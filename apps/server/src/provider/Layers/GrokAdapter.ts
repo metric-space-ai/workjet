@@ -118,7 +118,6 @@ interface GrokSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   currentModelId: string | undefined;
-  readonly managedPromptSemaphore: Semaphore.Semaphore;
   readonly managedPrompt: string | undefined;
   readonly managedPromptFingerprint: string | undefined;
   appliedManagedPromptFingerprint: string | undefined;
@@ -828,7 +827,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           });
 
           const now = yield* nowIso;
-          const managedPromptSemaphore = yield* Semaphore.make(1);
           const session: ProviderSession = {
             provider: PROVIDER,
             providerInstanceId: boundInstanceId,
@@ -860,7 +858,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             interruptedTurnIds: new Set(),
             promptsInFlight: 0,
             currentModelId: boundModelId,
-            managedPromptSemaphore,
             managedPrompt,
             managedPromptFingerprint,
             appliedManagedPromptFingerprint: resumeCursor?.managedPromptFingerprint,
@@ -1129,7 +1126,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 acp: ctx.acp,
                 acpSessionId: ctx.acpSessionId,
                 displayModel,
-                managedPromptSemaphore: ctx.managedPromptSemaphore,
                 turnPromptParts,
                 turnId,
               };
@@ -1159,89 +1155,87 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         const managedPromptFingerprintRef = yield* Ref.make<string | undefined>(undefined);
 
         return yield* Effect.gen(function* () {
-          const result = yield* prepared.managedPromptSemaphore.withPermit(
-            Effect.gen(function* () {
-              const injection = yield* withThreadLock(
-                input.threadId,
-                Effect.gen(function* () {
-                  const ctx = yield* requireSession(input.threadId);
-                  if (ctx.acpSessionId !== prepared.acpSessionId) {
-                    return yield* new ProviderAdapterRequestError({
-                      provider: PROVIDER,
-                      method: "session/prompt",
-                      detail: "Grok session changed before the prompt started.",
-                    });
-                  }
-                  const managedPromptFingerprint =
-                    ctx.managedPrompt !== undefined &&
-                    ctx.managedPromptFingerprint !== undefined &&
-                    ctx.appliedManagedPromptFingerprint !== ctx.managedPromptFingerprint &&
-                    !ctx.managedPromptInjectionInFlight
-                      ? ctx.managedPromptFingerprint
-                      : undefined;
-                  if (managedPromptFingerprint !== undefined) {
-                    ctx.managedPromptInjectionInFlight = true;
-                  }
-                  return {
-                    managedPrompt:
-                      managedPromptFingerprint !== undefined ? ctx.managedPrompt : undefined,
-                    managedPromptFingerprint,
-                  };
-                }),
-              );
-              yield* Ref.set(managedPromptFingerprintRef, injection.managedPromptFingerprint);
-              const promptParts: Array<EffectAcpSchema.ContentBlock> = [
-                ...(injection.managedPrompt !== undefined
-                  ? [{ type: "text" as const, text: injection.managedPrompt }]
-                  : []),
-                ...prepared.turnPromptParts,
-              ];
-              return yield* Effect.uninterruptibleMask((restore) =>
-                Effect.gen(function* () {
-                  const result = yield* restore(
-                    prepared.acp
-                      .prompt({ prompt: promptParts })
-                      .pipe(
-                        Effect.mapError((error) =>
-                          mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
-                        ),
+          const result = yield* Effect.gen(function* () {
+            const injection = yield* withThreadLock(
+              input.threadId,
+              Effect.gen(function* () {
+                const ctx = yield* requireSession(input.threadId);
+                if (ctx.acpSessionId !== prepared.acpSessionId) {
+                  return yield* new ProviderAdapterRequestError({
+                    provider: PROVIDER,
+                    method: "session/prompt",
+                    detail: "Grok session changed before the prompt started.",
+                  });
+                }
+                const managedPromptFingerprint =
+                  ctx.managedPrompt !== undefined &&
+                  ctx.managedPromptFingerprint !== undefined &&
+                  ctx.appliedManagedPromptFingerprint !== ctx.managedPromptFingerprint &&
+                  !ctx.managedPromptInjectionInFlight
+                    ? ctx.managedPromptFingerprint
+                    : undefined;
+                if (managedPromptFingerprint !== undefined) {
+                  ctx.managedPromptInjectionInFlight = true;
+                }
+                return {
+                  managedPrompt:
+                    managedPromptFingerprint !== undefined ? ctx.managedPrompt : undefined,
+                  managedPromptFingerprint,
+                };
+              }),
+            );
+            yield* Ref.set(managedPromptFingerprintRef, injection.managedPromptFingerprint);
+            const promptParts: Array<EffectAcpSchema.ContentBlock> = [
+              ...(injection.managedPrompt !== undefined
+                ? [{ type: "text" as const, text: injection.managedPrompt }]
+                : []),
+              ...prepared.turnPromptParts,
+            ];
+            return yield* Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                const result = yield* restore(
+                  prepared.acp
+                    .prompt({ prompt: promptParts })
+                    .pipe(
+                      Effect.mapError((error) =>
+                        mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
                       ),
-                  );
-                  yield* withThreadLock(
-                    input.threadId,
-                    Effect.sync(() => {
-                      const ctx = sessions.get(input.threadId);
-                      if (ctx?.acpSessionId === prepared.acpSessionId) {
-                        applyManagedPromptFingerprint(ctx, injection.managedPromptFingerprint);
-                      }
-                    }),
-                  );
-                  return result;
-                }),
-              ).pipe(
-                Effect.onError(() =>
-                  withThreadLock(
-                    input.threadId,
-                    Effect.sync(() => {
-                      const ctx = sessions.get(input.threadId);
-                      if (ctx?.acpSessionId === prepared.acpSessionId) {
-                        releaseManagedPromptInjection(ctx, injection.managedPromptFingerprint);
-                      }
-                    }),
-                  ).pipe(Effect.catch(() => Effect.void)),
-                ),
-              );
-            }).pipe(
-              Effect.tap((promptResult) =>
-                Effect.all([
-                  Ref.set(promptRpcSucceeded, true),
-                  Ref.set(promptResultRef, promptResult),
-                ]),
+                    ),
+                );
+                yield* withThreadLock(
+                  input.threadId,
+                  Effect.sync(() => {
+                    const ctx = sessions.get(input.threadId);
+                    if (ctx?.acpSessionId === prepared.acpSessionId) {
+                      applyManagedPromptFingerprint(ctx, injection.managedPromptFingerprint);
+                    }
+                  }),
+                );
+                return result;
+              }),
+            ).pipe(
+              Effect.onError(() =>
+                withThreadLock(
+                  input.threadId,
+                  Effect.sync(() => {
+                    const ctx = sessions.get(input.threadId);
+                    if (ctx?.acpSessionId === prepared.acpSessionId) {
+                      releaseManagedPromptInjection(ctx, injection.managedPromptFingerprint);
+                    }
+                  }),
+                ).pipe(Effect.catch(() => Effect.void)),
               ),
-              Effect.tapError((error) =>
-                Ref.set(promptFailureMessageRef, error.message).pipe(
-                  Effect.andThen(prepared.acp.drainEvents),
-                ),
+            );
+          }).pipe(
+            Effect.tap((promptResult) =>
+              Effect.all([
+                Ref.set(promptRpcSucceeded, true),
+                Ref.set(promptResultRef, promptResult),
+              ]),
+            ),
+            Effect.tapError((error) =>
+              Ref.set(promptFailureMessageRef, error.message).pipe(
+                Effect.andThen(prepared.acp.drainEvents),
               ),
             ),
           );

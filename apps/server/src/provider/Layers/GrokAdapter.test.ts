@@ -280,6 +280,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         const steeringPromptFiber = yield* adapter
           .sendTurn({ threadId, input: "steering prompt", attachments: [] })
           .pipe(Effect.forkChild);
+        yield* waitForFileContent(requestLogPath, 40, "steering prompt");
         yield* Fiber.join(firstPromptFiber);
         yield* Fiber.join(steeringPromptFiber);
         yield* adapter.sendTurn({ threadId, input: "later prompt", attachments: [] });

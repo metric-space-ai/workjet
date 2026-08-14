@@ -198,9 +198,12 @@ both modes.
   - [x] Keep externally administered 0.3.1 runtimes usable when managed source
         installation is unsupported, including Windows `greppy.exe`, and
         normalize legacy `file`/`line` search aliases to the canonical schema.
-  - [ ] Expose managed install, repair, and health state through the Workjet
+  - [x] Expose managed install, repair, and health state through the Workjet
         settings surface; keep activation controlled by each thread's Greppy
         toggle while every activated thread uses the same server store.
+  - [ ] Add the per-thread Greppy activation toggle to the Code composer/thread
+        settings without creating thread-, session-, harness-, or provider-scoped
+        stores.
 - [ ] `web-search`: shared Web Stack search/read surface.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.

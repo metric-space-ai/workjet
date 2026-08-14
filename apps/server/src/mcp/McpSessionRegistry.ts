@@ -8,12 +8,14 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import type { ThreadCapabilityContext } from "../workjet/ThreadCapabilityContext.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly threadCapabilityContext: ThreadCapabilityContext;
 }
 
 export interface McpIssuedCredential {
@@ -123,12 +125,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
+      const activeWorkjetMcpCapabilityIds = Object.freeze([
+        ...request.threadCapabilityContext.mcpCapabilityIds,
+      ]);
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities: new Set(["preview"]),
+        activeWorkjetMcpCapabilityIds: new Set(activeWorkjetMcpCapabilityIds),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -137,14 +143,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         return { records: next };
       });
       return {
-        config: {
+        config: Object.freeze({
           environmentId,
           threadId: scope.threadId,
           providerSessionId,
           providerInstanceId: scope.providerInstanceId,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
-        },
+          activeWorkjetMcpCapabilityIds,
+          compiledManagedPrompt: request.threadCapabilityContext.compiledManagedPrompt,
+        }),
       };
     },
   );

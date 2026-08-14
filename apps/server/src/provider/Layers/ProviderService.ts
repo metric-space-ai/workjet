@@ -10,6 +10,7 @@
  * @module ProviderServiceLive
  */
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   ModelSelection,
   NonNegativeInt,
   ThreadId,
@@ -23,6 +24,7 @@ import {
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as DateTime from "effect/DateTime";
@@ -57,7 +59,9 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import { resolveThreadCapabilityContext } from "../../workjet/ThreadCapabilityContext.ts";
 const isModelSelection = Schema.is(ModelSelection);
+const decodeWorkjetThreadConfig = Schema.decodeUnknownOption(WorkjetThreadConfig);
 
 /**
  * Hook for tests that want to override the canonical event logger pulled
@@ -125,6 +129,7 @@ function toRuntimePayloadFromSession(
   session: ProviderSession,
   extra?: {
     readonly modelSelection?: unknown;
+    readonly workjetConfig?: WorkjetThreadConfig;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
   },
@@ -135,6 +140,7 @@ function toRuntimePayloadFromSession(
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
     ...(extra?.modelSelection !== undefined ? { modelSelection: extra.modelSelection } : {}),
+    ...(extra?.workjetConfig !== undefined ? { workjetConfig: extra.workjetConfig } : {}),
     ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
     ...(extra?.lastRuntimeEventAt !== undefined
       ? { lastRuntimeEventAt: extra.lastRuntimeEventAt }
@@ -150,6 +156,16 @@ function readPersistedModelSelection(
   }
   const raw = "modelSelection" in runtimePayload ? runtimePayload.modelSelection : undefined;
   return isModelSelection(raw) ? raw : undefined;
+}
+
+function readPersistedWorkjetConfig(
+  runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
+): WorkjetThreadConfig {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return DEFAULT_WORKJET_THREAD_CONFIG;
+  }
+  const raw = "workjetConfig" in runtimePayload ? runtimePayload.workjetConfig : undefined;
+  return Option.getOrElse(decodeWorkjetThreadConfig(raw), () => DEFAULT_WORKJET_THREAD_CONFIG);
 }
 
 function readPersistedCwd(
@@ -217,14 +233,24 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
-    McpSessionRegistry.issueActiveMcpCredential({ threadId, providerInstanceId }).pipe(
+  const prepareMcpSession = (
+    threadId: ThreadId,
+    providerInstanceId: ProviderInstanceId,
+    workjetConfig: WorkjetThreadConfig,
+  ) => {
+    const threadCapabilityContext = resolveThreadCapabilityContext(workjetConfig);
+    return McpSessionRegistry.issueActiveMcpCredential({
+      threadId,
+      providerInstanceId,
+      threadCapabilityContext,
+    }).pipe(
       Effect.tap((credential) =>
         credential
           ? Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config))
           : Effect.void,
       ),
     );
+  };
   const clearMcpSession = (threadId: ThreadId) =>
     McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
@@ -264,6 +290,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     extra?: {
       readonly modelSelection?: unknown;
+      readonly workjetConfig?: WorkjetThreadConfig;
       readonly lastRuntimeEvent?: string;
       readonly lastRuntimeEventAt?: string;
     },
@@ -368,6 +395,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     });
     return yield* Effect.gen(function* () {
       const adapter = yield* registry.getByInstance(bindingInstanceId);
+      const persistedWorkjetConfig = readPersistedWorkjetConfig(input.binding.runtimePayload);
       const hasResumeCursor =
         input.binding.resumeCursor !== null && input.binding.resumeCursor !== undefined;
       const hasActiveSession = yield* adapter.hasSession(input.binding.threadId);
@@ -380,6 +408,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           yield* upsertSessionBinding(
             { ...existing, providerInstanceId: bindingInstanceId },
             input.binding.threadId,
+            { workjetConfig: persistedWorkjetConfig },
           );
           yield* analytics.record("provider.session.recovered", {
             provider: existing.provider,
@@ -400,7 +429,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
+      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId, persistedWorkjetConfig);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
@@ -410,6 +439,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
+          workjetConfig: persistedWorkjetConfig,
         })
         .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));
       if (resumed.provider !== adapter.provider) {
@@ -423,6 +453,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* upsertSessionBinding(
         { ...resumed, providerInstanceId: bindingInstanceId },
         input.binding.threadId,
+        { workjetConfig: persistedWorkjetConfig },
       );
       yield* analytics.record("provider.session.recovered", {
         provider: resumed.provider,
@@ -596,7 +627,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
+        yield* prepareMcpSession(threadId, resolvedInstanceId, input.workjetConfig);
         const session = yield* adapter
           .startSession({
             ...input,
@@ -624,6 +655,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         yield* upsertSessionBinding(sessionWithInstance, threadId, {
           modelSelection: input.modelSelection,
+          workjetConfig: input.workjetConfig,
         });
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,

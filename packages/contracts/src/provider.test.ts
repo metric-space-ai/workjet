@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "./workjet.ts";
 import {
   ProviderEvent,
   ProviderSendTurnInput,
@@ -21,6 +22,34 @@ function getOptionValue(
 }
 
 describe("ProviderSessionStartInput", () => {
+  it("defaults legacy payloads to the standard Workjet thread config", () => {
+    const parsed = decodeProviderSessionStartInput({
+      threadId: "thread-1",
+      provider: "codex",
+      runtimeMode: "full-access",
+    });
+
+    expect(parsed.workjetConfig).toEqual(DEFAULT_WORKJET_THREAD_CONFIG);
+  });
+
+  it("decodes an explicit non-default Workjet thread config", () => {
+    const workjetConfig = {
+      schemaVersion: 1,
+      role: "orchestrator",
+      parent: null,
+      managedInstructions: "Coordinate enabled capabilities.",
+      enabledCapabilityIds: ["web-search", "greppy"],
+    } as const;
+    const parsed = decodeProviderSessionStartInput({
+      threadId: "thread-1",
+      provider: "codex",
+      runtimeMode: "full-access",
+      workjetConfig,
+    });
+
+    expect(parsed.workjetConfig).toEqual(workjetConfig);
+  });
+
   it("accepts codex-compatible payloads", () => {
     const parsed = decodeProviderSessionStartInput({
       threadId: "thread-1",

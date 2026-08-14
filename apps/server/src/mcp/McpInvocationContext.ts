@@ -3,6 +3,7 @@ import {
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ThreadId,
+  type WorkjetCapabilityId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,7 @@ export interface McpInvocationScope {
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
   readonly capabilities: ReadonlySet<McpCapability>;
+  readonly activeWorkjetMcpCapabilityIds?: ReadonlySet<WorkjetCapabilityId>;
   readonly issuedAt: number;
 }
 

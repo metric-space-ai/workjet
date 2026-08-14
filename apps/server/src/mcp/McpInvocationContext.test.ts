@@ -16,6 +16,7 @@ it.effect("reports the scoped credential context when preview capability is unav
     providerSessionId: "provider-session-1",
     providerInstanceId: ProviderInstanceId.make("codex"),
     capabilities: new Set(),
+    activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
     issuedAt: 1,
   };
 

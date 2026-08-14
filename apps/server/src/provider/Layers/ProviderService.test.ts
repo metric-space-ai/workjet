@@ -9,9 +9,11 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderTurnStartResult,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -937,6 +939,120 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, session.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect(
+    "persists and recovers the effective Workjet config across runtime payload merges",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+        const threadId = asThreadId("thread-workjet-config");
+        const workjetConfig = {
+          schemaVersion: 1,
+          role: "orchestrator",
+          parent: null,
+          managedInstructions: "Coordinate the configured capabilities.",
+          enabledCapabilityIds: ["web-search", "greppy"],
+        } as const satisfies WorkjetThreadConfig;
+
+        const initial = yield* provider.startSession(threadId, {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: codexInstanceId,
+          threadId,
+          cwd: "/tmp/project-workjet",
+          runtimeMode: "full-access",
+          workjetConfig,
+        });
+        assert.deepEqual(
+          routing.codex.startSession.mock.calls.at(-1)?.[0].workjetConfig,
+          workjetConfig,
+        );
+
+        routing.codex.startSession.mockClear();
+        routing.codex.hasSession
+          .mockImplementationOnce(() => Effect.succeed(false))
+          .mockImplementationOnce(() => Effect.succeed(true));
+        yield* provider.sendTurn({
+          threadId,
+          input: "adopt active session",
+          attachments: [],
+        });
+        assert.equal(routing.codex.startSession.mock.calls.length, 0);
+
+        let persisted = yield* runtimeRepository.getByThreadId({ threadId });
+        assert.equal(Option.isSome(persisted), true);
+        if (Option.isSome(persisted)) {
+          const payload = persisted.value.runtimePayload as Record<string, unknown>;
+          assert.deepEqual(payload.workjetConfig, workjetConfig);
+          assert.equal(payload.lastRuntimeEvent, "provider.sendTurn");
+        }
+
+        yield* routing.codex.stopSession(initial.threadId);
+        routing.codex.startSession.mockClear();
+        yield* provider.sendTurn({
+          threadId,
+          input: "recover persisted session",
+          attachments: [],
+        });
+
+        assert.equal(routing.codex.startSession.mock.calls.length, 1);
+        assert.deepEqual(
+          routing.codex.startSession.mock.calls[0]?.[0].workjetConfig,
+          workjetConfig,
+        );
+        persisted = yield* runtimeRepository.getByThreadId({ threadId });
+        assert.equal(Option.isSome(persisted), true);
+        if (Option.isSome(persisted)) {
+          const payload = persisted.value.runtimePayload as Record<string, unknown>;
+          assert.deepEqual(payload.workjetConfig, workjetConfig);
+          assert.equal(payload.lastRuntimeEvent, "provider.sendTurn");
+        }
+      }),
+  );
+
+  it.effect("falls back to the default Workjet config for malformed historical payloads", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const threadId = asThreadId("thread-malformed-workjet-config");
+
+      const initial = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+      });
+      yield* directory.upsert({
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        runtimePayload: {
+          workjetConfig: { schemaVersion: 99, enabledCapabilityIds: ["unknown"] },
+        },
+      });
+      yield* routing.codex.stopSession(initial.threadId);
+      routing.codex.startSession.mockClear();
+
+      yield* provider.sendTurn({
+        threadId,
+        input: "recover historical session",
+        attachments: [],
+      });
+
+      assert.deepEqual(
+        routing.codex.startSession.mock.calls[0]?.[0].workjetConfig,
+        DEFAULT_WORKJET_THREAD_CONFIG,
+      );
+      const persisted = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(persisted), true);
+      if (Option.isSome(persisted)) {
+        const payload = persisted.value.runtimePayload as Record<string, unknown>;
+        assert.deepEqual(payload.workjetConfig, DEFAULT_WORKJET_THREAD_CONFIG);
+      }
     }),
   );
 

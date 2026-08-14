@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfig } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -147,6 +147,7 @@ describe("ProviderCommandReactor", () => {
   async function createHarness(input?: {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
+    readonly threadWorkjetConfig?: WorkjetThreadConfig;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
@@ -444,7 +445,7 @@ describe("ProviderCommandReactor", () => {
         title: "Thread",
         modelSelection: modelSelection,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: input?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -546,6 +547,7 @@ describe("ProviderCommandReactor", () => {
         model: "gpt-5-codex",
       },
       runtimeMode: "approval-required",
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     });
 
     const readModel = await harness.readModel();
@@ -553,6 +555,72 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("passes the thread's current Workjet config on provider start and restart", async () => {
+    const initialWorkjetConfig = {
+      schemaVersion: 1,
+      role: "orchestrator",
+      parent: null,
+      managedInstructions: "Coordinate the configured capabilities.",
+      enabledCapabilityIds: ["greppy"],
+    } as const satisfies WorkjetThreadConfig;
+    const restartedWorkjetConfig = {
+      schemaVersion: 1,
+      role: "standard",
+      parent: null,
+      managedInstructions: "Use the updated capability configuration.",
+      enabledCapabilityIds: ["web-search", "web-stack-browser"],
+    } as const satisfies WorkjetThreadConfig;
+    const harness = await createHarness({ threadWorkjetConfig: initialWorkjetConfig });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-workjet-config"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-workjet-config"),
+          role: "user",
+          text: "start with capabilities",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      workjetConfig: initialWorkjetConfig,
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.workjet-config.set",
+        commandId: CommandId.make("cmd-workjet-config-update"),
+        threadId: ThreadId.make("thread-1"),
+        workjetConfig: restartedWorkjetConfig,
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make("cmd-runtime-mode-workjet-restart"),
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 2);
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      runtimeMode: "full-access",
+      workjetConfig: restartedWorkjetConfig,
+    });
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>

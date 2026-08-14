@@ -105,16 +105,16 @@ become their provider proxy or database authority.
 Goal: add backward-compatible orchestration metadata before changing the UI or
 launching workers.
 
-- [ ] Add `packages/contracts/src/workjet.ts` with Effect Schema contracts.
-- [ ] Define role values exactly as `standard | orchestrator | worker`.
-- [ ] Define a parent reference containing `environmentId` and `threadId`.
-- [ ] Define a versioned thread configuration with managed instructions and
+- [x] Add `packages/contracts/src/workjet.ts` with Effect Schema contracts.
+- [x] Define role values exactly as `standard | orchestrator | worker`.
+- [x] Define a parent reference containing `environmentId` and `threadId`.
+- [x] Define a versioned thread configuration with managed instructions and
       enabled capability IDs.
-- [ ] Start with `greppy` and `web-search` capability IDs.
-- [ ] Require a parent for workers and forbid a parent for standard and
+- [x] Start with `greppy` and `web-search` capability IDs.
+- [x] Require a parent for workers and forbid a parent for standard and
       orchestrator threads.
-- [ ] Decode historical threads to the canonical standard configuration.
-- [ ] Add a dedicated command/event pair for replacing configuration.
+- [x] Decode historical threads to the canonical standard configuration.
+- [x] Add a dedicated command/event pair for replacing configuration.
 - [ ] Update decider, server projector, projection pipeline, snapshot query,
       and client reducer.
 - [ ] Add migration `041` with one typed JSON column in `projection_threads`.

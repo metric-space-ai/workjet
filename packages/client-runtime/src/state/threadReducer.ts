@@ -84,6 +84,7 @@ export function applyThreadDetailEvent(
           modelSelection: event.payload.modelSelection,
           runtimeMode: event.payload.runtimeMode,
           interactionMode: event.payload.interactionMode,
+          workjetConfig: event.payload.workjetConfig,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
           latestTurn: null,
@@ -238,6 +239,16 @@ export function applyThreadDetailEvent(
         thread: {
           ...thread,
           interactionMode: event.payload.interactionMode,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
+    case "thread.workjet-config-set":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          workjetConfig: event.payload.workjetConfig,
           updatedAt: event.payload.updatedAt,
         },
       };

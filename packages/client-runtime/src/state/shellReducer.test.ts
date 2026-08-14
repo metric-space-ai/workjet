@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
 
 import { applyShellStreamEvent } from "./shellReducer.ts";
@@ -30,6 +35,7 @@ const stubThread = {
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
   runtimeMode: "full-access" as const,
   interactionMode: "default" as const,
+  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   branch: null,
   worktreePath: null,
   latestTurn: null,

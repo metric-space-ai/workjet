@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -90,6 +91,7 @@ const THREAD_SHELL = {
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
   runtimeMode: "full-access",
   interactionMode: "default",
+  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   branch: null,
   worktreePath: null,
   latestTurn: null,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CheckpointRef,
   CommandId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EventId,
   MessageId,
   ProjectId,
@@ -29,6 +30,7 @@ const baseThread: OrchestrationThread = {
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
   runtimeMode: "full-access",
   interactionMode: "default",
+  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   branch: null,
   worktreePath: null,
   latestTurn: null,
@@ -87,6 +89,7 @@ describe("applyThreadDetailEvent", () => {
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
           runtimeMode: "full-access",
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           branch: "main",
           worktreePath: null,
           createdAt: "2026-04-01T01:00:00.000Z",

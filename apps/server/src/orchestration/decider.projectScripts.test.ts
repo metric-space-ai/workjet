@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -291,6 +292,7 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
             model: "gpt-5-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
@@ -388,6 +390,7 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
             model: "gpt-5-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
@@ -466,6 +469,7 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
             model: "gpt-5-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,

@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -65,6 +66,7 @@ const seedReadModel = Effect.gen(function* () {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,
@@ -93,6 +95,7 @@ const seedReadModel = Effect.gen(function* () {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,

@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   ThreadId,
   TurnId,
@@ -96,6 +97,7 @@ function makeReadModel(
       modelSelection: defaultModelSelection,
       interactionMode: "default" as const,
       runtimeMode: "full-access" as const,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       branch: null,
       worktreePath: null,
       createdAt: now,

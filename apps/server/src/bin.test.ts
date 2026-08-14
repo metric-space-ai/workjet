@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off - CLI integration exercises Node HTTP and filesystem boundaries.
 import * as NodeHttp from "node:http";
 import * as NodeFS from "node:fs";
@@ -513,6 +514,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
             model: "gpt-5-codex",
           },
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,

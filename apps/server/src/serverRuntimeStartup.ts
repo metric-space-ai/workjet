@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import {
   CommandId,
   DEFAULT_MODEL,
@@ -231,6 +232,7 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
           title: "New thread",
           modelSelection: nextProjectDefaultModelSelection,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,

@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -392,6 +393,7 @@ describe("CheckpointReactor", () => {
             model: "gpt-5-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "approval-required",
           branch: options?.threadBranch ?? null,
           worktreePath: options?.threadWorktreePath ?? cwd,
@@ -411,6 +413,7 @@ describe("CheckpointReactor", () => {
                     model: "gpt-5-codex",
                   },
                   interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                   runtimeMode: "approval-required",
                   branch: null,
                   worktreePath: options?.threadWorktreePath ?? cwd,

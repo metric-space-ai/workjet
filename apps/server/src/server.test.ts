@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -222,6 +223,7 @@ const makeDefaultOrchestrationReadModel = () => {
         modelSelection: defaultModelSelection,
         interactionMode: "default" as const,
         runtimeMode: "full-access" as const,
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         createdAt: now,
@@ -252,6 +254,7 @@ const makeDefaultOrchestrationThreadShell = (
     modelSelection: defaultModelSelection,
     runtimeMode: "full-access",
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     branch: null,
     worktreePath: null,
     latestTurn: null,
@@ -5840,6 +5843,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             modelSelection: defaultModelSelection,
             interactionMode: "default" as const,
             runtimeMode: "full-access" as const,
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
             branch: null,
             worktreePath: null,
             createdAt: now,
@@ -7414,6 +7418,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   modelSelection: defaultModelSelection,
                   runtimeMode: "full-access",
                   interactionMode: "default",
+                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                   branch: "main",
                   worktreePath: null,
                   createdAt,
@@ -7560,6 +7565,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   modelSelection: defaultModelSelection,
                   runtimeMode: "full-access",
                   interactionMode: "default",
+                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                   branch: "main",
                   worktreePath: null,
                   createdAt,
@@ -7663,6 +7669,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 modelSelection: defaultModelSelection,
                 runtimeMode: "full-access",
                 interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                 branch: "main",
                 worktreePath: null,
                 createdAt,
@@ -7784,6 +7791,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 modelSelection: defaultModelSelection,
                 runtimeMode: "full-access",
                 interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                 branch: "main",
                 worktreePath: null,
                 createdAt,
@@ -7868,6 +7876,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 modelSelection: defaultModelSelection,
                 runtimeMode: "full-access",
                 interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                 branch: "main",
                 worktreePath: null,
                 createdAt,

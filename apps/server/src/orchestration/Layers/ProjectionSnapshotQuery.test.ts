@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import {
   CheckpointRef,
   EventId,
@@ -301,6 +302,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
@@ -420,6 +422,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,

@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -283,6 +284,7 @@ describe("ProviderRuntimeIngestion", () => {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,
@@ -1247,6 +1249,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: "plan",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -1282,6 +1285,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -1435,6 +1439,7 @@ describe("ProviderRuntimeIngestion", () => {
             model: "gpt-5-codex",
           },
           interactionMode: "plan",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
@@ -1673,6 +1678,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: "plan",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -1708,6 +1714,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,

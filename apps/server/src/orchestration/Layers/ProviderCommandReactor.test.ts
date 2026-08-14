@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -443,6 +444,7 @@ describe("ProviderCommandReactor", () => {
         title: "Thread",
         modelSelection: modelSelection,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -459,6 +461,7 @@ describe("ProviderCommandReactor", () => {
           title: "Thread 2",
           modelSelection: modelSelection,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,

@@ -1,6 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+export {
+  GreppyRuntimeAvailability,
+  GreppyRuntimeReason,
+  GreppyRuntimeSnapshot,
+  GreppyRuntimeSource,
+} from "@t3tools/contracts";
+
 export const GREPPY_RUNTIME_PIN = {
   version: "0.3.1",
   rustToolchain: "1.95.0",
@@ -184,41 +191,6 @@ export const decodeGreppySemanticSearchV1 = (
       ),
     })),
   );
-
-export const GreppyRuntimeAvailability = Schema.Literals([
-  "available",
-  "unavailable",
-  "unsupported",
-]);
-export type GreppyRuntimeAvailability = typeof GreppyRuntimeAvailability.Type;
-
-export const GreppyRuntimeSource = Schema.Literals(["override", "managed", "path"]);
-export type GreppyRuntimeSource = typeof GreppyRuntimeSource.Type;
-
-export const GreppyRuntimeReason = Schema.Literals([
-  "unsupported-host",
-  "override-invalid",
-  "managed-invalid",
-  "path-unavailable",
-  "binary-unavailable",
-  "version-mismatch",
-  "surface-mismatch",
-  "timeout",
-  "process-exit",
-  "malformed-response",
-  "oversized-response",
-  "index-unavailable",
-  "install-failed",
-]);
-export type GreppyRuntimeReason = typeof GreppyRuntimeReason.Type;
-
-export interface GreppyRuntimeSnapshot {
-  readonly availability: GreppyRuntimeAvailability;
-  readonly source?: GreppyRuntimeSource;
-  readonly reason?: GreppyRuntimeReason;
-  readonly version: typeof GREPPY_RUNTIME_PIN.version;
-  readonly installSupported: boolean;
-}
 
 export const isGreppyIndexReady = (status: GreppyIndexStatus): boolean =>
   status.status === "ok" &&

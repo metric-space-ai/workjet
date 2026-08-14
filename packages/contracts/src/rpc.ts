@@ -190,6 +190,7 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import { GreppyRuntimeSnapshot, WorkjetGreppyOperationError } from "./workjet.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -271,6 +272,10 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+
+  // Workjet server-wide capability management
+  workjetGreppyInspect: "workjet.greppy.inspect",
+  workjetGreppyInstall: "workjet.greppy.install",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -465,6 +470,23 @@ export const WsServerGetBackgroundPolicyRpc = Rpc.make(WS_METHODS.serverGetBackg
   payload: Schema.Struct({}),
   success: BackgroundPolicySnapshot,
   error: EnvironmentAuthorizationError,
+});
+
+const WorkjetGreppyRpcError = Schema.Union([
+  WorkjetGreppyOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetGreppyInspectRpc = Rpc.make(WS_METHODS.workjetGreppyInspect, {
+  payload: Schema.Struct({}),
+  success: GreppyRuntimeSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsWorkjetGreppyInstallRpc = Rpc.make(WS_METHODS.workjetGreppyInstall, {
+  payload: Schema.Struct({}),
+  success: GreppyRuntimeSnapshot,
+  error: WorkjetGreppyRpcError,
 });
 
 const PullRequestRpcError = Schema.Union([
@@ -995,6 +1017,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsWorkjetGreppyInspectRpc,
+  WsWorkjetGreppyInstallRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

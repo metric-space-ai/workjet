@@ -70,6 +70,16 @@ describe("searchSettings", () => {
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
   });
 
+  it("registers Workjet and Greppy as first-class settings destinations", () => {
+    expect(searchSettings("greppy runtime")).toEqual([
+      {
+        id: "greppy-runtime",
+        title: "Greppy Runtime",
+        to: "/settings/workjet",
+      },
+    ]);
+  });
+
   it("routes appearance settings to their current section", () => {
     expect(searchSettings("theme")[0]).toMatchObject({
       id: "theme",

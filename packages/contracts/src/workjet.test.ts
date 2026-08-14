@@ -9,7 +9,13 @@ import {
   ThreadCreatedPayload,
   ThreadTurnStartCommand,
 } from "./orchestration.ts";
-import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "./workjet.ts";
+import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  GreppyRuntimeSnapshot,
+  WorkjetGreppyOperationError,
+  WorkjetThreadConfig,
+} from "./workjet.ts";
 
 const decodeWorkjetThreadConfig = Schema.decodeUnknownSync(WorkjetThreadConfig);
 const decodeOrchestrationCommand = Schema.decodeUnknownSync(OrchestrationCommand);
@@ -90,6 +96,51 @@ const threadCreateCommand = {
   worktreePath: null,
   createdAt: "2026-08-14T00:00:00.000Z",
 } as const;
+
+describe("Greppy runtime RPC contract", () => {
+  it("decodes portable snapshots without exposing a server path", () => {
+    const decoded = Schema.decodeUnknownSync(GreppyRuntimeSnapshot)({
+      availability: "available",
+      source: "managed",
+      version: "0.3.1",
+      installSupported: true,
+      storeDir: "/private/server/state/greppy",
+    });
+
+    expect(decoded).toEqual({
+      availability: "available",
+      source: "managed",
+      version: "0.3.1",
+      installSupported: true,
+    });
+  });
+
+  it("registers stable inspect and install method names", () => {
+    expect(WS_METHODS.workjetGreppyInspect).toBe("workjet.greppy.inspect");
+    expect(WS_METHODS.workjetGreppyInstall).toBe("workjet.greppy.install");
+    expect(WsRpcGroup.requests.has(WS_METHODS.workjetGreppyInspect)).toBe(true);
+    expect(WsRpcGroup.requests.has(WS_METHODS.workjetGreppyInstall)).toBe(true);
+  });
+
+  it("limits public operation failures to a bounded reason", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetGreppyOperationError)({
+      _tag: "WorkjetGreppyOperationError",
+      reason: "install-failed",
+      message: "secret server output",
+      stderr: "credential=value",
+      path: "/private/server/state",
+    });
+
+    expect(decoded.reason).toBe("install-failed");
+    expect(JSON.stringify(decoded)).not.toContain("secret");
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetGreppyOperationError)({
+        _tag: "WorkjetGreppyOperationError",
+        reason: "arbitrary-server-message",
+      }),
+    ).toThrow();
+  });
+});
 
 describe("WorkjetThreadConfig", () => {
   it.each([

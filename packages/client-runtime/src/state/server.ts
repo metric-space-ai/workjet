@@ -44,6 +44,8 @@ import { followStreamInEnvironment } from "./runtime.ts";
 
 export type ServerUpdateStage = "downloading" | "installing" | "resuming";
 
+export const GREPPY_RUNTIME_INSPECT_STALE_TIME_MS = 15_000;
+
 export type ServerUpdateState =
   | { readonly status: "idle" }
   | {
@@ -679,6 +681,23 @@ export function createServerEnvironmentAtoms<R, E>(
       Atom.withLabel(`environment-data:server:providers:${environmentId}`),
     ),
   );
+  const greppyRuntimeInspect = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:greppy:inspect",
+    tag: WS_METHODS.workjetGreppyInspect,
+    staleTimeMs: GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
+  });
+  const installGreppyRuntime = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:greppy:install",
+    tag: WS_METHODS.workjetGreppyInstall,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(greppyRuntimeInspect({ environmentId, input: {} }));
+      }),
+  });
 
   return {
     configValueAtom,
@@ -714,6 +733,8 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
+    greppyRuntimeInspect,
+    installGreppyRuntime,
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",

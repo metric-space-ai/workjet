@@ -1,3 +1,4 @@
+import { WorkjetGreppyOperationError } from "@t3tools/contracts";
 import {
   decodeGreppyIndexStatus,
   decodePinnedGreppyModelManifest,
@@ -229,6 +230,10 @@ const runtimePaths = (stateDir: string): RuntimePaths => {
 
 const safeError = (reason: GreppyRuntimeReason) => new GreppyRuntimeError({ reason });
 
+export const toWorkjetGreppyOperationError = (
+  error: GreppyRuntimeError,
+): WorkjetGreppyOperationError => new WorkjetGreppyOperationError({ reason: error.reason });
+
 const runChecked = async (
   platform: GreppyRuntimePlatform,
   command: RuntimeCommand,
@@ -300,9 +305,7 @@ const managedComplete = async (
   platform: GreppyRuntimePlatform,
   paths: RuntimePaths,
 ): Promise<boolean> => {
-  if (!(await platform.exists(paths.executable)) || !(await platform.exists(paths.sentinel))) {
-    return false;
-  }
+  if (!(await platform.exists(paths.sentinel))) return false;
   return (await platform.readText(paths.sentinel, 256).catch(() => "")) === INSTALL_SENTINEL;
 };
 
@@ -350,8 +353,13 @@ const makeResolved = async (
       await validateCandidate(platform, paths.executable, paths.storeDir);
       return { executable: paths.executable, source: "managed", storeDir: paths.storeDir };
     } catch {
-      // A damaged managed install may be repaired explicitly; PATH remains a
-      // valid separately administered fallback when no override was requested.
+      // A valid separately administered PATH runtime still wins after managed
+      // corruption, but preserve the repair signal when no fallback validates.
+      try {
+        return await resolveFromPath(platform, paths);
+      } catch {
+        throw safeError("managed-invalid");
+      }
     }
   }
   return resolveFromPath(platform, paths);
@@ -407,6 +415,15 @@ const performInstall = async (
   paths: RuntimePaths,
   configuredBuildTempRoot?: string,
 ): Promise<ResolvedGreppyRuntime> => {
+  const override = platform.environment[WORKJET_GREPPY_EXECUTABLE_ENV]?.trim();
+  if (override) {
+    try {
+      await validateCandidate(platform, override, paths.storeDir);
+      return { executable: override, source: "override", storeDir: paths.storeDir };
+    } catch {
+      throw safeError("override-invalid");
+    }
+  }
   if (!supportedHost(platform)) throw safeError("unsupported-host");
   if (await managedComplete(platform, paths)) {
     try {
@@ -623,7 +640,7 @@ export const make = (options: {
         availability: "available",
         source: runtime.source,
         version: GREPPY_RUNTIME_PIN.version,
-        installSupported: true,
+        installSupported: supportedHost(options.platform),
       } satisfies GreppyRuntimeSnapshot;
     });
   const ensureWorkspace = (cwd: string) =>

@@ -10,6 +10,7 @@ import * as Fiber from "effect/Fiber";
 import {
   __testing,
   greppyModelUrl,
+  GreppyRuntimeError,
   isAllowedGreppyDownloadUrl,
   isConfinedGreppyAssetPath,
   make,
@@ -17,6 +18,7 @@ import {
   type RuntimeCommand,
   type RuntimeCommandResult,
   type RuntimeDownloadResult,
+  toWorkjetGreppyOperationError,
   validateGreppyArchiveEntries,
 } from "./GreppyRuntime.ts";
 
@@ -351,8 +353,87 @@ describe("GreppyRuntime resolution", () => {
         installSupported: true,
       });
       assert.notInclude(JSON.stringify(snapshot), secret);
+
+      const installError = yield* runtime.install().pipe(Effect.flip);
+      assert.equal(installError.reason, "override-invalid");
+      assert.notInclude(installError.message, secret);
     }),
   );
+
+  it.effect("reports managed corruption unless a valid PATH fallback exists", () =>
+    Effect.gen(function* () {
+      const stateDir = "/state";
+      const paths = __testing.runtimePaths(stateDir);
+      const damaged = fakeRuntime({
+        run: async (command) =>
+          command.executable === paths.executable && command.args[0] === "--version"
+            ? result({ stdout: "greppy 0.2.0\n" })
+            : command.args[0] === "--version"
+              ? versionResult
+              : command.args[0] === "search"
+                ? searchHelpResult
+                : indexHelpResult,
+      });
+      seedManaged(damaged, stateDir);
+
+      assert.deepEqual(yield* make({ stateDir, platform: damaged.platform }).inspect(), {
+        availability: "unavailable",
+        reason: "managed-invalid",
+        version: "0.3.1",
+        installSupported: true,
+      });
+
+      const missingBinary = fakeRuntime();
+      missingBinary.files.set(paths.sentinel, completeSentinel);
+      assert.deepEqual(yield* make({ stateDir, platform: missingBinary.platform }).inspect(), {
+        availability: "unavailable",
+        reason: "managed-invalid",
+        version: "0.3.1",
+        installSupported: true,
+      });
+
+      const fallback = fakeRuntime({
+        environment: { PATH: "/path/bin" },
+        run: async (command) =>
+          command.executable === paths.executable && command.args[0] === "--version"
+            ? result({ stdout: "greppy 0.2.0\n" })
+            : command.args[0] === "--version"
+              ? versionResult
+              : command.args[0] === "search"
+                ? searchHelpResult
+                : indexHelpResult,
+      });
+      seedManaged(fallback, stateDir);
+      seedValidExecutable(fallback, "/path/bin/greppy");
+      assert.deepEqual(yield* make({ stateDir, platform: fallback.platform }).inspect(), {
+        availability: "available",
+        source: "path",
+        version: "0.3.1",
+        installSupported: true,
+      });
+    }),
+  );
+
+  it("maps internal failures to reason-only public errors", () => {
+    const internal = Object.assign(new GreppyRuntimeError({ reason: "install-failed" }), {
+      stdout: "secret stdout",
+      stderr: "secret stderr",
+      path: "/private/state/greppy",
+      url: "https://credential.example.test/token",
+    });
+    const sanitized = toWorkjetGreppyOperationError(internal);
+
+    assert.deepEqual(
+      { ...sanitized },
+      {
+        _tag: "WorkjetGreppyOperationError",
+        reason: "install-failed",
+      },
+    );
+    assert.notInclude(JSON.stringify(sanitized), "secret");
+    assert.notInclude(JSON.stringify(sanitized), "/private");
+    assert.notInclude(JSON.stringify(sanitized), "https://");
+  });
 
   it.effect("reports unsupported host pairs without guessing a binary", () =>
     Effect.gen(function* () {

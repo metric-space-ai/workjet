@@ -31,6 +31,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import {
   applyServerConfigProjection,
+  GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   matchesServerUpdateReadyEvent,
@@ -75,6 +76,12 @@ function session(client: WsRpcProtocolClient): RpcSession {
     closed: Effect.never,
   };
 }
+
+describe("Greppy runtime client wiring", () => {
+  it("uses a nonzero SWR freshness window", () => {
+    expect(GREPPY_RUNTIME_INSPECT_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+});
 
 describe("update restart reconnect nudges", () => {
   it.effect("retries once per backoff entry instead of only the first", () =>

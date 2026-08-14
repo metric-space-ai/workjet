@@ -1,3 +1,9 @@
+import {
+  GreppyRuntimeAvailability as ContractGreppyRuntimeAvailability,
+  GreppyRuntimeReason as ContractGreppyRuntimeReason,
+  GreppyRuntimeSnapshot as ContractGreppyRuntimeSnapshot,
+  GreppyRuntimeSource as ContractGreppyRuntimeSource,
+} from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
@@ -7,11 +13,22 @@ import {
   decodePinnedGreppyModelManifest,
   GREPPY_MODEL_ASSETS,
   GREPPY_RUNTIME_PIN,
+  GreppyRuntimeAvailability,
+  GreppyRuntimeReason,
+  GreppyRuntimeSnapshot,
+  GreppyRuntimeSource,
   isGreppyIndexReady,
   isGreppyIndexing,
 } from "./greppyRuntime.ts";
 
 describe("Greppy runtime contract", () => {
+  it("re-exports the canonical contracts schemas", () => {
+    assert.strictEqual(GreppyRuntimeAvailability, ContractGreppyRuntimeAvailability);
+    assert.strictEqual(GreppyRuntimeReason, ContractGreppyRuntimeReason);
+    assert.strictEqual(GreppyRuntimeSnapshot, ContractGreppyRuntimeSnapshot);
+    assert.strictEqual(GreppyRuntimeSource, ContractGreppyRuntimeSource);
+  });
+
   it("pins the exact immutable 0.3.1 source and CPU-safe locked build", () => {
     assert.deepEqual(GREPPY_RUNTIME_PIN, {
       version: "0.3.1",

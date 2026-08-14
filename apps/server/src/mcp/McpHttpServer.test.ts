@@ -13,6 +13,7 @@ import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
 import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
@@ -193,6 +194,7 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
       const routes = McpHttpServer.layer.pipe(
         Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+        Layer.provide(GreppyRuntime.layer),
         Layer.provide(
           ServerConfig.layerTest(
             process.cwd(),

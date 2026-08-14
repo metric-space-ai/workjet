@@ -17,6 +17,7 @@ import {
   PaletteIcon,
   SearchIcon,
   Settings2Icon,
+  WrenchIcon,
   XIcon,
 } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -50,6 +51,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/providers": BotIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/workjet": WrenchIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };

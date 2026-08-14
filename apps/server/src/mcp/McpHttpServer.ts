@@ -22,6 +22,7 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
 import * as GreppySearch from "./toolkits/workjet/GreppySearch.ts";
 import { WorkjetToolkitRegistrationLive } from "./toolkits/workjet/GreppyTool.ts";
 
@@ -219,7 +220,7 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
 );
 
 const ProductionWorkjetToolkitRegistrationLive = WorkjetToolkitRegistrationLive.pipe(
-  Layer.provide(GreppySearch.layer),
+  Layer.provide(GreppySearch.layer.pipe(Layer.provide(GreppyRuntime.layer))),
 );
 
 const McpTransportLive = McpServer.layerHttp({

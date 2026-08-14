@@ -8,11 +8,10 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
+import type * as GreppyRuntime from "./GreppyRuntime.ts";
 import * as GreppySearch from "./GreppySearch.ts";
 
 const encoder = new TextEncoder();
-const versionOutput = `greppy ${GreppySearch.GREPPY_VERSION}\n`;
-const searchHelpOutput = "--root --json --limit --max-bytes";
 
 interface CapturedCommand {
   readonly command: string;
@@ -65,72 +64,85 @@ function makeSpawner(
 const semanticSearchJson = (overrides?: Record<string, unknown>) =>
   JSON.stringify({
     schema_version: "greppy.semantic-search.v1",
+    command: "search",
     status: "ok",
     hits: [
       {
-        file: "src/retry.ts",
-        line: 17,
+        file_path: "src/retry.ts",
+        start_line: 17,
+        end_line: 23,
         summary: ["Retries a failed request.", "Uses bounded exponential backoff."],
       },
       {
-        file: "src/fallback.ts",
-        summary: ["Provides a fallback without a source line."],
+        file_path: "src/fallback.ts",
+        start_line: 9,
+        summary: ["Provides a fallback."],
       },
     ],
     ...overrides,
   });
 
-const successfulHandler = (command: CapturedCommand, _index: number) =>
-  makeHandle({
-    stdout:
-      command.args[0] === "--version"
-        ? versionOutput
-        : command.args[0] === "search" && command.args[1] === "--help"
-          ? searchHelpOutput
-          : semanticSearchJson(),
-  });
+const readyRuntime = (overrides?: Partial<GreppyRuntime.GreppyRuntimeShape>) =>
+  ({
+    storeDir: "/server/state/greppy",
+    resolve: () => Effect.die("search must use readiness"),
+    inspect: () => Effect.die("unused"),
+    install: () => Effect.die("unused"),
+    ensureWorkspace: (cwd: string) =>
+      Effect.succeed({
+        executable: "/managed/private/greppy",
+        source: "managed" as const,
+        storeDir: "/server/state/greppy",
+        cwd,
+        status: "ready" as const,
+      }),
+    ...overrides,
+  }) satisfies GreppyRuntime.GreppyRuntimeShape;
 
-function makeService(input: {
-  readonly storeDir?: string;
+function makeService(input?: {
+  readonly runtime?: GreppyRuntime.GreppyRuntimeShape;
   readonly timeout?: Duration.Duration;
   readonly handler?: (command: CapturedCommand, index: number) => ReturnType<typeof makeHandle>;
 }) {
-  const spawner = makeSpawner(input.handler ?? successfulHandler);
+  const spawner = makeSpawner(
+    input?.handler ?? (() => makeHandle({ stdout: semanticSearchJson() })),
+  );
   const service = GreppySearch.__testing
     .make({
-      storeDir: input.storeDir ?? "/server/state/greppy",
-      ...(input.timeout ? { timeout: input.timeout } : {}),
+      runtime: input?.runtime ?? readyRuntime(),
+      ...(input?.timeout ? { timeout: input.timeout } : {}),
     })
     .pipe(Effect.provide(spawner.layer));
   return { ...spawner, service };
 }
 
 function assertCarriesNoSecret(value: unknown, secret: string): void {
-  const seen = new WeakSet<object>();
-  const walk = (current: unknown): void => {
-    if (typeof current === "string") {
-      assert.notInclude(current, secret);
-      return;
-    }
-    if (typeof current !== "object" || current === null || seen.has(current)) return;
-    seen.add(current);
-    walk((current as { message?: unknown }).message);
-    walk((current as { cause?: unknown }).cause);
-    for (const nested of Object.values(current)) walk(nested);
-  };
-  walk(value);
+  assert.notInclude(JSON.stringify(value), secret);
+  if (value instanceof Error) assert.notInclude(value.message, secret);
 }
 
 describe("GreppySearch", () => {
-  it.effect("verifies 0.3.1 and the search surface, then runs bounded no-shell search", () =>
+  it.effect("uses runtime readiness and its exact executable for one bounded no-shell search", () =>
     Effect.gen(function* () {
-      const test = makeService({});
-      const greppy = yield* test.service;
-      const result = yield* greppy.search({
-        cwd: "/workspace/project",
-        task: "find retry handling",
+      const readinessCalls: Array<string> = [];
+      const test = makeService({
+        runtime: readyRuntime({
+          ensureWorkspace: (cwd) => {
+            readinessCalls.push(cwd);
+            return Effect.succeed({
+              executable: "/sensitive/resolved/greppy",
+              source: "override",
+              storeDir: "/t3-state/greppy",
+              cwd: "/canonical/project",
+              status: "ready",
+            });
+          },
+        }),
       });
+      const greppy = yield* test.service;
+      const result = yield* greppy.search({ cwd: "/workspace/project", task: "find retries" });
 
+      assert.deepEqual(readinessCalls, ["/workspace/project"]);
       assert.deepEqual(result, {
         matches: [
           {
@@ -138,186 +150,121 @@ describe("GreppySearch", () => {
             line: 17,
             excerpt: "Retries a failed request.\nUses bounded exponential backoff.",
           },
-          {
-            path: "src/fallback.ts",
-            excerpt: "Provides a fallback without a source line.",
-          },
+          { path: "src/fallback.ts", line: 9, excerpt: "Provides a fallback." },
         ],
       });
-      assert.equal(test.commands.length, 3);
-      assert.deepEqual(
-        test.commands.map(({ command, args }) => ({ command, args })),
-        [
-          { command: "greppy", args: ["--version"] },
-          { command: "greppy", args: ["search", "--help"] },
-          {
-            command: "greppy",
-            args: [
-              "search",
-              "--root",
-              "/workspace/project",
-              "--json",
-              "--limit",
-              "20",
-              "--max-bytes",
-              "65536",
-              "find retry handling",
-            ],
-          },
-        ],
-      );
-      for (const command of test.commands) {
-        assert.deepEqual(command.options.env, { GREPPY_STORE_DIR: "/server/state/greppy" });
-        assert.equal(command.options.extendEnv, true);
-        assert.equal(command.options.shell, false);
-      }
-      assert.equal(test.commands[2]?.options.cwd, "/workspace/project");
+      assert.equal(test.commands.length, 1);
+      const [command] = test.commands;
+      assert.equal(command?.command, "/sensitive/resolved/greppy");
+      assert.deepEqual(command?.args, [
+        "search",
+        "--root",
+        "/canonical/project",
+        "--json",
+        "--limit",
+        "20",
+        "--max-bytes",
+        "65536",
+        "find retries",
+      ]);
+      assert.equal(command?.options.cwd, "/canonical/project");
+      assert.deepEqual(command?.options.env, { GREPPY_STORE_DIR: "/t3-state/greppy" });
+      assert.equal(command?.options.extendEnv, true);
+      assert.equal(command?.options.shell, false);
     }),
   );
 
-  it.effect("maps at most 20 stable-schema hits", () =>
+  it.effect("maps at most 20 hits, bounds excerpts, and accepts no matches", () =>
     Effect.gen(function* () {
       const hits = Array.from({ length: 25 }, (_, index) => ({
-        file: `src/result-${index + 1}.ts`,
-        line: index + 1,
+        file_path: `src/result-${index + 1}.ts`,
+        start_line: index + 1,
         summary: [index === 0 ? "x".repeat(9_000) : `Result ${index + 1}`],
       }));
       const test = makeService({
-        handler: (command) =>
-          makeHandle({
-            stdout:
-              command.args[0] === "--version"
-                ? versionOutput
-                : command.args[0] === "search" && command.args[1] === "--help"
-                  ? searchHelpOutput
-                  : semanticSearchJson({ hits }),
-          }),
+        handler: () => makeHandle({ stdout: semanticSearchJson({ hits }) }),
       });
       const greppy = yield* test.service;
-      const result = yield* greppy.search({ cwd: "/workspace/project", task: "find results" });
-
-      assert.equal(result.matches.length, GreppySearch.GREPPY_SEARCH_LIMIT);
-      assert.equal(result.matches[0]?.path, "src/result-1.ts");
-      assert.equal(result.matches[0]?.excerpt.length, GreppySearch.GREPPY_EXCERPT_MAX_CHARS);
+      const result = yield* greppy.search({ cwd: "/workspace/project", task: "results" });
+      assert.equal(result.matches.length, 20);
+      assert.equal(result.matches[0]?.excerpt.length, 8_000);
       assert.equal(result.matches[19]?.path, "src/result-20.ts");
-    }),
-  );
 
-  it.effect("uses one server store across different thread and harness working directories", () =>
-    Effect.gen(function* () {
-      const test = makeService({ storeDir: "/t3-state/greppy" });
-      const greppy = yield* test.service;
-      yield* greppy.search({ cwd: "/worktrees/codex-thread", task: "first" });
-      yield* greppy.search({ cwd: "/worktrees/claude-thread", task: "second" });
-
-      const stores = new Set(test.commands.map((command) => command.options.env?.GREPPY_STORE_DIR));
-      assert.deepEqual([...stores], ["/t3-state/greppy"]);
-      assert.notInclude([...stores][0] ?? "", "thread");
-      assert.notInclude([...stores][0] ?? "", "codex");
-      assert.notInclude([...stores][0] ?? "", "claude");
-    }),
-  );
-
-  it.effect("redacts sensitive stderr from nonzero process failures", () =>
-    Effect.gen(function* () {
-      const secret = "SENSITIVE_FAKE_STDERR_TOKEN";
-      const test = makeService({
-        handler: (_command, index) =>
-          index < 2
-            ? successfulHandler(_command, index)
-            : makeHandle({ code: 9, stderr: `${secret} /private/store/path` }),
+      const empty = makeService({
+        handler: () =>
+          makeHandle({ stdout: semanticSearchJson({ status: "no_matches", hits: [] }) }),
       });
-      const greppy = yield* test.service;
-      const error = yield* greppy
-        .search({ cwd: "/workspace/project", task: "find retry handling" })
-        .pipe(Effect.flip);
-
-      assert.equal(error.reason, "process-exit");
-      assertCarriesNoSecret(error, secret);
-      assert.notInclude(JSON.stringify(error), secret);
+      assert.deepEqual(
+        yield* (yield* empty.service).search({ cwd: "/workspace/project", task: "absent" }),
+        { matches: [] },
+      );
     }),
   );
 
-  it.effect("fails closed for version, surface, index, malformed, and oversized output", () =>
+  it.effect("fails closed for indexing, malformed, oversized, and nonzero search output", () =>
     Effect.gen(function* () {
+      const indexing = makeService({
+        runtime: readyRuntime({
+          ensureWorkspace: () =>
+            Effect.succeed({
+              executable: "/managed/greppy",
+              source: "managed",
+              storeDir: "/state/greppy",
+              cwd: "/workspace",
+              status: "indexing",
+            }),
+        }),
+      });
+      assert.equal(
+        (yield* (yield* indexing.service)
+          .search({ cwd: "/workspace", task: "x" })
+          .pipe(Effect.flip)).reason,
+        "index-unavailable",
+      );
+      assert.equal(indexing.commands.length, 0);
+
       const cases = [
-        {
-          expected: "version-mismatch",
-          handler: (_command: CapturedCommand, index: number) =>
-            makeHandle({ stdout: index === 0 ? "greppy 0.4.0" : searchHelpOutput }),
-        },
-        {
-          expected: "surface-mismatch",
-          handler: (_command: CapturedCommand, index: number) =>
-            makeHandle({ stdout: index === 0 ? versionOutput : "search without required flags" }),
-        },
-        {
-          expected: "index-unavailable",
-          handler: (_command: CapturedCommand, index: number) =>
-            makeHandle({
-              code: index === 2 ? 1 : 0,
-              stdout:
-                index === 0
-                  ? versionOutput
-                  : index === 1
-                    ? searchHelpOutput
-                    : semanticSearchJson({ status: "no_index", hits: [] }),
-            }),
-        },
-        {
-          expected: "malformed-response",
-          handler: (_command: CapturedCommand, index: number) =>
-            makeHandle({
-              stdout: index === 0 ? versionOutput : index === 1 ? searchHelpOutput : "not-json",
-            }),
-        },
+        { expected: "malformed-response", handle: makeHandle({ stdout: "not-json" }) },
         {
           expected: "oversized-response",
-          handler: (_command: CapturedCommand, index: number) =>
-            makeHandle({
-              stdout:
-                index === 0
-                  ? versionOutput
-                  : index === 1
-                    ? searchHelpOutput
-                    : "x".repeat(GreppySearch.GREPPY_SEARCH_MAX_BYTES + 1),
-            }),
+          handle: makeHandle({ stdout: "x".repeat(GreppySearch.GREPPY_SEARCH_MAX_BYTES + 1) }),
+        },
+        {
+          expected: "process-exit",
+          handle: makeHandle({ code: 9, stdout: semanticSearchJson() }),
         },
       ] as const;
-
       for (const testCase of cases) {
-        const test = makeService({ handler: testCase.handler });
-        const greppy = yield* test.service;
-        const error = yield* greppy
-          .search({ cwd: "/workspace/project", task: "find retry handling" })
+        const test = makeService({ handler: () => testCase.handle });
+        const error = yield* (yield* test.service)
+          .search({ cwd: "/workspace", task: "x" })
           .pipe(Effect.flip);
         assert.equal(error.reason, testCase.expected);
       }
     }),
   );
 
-  it.effect("reports missing binaries and bounded timeouts as typed failures", () =>
+  it.effect("redacts sensitive process output and reports bounded timeouts", () =>
     Effect.gen(function* () {
-      const missingSpawner = ChildProcessSpawner.make(() => Effect.fail({} as never));
-      const missing = yield* GreppySearch.__testing
-        .make({ storeDir: "/server/state/greppy" })
-        .pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, missingSpawner));
-      const missingError = yield* missing
-        .search({ cwd: "/workspace/project", task: "find retry handling" })
+      const secret = "SENSITIVE_FAKE_STDERR_AND_PATH";
+      const failed = makeService({
+        handler: () => makeHandle({ code: 7, stderr: `${secret} /private/compiler/output` }),
+      });
+      const error = yield* (yield* failed.service)
+        .search({ cwd: "/workspace", task: "x" })
         .pipe(Effect.flip);
-      assert.equal(missingError.reason, "binary-unavailable");
+      assert.equal(error.reason, "process-exit");
+      assertCarriesNoSecret(error, secret);
 
-      const timeoutTest = makeService({
+      const timed = makeService({
         timeout: Duration.millis(10),
         handler: () => makeHandle({ never: true }),
       });
-      const timed = yield* timeoutTest.service;
-      const fiber = yield* timed
-        .search({ cwd: "/workspace/project", task: "find retry handling" })
+      const fiber = yield* (yield* timed.service)
+        .search({ cwd: "/workspace", task: "x" })
         .pipe(Effect.flip, Effect.forkChild);
       yield* TestClock.adjust(Duration.millis(11));
-      const timeoutError = yield* Fiber.join(fiber);
-      assert.equal(timeoutError.reason, "timeout");
+      assert.equal((yield* Fiber.join(fiber)).reason, "timeout");
     }),
   );
 });

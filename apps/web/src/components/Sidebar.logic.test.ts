@@ -37,6 +37,7 @@ import {
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   OrchestrationLatestTurn,
   ProjectId,
@@ -1305,6 +1306,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     },
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     proposedPlans: [],

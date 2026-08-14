@@ -1,6 +1,7 @@
 import {
   type ApprovalRequestId,
   DEFAULT_MODEL,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   defaultInstanceIdForDriver,
   type EnvironmentId,
   type MessageId,
@@ -5326,6 +5327,7 @@ function ChatViewContent(props: ChatViewProps) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode,
+                      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
@@ -5823,6 +5825,7 @@ function ChatViewContent(props: ChatViewProps) {
         modelSelection: nextThreadModelSelection,
         runtimeMode,
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
         createdAt,

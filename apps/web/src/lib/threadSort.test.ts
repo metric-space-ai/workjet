@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   DEFAULT_RUNTIME_MODE,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -21,6 +22,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     proposedPlans: [],

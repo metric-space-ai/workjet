@@ -1,5 +1,6 @@
 import {
   CheckpointRef,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EventId,
   MessageId,
   ProjectId,
@@ -53,6 +54,7 @@ describe("deriveOrchestrationBatchEffects", () => {
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
         runtimeMode: "full-access",
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         createdAt: "2026-02-27T00:00:00.000Z",
@@ -90,6 +92,7 @@ describe("deriveOrchestrationBatchEffects", () => {
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
         runtimeMode: "full-access",
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         createdAt: "2026-02-27T00:00:02.000Z",

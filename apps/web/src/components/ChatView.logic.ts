@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   type EnvironmentId,
   isProviderDriverKind,
   ProjectId,
@@ -91,6 +92,7 @@ export function buildLocalDraftThread(
     modelSelection: fallbackModelSelection,
     runtimeMode: draftThread.runtimeMode,
     interactionMode: draftThread.interactionMode,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     createdAt: draftThread.createdAt,

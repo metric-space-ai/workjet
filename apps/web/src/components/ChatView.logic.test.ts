@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -87,6 +88,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     },
     runtimeMode: "full-access",
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     proposedPlans: [],
@@ -138,6 +140,7 @@ describe("buildLoadingThreadFromShell", () => {
       },
       runtimeMode: "full-access",
       interactionMode: "default",
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       branch: "main",
       worktreePath: null,
       latestTurn: null,

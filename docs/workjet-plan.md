@@ -117,7 +117,7 @@ launching workers.
 - [x] Add a dedicated command/event pair for replacing configuration.
 - [ ] Update decider, server projector, projection pipeline, snapshot query,
       and client reducer.
-- [ ] Add migration `041` with one typed JSON column in `projection_threads`.
+- [x] Add migration `041` with one typed JSON column in `projection_threads`.
 - [ ] Add focused contract, decider, projector, migration, snapshot, and reducer
       tests.
 

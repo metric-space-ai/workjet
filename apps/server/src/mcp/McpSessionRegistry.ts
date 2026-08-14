@@ -16,6 +16,7 @@ export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
   readonly threadCapabilityContext: ThreadCapabilityContext;
+  readonly cwd?: string;
 }
 
 export interface McpIssuedCredential {
@@ -128,6 +129,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const activeWorkjetMcpCapabilityIds = Object.freeze([
         ...request.threadCapabilityContext.mcpCapabilityIds,
       ]);
+      const cwd = request.cwd?.trim();
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
@@ -135,6 +137,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities: new Set(["preview"]),
         activeWorkjetMcpCapabilityIds: new Set(activeWorkjetMcpCapabilityIds),
+        ...(cwd ? { cwd } : {}),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -150,6 +153,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
+          ...(cwd ? { cwd } : {}),
           activeWorkjetMcpCapabilityIds,
           compiledManagedPrompt: request.threadCapabilityContext.compiledManagedPrompt,
         }),
@@ -255,4 +259,20 @@ export const revokeAllActiveMcpCredentials = (): Effect.Effect<void> =>
 /** Exposed for tests. */
 export const __testing = {
   make: makeWithOptions,
+  withActive: <A, E, R>(
+    registry: McpSessionRegistryShape,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const previous = activeMcpSessionRegistry;
+        activeMcpSessionRegistry = registry;
+        return previous;
+      }),
+      () => effect,
+      (previous) =>
+        Effect.sync(() => {
+          activeMcpSessionRegistry = previous;
+        }),
+    ),
 };

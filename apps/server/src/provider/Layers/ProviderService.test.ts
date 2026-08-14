@@ -14,6 +14,7 @@ import type {
 import {
   ApprovalRequestId,
   DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -53,6 +54,8 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import {
   makeSqlitePersistenceLive,
   SqlitePersistenceMemory,
@@ -76,6 +79,37 @@ const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
+
+function makeCapturingMcpRegistry() {
+  const requests: Array<McpSessionRegistry.McpCredentialRequest> = [];
+  const registry = McpSessionRegistry.McpSessionRegistry.of({
+    issue: (request) =>
+      Effect.sync(() => {
+        requests.push(request);
+        return {
+          config: {
+            environmentId: EnvironmentId.make("environment-provider-service-test"),
+            threadId: request.threadId,
+            providerSessionId: `mcp-session-${String(requests.length)}`,
+            providerInstanceId: request.providerInstanceId,
+            endpoint: "http://127.0.0.1:43123/mcp",
+            authorizationHeader: `Bearer test-token-${String(requests.length)}`,
+            ...(request.cwd ? { cwd: request.cwd } : {}),
+            activeWorkjetMcpCapabilityIds: Object.freeze([
+              ...request.threadCapabilityContext.mcpCapabilityIds,
+            ]),
+            compiledManagedPrompt: request.threadCapabilityContext.compiledManagedPrompt,
+          },
+        };
+      }),
+    resolve: () => Effect.succeed(undefined),
+    touch: () => Effect.void,
+    revokeProviderSession: () => Effect.void,
+    revokeThread: () => Effect.void,
+    revokeAll: Effect.void,
+  });
+  return { registry, requests };
+}
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -1010,6 +1044,81 @@ routing.layer("ProviderServiceLive routing", (it) => {
           assert.equal(payload.lastRuntimeEvent, "provider.sendTurn");
         }
       }),
+  );
+
+  it.effect("propagates effective cwd into fresh, resumed, and adopted MCP credentials", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const mcp = makeCapturingMcpRegistry();
+      const workjetConfig = {
+        schemaVersion: 1,
+        role: "orchestrator",
+        parent: null,
+        managedInstructions: "Use the enabled repository search capability.",
+        enabledCapabilityIds: ["greppy"],
+      } as const satisfies WorkjetThreadConfig;
+
+      yield* McpSessionRegistry.__testing
+        .withActive(
+          mcp.registry,
+          Effect.gen(function* () {
+            const resumedThread = asThreadId("thread-mcp-cwd-resume");
+            const fresh = yield* provider.startSession(resumedThread, {
+              provider: ProviderDriverKind.make("codex"),
+              providerInstanceId: codexInstanceId,
+              threadId: resumedThread,
+              cwd: "/workspace/fresh-effective",
+              runtimeMode: "full-access",
+              workjetConfig,
+            });
+            assert.equal(mcp.requests.at(-1)?.cwd, "/workspace/fresh-effective");
+            assert.equal(
+              McpProviderSession.readMcpProviderSession(resumedThread)?.cwd,
+              "/workspace/fresh-effective",
+            );
+
+            yield* routing.codex.stopSession(fresh.threadId);
+            yield* provider.sendTurn({
+              threadId: resumedThread,
+              input: "resume the persisted provider session",
+              attachments: [],
+            });
+            assert.equal(mcp.requests.at(-1)?.cwd, "/workspace/fresh-effective");
+            assert.equal(
+              McpProviderSession.readMcpProviderSession(resumedThread)?.cwd,
+              "/workspace/fresh-effective",
+            );
+
+            const adoptedThread = asThreadId("thread-mcp-cwd-adopt");
+            yield* provider.startSession(adoptedThread, {
+              provider: ProviderDriverKind.make("codex"),
+              providerInstanceId: codexInstanceId,
+              threadId: adoptedThread,
+              cwd: "/workspace/persisted-before-adoption",
+              runtimeMode: "full-access",
+              workjetConfig,
+            });
+            routing.codex.updateSession(adoptedThread, (session) => ({
+              ...session,
+              cwd: "/workspace/adopted-effective",
+            }));
+            routing.codex.hasSession
+              .mockImplementationOnce(() => Effect.succeed(false))
+              .mockImplementationOnce(() => Effect.succeed(true));
+            yield* provider.sendTurn({
+              threadId: adoptedThread,
+              input: "adopt the already active provider session",
+              attachments: [],
+            });
+            assert.equal(mcp.requests.at(-1)?.cwd, "/workspace/adopted-effective");
+            assert.equal(
+              McpProviderSession.readMcpProviderSession(adoptedThread)?.cwd,
+              "/workspace/adopted-effective",
+            );
+          }),
+        )
+        .pipe(Effect.ensuring(Effect.sync(McpProviderSession.clearAllMcpProviderSessions)));
+    }),
   );
 
   it.effect("falls back to the default Workjet config for malformed historical payloads", () =>

@@ -237,12 +237,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     providerInstanceId: ProviderInstanceId,
     workjetConfig: WorkjetThreadConfig,
+    cwd?: string,
   ) => {
     const threadCapabilityContext = resolveThreadCapabilityContext(workjetConfig);
     return McpSessionRegistry.issueActiveMcpCredential({
       threadId,
       providerInstanceId,
       threadCapabilityContext,
+      ...(cwd ? { cwd } : {}),
     }).pipe(
       Effect.tap((credential) =>
         credential
@@ -405,6 +407,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           (session) => session.threadId === input.binding.threadId,
         );
         if (existing) {
+          const adoptedCwd =
+            (typeof existing.cwd === "string" && existing.cwd.trim().length > 0
+              ? existing.cwd.trim()
+              : undefined) ?? readPersistedCwd(input.binding.runtimePayload);
+          yield* prepareMcpSession(
+            input.binding.threadId,
+            bindingInstanceId,
+            persistedWorkjetConfig,
+            adoptedCwd,
+          );
           yield* upsertSessionBinding(
             { ...existing, providerInstanceId: bindingInstanceId },
             input.binding.threadId,
@@ -429,7 +441,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId, persistedWorkjetConfig);
+      yield* prepareMcpSession(
+        input.binding.threadId,
+        bindingInstanceId,
+        persistedWorkjetConfig,
+        persistedCwd,
+      );
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
@@ -627,7 +644,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId, input.workjetConfig);
+        yield* prepareMcpSession(threadId, resolvedInstanceId, input.workjetConfig, effectiveCwd);
         const session = yield* adapter
           .startSession({
             ...input,

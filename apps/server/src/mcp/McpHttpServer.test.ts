@@ -8,9 +8,12 @@ import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
+import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -147,6 +150,121 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
         ),
       });
       expect(reusedSessionResponse.status).toBe(404);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("filters tools/list by the authoritative bearer scope and preserves Preview tools", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const scopes = new Map<string, McpInvocationContext.McpInvocationScope>([
+        [
+          "hidden-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(),
+            cwd: "/workspace/project",
+          },
+        ],
+        [
+          "missing-cwd-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
+          },
+        ],
+        [
+          "visible-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
+            cwd: "/workspace/project",
+          },
+        ],
+      ]);
+      const registry = McpSessionRegistry.McpSessionRegistry.of({
+        issue: () => Effect.die("unused"),
+        resolve: (token) => Effect.succeed(scopes.get(token)),
+        touch: () => Effect.void,
+        revokeProviderSession: () => Effect.void,
+        revokeThread: () => Effect.void,
+        revokeAll: Effect.void,
+      });
+      const routes = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
+        Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+        Layer.provide(
+          ServerConfig.layerTest(
+            process.cwd(),
+            "/Volumes/tmp/workjet/tmp/mcp-http-server-test",
+          ).pipe(Layer.provide(NodeServices.layer)),
+        ),
+        Layer.provide(NodeServices.layer),
+      );
+      yield* HttpRouter.serve(routes, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+
+      const listTools = Effect.fn(function* (token: string) {
+        const initializeResponse = yield* httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+          },
+          body: HttpBody.text(
+            `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"experimental":{"greppy":true}},"clientInfo":{"name":"mcp-test","version":"1.0.0"}}}`,
+            "application/json",
+          ),
+        });
+        const sessionId = initializeResponse.headers["mcp-session-id"];
+        expect(initializeResponse.status).toBe(200);
+        expect(sessionId).not.toBeNull();
+        expect(sessionId).toBeDefined();
+
+        const initializedResponse = yield* httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+            "mcp-session-id": sessionId!,
+            "mcp-protocol-version": "2025-06-18",
+          },
+          body: HttpBody.text(
+            `{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+            "application/json",
+          ),
+        });
+        expect(initializedResponse.status).toBe(202);
+
+        const listResponse = yield* httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+            "mcp-session-id": sessionId!,
+            "mcp-protocol-version": "2025-06-18",
+          },
+          body: HttpBody.text(
+            `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+            "application/json",
+          ),
+        });
+        expect(listResponse.status).toBe(200);
+        const body = (yield* listResponse.json) as {
+          readonly result: { readonly tools: ReadonlyArray<{ readonly name: string }> };
+        };
+        return body.result.tools.map(({ name }) => name);
+      });
+
+      const hidden = yield* listTools("hidden-token");
+      const missingCwd = yield* listTools("missing-cwd-token");
+      const visible = yield* listTools("visible-token");
+
+      expect(hidden).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(missingCwd).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(visible).toContain(GREPPY_MCP_TOOL_NAME);
+      expect(hidden).toContain("preview_status");
+      expect(visible).toContain("preview_status");
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

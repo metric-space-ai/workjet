@@ -174,3 +174,37 @@ it.effect("does not keep credentials of other threads alive", () =>
     expect(yield* registry.resolve(token)).toBeUndefined();
   }),
 );
+
+it.effect("carries only an explicitly supplied provider-session cwd into the bearer scope", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-cwd"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadCapabilityContext: {
+        mcpCapabilityIds: ["greppy"],
+        promptCapabilityIds: ["greppy"],
+        compiledManagedPrompt: "",
+      },
+      cwd: "  /workspace/effective-project  ",
+    });
+
+    expect(issued.config.cwd).toBe("/workspace/effective-project");
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect(resolved?.cwd).toBe("/workspace/effective-project");
+
+    const withoutCwd = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-cwd"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadCapabilityContext: {
+        mcpCapabilityIds: ["greppy"],
+        promptCapabilityIds: ["greppy"],
+        compiledManagedPrompt: "",
+      },
+    });
+    expect(withoutCwd.config).not.toHaveProperty("cwd");
+    const withoutCwdToken = withoutCwd.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect(yield* registry.resolve(withoutCwdToken)).not.toHaveProperty("cwd");
+  }),
+);

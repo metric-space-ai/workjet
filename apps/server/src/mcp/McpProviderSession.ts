@@ -12,6 +12,7 @@ export interface McpProviderSessionConfig {
   readonly providerInstanceId: ProviderInstanceId;
   readonly endpoint: string;
   readonly authorizationHeader: string;
+  readonly cwd?: string;
   readonly activeWorkjetMcpCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly compiledManagedPrompt: string;
 }

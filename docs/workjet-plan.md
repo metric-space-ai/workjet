@@ -144,14 +144,14 @@ both modes.
 
 ### Registry contract
 
-- [ ] Add a versioned capability manifest with stable ID, version, metadata,
+- [x] Add a versioned capability manifest with stable ID, version, metadata,
       prompt contribution, permission requirements, secret requirements, input
       schema, output schema, and supported adapters.
-- [ ] Separate availability from activation. A capability may be installed but
+- [x] Separate availability from activation. A capability may be installed but
       disabled for a specific thread or CTOX instance.
-- [ ] Make activation explicit and auditable.
-- [ ] Reject unknown or incompatible capability versions with typed errors.
-- [ ] Keep secrets as references; never put secret values in manifests, thread
+- [x] Make activation explicit and auditable.
+- [x] Reject unknown or incompatible capability versions with typed errors.
+- [x] Keep secrets as references; never put secret values in manifests, thread
       events, browser storage, logs, or instance registries.
 
 ### Host adapters

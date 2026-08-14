@@ -4,7 +4,7 @@ import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
 
-export const WorkjetCapabilityId = Schema.Literals(["greppy", "web-search"]);
+export const WorkjetCapabilityId = Schema.Literals(["greppy", "web-search", "web-stack-browser"]);
 export type WorkjetCapabilityId = typeof WorkjetCapabilityId.Type;
 
 export const WorkjetParentThreadReference = Schema.Struct({

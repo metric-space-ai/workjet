@@ -28,7 +28,7 @@ const orchestratorConfig = {
   role: "orchestrator",
   parent: null,
   managedInstructions: "Coordinate the work.",
-  enabledCapabilityIds: ["greppy", "web-search"],
+  enabledCapabilityIds: ["greppy", "web-search", "web-stack-browser"],
 } as const;
 
 const workerConfig = {

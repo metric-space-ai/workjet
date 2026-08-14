@@ -104,6 +104,10 @@ export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill",
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
 
+export const WorkjetProductMode = Schema.Literals(["code", "ctox"]);
+export type WorkjetProductMode = typeof WorkjetProductMode.Type;
+export const DEFAULT_WORKJET_PRODUCT_MODE: WorkjetProductMode = "code";
+
 /**
  * A user-chosen font family (a single name or a comma-separated list). Empty
  * means "use the app default"; clients compose their own fallback stacks.
@@ -201,6 +205,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  workjetProductMode: WorkjetProductMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_PRODUCT_MODE)),
+  ),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -804,5 +811,6 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
+  workjetProductMode: Schema.optionalKey(WorkjetProductMode),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

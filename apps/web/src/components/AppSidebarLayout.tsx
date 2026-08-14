@@ -14,7 +14,11 @@ import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalSt
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentIdentificationMode,
+  useLegacySidebarEnabled,
+} from "../hooks/useSettings";
 import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
@@ -40,6 +44,8 @@ import {
   useSidebarVisibility,
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { CtoxMainShell, CtoxSidebarShell } from "./ctox/CtoxModeShell";
+import { resolveWorkjetProductMode } from "../workjetProductMode";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -136,10 +142,16 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
+  const productMode = resolveWorkjetProductMode({
+    configuredMode: configuredProductMode,
+    isElectron,
+  });
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const isCtoxShell = !isOnSettings && productMode === "ctox";
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -207,7 +219,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
-      <ProjectProjectionRetention />
+      {!isCtoxShell ? <ProjectProjectionRetention /> : null}
       <Sidebar
         side="left"
         collapsible="offcanvas"
@@ -228,6 +240,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             <SidebarChromeHeader isElectron={isElectron} />
             <SettingsSidebarNav pathname={pathname} />
           </>
+        ) : isCtoxShell ? (
+          <CtoxSidebarShell />
         ) : legacySidebarEnabled ? (
           <LegacyThreadSidebar />
         ) : (
@@ -235,7 +249,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         )}
         <SidebarRail onDoubleClick={resetSidebarWidth} />
       </Sidebar>
-      {children}
+      {isCtoxShell ? <CtoxMainShell /> : children}
       <SidebarControl />
     </SidebarProvider>
   );

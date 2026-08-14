@@ -33,6 +33,23 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ClientSettings Workjet product mode", () => {
+  it("defaults historical settings to Code mode", () => {
+    expect(decodeClientSettings({}).workjetProductMode).toBe("code");
+    expect(decodeClientSettings({ timestampFormat: "24-hour" }).workjetProductMode).toBe("code");
+  });
+
+  it.each(["code", "ctox"] as const)("accepts and patches product mode: %s", (mode) => {
+    expect(decodeClientSettings({ workjetProductMode: mode }).workjetProductMode).toBe(mode);
+    expect(decodeClientSettingsPatch({ workjetProductMode: mode }).workjetProductMode).toBe(mode);
+  });
+
+  it.each(["guest", "CTOX", "", null, 1])("rejects an invalid product mode: %s", (mode) => {
+    expect(() => decodeClientSettings({ workjetProductMode: mode })).toThrow();
+    expect(() => decodeClientSettingsPatch({ workjetProductMode: mode })).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

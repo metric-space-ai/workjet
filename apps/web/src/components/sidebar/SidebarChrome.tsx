@@ -4,12 +4,18 @@ import {
   GitPullRequestIcon,
   SettingsIcon,
 } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import type { WorkjetProductMode } from "@t3tools/contracts/settings";
 
-import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentIdentificationMode,
+  useUpdateClientSettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
+import { resolveWorkjetProductMode } from "../../workjetProductMode";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -46,6 +52,19 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     environmentIdentificationMode === "pill"
       ? resolveEnvironmentIdentificationPillLabel(stageLabel)
       : null;
+  const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
+  const productMode = resolveWorkjetProductMode({
+    configuredMode: configuredProductMode,
+    isElectron,
+  });
+  const updateClientSettings = useUpdateClientSettings();
+  const handleProductModeChange = useCallback(
+    (nextMode: WorkjetProductMode) => {
+      if (nextMode === productMode) return;
+      updateClientSettings({ workjetProductMode: nextMode });
+    },
+    [productMode, updateClientSettings],
+  );
 
   return (
     <SidebarHeader
@@ -63,7 +82,15 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           backdropVariant && resolveSidebarStageFocusRingOffsetClass(backdropVariant),
         )}
       />
-      <SidebarBrand onBackdrop={backdropVariant !== null} />
+      {isElectron ? (
+        <WorkjetProductModeSwitch
+          mode={productMode}
+          onBackdrop={backdropVariant !== null}
+          onModeChange={handleProductModeChange}
+        />
+      ) : (
+        <SidebarBrand onBackdrop={backdropVariant !== null} />
+      )}
       {pillLabel ? (
         <Badge
           className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
@@ -77,6 +104,99 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     </SidebarHeader>
   );
 });
+
+const WORKJET_PRODUCT_MODES: ReadonlyArray<{
+  readonly label: string;
+  readonly value: WorkjetProductMode;
+}> = [
+  { label: "Code", value: "code" },
+  { label: "CTOX", value: "ctox" },
+];
+
+export function WorkjetProductModeSwitch({
+  mode,
+  onBackdrop,
+  onModeChange,
+}: {
+  mode: WorkjetProductMode;
+  onBackdrop: boolean;
+  onModeChange: (mode: WorkjetProductMode) => void;
+}) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    let nextMode: WorkjetProductMode | null = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "Home") {
+      nextMode = "code";
+    } else if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "End") {
+      nextMode = "ctox";
+    }
+    if (nextMode === null) return;
+
+    event.preventDefault();
+    onModeChange(nextMode);
+    event.currentTarget.parentElement
+      ?.querySelector<HTMLButtonElement>(`[data-product-mode="${nextMode}"]`)
+      ?.focus();
+  };
+
+  return (
+    <div
+      className={cn(
+        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1.5 rounded-md px-1 outline-hidden",
+        onBackdrop ? "text-white" : "text-foreground",
+      )}
+    >
+      <T3Wordmark />
+      <div
+        aria-label="Workjet product mode"
+        className={cn(
+          "flex h-6 items-center rounded-md border p-0.5",
+          onBackdrop ? "border-white/20 bg-black/10" : "border-sidebar-border bg-sidebar-accent/35",
+        )}
+        role="radiogroup"
+      >
+        {WORKJET_PRODUCT_MODES.map((productMode, index) => {
+          const isSelected = mode === productMode.value;
+          return (
+            <div className="contents" key={productMode.value}>
+              {index > 0 ? (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "px-0.5 text-[10px]",
+                    onBackdrop ? "text-white/35" : "text-sidebar-muted-foreground/45",
+                  )}
+                >
+                  |
+                </span>
+              ) : null}
+              <button
+                aria-checked={isSelected}
+                className={cn(
+                  "h-5 rounded-sm px-1.5 text-[11px] font-medium leading-none outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  isSelected
+                    ? onBackdrop
+                      ? "bg-white/20 text-white"
+                      : "bg-sidebar text-sidebar-foreground shadow-xs"
+                    : onBackdrop
+                      ? "text-white/60 hover:text-white"
+                      : "text-sidebar-muted-foreground hover:text-sidebar-foreground",
+                )}
+                data-product-mode={productMode.value}
+                onClick={() => onModeChange(productMode.value)}
+                onKeyDown={handleKeyDown}
+                role="radio"
+                tabIndex={isSelected ? 0 : -1}
+                type="button"
+              >
+                {productMode.label}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (

@@ -1,6 +1,11 @@
 node_modules
 .bun
 .turbo
+/.dev/
+/.dep/
+/.deps/
+/.cache/
+/.vite-plus/
 .DS_Store
 *.log
 *.tsbuildinfo

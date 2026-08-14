@@ -88,6 +88,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -538,9 +539,12 @@ export interface ChatComposerProps {
   showPlanFollowUpPrompt: boolean;
   activeProposedPlan: Thread["proposedPlans"][number] | null;
 
-  // Mode
+  // Mode / Workjet
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
+  workjetGreppyEnabled: boolean | null;
+  workjetCapabilityBusy: boolean;
+  workjetCapabilityDisabled: boolean;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -589,6 +593,7 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  onWorkjetGreppyEnabledChange: (enabled: boolean) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -633,6 +638,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     runtimeMode,
     interactionMode,
+    workjetGreppyEnabled,
+    workjetCapabilityBusy,
+    workjetCapabilityDisabled,
     lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
@@ -661,6 +669,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    onWorkjetGreppyEnabledChange,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -3152,6 +3161,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     runtimeMode={runtimeMode}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
+                    workjetMenuContent={
+                      workjetGreppyEnabled === null ? undefined : (
+                        <WorkjetCapabilityMenu
+                          compact
+                          greppyEnabled={workjetGreppyEnabled}
+                          busy={workjetCapabilityBusy}
+                          disabled={workjetCapabilityDisabled}
+                          onGreppyEnabledChange={onWorkjetGreppyEnabledChange}
+                        />
+                      )
+                    }
                     onToggleInteractionMode={toggleInteractionMode}
                     onRuntimeModeChange={handleRuntimeModeChange}
                   />
@@ -3170,6 +3190,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
                     />
+                    {workjetGreppyEnabled === null ? null : (
+                      <>
+                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                        <WorkjetCapabilityMenu
+                          greppyEnabled={workjetGreppyEnabled}
+                          busy={workjetCapabilityBusy}
+                          disabled={workjetCapabilityDisabled}
+                          onGreppyEnabledChange={onWorkjetGreppyEnabledChange}
+                        />
+                      </>
+                    )}
                   </>
                 )}
               </div>

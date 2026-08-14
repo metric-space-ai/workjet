@@ -5,6 +5,7 @@ import {
   ProjectId,
   ThreadId,
   type ClientOrchestrationCommand,
+  type WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -24,6 +25,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  setThreadWorkjetConfig,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -116,6 +118,40 @@ describe("environment commands", () => {
           commandId: "queued-command",
           threadId: "thread-1",
           createdAt: "2026-06-06T00:01:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches the exact Workjet thread config payload and tag", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+      const workjetConfig = {
+        schemaVersion: 1,
+        role: "worker",
+        parent: {
+          environmentId: EnvironmentId.make("environment-parent"),
+          threadId: ThreadId.make("thread-parent"),
+        },
+        managedInstructions: "Keep the worker focused.",
+        enabledCapabilityIds: ["web-search", "greppy"],
+      } as const satisfies WorkjetThreadConfig;
+
+      yield* setThreadWorkjetConfig({
+        commandId: CommandId.make("workjet-config-command"),
+        threadId: ThreadId.make("thread-1"),
+        workjetConfig,
+        createdAt: "2026-06-06T00:02:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.workjet-config.set",
+          commandId: "workjet-config-command",
+          threadId: "thread-1",
+          workjetConfig,
+          createdAt: "2026-06-06T00:02:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

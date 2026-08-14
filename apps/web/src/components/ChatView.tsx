@@ -16,6 +16,7 @@ import {
   type ThreadId,
   type TurnId,
   type KeybindingCommand,
+  type WorkjetThreadConfig,
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   ProviderDriverKind,
@@ -247,6 +248,11 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  executeWorkjetCapabilityToggle,
+  GREPPY_CAPABILITY_ID,
+  WORKJET_GREPPY_FAILURE_TOAST,
+} from "./chat/WorkjetCapabilityMenu";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1224,6 +1230,9 @@ function ChatViewContent(props: ChatViewProps) {
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
     reportFailure: false,
   });
+  const setThreadWorkjetConfig = useAtomCommand(threadEnvironment.setWorkjetConfig, {
+    reportFailure: false,
+  });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
@@ -1349,6 +1358,9 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  const [workjetConfigOverridesByThreadKey, setWorkjetConfigOverridesByThreadKey] = useState<
+    Record<string, { readonly config: WorkjetThreadConfig; readonly busy: boolean }>
+  >({});
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -1389,6 +1401,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const workjetToggleInFlightThreadKeysRef = useRef<Set<string>>(new Set());
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -1582,6 +1595,32 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadEnvironmentId, activeThreadId],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  const activeWorkjetConfigOverride = activeThreadKey
+    ? workjetConfigOverridesByThreadKey[activeThreadKey]
+    : undefined;
+  const visibleWorkjetConfig =
+    isServerThread && activeServerThread
+      ? (activeWorkjetConfigOverride?.config ?? activeServerThread.workjetConfig)
+      : null;
+  const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
+  useEffect(() => {
+    if (!activeServerThread || !activeThreadKey) return;
+    setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
+      const current = currentByThreadKey[activeThreadKey];
+      if (!current || current.busy) return currentByThreadKey;
+      const serverCapabilityIds = activeServerThread.workjetConfig.enabledCapabilityIds;
+      const optimisticCapabilityIds = current.config.enabledCapabilityIds;
+      const serverCaughtUp =
+        serverCapabilityIds.length === optimisticCapabilityIds.length &&
+        serverCapabilityIds.every(
+          (capabilityId, index) => capabilityId === optimisticCapabilityIds[index],
+        );
+      if (!serverCaughtUp) return currentByThreadKey;
+      const nextByThreadKey = { ...currentByThreadKey };
+      delete nextByThreadKey[activeThreadKey];
+      return nextByThreadKey;
+    });
+  }, [activeServerThread, activeThreadKey, activeWorkjetConfigOverride]);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
     readonly messageId: MessageId | null;
@@ -3264,6 +3303,62 @@ function ChatViewContent(props: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
+  const handleWorkjetGreppyEnabledChange = useCallback(
+    (enabled: boolean) => {
+      if (!activeServerThread || !activeThreadKey || !visibleWorkjetConfig) return;
+      if (workjetToggleInFlightThreadKeysRef.current.has(activeThreadKey)) return;
+
+      const threadKey = activeThreadKey;
+      const currentConfig = visibleWorkjetConfig;
+      workjetToggleInFlightThreadKeysRef.current.add(threadKey);
+      void (async () => {
+        try {
+          const retainedConfig = await executeWorkjetCapabilityToggle({
+            currentConfig,
+            capabilityId: GREPPY_CAPABILITY_ID,
+            enabled,
+            dispatch: (nextConfig) =>
+              setThreadWorkjetConfig({
+                environmentId: activeServerThread.environmentId,
+                input: {
+                  threadId: activeServerThread.id,
+                  workjetConfig: nextConfig,
+                },
+              }),
+            setVisibleConfig: (config) => {
+              setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => ({
+                ...currentByThreadKey,
+                [threadKey]: {
+                  config,
+                  busy: config !== currentConfig,
+                },
+              }));
+            },
+            notifyFailure: () => {
+              toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+            },
+          });
+          setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
+            const current = currentByThreadKey[threadKey];
+            if (!current) return currentByThreadKey;
+            if (retainedConfig === currentConfig) {
+              const nextByThreadKey = { ...currentByThreadKey };
+              delete nextByThreadKey[threadKey];
+              return nextByThreadKey;
+            }
+            if (current.config !== retainedConfig) return currentByThreadKey;
+            return {
+              ...currentByThreadKey,
+              [threadKey]: { ...current, busy: false },
+            };
+          });
+        } finally {
+          workjetToggleInFlightThreadKeysRef.current.delete(threadKey);
+        }
+      })();
+    },
+    [activeServerThread, activeThreadKey, setThreadWorkjetConfig, visibleWorkjetConfig],
+  );
   const createBrowserSurface = useCallback(() => {
     if (!activeThreadRef) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
@@ -6376,6 +6471,17 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            workjetGreppyEnabled={
+                              visibleWorkjetConfig
+                                ? visibleWorkjetConfig.enabledCapabilityIds.includes(
+                                    GREPPY_CAPABILITY_ID,
+                                  )
+                                : null
+                            }
+                            workjetCapabilityBusy={workjetCapabilityBusy}
+                            workjetCapabilityDisabled={
+                              threadDetailLoading || activeEnvironmentUnavailable
+                            }
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             activeProjectDefaultModelSelection={
@@ -6411,6 +6517,7 @@ function ChatViewContent(props: ChatViewProps) {
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
+                            onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
                             focusComposer={focusComposer}
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}

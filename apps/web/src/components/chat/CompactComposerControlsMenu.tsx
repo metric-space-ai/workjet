@@ -16,6 +16,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
+  workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -37,6 +38,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
+        {props.workjetMenuContent ? (
+          <>
+            {props.workjetMenuContent}
             <MenuDivider />
           </>
         ) : null}

@@ -13,20 +13,21 @@ parity is proven.
 
 ## Ownership boundaries
 
-| Capability                                                                     | Canonical owner          | Runtime boundary                                           |
-| ------------------------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------- |
-| Desktop window, release, updates, settings, and product-mode navigation        | Workjet                  | Electron main process and Workjet renderer                 |
-| T3 projects, threads, turns, workspaces, and remote environments               | Workjet T3 server        | Typed Effect RPC                                           |
-| Orchestrator/worker roles and parent-child thread relationships                | Workjet T3 server        | Event-sourced command/event/projection flow                |
-| Shared skill and tool manifests                                                | Workjet                  | Versioned registry with harness and CTOX adapters          |
-| Provider protocol translation, subscriptions, account pools, and cooldowns     | Workjet provider gateway | Rust library/binary with authenticated loopback management |
-| CTOX instance discovery, login, pairing, and shell launch                      | Workjet                  | Electron session, keychain, and isolated guest views       |
-| CTOX Business OS records, commands, files, policies, and durable orchestration | CTOX                     | CTOX Sync Engine over WebRTC                               |
-| External agent control of CTOX Business OS                                     | CTOX                     | Typed Business OS MCP channel                              |
+| Capability                                                                     | Canonical owner             | Runtime boundary                                     |
+| ------------------------------------------------------------------------------ | --------------------------- | ---------------------------------------------------- |
+| Desktop window, release, updates, settings, and product-mode navigation        | Workjet                     | Electron main process and Workjet renderer           |
+| T3 projects, threads, turns, workspaces, and remote environments               | Workjet T3 server           | Typed Effect RPC                                     |
+| Orchestrator/worker roles and parent-child thread relationships                | Workjet T3 server           | Event-sourced command/event/projection flow          |
+| Shared skill and tool implementations                                          | Workjet                     | Versioned registry with harness and CTOX adapters    |
+| Provider protocol translation, subscriptions, account pools, and cooldowns     | Shared Workjet Rust package | One isolated gateway runtime per product authority   |
+| CTOX instance discovery, login, pairing, and shell launch                      | Workjet                     | Electron session, keychain, and isolated guest views |
+| CTOX Business OS records, commands, files, policies, and durable orchestration | CTOX                        | CTOX Sync Engine over WebRTC                         |
+| External agent control of CTOX Business OS                                     | CTOX                        | Typed Business OS MCP channel                        |
 
-The two modes share desktop infrastructure, skills, tools, and provider
-profiles. They do not share a state machine: a T3 thread remains a T3 thread,
-and a CTOX thread or command remains authoritative in CTOX.
+The two modes share desktop infrastructure and the same source packages for
+skills, tools, and provider integration. They do not share a runtime or state
+machine: a T3 thread remains a T3 thread, and a CTOX thread or command remains
+authoritative inside its closed CTOX instance.
 
 ## Desktop composition
 
@@ -56,7 +57,8 @@ lifecycle.
 
 ## Shared skills and tools
 
-One registry describes a capability independently from its execution host:
+One registry and implementation package describes a capability independently
+from its execution host:
 
 - stable ID and version;
 - human-facing metadata;
@@ -66,50 +68,59 @@ One registry describes a capability independently from its execution host:
 - supported execution adapters (`t3`, `ctox`, or both).
 
 The T3 adapter publishes enabled tools through the existing per-session T3 MCP
-server. The CTOX adapter installs or invokes the corresponding capability
-through CTOX's typed Business OS MCP/control channel. Business OS application
-data still uses WebRTC; MCP is a control surface, not a replacement data plane.
+server. The CTOX adapter installs or invokes the same capability through CTOX's
+typed Business OS MCP/control channel. Business OS application data still uses
+WebRTC; MCP is a control surface, not a replacement data plane.
 
 Greppy remains a managed external engine behind one registry entry. Web search
-is another independently switchable entry. Thread configuration stores enabled
-skill IDs, while the registry resolves those IDs to the current implementation.
+is another independently switchable entry. The CTOX Rust Web Stack moves into
+Workjet as the canonical shared Web Stack package; CTOX and all T3 harnesses
+consume that same versioned implementation. Thread or instance configuration
+stores enabled capability IDs, while the registry resolves those IDs to the
+current implementation.
 
-## Provider gateway
+## Shared provider-gateway code
 
-The portable CLIProxyAPI Rust port currently maintained in CTOX becomes
-Workjet's canonical provider-gateway package. Its provider-neutral Track A is
-moved first; CTOX-specific persistence and Business OS projection code stays in
-CTOX or is replaced by Workjet adapters.
+The portable CLIProxyAPI Rust port currently maintained in CTOX becomes the
+canonical shared Workjet provider-gateway package. Its provider-neutral Track A
+is moved first; CTOX-specific persistence and Business OS projection code stays
+in CTOX or is replaced by thin CTOX adapters.
 
-The gateway exposes OpenAI-, Anthropic-, Gemini-, and provider-specific
+Each gateway runtime exposes OpenAI-, Anthropic-, Gemini-, and provider-specific
 compatibility surfaces plus a separate authenticated management interface. It
 owns subscription authentication, model discovery, account selection, weights,
-cooldowns, refresh, translation, streaming, and redaction.
+cooldowns, refresh, translation, streaming, redaction, and the local mapping
+from a provider profile to allowed accounts and models.
 
-Every execution host runs the gateway next to the harness that consumes it:
+Workjet/T3 runs one gateway for all Codex, Claude Code, Grok, and other harnesses
+attached to that T3 runtime. Those harnesses do not persist provider OAuth
+tokens and do not carry independent provider routing logic.
 
-- Workjet Desktop bundles it for local T3 environments.
-- Remote T3 servers run the same version beside their provider drivers.
-- CTOX consumes the versioned Workjet Rust crate and runs it beside its own
-  coding runtime.
+Every CTOX instance remains a closed product authority and runs its own gateway
+runtime from the same shared Rust codebase. A CTOX instance is not another T3
+harness and never forwards its provider traffic or credentials through the
+Workjet/T3 gateway.
 
-Credentials remain local to each execution host and are referenced through its
-secret store. Provider profiles may be managed from one Workjet UI, but raw
-subscription tokens are never copied through thread events or browser storage.
+Provider credentials remain in the secret store of the owning runtime: the
+Workjet/T3 gateway for T3 harnesses, or the individual CTOX instance gateway for
+CTOX. Raw subscription tokens are never copied across these authorities or into
+T3 thread events, browser storage, harness configuration, or desktop instance
+registries.
 
 ## Migration order
 
 1. Add backward-compatible Workjet thread roles and skill configuration to the
    T3 event model.
-2. Introduce the shared skill/tool registry and adapters without changing
-   existing T3 provider selection.
+2. Move the CTOX Web Stack into the shared skill/tool registry and add T3 and
+   CTOX adapters without duplicating its implementation.
 3. Move and rename the portable Rust provider gateway, preserving its complete
    conformance gate before changing host integration.
 4. Port CTOX Desktop instance/session capabilities into typed Workjet Electron
    services and add the Code/CTOX mode switch.
 5. Run managed, local, SSH, invite, WebRTC-only, keychain, and packaged-app
    parity tests in Workjet.
-6. Change CTOX to consume the versioned Workjet gateway package.
+6. Change CTOX and every T3 harness to consume the shared provider-gateway and
+   Web Stack source packages while retaining separate runtime instances.
 7. Remove `src/apps/business-os-desktop` from CTOX only after the Workjet
    replacement passes the same release evidence.
 

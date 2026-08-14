@@ -1,15 +1,17 @@
 import {
   EnvironmentId,
+  ModelSelection,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type WorkjetThreadConfig,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -22,6 +24,8 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 const NOW = "2026-08-14T00:00:00.000Z";
 const ACTIVE_THREAD_ID = ThreadId.make("thread-workjet-active");
 const ARCHIVED_THREAD_ID = ThreadId.make("thread-workjet-archived");
+const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
+const encodeWorkjetThreadConfig = Schema.encodeSync(Schema.fromJsonString(WorkjetThreadConfig));
 
 const orchestratorConfig = {
   schemaVersion: 1,
@@ -77,7 +81,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
           'project-workjet-snapshot',
           'Workjet snapshot project',
           '/tmp/workjet-snapshot-project',
-          ${JSON.stringify({
+          ${encodeModelSelection({
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5.4",
           })},
@@ -115,13 +119,13 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
             ${input.threadId},
             'project-workjet-snapshot',
             ${input.title},
-            ${JSON.stringify({
+            ${encodeModelSelection({
               instanceId: ProviderInstanceId.make("codex"),
               model: "gpt-5.4",
             })},
             'full-access',
             'default',
-            ${JSON.stringify(input.workjetConfig)},
+            ${encodeWorkjetThreadConfig(input.workjetConfig)},
             NULL,
             NULL,
             NULL,
@@ -218,7 +222,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
           'thread-workjet-malformed',
           'project-workjet-snapshot',
           'Malformed Workjet configuration',
-          ${JSON.stringify({
+          ${encodeModelSelection({
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5.4",
           })},

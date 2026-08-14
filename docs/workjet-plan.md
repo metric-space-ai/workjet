@@ -115,10 +115,10 @@ launching workers.
       orchestrator threads.
 - [x] Decode historical threads to the canonical standard configuration.
 - [x] Add a dedicated command/event pair for replacing configuration.
-- [ ] Update decider, server projector, projection pipeline, snapshot query,
+- [x] Update decider, server projector, projection pipeline, snapshot query,
       and client reducer.
 - [x] Add migration `041` with one typed JSON column in `projection_threads`.
-- [ ] Add focused contract, decider, projector, migration, snapshot, and reducer
+- [x] Add focused contract, decider, projector, migration, snapshot, and reducer
       tests.
 
 Acceptance:

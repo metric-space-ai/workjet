@@ -376,8 +376,10 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 
 ### Renderer
 
-- [ ] Add the top-left `Code | CTOX` product-mode switch.
-- [ ] Preserve the T3 project/thread sidebar in Code mode.
+- [x] Add the top-left `Code | CTOX` product-mode switch.
+- [x] Preserve the T3 project/thread sidebar in Code mode.
+- [x] Add the persisted, Electron-only CTOX shell state with an explicit empty
+      instance/main surface and no guest or alternate Business OS data path.
 - [ ] Render CTOX instance groups, status, role, source, and last-used state in
       CTOX mode.
 - [ ] Selecting an instance activates its guest surface in the main region.
@@ -590,7 +592,7 @@ Workjet is complete only when all of the following are true:
 
 1. [x] Finish and verify Wave 1 thread-domain implementation.
 2. [x] Add the minimal capability-registry contract and prompt adapter interface.
-3. [ ] Build the Code/CTOX product-mode shell state without yet loading a guest.
+3. [x] Build the Code/CTOX product-mode shell state without yet loading a guest.
 4. [ ] Port ctox.dev instance discovery and session isolation into typed Electron
        services.
 5. [ ] Prepare history-preserving import branches for CLIProxyAPI Rust and Web

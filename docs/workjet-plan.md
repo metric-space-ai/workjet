@@ -50,6 +50,11 @@ share runtime state.
 - A CTOX instance is not a T3 harness.
 - CLI-proxy Rust and Web Stack have one canonical maintained source base used
   by both products.
+- Workjet/T3 uses exactly one Greppy store per server environment at
+  `<ServerConfig.stateDir>/greppy`. All local threads and harnesses share it;
+  thread, provider-session, harness, and provider-instance IDs must never be
+  components of that path. Each remote T3 server naturally owns its own local
+  store, while CTOX instance state remains separate.
 - T3 and CTOX keep separate event/state machines and persistence.
 
 ## 2. Repository and source policy
@@ -169,6 +174,9 @@ both modes.
       fingerprinted recovery-safe first-prompt adapter for Grok ACP.
 - [ ] T3 adapter: expose active tools through T3's existing per-session MCP
       server.
+  - [x] Register the first production adapter, Greppy search, with bearer-scope
+        `tools/list` filtering, independent `tools/call` enforcement, effective
+        session-cwd propagation, and Preview MCP regression coverage.
 - [ ] CTOX adapter: expose the same capabilities through typed Business OS MCP
       and/or validated CTOX business commands.
 - [ ] Keep CTOX Business OS data on WebRTC; MCP remains a control and tool
@@ -180,6 +188,10 @@ both modes.
 
 - [ ] `greppy`: managed external binary with controlled store/runtime paths,
       health checks, redacted errors, and enable/disable state.
+  - [x] Implement the bounded Greppy 0.3.1 search boundary with exact
+        version/surface checks, stable-schema parsing, safe typed failures, and
+        one server-wide shared store for every T3 thread and harness.
+  - [ ] Complete managed installation and index lifecycle/health handling.
 - [ ] `web-search`: shared Web Stack search/read surface.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.

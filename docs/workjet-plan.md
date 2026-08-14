@@ -158,6 +158,12 @@ both modes.
 
 ### Host adapters
 
+- [x] Project each thread's current Workjet configuration into provider session
+      start/restart and recovery, resolve T3 MCP and prompt adapters separately,
+      and keep active capability grants distinct from preview authorization.
+- [x] Persist the effective Workjet configuration in provider runtime bindings,
+      preserve it across runtime-payload updates and active-session adoption,
+      and fall back safely for absent or malformed historical payloads.
 - [ ] T3 adapter: expose active tools through T3's existing per-session MCP
       server and compile active prompt contributions for each harness.
 - [ ] CTOX adapter: expose the same capabilities through typed Business OS MCP

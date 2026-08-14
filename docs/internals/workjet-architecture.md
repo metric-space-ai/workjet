@@ -124,10 +124,12 @@ registries.
 7. Remove `src/apps/business-os-desktop` from CTOX only after the Workjet
    replacement passes the same release evidence.
 
-## Open release gate
+## License policy
 
 T3 Code is MIT-licensed. CTOX and the current Rust port mark CTOX modifications
-as AGPL-3.0-only. Before distributing the combined application, choose and
-document either an AGPL Workjet distribution or an additional license grant for
-the CTOX-owned components while retaining all upstream MIT notices. No license
-headers are changed implicitly during the port.
+as AGPL-3.0-only. Metric Space AI has authorized CTOX-owned components shared
+with Workjet under `MIT OR AGPL-3.0-only`. Workjet can therefore use the MIT
+option while CTOX continues to be distributed under AGPL. Imported files must
+receive the dual SPDX expression only when Metric Space AI owns or controls the
+necessary copyright. T3, CLIProxyAPI, Greppy, and all other third-party notices
+remain intact. The authoritative rules are in `LICENSE_POLICY.md`.

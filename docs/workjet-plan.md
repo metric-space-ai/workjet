@@ -408,15 +408,19 @@ parity gate is green.
       authority escalation.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
 
-## 13. Licensing gate
+## 13. Licensing policy and release gate
 
-T3 Code is MIT. CTOX and the current Rust-port modifications are marked
-AGPL-3.0-only. The combined distribution must not silently change headers or
-make unsupported licensing claims.
+T3 Code is MIT. CTOX-owned components shared with Workjet are authorized under
+`MIT OR AGPL-3.0-only`; CTOX itself may remain AGPL-3.0-only. The combined
+distribution must not silently change third-party headers or make unsupported
+licensing claims.
 
-- [ ] Decide whether Workjet is distributed as AGPL-3.0 or whether CTOX-owned
-      Desktop/provider/Web Stack work receives an additional license grant for
-      Workjet.
+- [x] Adopt `MIT OR AGPL-3.0-only` for CTOX-owned Desktop/provider/Web Stack
+      code shared with Workjet.
+- [x] Keep the T3-derived Workjet application under MIT by selecting the MIT
+      option for dual-licensed CTOX-owned components in Workjet releases.
+- [ ] Add the dual SPDX expression only to files Metric Space AI owns or
+      controls; do not relicense third-party contributions implicitly.
 - [ ] Preserve the T3 MIT copyright and license notices.
 - [ ] Preserve CLIProxyAPI upstream MIT provenance and the license applicable to
       the Rust-port modifications.
@@ -425,7 +429,8 @@ make unsupported licensing claims.
 - [ ] Review Electron guest-shell packaging and network-use obligations before
       the first public binary.
 
-This is a release blocker, not a blocker for isolated development commits.
+The license choice is closed. Completing file-level provenance, headers, and
+generated notices remains a release gate.
 
 ## 14. Upstream maintenance strategy
 
@@ -555,6 +560,7 @@ Workjet is complete only when all of the following are true:
    services.
 5. Prepare history-preserving import branches for CLIProxyAPI Rust and Web
    Stack.
-6. Decide the Workjet licensing model before merging imported AGPL-marked code.
+6. Apply the dual-license policy and provenance inventory while importing
+   CTOX-owned code.
 7. Land the first real local orchestrator → worker flow.
 8. Land one managed CTOX instance → Business OS WebRTC launch flow.

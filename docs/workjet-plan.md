@@ -191,7 +191,16 @@ both modes.
   - [x] Implement the bounded Greppy 0.3.1 search boundary with exact
         version/surface checks, stable-schema parsing, safe typed failures, and
         one server-wide shared store for every T3 thread and harness.
-  - [ ] Complete managed installation and index lifecycle/health handling.
+  - [x] Implement the server-side managed Greppy installation and index
+        lifecycle: immutable source/model checksums, CPU-only Rust 1.95 build,
+        transactional activation, bounded health probes, canonical-workspace
+        indexing, and per-workspace single-flight refreshes.
+  - [x] Keep externally administered 0.3.1 runtimes usable when managed source
+        installation is unsupported, including Windows `greppy.exe`, and
+        normalize legacy `file`/`line` search aliases to the canonical schema.
+  - [ ] Expose managed install, repair, and health state through the Workjet
+        settings surface; keep activation controlled by each thread's Greppy
+        toggle while every activated thread uses the same server store.
 - [ ] `web-search`: shared Web Stack search/read surface.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.

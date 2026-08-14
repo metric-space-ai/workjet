@@ -186,7 +186,7 @@ both modes.
 
 ### First capabilities
 
-- [ ] `greppy`: managed external binary with controlled store/runtime paths,
+- [x] `greppy`: managed external binary with controlled store/runtime paths,
       health checks, redacted errors, and enable/disable state.
   - [x] Implement the bounded Greppy 0.3.1 search boundary with exact
         version/surface checks, stable-schema parsing, safe typed failures, and
@@ -201,7 +201,7 @@ both modes.
   - [x] Expose managed install, repair, and health state through the Workjet
         settings surface; keep activation controlled by each thread's Greppy
         toggle while every activated thread uses the same server store.
-  - [ ] Add the per-thread Greppy activation toggle to the Code composer/thread
+  - [x] Add the per-thread Greppy activation toggle to the Code composer/thread
         settings without creating thread-, session-, harness-, or provider-scoped
         stores.
 - [ ] `web-search`: shared Web Stack search/read surface.

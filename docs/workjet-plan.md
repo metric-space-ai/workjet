@@ -164,8 +164,11 @@ both modes.
 - [x] Persist the effective Workjet configuration in provider runtime bindings,
       preserve it across runtime-payload updates and active-session adoption,
       and fall back safely for absent or malformed historical payloads.
+- [x] Compile each thread's active prompt contributions into the native Codex
+      developer-instructions and Claude Code system-prompt boundaries, plus a
+      fingerprinted recovery-safe first-prompt adapter for Grok ACP.
 - [ ] T3 adapter: expose active tools through T3's existing per-session MCP
-      server and compile active prompt contributions for each harness.
+      server.
 - [ ] CTOX adapter: expose the same capabilities through typed Business OS MCP
       and/or validated CTOX business commands.
 - [ ] Keep CTOX Business OS data on WebRTC; MCP remains a control and tool

@@ -1,4 +1,3 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import {
   ChatAttachment,
   CheckpointRef,
@@ -26,6 +25,7 @@ import {
   ModelSelection,
   ProjectId,
   ThreadId,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -86,6 +86,7 @@ const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -417,6 +418,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -453,6 +455,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -491,6 +494,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -933,6 +937,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -1566,7 +1571,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 modelSelection: row.modelSelection,
                 runtimeMode: row.runtimeMode,
                 interactionMode: row.interactionMode,
-                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                workjetConfig: row.workjetConfig,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
                 latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -1774,7 +1779,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
                   interactionMode: row.interactionMode,
-                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                  workjetConfig: row.workjetConfig,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -1911,7 +1916,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       modelSelection: row.modelSelection,
                       runtimeMode: row.runtimeMode,
                       interactionMode: row.interactionMode,
-                      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                      workjetConfig: row.workjetConfig,
                       branch: row.branch,
                       worktreePath: row.worktreePath,
                       latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -2057,7 +2062,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
                   interactionMode: row.interactionMode,
-                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                  workjetConfig: row.workjetConfig,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -2337,7 +2342,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
         interactionMode: threadRow.value.interactionMode,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: threadRow.value.workjetConfig,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
@@ -2459,6 +2464,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
         interactionMode: threadRow.value.interactionMode,
+        workjetConfig: threadRow.value.workjetConfig,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,

@@ -179,6 +179,52 @@ describe("buildTurnStartParams", () => {
     });
   });
 
+  it("appends managed instructions once in default and plan collaboration modes", () => {
+    const managedPrompt = "  Follow the managed workflow.  ";
+    const expectedBlock =
+      "<workjet_managed_instructions>\nFollow the managed workflow.\n</workjet_managed_instructions>";
+
+    for (const interactionMode of ["default", "plan"] as const) {
+      const params = Effect.runSync(
+        buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: "Work",
+          model: "gpt-5.3-codex",
+          effort: "medium",
+          interactionMode,
+          compiledManagedPrompt: managedPrompt,
+        }),
+      );
+      const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+
+      NodeAssert.equal(instructions.split(expectedBlock).length - 1, 1);
+      NodeAssert.ok(instructions.endsWith(expectedBlock));
+    }
+  });
+
+  it("preserves legacy collaboration instructions for empty managed prompts", () => {
+    const legacy = Effect.runSync(
+      buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Work",
+        interactionMode: "default",
+      }),
+    );
+    const empty = Effect.runSync(
+      buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Work",
+        interactionMode: "default",
+        compiledManagedPrompt: " \n\t ",
+      }),
+    );
+
+    NodeAssert.deepStrictEqual(empty, legacy);
+  });
+
   it("reports the same fallback model and effort in settings and instructions", () => {
     const params = Effect.runSync(
       buildTurnStartParams({

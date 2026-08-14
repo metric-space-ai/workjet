@@ -111,6 +111,19 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   return Exit.isSuccess(result) ? result.value : undefined;
 }
 
+function claudeSystemPrompt(
+  compiledManagedPrompt: string | undefined,
+): NonNullable<ClaudeQueryOptions["systemPrompt"]> {
+  const managedPrompt = compiledManagedPrompt?.trim();
+  return managedPrompt
+    ? {
+        type: "preset",
+        preset: "claude_code",
+        append: `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
+      }
+    : { type: "preset", preset: "claude_code" };
+}
+
 type PromptQueueItem =
   | {
       readonly type: "message";
@@ -4102,7 +4115,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.

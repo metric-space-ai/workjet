@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -35,6 +36,7 @@ import * as Stream from "effect/Stream";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -57,6 +59,19 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
+
+function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): void {
+  McpProviderSession.setMcpProviderSession({
+    environmentId: EnvironmentId.make("codex-managed-prompt-test"),
+    threadId,
+    providerSessionId: "codex-managed-prompt-session",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    endpoint: "http://127.0.0.1/mcp",
+    authorizationHeader: "Bearer test-token",
+    activeWorkjetMcpCapabilityIds: [],
+    compiledManagedPrompt,
+  });
+}
 
 class FakeCodexRuntime implements CodexSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
@@ -288,6 +303,30 @@ validationLayer("CodexAdapterLive validation", (it) => {
       });
     }),
   );
+
+  it.effect("propagates the thread managed prompt into the Codex runtime", () => {
+    const threadId = asThreadId("codex-managed-prompt-propagation");
+    const managedPrompt = "Apply the managed Codex workflow.";
+    setManagedPrompt(threadId, managedPrompt);
+
+    return Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      NodeAssert.equal(
+        validationRuntimeFactory.factory.mock.calls[0]?.[0].compiledManagedPrompt,
+        managedPrompt,
+      );
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
 });
 
 const sessionRuntimeFactory = makeRuntimeFactory();

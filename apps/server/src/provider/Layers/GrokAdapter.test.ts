@@ -17,6 +17,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import {
   ApprovalRequestId,
+  EnvironmentId,
   GrokSettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -26,6 +27,7 @@ import {
 } from "@t3tools/contracts";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { grokPromptSettlementBelongsToContext, makeGrokAdapter } from "./GrokAdapter.ts";
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
@@ -41,6 +43,27 @@ async function makeMockGrokWrapper(extraEnv?: Record<string, string>) {
     .join("\n");
   const script = `#!/bin/sh
 ${envExports}
+exec ${JSON.stringify(mockAgentCommand)} ${JSON.stringify(mockAgentPath)} "$@"
+`;
+  await NodeFSP.writeFile(wrapperPath, script, "utf8");
+  await NodeFSP.chmod(wrapperPath, 0o755);
+  return wrapperPath;
+}
+
+async function makeFailFirstProcessGrokWrapper(input: {
+  readonly requestLogPath: string;
+  readonly invocationMarkerPath: string;
+}) {
+  const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-mock-retry-"));
+  const wrapperPath = NodePath.join(dir, "fake-grok.sh");
+  const script = `#!/bin/sh
+export T3_ACP_REQUEST_LOG_PATH=${JSON.stringify(input.requestLogPath)}
+if [ ! -f ${JSON.stringify(input.invocationMarkerPath)} ]; then
+  : > ${JSON.stringify(input.invocationMarkerPath)}
+  export T3_ACP_FAIL_PROMPT=1
+else
+  unset T3_ACP_FAIL_PROMPT
+fi
 exec ${JSON.stringify(mockAgentCommand)} ${JSON.stringify(mockAgentPath)} "$@"
 `;
   await NodeFSP.writeFile(wrapperPath, script, "utf8");
@@ -80,6 +103,41 @@ async function readJsonLines(filePath: string) {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function readPromptTextBlocks(requests: ReadonlyArray<Record<string, unknown>>): string[][] {
+  return requests.flatMap((request) => {
+    if (request.method !== "session/prompt") return [];
+    const params = request.params;
+    if (typeof params !== "object" || params === null || !("prompt" in params)) return [];
+    const prompt = params.prompt;
+    if (!Array.isArray(prompt)) return [];
+    return [
+      prompt.flatMap((part) =>
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        part.type === "text" &&
+        "text" in part &&
+        typeof part.text === "string"
+          ? [part.text]
+          : [],
+      ),
+    ];
+  });
+}
+
+function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): void {
+  McpProviderSession.setMcpProviderSession({
+    environmentId: EnvironmentId.make("grok-managed-prompt-test"),
+    threadId,
+    providerSessionId: "grok-managed-prompt-session",
+    providerInstanceId: ProviderInstanceId.make("grok"),
+    endpoint: "http://127.0.0.1/mcp",
+    authorizationHeader: "Bearer test-token",
+    activeWorkjetMcpCapabilityIds: [],
+    compiledManagedPrompt,
+  });
 }
 
 const grokAdapterTestLayer = ServerConfig.layerTest(process.cwd(), {
@@ -187,6 +245,295 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       yield* adapter.stopSession(threadId);
     }),
   );
+
+  it.effect(
+    "injects managed instructions only into the first prompt, not steering or later turns",
+    () => {
+      const threadId = ThreadId.make("grok-managed-prompt-once");
+      const managedBlock =
+        "<workjet_managed_instructions>\nFollow the managed Grok workflow.\n</workjet_managed_instructions>";
+      setManagedPrompt(threadId, "  Follow the managed Grok workflow.  ");
+
+      return Effect.gen(function* () {
+        const tempDir = yield* Effect.promise(() =>
+          NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-managed-prompt-once-")),
+        );
+        const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+        const wrapperPath = yield* Effect.promise(() =>
+          makeMockGrokWrapper({
+            T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+            T3_ACP_PROMPT_DELAY_MS: "100",
+          }),
+        );
+        const adapter = yield* makeTestAdapter(wrapperPath);
+
+        yield* adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("grok"),
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+        const firstPromptFiber = yield* adapter
+          .sendTurn({ threadId, input: "first prompt", attachments: [] })
+          .pipe(Effect.forkChild);
+        yield* waitForFileContent(requestLogPath, 40, "first prompt");
+        const steeringPromptFiber = yield* adapter
+          .sendTurn({ threadId, input: "steering prompt", attachments: [] })
+          .pipe(Effect.forkChild);
+        yield* Fiber.join(firstPromptFiber);
+        yield* Fiber.join(steeringPromptFiber);
+        yield* adapter.sendTurn({ threadId, input: "later prompt", attachments: [] });
+
+        const prompts = readPromptTextBlocks(
+          yield* Effect.promise(() => readJsonLines(requestLogPath)),
+        );
+        assert.deepEqual(prompts, [
+          [managedBlock, "first prompt"],
+          ["steering prompt"],
+          ["later prompt"],
+        ]);
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+        TestClock.withLive,
+      );
+    },
+  );
+
+  it.effect("skips managed instructions after same-fingerprint recovery", () => {
+    const threadId = ThreadId.make("grok-managed-prompt-same-recovery");
+    const managedBlock =
+      "<workjet_managed_instructions>\nKeep the recovered workflow.\n</workjet_managed_instructions>";
+    setManagedPrompt(threadId, "Keep the recovered workflow.");
+
+    return Effect.gen(function* () {
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-managed-prompt-recovery-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const firstTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "before recovery",
+        attachments: [],
+      });
+      const resumeCursor = firstTurn.resumeCursor;
+      assert.match(
+        String(
+          typeof resumeCursor === "object" &&
+            resumeCursor !== null &&
+            "managedPromptFingerprint" in resumeCursor
+            ? resumeCursor.managedPromptFingerprint
+            : "",
+        ),
+        /^[0-9a-f]{64}$/,
+      );
+      yield* adapter.stopSession(threadId);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        resumeCursor,
+      });
+      yield* adapter.sendTurn({ threadId, input: "after recovery", attachments: [] });
+
+      const prompts = readPromptTextBlocks(
+        yield* Effect.promise(() => readJsonLines(requestLogPath)),
+      );
+      assert.deepEqual(prompts, [[managedBlock, "before recovery"], ["after recovery"]]);
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
+
+  it.effect("reinjects changed managed instructions after recovery", () => {
+    const threadId = ThreadId.make("grok-managed-prompt-changed-recovery");
+    const firstManagedBlock =
+      "<workjet_managed_instructions>\nUse workflow A.\n</workjet_managed_instructions>";
+    const secondManagedBlock =
+      "<workjet_managed_instructions>\nUse workflow B.\n</workjet_managed_instructions>";
+    setManagedPrompt(threadId, "Use workflow A.");
+
+    return Effect.gen(function* () {
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-managed-prompt-changed-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const firstTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "workflow A turn",
+        attachments: [],
+      });
+      yield* adapter.stopSession(threadId);
+
+      setManagedPrompt(threadId, "Use workflow B.");
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        resumeCursor: firstTurn.resumeCursor,
+      });
+      const changedTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "workflow B turn",
+        attachments: [],
+      });
+
+      assert.notDeepEqual(changedTurn.resumeCursor, firstTurn.resumeCursor);
+      const prompts = readPromptTextBlocks(
+        yield* Effect.promise(() => readJsonLines(requestLogPath)),
+      );
+      assert.deepEqual(prompts, [
+        [firstManagedBlock, "workflow A turn"],
+        [secondManagedBlock, "workflow B turn"],
+      ]);
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
+
+  it.effect(
+    "preserves prompt parts and legacy resume cursors for empty managed instructions",
+    () => {
+      const threadId = ThreadId.make("grok-empty-managed-prompt");
+      setManagedPrompt(threadId, " \n\t ");
+
+      return Effect.gen(function* () {
+        const tempDir = yield* Effect.promise(() =>
+          NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-empty-managed-prompt-")),
+        );
+        const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+        const wrapperPath = yield* Effect.promise(() =>
+          makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+        );
+        const adapter = yield* makeTestAdapter(wrapperPath);
+        const legacyCursor = { schemaVersion: 1 as const, sessionId: "mock-session-1" };
+
+        const session = yield* adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("grok"),
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          resumeCursor: legacyCursor,
+        });
+        const turn = yield* adapter.sendTurn({
+          threadId,
+          input: "legacy prompt",
+          attachments: [],
+        });
+
+        assert.deepEqual(session.resumeCursor, legacyCursor);
+        assert.deepEqual(turn.resumeCursor, legacyCursor);
+        const prompts = readPromptTextBlocks(
+          yield* Effect.promise(() => readJsonLines(requestLogPath)),
+        );
+        assert.deepEqual(prompts, [["legacy prompt"]]);
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      );
+    },
+  );
+
+  it.effect("retries managed instructions after a failed first ACP prompt", () => {
+    const threadId = ThreadId.make("grok-managed-prompt-failure-retry");
+    const managedBlock =
+      "<workjet_managed_instructions>\nRetry this managed workflow.\n</workjet_managed_instructions>";
+    setManagedPrompt(threadId, "Retry this managed workflow.");
+
+    return Effect.gen(function* () {
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-managed-prompt-retry-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const invocationMarkerPath = NodePath.join(tempDir, "invoked");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeFailFirstProcessGrokWrapper({ requestLogPath, invocationMarkerPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      const firstSession = yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const firstError = yield* Effect.flip(
+        adapter.sendTurn({ threadId, input: "failed first prompt", attachments: [] }),
+      );
+      assert.equal(firstError._tag, "ProviderAdapterRequestError");
+      assert.deepEqual(firstSession.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "mock-session-1",
+      });
+      yield* adapter.stopSession(threadId);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        resumeCursor: firstSession.resumeCursor,
+      });
+      const retryTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "retry prompt",
+        attachments: [],
+      });
+
+      assert.match(
+        String(
+          typeof retryTurn.resumeCursor === "object" &&
+            retryTurn.resumeCursor !== null &&
+            "managedPromptFingerprint" in retryTurn.resumeCursor
+            ? retryTurn.resumeCursor.managedPromptFingerprint
+            : "",
+        ),
+        /^[0-9a-f]{64}$/,
+      );
+      const prompts = readPromptTextBlocks(
+        yield* Effect.promise(() => readJsonLines(requestLogPath)),
+      );
+      assert.deepEqual(prompts, [
+        [managedBlock, "failed first prompt"],
+        [managedBlock, "retry prompt"],
+      ]);
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
 
   it.effect("closes the ACP child process when a session stops", () =>
     Effect.gen(function* () {

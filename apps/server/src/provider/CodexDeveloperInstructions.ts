@@ -169,12 +169,17 @@ function toSingleLine(value: string): string {
 export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
   runtime: CodexRuntimeInfo,
+  compiledManagedPrompt?: string,
 ): string {
   const base =
     interactionMode === "plan"
       ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
       : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS;
-  return `${base}
+  const runtimeInstructions = `${base}
 
 <runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
+  const managedPrompt = compiledManagedPrompt?.trim();
+  return managedPrompt
+    ? `${runtimeInstructions}\n\n<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
+    : runtimeInstructions;
 }

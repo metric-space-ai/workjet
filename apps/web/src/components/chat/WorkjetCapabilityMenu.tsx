@@ -6,7 +6,14 @@ import {
 import { SettingsIcon } from "lucide-react";
 
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
-import { Menu, MenuCheckboxItem, MenuGroupLabel, MenuPopup, MenuTrigger } from "../ui/menu";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuPopup,
+  MenuTrigger,
+} from "../ui/menu";
 
 const GREPPY_CAPABILITY_ID = "greppy" satisfies WorkjetCapabilityId;
 
@@ -95,7 +102,7 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
   const disabled = props.disabled === true || props.busy;
 
   return (
-    <>
+    <MenuGroup>
       <MenuGroupLabel>Workjet</MenuGroupLabel>
       <MenuCheckboxItem
         variant="switch"
@@ -118,7 +125,7 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
         Greppy is activated only for this thread. Its runtime and store are shared by all threads on
         this server.
       </p>
-    </>
+    </MenuGroup>
   );
 }
 

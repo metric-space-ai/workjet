@@ -179,6 +179,32 @@ import {
   transferBudgetViolations,
 } from "../integration/TransferBudgetReport.integration.ts";
 
+it("streams Workjet config changes to subscribed thread details", () => {
+  const threadId = ThreadId.make("thread-workjet-config");
+  const event = {
+    sequence: 1,
+    eventId: EventId.make("event-workjet-config"),
+    aggregateKind: "thread",
+    aggregateId: threadId,
+    occurredAt: "2026-08-14T00:00:00.000Z",
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    type: "thread.workjet-config-set",
+    payload: {
+      threadId,
+      workjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        enabledCapabilityIds: ["greppy"],
+      },
+      updatedAt: "2026-08-14T00:00:00.000Z",
+    },
+  } satisfies Extract<OrchestrationEvent, { type: "thread.workjet-config-set" }>;
+
+  assert.isTrue(isThreadDetailEvent(event));
+});
+
 const defaultProjectId = ProjectId.make("project-default");
 const defaultThreadId = ThreadId.make("thread-default");
 const defaultDesktopBootstrapToken = "test-desktop-bootstrap-token";

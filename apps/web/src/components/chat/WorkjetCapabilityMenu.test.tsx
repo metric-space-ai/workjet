@@ -5,6 +5,8 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { MenuGroup } from "../ui/menu";
+
 import {
   executeWorkjetCapabilityToggle,
   GREPPY_CAPABILITY_ID,
@@ -102,6 +104,7 @@ describe("WorkjetCapabilityMenu", () => {
     expect(enabledSwitch?.props.checked).toBe(true);
     expect(enabledSwitch?.props.disabled).toBe(false);
     expect(enabledSwitch?.props["aria-label"]).toBe("Greppy for this thread");
+    expect(enabledContent.type).toBe(MenuGroup);
     expect(textContent(explanation)).toContain("activated only for this thread");
     expect(textContent(explanation)).toContain(
       "runtime and store are shared by all threads on this server",

@@ -106,6 +106,18 @@ describe("CapabilityManifestV1", () => {
     expect(decoded.promptContribution).toBeNull();
   });
 
+  it("rejects non-JSON values in schema documents", () => {
+    expect(() =>
+      decodeManifest({
+        ...manifest,
+        inputSchema: {
+          type: "object",
+          resolve: () => "not wire safe",
+        },
+      }),
+    ).toThrow();
+  });
+
   it("strips secret values from decoded and encoded manifests", () => {
     const sentinel = "must-not-survive";
     const decoded = decodeManifest({

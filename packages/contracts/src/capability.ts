@@ -47,9 +47,29 @@ export const CapabilitySecretRequirement = Schema.Struct({
 });
 export type CapabilitySecretRequirement = typeof CapabilitySecretRequirement.Type;
 
+export type CapabilityJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<CapabilityJsonValue>
+  | { readonly [key: string]: CapabilityJsonValue };
+
+export const CapabilityJsonValue: Schema.Codec<CapabilityJsonValue> = Schema.Union([
+  Schema.Null,
+  Schema.Boolean,
+  Schema.Number,
+  Schema.String,
+  Schema.Array(Schema.suspend((): Schema.Codec<CapabilityJsonValue> => CapabilityJsonValue)),
+  Schema.Record(
+    TrimmedNonEmptyString,
+    Schema.suspend((): Schema.Codec<CapabilityJsonValue> => CapabilityJsonValue),
+  ),
+]);
+
 export const CapabilityJsonSchemaDocument = Schema.Record(
   TrimmedNonEmptyString,
-  Schema.Unknown,
+  CapabilityJsonValue,
 ).check(Schema.isMinProperties(1));
 export type CapabilityJsonSchemaDocument = typeof CapabilityJsonSchemaDocument.Type;
 

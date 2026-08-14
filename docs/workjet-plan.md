@@ -153,6 +153,8 @@ both modes.
 - [x] Reject unknown or incompatible capability versions with typed errors.
 - [x] Keep secrets as references; never put secret values in manifests, thread
       events, browser storage, logs, or instance registries.
+- [x] Provide one host-neutral built-in registry with exact-version resolution,
+      adapter filtering, and deterministic managed prompt compilation.
 
 ### Host adapters
 
@@ -553,14 +555,14 @@ Workjet is complete only when all of the following are true:
 
 ## 18. Immediate execution queue
 
-1. Finish and verify Wave 1 thread-domain implementation.
-2. Add the minimal capability-registry contract and prompt adapter interface.
-3. Build the Code/CTOX product-mode shell state without yet loading a guest.
-4. Port ctox.dev instance discovery and session isolation into typed Electron
-   services.
-5. Prepare history-preserving import branches for CLIProxyAPI Rust and Web
-   Stack.
-6. Apply the dual-license policy and provenance inventory while importing
-   CTOX-owned code.
-7. Land the first real local orchestrator → worker flow.
-8. Land one managed CTOX instance → Business OS WebRTC launch flow.
+1. [x] Finish and verify Wave 1 thread-domain implementation.
+2. [x] Add the minimal capability-registry contract and prompt adapter interface.
+3. [ ] Build the Code/CTOX product-mode shell state without yet loading a guest.
+4. [ ] Port ctox.dev instance discovery and session isolation into typed Electron
+       services.
+5. [ ] Prepare history-preserving import branches for CLIProxyAPI Rust and Web
+       Stack.
+6. [ ] Apply the dual-license policy and provenance inventory while importing
+       CTOX-owned code.
+7. [ ] Land the first real local orchestrator → worker flow.
+8. [ ] Land one managed CTOX instance → Business OS WebRTC launch flow.

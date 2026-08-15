@@ -207,6 +207,15 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
 
     const logout = Effect.gen(function* () {
       const browserSession = yield* accountSession;
+      yield* Effect.tryPromise({
+        try: () =>
+          browserSession.clearStorageData({
+            origin: baseUrl,
+            storages: ["cookies", "localstorage", "indexdb", "cachestorage", "serviceworkers"],
+          }),
+        catch: () => new CtoxDevAuthOperationError({ operation: "logout-storage" }),
+      });
+
       const cookies = browserSession.cookies as unknown as CookieApi;
       if (typeof cookies.get === "function" && typeof cookies.remove === "function") {
         const accountCookies = yield* Effect.tryPromise({
@@ -233,21 +242,7 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
           }),
           { concurrency: "unbounded", discard: true },
         );
-      } else {
-        yield* Effect.tryPromise({
-          try: () => browserSession.clearStorageData({ origin: baseUrl, storages: ["cookies"] }),
-          catch: () => new CtoxDevAuthOperationError({ operation: "logout-cookies" }),
-        });
       }
-
-      yield* Effect.tryPromise({
-        try: () =>
-          browserSession.clearStorageData({
-            origin: baseUrl,
-            storages: ["localstorage", "indexdb", "cachestorage", "serviceworkers"],
-          }),
-        catch: () => new CtoxDevAuthOperationError({ operation: "logout-storage" }),
-      });
     }).pipe(Effect.withSpan("CtoxDevAuth.logout"));
 
     const runLogin = Effect.gen(function* () {

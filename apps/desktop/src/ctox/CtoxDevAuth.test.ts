@@ -271,7 +271,7 @@ describe("CtoxDevAuth", () => {
         [
           {
             origin: "https://accounts.ctox.dev",
-            storages: ["localstorage", "indexdb", "cachestorage", "serviceworkers"],
+            storages: ["cookies", "localstorage", "indexdb", "cachestorage", "serviceworkers"],
           },
         ],
       ]);

@@ -1,3 +1,7 @@
+import {
+  WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
+  WEB_READ_OUTPUT_SCHEMA,
+} from "@metric-space-ai/workjet-capabilities";
 import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -73,8 +77,157 @@ export interface WebDeepResearchInput {
   readonly includeAnnasArchive: boolean;
 }
 
-export type WebReadResult = Readonly<Record<string, unknown>>;
-export type WebDeepResearchResult = Readonly<Record<string, unknown>>;
+export interface WebReadResponseMetadata {
+  readonly requestedUrl?: string;
+  readonly finalUrl?: string;
+  readonly status?: number;
+  readonly contentType?: string;
+  readonly byteCount?: number;
+  readonly sha256?: string;
+  readonly contentKind?: string;
+  readonly redirected?: boolean;
+  readonly redirectChain: ReadonlyArray<string>;
+  readonly lineage?: string;
+  readonly admissionRejectionReason?: string;
+}
+
+export interface WebReadExtractedField {
+  readonly field: string;
+  readonly value: string;
+  readonly confidence?: string;
+  readonly note?: string;
+  readonly sourceUrl?: string;
+}
+
+export interface WebReadExtractedFields {
+  readonly sourceId?: string;
+  readonly tier?: string;
+  readonly fields: ReadonlyArray<WebReadExtractedField>;
+}
+
+export interface WebReadResult {
+  readonly operation: "read";
+  readonly requestedUrl: string;
+  readonly canonicalUrl?: string;
+  readonly finalUrl?: string;
+  readonly title?: string;
+  readonly summary?: string;
+  readonly pageTextExcerpt?: string;
+  readonly isPdf: boolean;
+  readonly pdfTotalPages?: number;
+  readonly redirected?: boolean;
+  readonly redirectChain: ReadonlyArray<string>;
+  readonly lineage?: string;
+  readonly verificationStatus?: string;
+  readonly checkedAt?: number;
+  readonly httpStatus?: number;
+  readonly snapshotHash?: string;
+  readonly contentType?: string;
+  readonly byteCount?: number;
+  readonly responseContentKind?: string;
+  readonly responseMetadata?: WebReadResponseMetadata;
+  readonly excerpts: ReadonlyArray<string>;
+  readonly findMatches: ReadonlyArray<{
+    readonly pattern: string;
+    readonly matches: ReadonlyArray<string>;
+  }>;
+  readonly pageSections: ReadonlyArray<{
+    readonly pageNumber?: number;
+    readonly text: string;
+  }>;
+  readonly sourceTier?: string;
+  readonly transportEvidenceEligible: boolean;
+  readonly evidenceEligible: boolean;
+  readonly evidenceRelevanceScore?: number;
+  readonly evidenceRejectionReason?: string;
+  readonly evidenceContentKind?: string;
+  readonly datasetContentExtracted: boolean;
+  readonly extractedFields?: WebReadExtractedFields;
+}
+
+export interface WebDeepResearchSource {
+  readonly title?: string;
+  readonly canonicalUrl: string;
+  readonly domain?: string;
+  readonly summary?: string;
+  readonly sourceType?: string;
+  readonly doi?: string;
+  readonly verificationStatus?: string;
+  readonly checkedAt?: number;
+  readonly httpStatus?: number;
+  readonly snapshotHash?: string;
+  readonly transportVerified: boolean;
+  readonly contentExtracted: boolean;
+  readonly actualFullTextOrData: boolean;
+  readonly evidenceEligible: boolean;
+  readonly evidenceRelevanceScore?: number;
+  readonly evidenceRejectionReason?: string;
+  readonly responseContentKind?: string;
+  readonly dataValidationStatus?: string;
+  readonly pageTextExcerpt?: string;
+  readonly excerpts: ReadonlyArray<string>;
+}
+
+export interface WebDeepResearchBlockedSource {
+  readonly title?: string;
+  readonly canonicalUrl: string;
+  readonly blockedResponseUrl?: string;
+  readonly reason?: string;
+  readonly doi?: string;
+  readonly nextAction?: string;
+}
+
+export interface WebDeepResearchResult {
+  readonly operation: "deepResearch";
+  readonly query: string;
+  readonly focus?: string;
+  readonly depth: WebDeepResearchDepth;
+  readonly maxSources: number;
+  readonly evidenceStatus: "no_verified_sources" | "verified_sources_available";
+  readonly verifiedSources: ReadonlyArray<WebDeepResearchSource>;
+  readonly blockedSources: ReadonlyArray<WebDeepResearchBlockedSource>;
+  readonly systematicCoverage: {
+    readonly plannedFacets: ReadonlyArray<string>;
+    readonly successfulFacets: ReadonlyArray<string>;
+    readonly uncoveredFacets: ReadonlyArray<string>;
+    readonly excludedExistingUrlCount: number;
+    readonly verifiedPrimaryDataSources: number;
+    readonly verifiedScholarlyFullTextSources: number;
+    readonly hashBoundVerifiedSources: number;
+    readonly independentVerifiedDomains: ReadonlyArray<string>;
+    readonly remainingGaps: ReadonlyArray<string>;
+    readonly complete: boolean;
+  };
+  readonly researchCallCounts: Readonly<
+    Record<
+      | "planned_search_queries"
+      | "executed_search_queries"
+      | "database_queries"
+      | "discovered_source_candidates"
+      | "candidate_pool_limit"
+      | "deduplicated_sources"
+      | "verified_sources"
+      | "rejected_source_candidates"
+      | "read_budget"
+      | "followup_read_budget"
+      | "read_attempts"
+      | "followed_data_links"
+      | "sources_with_page_read_attempts"
+      | "successful_page_reads"
+      | "failed_page_reads"
+      | "figure_candidates"
+      | "estimated_external_fetches",
+      number
+    >
+  >;
+  readonly reportScaffold: {
+    readonly recommendedSections: ReadonlyArray<string>;
+    readonly evaluationAxes: ReadonlyArray<string>;
+    readonly synthesisInstruction: string;
+  };
+  readonly workspacePersisted: boolean;
+  readonly workspaceId?: string;
+}
 
 export interface WebStackResearchShape {
   readonly read: (input: WebReadInput) => Effect.Effect<WebReadResult, WebStackResearchError>;
@@ -169,26 +322,122 @@ export const decodeWebDeepResearchInput = (value: unknown): WebDeepResearchInput
   };
 };
 
-const parseResponse = (
+interface JsonContract {
+  readonly const?: unknown;
+  readonly enum?: ReadonlyArray<unknown>;
+  readonly type?: "object" | "array" | "string" | "integer" | "boolean";
+  readonly required?: ReadonlyArray<string>;
+  readonly properties?: Readonly<Record<string, JsonContract>>;
+  readonly items?: JsonContract;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
+  readonly minimum?: number;
+  readonly maximum?: number;
+}
+
+const INVALID_JSON_CONTRACT = Symbol("INVALID_JSON_CONTRACT");
+type InvalidJsonContract = typeof INVALID_JSON_CONTRACT;
+
+const projectJsonContract = (
+  schema: JsonContract,
+  value: unknown,
+): unknown | InvalidJsonContract => {
+  if (Object.hasOwn(schema, "const") && value !== schema.const) return INVALID_JSON_CONTRACT;
+  if (schema.enum && !schema.enum.includes(value)) return INVALID_JSON_CONTRACT;
+
+  switch (schema.type) {
+    case undefined:
+      return value;
+    case "boolean":
+      return typeof value === "boolean" ? value : INVALID_JSON_CONTRACT;
+    case "integer":
+      return typeof value === "number" &&
+        Number.isSafeInteger(value) &&
+        (schema.minimum === undefined || value >= schema.minimum) &&
+        (schema.maximum === undefined || value <= schema.maximum)
+        ? value
+        : INVALID_JSON_CONTRACT;
+    case "string": {
+      if (typeof value !== "string") return INVALID_JSON_CONTRACT;
+      const length = Array.from(value).length;
+      return (schema.minLength === undefined || length >= schema.minLength) &&
+        (schema.maxLength === undefined || length <= schema.maxLength) &&
+        (schema.pattern === undefined || new RegExp(schema.pattern, "u").test(value))
+        ? value
+        : INVALID_JSON_CONTRACT;
+    }
+    case "array": {
+      if (
+        !Array.isArray(value) ||
+        !schema.items ||
+        (schema.minItems !== undefined && value.length < schema.minItems) ||
+        (schema.maxItems !== undefined && value.length > schema.maxItems)
+      ) {
+        return INVALID_JSON_CONTRACT;
+      }
+      const projected: Array<unknown> = [];
+      for (const item of value) {
+        const result = projectJsonContract(schema.items, item);
+        if (result === INVALID_JSON_CONTRACT) return INVALID_JSON_CONTRACT;
+        projected.push(result);
+      }
+      return projected;
+    }
+    case "object": {
+      if (!isRecord(value) || !schema.properties) return INVALID_JSON_CONTRACT;
+      for (const required of schema.required ?? []) {
+        if (!Object.hasOwn(value, required) || value[required] === null) {
+          return INVALID_JSON_CONTRACT;
+        }
+      }
+      const projected: Record<string, unknown> = {};
+      for (const [key, propertySchema] of Object.entries(schema.properties)) {
+        const propertyValue = value[key];
+        if (propertyValue === undefined || propertyValue === null) continue;
+        const result = projectJsonContract(propertySchema, propertyValue);
+        if (result === INVALID_JSON_CONTRACT) return INVALID_JSON_CONTRACT;
+        projected[key] = result;
+      }
+      return projected;
+    }
+  }
+};
+
+function parseResponse(
+  output: NativeProcess.ProcessOutput,
+  operation: "read",
+): Effect.Effect<WebReadResult, WebStackResearchError>;
+function parseResponse(
+  output: NativeProcess.ProcessOutput,
+  operation: "deepResearch",
+): Effect.Effect<WebDeepResearchResult, WebStackResearchError>;
+function parseResponse(
   output: NativeProcess.ProcessOutput,
   operation: "read" | "deepResearch",
-): Effect.Effect<Readonly<Record<string, unknown>>, WebStackResearchError> => {
+): Effect.Effect<WebReadResult | WebDeepResearchResult, WebStackResearchError> {
   if (output.stdout.totalBytes > NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES) {
     return Effect.fail(failure("oversized-response"));
   }
   if (output.exitCode !== 0) return Effect.fail(failure("process-exit"));
   return Effect.try({
     try: () => {
+      // @effect-diagnostics-next-line preferSchemaOverJson:off - strict projection validates this bounded native process boundary.
       const value = JSON.parse(NativeProcess.outputText(output.stdout)) as unknown;
       if (!isRecord(value) || value.ok !== true || value.operation !== operation) {
         throw new Error("invalid response");
       }
-      const { ok: _ok, ...result } = value;
-      return result;
+      const schema =
+        operation === "read" ? WEB_READ_OUTPUT_SCHEMA : WEB_DEEP_RESEARCH_OUTPUT_SCHEMA;
+      const result = projectJsonContract(schema as JsonContract, value);
+      if (result === INVALID_JSON_CONTRACT) throw new Error("invalid response");
+      return result as WebReadResult | WebDeepResearchResult;
     },
     catch: () => failure("malformed-response"),
   });
-};
+}
 
 const makeWithOptions = Effect.fn("WebStackResearch.make")(function* (options: {
   readonly stateDir: string;

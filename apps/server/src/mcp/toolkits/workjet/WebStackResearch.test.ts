@@ -12,6 +12,16 @@ import * as WebStackResearch from "./WebStackResearch.ts";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+const nativeOutput = (value: unknown): NativeProcess.ProcessOutput => {
+  const bytes = encoder.encode(JSON.stringify(value));
+  return { stdout: { bytes, totalBytes: bytes.length }, stderrBytes: 0, exitCode: 0 };
+};
+
+const omitNullMembers = (value: unknown): unknown =>
+  JSON.parse(JSON.stringify(value), (_key, member) =>
+    member === null ? undefined : member,
+  ) as unknown;
+
 interface CapturedCommand {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
@@ -59,26 +69,150 @@ const makeSpawner = (handler: (command: CapturedCommand, index: number) => Handl
   };
 };
 
-const readResponse = JSON.stringify({
+const readEnvelope = {
   ok: true,
   operation: "read",
   requestedUrl: "https://example.test/requested",
   canonicalUrl: "https://example.test/canonical",
+  finalUrl: "https://example.test/final",
   title: "Example",
+  summary: "Summary",
   pageTextExcerpt: "Evidence",
+  isPdf: true,
+  pdfTotalPages: 3,
+  redirected: true,
+  redirectChain: ["https://example.test/requested", "https://example.test/final"],
+  lineage: "network",
+  verificationStatus: "verified",
+  checkedAt: 1_700_000_000,
+  httpStatus: 200,
+  snapshotHash: "sha256:example",
+  contentType: "text/html",
+  byteCount: 1_024,
+  responseContentKind: "html",
+  responseMetadata: {
+    requestedUrl: "https://example.test/requested",
+    finalUrl: "https://example.test/final",
+    status: 200,
+    contentType: "text/html",
+    byteCount: 1_024,
+    sha256: "sha256:example",
+    contentKind: "html",
+    redirected: true,
+    redirectChain: ["https://example.test/final"],
+    lineage: "network",
+    admissionRejectionReason: null,
+  },
+  excerpts: ["Evidence excerpt"],
+  findMatches: [{ pattern: "Evidence", matches: ["Evidence match"] }],
+  pageSections: [{ pageNumber: 1, text: "Section text" }],
+  sourceTier: "public",
+  transportEvidenceEligible: true,
   evidenceEligible: true,
-});
+  evidenceRelevanceScore: 95,
+  evidenceRejectionReason: null,
+  evidenceContentKind: "html",
+  datasetContentExtracted: false,
+  extractedFields: {
+    sourceId: "source-1",
+    tier: "public",
+    fields: [
+      {
+        field: "author",
+        value: "Example Author",
+        confidence: "high",
+        note: null,
+        sourceUrl: "https://example.test/final",
+      },
+    ],
+  },
+} as const;
+const readResponse = JSON.stringify(readEnvelope);
 
-const researchResponse = JSON.stringify({
+const researchCounts = {
+  planned_search_queries: 4,
+  executed_search_queries: 4,
+  database_queries: 2,
+  discovered_source_candidates: 12,
+  candidate_pool_limit: 100,
+  deduplicated_sources: 8,
+  verified_sources: 1,
+  rejected_source_candidates: 7,
+  read_budget: 16,
+  followup_read_budget: 8,
+  read_attempts: 8,
+  followed_data_links: 1,
+  sources_with_page_read_attempts: 8,
+  successful_page_reads: 6,
+  failed_page_reads: 2,
+  figure_candidates: 1,
+  estimated_external_fetches: 22,
+} as const;
+
+const researchEnvelope = {
   ok: true,
   operation: "deepResearch",
   query: "bounded research",
+  focus: "evidence",
   depth: "standard",
+  maxSources: 16,
   evidenceStatus: "verified_sources_available",
-  verifiedSources: [{ title: "Source", canonicalUrl: "https://example.test/source" }],
+  verifiedSources: [
+    {
+      title: "Source",
+      canonicalUrl: "https://example.test/source",
+      domain: "example.test",
+      summary: "Useful evidence",
+      sourceType: "public_web",
+      doi: null,
+      verificationStatus: "verified",
+      checkedAt: 1_700_000_000,
+      httpStatus: 200,
+      snapshotHash: "sha256:example",
+      transportVerified: true,
+      contentExtracted: true,
+      actualFullTextOrData: true,
+      evidenceEligible: true,
+      evidenceRelevanceScore: 90,
+      evidenceRejectionReason: null,
+      responseContentKind: "html",
+      dataValidationStatus: "validated",
+      pageTextExcerpt: "Evidence excerpt",
+      excerpts: ["Evidence excerpt"],
+    },
+  ],
+  blockedSources: [
+    {
+      title: "Blocked",
+      canonicalUrl: "https://blocked.test/",
+      blockedResponseUrl: "https://blocked.test/login",
+      reason: "bot_wall",
+      doi: null,
+      nextAction: "Use another lawful source.",
+    },
+  ],
+  systematicCoverage: {
+    plannedFacets: ["primary data"],
+    successfulFacets: ["primary data"],
+    uncoveredFacets: [],
+    excludedExistingUrlCount: 1,
+    verifiedPrimaryDataSources: 1,
+    verifiedScholarlyFullTextSources: 0,
+    hashBoundVerifiedSources: 1,
+    independentVerifiedDomains: ["example.test"],
+    remainingGaps: ["no_verified_scholarly_full_text"],
+    complete: false,
+  },
+  researchCallCounts: researchCounts,
+  reportScaffold: {
+    recommendedSections: ["Summary"],
+    evaluationAxes: ["Credibility"],
+    synthesisInstruction: "Synthesize verified evidence.",
+  },
   workspacePersisted: true,
-  workspaceId: "research-1234",
-});
+  workspaceId: "research-0123456789abcdef",
+} as const;
+const researchResponse = JSON.stringify(researchEnvelope);
 
 const makeService = (input?: {
   readonly stateDir?: string;
@@ -194,6 +328,133 @@ describe("WebStackResearch", () => {
       [300_000, 900_000, 1_800_000],
     );
   });
+
+  it.effect("accepts and projects full normalized read and research envelopes", () =>
+    Effect.gen(function* () {
+      const read = yield* WebStackResearch.__testing.parseResponse(
+        nativeOutput(readEnvelope),
+        "read",
+      );
+      const research = yield* WebStackResearch.__testing.parseResponse(
+        nativeOutput(researchEnvelope),
+        "deepResearch",
+      );
+      const { ok: _readOk, ...nativeReadResult } = readEnvelope;
+      const { ok: _researchOk, ...nativeResearchResult } = researchEnvelope;
+      const expectedRead = omitNullMembers(nativeReadResult) as WebStackResearch.WebReadResult;
+      const expectedResearch = omitNullMembers(
+        nativeResearchResult,
+      ) as WebStackResearch.WebDeepResearchResult;
+
+      assert.deepEqual(read, expectedRead);
+      assert.deepEqual(research, expectedResearch);
+      assert.notProperty(read.responseMetadata!, "admissionRejectionReason");
+      assert.notProperty(research.verifiedSources[0]!, "doi");
+    }),
+  );
+
+  it.effect("rejects missing, mistyped, out-of-bound, and unsafe nested normalized output", () =>
+    Effect.gen(function* () {
+      const malformed: ReadonlyArray<readonly [unknown, "read" | "deepResearch"]> = [
+        [{ ...readEnvelope, operation: "deepResearch" }, "read"],
+        [
+          {
+            ...readEnvelope,
+            findMatches: [{ pattern: "needle", matches: [{ body: "raw secret" }] }],
+          },
+          "read",
+        ],
+        [{ ...readEnvelope, title: "x".repeat(2_001) }, "read"],
+        [{ ...readEnvelope, httpStatus: 1.5 }, "read"],
+        [
+          {
+            ...researchEnvelope,
+            systematicCoverage: {
+              ...researchEnvelope.systematicCoverage,
+              remainingGaps: ["x".repeat(1_001)],
+            },
+          },
+          "deepResearch",
+        ],
+        [
+          {
+            ...researchEnvelope,
+            verifiedSources: [
+              {
+                ...researchEnvelope.verifiedSources[0],
+                excerpts: Array.from({ length: 9 }, () => "excerpt"),
+              },
+            ],
+          },
+          "deepResearch",
+        ],
+        [
+          {
+            ...researchEnvelope,
+            reportScaffold: { recommendedSections: [], evaluationAxes: [] },
+          },
+          "deepResearch",
+        ],
+      ];
+
+      for (const [value, operation] of malformed) {
+        if (operation === "read") {
+          const error = yield* WebStackResearch.__testing
+            .parseResponse(nativeOutput(value), "read")
+            .pipe(Effect.flip);
+          assert.equal(error.reason, "malformed-response");
+        } else {
+          const error = yield* WebStackResearch.__testing
+            .parseResponse(nativeOutput(value), "deepResearch")
+            .pipe(Effect.flip);
+          assert.equal(error.reason, "malformed-response");
+        }
+      }
+    }),
+  );
+
+  it.effect("drops unknown native fields at every object boundary before returning output", () =>
+    Effect.gen(function* () {
+      const secret = "/private/raw-workspace/SECRET_BODY";
+      const read = yield* WebStackResearch.__testing.parseResponse(
+        nativeOutput({
+          ...readEnvelope,
+          path: secret,
+          rawHtml: secret,
+          responseMetadata: { ...readEnvelope.responseMetadata, body: secret },
+          findMatches: [{ ...readEnvelope.findMatches[0], artifactPath: secret }],
+          extractedFields: {
+            ...readEnvelope.extractedFields,
+            fields: [{ ...readEnvelope.extractedFields.fields[0], raw: secret }],
+          },
+        }),
+        "read",
+      );
+      const research = yield* WebStackResearch.__testing.parseResponse(
+        nativeOutput({
+          ...researchEnvelope,
+          workspacePath: secret,
+          verifiedSources: [{ ...researchEnvelope.verifiedSources[0], responseBody: secret }],
+          blockedSources: [{ ...researchEnvelope.blockedSources[0], path: secret }],
+          systematicCoverage: { ...researchEnvelope.systematicCoverage, rawErrors: [secret] },
+          researchCallCounts: { ...researchCounts, stderr: secret },
+          reportScaffold: { ...researchEnvelope.reportScaffold, rawArtifact: secret },
+        }),
+        "deepResearch",
+      );
+
+      // @effect-diagnostics-next-line preferSchemaOverJson:off - asserts the complete projected native JSON boundary is redacted.
+      assert.notInclude(JSON.stringify([read, research]), secret);
+      assert.notProperty(read, "path");
+      assert.notProperty(read.responseMetadata!, "body");
+      assert.notProperty(research.verifiedSources[0]!, "responseBody");
+      assert.notProperty(research.reportScaffold, "rawArtifact");
+      assert.deepEqual(
+        Object.keys(research.researchCallCounts).sort(),
+        Object.keys(researchCounts).sort(),
+      );
+    }),
+  );
 
   it.effect("shares one lazy exact probe and uses the absolute server-owned root", () => {
     const test = makeService({ stateDir: "/server-owned/state" });

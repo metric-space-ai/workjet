@@ -1,7 +1,9 @@
 import {
   builtInCapabilityManifests,
   WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+  WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
   WEB_READ_INPUT_SCHEMA,
+  WEB_READ_OUTPUT_SCHEMA,
 } from "@metric-space-ai/workjet-capabilities";
 import { expect, it, vi } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -41,6 +43,78 @@ const invocation = (
   issuedAt: 1,
 });
 
+const readResult: WebStackResearch.WebReadResult = {
+  operation: "read",
+  requestedUrl: "https://example.test/requested",
+  canonicalUrl: "https://example.test/canonical",
+  pageTextExcerpt: "Evidence",
+  isPdf: false,
+  redirectChain: [],
+  excerpts: ["Evidence"],
+  findMatches: [],
+  pageSections: [],
+  transportEvidenceEligible: true,
+  evidenceEligible: true,
+  datasetContentExtracted: false,
+};
+
+const researchResult: WebStackResearch.WebDeepResearchResult = {
+  operation: "deepResearch",
+  query: "bounded research",
+  depth: "standard",
+  maxSources: 16,
+  evidenceStatus: "verified_sources_available",
+  verifiedSources: [
+    {
+      canonicalUrl: "https://example.test/source",
+      transportVerified: true,
+      contentExtracted: true,
+      actualFullTextOrData: true,
+      evidenceEligible: true,
+      excerpts: ["Evidence"],
+    },
+  ],
+  blockedSources: [],
+  systematicCoverage: {
+    plannedFacets: ["evidence"],
+    successfulFacets: ["evidence"],
+    uncoveredFacets: [],
+    excludedExistingUrlCount: 0,
+    verifiedPrimaryDataSources: 1,
+    verifiedScholarlyFullTextSources: 0,
+    hashBoundVerifiedSources: 0,
+    independentVerifiedDomains: ["example.test"],
+    remainingGaps: [],
+    complete: true,
+  },
+  researchCallCounts: {
+    planned_search_queries: 1,
+    executed_search_queries: 1,
+    database_queries: 0,
+    discovered_source_candidates: 1,
+    candidate_pool_limit: 100,
+    deduplicated_sources: 1,
+    verified_sources: 1,
+    rejected_source_candidates: 0,
+    read_budget: 16,
+    followup_read_budget: 8,
+    read_attempts: 1,
+    followed_data_links: 0,
+    sources_with_page_read_attempts: 1,
+    successful_page_reads: 1,
+    failed_page_reads: 0,
+    figure_candidates: 0,
+    estimated_external_fetches: 2,
+  },
+  reportScaffold: {
+    recommendedSections: ["Summary"],
+    evaluationAxes: ["Credibility"],
+    synthesisInstruction: "Synthesize verified evidence.",
+  },
+  workspacePersisted: true,
+  workspaceId: "research-0123456789abcdef",
+};
+
 function makeTestLayer(
   search: WebStackSearch.WebStackSearchShape,
   browser: WebStackBrowser.WebStackBrowserShape = {
@@ -57,8 +131,8 @@ function makeTestLayer(
     automate: () => Effect.succeed({ observations: [] }),
   },
   research: WebStackResearch.WebStackResearchShape = {
-    read: () => Effect.succeed({ operation: "read" }),
-    deepResearch: () => Effect.succeed({ operation: "deepResearch" }),
+    read: () => Effect.succeed(readResult),
+    deepResearch: () => Effect.succeed(researchResult),
   },
 ) {
   return WebStackTool.WebStackToolkitRegistrationLive.pipe(
@@ -447,7 +521,7 @@ it.effect(
   },
 );
 
-it.effect("registers read and deep research with canonical schemas and exact annotations", () =>
+it.effect("exposes read and deep research output schemas through MCP tools/list registration", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const read = server.tools.find(({ tool }) => tool.name === WebStackTool.WEB_READ_MCP_TOOL_NAME);
@@ -456,6 +530,7 @@ it.effect("registers read and deep research with canonical schemas and exact ann
     );
 
     expect(read?.tool.inputSchema).toEqual(WEB_READ_INPUT_SCHEMA);
+    expect(read?.tool.outputSchema).toEqual(WEB_READ_OUTPUT_SCHEMA);
     expect(read?.tool.annotations).toMatchObject({
       title: "Read Web Page",
       readOnlyHint: true,
@@ -464,6 +539,7 @@ it.effect("registers read and deep research with canonical schemas and exact ann
       openWorldHint: true,
     });
     expect(research?.tool.inputSchema).toEqual(WEB_DEEP_RESEARCH_INPUT_SCHEMA);
+    expect(research?.tool.outputSchema).toEqual(WEB_DEEP_RESEARCH_OUTPUT_SCHEMA);
     expect(research?.tool.annotations).toMatchObject({
       title: "Deep Web Research",
       readOnlyHint: true,
@@ -600,17 +676,6 @@ it.effect("rejects invalid path-bearing research payloads with InvalidParams", (
 });
 
 it.effect("applies research defaults and returns successful structured evidence", () => {
-  const readResult = {
-    operation: "read",
-    canonicalUrl: "https://example.test/canonical",
-    pageTextExcerpt: "Evidence",
-  };
-  const researchResult = {
-    operation: "deepResearch",
-    evidenceStatus: "verified_sources_available",
-    verifiedSources: [{ canonicalUrl: "https://example.test/source" }],
-    workspacePersisted: true,
-  };
   const read = vi.fn(() => Effect.succeed(readResult));
   const deepResearch = vi.fn(() => Effect.succeed(researchResult));
   return Effect.gen(function* () {

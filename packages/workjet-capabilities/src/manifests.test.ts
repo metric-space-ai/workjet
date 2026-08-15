@@ -9,7 +9,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   builtInCapabilityManifests,
   WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+  WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
   WEB_READ_INPUT_SCHEMA,
+  WEB_READ_OUTPUT_SCHEMA,
 } from "./manifests.ts";
 
 const ALL_ADAPTERS: ReadonlyArray<CapabilityAdapter> = [
@@ -18,6 +20,41 @@ const ALL_ADAPTERS: ReadonlyArray<CapabilityAdapter> = [
   "ctox-business-os-mcp",
   "ctox-business-command",
 ];
+
+const assertFiniteClosedSchema = (schema: unknown): void => {
+  expect(schema).toBeTypeOf("object");
+  expect(schema).not.toBeNull();
+  const node = schema as Record<string, unknown>;
+  if (Object.hasOwn(node, "const")) return;
+  if (Array.isArray(node.enum)) {
+    expect(node.enum.length).toBeGreaterThan(0);
+    return;
+  }
+  switch (node.type) {
+    case "object":
+      expect(node.additionalProperties).toBe(false);
+      expect(node.required).toBeInstanceOf(Array);
+      for (const property of Object.values(node.properties as Record<string, unknown>)) {
+        assertFiniteClosedSchema(property);
+      }
+      return;
+    case "array":
+      expect(node.maxItems).toBeTypeOf("number");
+      assertFiniteClosedSchema(node.items);
+      return;
+    case "string":
+      expect(node.maxLength).toBeTypeOf("number");
+      return;
+    case "integer":
+      expect(node.minimum).toBeTypeOf("number");
+      expect(node.maximum).toBeTypeOf("number");
+      return;
+    case "boolean":
+      return;
+    default:
+      throw new Error(`Unsupported schema node: ${JSON.stringify(node)}`);
+  }
+};
 
 const EXPECTED = [
   {
@@ -133,6 +170,59 @@ describe("built-in capability manifests", () => {
     const serialized = JSON.stringify([WEB_READ_INPUT_SCHEMA, WEB_DEEP_RESEARCH_INPUT_SCHEMA]);
     for (const forbidden of ["workspace", "path", "config", "environment", "executable"]) {
       expect(serialized.toLowerCase()).not.toContain(forbidden);
+    }
+  });
+
+  it("exports recursively closed output schemas with the Rust normalization bounds", () => {
+    assertFiniteClosedSchema(WEB_READ_OUTPUT_SCHEMA);
+    assertFiniteClosedSchema(WEB_DEEP_RESEARCH_OUTPUT_SCHEMA);
+
+    expect(WEB_READ_OUTPUT_SCHEMA).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "operation",
+        "requestedUrl",
+        "isPdf",
+        "redirectChain",
+        "excerpts",
+        "findMatches",
+        "pageSections",
+        "transportEvidenceEligible",
+        "evidenceEligible",
+        "datasetContentExtracted",
+      ],
+      properties: {
+        operation: { const: "read" },
+        requestedUrl: { maxLength: 8_000 },
+        pageTextExcerpt: { maxLength: 16_000 },
+        redirectChain: { maxItems: 100, items: { maxLength: 8_000 } },
+        findMatches: { maxItems: 32 },
+        pageSections: { maxItems: 100 },
+      },
+    });
+    expect(WEB_DEEP_RESEARCH_OUTPUT_SCHEMA).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        operation: { const: "deepResearch" },
+        query: { maxLength: 4_000 },
+        maxSources: { minimum: 3, maximum: 100 },
+        verifiedSources: { maxItems: 100 },
+        blockedSources: { maxItems: 100 },
+        systematicCoverage: { additionalProperties: false },
+        researchCallCounts: { additionalProperties: false },
+        reportScaffold: { additionalProperties: false },
+        workspaceId: { minLength: 25, maxLength: 25 },
+      },
+    });
+
+    const serialized = JSON.stringify([
+      WEB_READ_OUTPUT_SCHEMA,
+      WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
+    ]).toLowerCase();
+    for (const forbidden of ['"path"', '"body"', '"html"', '"raw"', "artifact", "workspacepath"]) {
+      expect(serialized).not.toContain(forbidden);
     }
   });
 

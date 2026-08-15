@@ -1,7 +1,9 @@
 import {
   builtInCapabilityManifests,
   WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+  WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
   WEB_READ_INPUT_SCHEMA,
+  WEB_READ_OUTPUT_SCHEMA,
 } from "@metric-space-ai/workjet-capabilities";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -287,6 +289,7 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
       name: WebReadMcpTool.name,
       description: WebReadMcpTool.description,
       inputSchema: WEB_READ_INPUT_SCHEMA,
+      outputSchema: WEB_READ_OUTPUT_SCHEMA,
       annotations: toolAnnotations(WebReadMcpTool),
     }),
     annotations: WebReadMcpTool.annotations,
@@ -319,6 +322,7 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
       name: WebDeepResearchMcpTool.name,
       description: WebDeepResearchMcpTool.description,
       inputSchema: WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+      outputSchema: WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
       annotations: toolAnnotations(WebDeepResearchMcpTool),
     }),
     annotations: WebDeepResearchMcpTool.annotations,

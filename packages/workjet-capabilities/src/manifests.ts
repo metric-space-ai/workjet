@@ -46,6 +46,302 @@ export const WEB_DEEP_RESEARCH_INPUT_SCHEMA = {
   },
 } as const;
 
+const BOUNDED_STRING = (maxLength: number) => ({ type: "string", maxLength }) as const;
+const SAFE_UNSIGNED_INTEGER = {
+  type: "integer",
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER,
+} as const;
+const SAFE_INTEGER = {
+  type: "integer",
+  minimum: Number.MIN_SAFE_INTEGER,
+  maximum: Number.MAX_SAFE_INTEGER,
+} as const;
+const BOUNDED_STRING_ARRAY = (maxItems: number, maxLength: number) =>
+  ({
+    type: "array",
+    maxItems,
+    items: BOUNDED_STRING(maxLength),
+  }) as const;
+
+const WEB_READ_RESPONSE_METADATA_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["redirectChain"],
+  properties: {
+    requestedUrl: BOUNDED_STRING(8_000),
+    finalUrl: BOUNDED_STRING(8_000),
+    status: SAFE_UNSIGNED_INTEGER,
+    contentType: BOUNDED_STRING(1_000),
+    byteCount: SAFE_UNSIGNED_INTEGER,
+    sha256: BOUNDED_STRING(1_000),
+    contentKind: BOUNDED_STRING(1_000),
+    redirected: { type: "boolean" },
+    redirectChain: BOUNDED_STRING_ARRAY(100, 8_000),
+    lineage: BOUNDED_STRING(16_000),
+    admissionRejectionReason: BOUNDED_STRING(2_000),
+  },
+} as const;
+
+const WEB_READ_EXTRACTED_FIELDS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["fields"],
+  properties: {
+    sourceId: BOUNDED_STRING(1_000),
+    tier: BOUNDED_STRING(1_000),
+    fields: {
+      type: "array",
+      maxItems: 100,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["field", "value"],
+        properties: {
+          field: BOUNDED_STRING(1_000),
+          value: BOUNDED_STRING(4_000),
+          confidence: BOUNDED_STRING(1_000),
+          note: BOUNDED_STRING(2_000),
+          sourceUrl: BOUNDED_STRING(8_000),
+        },
+      },
+    },
+  },
+} as const;
+
+export const WEB_READ_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "operation",
+    "requestedUrl",
+    "isPdf",
+    "redirectChain",
+    "excerpts",
+    "findMatches",
+    "pageSections",
+    "transportEvidenceEligible",
+    "evidenceEligible",
+    "datasetContentExtracted",
+  ],
+  properties: {
+    operation: { const: "read" },
+    requestedUrl: BOUNDED_STRING(8_000),
+    canonicalUrl: BOUNDED_STRING(8_000),
+    finalUrl: BOUNDED_STRING(8_000),
+    title: BOUNDED_STRING(2_000),
+    summary: BOUNDED_STRING(16_000),
+    pageTextExcerpt: BOUNDED_STRING(16_000),
+    isPdf: { type: "boolean" },
+    pdfTotalPages: SAFE_UNSIGNED_INTEGER,
+    redirected: { type: "boolean" },
+    redirectChain: BOUNDED_STRING_ARRAY(100, 8_000),
+    lineage: BOUNDED_STRING(16_000),
+    verificationStatus: BOUNDED_STRING(1_000),
+    checkedAt: SAFE_UNSIGNED_INTEGER,
+    httpStatus: SAFE_UNSIGNED_INTEGER,
+    snapshotHash: BOUNDED_STRING(1_000),
+    contentType: BOUNDED_STRING(1_000),
+    byteCount: SAFE_UNSIGNED_INTEGER,
+    responseContentKind: BOUNDED_STRING(1_000),
+    responseMetadata: WEB_READ_RESPONSE_METADATA_SCHEMA,
+    excerpts: BOUNDED_STRING_ARRAY(100, 2_000),
+    findMatches: {
+      type: "array",
+      maxItems: 32,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["pattern", "matches"],
+        properties: {
+          pattern: BOUNDED_STRING(1_000),
+          matches: BOUNDED_STRING_ARRAY(16, 2_000),
+        },
+      },
+    },
+    pageSections: {
+      type: "array",
+      maxItems: 100,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["text"],
+        properties: {
+          pageNumber: SAFE_UNSIGNED_INTEGER,
+          text: BOUNDED_STRING(4_000),
+        },
+      },
+    },
+    sourceTier: BOUNDED_STRING(1_000),
+    transportEvidenceEligible: { type: "boolean" },
+    evidenceEligible: { type: "boolean" },
+    evidenceRelevanceScore: SAFE_INTEGER,
+    evidenceRejectionReason: BOUNDED_STRING(2_000),
+    evidenceContentKind: BOUNDED_STRING(1_000),
+    datasetContentExtracted: { type: "boolean" },
+    extractedFields: WEB_READ_EXTRACTED_FIELDS_SCHEMA,
+  },
+} as const;
+
+const WEB_RESEARCH_SOURCE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "canonicalUrl",
+    "transportVerified",
+    "contentExtracted",
+    "actualFullTextOrData",
+    "evidenceEligible",
+    "excerpts",
+  ],
+  properties: {
+    title: BOUNDED_STRING(2_000),
+    canonicalUrl: BOUNDED_STRING(8_000),
+    domain: BOUNDED_STRING(1_000),
+    summary: BOUNDED_STRING(4_000),
+    sourceType: BOUNDED_STRING(1_000),
+    doi: BOUNDED_STRING(1_000),
+    verificationStatus: BOUNDED_STRING(1_000),
+    checkedAt: SAFE_UNSIGNED_INTEGER,
+    httpStatus: SAFE_UNSIGNED_INTEGER,
+    snapshotHash: BOUNDED_STRING(1_000),
+    transportVerified: { type: "boolean" },
+    contentExtracted: { type: "boolean" },
+    actualFullTextOrData: { type: "boolean" },
+    evidenceEligible: { type: "boolean" },
+    evidenceRelevanceScore: SAFE_INTEGER,
+    evidenceRejectionReason: BOUNDED_STRING(2_000),
+    responseContentKind: BOUNDED_STRING(1_000),
+    dataValidationStatus: BOUNDED_STRING(1_000),
+    pageTextExcerpt: BOUNDED_STRING(4_000),
+    excerpts: BOUNDED_STRING_ARRAY(8, 2_000),
+  },
+} as const;
+
+const WEB_RESEARCH_COUNT_NAMES = [
+  "planned_search_queries",
+  "executed_search_queries",
+  "database_queries",
+  "discovered_source_candidates",
+  "candidate_pool_limit",
+  "deduplicated_sources",
+  "verified_sources",
+  "rejected_source_candidates",
+  "read_budget",
+  "followup_read_budget",
+  "read_attempts",
+  "followed_data_links",
+  "sources_with_page_read_attempts",
+  "successful_page_reads",
+  "failed_page_reads",
+  "figure_candidates",
+  "estimated_external_fetches",
+] as const;
+
+export const WEB_DEEP_RESEARCH_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "operation",
+    "query",
+    "depth",
+    "maxSources",
+    "evidenceStatus",
+    "verifiedSources",
+    "blockedSources",
+    "systematicCoverage",
+    "researchCallCounts",
+    "reportScaffold",
+    "workspacePersisted",
+  ],
+  properties: {
+    operation: { const: "deepResearch" },
+    query: BOUNDED_STRING(4_000),
+    focus: BOUNDED_STRING(4_000),
+    depth: { type: "string", enum: ["quick", "standard", "exhaustive"] },
+    maxSources: { type: "integer", minimum: 3, maximum: 100 },
+    evidenceStatus: {
+      type: "string",
+      enum: ["no_verified_sources", "verified_sources_available"],
+    },
+    verifiedSources: {
+      type: "array",
+      maxItems: 100,
+      items: WEB_RESEARCH_SOURCE_SCHEMA,
+    },
+    blockedSources: {
+      type: "array",
+      maxItems: 100,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["canonicalUrl"],
+        properties: {
+          title: BOUNDED_STRING(2_000),
+          canonicalUrl: BOUNDED_STRING(8_000),
+          blockedResponseUrl: BOUNDED_STRING(8_000),
+          reason: BOUNDED_STRING(2_000),
+          doi: BOUNDED_STRING(1_000),
+          nextAction: BOUNDED_STRING(4_000),
+        },
+      },
+    },
+    systematicCoverage: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "plannedFacets",
+        "successfulFacets",
+        "uncoveredFacets",
+        "excludedExistingUrlCount",
+        "verifiedPrimaryDataSources",
+        "verifiedScholarlyFullTextSources",
+        "hashBoundVerifiedSources",
+        "independentVerifiedDomains",
+        "remainingGaps",
+        "complete",
+      ],
+      properties: {
+        plannedFacets: BOUNDED_STRING_ARRAY(100, 1_000),
+        successfulFacets: BOUNDED_STRING_ARRAY(100, 1_000),
+        uncoveredFacets: BOUNDED_STRING_ARRAY(100, 1_000),
+        excludedExistingUrlCount: { type: "integer", minimum: 0, maximum: 100 },
+        verifiedPrimaryDataSources: { type: "integer", minimum: 0, maximum: 100 },
+        verifiedScholarlyFullTextSources: { type: "integer", minimum: 0, maximum: 100 },
+        hashBoundVerifiedSources: { type: "integer", minimum: 0, maximum: 100 },
+        independentVerifiedDomains: BOUNDED_STRING_ARRAY(100, 1_000),
+        remainingGaps: BOUNDED_STRING_ARRAY(100, 1_000),
+        complete: { type: "boolean" },
+      },
+    },
+    researchCallCounts: {
+      type: "object",
+      additionalProperties: false,
+      required: WEB_RESEARCH_COUNT_NAMES,
+      properties: Object.fromEntries(
+        WEB_RESEARCH_COUNT_NAMES.map((name) => [name, SAFE_UNSIGNED_INTEGER]),
+      ) as Record<(typeof WEB_RESEARCH_COUNT_NAMES)[number], typeof SAFE_UNSIGNED_INTEGER>,
+    },
+    reportScaffold: {
+      type: "object",
+      additionalProperties: false,
+      required: ["recommendedSections", "evaluationAxes", "synthesisInstruction"],
+      properties: {
+        recommendedSections: BOUNDED_STRING_ARRAY(100, 2_000),
+        evaluationAxes: BOUNDED_STRING_ARRAY(100, 2_000),
+        synthesisInstruction: BOUNDED_STRING(16_000),
+      },
+    },
+    workspacePersisted: { type: "boolean" },
+    workspaceId: {
+      type: "string",
+      minLength: 25,
+      maxLength: 25,
+      pattern: "^research-[0-9a-f]{16}$",
+    },
+  },
+} as const;
+
 const BROWSER_TARGET_SCHEMA = {
   oneOf: [
     {

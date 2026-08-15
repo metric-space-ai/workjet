@@ -8,6 +8,44 @@ const ALL_ADAPTERS = [
   "ctox-business-command",
 ] as const;
 
+const NON_WHITESPACE_STRING = (maxLength: number) =>
+  ({ type: "string", minLength: 1, maxLength, pattern: "\\S" }) as const;
+
+export const WEB_READ_INPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["url"],
+  properties: {
+    url: NON_WHITESPACE_STRING(8_000),
+    query: NON_WHITESPACE_STRING(4_000),
+    find: {
+      type: "array",
+      maxItems: 32,
+      items: NON_WHITESPACE_STRING(1_000),
+    },
+    country: { type: "string", enum: ["DE", "AT", "CH"] },
+  },
+} as const;
+
+export const WEB_DEEP_RESEARCH_INPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["query"],
+  properties: {
+    query: NON_WHITESPACE_STRING(4_000),
+    focus: NON_WHITESPACE_STRING(4_000),
+    depth: { type: "string", enum: ["quick", "standard", "exhaustive"] },
+    maxSources: { type: "integer", minimum: 3, maximum: 100 },
+    excludeUrls: {
+      type: "array",
+      maxItems: 100,
+      items: NON_WHITESPACE_STRING(8_000),
+    },
+    includePapers: { type: "boolean" },
+    includeAnnasArchive: { type: "boolean" },
+  },
+} as const;
+
 const BROWSER_TARGET_SCHEMA = {
   oneOf: [
     {
@@ -119,11 +157,12 @@ const BUILT_IN_MANIFEST_LITERALS = [
     version: "1.0.0",
     metadata: {
       displayName: "Web Search",
-      description: "Searches public web sources and returns structured results.",
+      description:
+        "Searches public web sources, reads specific pages, and performs bounded deep research with structured evidence.",
     },
     promptContribution: {
       instructions:
-        "Use Web Search when current or externally published information is needed, and ground conclusions in the returned sources.",
+        "Use Web Search to discover current or externally published information, read specific public pages, or perform bounded deep research, and ground conclusions in the returned evidence.",
     },
     permissionRequirements: ["network.search", "network.read"],
     secretRequirements: [],

@@ -1,4 +1,8 @@
-import { builtInCapabilityManifests } from "@metric-space-ai/workjet-capabilities";
+import {
+  builtInCapabilityManifests,
+  WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+  WEB_READ_INPUT_SCHEMA,
+} from "@metric-space-ai/workjet-capabilities";
 import { expect, it, vi } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -8,6 +12,7 @@ import { McpSchema, McpServer } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as WebStackBrowser from "./WebStackBrowser.ts";
+import * as WebStackResearch from "./WebStackResearch.ts";
 import * as WebStackSearch from "./WebStackSearch.ts";
 import * as WebStackTool from "./WebStackTool.ts";
 
@@ -51,11 +56,21 @@ function makeTestLayer(
       }),
     automate: () => Effect.succeed({ observations: [] }),
   },
+  research: WebStackResearch.WebStackResearchShape = {
+    read: () => Effect.succeed({ operation: "read" }),
+    deepResearch: () => Effect.succeed({ operation: "deepResearch" }),
+  },
 ) {
   return WebStackTool.WebStackToolkitRegistrationLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provideMerge(
       Layer.succeed(WebStackSearch.WebStackSearch, WebStackSearch.WebStackSearch.of(search)),
+    ),
+    Layer.provideMerge(
+      Layer.succeed(
+        WebStackResearch.WebStackResearch,
+        WebStackResearch.WebStackResearch.of(research),
+      ),
     ),
     Layer.provide(
       Layer.succeed(WebStackBrowser.WebStackBrowser, WebStackBrowser.WebStackBrowser.of(browser)),
@@ -431,3 +446,259 @@ it.effect(
     );
   },
 );
+
+it.effect("registers read and deep research with canonical schemas and exact annotations", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const read = server.tools.find(({ tool }) => tool.name === WebStackTool.WEB_READ_MCP_TOOL_NAME);
+    const research = server.tools.find(
+      ({ tool }) => tool.name === WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+    );
+
+    expect(read?.tool.inputSchema).toEqual(WEB_READ_INPUT_SCHEMA);
+    expect(read?.tool.annotations).toMatchObject({
+      title: "Read Web Page",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+    expect(research?.tool.inputSchema).toEqual(WEB_DEEP_RESEARCH_INPUT_SCHEMA);
+    expect(research?.tool.annotations).toMatchObject({
+      title: "Deep Web Research",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+  }).pipe(Effect.provide(makeTestLayer({ search: () => Effect.succeed({ results: [] }) }))),
+);
+
+it.effect("gates both research tools only on the one Web Search bearer grant", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    for (const name of [
+      WebStackTool.WEB_READ_MCP_TOOL_NAME,
+      WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+    ]) {
+      const registered = server.tools.find(({ tool }) => tool.name === name);
+      const enabledWhen = Context.get(
+        registered!.annotations as Context.Context<McpSchema.EnabledWhen>,
+        McpSchema.EnabledWhen,
+      );
+      expect(
+        yield* Effect.sync(() => enabledWhen(client.initializePayload)).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation([])),
+        ),
+      ).toBe(false);
+      expect(
+        yield* Effect.sync(() => enabledWhen(client.initializePayload)).pipe(
+          Effect.provideService(
+            McpInvocationContext.McpInvocationContext,
+            invocation(["web-search"]),
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        yield* Effect.sync(() => enabledWhen(client.initializePayload)).pipe(
+          Effect.provideService(
+            McpInvocationContext.McpInvocationContext,
+            invocation(["web-stack-browser"]),
+          ),
+        ),
+      ).toBe(false);
+    }
+  }).pipe(Effect.provide(makeTestLayer({ search: () => Effect.succeed({ results: [] }) }))),
+);
+
+it.effect("independently denies direct read and research calls before service invocation", () => {
+  const read = vi.fn(() => Effect.die("must not read"));
+  const deepResearch = vi.fn(() => Effect.die("must not research"));
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    for (const call of [
+      {
+        name: WebStackTool.WEB_READ_MCP_TOOL_NAME,
+        arguments: { url: "https://example.test/secret" },
+        operation: "read",
+      },
+      {
+        name: WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+        arguments: { query: "secret query" },
+        operation: "deep-research",
+      },
+    ]) {
+      const denied = yield* server
+        .callTool({ name: call.name, arguments: call.arguments })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation([])),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+      expect(denied.isError).toBe(true);
+      expect(denied.structuredContent).toEqual({
+        error: {
+          _tag: "WebStackMcpResearchError",
+          operation: call.operation,
+          reason: "capability-not-granted",
+        },
+      });
+      expect(denied.content).toEqual([{ type: "text", text: "Web research failed." }]);
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(deepResearch).not.toHaveBeenCalled();
+  }).pipe(
+    Effect.provide(
+      makeTestLayer({ search: () => Effect.succeed({ results: [] }) }, undefined, {
+        read,
+        deepResearch,
+      }),
+    ),
+  );
+});
+
+it.effect("rejects invalid path-bearing research payloads with InvalidParams", () => {
+  const read = vi.fn(() => Effect.die("must not read"));
+  const deepResearch = vi.fn(() => Effect.die("must not research"));
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    for (const call of [
+      {
+        name: WebStackTool.WEB_READ_MCP_TOOL_NAME,
+        arguments: { url: "https://example.test/", workspace: "/tmp" },
+      },
+      {
+        name: WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+        arguments: { query: "research", path: "/tmp", includePapers: true },
+      },
+      {
+        name: WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+        arguments: { query: " ", maxSources: 2 },
+      },
+    ]) {
+      const error = yield* server
+        .callTool(call)
+        .pipe(
+          Effect.provideService(
+            McpInvocationContext.McpInvocationContext,
+            invocation(["web-search"]),
+          ),
+          Effect.provideService(McpSchema.McpServerClient, client),
+          Effect.flip,
+        );
+      expect(error._tag).toBe("InvalidParams");
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(deepResearch).not.toHaveBeenCalled();
+  }).pipe(
+    Effect.provide(
+      makeTestLayer({ search: () => Effect.succeed({ results: [] }) }, undefined, {
+        read,
+        deepResearch,
+      }),
+    ),
+  );
+});
+
+it.effect("applies research defaults and returns successful structured evidence", () => {
+  const readResult = {
+    operation: "read",
+    canonicalUrl: "https://example.test/canonical",
+    pageTextExcerpt: "Evidence",
+  };
+  const researchResult = {
+    operation: "deepResearch",
+    evidenceStatus: "verified_sources_available",
+    verifiedSources: [{ canonicalUrl: "https://example.test/source" }],
+    workspacePersisted: true,
+  };
+  const read = vi.fn(() => Effect.succeed(readResult));
+  const deepResearch = vi.fn(() => Effect.succeed(researchResult));
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const readResponse = yield* server
+      .callTool({
+        name: WebStackTool.WEB_READ_MCP_TOOL_NAME,
+        arguments: { url: "https://example.test/", find: ["evidence"], country: "CH" },
+      })
+      .pipe(
+        Effect.provideService(
+          McpInvocationContext.McpInvocationContext,
+          invocation(["web-search"]),
+        ),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    const researchResponse = yield* server
+      .callTool({
+        name: WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+        arguments: { query: "bounded research" },
+      })
+      .pipe(
+        Effect.provideService(
+          McpInvocationContext.McpInvocationContext,
+          invocation(["web-search"]),
+        ),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+
+    expect(read).toHaveBeenCalledWith({
+      url: "https://example.test/",
+      find: ["evidence"],
+      country: "CH",
+    });
+    expect(deepResearch).toHaveBeenCalledWith({
+      query: "bounded research",
+      depth: "standard",
+      maxSources: 16,
+      excludeUrls: [],
+      includePapers: true,
+      includeAnnasArchive: false,
+    });
+    expect(readResponse.structuredContent).toEqual(readResult);
+    expect(readResponse.content).toEqual([{ type: "text", text: JSON.stringify(readResult) }]);
+    expect(researchResponse.structuredContent).toEqual(researchResult);
+  }).pipe(
+    Effect.provide(
+      makeTestLayer({ search: () => Effect.succeed({ results: [] }) }, undefined, {
+        read,
+        deepResearch,
+      }),
+    ),
+  );
+});
+
+it.effect("returns only a stable reason for native research failures", () => {
+  const secret = "SENSITIVE_URL_QUERY_STDERR";
+  const error = new WebStackResearch.WebStackResearchError({ reason: "process-exit" });
+  Object.defineProperty(error, "internal", { value: secret });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const response = yield* server
+      .callTool({
+        name: WebStackTool.WEB_READ_MCP_TOOL_NAME,
+        arguments: { url: `https://example.test/${secret}` },
+      })
+      .pipe(
+        Effect.provideService(
+          McpInvocationContext.McpInvocationContext,
+          invocation(["web-search"]),
+        ),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(response.structuredContent).toEqual({
+      error: {
+        _tag: "WebStackMcpResearchError",
+        operation: "read",
+        reason: "process-exit",
+      },
+    });
+    expect(response.content).toEqual([{ type: "text", text: "Web research failed." }]);
+    expect(JSON.stringify(response)).not.toContain(secret);
+  }).pipe(
+    Effect.provide(
+      makeTestLayer({ search: () => Effect.succeed({ results: [] }) }, undefined, {
+        read: () => Effect.fail(error),
+        deepResearch: () => Effect.fail(error),
+      }),
+    ),
+  );
+});

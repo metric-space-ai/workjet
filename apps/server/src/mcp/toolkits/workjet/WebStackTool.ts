@@ -1,4 +1,8 @@
-import { builtInCapabilityManifests } from "@metric-space-ai/workjet-capabilities";
+import {
+  builtInCapabilityManifests,
+  WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+  WEB_READ_INPUT_SCHEMA,
+} from "@metric-space-ai/workjet-capabilities";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -9,9 +13,12 @@ import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as WebStackBrowser from "./WebStackBrowser.ts";
+import * as WebStackResearch from "./WebStackResearch.ts";
 import * as WebStackSearch from "./WebStackSearch.ts";
 
 export const WEB_SEARCH_MCP_TOOL_NAME = "web_search";
+export const WEB_READ_MCP_TOOL_NAME = "web_read";
+export const WEB_DEEP_RESEARCH_MCP_TOOL_NAME = "web_deep_research";
 export const WEB_BROWSER_PREPARE_MCP_TOOL_NAME = "web_browser_prepare";
 export const WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME = "web_browser_automate";
 
@@ -72,6 +79,20 @@ const webSearchAnnotations = annotations({
   idempotent: true,
   capabilityId: "web-search",
 });
+const webReadAnnotations = annotations({
+  title: "Read Web Page",
+  readonly: true,
+  destructive: false,
+  idempotent: true,
+  capabilityId: "web-search",
+});
+const webDeepResearchAnnotations = annotations({
+  title: "Deep Web Research",
+  readonly: true,
+  destructive: false,
+  idempotent: false,
+  capabilityId: "web-search",
+});
 const webBrowserPrepareAnnotations = annotations({
   title: "Prepare Web Browser",
   readonly: false,
@@ -91,6 +112,20 @@ export const WebSearchMcpTool = {
   name: WEB_SEARCH_MCP_TOOL_NAME,
   description: webSearchManifest.metadata.description,
   annotations: webSearchAnnotations,
+} as const;
+
+export const WebReadMcpTool = {
+  name: WEB_READ_MCP_TOOL_NAME,
+  description:
+    "Reads one public web page through bounded evidence gates and returns normalized page evidence without local artifacts or raw bodies.",
+  annotations: webReadAnnotations,
+} as const;
+
+export const WebDeepResearchMcpTool = {
+  name: WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+  description:
+    "Performs bounded multi-source web research and returns verified source summaries, coverage, call counts, and a report scaffold.",
+  annotations: webDeepResearchAnnotations,
 } as const;
 
 export const WebBrowserPrepareMcpTool = {
@@ -141,6 +176,22 @@ const safeSearchFailureResult = (
     content: [{ type: "text", text: "Web Search failed." }],
   });
 
+const safeResearchFailureResult = (
+  operation: "read" | "deep-research",
+  reason: WebStackResearch.WebStackResearchFailureReason | "capability-not-granted",
+): McpSchema.CallToolResult =>
+  new McpSchema.CallToolResult({
+    isError: true,
+    structuredContent: {
+      error: {
+        _tag: "WebStackMcpResearchError",
+        operation,
+        reason,
+      },
+    },
+    content: [{ type: "text", text: "Web research failed." }],
+  });
+
 const safeBrowserFailureResult = (
   tool: "prepare" | "automate",
   reason: WebStackBrowser.WebStackBrowserFailureReason | "capability-not-granted",
@@ -163,6 +214,15 @@ const webSearchFailureResult = (
   Effect.logWarning("Web Search MCP call failed", { reason: error.reason }).pipe(
     Effect.as(safeSearchFailureResult(error.reason)),
   );
+
+const webResearchFailureResult = (
+  operation: "read" | "deep-research",
+  error: WebStackResearch.WebStackResearchError,
+): Effect.Effect<McpSchema.CallToolResult> =>
+  Effect.logWarning("Web research MCP call failed", {
+    operation,
+    reason: error.reason,
+  }).pipe(Effect.as(safeResearchFailureResult(operation, error.reason)));
 
 const webBrowserFailureResult = (
   tool: "prepare" | "automate",
@@ -212,6 +272,77 @@ const registerWebSearch = Effect.fn("McpHttpServer.registerWebSearch")(function*
             WorkjetMcpCapabilityUnavailableError: () =>
               Effect.succeed(safeSearchFailureResult("capability-not-granted")),
             WebStackSearchError: webSearchFailureResult,
+          }),
+        );
+      }),
+  });
+});
+
+const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(function* () {
+  const server = yield* McpServer.McpServer;
+  const research = yield* WebStackResearch.WebStackResearch;
+
+  yield* server.addTool({
+    tool: new McpSchema.Tool({
+      name: WebReadMcpTool.name,
+      description: WebReadMcpTool.description,
+      inputSchema: WEB_READ_INPUT_SCHEMA,
+      annotations: toolAnnotations(WebReadMcpTool),
+    }),
+    annotations: WebReadMcpTool.annotations,
+    handle: (payload) =>
+      Effect.withFiber((fiber) => {
+        const invocation = Context.getUnsafe(
+          fiber.context,
+          McpInvocationContext.McpInvocationContext,
+        );
+        return Effect.gen(function* () {
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-search");
+          const input = WebStackResearch.decodeWebReadInput(payload);
+          if (!input) {
+            return yield* new McpSchema.InvalidParams({ message: "Invalid Web Read input." });
+          }
+          return callResult(yield* research.read(input));
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.catchTags({
+            WorkjetMcpCapabilityUnavailableError: () =>
+              Effect.succeed(safeResearchFailureResult("read", "capability-not-granted")),
+            WebStackResearchError: (error) => webResearchFailureResult("read", error),
+          }),
+        );
+      }),
+  });
+
+  yield* server.addTool({
+    tool: new McpSchema.Tool({
+      name: WebDeepResearchMcpTool.name,
+      description: WebDeepResearchMcpTool.description,
+      inputSchema: WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+      annotations: toolAnnotations(WebDeepResearchMcpTool),
+    }),
+    annotations: WebDeepResearchMcpTool.annotations,
+    handle: (payload) =>
+      Effect.withFiber((fiber) => {
+        const invocation = Context.getUnsafe(
+          fiber.context,
+          McpInvocationContext.McpInvocationContext,
+        );
+        return Effect.gen(function* () {
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-search");
+          const input = WebStackResearch.decodeWebDeepResearchInput(payload);
+          if (!input) {
+            return yield* new McpSchema.InvalidParams({
+              message: "Invalid Web Deep Research input.",
+            });
+          }
+          return callResult(yield* research.deepResearch(input));
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.catchTags({
+            WorkjetMcpCapabilityUnavailableError: () =>
+              Effect.succeed(safeResearchFailureResult("deep-research", "capability-not-granted")),
+            WebStackResearchError: (error) => webResearchFailureResult("deep-research", error),
           }),
         );
       }),
@@ -329,5 +460,7 @@ const registerWebBrowser = Effect.fn("McpHttpServer.registerWebBrowser")(functio
 });
 
 export const WebStackToolkitRegistrationLive = Layer.effectDiscard(
-  Effect.all([registerWebSearch(), registerWebBrowser()], { concurrency: "unbounded" }),
+  Effect.all([registerWebSearch(), registerWebResearch(), registerWebBrowser()], {
+    concurrency: "unbounded",
+  }),
 );

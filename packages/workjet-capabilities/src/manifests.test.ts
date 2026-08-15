@@ -6,7 +6,11 @@ import {
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { builtInCapabilityManifests } from "./manifests.ts";
+import {
+  builtInCapabilityManifests,
+  WEB_DEEP_RESEARCH_INPUT_SCHEMA,
+  WEB_READ_INPUT_SCHEMA,
+} from "./manifests.ts";
 
 const ALL_ADAPTERS: ReadonlyArray<CapabilityAdapter> = [
   "t3-mcp",
@@ -90,6 +94,55 @@ describe("built-in capability manifests", () => {
       expect(manifest.outputSchema.additionalProperties).toBe(false);
       expect(manifest.outputSchema.required).toBeInstanceOf(Array);
     }
+  });
+
+  it("exports strict bounded read and deep research model schemas without path controls", () => {
+    expect(WEB_READ_INPUT_SCHEMA).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["url"],
+      properties: {
+        url: { type: "string", minLength: 1, maxLength: 8_000, pattern: "\\S" },
+        query: { type: "string", minLength: 1, maxLength: 4_000, pattern: "\\S" },
+        find: {
+          type: "array",
+          maxItems: 32,
+          items: { type: "string", minLength: 1, maxLength: 1_000, pattern: "\\S" },
+        },
+        country: { type: "string", enum: ["DE", "AT", "CH"] },
+      },
+    });
+    expect(WEB_DEEP_RESEARCH_INPUT_SCHEMA).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["query"],
+      properties: {
+        query: { type: "string", minLength: 1, maxLength: 4_000, pattern: "\\S" },
+        focus: { type: "string", minLength: 1, maxLength: 4_000, pattern: "\\S" },
+        depth: { type: "string", enum: ["quick", "standard", "exhaustive"] },
+        maxSources: { type: "integer", minimum: 3, maximum: 100 },
+        excludeUrls: {
+          type: "array",
+          maxItems: 100,
+          items: { type: "string", minLength: 1, maxLength: 8_000, pattern: "\\S" },
+        },
+        includePapers: { type: "boolean" },
+        includeAnnasArchive: { type: "boolean" },
+      },
+    });
+    const serialized = JSON.stringify([WEB_READ_INPUT_SCHEMA, WEB_DEEP_RESEARCH_INPUT_SCHEMA]);
+    for (const forbidden of ["workspace", "path", "config", "environment", "executable"]) {
+      expect(serialized.toLowerCase()).not.toContain(forbidden);
+    }
+  });
+
+  it("describes Web Search as one search, read, and research capability", () => {
+    const manifest = builtInCapabilityManifests.find(({ id }) => id === "web-search");
+    expect(manifest?.version).toBe("1.0.0");
+    expect(manifest?.metadata.description).toContain("reads specific pages");
+    expect(manifest?.metadata.description).toContain("deep research");
+    expect(manifest?.promptContribution?.instructions).toContain("read specific public pages");
+    expect(manifest?.promptContribution?.instructions).toContain("deep research");
   });
 
   it("defines the browser contract as a strict bounded finite action vocabulary", () => {

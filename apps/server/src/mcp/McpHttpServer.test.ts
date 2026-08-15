@@ -18,6 +18,8 @@ import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
 import {
   WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
   WEB_BROWSER_PREPARE_MCP_TOOL_NAME,
+  WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+  WEB_READ_MCP_TOOL_NAME,
   WEB_SEARCH_MCP_TOOL_NAME,
 } from "./toolkits/workjet/WebStackTool.ts";
 
@@ -304,17 +306,23 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
         expect(all).toContain(browserTool);
       }
       expect(hidden).not.toContain(GREPPY_MCP_TOOL_NAME);
-      expect(hidden).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(greppyMissingCwd).not.toContain(GREPPY_MCP_TOOL_NAME);
-      expect(greppyMissingCwd).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(greppyOnly).toContain(GREPPY_MCP_TOOL_NAME);
-      expect(greppyOnly).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(webSearchOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
-      expect(webSearchOnly).toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(browserOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
-      expect(browserOnly).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(all).toContain(GREPPY_MCP_TOOL_NAME);
-      expect(all).toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      for (const researchTool of [
+        WEB_SEARCH_MCP_TOOL_NAME,
+        WEB_READ_MCP_TOOL_NAME,
+        WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+      ]) {
+        expect(hidden).not.toContain(researchTool);
+        expect(greppyMissingCwd).not.toContain(researchTool);
+        expect(greppyOnly).not.toContain(researchTool);
+        expect(webSearchOnly).toContain(researchTool);
+        expect(browserOnly).not.toContain(researchTool);
+        expect(all).toContain(researchTool);
+      }
       expect(hidden).toContain("preview_status");
       expect(greppyOnly).toContain("preview_status");
       expect(webSearchOnly).toContain("preview_status");

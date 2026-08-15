@@ -59,6 +59,26 @@ describe("resolveThreadCapabilityContext", () => {
     );
   });
 
+  it("keeps search, direct read, and deep research under the one web-search thread grant", () => {
+    const webSearch = builtInCapabilityManifests.filter(({ id }) => id === "web-search");
+    expect(webSearch).toHaveLength(1);
+    expect(webSearch[0]?.version).toBe("1.0.0");
+    expect(webSearch[0]?.metadata.description).toContain("reads specific pages");
+    expect(webSearch[0]?.metadata.description).toContain("deep research");
+
+    const config = {
+      schemaVersion: 1,
+      role: "standard",
+      parent: null,
+      managedInstructions: "",
+      enabledCapabilityIds: ["web-search"],
+    } as WorkjetThreadConfig;
+    expect(resolveThreadCapabilityContext(config, registry)).toMatchObject({
+      mcpCapabilityIds: ["web-search"],
+      promptCapabilityIds: [],
+    });
+  });
+
   it("returns frozen copies that do not retain the config capability array", () => {
     const enabledCapabilityIds = ["greppy", "web-stack-browser"];
     const config = {

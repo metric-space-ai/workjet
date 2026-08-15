@@ -1,0 +1,6 @@
+{
+  "input": { "source_id": "google.de", "company": "Example Manufacturing AG", "country": "DE" },
+  "expected": { "firma_name": "Example Manufacturing AG", "firma_domain": "example-manufacturing.test" },
+  "search": { "provider": "google", "results": [{ "title": "Example Manufacturing AG | Industrial Systems", "url": "https://example-manufacturing.test/de/", "summary": "Example Manufacturing AG develops industrial systems." }] },
+  "read": { "ok": true, "url": "https://example-manufacturing.test/de/", "title": "Example Manufacturing AG | Industrial Systems", "page_text_excerpt": "Example Manufacturing AG develops industrial systems." }
+}

@@ -1,0 +1,25 @@
+{
+  "input": { "source_id": "rocketreach.com", "company": "Example Manufacturing AG", "country": "DE", "task_id": "fixture-rocketreach", "credential_ref": "ctox-secret://credentials/ROCKETREACH_BROWSER_LOGIN" },
+  "expected": {
+    "firma_name": "Example Manufacturing AG",
+    "person_vorname": "Ada",
+    "person_nachname": "Lovelace",
+    "person_position": "Chief Technology Officer",
+    "person_email": "ada.lovelace@example.test"
+  },
+  "browser_allowed_domains": ["rocketreach.com", "rocketreach.co"],
+  "login_url": "https://rocketreach.co/login",
+  "search": { "results": [{ "title": "Example Manufacturing AG Company Profile", "url": "https://rocketreach.co/example-manufacturing-ag-profile_bexample", "summary": "Example Manufacturing AG company directory" }] },
+  "read": { "ok": true, "url": "https://rocketreach.co/example-manufacturing-ag-profile_bexample", "title": "Example Manufacturing AG Company Profile | RocketReach", "page_text_excerpt": "Example Manufacturing AG company profile" },
+  "capture": {
+    "ok": true,
+    "source_status": "succeeded",
+    "records": [
+      { "field": "firma_name", "value": "Example Manufacturing AG", "confidence": "high", "source_url": "https://rocketreach.co/example-manufacturing-ag-profile_bexample" },
+      { "field": "person_vorname", "value": "Ada", "confidence": "high", "source_url": "https://rocketreach.co/ada-lovelace-email_example" },
+      { "field": "person_nachname", "value": "Lovelace", "confidence": "high", "source_url": "https://rocketreach.co/ada-lovelace-email_example" },
+      { "field": "person_position", "value": "Chief Technology Officer", "confidence": "high", "source_url": "https://rocketreach.co/ada-lovelace-email_example" },
+      { "field": "person_email", "value": "ada.lovelace@example.test", "confidence": "high", "source_url": "https://rocketreach.co/ada-lovelace-email_example" }
+    ]
+  }
+}

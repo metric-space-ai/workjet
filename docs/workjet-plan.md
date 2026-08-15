@@ -231,12 +231,13 @@ Tasks:
 - [x] Freeze and record the accepted CLIProxyAPI upstream pin, CTOX source
       commit, subtree object, upstream MIT license, and accepted receipt digest
       in `docs/workjet-source-provenance.md`.
-- [ ] Import the portable crate with file history where practical.
+- [x] Import the portable crate with file history where practical.
   - [x] Prepare and tree-verify local branch
         `codex/import-provider-gateway` with the two reachable component
         commits.
-  - [ ] Merge the prepared history under `native/provider-gateway/`.
-- [ ] Place the canonical crate under `native/provider-gateway/`.
+  - [x] Merge the prepared history under `native/provider-gateway/` without
+        changing its verified source tree.
+- [x] Place the canonical crate under `native/provider-gateway/`.
 - [ ] Rename the public package/binary from CTOX-specific names to Workjet
       provider-gateway names while retaining compatibility aliases for migration.
 - [ ] Preserve origin and per-file license headers.
@@ -280,10 +281,11 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Record the source commit and subtree object in
         `docs/workjet-source-provenance.md`.
   - [ ] Capture a fresh green Web Stack gate at the frozen source before import.
-- [ ] Move the crate to `native/web-stack/` with source history where practical.
+- [x] Move the crate to `native/web-stack/` with source history where practical.
   - [x] Prepare and tree-verify local branch `codex/import-web-stack` with 130
         reachable component commits.
-  - [ ] Merge the prepared history under `native/web-stack/`.
+  - [x] Merge the prepared history under `native/web-stack/` without changing
+        its verified source tree.
 - [ ] Move or externalize the optional PDF parser dependency required by the
       `full` feature.
 - [ ] Replace direct CTOX SQLite configuration reads with a small injected

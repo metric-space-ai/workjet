@@ -14,6 +14,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
+import * as WorkerDispatch from "../workjet/WorkerDispatch.ts";
 import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
 import {
   WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
@@ -22,6 +23,7 @@ import {
   WEB_READ_MCP_TOOL_NAME,
   WEB_SEARCH_MCP_TOOL_NAME,
 } from "./toolkits/workjet/WebStackTool.ts";
+import { WORKJET_DISPATCH_WORKER_TOOL_NAME } from "./toolkits/workjet/WorkerTool.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -45,6 +47,10 @@ const client = McpSchema.McpServerClient.of({
   },
   getClient: Effect.die("unused"),
 });
+const WorkerDispatchTestLayer = Layer.succeed(
+  WorkerDispatch.WorkerDispatch,
+  WorkerDispatch.WorkerDispatch.of({ dispatch: () => Effect.die("unused") }),
+);
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
@@ -175,6 +181,27 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
           },
         ],
         [
+          "standard-role-token",
+          {
+            ...invocation,
+            workjetRole: "standard",
+          },
+        ],
+        [
+          "worker-role-token",
+          {
+            ...invocation,
+            workjetRole: "worker",
+          },
+        ],
+        [
+          "orchestrator-role-token",
+          {
+            ...invocation,
+            workjetRole: "orchestrator",
+          },
+        ],
+        [
           "greppy-missing-cwd-token",
           {
             ...invocation,
@@ -224,6 +251,7 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
         Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
         Layer.provide(GreppyRuntime.layer),
+        Layer.provide(WorkerDispatchTestLayer),
         Layer.provide(
           ServerConfig.layerTest(
             process.cwd(),
@@ -288,11 +316,19 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
       });
 
       const hidden = yield* listTools("hidden-token");
+      const standardRole = yield* listTools("standard-role-token");
+      const workerRole = yield* listTools("worker-role-token");
+      const orchestratorRole = yield* listTools("orchestrator-role-token");
       const greppyMissingCwd = yield* listTools("greppy-missing-cwd-token");
       const greppyOnly = yield* listTools("greppy-only-token");
       const webSearchOnly = yield* listTools("web-search-only-token");
       const browserOnly = yield* listTools("browser-only-token");
       const all = yield* listTools("all-token");
+
+      expect(standardRole).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+      expect(workerRole).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+      expect(hidden).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+      expect(orchestratorRole).toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
 
       for (const browserTool of [
         WEB_BROWSER_PREPARE_MCP_TOOL_NAME,

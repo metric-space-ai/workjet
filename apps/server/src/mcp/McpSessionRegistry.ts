@@ -137,6 +137,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities: new Set(["preview"]),
         activeWorkjetMcpCapabilityIds: new Set(activeWorkjetMcpCapabilityIds),
+        workjetRole: request.threadCapabilityContext.workjetRole,
         ...(cwd ? { cwd } : {}),
         issuedAt,
       };

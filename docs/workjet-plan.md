@@ -396,16 +396,19 @@ Goal: turn the stored role metadata into real local and remote orchestration.
 - [ ] Add a radio-style `Code | Orchestrator` control without replacing the
       existing provider-specific Plan/Build control.
 - [ ] Add a neighboring settings gear for Workjet configuration.
-- [ ] Compile the Workjet managed system prompt for Codex, Claude Code, Grok,
-      and other enabled drivers through their supported prompt/rules mechanism.
-- [ ] Keep user/developer instructions clearly separated from managed Workjet
+- [x] Compile deterministic Workjet role instructions through the existing
+      managed-prompt path used by Codex, Claude Code, and Grok.
+- [x] Keep user/developer instructions clearly separated from managed Workjet
       instructions.
-- [ ] Create worker threads through normal T3 commands.
+- [x] Create the first same-environment worker thread through normal T3
+      `thread.create` and `thread.turn.start` commands, exposed only through the
+      orchestrator-scoped `workjet_dispatch_worker` MCP boundary.
 - [ ] Store parent/child references and worker status as durable events.
 - [ ] Add bounded dispatch, cancellation, retry, timeout, and result-return
       semantics.
 - [ ] Treat worker completion as an event, not as a UI-only observation.
-- [ ] Support workers in the same environment first.
+- [x] Support initial fire-and-forget worker dispatch in the same environment;
+      completion, cancellation, retry, and remote coordination remain future work.
 - [ ] Add cross-environment dispatch only after a durable server-to-server
       coordinator exists; current client-only federation is insufficient.
 - [ ] Never copy the old Swift SSH/snapshot remote protocol into T3. T3 remains

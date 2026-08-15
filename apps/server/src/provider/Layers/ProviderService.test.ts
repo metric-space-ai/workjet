@@ -54,6 +54,7 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import {
@@ -102,7 +103,9 @@ function makeCapturingMcpRegistry() {
           },
         };
       }),
-    resolve: () => Effect.succeed(undefined),
+    resolve: (): Effect.Effect<McpInvocationContext.McpInvocationScope | undefined> =>
+      // @effect-diagnostics-next-line effectSucceedWithVoid:off -- the registry contract distinguishes an absent scope from Effect.void.
+      Effect.succeed(undefined),
     touch: () => Effect.void,
     revokeProviderSession: () => Effect.void,
     revokeThread: () => Effect.void,
@@ -1072,6 +1075,11 @@ routing.layer("ProviderServiceLive routing", (it) => {
               workjetConfig,
             });
             assert.equal(mcp.requests.at(-1)?.cwd, "/workspace/fresh-effective");
+            assert.equal(mcp.requests.at(-1)?.threadCapabilityContext.workjetRole, "orchestrator");
+            assert.match(
+              mcp.requests.at(-1)?.threadCapabilityContext.compiledManagedPrompt ?? "",
+              /## Workjet Role: Orchestrator/,
+            );
             assert.equal(
               McpProviderSession.readMcpProviderSession(resumedThread)?.cwd,
               "/workspace/fresh-effective",

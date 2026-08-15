@@ -28,6 +28,7 @@ import * as WebStackBrowser from "./toolkits/workjet/WebStackBrowser.ts";
 import * as WebStackResearch from "./toolkits/workjet/WebStackResearch.ts";
 import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
 import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
+import { WorkerToolkitRegistrationLive } from "./toolkits/workjet/WorkerTool.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -223,6 +224,7 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
 );
 
 const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
+  WorkerToolkitRegistrationLive,
   WorkjetToolkitRegistrationLive.pipe(Layer.provide(GreppySearch.layer)),
   WebStackToolkitRegistrationLive.pipe(
     Layer.provideMerge(WebStackSearch.layer),

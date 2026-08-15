@@ -19,6 +19,7 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
   getDescriptor: Effect.die("unused"),
 });
 const emptyThreadCapabilityContext = {
+  workjetRole: "standard",
   mcpCapabilityIds: [],
   promptCapabilityIds: [],
   compiledManagedPrompt: "",
@@ -75,6 +76,7 @@ it.effect(
         threadId: ThreadId.make("thread-workjet"),
         providerInstanceId: ProviderInstanceId.make("codex"),
         threadCapabilityContext: {
+          workjetRole: "orchestrator",
           mcpCapabilityIds,
           promptCapabilityIds: ["greppy"],
           compiledManagedPrompt,
@@ -87,10 +89,13 @@ it.effect(
       expect(Object.isFrozen(issued.config.activeWorkjetMcpCapabilityIds)).toBe(true);
       expect(issued.config.endpoint).not.toContain(compiledManagedPrompt);
       expect(issued.config.authorizationHeader).not.toContain(compiledManagedPrompt);
+      expect(issued.config.endpoint).not.toContain("orchestrator");
+      expect(issued.config.authorizationHeader).not.toContain("orchestrator");
 
       const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
       const resolved = yield* registry.resolve(token);
       expect(resolved?.capabilities.has("preview")).toBe(true);
+      expect(resolved?.workjetRole).toBe("orchestrator");
       expect(resolved?.activeWorkjetMcpCapabilityIds).toEqual(new Set(["web-search", "greppy"]));
       expect(resolved?.capabilities.has("web-search" as never)).toBe(false);
       expect(resolved && "compiledManagedPrompt" in resolved).toBe(false);
@@ -182,6 +187,7 @@ it.effect("carries only an explicitly supplied provider-session cwd into the bea
       threadId: ThreadId.make("thread-cwd"),
       providerInstanceId: ProviderInstanceId.make("codex"),
       threadCapabilityContext: {
+        workjetRole: "orchestrator",
         mcpCapabilityIds: ["greppy"],
         promptCapabilityIds: ["greppy"],
         compiledManagedPrompt: "",
@@ -198,6 +204,7 @@ it.effect("carries only an explicitly supplied provider-session cwd into the bea
       threadId: ThreadId.make("thread-no-cwd"),
       providerInstanceId: ProviderInstanceId.make("codex"),
       threadCapabilityContext: {
+        workjetRole: "orchestrator",
         mcpCapabilityIds: ["greppy"],
         promptCapabilityIds: ["greppy"],
         compiledManagedPrompt: "",

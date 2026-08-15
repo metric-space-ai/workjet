@@ -21,6 +21,7 @@ describe("capability prompt compiler", () => {
 
     expect(
       compileCapabilityPrompt({
+        role: "standard",
         managedInstructions: "  Follow the managed policy.  ",
         manifests,
       }),
@@ -39,7 +40,11 @@ describe("capability prompt compiler", () => {
       withPrompt(builtInCapabilityManifests[0]!, "Second contribution."),
       withPrompt(builtInCapabilityManifests[2]!, "Browser contribution."),
     ];
-    const prompt = compileCapabilityPrompt({ managedInstructions: "", manifests });
+    const prompt = compileCapabilityPrompt({
+      role: "standard",
+      managedInstructions: "",
+      manifests,
+    });
 
     expect(prompt).toContain("First contribution.");
     expect(prompt).not.toContain("Second contribution.");
@@ -49,6 +54,7 @@ describe("capability prompt compiler", () => {
   it("returns empty output for blank instructions and no contributions", () => {
     expect(
       compileCapabilityPrompt({
+        role: "standard",
         managedInstructions: " \n\t ",
         manifests: [
           withPrompt(builtInCapabilityManifests[0]!, null),
@@ -73,6 +79,7 @@ describe("capability prompt compiler", () => {
       supportedAdapters: ["ctox-business-command"],
     };
     const prompt = compileCapabilityPrompt({
+      role: "standard",
       managedInstructions: "Managed text.",
       manifests: [sentinelManifest],
     });
@@ -88,11 +95,53 @@ describe("capability prompt compiler", () => {
     expect(prompt).not.toContain("ctox-business-command");
   });
 
+  it("keeps a plain standard role byte-for-byte empty", () => {
+    expect(
+      compileCapabilityPrompt({ role: "standard", managedInstructions: "", manifests: [] }),
+    ).toBe("");
+  });
+
+  it("compiles deterministic orchestrator and worker role boundaries", () => {
+    expect(
+      compileCapabilityPrompt({ role: "orchestrator", managedInstructions: "", manifests: [] }),
+    ).toBe(
+      [
+        "## Workjet Role: Orchestrator",
+        "",
+        "You are a Workjet orchestrator. Workers are ordinary T3 threads in the same server environment. Use `workjet_dispatch_worker` as the dispatch boundary. Delegate bounded tasks and use the returned worker thread ID to track the dispatched work.",
+      ].join("\n"),
+    );
+    expect(
+      compileCapabilityPrompt({ role: "worker", managedInstructions: "", manifests: [] }),
+    ).toBe(
+      [
+        "## Workjet Role: Worker",
+        "",
+        "You are a Workjet worker child thread. Complete the assigned task in this thread and report the result here. Do not dispatch more workers.",
+      ].join("\n"),
+    );
+  });
+
+  it("keeps role, managed instructions, and capability contributions in stable order", () => {
+    const prompt = compileCapabilityPrompt({
+      role: "orchestrator",
+      managedInstructions: "Managed text.",
+      manifests: [withPrompt(builtInCapabilityManifests[0]!, "Capability text.")],
+    });
+
+    expect(prompt.indexOf("## Workjet Role: Orchestrator")).toBeLessThan(
+      prompt.indexOf("## Managed Instructions"),
+    );
+    expect(prompt.indexOf("## Managed Instructions")).toBeLessThan(
+      prompt.indexOf("## Capability: greppy@1.0.0"),
+    );
+  });
+
   it("does not mutate the supplied manifest collection", () => {
     const manifests = [builtInCapabilityManifests[2]!, builtInCapabilityManifests[0]!];
     const original = [...manifests];
 
-    compileCapabilityPrompt({ managedInstructions: "Managed", manifests });
+    compileCapabilityPrompt({ role: "standard", managedInstructions: "Managed", manifests });
 
     expect(manifests).toEqual(original);
   });

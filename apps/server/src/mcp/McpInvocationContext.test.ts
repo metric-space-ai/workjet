@@ -67,6 +67,37 @@ it.effect("keeps Workjet grants independent from tool-specific cwd requirements"
   });
 });
 
+it.effect("requires the exact orchestrator role for worker dispatch", () =>
+  Effect.gen(function* () {
+    const base: McpInvocationContext.McpInvocationScope = {
+      environmentId: EnvironmentId.make("environment-1"),
+      threadId: ThreadId.make("thread-1"),
+      providerSessionId: "provider-session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview"]),
+      issuedAt: 1,
+    };
+
+    for (const workjetRole of ["standard", "worker", undefined] as const) {
+      const invocation = { ...base, ...(workjetRole ? { workjetRole } : {}) };
+      expect(McpInvocationContext.isWorkjetOrchestrator(invocation)).toBe(false);
+      const error = yield* McpInvocationContext.requireWorkjetOrchestrator().pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.flip,
+      );
+      expect(error).toBeInstanceOf(McpInvocationContext.WorkjetOrchestratorUnavailableError);
+    }
+
+    const orchestrator = { ...base, workjetRole: "orchestrator" as const };
+    expect(McpInvocationContext.isWorkjetOrchestrator(orchestrator)).toBe(true);
+    expect(
+      yield* McpInvocationContext.requireWorkjetOrchestrator().pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, orchestrator),
+      ),
+    ).toBe(orchestrator);
+  }),
+);
+
 it.effect("denies an ungranted Workjet MCP capability without consulting cwd", () => {
   const invocation: McpInvocationContext.McpInvocationScope = {
     environmentId: EnvironmentId.make("environment-1"),

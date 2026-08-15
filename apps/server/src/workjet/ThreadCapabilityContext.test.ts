@@ -25,6 +25,7 @@ const registry = createCapabilityRegistry([
 describe("resolveThreadCapabilityContext", () => {
   it("resolves the default config to empty T3 capability context", () => {
     expect(resolveThreadCapabilityContext(DEFAULT_WORKJET_THREAD_CONFIG)).toEqual({
+      workjetRole: "standard",
       mcpCapabilityIds: [],
       promptCapabilityIds: [],
       compiledManagedPrompt: "",
@@ -48,6 +49,7 @@ describe("resolveThreadCapabilityContext", () => {
 
     const context = resolveThreadCapabilityContext(config, registry);
 
+    expect(context.workjetRole).toBe("standard");
     expect(context.mcpCapabilityIds).toEqual(["web-search", "web-stack-browser"]);
     expect(context.promptCapabilityIds).toEqual(["greppy", "web-stack-browser"]);
     expect(context.compiledManagedPrompt).toBe(
@@ -77,6 +79,32 @@ describe("resolveThreadCapabilityContext", () => {
       mcpCapabilityIds: ["web-search"],
       promptCapabilityIds: [],
     });
+  });
+
+  it("projects orchestrator and worker roles into the managed prompt", () => {
+    const orchestrator = resolveThreadCapabilityContext({
+      schemaVersion: 1,
+      role: "orchestrator",
+      parent: null,
+      managedInstructions: "Coordinate carefully.",
+      enabledCapabilityIds: [],
+    });
+    expect(orchestrator.workjetRole).toBe("orchestrator");
+    expect(orchestrator.compiledManagedPrompt).toContain("## Workjet Role: Orchestrator");
+    expect(orchestrator.compiledManagedPrompt).toContain("## Managed Instructions");
+
+    const worker = resolveThreadCapabilityContext({
+      schemaVersion: 1,
+      role: "worker",
+      parent: {
+        environmentId: "environment-1" as never,
+        threadId: "thread-parent" as never,
+      },
+      managedInstructions: "",
+      enabledCapabilityIds: [],
+    });
+    expect(worker.workjetRole).toBe("worker");
+    expect(worker.compiledManagedPrompt).toContain("Do not dispatch more workers");
   });
 
   it("returns frozen copies that do not retain the config capability array", () => {

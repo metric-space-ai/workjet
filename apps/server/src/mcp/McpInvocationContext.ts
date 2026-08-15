@@ -4,6 +4,7 @@ import {
   type ProviderInstanceId,
   type ThreadId,
   WorkjetCapabilityId,
+  type WorkjetThreadRole,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,6 +19,7 @@ export interface McpInvocationScope {
   readonly providerInstanceId: ProviderInstanceId;
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly activeWorkjetMcpCapabilityIds?: ReadonlySet<WorkjetCapabilityId>;
+  readonly workjetRole?: WorkjetThreadRole;
   readonly cwd?: string;
   readonly issuedAt: number;
 }
@@ -30,6 +32,15 @@ export class WorkjetMcpCapabilityUnavailableError extends Schema.TaggedErrorClas
 ) {
   override get message(): string {
     return `MCP credential does not grant the ${this.capabilityId} capability.`;
+  }
+}
+
+export class WorkjetOrchestratorUnavailableError extends Schema.TaggedErrorClass<WorkjetOrchestratorUnavailableError>()(
+  "WorkjetOrchestratorUnavailableError",
+  {},
+) {
+  override get message(): string {
+    return "This MCP credential is not authorized to dispatch Workjet workers.";
   }
 }
 
@@ -82,6 +93,17 @@ export const requireActiveWorkjetMcpCapability = Effect.fn("mcp.requireActiveWor
     return invocation;
   },
 );
+
+export const isWorkjetOrchestrator = (invocation: McpInvocationScope): boolean =>
+  invocation.workjetRole === "orchestrator";
+
+export const requireWorkjetOrchestrator = Effect.fn("mcp.requireWorkjetOrchestrator")(function* () {
+  const invocation = yield* McpInvocationContext;
+  if (!isWorkjetOrchestrator(invocation)) {
+    return yield* new WorkjetOrchestratorUnavailableError();
+  }
+  return invocation;
+});
 
 export const requireMcpSessionCwd = Effect.fn("mcp.requireSessionCwd")(function* () {
   const invocation = yield* McpInvocationContext;

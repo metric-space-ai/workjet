@@ -46,6 +46,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
+import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -455,7 +456,10 @@ export const makeRoutesLayer = Layer.mergeAll(
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),
-  McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  McpHttpServer.layer.pipe(
+    Layer.provide(McpSessionRegistry.layer),
+    Layer.provide(WorkerDispatch.layer),
+  ),
 ).pipe(
   // WebSocket management and MCP search resolve this one server-lifetime
   // runtime, preserving one shared store and one set of single-flight maps.

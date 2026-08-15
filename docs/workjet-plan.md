@@ -216,11 +216,11 @@ both modes.
 - [ ] `web-search`: shared Web Stack search/read surface; the T3 adapter is
       complete and CTOX parity remains open.
   - [x] Ship the first Workjet/T3 search surface through the existing
-        per-session MCP server; commit `33a05b537` passes 19 focused TypeScript
+        per-session MCP server; commit `20287044b` passes 19 focused TypeScript
         tests, the server typecheck, strict Rust Clippy, 450 Rust tests with 23
         ignored, four native boundary tests, and all 43 Web Stack fixture tests.
   - [x] Add the remaining bounded read and deep-research T3 surfaces. Commits
-        `4f7eddd53` and `3ec3b8aab` add exact native surface probes, strict
+        `2ff4a6e39` and `ae9030701` add exact native surface probes, strict
         request decoding, canonical recursively closed output schemas,
         schema-driven response projection, capability-gated MCP registration,
         finite timeouts, and server-owned state. Independent gates pass with 57
@@ -231,21 +231,21 @@ both modes.
         gate.
   - [x] Centralize all five Web Stack tool names, grants, descriptions,
         annotations, and recursively closed input/output schemas in one
-        machine-readable contract. Commit `2779a1b50` adds deterministic
+        machine-readable contract. Commit `52f9fe82b` adds deterministic
         TypeScript generation and passes the byte-drift gate plus 33 focused
         manifest/registration tests; no host keeps a hand-maintained schema
         copy.
   - [x] Promote the finite decoder, browser action AST/compiler, execution,
         strict response projection, stable redacted errors, and host-controlled
         response budget into the product-neutral Rust library. Commit
-        `2ad459fa8` reduces the Workjet binary to a thin context/config transport
+        `c9fddb723` reduces the Workjet binary to a thin context/config transport
         and independently passes strict Clippy, 461 Rust tests with 23 ignored,
         and all 43 Node fixture tests.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.
   - [x] Ship the Workjet/T3 structured prepare and automation surface through
-        the existing per-session MCP server. Commits `b81a8ee2a` and
-        `c429829b2` pass 39 focused TypeScript tests, both package typechecks,
+        the existing per-session MCP server. Commits `a4d294f3f` and
+        `f9b972167` pass 39 focused TypeScript tests, both package typechecks,
         strict Rust Clippy, 450 Rust tests with 23 ignored, seven native
         boundary tests, and all 43 Web Stack fixture tests. Real installed-
         browser E2E and CTOX adapter parity remain open.
@@ -287,8 +287,10 @@ Tasks:
       and porting ledger.
 - [x] Remove the imported built-in Antigravity OAuth client credentials from
       the current portable source and require one typed, zeroizing,
-      host-injected credential object for login and refresh. The older imported
-      credential-bearing Git blobs remain a separate publication-history gate.
+      host-injected credential object for login and refresh.
+  - [x] Rewrite every owned, unpublished import/product ref before the first
+        push so the two former literals are absent from all reachable blobs and
+        commit messages; a 65,388-object exact-literal scan is clean.
 - [ ] Add a Workjet/T3 host adapter using Workjet's secret storage and lifecycle.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
@@ -347,23 +349,24 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Normalize the PDF parser strict all-target Clippy baseline so both the
         no-default and all-feature modes are green; algorithm parity and tests
         remain unchanged, with no PDF visual or extraction E2E coverage claim.
-  - [ ] Before public history, perform and independently verify the one-time Git
-        history purge of the former imported PDF fixture corpus. The synthetic
-        current tree and Cargo package exclusion do not close this publication
-        gate.
+  - [x] Before public history, perform and independently verify the one-time Git
+        history purge of the former imported PDF fixture corpus. No root-level
+        legacy fixture object remains reachable; exactly one native-path commit
+        restores the byte-identical synthetic tree.
 - [x] Replace every current `native/web-stack/fixtures/sources/**` website/API
       snapshot with a minimal original synthetic Workjet fixture; parser tests
       now assert exact fictional records, reserved-domain contacts, metadata,
       optional branches, deduplication, and source-specific links.
-  - [ ] Before public history, perform and independently verify the one-time Git
-        history purge of the former imported snapshots. The current synthetic
-        tree and Cargo package exclusion do not close this publication gate.
+  - [x] Before public history, perform and independently verify the one-time Git
+        history purge of the former imported snapshots. No root-level legacy
+        fixture object remains reachable; exactly one native-path commit restores
+        the byte-identical synthetic tree.
 - [x] Normalize the imported Web Stack's Rust 1.97 all-target Clippy baseline;
-      commit `97c28f66f` resolves all 64 pre-existing mechanical findings with
+      commit `90dac51de` resolves all 64 pre-existing mechanical findings with
       only narrow, locally justified compatibility exceptions. Strict
       all-target Clippy and the 444-Rust/43-Node full-feature gate pass.
 - [x] Replace direct CTOX SQLite configuration reads with the call-scoped,
-      object-safe `RuntimeConfigStore` boundary. Commit `20df6800b` keeps SQL
+      object-safe `RuntimeConfigStore` boundary. Commit `f0cf09ed8` keeps SQL
       knowledge inside the CTOX adapter and adds product-neutral context entry
       points without process-global or thread-local configuration.
 - [x] Supply the SQL-free immutable `WorkjetRuntimeConfigStore` and the
@@ -371,12 +374,12 @@ CTOX and the T3 harness adapter consume the same tagged package.
       concurrent-isolation tests pass with the 450-Rust/43-Node full gate.
   - [x] Bind the CTOX compatibility adapter to the one authoritative CTOX
         runtime-config store at `runtime/ctox-runtime.sqlite3`. Commit
-        `ef91a2b6e` proves that a conflicting value in the consolidated
+        `8472d6847` proves that a conflicting value in the consolidated
         `runtime/ctox.sqlite3` core database is ignored and introduces no
         fallback, copying, synchronization, or second configuration authority.
 - [x] Keep compatibility names for CTOX tool calls during migration while
-      introducing product-neutral manifest IDs. Commits `2779a1b50` and
-      `2ad459fa8` add the canonical five-tool contract and shared host API
+      introducing product-neutral manifest IDs. Commits `52f9fe82b` and
+      `c9fddb723` add the canonical five-tool contract and shared host API
       without removing legacy crate exports or CTOX CLI command names.
 - [ ] Preserve SSRF protection, redirect validation, size limits, untrusted
       content fencing, cache bounds, evidence receipts, and legal/ToS controls.

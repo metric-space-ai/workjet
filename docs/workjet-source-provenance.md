@@ -1,6 +1,6 @@
 # Workjet source provenance inventory
 
-Status date: 2026-08-15
+Status date: 2026-08-16
 
 This inventory freezes the source identities and license boundaries used to
 prepare Workjet imports. It is not an assertion that every frozen source has
@@ -21,14 +21,14 @@ under ignored `.deps/` or external build storage.
 
 ## Frozen source identities
 
-| Component                | Canonical source                                                                                                         | Frozen revision                                                                                                                                                                       | Source state at inventory                                                                                                                                                                        | License boundary                                                                                                                                                                                                                                                                                                                                                             | Planned Workjet treatment                                                                                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workjet / T3 Code        | `git@github.com:pingdotgg/t3code.git` via Workjet remote `upstream`                                                      | commit `6ae44b418a24dc021cf042cbb1e60ebeb47e160f`; tree `7a67bc947abca4ef3af6becd996fb4b29c036489`                                                                                    | Workjet merge-base equals this commit. Workjet changes form the downstream patch stack.                                                                                                          | MIT; retain the T3 Tools notice in `LICENSE` (SHA-256 `935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43`).                                                                                                                                                                                                                                                   | Keep T3-derived files MIT and upstream-compatible where practical.                                                                                                                                                                      |
-| CTOX Business OS Desktop | `/Users/michaelwelsch/Documents/ctox/src/apps/business-os-desktop`                                                       | CTOX commit `34fc7cc0978b6a1774342cb5468e90a6a0304564`; subtree `e2bf769fe90d116f131dbcf81e76151346e7c283`                                                                            | Selected subtree is clean. The wider CTOX checkout is dirty and must not be used as an implicit source snapshot. Package version `0.3.52`.                                                       | No component license field or file exists. First-party files currently inherit CTOX's AGPL policy. Only Metric Space AI-owned or controlled files may receive `MIT OR AGPL-3.0-only`.                                                                                                                                                                                        | Port the desktop connection/session behavior into Workjet; keep Business OS source and release artifacts in CTOX. Review every copied file before adding dual SPDX.                                                                     |
-| CLIProxyAPI Rust port    | `/Users/michaelwelsch/Documents/ctox/src/core/execution/cliproxyapi`                                                     | CTOX commit `cf92182afed8f31844cbb234657e992fd769cfdc`; subtree `9c0164ce5ffb6e799f9057700cb06bd56ecbc014`                                                                            | Selected subtree is clean. Crate `ctox-cliproxyapi` version `0.1.0`.                                                                                                                             | Mixed provenance: upstream CLIProxyAPI is MIT; CTOX-authored port changes currently declare AGPL and may be offered as `MIT OR AGPL-3.0-only` where ownership permits. Preserve `LICENSE.upstream` (SHA-256 `87d0eee372775bafa8bf3f3d56dcbc0d9c7e0e06b9904f076d0b0ed70d288773`).                                                                                             | Import history, preserve upstream MIT notices, separate portable gateway code from CTOX product adapters, then publish a pinned package consumed by both products.                                                                      |
-| CTOX Web Stack           | `/Users/michaelwelsch/Documents/ctox/src/tools/web-stack`                                                                | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`; subtree `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84`                                                                            | Selected subtree is clean. Crate `ctox-web-stack` version `0.1.0`.                                                                                                                               | Aggregate source expression `MIT AND ISC AND (MIT OR AGPL-3.0-only)`. CloakBrowser- and puppeteer-extra-derived assets remain MIT; google-search-derived portions remain ISC; only Metric Space AI-owned material receives the owner choice. Patchright `1.55.0` remains a separately installed Apache-2.0 runtime dependency. | Preserve immutable pins and file-family maps in `native/web-stack/UPSTREAM.md`; exclude unresolved `fixtures/sources/**` history from Cargo packaging and block public Git history until source-specific rights or synthetic replacement. |
-| CTOX PDF parser          | `/Users/michaelwelsch/Documents/ctox/src/tools/pdf-parse`; algorithm source `https://github.com/run-llama/liteparse.git` | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`, subtree `34e648d4027df575cc0bf60221f36341e1856968`; LiteParse tag `v1.4.5`, commit `67726fc153393439f43d70268ba67d08bf49ed87` | Selected CTOX subtree is clean. Crate `ctox-pdf-parse` version `0.1.0`; its Rust algorithm transposition is pinned to LiteParse v1.4.5 because v1.4.6 changed `bboxToLine` gap/overlap behavior. | Aggregate software expression `Apache-2.0 AND (MIT OR AGPL-3.0-only)`: LiteParse-derived material remains Apache-2.0, while Metric Space AI-owned additions use the authorized choice. Apache text SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`. The current `tests/fixtures/**` tree is original synthetic Workjet data and remains excluded from Cargo packaging; prior imported fixture blobs remain a publication-history gate. | Preserve the six reachable component commits under `native/pdf-parse/`, retain the immutable LiteParse port map in `UPSTREAM.md`, keep the synthetic evaluator contracts distinct from PDF extraction/rendering E2E, and purge the former fixture blobs before public history. |
-| Greppy                   | `git@github.com:metric-space-ai/greppy.git`                                                                              | commit `de078b47d1df5df7c086e4591162517328f979ec`; source archive SHA-256 `20e54f1339f1ec138665e0bc0371d4557a96ce166ce4620ecc3f0ad4266f01cf`                                          | Source commit is pinned by Workjet. The local checkout contains an unrelated untracked `greppy` symlink and is therefore not a clean release input. Workspace version `0.3.1`.                   | Apache-2.0; retain `LICENSE` (SHA-256 `887fda41b617fdddcfeca9a77214b6ee7e20b5fc0194a7c69d33d0e63d7ca02b`) plus `THIRD_PARTY.md` and model/kernel terms.                                                                                                                                                                                                                      | Continue using the pinned external binary/source build and one server-owned store; do not vendor a second per-thread or per-harness copy.                                                                                               |
+| Component                | Canonical source                                                                                                         | Frozen revision                                                                                                                                                                       | Source state at inventory                                                                                                                                                                        | License boundary                                                                                                                                                                                                                                                                                                                                                                                  | Planned Workjet treatment                                                                                                                                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workjet / T3 Code        | `git@github.com:pingdotgg/t3code.git` via Workjet remote `upstream`                                                      | commit `6ae44b418a24dc021cf042cbb1e60ebeb47e160f`; tree `7a67bc947abca4ef3af6becd996fb4b29c036489`                                                                                    | Workjet merge-base equals this commit. Workjet changes form the downstream patch stack.                                                                                                          | MIT; retain the T3 Tools notice in `LICENSE` (SHA-256 `935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43`).                                                                                                                                                                                                                                                                        | Keep T3-derived files MIT and upstream-compatible where practical.                                                                                                                                                                                                                   |
+| CTOX Business OS Desktop | `/Users/michaelwelsch/Documents/ctox/src/apps/business-os-desktop`                                                       | CTOX commit `34fc7cc0978b6a1774342cb5468e90a6a0304564`; subtree `e2bf769fe90d116f131dbcf81e76151346e7c283`                                                                            | Selected subtree is clean. The wider CTOX checkout is dirty and must not be used as an implicit source snapshot. Package version `0.3.52`.                                                       | No component license field or file exists. First-party files currently inherit CTOX's AGPL policy. Only Metric Space AI-owned or controlled files may receive `MIT OR AGPL-3.0-only`.                                                                                                                                                                                                             | Port the desktop connection/session behavior into Workjet; keep Business OS source and release artifacts in CTOX. Review every copied file before adding dual SPDX.                                                                                                                  |
+| CLIProxyAPI Rust port    | `/Users/michaelwelsch/Documents/ctox/src/core/execution/cliproxyapi`                                                     | CTOX commit `cf92182afed8f31844cbb234657e992fd769cfdc`; subtree `9c0164ce5ffb6e799f9057700cb06bd56ecbc014`                                                                            | Selected subtree is clean. Crate `ctox-cliproxyapi` version `0.1.0`.                                                                                                                             | Mixed provenance: upstream CLIProxyAPI is MIT; CTOX-authored port changes currently declare AGPL and may be offered as `MIT OR AGPL-3.0-only` where ownership permits. Preserve `LICENSE.upstream` (SHA-256 `87d0eee372775bafa8bf3f3d56dcbc0d9c7e0e06b9904f076d0b0ed70d288773`).                                                                                                                  | Import history, preserve upstream MIT notices, separate portable gateway code from CTOX product adapters, then publish a pinned package consumed by both products.                                                                                                                   |
+| CTOX Web Stack           | `/Users/michaelwelsch/Documents/ctox/src/tools/web-stack`                                                                | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`; subtree `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84`                                                                            | Selected subtree is clean. Crate `ctox-web-stack` version `0.1.0`.                                                                                                                               | Aggregate source expression `MIT AND ISC AND (MIT OR AGPL-3.0-only)`. CloakBrowser- and puppeteer-extra-derived assets remain MIT; google-search-derived portions remain ISC; only Metric Space AI-owned material receives the owner choice. Patchright `1.55.0` remains a separately installed Apache-2.0 runtime dependency.                                                                    | Preserve immutable pins and file-family maps in `native/web-stack/UPSTREAM.md`; keep synthetic fixtures out of Cargo packages. The former response snapshots were removed from every owned publication ref before the first push.                                                    |
+| CTOX PDF parser          | `/Users/michaelwelsch/Documents/ctox/src/tools/pdf-parse`; algorithm source `https://github.com/run-llama/liteparse.git` | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`, subtree `34e648d4027df575cc0bf60221f36341e1856968`; LiteParse tag `v1.4.5`, commit `67726fc153393439f43d70268ba67d08bf49ed87` | Selected CTOX subtree is clean. Crate `ctox-pdf-parse` version `0.1.0`; its Rust algorithm transposition is pinned to LiteParse v1.4.5 because v1.4.6 changed `bboxToLine` gap/overlap behavior. | Aggregate software expression `Apache-2.0 AND (MIT OR AGPL-3.0-only)`: LiteParse-derived material remains Apache-2.0, while Metric Space AI-owned additions use the authorized choice. Apache text SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`. The current `tests/fixtures/**` tree is original synthetic Workjet data and remains excluded from Cargo packaging. | Preserve the verified algorithm history and immutable LiteParse port map in `UPSTREAM.md`; keep the synthetic evaluator contracts distinct from PDF extraction/rendering E2E. The former imported fixture corpus was removed from every owned publication ref before the first push. |
+| Greppy                   | `git@github.com:metric-space-ai/greppy.git`                                                                              | commit `de078b47d1df5df7c086e4591162517328f979ec`; source archive SHA-256 `20e54f1339f1ec138665e0bc0371d4557a96ce166ce4620ecc3f0ad4266f01cf`                                          | Source commit is pinned by Workjet. The local checkout contains an unrelated untracked `greppy` symlink and is therefore not a clean release input. Workspace version `0.3.1`.                   | Apache-2.0; retain `LICENSE` (SHA-256 `887fda41b617fdddcfeca9a77214b6ee7e20b5fc0194a7c69d33d0e63d7ca02b`) plus `THIRD_PARTY.md` and model/kernel terms.                                                                                                                                                                                                                                           | Continue using the pinned external binary/source build and one server-owned store; do not vendor a second per-thread or per-harness copy.                                                                                                                                            |
 
 The parent CTOX repository was at commit
 `6eae0cb92b56a99bb4f6e009ee47bb9e20e93ad7` during this inventory. Its root
@@ -40,39 +40,43 @@ ISC license for the frozen subtrees.
 
 ## History-preserving imports
 
-The following local Workjet branches contain only the selected component at
-their repository root. They were produced with `git subtree split` from the
-exact frozen CTOX commit and an annotated commit-message prefix. Each branch was
-merged into the Workjet product branch as a second parent while its root tree
-was mounted unchanged at the recorded destination. Nothing has been pushed to
-GitHub yet.
+The local Workjet import branches contain only the selected component at their
+repository root. They were originally produced with `git subtree split` from
+the exact frozen CTOX commits and were tree-verified against the frozen source
+objects above. Before the first public push, a one-time history rewrite made
+three narrowly defined publication changes: it replaced the two built-in
+Antigravity OAuth literals in blobs and commit messages, removed
+`fixtures/sources/**` from the Web Stack import, and removed
+`tests/fixtures/**` from the PDF import. The rewritten branches therefore retain
+the usable source history but intentionally no longer have the frozen root tree.
 
-| Component        | Workjet import branch           | Export tip                                 | Commits retained             | Verified root tree                         | Workjet destination        | Import merge commit                        |
+| Component        | Workjet import branch           | Sanitized tip                              | Commits retained             | Sanitized root tree                        | Workjet destination        | Sanitized import merge                     |
 | ---------------- | ------------------------------- | ------------------------------------------ | ---------------------------- | ------------------------------------------ | -------------------------- | ------------------------------------------ |
-| Provider gateway | `codex/import-provider-gateway` | `9b3b6e1aa860e43fff958691b5aec6c5264145be` | 2                            | `9c0164ce5ffb6e799f9057700cb06bd56ecbc014` | `native/provider-gateway/` | `f3214e6179c3a8e43bce147ca04bd6dd48cc8821` |
-| Web Stack        | `codex/import-web-stack`        | `fb8a1f3bf411755fc1e1e1ffd90d2efc6cd33843` | 130 (126 non-merge, 4 merge) | `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84` | `native/web-stack/`        | `eb4e0815ad15681a76ad62b16c71da16317bc559` |
-| PDF parser       | `codex/import-pdf-parse`        | `9982588926f361ac4799e6f98a0f6453e85f73fa` | 6                            | `34e648d4027df575cc0bf60221f36341e1856968` | `native/pdf-parse/`        | `07370e613172a4742f10f1ab1bc8e8e8c08655ce` |
+| Provider gateway | `codex/import-provider-gateway` | `3fb92e69cd1c5a395a5b149bb192fdb0728018ae` | 2                            | `3803ff6a0c75d9a87a36e3ae644a7a1701243df0` | `native/provider-gateway/` | `3ac7b90e324bce70beddbb083d19cf34ab39fffe` |
+| Web Stack        | `codex/import-web-stack`        | `45dbabee9a97b0d0d106c035e3a03f34e77d55a0` | 130 (126 non-merge, 4 merge) | `8f392682304f6c92d5232450d96979f6a9e7312a` | `native/web-stack/`        | `aeb31ababf6d91c0992bf5939f51332f4eba5b77` |
+| PDF parser       | `codex/import-pdf-parse`        | `f2fbc1e25e00f6c5da6facfbe46123cc9e6e9457` | 5                            | `3ba1e65fcd5862ef7613502ceb4adfa7cbaa0fe6` | `native/pdf-parse/`        | `4faa03874389d535254483676c406cd2418653ca` |
 
-For each branch, the exported root tree was compared directly with
-`<frozen-ctox-commit>:<source-path>` and matched exactly. The local CTOX clone
-has two shallow boundaries, so these branches preserve all component history
-that the accepted local source proves; they make no claim about unreachable
-history older than those boundaries. After each Workjet merge, the destination
-subtree object was compared again with the exported root tree and matched
-exactly.
+The immutable frozen source commits and trees above remain the provenance
+anchors for comparing the deliberate removals. The local CTOX clone has two
+shallow boundaries, so the original split branches preserved only component
+history reachable from the accepted local source. The publication rewrite
+pruned one now-empty PDF fixture-only commit; it did not manufacture older
+history.
 
-The provider export contains 1,383 tracked source, test, fixture, SDK, example,
-and port-ledger files; the Web Stack export contains 131; the PDF parser export
-contains 59. None tracks compiled binaries, archives, databases, credential
-material, dependency directories, or build output. Names such as
-`internal/runtime` and `internal/cache` in the provider export are Rust source
-modules, not generated runtime state. A bounded secret-pattern scan found no
-embedded private key or provider-token material; the only private-key marker is
-an expected assertion against generated test output in
-`internal/auth/vertex/keyutil.rs`.
+The sanitized provider export contains 1,383 tracked files; the Web Stack
+export contains 111; the PDF parser export contains 33. None tracks compiled
+binaries, archives, databases, built-in OAuth credentials, dependency
+directories, or build output. Names such as `internal/runtime` and
+`internal/cache` in the provider export are Rust source modules, not generated
+runtime state. A reachable-object scan across `main`, the product branch, and
+all three import branches inspected 65,388 objects and found zero copies of the
+two protected OAuth literals. Root-level legacy fixture paths are absent. The
+only native fixture history is commit `0dd64106c`, which restores the exact
+pre-rewrite synthetic trees; the whole restored source tree matched its
+pre-rewrite tree object before this documentation update.
 
-The import branches are intentionally source-faithful, not already
-product-neutral. At the import boundary the provider crate still used the
+Apart from the documented publication removals, the import branches remain
+history-oriented rather than product-neutral. At the import boundary the provider crate still used the
 `ctox-cliproxyapi` package name and extensive CTOX port annotations, while the
 Web Stack read `runtime/ctox.sqlite3` directly in `src/runtime_config.rs`.
 The provider identity and Web Stack configuration normalizations are recorded
@@ -111,30 +115,29 @@ installs the separately licensed Apache-2.0 npm runtime exactly as
 Apache-2.0 notice are recorded separately.
 
 Cargo packaging excludes `native/web-stack/fixtures/sources/**`. Every file in
-the current tree is now an original, minimal synthetic Workjet fixture using
+the current tree is an original, minimal synthetic Workjet fixture using
 fictional identities and reserved contact domains; no captured upstream response
-body remains at HEAD. The earlier imported commits still contain the former
-third-party/web-response snapshots. Replacing the current tree does not make the
-existing Git history publishable: public history remains gated on a one-time,
-verified purge of that prior fixture history.
+body remains at HEAD or in an owned publication ref. The one-time rewrite left
+no root-level `fixtures/sources/**` object reachable and exactly one native
+fixture commit, `0dd64106c`, reintroduces the synthetic tree.
 
 ## Frozen Web Stack full-feature baseline
 
 With the exact imported Web Stack and PDF-parser trees, Workjet commit
-`17cd19f39` adds the nearest `scrape-targets/package.json` boundary required to
+`f6bdc4de8` adds the nearest `scrape-targets/package.json` boundary required to
 keep the inherited `.js` executors in CommonJS mode beneath Workjet's ESM root.
 It changes no scrape logic. The full-feature Cargo gate then passes 444 Rust
 tests with zero failures and 23 explicitly ignored live-network tests. Its
 scrape-target integration wrapper also passes all 43 Node fixture gates.
 
-Workjet commit `97c28f66f` resolves the first strict Rust 1.97 all-target
+Workjet commit `90dac51de` resolves the first strict Rust 1.97 all-target
 Clippy run's 64 pre-existing mechanical findings. It adds no crate-wide or
 module-wide lint suppression; the only compatibility exceptions are scoped to
 the exact public helpers or private functions they justify. The independent
 post-integration gate passes strict all-target Clippy, all 444 Rust tests, and
 all 43 Node fixture tests.
 
-Workjet commit `20df6800b` adds an object-safe, call-scoped
+Workjet commit `f0cf09ed8` adds an object-safe, call-scoped
 `RuntimeConfigStore` and `WebStackContext`. Product-neutral entry points receive
 the store from their host, the immutable `WorkjetRuntimeConfigStore` has no SQL
 dependency, and `CtoxRuntimeConfigStore` is the sole reader of CTOX's
@@ -147,7 +150,7 @@ crate.
 
 ## Provider-gateway license normalization
 
-Workjet commit `a860baa4b` applies the authorized provider-gateway policy after
+Workjet commit `7041be12e` applies the authorized provider-gateway policy after
 the source-faithful import. Exactly 1,233 Rust files now carry
 `SPDX-License-Identifier: MIT OR AGPL-3.0-only`; the two former header forms are
 absent. Existing `Origin` and upstream-reference annotations remain in place,
@@ -164,7 +167,7 @@ the final generated NOTICE/source-offer inventory.
 
 ## Provider-gateway Workjet identity
 
-Workjet commit `e46180c91` makes `workjet-provider-gateway` the canonical Cargo
+Workjet commit `1d9c5752b` makes `workjet-provider-gateway` the canonical Cargo
 package and server binary and changes the canonical Rust crate identifier to
 `workjet_provider_gateway`. Active differential and test scripts address the
 new package name. A behavior-identical `cliproxy-server` binary remains as a
@@ -174,7 +177,7 @@ produce identical help output and exit status.
 The package rename deliberately leaves the existing
 `ctox-cliproxyapi-plugin-handshake-v1`, `ctox-cliproxyapi-plugin-pipe-v1`, and
 Windows named-pipe prefix unchanged. These are compatibility wire identifiers,
-not public package identity. Commit `0cbb6c883` removes a broad temporary Clippy
+not public package identity. Commit `fa8a02a66` removes a broad temporary Clippy
 allowance and applies five local, behavior-preserving Rust 1.97 cleanups. The
 post-normalization library gate passes 2,509 tests with zero failures and three
 ignored tests; all-target Clippy is warning-free.
@@ -233,22 +236,20 @@ recorded third-party terms.
    parity, signed-artifact, WebRTC-authority, and rollback gates in the master
    plan.
 
-## Open provenance gaps
+## Provenance status and open gaps
 
 - Record an immutable release URL and checksum for the versioned Business OS
   shell after CTOX publishes the first artifact consumed by Workjet.
 - [x] Replace every current Web Stack `fixtures/sources/**` artifact with a
-  minimal original synthetic fixture.
-- [ ] Purge the former imported Web Stack snapshots from prior Git commits and
-  verify the rewritten history before claiming that fixture history is
-  publishable. Cargo package exclusion and the clean current tree do not resolve
-  this Git-history gate.
+      minimal original synthetic fixture.
+- [x] Purge the former imported Web Stack snapshots from prior Git commits. The
+      rewritten owned publication refs contain no root-level snapshot object and
+      exactly one native-path commit restores the synthetic fixtures.
 - [x] Replace every current PDF parser `tests/fixtures/**` document/page fixture
-  with original, hand-authored Workjet synthetic page-text contracts.
-- [ ] Purge the former imported PDF parser fixtures from prior Git commits and
-  verify the rewritten history before claiming that fixture history is
-  publishable. The synthetic current tree and Cargo package exclusion do not
-  close this one-time gate.
+      with original, hand-authored Workjet synthetic page-text contracts.
+- [x] Purge the former imported PDF parser fixtures from prior Git commits. The
+      rewritten owned publication refs contain no root-level fixture object and
+      exactly one native-path commit restores the synthetic contracts.
 - Reconcile CTOX's root npm `ISC` declaration with its AGPL root license and
   NOTICE.
 - Reconcile Greppy's `0.3.1` manifest with README/CITATION release text that

@@ -1,7 +1,7 @@
 // ref: internal/runtime/executor/helps/model_capabilities_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // ref: internal/runtime/executor/helps/{thinking_providers,codex_multi_agent_v2}.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::cell::RefCell;
 

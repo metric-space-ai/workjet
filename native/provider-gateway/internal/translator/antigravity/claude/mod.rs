@@ -1,5 +1,5 @@
 // Origin: CTOX
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 mod antigravity_claude_request;
 mod antigravity_claude_response;

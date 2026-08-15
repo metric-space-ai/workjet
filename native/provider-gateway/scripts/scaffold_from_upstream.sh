@@ -20,7 +20,7 @@ find "$upstream_dir" -type f -name '*.go' | while IFS= read -r source; do
     {
         printf '// ref: %s @ %s\n' "$relative" "$commit"
         printf '// Port-Status: scaffold\n'
-        printf '// License: MIT (upstream); modifications AGPL-3.0-only\n\n'
+        printf '// SPDX-License-Identifier: MIT OR AGPL-3.0-only\n\n'
         printf '// Intentionally outside the Rust module graph until its signatures are ported.\n'
     } > "$target"
 done

@@ -1,5 +1,5 @@
 // Origin: CTOX module graph for the upstream watcher package.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 pub mod clients;
 pub mod config_reload;

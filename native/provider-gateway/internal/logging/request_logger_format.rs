@@ -1,6 +1,6 @@
 // ref: internal/logging/request_logger_format.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::request_logger::RequestLogRecord;
 use crate::internal::api::middleware::request_logging::{

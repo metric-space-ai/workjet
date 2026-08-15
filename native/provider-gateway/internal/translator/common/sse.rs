@@ -1,6 +1,6 @@
 // refs: internal/translator/*/*/*_response.go @ ffdb9c9fbc78a6235d59c9ccbdc4243ba35ecdcd
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SseEvent {

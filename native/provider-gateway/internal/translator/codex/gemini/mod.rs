@@ -1,5 +1,5 @@
 // Origin: CTOX module graph for the pinned Codex/Gemini translator.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 mod codex_gemini_request;
 mod codex_gemini_response;

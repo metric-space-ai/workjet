@@ -1,7 +1,7 @@
 // ref: internal/runtime/executor/antigravity_schema_sanitize_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Candidate delta evidence: propertyNames regressions added by a88197f845c979132c8978ea223c6af05cc81536.
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::antigravity_executor_request::prepare_antigravity_generate_body;
 use serde_json::{json, Value};

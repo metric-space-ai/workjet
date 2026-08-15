@@ -1,7 +1,7 @@
 // refs: internal/thinking/provider/interactions/apply.go,
 // internal/thinking/provider/kimi/apply.go @ ffdb9c9fbc78a6235d59c9ccbdc4243ba35ecdcd
 // Port-Status: supplemental
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use serde_json::Value;
 

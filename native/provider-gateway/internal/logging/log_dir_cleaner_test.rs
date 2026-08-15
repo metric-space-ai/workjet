@@ -1,6 +1,6 @@
 // ref: internal/logging/log_dir_cleaner_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::log_dir_cleaner::{enforce_log_dir_size_limit, is_log_file_name, NativeLogFilesystem};
 use std::fs;

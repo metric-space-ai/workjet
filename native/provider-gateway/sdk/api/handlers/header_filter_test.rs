@@ -1,6 +1,6 @@
 // ref: sdk/api/handlers/header_filter_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::{
     filter_upstream_headers, is_cpa_reserved_response_header, write_upstream_headers, HeaderMap,

@@ -1,7 +1,7 @@
 // ref: internal/runtime/executor/helps/utls_client.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: the host transport factory owns the real TLS handshake and session cache.
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::fmt;
 use std::sync::Arc;

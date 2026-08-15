@@ -1,6 +1,6 @@
 // ref: internal/translator/claude/openai/chat-completions/claude_openai_request.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use crate::internal::registry::lookup_model_info;
 use crate::internal::thinking::{convert_level_to_budget, has_level, map_to_claude_effort};

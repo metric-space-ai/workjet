@@ -1,5 +1,5 @@
 // Origin: CTOX test support for upstream service mirrors
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

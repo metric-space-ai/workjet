@@ -1,7 +1,7 @@
 // ref: internal/pluginhost/model_router.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: model routing calls cross the isolated RPC client
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use crate::sdk::pluginabi::METHOD_MODEL_ROUTE;
 use crate::sdk::pluginapi::{ModelRouteRequest, ModelRouteResponse, ModelRouter, PluginFuture};

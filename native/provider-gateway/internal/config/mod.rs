@@ -1,5 +1,5 @@
 // Origin: CTOX
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 // Keep the mirrored upstream `internal/config/config.go` path addressable.
 pub mod clone;

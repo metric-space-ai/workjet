@@ -1,7 +1,7 @@
 // ref: internal/pluginhost/abi.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: replaces the in-process ABI with CTOX process isolation
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Process-isolated replacement for upstream's in-process plugin ABI.
 

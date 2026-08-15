@@ -1,5 +1,5 @@
 // Origin: CTOX module graph for watcher auth synthesizers.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 pub mod config;
 pub mod context;

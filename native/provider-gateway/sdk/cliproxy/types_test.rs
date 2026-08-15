@@ -1,5 +1,5 @@
 // Origin: CTOX supplemental tests for sdk/cliproxy/types.go.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::sync::{Arc, Mutex};
 

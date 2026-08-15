@@ -1,7 +1,7 @@
 // Origin: CTOX
 // Port-Status: adapted_to_ctox
 // Port-Note: CTOX process-frame transport replacing in-process plugin calls
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::collections::HashMap;
 use std::fmt;

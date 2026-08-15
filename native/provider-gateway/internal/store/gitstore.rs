@@ -1,7 +1,7 @@
 // ref: internal/store/gitstore.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: network Git and credentials cross an injected typed transport authority
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Git-backed auth/config store.
 //!

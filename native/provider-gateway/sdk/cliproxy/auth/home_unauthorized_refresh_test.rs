@@ -1,7 +1,7 @@
 // ref: sdk/cliproxy/auth/home_unauthorized_refresh_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: ephemeral selection refresh is tested through the instance-owned registry
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

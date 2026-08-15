@@ -1,5 +1,5 @@
 // Origin: CTOX module graph for the upstream logging package.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 pub mod cpa_trace;
 pub mod gin_logger;

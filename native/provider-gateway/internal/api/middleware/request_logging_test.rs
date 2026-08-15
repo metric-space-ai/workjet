@@ -1,6 +1,6 @@
 // ref: internal/api/middleware/request_logging_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::request_logging::{
     decode_captured_request_body_for_log_with_limit, mask_sensitive_query,

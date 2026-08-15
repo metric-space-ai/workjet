@@ -1,7 +1,7 @@
 // ref: internal/cache/xai_reasoning_replay_cache.go:15-397 @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: Home KV is supplied by the enclosing Rust gateway.
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use serde_json::{Map, Value};
 

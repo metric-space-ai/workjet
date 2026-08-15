@@ -1,6 +1,6 @@
 // ref: internal/safemode/example_api_keys_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::example_api_keys::{
     example_api_key_warning_page_html, example_api_keys, has_example_api_keys,

@@ -1,6 +1,6 @@
 // ref: internal/translator/openai/openai/chat-completions/openai_openai_response.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 pub fn convert_openai_response_to_openai(raw_json: &[u8]) -> Vec<Vec<u8>> {
     let payload = raw_json

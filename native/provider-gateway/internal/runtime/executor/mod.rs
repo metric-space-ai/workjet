@@ -1,5 +1,5 @@
 // Origin: CTOX
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 pub mod aistudio_executor;
 pub mod antigravity_executor;

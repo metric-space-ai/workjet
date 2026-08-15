@@ -1,6 +1,6 @@
 // ref: internal/translator/common/cache_control_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::{attach_cache_control, attach_message_cache_control};
 use serde_json::{json, Value};

@@ -1,6 +1,6 @@
 // ref: internal/translator/gemini/openai/responses/gemini_openai-responses_response.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use crate::internal::translator::antigravity::openai::responses::{
     convert_antigravity_response_to_openai_responses_non_stream_with_state,

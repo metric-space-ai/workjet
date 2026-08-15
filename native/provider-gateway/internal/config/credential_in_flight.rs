@@ -1,6 +1,6 @@
 // ref: internal/config/credential_in_flight.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 pub const DEFAULT_IN_FLIGHT_MAX_PART_BYTES: usize = 256 * 1024;

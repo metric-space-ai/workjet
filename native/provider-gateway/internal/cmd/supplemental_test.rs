@@ -1,5 +1,5 @@
 // Origin: CTOX supplemental command lifecycle tests; no upstream test credit.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::auth_manager::*;
 use super::login_prompt::{IoPrompt, Prompt, RejectingPrompt};

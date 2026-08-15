@@ -1,7 +1,7 @@
 // ref: sdk/cliproxy/auth/conductor_fast_error_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: direct and wrapped typed errors share one no-retry classifier
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::error::Error;
 use std::fmt;

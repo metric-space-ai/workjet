@@ -1,6 +1,6 @@
 // ref: internal/watcher/diff/config_diff.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use crate::internal::watcher::config_reload::WatcherConfig;
 pub fn build_config_change_details(old: &WatcherConfig, new: &WatcherConfig) -> Vec<String> {

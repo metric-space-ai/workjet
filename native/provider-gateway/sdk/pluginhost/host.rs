@@ -1,7 +1,7 @@
 // ref: sdk/pluginhost/host.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: public SDK facade preserves the process/capability boundary
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Public, provider-neutral facade for the process-isolated plugin host.
 //!

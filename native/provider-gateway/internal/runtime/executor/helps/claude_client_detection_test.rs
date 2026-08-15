@@ -1,6 +1,6 @@
 // ref: internal/runtime/executor/helps/claude_client_detection_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::claude_client_detection::detect_claude_code_request;
 use super::claude_device_profile::ClaudeHeaderDefaults;

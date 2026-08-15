@@ -1,7 +1,7 @@
 // Origin: CTOX
 // Port-Status: adapted_to_ctox
 // Port-Note: Unix LocalTransport isolation evidence
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

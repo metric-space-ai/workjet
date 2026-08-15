@@ -1,7 +1,7 @@
 // ref: internal/pluginhost/auth_provider_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: auth calls use process RPC and typed host configuration
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};

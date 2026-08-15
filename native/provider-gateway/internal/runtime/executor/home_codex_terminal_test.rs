@@ -1,6 +1,6 @@
 // ref: internal/runtime/executor/home_codex_terminal_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! CTOX owns subscription selection instead of the upstream Home dispatcher.
 //! This mirror therefore proves the same terminal invariant at the injected

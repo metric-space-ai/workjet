@@ -1,5 +1,5 @@
 // Origin: CTOX supplemental tests for sdk/api/management.go.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::io;
 use std::path::Path;

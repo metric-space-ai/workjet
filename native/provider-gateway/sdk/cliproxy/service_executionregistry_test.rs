@@ -1,6 +1,6 @@
 // ref: sdk/cliproxy/service_executionregistry_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Semantic disposition of the 2,984-line upstream service integration suite.
 //!

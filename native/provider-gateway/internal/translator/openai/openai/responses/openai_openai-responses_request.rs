@@ -1,6 +1,6 @@
 // ref: internal/translator/openai/openai/responses/openai_openai-responses_request.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Converts OpenAI Responses requests into the OpenAI Chat Completions
 //! shape consumed by the upstream provider adapter. The translation

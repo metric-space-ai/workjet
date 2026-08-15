@@ -1,6 +1,6 @@
 // ref: internal/translator/openai/openai/responses/openai_openai-responses_response.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Translates an OpenAI Chat Completions response (streaming SSE chunks
 //! or a single non-stream JSON body) into the OpenAI Responses event

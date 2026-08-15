@@ -1,6 +1,6 @@
 // ref: examples/plugin/claude-web-search-router/go/penalty.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 use super::Backend;
 use std::collections::BTreeMap;
 #[derive(Default)]

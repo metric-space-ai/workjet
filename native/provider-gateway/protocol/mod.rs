@@ -1,6 +1,6 @@
 // refs: sdk/api, sdk/translator/types.go, internal/translator @ ffdb9c9fbc78a6235d59c9ccbdc4243ba35ecdcd
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Protocol-neutral contracts used between wire translators and executors.
 //! These replace repeated Go `gjson.Result` interpretation with explicit Rust

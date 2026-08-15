@@ -1,5 +1,5 @@
 // Origin: CTOX module boundary for the pinned upstream `internal/modelconfig` package.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 pub mod model_hash;
 pub mod model_info;

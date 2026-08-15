@@ -1,6 +1,6 @@
 // ref: examples/plugin/claude-web-search-router/go/detect.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 use serde_json::Value;
 const TYPES: [&str; 2] = ["web_search_20250305", "web_search_20260209"];
 pub fn is_claude_source(source: &str) -> bool {

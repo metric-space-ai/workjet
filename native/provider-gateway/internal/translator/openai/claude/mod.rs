@@ -1,5 +1,5 @@
 // Origin: CTOX
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 //
 // Local module wiring for the openai → claude translator leaf. The leaf
 // follows the same shape as the worked example in

@@ -1,5 +1,5 @@
 // Origin: CTOX integration for sdk/cliproxy/service_executionregistry_test.go
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Instance-owned convergence graph for Home and watcher runtime updates.
 //!

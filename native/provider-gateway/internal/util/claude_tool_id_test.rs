@@ -1,6 +1,6 @@
 // ref: internal/util/claude_tool_id_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::claude_tool_id::{
     gemini_claude_tool_use_id, is_gemini_claude_tool_use_id, sanitize_claude_tool_id,

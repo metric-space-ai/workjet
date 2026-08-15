@@ -2,7 +2,7 @@
 // ref: internal/translator/gemini/openai/responses/gemini_openai-responses_response.go:102-831 @ a88197f845c979132c8978ea223c6af05cc81536
 // ref: internal/translator/gemini/openai/responses/gemini_openai-responses_response.go:832-1226 @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use crate::internal::translator::common::sse_event_data;
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};

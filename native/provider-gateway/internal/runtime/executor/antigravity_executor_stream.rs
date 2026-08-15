@@ -1,6 +1,6 @@
 // ref: internal/runtime/executor/antigravity_executor_stream.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Mirrored facade for the active Antigravity streaming vertical. The Rust
 //! ownership split keeps wire/body state in `antigravity_executor`, persisted

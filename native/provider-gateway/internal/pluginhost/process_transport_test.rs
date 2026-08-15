@@ -1,7 +1,7 @@
 // Origin: CTOX
 // Port-Status: adapted_to_ctox
 // Port-Note: supplemental process-frame transport evidence
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use serde_json::json;
 use tokio::io::{duplex, AsyncWriteExt};

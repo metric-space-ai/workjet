@@ -1,7 +1,7 @@
 // ref: internal/api/handlers/management/auth_files_fields.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: secret-free field/download/upload views over the injected credential store
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::collections::BTreeSet;
 use std::fmt;

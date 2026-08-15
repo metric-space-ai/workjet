@@ -1,7 +1,7 @@
 // ref: sdk/cliproxy/auth/api_key_model_capabilities.go @ a88197f845c979132c8978ea223c6af05cc81536
 // ref: sdk/cliproxy/auth/conductor_models.go:15-35,258-380,520-681 @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::collections::BTreeMap;
 use std::fmt;

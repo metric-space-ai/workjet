@@ -1,6 +1,6 @@
 // ref: internal/runtime/executor/antigravity_executor_credits.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Credits, 429 classification and short-cooldown state for Antigravity.
 //! Upstream package globals and Home-KV discovery are replaced by one injected

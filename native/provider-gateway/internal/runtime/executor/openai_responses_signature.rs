@@ -1,6 +1,6 @@
 // ref: internal/runtime/executor/openai_responses_signature.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 //! Sanitizes reasoning history before forwarding an OpenAI Responses request.
 //!

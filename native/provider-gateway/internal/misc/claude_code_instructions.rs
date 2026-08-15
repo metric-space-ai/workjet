@@ -1,6 +1,6 @@
 // ref: internal/misc/claude_code_instructions.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: ported
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 /// Claude Code system instructions embedded into the executable at compile
 /// time, matching Go's `//go:embed claude_code_instructions.txt` payload. The

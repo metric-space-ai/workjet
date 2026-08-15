@@ -1,5 +1,5 @@
 // Origin: CTOX module graph for the upstream xAI auth package.
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 #[path = "xai.rs"]
 mod flow;

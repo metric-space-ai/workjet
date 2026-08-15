@@ -1,6 +1,6 @@
 // Origin: CTOX
 // Port-Status: adapted_to_ctox
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 mod claude_openai_request;
 mod claude_openai_response;

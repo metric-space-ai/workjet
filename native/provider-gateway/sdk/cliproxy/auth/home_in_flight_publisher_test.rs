@@ -1,7 +1,7 @@
 // ref: sdk/cliproxy/auth/home_in_flight_publisher_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
 // Port-Note: deterministic packing, bounded overflow and injected transport/clock behavior
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::sync::{Arc, Mutex};
 

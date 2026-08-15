@@ -1,7 +1,7 @@
 // Origin: CTOX
 // Port-Status: adapted_to_ctox
 // Port-Note: Windows LocalTransport boundary for isolated plugin processes
-// License: AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::ffi::OsStr;
 use std::fmt;

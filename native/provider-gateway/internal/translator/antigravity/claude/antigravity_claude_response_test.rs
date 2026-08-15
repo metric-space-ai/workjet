@@ -1,6 +1,6 @@
 // ref: internal/translator/antigravity/claude/antigravity_claude_response_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 // The 35 upstream tests are dispositioned across executable evidence rather
 // than copied one-for-one: 7 aggregate and 5 streaming Web Search differential

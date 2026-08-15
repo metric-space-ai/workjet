@@ -1,6 +1,6 @@
 // ref: internal/translator/claude/gemini/noop_optimization_test.go @ a88197f845c979132c8978ea223c6af05cc81536
 // Port-Status: adapted_to_ctox
-// License: MIT (upstream); modifications AGPL-3.0-only
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::{lowercase_claude_tool_schema_types, normalize_claude_tool_schema};
 use serde_json::Value;

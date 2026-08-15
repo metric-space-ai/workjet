@@ -16,7 +16,7 @@ CTOX_DIFF_OUTPUT="$scratch/go.json" \
     -run '^TestCtoxDifferential$' -count=1 -timeout=30s -v
 
 CARGO_TARGET_DIR="$repo_dir/runtime/build/cliproxyapi-target" \
-    cargo run -q -p ctox-cliproxyapi --bin cliproxy-differential -- \
+    cargo run -q -p workjet-provider-gateway --bin cliproxy-differential -- \
     "$crate_dir/tests/differential/fixtures.json" "$scratch/rust.json"
 
 delta_name=stream-provider-error-ctox-delta

@@ -4,7 +4,7 @@
 
 use std::{env, fs, process::ExitCode};
 
-use ctox_cliproxyapi::internal::registry::validate_codex_client_models_json;
+use workjet_provider_gateway::internal::registry::validate_codex_client_models_json;
 
 fn main() -> ExitCode {
     let mut args = env::args_os().skip(1);

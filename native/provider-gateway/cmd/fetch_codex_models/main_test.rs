@@ -11,7 +11,7 @@ use std::{
 };
 
 use chrono::TimeZone;
-use ctox_cliproxyapi::sdk::cliproxy::auth::{AuthStatus, AuthStoreError};
+use workjet_provider_gateway::sdk::cliproxy::auth::{AuthStatus, AuthStoreError};
 
 use super::*;
 

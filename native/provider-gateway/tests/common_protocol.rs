@@ -1,8 +1,8 @@
-use ctox_cliproxyapi::internal::translator::common::{
+use workjet_provider_gateway::internal::translator::common::{
     claude_input_tokens_json, gemini_token_count_json, join_raw_array, set_top_level_string,
     sse_event_data, JsonField, RawJson, SseDecoder,
 };
-use ctox_cliproxyapi::protocol::{ContentPart, StreamEvent, Usage};
+use workjet_provider_gateway::protocol::{ContentPart, StreamEvent, Usage};
 
 #[test]
 fn upstream_token_count_shapes_are_byte_exact() {

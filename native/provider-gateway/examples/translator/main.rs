@@ -2,7 +2,7 @@
 // Port-Status: adapted_to_ctox
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
-use ctox_cliproxyapi::sdk::translator::{
+use workjet_provider_gateway::sdk::translator::{
     builtin, gemini, openai, TranslationContext, TranslationState,
 };
 

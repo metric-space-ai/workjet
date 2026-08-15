@@ -16,7 +16,7 @@ CTOX_DIFF_OUTPUT="$scratch/go.json" \
     -run '^TestCtoxInteractionsResponsesDifferential$' -count=1 -timeout=30s -v
 
 CARGO_TARGET_DIR="$repo_dir/runtime/build/cliproxyapi-target" \
-    cargo run -q -p ctox-cliproxyapi --bin cliproxy-differential -- \
+    cargo run -q -p workjet-provider-gateway --bin cliproxy-differential -- \
     "$crate_dir/tests/differential/interactions_responses_fixtures.json" "$scratch/rust.json"
 
 jq -S 'walk(if type == "object" then del(.created, .updated) else . end)' "$scratch/go.json" > "$scratch/go.sorted.json"

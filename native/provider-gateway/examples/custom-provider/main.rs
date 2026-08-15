@@ -6,21 +6,23 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use ctox_cliproxyapi::internal::registry::{embedded_models_catalog, ModelRegistry as Registry};
-use ctox_cliproxyapi::sdk::cliproxy::auth::{
+use tokio::sync::mpsc;
+use workjet_provider_gateway::internal::registry::{
+    embedded_models_catalog, ModelRegistry as Registry,
+};
+use workjet_provider_gateway::sdk::cliproxy::auth::{
     Auth, AuthRefresher, ProviderExecutorRegistration, ProviderExecutorRegistry,
     RefreshExecutorError,
 };
-use ctox_cliproxyapi::sdk::cliproxy::model_registry::ModelInfo;
-use ctox_cliproxyapi::sdk::pluginapi::{
+use workjet_provider_gateway::sdk::cliproxy::model_registry::ModelInfo;
+use workjet_provider_gateway::sdk::pluginapi::{
     ExecutorHttpRequest, ExecutorHttpResponse, ExecutorRequest, ExecutorResponse,
     ExecutorStreamChunk, ExecutorStreamResponse, HostHttpClient, HttpRequest, HttpResponse,
     HttpStreamResponse, PluginExecutionError, PluginFuture, ProviderExecutor,
 };
-use ctox_cliproxyapi::sdk::translator::{
+use workjet_provider_gateway::sdk::translator::{
     Format, Registry as TranslatorRegistry, ResponseTransform, TranslationContext, TranslationState,
 };
-use tokio::sync::mpsc;
 
 const PROVIDER_KEY: &str = "myprov";
 const OPENAI_CHAT: &str = "openai.chat";
@@ -53,7 +55,10 @@ fn endpoint(request: &ExecutorRequest) -> String {
         .to_owned()
 }
 
-fn inject_api_key(headers: &mut ctox_cliproxyapi::sdk::pluginapi::Headers, api_key: Option<&str>) {
+fn inject_api_key(
+    headers: &mut workjet_provider_gateway::sdk::pluginapi::Headers,
+    api_key: Option<&str>,
+) {
     if let Some(api_key) = api_key.map(str::trim).filter(|value| !value.is_empty()) {
         headers.insert(
             "Authorization".to_owned(),

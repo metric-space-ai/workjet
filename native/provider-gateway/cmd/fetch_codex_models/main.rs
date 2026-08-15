@@ -5,9 +5,9 @@
 use std::{collections::BTreeMap, fmt, path::Path, process::ExitCode, time::Duration};
 
 use chrono::{DateTime, Utc};
-use ctox_cliproxyapi::sdk::cliproxy::auth::{Auth, AuthStore};
 use serde_json::Value;
 use url::Url;
+use workjet_provider_gateway::sdk::cliproxy::auth::{Auth, AuthStore};
 
 const CODEX_MODELS_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 const CODEX_MODELS_PATH: &str = "/models";

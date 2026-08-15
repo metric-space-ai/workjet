@@ -7,8 +7,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use ctox_cliproxyapi::internal::pluginhost::process_transport::RequestMode;
-use ctox_cliproxyapi::internal::pluginhost::supervisor::{
+use workjet_provider_gateway::internal::pluginhost::process_transport::RequestMode;
+use workjet_provider_gateway::internal::pluginhost::supervisor::{
     PluginProcessConfig, PluginSupervisor, PluginSupervisorError, RestartPolicy,
 };
 

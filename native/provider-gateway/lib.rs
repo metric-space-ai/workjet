@@ -10,8 +10,13 @@
 // Mirrored command sources are compiled both as binaries and as library host
 // ABI modules. Give those shared sources one stable crate-qualified path in
 // both compilation contexts.
-extern crate self as ctox_cliproxyapi;
+extern crate self as workjet_provider_gateway;
 
+#[allow(
+    clippy::collapsible_match,
+    clippy::question_mark,
+    clippy::unnecessary_fold
+)]
 pub mod internal;
 pub mod protocol;
 pub mod sdk;

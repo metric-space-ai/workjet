@@ -4,10 +4,10 @@
 
 use std::{collections::BTreeMap, fmt, path::Path, process::ExitCode, time::Duration};
 
-use ctox_cliproxyapi::sdk::cliproxy::auth::{Auth, AuthStore};
 use serde::Serialize;
 use serde_json::Value;
 use url::Url;
+use workjet_provider_gateway::sdk::cliproxy::auth::{Auth, AuthStore};
 
 const BASE_URLS: [&str; 3] = [
     "https://cloudcode-pa.googleapis.com",

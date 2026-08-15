@@ -1,11 +1,11 @@
-use ctox_cliproxyapi::internal::translator::claude::openai::responses::{
+use serde_json::Value;
+use workjet_provider_gateway::internal::translator::claude::openai::responses::{
     convert_claude_response_to_openai_responses,
     convert_claude_response_to_openai_responses_non_stream,
     convert_openai_responses_request_to_claude, ClaudeResponsesStreamDecoder,
     ClaudeToResponsesState,
 };
-use ctox_cliproxyapi::sdk::translator::TranslationContext;
-use serde_json::Value;
+use workjet_provider_gateway::sdk::translator::TranslationContext;
 
 fn value(bytes: &[u8]) -> Value {
     serde_json::from_slice(bytes).unwrap()

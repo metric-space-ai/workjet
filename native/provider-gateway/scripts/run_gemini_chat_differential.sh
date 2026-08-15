@@ -10,7 +10,7 @@ scratch=$(mktemp -d)
 trap 'rm -f "$probe"; rm -rf "$scratch"' EXIT
 cp "$crate_dir/tests/differential/gemini_chat_probe.go.txt" "$probe"
 CTOX_DIFF_FIXTURES="$fixtures" CTOX_DIFF_OUTPUT="$scratch/go.json" go -C "$upstream_dir" test ./internal/translator/gemini/openai/chat-completions -run '^TestCtoxGeminiChatDifferential$' -count=1 -timeout=30s
-CARGO_TARGET_DIR="$repo_dir/runtime/build/cliproxyapi-target" cargo run -q -p ctox-cliproxyapi --bin cliproxy-differential -- "$fixtures" "$scratch/rust.json"
+CARGO_TARGET_DIR="$repo_dir/runtime/build/cliproxyapi-target" cargo run -q -p workjet-provider-gateway --bin cliproxy-differential -- "$fixtures" "$scratch/rust.json"
 jq -S . "$scratch/go.json" > "$scratch/go.sorted.json"
 jq -S . "$scratch/rust.json" > "$scratch/rust.sorted.json"
 if ! cmp -s "$scratch/go.sorted.json" "$scratch/rust.sorted.json"; then diff -u "$scratch/go.sorted.json" "$scratch/rust.sorted.json"; exit 1; fi

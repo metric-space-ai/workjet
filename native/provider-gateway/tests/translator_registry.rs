@@ -1,14 +1,14 @@
-use ctox_cliproxyapi::internal::translator::claude::openai::chat_completions::register_openai_chat_claude_request;
-use ctox_cliproxyapi::internal::translator::claude::openai::responses::register_openai_responses_claude;
-use ctox_cliproxyapi::internal::translator::openai::interactions::responses::register_openai_responses_interactions;
-use ctox_cliproxyapi::sdk::translator::{
+use serde_json::Value;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use workjet_provider_gateway::internal::translator::claude::openai::chat_completions::register_openai_chat_claude_request;
+use workjet_provider_gateway::internal::translator::claude::openai::responses::register_openai_responses_claude;
+use workjet_provider_gateway::internal::translator::openai::interactions::responses::register_openai_responses_interactions;
+use workjet_provider_gateway::sdk::translator::{
     claude, interactions, openai, openai_response, Format, Pipeline, PluginHooks, Registry,
     RequestEnvelope, RequestTransform, ResponseEnvelope, ResponseTransform, TranslationContext,
     TranslationState,
 };
-use serde_json::Value;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 fn request_transform(body: &'static [u8]) -> RequestTransform {
     Arc::new(move |_, _, _| body.to_vec())

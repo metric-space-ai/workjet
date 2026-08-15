@@ -6,11 +6,11 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use ctox_cliproxyapi::sdk::cliproxy::auth::{
+use workjet_provider_gateway::sdk::cliproxy::auth::{
     Auth, AuthRefresher, ProviderExecutorRegistration, ProviderExecutorRegistry,
     RefreshExecutorError,
 };
-use ctox_cliproxyapi::sdk::pluginapi::{
+use workjet_provider_gateway::sdk::pluginapi::{
     ExecutorHttpRequest, ExecutorHttpResponse, ExecutorRequest, ExecutorResponse,
     ExecutorStreamResponse, HostHttpClient, HttpRequest, HttpResponse, HttpStreamResponse,
     PluginExecutionError, PluginFuture, ProviderExecutor,

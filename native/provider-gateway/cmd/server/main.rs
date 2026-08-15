@@ -9,7 +9,7 @@ use std::{
     time::SystemTime,
 };
 
-use ctox_cliproxyapi::internal::{config::SdkConfig, safemode::has_example_api_keys};
+use workjet_provider_gateway::internal::{config::SdkConfig, safemode::has_example_api_keys};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ServerConfig {
@@ -273,7 +273,7 @@ fn parse_options(args: &[String]) -> Result<Option<Options>, CommandError> {
 }
 
 fn usage() -> &'static str {
-    "Usage: cliproxy-server [--config PATH] [--tui [--standalone]] [--local-model] [provider login flag]\nRuntime config, secrets, stores, transports, and service lifecycle are supplied by CTOX."
+    "Usage: workjet-provider-gateway [--config PATH] [--tui [--standalone]] [--local-model] [provider login flag]\nRuntime config, secrets, stores, transports, and service lifecycle are supplied by an embedding Workjet or CTOX host."
 }
 
 pub fn standalone_main(args: Vec<String>) -> ExitCode {

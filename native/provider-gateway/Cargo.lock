@@ -347,7 +347,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctox-cliproxyapi"
+name = "workjet-provider-gateway"
 version = "0.1.0"
 dependencies = [
  "base64",

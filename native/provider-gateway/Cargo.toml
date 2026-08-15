@@ -1,9 +1,9 @@
 [package]
-name = "ctox-cliproxyapi"
+name = "workjet-provider-gateway"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR AGPL-3.0-only"
-description = "Rust port of router-for-me/CLIProxyAPI for CTOX"
+description = "Portable CLIProxyAPI Rust port shared by Workjet and CTOX"
 autoexamples = false
 
 [lib]
@@ -32,8 +32,12 @@ name = "cliproxy-fetch-antigravity-models"
 path = "cmd/fetch_antigravity_models/bin.rs"
 
 [[bin]]
-name = "cliproxy-server"
+name = "workjet-provider-gateway"
 path = "cmd/server/bin.rs"
+
+[[bin]]
+name = "cliproxy-server"
+path = "cmd/server/legacy_bin.rs"
 
 [[example]]
 name = "translator"

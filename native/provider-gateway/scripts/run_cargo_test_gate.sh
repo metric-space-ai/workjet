@@ -23,7 +23,7 @@ case "$target_dir" in
     *) target_dir="$(pwd)/$target_dir" ;;
 esac
 binary=
-for candidate in "$target_dir"/debug/deps/ctox_cliproxyapi-*; do
+for candidate in "$target_dir"/debug/deps/workjet_provider_gateway-*; do
     test -f "$candidate" && test -x "$candidate" || continue
     if [ -z "$binary" ] || [ "$candidate" -nt "$binary" ]; then
         binary=$candidate
@@ -34,7 +34,7 @@ test -n "$binary" || {
     exit 1
 }
 
-runner=$(mktemp /private/tmp/ctox-cliproxyapi-test.XXXXXX)
+runner=$(mktemp /private/tmp/workjet-provider-gateway-test.XXXXXX)
 trap 'rm -f "$runner"' EXIT HUP INT TERM
 cp -X "$binary" "$runner"
 chmod +x "$runner"

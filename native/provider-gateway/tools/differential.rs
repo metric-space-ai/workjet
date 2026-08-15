@@ -3,131 +3,6 @@
 
 #[cfg(any(unix, windows))]
 use base64::Engine as _;
-use ctox_cliproxyapi::internal::api::handlers::management::static_model_definitions_payload;
-use ctox_cliproxyapi::internal::cache::antigravity_reasoning_replay_cache::AntigravityReasoningReplayCache;
-use ctox_cliproxyapi::internal::cache::{
-    cache_signature, clear_signature_cache, set_signature_bypass_strict_mode,
-    set_signature_cache_enabled,
-};
-use ctox_cliproxyapi::internal::pluginhost::rpc_schema::{RpcLifecycleRequest, RpcRegistration};
-#[cfg(unix)]
-use ctox_cliproxyapi::internal::pluginhost::transport_unix::{
-    handshake_proof, handshake_response_message, HandshakeRequest,
-};
-#[cfg(windows)]
-use ctox_cliproxyapi::internal::pluginhost::transport_windows::{
-    handshake_proof, handshake_response_message, HandshakeRequest,
-};
-#[cfg(any(unix, windows))]
-use ctox_cliproxyapi::internal::pluginhost::{
-    process_transport::{read_process_message, write_process_message},
-    rpc_schema::{
-        decode_upstream_json, encode_upstream_json, ProcessMessage, RpcCapabilities,
-        RpcIdentifierResponse, PROCESS_PROTOCOL_VERSION,
-    },
-};
-use ctox_cliproxyapi::internal::runtime::executor::antigravity_reasoning_replay::{
-    apply_antigravity_reasoning_replay_items, prepare_antigravity_reasoning_replay,
-    AntigravityReplayCommitOutcome,
-};
-use ctox_cliproxyapi::internal::runtime::executor::{
-    count_codex_input_tokens, enforce_claude_cache_control_limit, ensure_claude_cache_control,
-    normalize_claude_cache_control_ttl, parse_claude_usage,
-    remap_claude_oauth_tool_names_with_secret, sign_anthropic_messages_body,
-};
-use ctox_cliproxyapi::internal::signature::sanitize_gemini_request_thought_signatures;
-use ctox_cliproxyapi::internal::translator::antigravity::claude::{
-    convert_antigravity_response_to_claude_non_stream,
-    convert_antigravity_response_to_claude_stream,
-    convert_antigravity_web_search_response_to_claude_non_stream,
-    convert_antigravity_web_search_response_to_claude_stream,
-    convert_claude_request_to_antigravity_with_capabilities,
-    decode_gemini_claude_carrier_signature, encode_gemini_claude_carrier_signature,
-    normalize_claude_bypass_signature, strip_empty_signature_thinking_blocks,
-    strip_invalid_bypass_signature_thinking_blocks, strip_invalid_gemini_signature_thinking_blocks,
-    validate_claude_bypass_signatures, AntigravityClaudeRequestCapabilities,
-    AntigravityClaudeStreamState, AntigravityClaudeWebSearchStreamState,
-};
-use ctox_cliproxyapi::internal::translator::antigravity::gemini::{
-    convert_antigravity_response_to_gemini, convert_antigravity_response_to_gemini_non_stream,
-    convert_gemini_request_to_antigravity, gemini_token_count as antigravity_gemini_token_count,
-};
-use ctox_cliproxyapi::internal::translator::antigravity::openai::chat_completions::{
-    convert_antigravity_response_to_openai_chat_non_stream,
-    convert_antigravity_response_to_openai_chat_stream, convert_openai_chat_request_to_antigravity,
-    AntigravityToChatStreamState,
-};
-use ctox_cliproxyapi::internal::translator::antigravity::openai::responses::convert_antigravity_response_to_openai_responses_non_stream;
-use ctox_cliproxyapi::internal::translator::antigravity::openai::responses::convert_openai_responses_request_to_antigravity;
-use ctox_cliproxyapi::internal::translator::antigravity::openai::responses::{
-    convert_antigravity_response_to_openai_responses_stream, AntigravityToResponsesState,
-};
-use ctox_cliproxyapi::internal::translator::claude::openai::chat_completions::{
-    convert_claude_response_to_openai_chat_non_stream,
-    convert_claude_response_to_openai_chat_stream, convert_openai_chat_request_to_claude,
-    ClaudeToChatStreamState,
-};
-use ctox_cliproxyapi::internal::translator::claude::openai::responses::{
-    convert_claude_response_to_openai_responses,
-    convert_claude_response_to_openai_responses_non_stream,
-    convert_openai_responses_request_to_claude, ClaudeToResponsesState,
-};
-use ctox_cliproxyapi::internal::translator::codex::openai::chat_completions::{
-    convert_codex_response_to_openai_chat_non_stream, convert_codex_response_to_openai_chat_stream,
-    convert_openai_chat_request_to_codex, CodexToChatStreamState,
-};
-use ctox_cliproxyapi::internal::translator::codex::openai::responses::{
-    convert_codex_response_to_openai_responses,
-    convert_codex_response_to_openai_responses_non_stream,
-    convert_openai_responses_request_to_codex,
-};
-use ctox_cliproxyapi::internal::translator::common::{
-    attach_cache_control, attach_message_cache_control, claude_message_system_reminder_text,
-    interactions_usage, normalize_openai_file_data,
-};
-use ctox_cliproxyapi::internal::translator::gemini::common::attach_default_safety_settings;
-use ctox_cliproxyapi::internal::translator::gemini::openai::chat_completions::{
-    convert_gemini_response_to_openai_chat_non_stream,
-    convert_gemini_response_to_openai_chat_stream, convert_openai_chat_request_to_gemini,
-    GeminiToChatStreamState,
-};
-use ctox_cliproxyapi::internal::translator::gemini::openai::responses::{
-    convert_gemini_response_to_openai_responses_non_stream,
-    convert_gemini_response_to_openai_responses_stream, convert_openai_responses_request_to_gemini,
-    GeminiToResponsesState,
-};
-use ctox_cliproxyapi::internal::translator::gemini::passthrough::{
-    convert_gemini_request_to_gemini, gemini_token_count, passthrough_gemini_response_non_stream,
-    passthrough_gemini_response_stream,
-};
-use ctox_cliproxyapi::internal::translator::openai::claude::{
-    convert_claude_request_to_openai, convert_openai_response_to_claude,
-    convert_openai_response_to_claude_non_stream, OpenAIToClaudeStreamState,
-};
-use ctox_cliproxyapi::internal::translator::openai::interactions::responses::{
-    convert_interactions_request_to_openai_responses,
-    convert_interactions_response_to_openai_responses_non_stream,
-    convert_interactions_response_to_openai_responses_stream,
-    convert_openai_responses_request_to_interactions,
-    convert_openai_responses_response_to_interactions_non_stream,
-    convert_openai_responses_response_to_interactions_stream,
-};
-use ctox_cliproxyapi::internal::translator::openai::passthrough::chat_completions::{
-    convert_openai_request_to_openai, convert_openai_response_to_openai,
-    convert_openai_response_to_openai_non_stream,
-};
-use ctox_cliproxyapi::internal::translator::openai::passthrough::responses::{
-    convert_openai_chat_completions_response_to_openai_responses,
-    convert_openai_chat_completions_response_to_openai_responses_non_stream,
-    convert_openai_responses_request_to_openai_chat_completions,
-};
-use ctox_cliproxyapi::internal::util::claude_attribution::is_claude_code_attribution_system_text;
-use ctox_cliproxyapi::sdk::cliproxy::auth::{
-    AccountCandidate, AuthScheduler, SchedulerPickOptions, SchedulerStrategy,
-};
-#[cfg(any(unix, windows))]
-use ctox_cliproxyapi::sdk::pluginapi::{ExecutorModelScope, Metadata};
-use ctox_cliproxyapi::sdk::translator::TranslationContext;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::Value;
@@ -143,6 +18,133 @@ use std::time::Duration;
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 #[cfg(unix)]
 use tokio::net::UnixStream;
+use workjet_provider_gateway::internal::api::handlers::management::static_model_definitions_payload;
+use workjet_provider_gateway::internal::cache::antigravity_reasoning_replay_cache::AntigravityReasoningReplayCache;
+use workjet_provider_gateway::internal::cache::{
+    cache_signature, clear_signature_cache, set_signature_bypass_strict_mode,
+    set_signature_cache_enabled,
+};
+use workjet_provider_gateway::internal::pluginhost::rpc_schema::{
+    RpcLifecycleRequest, RpcRegistration,
+};
+#[cfg(unix)]
+use workjet_provider_gateway::internal::pluginhost::transport_unix::{
+    handshake_proof, handshake_response_message, HandshakeRequest,
+};
+#[cfg(windows)]
+use workjet_provider_gateway::internal::pluginhost::transport_windows::{
+    handshake_proof, handshake_response_message, HandshakeRequest,
+};
+#[cfg(any(unix, windows))]
+use workjet_provider_gateway::internal::pluginhost::{
+    process_transport::{read_process_message, write_process_message},
+    rpc_schema::{
+        decode_upstream_json, encode_upstream_json, ProcessMessage, RpcCapabilities,
+        RpcIdentifierResponse, PROCESS_PROTOCOL_VERSION,
+    },
+};
+use workjet_provider_gateway::internal::runtime::executor::antigravity_reasoning_replay::{
+    apply_antigravity_reasoning_replay_items, prepare_antigravity_reasoning_replay,
+    AntigravityReplayCommitOutcome,
+};
+use workjet_provider_gateway::internal::runtime::executor::{
+    count_codex_input_tokens, enforce_claude_cache_control_limit, ensure_claude_cache_control,
+    normalize_claude_cache_control_ttl, parse_claude_usage,
+    remap_claude_oauth_tool_names_with_secret, sign_anthropic_messages_body,
+};
+use workjet_provider_gateway::internal::signature::sanitize_gemini_request_thought_signatures;
+use workjet_provider_gateway::internal::translator::antigravity::claude::{
+    convert_antigravity_response_to_claude_non_stream,
+    convert_antigravity_response_to_claude_stream,
+    convert_antigravity_web_search_response_to_claude_non_stream,
+    convert_antigravity_web_search_response_to_claude_stream,
+    convert_claude_request_to_antigravity_with_capabilities,
+    decode_gemini_claude_carrier_signature, encode_gemini_claude_carrier_signature,
+    normalize_claude_bypass_signature, strip_empty_signature_thinking_blocks,
+    strip_invalid_bypass_signature_thinking_blocks, strip_invalid_gemini_signature_thinking_blocks,
+    validate_claude_bypass_signatures, AntigravityClaudeRequestCapabilities,
+    AntigravityClaudeStreamState, AntigravityClaudeWebSearchStreamState,
+};
+use workjet_provider_gateway::internal::translator::antigravity::gemini::{
+    convert_antigravity_response_to_gemini, convert_antigravity_response_to_gemini_non_stream,
+    convert_gemini_request_to_antigravity, gemini_token_count as antigravity_gemini_token_count,
+};
+use workjet_provider_gateway::internal::translator::antigravity::openai::chat_completions::{
+    convert_antigravity_response_to_openai_chat_non_stream,
+    convert_antigravity_response_to_openai_chat_stream, convert_openai_chat_request_to_antigravity,
+    AntigravityToChatStreamState,
+};
+use workjet_provider_gateway::internal::translator::antigravity::openai::responses::convert_antigravity_response_to_openai_responses_non_stream;
+use workjet_provider_gateway::internal::translator::antigravity::openai::responses::convert_openai_responses_request_to_antigravity;
+use workjet_provider_gateway::internal::translator::antigravity::openai::responses::{
+    convert_antigravity_response_to_openai_responses_stream, AntigravityToResponsesState,
+};
+use workjet_provider_gateway::internal::translator::claude::openai::chat_completions::{
+    convert_claude_response_to_openai_chat_non_stream,
+    convert_claude_response_to_openai_chat_stream, convert_openai_chat_request_to_claude,
+    ClaudeToChatStreamState,
+};
+use workjet_provider_gateway::internal::translator::claude::openai::responses::{
+    convert_claude_response_to_openai_responses,
+    convert_claude_response_to_openai_responses_non_stream,
+    convert_openai_responses_request_to_claude, ClaudeToResponsesState,
+};
+use workjet_provider_gateway::internal::translator::codex::openai::chat_completions::{
+    convert_codex_response_to_openai_chat_non_stream, convert_codex_response_to_openai_chat_stream,
+    convert_openai_chat_request_to_codex, CodexToChatStreamState,
+};
+use workjet_provider_gateway::internal::translator::codex::openai::responses::{
+    convert_codex_response_to_openai_responses,
+    convert_codex_response_to_openai_responses_non_stream,
+    convert_openai_responses_request_to_codex,
+};
+use workjet_provider_gateway::internal::translator::common::{
+    attach_cache_control, attach_message_cache_control, claude_message_system_reminder_text,
+    interactions_usage, normalize_openai_file_data,
+};
+use workjet_provider_gateway::internal::translator::gemini::common::attach_default_safety_settings;
+use workjet_provider_gateway::internal::translator::gemini::openai::chat_completions::{
+    convert_gemini_response_to_openai_chat_non_stream,
+    convert_gemini_response_to_openai_chat_stream, convert_openai_chat_request_to_gemini,
+    GeminiToChatStreamState,
+};
+use workjet_provider_gateway::internal::translator::gemini::openai::responses::{
+    convert_gemini_response_to_openai_responses_non_stream,
+    convert_gemini_response_to_openai_responses_stream, convert_openai_responses_request_to_gemini,
+    GeminiToResponsesState,
+};
+use workjet_provider_gateway::internal::translator::gemini::passthrough::{
+    convert_gemini_request_to_gemini, gemini_token_count, passthrough_gemini_response_non_stream,
+    passthrough_gemini_response_stream,
+};
+use workjet_provider_gateway::internal::translator::openai::claude::{
+    convert_claude_request_to_openai, convert_openai_response_to_claude,
+    convert_openai_response_to_claude_non_stream, OpenAIToClaudeStreamState,
+};
+use workjet_provider_gateway::internal::translator::openai::interactions::responses::{
+    convert_interactions_request_to_openai_responses,
+    convert_interactions_response_to_openai_responses_non_stream,
+    convert_interactions_response_to_openai_responses_stream,
+    convert_openai_responses_request_to_interactions,
+    convert_openai_responses_response_to_interactions_non_stream,
+    convert_openai_responses_response_to_interactions_stream,
+};
+use workjet_provider_gateway::internal::translator::openai::passthrough::chat_completions::{
+    convert_openai_request_to_openai, convert_openai_response_to_openai,
+    convert_openai_response_to_openai_non_stream,
+};
+use workjet_provider_gateway::internal::translator::openai::passthrough::responses::{
+    convert_openai_chat_completions_response_to_openai_responses,
+    convert_openai_chat_completions_response_to_openai_responses_non_stream,
+    convert_openai_responses_request_to_openai_chat_completions,
+};
+use workjet_provider_gateway::internal::util::claude_attribution::is_claude_code_attribution_system_text;
+use workjet_provider_gateway::sdk::cliproxy::auth::{
+    AccountCandidate, AuthScheduler, SchedulerPickOptions, SchedulerStrategy,
+};
+#[cfg(any(unix, windows))]
+use workjet_provider_gateway::sdk::pluginapi::{ExecutorModelScope, Metadata};
+use workjet_provider_gateway::sdk::translator::TranslationContext;
 #[cfg(any(unix, windows))]
 use zeroize::Zeroizing;
 
@@ -1164,7 +1166,7 @@ fn run_scheduler_sequence(
             let provider = input.providers.first().map(String::as_str).unwrap_or("");
             let candidate =
                 scheduler.pick_single(provider, model, 0, &candidates, &[], &options)?;
-            ctox_cliproxyapi::sdk::cliproxy::auth::ScheduledAccount {
+            workjet_provider_gateway::sdk::cliproxy::auth::ScheduledAccount {
                 provider: provider.trim().to_ascii_lowercase(),
                 candidate,
             }
@@ -1272,9 +1274,11 @@ fn run_plugin_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>>
             else {
                 continue;
             };
-            if method == ctox_cliproxyapi::sdk::pluginabi::METHOD_PLUGIN_REGISTER {
+            if method == workjet_provider_gateway::sdk::pluginabi::METHOD_PLUGIN_REGISTER {
                 let lifecycle: RpcLifecycleRequest = decode_upstream_json(&payload)?;
-                if lifecycle.schema_version != ctox_cliproxyapi::sdk::pluginabi::SCHEMA_VERSION {
+                if lifecycle.schema_version
+                    != workjet_provider_gateway::sdk::pluginabi::SCHEMA_VERSION
+                {
                     return Err("invalid lifecycle schema".into());
                 }
                 let registration = RpcRegistration {
@@ -1296,7 +1300,7 @@ fn run_plugin_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>>
                 let response = ProcessMessage::Response {
                     protocol_version: PROCESS_PROTOCOL_VERSION,
                     request_id,
-                    envelope: ctox_cliproxyapi::sdk::pluginabi::Envelope::success(Some(
+                    envelope: workjet_provider_gateway::sdk::pluginabi::Envelope::success(Some(
                         encode_upstream_json(&registration)?,
                     )),
                 };
@@ -1304,14 +1308,14 @@ fn run_plugin_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>>
                 registered = true;
                 continue;
             }
-            if method == ctox_cliproxyapi::sdk::pluginabi::METHOD_EXECUTOR_IDENTIFIER {
+            if method == workjet_provider_gateway::sdk::pluginabi::METHOD_EXECUTOR_IDENTIFIER {
                 if !registered {
                     return Err("executor call before registration".into());
                 }
                 let response = ProcessMessage::Response {
                     protocol_version: PROCESS_PROTOCOL_VERSION,
                     request_id,
-                    envelope: ctox_cliproxyapi::sdk::pluginabi::Envelope::success(Some(
+                    envelope: workjet_provider_gateway::sdk::pluginabi::Envelope::success(Some(
                         encode_upstream_json(&RpcIdentifierResponse {
                             identifier: "fixture-executor".into(),
                         })?,
@@ -1324,7 +1328,7 @@ fn run_plugin_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>>
                 let response = ProcessMessage::Response {
                     protocol_version: PROCESS_PROTOCOL_VERSION,
                     request_id,
-                    envelope: ctox_cliproxyapi::sdk::pluginabi::Envelope::success(None),
+                    envelope: workjet_provider_gateway::sdk::pluginabi::Envelope::success(None),
                 };
                 write_process_message(&mut stream, &response).await?;
                 return Ok(());
@@ -1335,7 +1339,7 @@ fn run_plugin_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>>
 
 #[cfg(any(unix, windows))]
 fn sdk_method_plugin_shutdown() -> &'static str {
-    ctox_cliproxyapi::sdk::pluginabi::METHOD_PLUGIN_SHUTDOWN
+    workjet_provider_gateway::sdk::pluginabi::METHOD_PLUGIN_SHUTDOWN
 }
 
 #[cfg(not(any(unix, windows)))]

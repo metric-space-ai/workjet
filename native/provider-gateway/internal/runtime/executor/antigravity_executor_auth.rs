@@ -176,10 +176,20 @@ mod tests {
 
     use super::*;
     use crate::internal::auth::antigravity::{
-        AntigravityRefreshHttpResponse, AntigravityRefreshRequest,
-        AntigravityRefreshTransportFailure, AntigravitySecretHandle, AntigravitySecretKind,
-        SecretString,
+        AntigravityOAuthClientCredentials, AntigravityRefreshHttpResponse,
+        AntigravityRefreshRequest, AntigravityRefreshTransportFailure, AntigravitySecretHandle,
+        AntigravitySecretKind, SecretString,
     };
+
+    fn oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+        Arc::new(
+            AntigravityOAuthClientCredentials::new(
+                "workjet-test-client-id",
+                "workjet-test-client-secret",
+            )
+            .unwrap(),
+        )
+    }
 
     struct MemoryStore {
         credentials: Mutex<AntigravityStoredCredentials>,
@@ -272,7 +282,7 @@ mod tests {
             store.clone(),
             Arc::new(TestTransport),
             Arc::new(FixedClock(now)),
-            Arc::new(AntigravityRefreshCoordinator::default()),
+            Arc::new(AntigravityRefreshCoordinator::new(oauth_credentials())),
         );
         assert_eq!(
             auth.refresh_after_status(429).await.unwrap_err(),

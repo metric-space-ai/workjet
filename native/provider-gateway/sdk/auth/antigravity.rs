@@ -16,9 +16,12 @@ use subtle::ConstantTimeEq;
 #[cfg(test)]
 use crate::internal::auth::antigravity::REFRESH_SKEW;
 use crate::internal::auth::antigravity::{
-    build_auth_url, AntigravityAuth, AntigravityAuthError, AntigravityAuthErrorKind,
-    AntigravityCredentialHandles, AntigravitySecretStore, AntigravityStoredCredentials,
-    AntigravityTokenError, SecretString, CALLBACK_PORT,
+    AntigravityAuth, AntigravityAuthError, AntigravityAuthErrorKind, AntigravityCredentialHandles,
+    AntigravitySecretStore, AntigravityStoredCredentials, AntigravityTokenError, SecretString,
+    CALLBACK_PORT,
+};
+pub use crate::internal::auth::antigravity::{
+    AntigravityOAuthClientCredentials, AntigravityOAuthClientCredentialsError,
 };
 use crate::internal::auth::models::{shared_token_storage, TokenStorage, TokenStorageError};
 use crate::internal::misc::generate_random_state;
@@ -315,7 +318,9 @@ impl Authenticator for AntigravityAuthenticator {
                 ));
             }
 
-            let auth_url = build_auth_url(state.expose_secret(), Some(redirect_uri));
+            let auth_url = self
+                .service
+                .build_auth_url(state.expose_secret(), Some(redirect_uri));
             self.presenter
                 .present(&AntigravityLoginPresentation {
                     auth_url,
@@ -538,6 +543,16 @@ mod tests {
 
     use super::*;
 
+    fn oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+        Arc::new(
+            AntigravityOAuthClientCredentials::new(
+                "workjet-test-client-id",
+                "workjet-test-client-secret",
+            )
+            .unwrap(),
+        )
+    }
+
     struct FixedClock(SystemTime);
 
     impl AntigravityClock for FixedClock {
@@ -742,7 +757,7 @@ mod tests {
         let presenter = Arc::new(Presenter::default());
         let store = Arc::new(Store::default());
         let authenticator = AntigravityAuthenticator::new(
-            Arc::new(AntigravityAuth::new(transport.clone())),
+            Arc::new(AntigravityAuth::new(oauth_credentials(), transport.clone())),
             callback_factory.clone(),
             presenter.clone(),
             Arc::new(FixedClock(UNIX_EPOCH + Duration::from_secs(1_000))),
@@ -805,6 +820,8 @@ mod tests {
         let encoded = serde_json::to_string(&record.metadata).unwrap();
         assert!(!encoded.contains("access-secret"));
         assert!(!encoded.contains("refresh-secret"));
+        assert!(!encoded.contains("workjet-test-client-id"));
+        assert!(!encoded.contains("workjet-test-client-secret"));
 
         let presented = presenter.0.lock().unwrap();
         assert_eq!(presented.len(), 1);
@@ -812,6 +829,7 @@ mod tests {
         assert!(!presented[0].2);
         let url = url::Url::parse(&presented[0].0).unwrap();
         let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(query["client_id"], "workjet-test-client-id");
         assert_eq!(query["state"], "state-secret");
         assert_eq!(
             query["redirect_uri"],

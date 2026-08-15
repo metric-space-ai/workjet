@@ -18,8 +18,8 @@ use crate::sdk::auth::LoginCancellation;
 
 use super::constants::{
     ANTIGRAVITY_GOOG_API_CLIENT_USER_AGENT, ANTIGRAVITY_NODE_API_CLIENT_USER_AGENT,
-    ANTIGRAVITY_USER_AGENT, API_ENDPOINT, API_VERSION, AUTH_ENDPOINT, CALLBACK_PORT, CLIENT_ID,
-    CLIENT_SECRET, DAILY_API_ENDPOINT, REFRESH_SKEW, SCOPES, TOKEN_ENDPOINT, USER_INFO_ENDPOINT,
+    ANTIGRAVITY_USER_AGENT, API_ENDPOINT, API_VERSION, AUTH_ENDPOINT, CALLBACK_PORT,
+    DAILY_API_ENDPOINT, REFRESH_SKEW, SCOPES, TOKEN_ENDPOINT, USER_INFO_ENDPOINT,
 };
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -217,7 +217,68 @@ struct UserInfoWireResponse {
     email: String,
 }
 
+pub struct AntigravityOAuthClientCredentials {
+    client_id: Zeroizing<String>,
+    client_secret: Zeroizing<String>,
+}
+
+impl AntigravityOAuthClientCredentials {
+    pub fn new(
+        client_id: impl Into<String>,
+        client_secret: impl Into<String>,
+    ) -> Result<Self, AntigravityOAuthClientCredentialsError> {
+        let client_id = Zeroizing::new(client_id.into());
+        if client_id.trim().is_empty() {
+            return Err(AntigravityOAuthClientCredentialsError::EmptyClientId);
+        }
+        let client_secret = Zeroizing::new(client_secret.into());
+        if client_secret.trim().is_empty() {
+            return Err(AntigravityOAuthClientCredentialsError::EmptyClientSecret);
+        }
+        Ok(Self {
+            client_id,
+            client_secret,
+        })
+    }
+
+    fn client_id(&self) -> &str {
+        self.client_id.as_str()
+    }
+
+    fn client_secret(&self) -> &str {
+        self.client_secret.as_str()
+    }
+}
+
+impl fmt::Debug for AntigravityOAuthClientCredentials {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AntigravityOAuthClientCredentials")
+            .field("client_id", &"[REDACTED]")
+            .field("client_secret", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AntigravityOAuthClientCredentialsError {
+    EmptyClientId,
+    EmptyClientSecret,
+}
+
+impl fmt::Display for AntigravityOAuthClientCredentialsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::EmptyClientId => "Antigravity OAuth client ID must not be empty",
+            Self::EmptyClientSecret => "Antigravity OAuth client secret must not be empty",
+        })
+    }
+}
+
+impl std::error::Error for AntigravityOAuthClientCredentialsError {}
+
 pub struct AntigravityAuth {
+    credentials: Arc<AntigravityOAuthClientCredentials>,
     transport: Arc<dyn AntigravityFlowTransport>,
 }
 
@@ -225,6 +286,7 @@ impl fmt::Debug for AntigravityAuth {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("AntigravityAuth")
+            .field("credentials", &"[INJECTED, REDACTED]")
             .field("transport", &"[INJECTED]")
             .finish()
     }
@@ -232,8 +294,32 @@ impl fmt::Debug for AntigravityAuth {
 
 impl AntigravityAuth {
     #[must_use]
-    pub fn new(transport: Arc<dyn AntigravityFlowTransport>) -> Self {
-        Self { transport }
+    pub fn new(
+        credentials: Arc<AntigravityOAuthClientCredentials>,
+        transport: Arc<dyn AntigravityFlowTransport>,
+    ) -> Self {
+        Self {
+            credentials,
+            transport,
+        }
+    }
+
+    #[must_use]
+    pub fn build_auth_url(&self, state: &str, redirect_uri: Option<&str>) -> String {
+        let default_redirect = format!("http://localhost:{CALLBACK_PORT}/oauth-callback");
+        let redirect_uri = redirect_uri
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(&default_redirect);
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("access_type", "offline")
+            .append_pair("client_id", self.credentials.client_id())
+            .append_pair("prompt", "consent")
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("response_type", "code")
+            .append_pair("scope", &SCOPES.join(" "))
+            .append_pair("state", state)
+            .finish();
+        format!("{AUTH_ENDPOINT}?{query}")
     }
 
     pub async fn exchange_code_for_tokens(
@@ -249,8 +335,8 @@ impl AntigravityAuth {
         }
         let body = form(&[
             ("code", code),
-            ("client_id", CLIENT_ID),
-            ("client_secret", CLIENT_SECRET),
+            ("client_id", self.credentials.client_id()),
+            ("client_secret", self.credentials.client_secret()),
             ("redirect_uri", redirect_uri),
             ("grant_type", "authorization_code"),
         ]);
@@ -555,23 +641,6 @@ fn ensure_success(
     }
 }
 
-pub fn build_auth_url(state: &str, redirect_uri: Option<&str>) -> String {
-    let default_redirect = format!("http://localhost:{CALLBACK_PORT}/oauth-callback");
-    let redirect_uri = redirect_uri
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(&default_redirect);
-    let query = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("access_type", "offline")
-        .append_pair("client_id", CLIENT_ID)
-        .append_pair("prompt", "consent")
-        .append_pair("redirect_uri", redirect_uri)
-        .append_pair("response_type", "code")
-        .append_pair("scope", &SCOPES.join(" "))
-        .append_pair("state", state)
-        .finish();
-    format!("{AUTH_ENDPOINT}?{query}")
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub struct SecretString(Zeroizing<String>);
 
@@ -780,19 +849,26 @@ impl std::error::Error for AntigravityTokenError {}
 
 #[derive(Clone)]
 pub struct AntigravityRefreshRequest {
+    credentials: Arc<AntigravityOAuthClientCredentials>,
     refresh_token: SecretString,
 }
 
 impl AntigravityRefreshRequest {
-    pub fn new(refresh_token: SecretString) -> Self {
-        Self { refresh_token }
+    pub fn new(
+        credentials: Arc<AntigravityOAuthClientCredentials>,
+        refresh_token: SecretString,
+    ) -> Self {
+        Self {
+            credentials,
+            refresh_token,
+        }
     }
 
     pub fn form_body(&self) -> Zeroizing<Vec<u8>> {
         Zeroizing::new(
             url::form_urlencoded::Serializer::new(String::new())
-                .append_pair("client_id", CLIENT_ID)
-                .append_pair("client_secret", CLIENT_SECRET)
+                .append_pair("client_id", self.credentials.client_id())
+                .append_pair("client_secret", self.credentials.client_secret())
                 .append_pair("grant_type", "refresh_token")
                 .append_pair("refresh_token", self.refresh_token.expose_secret())
                 .finish()
@@ -915,12 +991,29 @@ impl fmt::Debug for RefreshFingerprint {
 type RefreshResult = Result<AntigravityStoredCredentials, AntigravityRefreshError>;
 type FlightReceiver = watch::Receiver<Option<RefreshResult>>;
 
-#[derive(Default)]
 pub struct AntigravityRefreshCoordinator {
+    credentials: Arc<AntigravityOAuthClientCredentials>,
     flights: Mutex<HashMap<RefreshFingerprint, FlightReceiver>>,
 }
 
+impl fmt::Debug for AntigravityRefreshCoordinator {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AntigravityRefreshCoordinator")
+            .field("credentials", &"[INJECTED, REDACTED]")
+            .finish_non_exhaustive()
+    }
+}
+
 impl AntigravityRefreshCoordinator {
+    #[must_use]
+    pub fn new(credentials: Arc<AntigravityOAuthClientCredentials>) -> Self {
+        Self {
+            credentials,
+            flights: Mutex::new(HashMap::new()),
+        }
+    }
+
     pub async fn refresh<T: AntigravityRefreshTransport + ?Sized>(
         &self,
         transport: &T,
@@ -942,7 +1035,7 @@ impl AntigravityRefreshCoordinator {
         let Some(sender) = leader else {
             return wait_for_flight(&mut receiver).await;
         };
-        let result = refresh_once(transport, &current, now).await;
+        let result = refresh_once(&self.credentials, transport, &current, now).await;
         if sender.send(Some(result.clone())).is_err() {
             lock_recover(&self.flights).remove(&fingerprint);
             return Err(AntigravityRefreshError::InvalidSingleFlightResult);
@@ -961,11 +1054,13 @@ struct RefreshWireResponse {
 }
 
 async fn refresh_once<T: AntigravityRefreshTransport + ?Sized>(
+    credentials: &Arc<AntigravityOAuthClientCredentials>,
     transport: &T,
     current: &AntigravityStoredCredentials,
     now: SystemTime,
 ) -> RefreshResult {
-    let request = AntigravityRefreshRequest::new(current.refresh_token().clone());
+    let request =
+        AntigravityRefreshRequest::new(Arc::clone(credentials), current.refresh_token().clone());
     let response = transport
         .execute(&request, Duration::from_secs(30))
         .await
@@ -1019,6 +1114,28 @@ mod tests {
 
     use super::*;
 
+    const TEST_CLIENT_ID: &str = "workjet-test-client-id";
+    const TEST_CLIENT_SECRET: &str = "workjet-test-client-secret";
+
+    fn oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+        Arc::new(
+            AntigravityOAuthClientCredentials::new(TEST_CLIENT_ID, TEST_CLIENT_SECRET).unwrap(),
+        )
+    }
+
+    struct UnusedFlowTransport;
+
+    impl AntigravityFlowTransport for UnusedFlowTransport {
+        fn execute<'a>(
+            &'a self,
+            _: &'a AntigravityHttpRequest,
+            _: Duration,
+            _: &'a LoginCancellation,
+        ) -> AntigravityHttpFuture<'a> {
+            Box::pin(async { Err(AntigravityHttpTransportFailure::Protocol) })
+        }
+    }
+
     struct MockTransport {
         calls: AtomicUsize,
         response: Vec<u8>,
@@ -1043,9 +1160,12 @@ mod tests {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 assert_eq!(timeout, Duration::from_secs(30));
-                let form = String::from_utf8(request.form_body().to_vec()).unwrap();
-                assert!(form.contains("grant_type=refresh_token"));
-                assert!(form.contains("refresh_token=refresh-old"));
+                let body = request.form_body();
+                let form: HashMap<_, _> = url::form_urlencoded::parse(&body).into_owned().collect();
+                assert_eq!(form["client_id"], TEST_CLIENT_ID);
+                assert_eq!(form["client_secret"], TEST_CLIENT_SECRET);
+                assert_eq!(form["grant_type"], "refresh_token");
+                assert_eq!(form["refresh_token"], "refresh-old");
                 tokio::time::sleep(Duration::from_millis(20)).await;
                 Ok(AntigravityRefreshHttpResponse::new(
                     200,
@@ -1067,10 +1187,12 @@ mod tests {
 
     #[test]
     fn auth_url_matches_google_offline_consent_contract() {
-        let url = url::Url::parse(&build_auth_url("state with space", None)).unwrap();
+        let auth = AntigravityAuth::new(oauth_credentials(), Arc::new(UnusedFlowTransport));
+        let url = url::Url::parse(&auth.build_auth_url("state with space", None)).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(url.as_str().split('?').next().unwrap(), AUTH_ENDPOINT);
         assert_eq!(query["access_type"], "offline");
+        assert_eq!(query["client_id"], TEST_CLIENT_ID);
         assert_eq!(query["prompt"], "consent");
         assert_eq!(query["state"], "state with space");
         assert_eq!(
@@ -1091,10 +1213,30 @@ mod tests {
         let state =
             AntigravitySecretHandle::new("scope", "state", AntigravitySecretKind::State).unwrap();
         assert!(AntigravityCredentialHandles::new(refresh.clone(), access.clone(), state).is_err());
-        let request = AntigravityRefreshRequest::new(SecretString::new("do-not-leak").unwrap());
+        let request = AntigravityRefreshRequest::new(
+            oauth_credentials(),
+            SecretString::new("do-not-leak").unwrap(),
+        );
         let rendered = format!("{request:?}");
         assert!(!rendered.contains("do-not-leak"));
-        assert!(!rendered.contains(CLIENT_SECRET));
+        assert!(!rendered.contains(TEST_CLIENT_ID));
+        assert!(!rendered.contains(TEST_CLIENT_SECRET));
+    }
+
+    #[test]
+    fn refresh_coordinator_has_no_default_or_global_fallback() {
+        trait AmbiguousIfDefault<A> {
+            fn marker() {}
+        }
+        impl<T: ?Sized> AmbiguousIfDefault<()> for T {}
+        struct DefaultMarker;
+        impl<T: Default> AmbiguousIfDefault<DefaultMarker> for T {}
+
+        let _ = <AntigravityRefreshCoordinator as AmbiguousIfDefault<_>>::marker;
+        let coordinator = AntigravityRefreshCoordinator::new(oauth_credentials());
+        let rendered = format!("{coordinator:?}");
+        assert!(!rendered.contains(TEST_CLIENT_ID));
+        assert!(!rendered.contains(TEST_CLIENT_SECRET));
     }
 
     #[test]
@@ -1115,7 +1257,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_refresh_uses_one_call_and_preserves_project() {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
-        let coordinator = Arc::new(AntigravityRefreshCoordinator::default());
+        let coordinator = Arc::new(AntigravityRefreshCoordinator::new(oauth_credentials()));
         let transport = Arc::new(MockTransport {
             calls: AtomicUsize::new(0),
             response:
@@ -1178,7 +1320,7 @@ mod tests {
             }
         }
         let now = SystemTime::UNIX_EPOCH;
-        let error = AntigravityRefreshCoordinator::default()
+        let error = AntigravityRefreshCoordinator::new(oauth_credentials())
             .refresh(&Failure, credentials(now), now)
             .await
             .unwrap_err();

@@ -37,6 +37,7 @@ pub use antigravity::{
     AntigravityCallbackErrorKind, AntigravityCallbackFuture, AntigravityCallbackResult,
     AntigravityCallbackSession, AntigravityCallbackStartFuture, AntigravityClock,
     AntigravityHandleFactory, AntigravityLoginPresentation, AntigravityLoginPresenter,
+    AntigravityOAuthClientCredentials, AntigravityOAuthClientCredentialsError,
     AntigravityStateError, AntigravityStateGenerator, RandomAntigravityStateGenerator,
     SystemAntigravityClock, ANTIGRAVITY_CALLBACK_TIMEOUT, ANTIGRAVITY_MANUAL_PROMPT_DELAY,
 };

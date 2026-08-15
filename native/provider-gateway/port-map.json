@@ -756,13 +756,13 @@
     {
       "upstream": "internal/auth/antigravity/auth_test.go",
       "rust": "internal/auth/antigravity/auth_test.rs",
-      "status": "ported",
+      "status": "adapted_to_ctox",
       "test": true
     },
     {
       "upstream": "internal/auth/antigravity/constants.go",
       "rust": "internal/auth/antigravity/constants.rs",
-      "status": "ported",
+      "status": "adapted_to_ctox",
       "test": false
     },
     {
@@ -2352,7 +2352,7 @@
     {
       "upstream": "internal/runtime/executor/antigravity_executor_execute.go",
       "rust": "internal/runtime/executor/antigravity_executor_execute.rs",
-      "status": "ported",
+      "status": "adapted_to_ctox",
       "test": false
     },
     {

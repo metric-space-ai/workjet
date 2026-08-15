@@ -1,5 +1,5 @@
 // ref: internal/auth/antigravity/constants.go @ a88197f845c979132c8978ea223c6af05cc81536
-// Port-Status: ported
+// Port-Status: adapted_to_ctox
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::time::Duration;
@@ -17,11 +17,6 @@ pub(crate) const ANTIGRAVITY_USER_AGENT: &str = "antigravity/hub/2.2.1 darwin/ar
 pub(crate) const ANTIGRAVITY_NODE_API_CLIENT_USER_AGENT: &str = "google-api-nodejs-client/10.3.0";
 pub(crate) const ANTIGRAVITY_GOOG_API_CLIENT_USER_AGENT: &str = "gl-node/22.21.1";
 
-pub(crate) const CLIENT_ID: &str =
-    "WORKJET_REMOVED_CLIENT_ID";
-// Google treats this installed-application OAuth value as a public client
-// credential. It is never accepted from runtime config or rendered by Debug.
-pub(crate) const CLIENT_SECRET: &str = "WORKJET_REMOVED_CLIENT_SECRET";
 pub(crate) const SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/cloud-platform",
     "https://www.googleapis.com/auth/userinfo.email",

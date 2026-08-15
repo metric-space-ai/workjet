@@ -11,10 +11,20 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::Notify;
 
 use crate::internal::auth::antigravity::{
-    AntigravityRefreshCoordinator, AntigravityRefreshHttpResponse, AntigravityRefreshRequest,
-    AntigravityRefreshTransport, AntigravityRefreshTransportFailure, AntigravityStoredCredentials,
-    SecretString,
+    AntigravityOAuthClientCredentials, AntigravityRefreshCoordinator,
+    AntigravityRefreshHttpResponse, AntigravityRefreshRequest, AntigravityRefreshTransport,
+    AntigravityRefreshTransportFailure, AntigravityStoredCredentials, SecretString,
 };
+
+fn oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+    Arc::new(
+        AntigravityOAuthClientCredentials::new(
+            "workjet-test-client-id",
+            "workjet-test-client-secret",
+        )
+        .unwrap(),
+    )
+}
 
 struct BlockingRefreshTransport {
     calls: AtomicUsize,
@@ -63,7 +73,7 @@ fn credentials(project_id: &str) -> AntigravityStoredCredentials {
 
 #[tokio::test]
 async fn antigravity_refresh_deduplicates_concurrent_refresh() {
-    let coordinator = Arc::new(AntigravityRefreshCoordinator::default());
+    let coordinator = Arc::new(AntigravityRefreshCoordinator::new(oauth_credentials()));
     let transport = Arc::new(BlockingRefreshTransport {
         calls: AtomicUsize::new(0),
         started: Notify::new(),

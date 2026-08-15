@@ -1,5 +1,5 @@
 // ref: internal/runtime/executor/antigravity_executor_execute.go @ a88197f845c979132c8978ea223c6af05cc81536
-// Port-Status: ported
+// Port-Status: adapted_to_ctox
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use std::collections::{HashMap, HashSet};
@@ -1199,16 +1199,27 @@ mod tests {
 
     use super::*;
     use crate::internal::auth::antigravity::{
-        AntigravityCredentialHandles, AntigravityRefreshCoordinator,
-        AntigravityRefreshHttpResponse, AntigravityRefreshRequest, AntigravityRefreshTransport,
-        AntigravityRefreshTransportFailure, AntigravitySecretHandle, AntigravitySecretKind,
-        AntigravitySecretStore, AntigravityStoredCredentials, AntigravityTokenError, SecretString,
+        AntigravityCredentialHandles, AntigravityOAuthClientCredentials,
+        AntigravityRefreshCoordinator, AntigravityRefreshHttpResponse, AntigravityRefreshRequest,
+        AntigravityRefreshTransport, AntigravityRefreshTransportFailure, AntigravitySecretHandle,
+        AntigravitySecretKind, AntigravitySecretStore, AntigravityStoredCredentials,
+        AntigravityTokenError, SecretString,
     };
     use crate::internal::runtime::executor::{
         AntigravityGenerateHttpTransport, SystemAntigravityAuthClock,
     };
     use crate::internal::translator::antigravity::openai::responses::convert_openai_responses_request_to_antigravity;
     use crate::sdk::cliproxy::auth::{CooldownStateRecord, CooldownStateStore, CooldownStoreError};
+
+    fn oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+        Arc::new(
+            AntigravityOAuthClientCredentials::new(
+                "workjet-test-client-id",
+                "workjet-test-client-secret",
+            )
+            .unwrap(),
+        )
+    }
 
     struct MemoryStore(Mutex<AntigravityStoredCredentials>);
 
@@ -1573,7 +1584,7 @@ mod tests {
             store.clone(),
             refresh_transport,
             Arc::new(SystemAntigravityAuthClock),
-            Arc::new(AntigravityRefreshCoordinator::default()),
+            Arc::new(AntigravityRefreshCoordinator::new(oauth_credentials())),
         ));
         (auth, store)
     }
@@ -2331,7 +2342,7 @@ mod tests {
             Arc::new(MemoryStore(Mutex::new(credentials))),
             Arc::new(UnusedRefresh),
             Arc::new(SystemAntigravityAuthClock),
-            Arc::new(AntigravityRefreshCoordinator::default()),
+            Arc::new(AntigravityRefreshCoordinator::new(oauth_credentials())),
         ));
         let executor = AntigravitySubscriptionExecutor::new(
             auth,

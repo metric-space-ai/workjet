@@ -846,11 +846,11 @@ mod tests {
         CodexAlphaSearchTransport, CodexAlphaSearchTransportRequest,
     };
     use crate::internal::auth::antigravity::{
-        AntigravityCredentialHandles, AntigravityRefreshCoordinator,
-        AntigravityRefreshHttpResponse, AntigravityRefreshRequest, AntigravityRefreshTransport,
-        AntigravityRefreshTransportFailure, AntigravitySecretHandle, AntigravitySecretKind,
-        AntigravitySecretStore, AntigravityStoredCredentials, AntigravityTokenError,
-        SecretString as AntigravitySecretString,
+        AntigravityCredentialHandles, AntigravityOAuthClientCredentials,
+        AntigravityRefreshCoordinator, AntigravityRefreshHttpResponse, AntigravityRefreshRequest,
+        AntigravityRefreshTransport, AntigravityRefreshTransportFailure, AntigravitySecretHandle,
+        AntigravitySecretKind, AntigravitySecretStore, AntigravityStoredCredentials,
+        AntigravityTokenError, SecretString as AntigravitySecretString,
     };
     use crate::internal::auth::claude::{
         ClaudeCredentialHandles, ClaudeRefreshCoordinator, ClaudeRefreshTransport,
@@ -891,6 +891,16 @@ mod tests {
         CooldownStateStore, CooldownStoreError,
     };
     use crate::sdk::cliproxy::executor::Headers;
+
+    fn antigravity_oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+        Arc::new(
+            AntigravityOAuthClientCredentials::new(
+                "workjet-test-client-id",
+                "workjet-test-client-secret",
+            )
+            .unwrap(),
+        )
+    }
 
     #[derive(Default)]
     struct AlphaRouteSelectorProbe(Mutex<Vec<(String, Headers, Vec<u8>)>>);
@@ -1563,7 +1573,9 @@ mod tests {
             Arc::new(AntigravityMemorySecretStore(Mutex::new(credentials))),
             Arc::new(UnusedAntigravityRefreshTransport),
             Arc::new(FixedAntigravityClock),
-            Arc::new(AntigravityRefreshCoordinator::default()),
+            Arc::new(AntigravityRefreshCoordinator::new(
+                antigravity_oauth_credentials(),
+            )),
         ));
         let cooldowns = Arc::new(MemoryCooldownStore::default());
         let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));

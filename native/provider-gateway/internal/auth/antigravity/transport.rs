@@ -195,8 +195,19 @@ mod tests {
 
     use super::*;
     use crate::internal::auth::antigravity::{
-        AntigravityRefreshCoordinator, AntigravityStoredCredentials, SecretString,
+        AntigravityOAuthClientCredentials, AntigravityRefreshCoordinator,
+        AntigravityStoredCredentials, SecretString,
     };
+
+    fn oauth_credentials() -> Arc<AntigravityOAuthClientCredentials> {
+        Arc::new(
+            AntigravityOAuthClientCredentials::new(
+                "workjet-test-client-id",
+                "workjet-test-client-secret",
+            )
+            .unwrap(),
+        )
+    }
 
     #[test]
     fn invalid_proxy_never_echoes_credentials() {
@@ -252,7 +263,7 @@ mod tests {
             "project-1",
         )
         .unwrap();
-        let rotated = AntigravityRefreshCoordinator::default()
+        let rotated = AntigravityRefreshCoordinator::new(oauth_credentials())
             .refresh(
                 &AntigravityHttpTransport::with_endpoint(&endpoint, None).unwrap(),
                 current,
@@ -269,6 +280,8 @@ mod tests {
         assert!(lower.contains("host: oauth2.googleapis.com"));
         assert!(lower.contains("user-agent: go-http-client/2.0"));
         assert!(lower.contains("content-type: application/x-www-form-urlencoded"));
+        assert!(request.contains("client_id=workjet-test-client-id"));
+        assert!(request.contains("client_secret=workjet-test-client-secret"));
         assert!(request.contains("refresh_token=refresh-old"));
         assert!(request.contains("grant_type=refresh_token"));
     }

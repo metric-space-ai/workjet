@@ -7,10 +7,10 @@ mod constants;
 mod transport;
 
 pub use auth::{
-    build_auth_url, AntigravityAuth, AntigravityAuthError, AntigravityAuthErrorKind,
-    AntigravityCredentialHandles, AntigravityFlowTransport, AntigravityHttpFuture,
-    AntigravityHttpMethod, AntigravityHttpRequest, AntigravityHttpResponse,
-    AntigravityHttpTransportFailure, AntigravityRefreshCoordinator, AntigravityRefreshError,
+    AntigravityAuth, AntigravityAuthError, AntigravityAuthErrorKind, AntigravityCredentialHandles,
+    AntigravityFlowTransport, AntigravityHttpFuture, AntigravityHttpMethod, AntigravityHttpRequest,
+    AntigravityHttpResponse, AntigravityHttpTransportFailure, AntigravityOAuthClientCredentials,
+    AntigravityOAuthClientCredentialsError, AntigravityRefreshCoordinator, AntigravityRefreshError,
     AntigravityRefreshHttpResponse, AntigravityRefreshRequest, AntigravityRefreshTransport,
     AntigravityRefreshTransportFailure, AntigravitySecretHandle, AntigravitySecretKind,
     AntigravitySecretStore, AntigravityStoredCredentials, AntigravityTokenError,

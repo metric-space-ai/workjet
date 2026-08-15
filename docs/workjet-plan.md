@@ -718,5 +718,5 @@ Workjet is complete only when all of the following are true:
        CLIProxyAPI Rust and Web Stack.
 6. [x] Apply the dual-license policy and provenance inventory while importing
        CTOX-owned code.
-7. [ ] Land the first real local orchestrator → worker flow.
+7. [x] Land the first real local orchestrator → worker flow.
 8. [ ] Land one managed CTOX instance → Business OS WebRTC launch flow.

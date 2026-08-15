@@ -21,6 +21,8 @@ import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
+import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
+import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
@@ -180,11 +182,14 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
+const desktopCtoxLayer = CtoxDevAuth.layer().pipe(Layer.provideMerge(CtoxElectronSessions.layer));
+
 const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
+  desktopCtoxLayer,
   desktopSshLayer,
 ).pipe(
   Layer.provideMerge(DesktopUpdates.layer),

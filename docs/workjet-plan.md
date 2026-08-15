@@ -297,9 +297,13 @@ CTOX and the T3 harness adapter consume the same tagged package.
       commit `97c28f66f` resolves all 64 pre-existing mechanical findings with
       only narrow, locally justified compatibility exceptions. Strict
       all-target Clippy and the 444-Rust/43-Node full-feature gate pass.
-- [ ] Replace direct CTOX SQLite configuration reads with a small injected
-      configuration/store trait.
-- [ ] Supply a Workjet/T3 adapter and a CTOX runtime-config adapter.
+- [x] Replace direct CTOX SQLite configuration reads with the call-scoped,
+      object-safe `RuntimeConfigStore` boundary. Commit `20df6800b` keeps SQL
+      knowledge inside the CTOX adapter and adds product-neutral context entry
+      points without process-global or thread-local configuration.
+- [x] Supply the SQL-free immutable `WorkjetRuntimeConfigStore` and the
+      compatibility `CtoxRuntimeConfigStore`; adapter-conformance and
+      concurrent-isolation tests pass with the 450-Rust/43-Node full gate.
 - [ ] Keep compatibility names for CTOX tool calls during migration while
       introducing product-neutral manifest IDs.
 - [ ] Preserve SSRF protection, redirect validation, size limits, untrusted

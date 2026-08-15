@@ -74,10 +74,9 @@ an expected assertion against generated test output in
 The import branches are intentionally source-faithful, not already
 product-neutral. At the import boundary the provider crate still used the
 `ctox-cliproxyapi` package name and extensive CTOX port annotations, while the
-Web Stack still reads `runtime/ctox.sqlite3` directly in
-`src/runtime_config.rs`. The provider identity normalization is recorded below;
-the Web Stack configuration adapter remains post-import work. Neither task is
-grounds for discarding the verified source history.
+Web Stack read `runtime/ctox.sqlite3` directly in `src/runtime_config.rs`.
+The provider identity and Web Stack configuration normalizations are recorded
+below. Neither task is grounds for discarding the verified source history.
 
 ## Frozen Web Stack full-feature baseline
 
@@ -94,6 +93,17 @@ module-wide lint suppression; the only compatibility exceptions are scoped to
 the exact public helpers or private functions they justify. The independent
 post-integration gate passes strict all-target Clippy, all 444 Rust tests, and
 all 43 Node fixture tests.
+
+Workjet commit `20df6800b` adds an object-safe, call-scoped
+`RuntimeConfigStore` and `WebStackContext`. Product-neutral entry points receive
+the store from their host, the immutable `WorkjetRuntimeConfigStore` has no SQL
+dependency, and `CtoxRuntimeConfigStore` is the sole reader of CTOX's
+`runtime_env_kv` schema. Existing CTOX entry points remain compatibility
+wrappers. The independent post-integration gate passes formatting, strict
+all-target Clippy, 450 Rust tests with 23 explicitly ignored live-network tests,
+and all 43 Node fixture tests. Static checks find no direct configuration read
+outside `runtime_config.rs` and no `static mut` or `thread_local!` state in the
+crate.
 
 ## Provider-gateway license normalization
 

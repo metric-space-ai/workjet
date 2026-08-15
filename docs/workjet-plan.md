@@ -229,6 +229,18 @@ both modes.
         Node fixture tests. The package/server typechecks still report only the
         already-known Workjet Effect diagnostics and remain a separate cleanup
         gate.
+  - [x] Centralize all five Web Stack tool names, grants, descriptions,
+        annotations, and recursively closed input/output schemas in one
+        machine-readable contract. Commit `2779a1b50` adds deterministic
+        TypeScript generation and passes the byte-drift gate plus 33 focused
+        manifest/registration tests; no host keeps a hand-maintained schema
+        copy.
+  - [x] Promote the finite decoder, browser action AST/compiler, execution,
+        strict response projection, stable redacted errors, and host-controlled
+        response budget into the product-neutral Rust library. Commit
+        `2ad459fa8` reduces the Workjet binary to a thin context/config transport
+        and independently passes strict Clippy, 461 Rust tests with 23 ignored,
+        and all 43 Node fixture tests.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.
   - [x] Ship the Workjet/T3 structured prepare and automation surface through
@@ -333,8 +345,10 @@ CTOX and the T3 harness adapter consume the same tagged package.
 - [x] Supply the SQL-free immutable `WorkjetRuntimeConfigStore` and the
       compatibility `CtoxRuntimeConfigStore`; adapter-conformance and
       concurrent-isolation tests pass with the 450-Rust/43-Node full gate.
-- [ ] Keep compatibility names for CTOX tool calls during migration while
-      introducing product-neutral manifest IDs.
+- [x] Keep compatibility names for CTOX tool calls during migration while
+      introducing product-neutral manifest IDs. Commits `2779a1b50` and
+      `2ad459fa8` add the canonical five-tool contract and shared host API
+      without removing legacy crate exports or CTOX CLI command names.
 - [ ] Preserve SSRF protection, redirect validation, size limits, untrusted
       content fencing, cache bounds, evidence receipts, and legal/ToS controls.
 - [ ] Keep browser dependencies and downloaded browsers under ignored `.deps`
@@ -348,8 +362,17 @@ CTOX and the T3 harness adapter consume the same tagged package.
         with the same SQL-free store and server-wide Web Stack state root.
   - [x] Add the read and deep-research T3 surfaces with canonical input/output
         schemas and a strict native response projection.
+  - [x] Make the canonical schemas and finite execution boundary consumable by
+        both hosts through the shared package; Workjet/T3 now consumes them and
+        the CTOX product adapter remains the only missing host wiring.
   - [ ] Add the CTOX host adapter for search, read, deep research, and browser.
 - [ ] Prove both adapters against a shared fixture suite.
+  - [x] Add the canonical adapter fixture and consume it from Rust unit and
+        downstream-facing public API tests, including invalid controls,
+        redaction canaries, finite browser actions, host budgets, and host-owned
+        state assertions.
+  - [ ] Run the same fixture through the CTOX MCP registration, grants, policy,
+        audit, and dispatch boundary.
 - [ ] Change CTOX to consume the pinned Workjet Web Stack package.
 - [ ] Remove the duplicate CTOX source only after parity.
 

@@ -26,7 +26,7 @@ under ignored `.deps/` or external build storage.
 | Workjet / T3 Code        | `git@github.com:pingdotgg/t3code.git` via Workjet remote `upstream`                                                      | commit `6ae44b418a24dc021cf042cbb1e60ebeb47e160f`; tree `7a67bc947abca4ef3af6becd996fb4b29c036489`                                                                                    | Workjet merge-base equals this commit. Workjet changes form the downstream patch stack.                                                                                                          | MIT; retain the T3 Tools notice in `LICENSE` (SHA-256 `935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43`).                                                                                                                                                                                                                                                   | Keep T3-derived files MIT and upstream-compatible where practical.                                                                                                                                                                      |
 | CTOX Business OS Desktop | `/Users/michaelwelsch/Documents/ctox/src/apps/business-os-desktop`                                                       | CTOX commit `34fc7cc0978b6a1774342cb5468e90a6a0304564`; subtree `e2bf769fe90d116f131dbcf81e76151346e7c283`                                                                            | Selected subtree is clean. The wider CTOX checkout is dirty and must not be used as an implicit source snapshot. Package version `0.3.52`.                                                       | No component license field or file exists. First-party files currently inherit CTOX's AGPL policy. Only Metric Space AI-owned or controlled files may receive `MIT OR AGPL-3.0-only`.                                                                                                                                                                                        | Port the desktop connection/session behavior into Workjet; keep Business OS source and release artifacts in CTOX. Review every copied file before adding dual SPDX.                                                                     |
 | CLIProxyAPI Rust port    | `/Users/michaelwelsch/Documents/ctox/src/core/execution/cliproxyapi`                                                     | CTOX commit `cf92182afed8f31844cbb234657e992fd769cfdc`; subtree `9c0164ce5ffb6e799f9057700cb06bd56ecbc014`                                                                            | Selected subtree is clean. Crate `ctox-cliproxyapi` version `0.1.0`.                                                                                                                             | Mixed provenance: upstream CLIProxyAPI is MIT; CTOX-authored port changes currently declare AGPL and may be offered as `MIT OR AGPL-3.0-only` where ownership permits. Preserve `LICENSE.upstream` (SHA-256 `87d0eee372775bafa8bf3f3d56dcbc0d9c7e0e06b9904f076d0b0ed70d288773`).                                                                                             | Import history, preserve upstream MIT notices, separate portable gateway code from CTOX product adapters, then publish a pinned package consumed by both products.                                                                      |
-| CTOX Web Stack           | `/Users/michaelwelsch/Documents/ctox/src/tools/web-stack`                                                                | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`; subtree `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84`                                                                            | Selected subtree is clean. Crate `ctox-web-stack` version `0.1.0`.                                                                                                                               | Mixed at file level. CTOX-owned code may be dual-licensed. `humanlike.mjs` and `stealth_init.js` identify MIT-derived ports; Patchright is an Apache-2.0 runtime dependency. Those notices and terms remain independent.                                                                                                                                                     | Import history exactly; finish the file-level origin pass before dual-licensing or release, preserve compatibility names temporarily, and inject product-specific configuration through adapters.                                       |
+| CTOX Web Stack           | `/Users/michaelwelsch/Documents/ctox/src/tools/web-stack`                                                                | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`; subtree `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84`                                                                            | Selected subtree is clean. Crate `ctox-web-stack` version `0.1.0`.                                                                                                                               | Aggregate source expression `MIT AND ISC AND (MIT OR AGPL-3.0-only)`. CloakBrowser- and puppeteer-extra-derived assets remain MIT; google-search-derived portions remain ISC; only Metric Space AI-owned material receives the owner choice. Patchright `1.55.0` remains a separately installed Apache-2.0 runtime dependency. | Preserve immutable pins and file-family maps in `native/web-stack/UPSTREAM.md`; exclude unresolved `fixtures/sources/**` history from Cargo packaging and block public Git history until source-specific rights or synthetic replacement. |
 | CTOX PDF parser          | `/Users/michaelwelsch/Documents/ctox/src/tools/pdf-parse`; algorithm source `https://github.com/run-llama/liteparse.git` | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`, subtree `34e648d4027df575cc0bf60221f36341e1856968`; LiteParse tag `v1.4.5`, commit `67726fc153393439f43d70268ba67d08bf49ed87` | Selected CTOX subtree is clean. Crate `ctox-pdf-parse` version `0.1.0`; its Rust algorithm transposition is pinned to LiteParse v1.4.5 because v1.4.6 changed `bboxToLine` gap/overlap behavior. | Aggregate software expression `Apache-2.0 AND (MIT OR AGPL-3.0-only)`: LiteParse-derived material remains Apache-2.0, while Metric Space AI-owned additions use the authorized choice. Apache text SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`. `tests/fixtures/**` document/page data is excluded from both grants and from Cargo packaging. | Preserve the six reachable component commits under `native/pdf-parse/`, retain the immutable LiteParse port map in `UPSTREAM.md`, and block public fixture history until source-specific rights or synthetic replacements are complete. |
 | Greppy                   | `git@github.com:metric-space-ai/greppy.git`                                                                              | commit `de078b47d1df5df7c086e4591162517328f979ec`; source archive SHA-256 `20e54f1339f1ec138665e0bc0371d4557a96ce166ce4620ecc3f0ad4266f01cf`                                          | Source commit is pinned by Workjet. The local checkout contains an unrelated untracked `greppy` symlink and is therefore not a clean release input. Workspace version `0.3.1`.                   | Apache-2.0; retain `LICENSE` (SHA-256 `887fda41b617fdddcfeca9a77214b6ee7e20b5fc0194a7c69d33d0e63d7ca02b`) plus `THIRD_PARTY.md` and model/kernel terms.                                                                                                                                                                                                                      | Continue using the pinned external binary/source build and one server-owned store; do not vendor a second per-thread or per-harness copy.                                                                                               |
 
@@ -77,6 +77,45 @@ product-neutral. At the import boundary the provider crate still used the
 Web Stack read `runtime/ctox.sqlite3` directly in `src/runtime_config.rs`.
 The provider identity and Web Stack configuration normalizations are recorded
 below. Neither task is grounds for discarding the verified source history.
+
+## Web Stack mixed license normalization
+
+The Web Stack source package records the aggregate SPDX expression
+`MIT AND ISC AND (MIT OR AGPL-3.0-only)`. That conjunction preserves the
+owner-authorized MIT/AGPL choice only for Metric Space AI-owned material while
+retaining the independent terms on derived browser assets:
+
+- `assets/humanlike.mjs` maps to CloakBrowser commit
+  `0437a3f1f533b6c883e864b7730be1121da51348`, source families
+  `cloakbrowser/human/**` and `js/src/human/**`, under MIT;
+- `assets/stealth_init.js` maps to puppeteer-extra commit
+  `39248f1f5deeb21b1e7eb6ae07b8ef73f1231ab9`, source family
+  `packages/puppeteer-extra-plugin-stealth/evasions/**`, under MIT;
+- portions of `assets/google_browser_runner.mjs` map to google-search commit
+  `367aa01922e6d071f1900443eeae94d5f7a9b833`, principally `src/search.ts`
+  plus the package behavior/docs used locally, under ISC, and also retain the
+  mapped CloakBrowser MIT boundary.
+
+The exact commits, external inspection paths, source-family map, license
+checksums, and downstream modification boundaries are recorded in
+`native/web-stack/UPSTREAM.md`. Byte-identical upstream notices are retained for
+CloakBrowser, puppeteer-extra, and Patchright. The google-search package declares
+`ISC` in `package.json` but has no standalone license file at the pin, so the
+local standard ISC grant names metadata author `web-agent-master`, omits a year,
+and is not represented as an upstream byte-identical copy.
+
+Patchright remains outside the crate source expression: browser preparation
+installs the separately licensed Apache-2.0 npm runtime exactly as
+`patchright@1.55.0`. Its tag `v1.55.0`, commit
+`aabc60cdfbd6fccaaa1f24e4f9008cc85ff8fd4f`, npm integrity, and byte-identical
+Apache-2.0 notice are recorded separately.
+
+Cargo packaging excludes `native/web-stack/fixtures/sources/**`. That test-only
+third-party/web-response fixture history has unresolved redistribution evidence
+and is outside the package grants. Exclusion from the Cargo artifact does not
+make the existing Git history publishable: public history remains gated on
+source-specific rights or synthetic replacements plus any required history
+sanitization.
 
 ## Frozen Web Stack full-feature baseline
 
@@ -197,8 +236,10 @@ recorded third-party terms.
 
 - Record an immutable release URL and checksum for the versioned Business OS
   shell after CTOX publishes the first artifact consumed by Workjet.
-- Record file-level upstream commits/checksums for the Web Stack's derived
-  browser-preparation assets before import.
+- Resolve source-specific rights for every Web Stack `fixtures/sources/**`
+  fixture or replace it synthetically, then sanitize history as required before
+  claiming that fixture history is publishable. Cargo package exclusion does
+  not resolve this Git-history gate.
 - Resolve source-specific rights for every PDF parser `tests/fixtures/**`
   document/page fixture or replace it synthetically, then pass the public
   history-sanitization gate before claiming that fixture history is publishable.

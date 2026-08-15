@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: MIT AND (MIT OR AGPL-3.0-only)
+// Origin: derived from CloakHQ/CloakBrowser commit
+// 0437a3f1f533b6c883e864b7730be1121da51348.
+// Upstream source families: `cloakbrowser/human/**` and `js/src/human/**`.
+// Downstream modifications: reimplemented and adapted as a self-contained
+// JavaScript module for the local Playwright/Patchright integration.
+//
 // CTOX humanlike.mjs — behavioral primitives for Playwright/Patchright.
 //
 // Algorithms and default constants are ported from CloakHQ/CloakBrowser's

@@ -50,6 +50,44 @@ Current ownership boundary:
 - the durable scrape runtime/database still stays in the wider CTOX scrape
   subsystem, so the root injects only that executor.
 
+## License and provenance boundary
+
+This crate has a mixed file-level boundary. Its aggregate Cargo SPDX expression
+is:
+
+```text
+MIT AND ISC AND (MIT OR AGPL-3.0-only)
+```
+
+The `MIT OR AGPL-3.0-only` choice applies only to Metric Space AI-owned or
+controlled material. It does not relicense derived browser assets:
+
+- `assets/humanlike.mjs` retains CloakBrowser's MIT boundary and applies the
+  owner choice only to downstream additions;
+- `assets/stealth_init.js` retains puppeteer-extra's MIT boundary and applies
+  the owner choice only to downstream additions;
+- `assets/google_browser_runner.mjs` retains the google-search ISC boundary and
+  the CloakBrowser MIT boundary, with the owner choice applying only to
+  downstream additions.
+
+See `UPSTREAM.md`, `THIRD_PARTY.md`, the file-top SPDX/origin notices, and the
+license texts under `licenses/` for immutable pins, exact source-family maps,
+checksums, attribution, and redistribution terms.
+
+Patchright is a separately installed Apache-2.0 Node runtime dependency, not
+vendored crate source. The browser preparation implementation remains pinned to
+exactly `patchright@1.55.0`; its notice is retained in
+`licenses/Patchright-Apache-2.0.txt`. Apache-2.0 is therefore documented
+separately rather than added to the crate's aggregate source expression.
+
+`fixtures/sources/**` contains test-only third-party/web-response fixture
+history with unresolved redistribution evidence. Cargo packaging excludes the
+entire path, and no package license grant should be inferred for it. Its
+presence in Git is not a claim that the history is publishable. Public Git
+history remains blocked until source-specific rights are established or the
+fixtures are replaced synthetically and any required history sanitization is
+complete.
+
 ## Public scrape fallback
 
 Registered public scrape adapters have one bounded browser fallback for access

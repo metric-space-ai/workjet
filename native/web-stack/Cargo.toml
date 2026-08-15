@@ -2,6 +2,8 @@
 name = "ctox-web-stack"
 version = "0.1.0"
 edition = "2021"
+license = "MIT AND ISC AND (MIT OR AGPL-3.0-only)"
+exclude = ["fixtures/sources/**"]
 
 [features]
 default = ["full"]
@@ -26,3 +28,8 @@ zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 [[bin]]
 name = "workjet-web-stack"
 path = "src/bin/workjet-web-stack.rs"
+required-features = ["full"]
+
+[[test]]
+name = "capability_contract"
+required-features = ["full"]

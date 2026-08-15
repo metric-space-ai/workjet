@@ -1,3 +1,13 @@
+// SPDX-License-Identifier: ISC AND MIT AND (MIT OR AGPL-3.0-only)
+// Origins: web-agent-master/google-search commit
+// 367aa01922e6d071f1900443eeae94d5f7a9b833, using `src/search.ts` plus
+// package behavior/docs; and CloakHQ/CloakBrowser commit
+// 0437a3f1f533b6c883e864b7730be1121da51348, using
+// `cloakbrowser/human/**` and `js/src/human/**` launch-wrapper rules.
+// Downstream modifications: reworked into this bounded stdin/stdout runner,
+// persistent-context flow, consent handling, result projection, and Patchright
+// integration.
+//
 // CTOX Google search runner via Patchright (drop-in Playwright fork with
 // CDP-leak patches: Runtime.enable, Console.enable, source-URL markers).
 //

@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: MIT AND (MIT OR AGPL-3.0-only)
+// Origin: derived from berstend/puppeteer-extra commit
+// 39248f1f5deeb21b1e7eb6ae07b8ef73f1231ab9.
+// Upstream source family:
+// `packages/puppeteer-extra-plugin-stealth/evasions/**`.
+// Downstream modifications: distilled and adapted into one self-contained init
+// script for the local Playwright/Patchright integration.
+//
 // CTOX stealth_init.js — JS-property evasions injected via addInitScript.
 //
 // Algorithms and shapes are ported (under MIT, Copyright berstend & contributors)

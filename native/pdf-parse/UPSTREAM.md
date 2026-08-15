@@ -70,13 +70,22 @@ That aggregate expression records both applicable boundaries. It does not
 relicense LiteParse-derived material. See `LICENSE.Apache-2.0`, `LICENSE.MIT`,
 and `LICENSE.AGPL-3.0-only` for the full terms.
 
-## Fixture exclusion and public-release gate
+## Fixture boundaries and public-release gate
 
-`tests/fixtures/**` contains external document/page data. That data is
-explicitly excluded from both the LiteParse Apache-2.0 grant and the Metric
-Space AI `MIT OR AGPL-3.0-only` grant. Its presence in this source history is
-not a claim that it is publishable. A public source release remains gated on
-source-specific rights for each fixture or synthetic replacement, followed by
-history sanitization as needed. Cargo packaging excludes this directory, so it
-is not part of the published crate artifact. Do not infer fixture rights from
-this crate's aggregate Cargo license expression.
+The current `tests/fixtures/**` tree is original, hand-authored Workjet
+synthetic data. Its page JSON files preserve the `PageFixture` wire fields and
+add test-only synthetic page text evaluated directly in CI. Their
+`synthetic-pdfs/*.pdf` values are inert placeholders: no PDF binary is
+committed, downloaded, parsed, rendered, or generated. This coverage validates
+the evaluator and page-text linearization expectations only, not PDFium
+extraction or visual rendering.
+
+Earlier imported document/page fixtures remain reachable in prior Git commits.
+Replacing the current tree does not make that history publishable; a public
+source release remains gated on a one-time, verified purge of the former
+fixture history. Cargo packaging continues to exclude `tests/fixtures/**`.
+
+The source-derived `parity/**` fixtures are unchanged and remain governed by
+the LiteParse file-family transposition and Apache-2.0 boundary recorded above.
+The synthetic page contracts do not weaken, replace, or relicense that parity
+suite.

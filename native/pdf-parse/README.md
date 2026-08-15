@@ -64,8 +64,14 @@ upstream work. Metric Space AI-owned additions are available under the
 owner-authorized choice `MIT OR AGPL-3.0-only`. Full terms are in
 `LICENSE.Apache-2.0`, `LICENSE.MIT`, and `LICENSE.AGPL-3.0-only`.
 
-`tests/fixtures/**` document/page data is excluded from both license grants.
-Cargo packaging excludes that directory, but the Git history must still not be
-treated as publishable until each fixture has source-specific rights or a
-synthetic replacement and the later public history-sanitization gate is
-complete. See `UPSTREAM.md` for the complete boundary.
+The current `tests/fixtures/**` tree is original, hand-authored Workjet
+synthetic data. It contains page-text evaluator contracts and inert
+`synthetic-pdfs/*.pdf` placeholders, but no PDF binary. The contracts exercise
+evaluator and linearization expectations in ordinary CI; they do not claim
+PDFium extraction, PDF rendering, or visual end-to-end coverage.
+
+Cargo packaging continues to exclude `tests/fixtures/**`. Earlier imported
+fixture data remains in prior Git commits, so public publication is still gated
+on a one-time verified history purge. The source-derived `parity/**` fixtures
+remain governed by the separately documented LiteParse transposition boundary.
+See `UPSTREAM.md` for the complete boundary.

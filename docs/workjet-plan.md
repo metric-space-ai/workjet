@@ -338,6 +338,16 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Import the exact frozen parser tree under `native/pdf-parse/` through
         history branch `codex/import-pdf-parse` and verify all six reachable
         component commits.
+  - [x] Replace every current `native/pdf-parse/tests/fixtures/**` document/page
+        artifact with original Workjet synthetic page-text contracts executable
+        in ordinary CI without PDF binaries, downloads, or PDFium. This validates
+        the fixture evaluator and linearization expectations only; it adds no PDF
+        extraction, rendering, or visual E2E claim, and leaves `parity/**`
+        unchanged under its documented LiteParse transposition boundary.
+  - [ ] Before public history, perform and independently verify the one-time Git
+        history purge of the former imported PDF fixture corpus. The synthetic
+        current tree and Cargo package exclusion do not close this publication
+        gate.
 - [x] Replace every current `native/web-stack/fixtures/sources/**` website/API
       snapshot with a minimal original synthetic Workjet fixture; parser tests
       now assert exact fictional records, reserved-domain contacts, metadata,

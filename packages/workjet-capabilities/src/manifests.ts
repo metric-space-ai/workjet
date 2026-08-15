@@ -8,6 +8,60 @@ const ALL_ADAPTERS = [
   "ctox-business-command",
 ] as const;
 
+const BROWSER_TARGET_SCHEMA = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["selector"],
+      properties: {
+        selector: { type: "string", minLength: 1, maxLength: 2000, pattern: "\\S" },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["testId"],
+      properties: {
+        testId: { type: "string", minLength: 1, maxLength: 2000, pattern: "\\S" },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["role", "name"],
+      properties: {
+        role: { type: "string", minLength: 1, maxLength: 200, pattern: "\\S" },
+        name: { type: "string", minLength: 1, maxLength: 2000, pattern: "\\S" },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["label"],
+      properties: {
+        label: { type: "string", minLength: 1, maxLength: 2000, pattern: "\\S" },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["placeholder"],
+      properties: {
+        placeholder: { type: "string", minLength: 1, maxLength: 2000, pattern: "\\S" },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["text"],
+      properties: {
+        text: { type: "string", minLength: 1, maxLength: 2000, pattern: "\\S" },
+      },
+    },
+  ],
+} as const;
+
 const BUILT_IN_MANIFEST_LITERALS = [
   {
     schemaVersion: 1,
@@ -119,7 +173,7 @@ const BUILT_IN_MANIFEST_LITERALS = [
     },
     promptContribution: {
       instructions:
-        "Use Web Stack Browser for tasks that require interacting with or inspecting a rendered web page, and report observed outcomes.",
+        "Use Web Stack Browser for tasks that require interacting with or inspecting a rendered web page. Supply only its finite structured actions, never JavaScript, shell commands, paths, environment variables, or secrets, and report observed outcomes.",
     },
     permissionRequirements: ["browser.automation", "network.read"],
     secretRequirements: [],
@@ -140,7 +194,7 @@ const BUILT_IN_MANIFEST_LITERALS = [
                 required: ["action", "url"],
                 properties: {
                   action: { const: "navigate" },
-                  url: { type: "string", minLength: 1, maxLength: 8000 },
+                  url: { type: "string", minLength: 1, maxLength: 8000, pattern: "\\S" },
                 },
               },
               {
@@ -155,51 +209,7 @@ const BUILT_IN_MANIFEST_LITERALS = [
                 required: ["action", "target"],
                 properties: {
                   action: { const: "click" },
-                  target: {
-                    oneOf: [
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["selector"],
-                        properties: { selector: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["testId"],
-                        properties: { testId: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["role", "name"],
-                        properties: {
-                          role: { type: "string", minLength: 1, maxLength: 200 },
-                          name: { type: "string", minLength: 1, maxLength: 2000 },
-                        },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["label"],
-                        properties: { label: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["placeholder"],
-                        properties: {
-                          placeholder: { type: "string", minLength: 1, maxLength: 2000 },
-                        },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["text"],
-                        properties: { text: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                    ],
-                  },
+                  target: BROWSER_TARGET_SCHEMA,
                 },
               },
               {
@@ -208,51 +218,7 @@ const BUILT_IN_MANIFEST_LITERALS = [
                 required: ["action", "target", "value"],
                 properties: {
                   action: { const: "fill" },
-                  target: {
-                    oneOf: [
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["selector"],
-                        properties: { selector: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["testId"],
-                        properties: { testId: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["role", "name"],
-                        properties: {
-                          role: { type: "string", minLength: 1, maxLength: 200 },
-                          name: { type: "string", minLength: 1, maxLength: 2000 },
-                        },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["label"],
-                        properties: { label: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["placeholder"],
-                        properties: {
-                          placeholder: { type: "string", minLength: 1, maxLength: 2000 },
-                        },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["text"],
-                        properties: { text: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                    ],
-                  },
+                  target: BROWSER_TARGET_SCHEMA,
                   value: { type: "string", maxLength: 8000 },
                 },
               },
@@ -262,52 +228,8 @@ const BUILT_IN_MANIFEST_LITERALS = [
                 required: ["action", "target", "key"],
                 properties: {
                   action: { const: "press" },
-                  target: {
-                    oneOf: [
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["selector"],
-                        properties: { selector: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["testId"],
-                        properties: { testId: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["role", "name"],
-                        properties: {
-                          role: { type: "string", minLength: 1, maxLength: 200 },
-                          name: { type: "string", minLength: 1, maxLength: 2000 },
-                        },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["label"],
-                        properties: { label: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["placeholder"],
-                        properties: {
-                          placeholder: { type: "string", minLength: 1, maxLength: 2000 },
-                        },
-                      },
-                      {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["text"],
-                        properties: { text: { type: "string", minLength: 1, maxLength: 2000 } },
-                      },
-                    ],
-                  },
-                  key: { type: "string", minLength: 1, maxLength: 200 },
+                  target: BROWSER_TARGET_SCHEMA,
+                  key: { type: "string", minLength: 1, maxLength: 200, pattern: "\\S" },
                 },
               },
             ],

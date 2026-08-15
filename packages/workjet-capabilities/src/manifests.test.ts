@@ -114,6 +114,7 @@ describe("built-in capability manifests", () => {
     expect(JSON.stringify(browser?.inputSchema)).not.toContain("source");
     expect(JSON.stringify(browser?.inputSchema)).not.toContain("path");
     expect(JSON.stringify(browser?.inputSchema)).not.toContain("environment");
+    expect(JSON.stringify(browser?.inputSchema)).toContain('"pattern":"\\\\S"');
     const outputProperties = browser?.outputSchema.properties as
       | Record<string, unknown>
       | undefined;

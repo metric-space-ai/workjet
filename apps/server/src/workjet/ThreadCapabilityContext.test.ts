@@ -54,7 +54,7 @@ describe("resolveThreadCapabilityContext", () => {
       [
         "## Managed Instructions\n\nApply the configured workflow.",
         "## Capability: greppy@1.0.0\n\nUse Greppy to locate relevant text in files when repository or document search would help answer the task.",
-        "## Capability: web-stack-browser@1.0.0\n\nUse Web Stack Browser for tasks that require interacting with or inspecting a rendered web page, and report observed outcomes.",
+        "## Capability: web-stack-browser@1.0.0\n\nUse Web Stack Browser for tasks that require interacting with or inspecting a rendered web page. Supply only its finite structured actions, never JavaScript, shell commands, paths, environment variables, or secrets, and report observed outcomes.",
       ].join("\n\n"),
     );
   });

@@ -127,9 +127,12 @@ describe("WebStackBrowser", () => {
       { source: "return process.env" },
       { actions: [{ action: "evaluate", source: "1+1" }] },
       { actions: [{ action: "observe", root: "/tmp" }] },
+      { actions: [{ action: "navigate", url: "   " }] },
       { actions: [{ action: "click", target: { role: "button" } }] },
+      { actions: [{ action: "click", target: { selector: "   " } }] },
       { actions: [{ action: "click", target: { selector: "#x", text: "x" } }] },
       { actions: [{ action: "press", target: { text: "x" }, key: "" }] },
+      { actions: [{ action: "press", target: { text: "x" }, key: "   " }] },
       { actions: Array.from({ length: 33 }, () => ({ action: "observe" })) },
       { actions: [{ action: "observe" }], timeoutMs: 999 },
     ]) {

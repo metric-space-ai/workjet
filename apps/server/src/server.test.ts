@@ -7421,6 +7421,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         });
 
         const createdAt = "2026-01-01T00:00:00.000Z";
+        const bootstrapWorkjetConfig = {
+          schemaVersion: 1,
+          role: "orchestrator",
+          parent: null,
+          managedInstructions: "Coordinate this thread through Workjet.",
+          enabledCapabilityIds: ["greppy"],
+        } as const;
         const wsUrl = yield* getWsServerUrl("/ws");
         const response = yield* Effect.scoped(
           withWsRpcClient(wsUrl, (client) =>
@@ -7444,7 +7451,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   modelSelection: defaultModelSelection,
                   runtimeMode: "full-access",
                   interactionMode: "default",
-                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                  workjetConfig: bootstrapWorkjetConfig,
                   branch: "main",
                   worktreePath: null,
                   createdAt,
@@ -7473,6 +7480,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             "thread.turn.start",
           ],
         );
+        const createThreadCommand = dispatchedCommands[0];
+        assertTrue(createThreadCommand?.type === "thread.create");
+        if (createThreadCommand?.type === "thread.create") {
+          assert.deepEqual(createThreadCommand.workjetConfig, bootstrapWorkjetConfig);
+        }
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           refName: fetchedOriginCommit,

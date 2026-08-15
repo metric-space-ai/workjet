@@ -1,7 +1,7 @@
 use ctox_web_stack::{
-    execute_web_stack_capability, web_stack_capability_contracts, RuntimeConfigStore,
-    WebStackCapabilityErrorKind, WebStackCapabilityLimits, WebStackCapabilityTool, WebStackContext,
-    WorkjetRuntimeConfigStore,
+    execute_web_stack_capability, web_stack_capability_contracts, CtoxRuntimeConfigStore,
+    RuntimeConfigStore, WebStackCapabilityErrorKind, WebStackCapabilityLimits,
+    WebStackCapabilityTool, WebStackContext, WorkjetRuntimeConfigStore,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -30,6 +30,27 @@ fn temp_root(label: &str) -> PathBuf {
     ))
 }
 
+fn set_runtime_value(database: &Path, key: &str, value: &str) {
+    fs::create_dir_all(database.parent().unwrap()).unwrap();
+    let connection = rusqlite::Connection::open(database).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS runtime_env_kv (
+                env_key TEXT PRIMARY KEY,
+                env_value TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO runtime_env_kv(env_key, env_value)
+             VALUES (?1, ?2)
+             ON CONFLICT(env_key) DO UPDATE SET env_value = excluded.env_value",
+            rusqlite::params![key, value],
+        )
+        .unwrap();
+}
+
 fn collect_property_names(schema: &Value, names: &mut Vec<String>) {
     match schema {
         Value::Array(items) => {
@@ -47,6 +68,36 @@ fn collect_property_names(schema: &Value, names: &mut Vec<String>) {
         }
         _ => {}
     }
+}
+
+#[test]
+fn ctox_runtime_config_from_root_uses_only_the_authoritative_store() {
+    let root = temp_root("ctox-runtime-config-authority");
+    let authoritative = root.join("runtime/ctox-runtime.sqlite3");
+    let consolidated = root.join("runtime/ctox.sqlite3");
+    set_runtime_value(&authoritative, "CONFLICT", "authoritative");
+    set_runtime_value(&consolidated, "CONFLICT", "consolidated");
+    set_runtime_value(&consolidated, "CONSOLIDATED_ONLY", "legacy");
+
+    let store = CtoxRuntimeConfigStore::from_root(&root);
+    assert_eq!(store.database_path(), authoritative);
+    assert_eq!(store.get("CONFLICT").as_deref(), Some("authoritative"));
+    assert_eq!(store.get("CONSOLIDATED_ONLY"), None);
+
+    fs::remove_file(&authoritative).unwrap();
+    assert_eq!(store.get("CONFLICT"), None);
+    assert_eq!(store.get("CONSOLIDATED_ONLY"), None);
+
+    let explicit_legacy = CtoxRuntimeConfigStore::from_database_path(consolidated);
+    assert_eq!(
+        explicit_legacy.get("CONFLICT").as_deref(),
+        Some("consolidated")
+    );
+    assert_eq!(
+        explicit_legacy.get("CONSOLIDATED_ONLY").as_deref(),
+        Some("legacy")
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -214,9 +265,11 @@ fn errors_are_stable_redacted_and_workjet_state_stays_host_owned() {
 
     let marker = fixture["outputCanaries"]["marker"].as_str().unwrap();
     let root = temp_root(marker);
-    let database = root.join("runtime/ctox.sqlite3");
-    fs::create_dir_all(database.parent().unwrap()).unwrap();
-    fs::write(&database, marker.as_bytes()).unwrap();
+    let runtime_config_database = root.join("runtime/ctox-runtime.sqlite3");
+    let consolidated_database = root.join("runtime/ctox.sqlite3");
+    fs::create_dir_all(runtime_config_database.parent().unwrap()).unwrap();
+    fs::write(&runtime_config_database, marker.as_bytes()).unwrap();
+    fs::write(&consolidated_database, marker.as_bytes()).unwrap();
 
     let disabled = WorkjetRuntimeConfigStore::new([
         ("CTOX_WEB_SEARCH_ENABLED", "false"),
@@ -235,7 +288,11 @@ fn errors_are_stable_redacted_and_workjet_state_stays_host_owned() {
     assert_eq!(error.to_string(), "capability execution failed");
     assert!(!format!("{error:?}").contains(marker));
     assert!(!error.to_string().contains(root.to_string_lossy().as_ref()));
-    assert_eq!(fs::read(&database).unwrap(), marker.as_bytes());
+    assert_eq!(
+        fs::read(&runtime_config_database).unwrap(),
+        marker.as_bytes()
+    );
+    assert_eq!(fs::read(&consolidated_database).unwrap(), marker.as_bytes());
 
     let prepare_arguments = fixture["validInputs"]
         .as_array()
@@ -255,7 +312,11 @@ fn errors_are_stable_redacted_and_workjet_state_stays_host_owned() {
     )
     .unwrap();
     assert_eq!(prepared["installAttempted"], false);
-    assert_eq!(fs::read(&database).unwrap(), marker.as_bytes());
+    assert_eq!(
+        fs::read(&runtime_config_database).unwrap(),
+        marker.as_bytes()
+    );
+    assert_eq!(fs::read(&consolidated_database).unwrap(), marker.as_bytes());
     assert!(!prepared
         .to_string()
         .contains(root.to_string_lossy().as_ref()));

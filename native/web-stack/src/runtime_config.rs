@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
-const DEFAULT_RUNTIME_CONFIG_RELATIVE_PATH: &str = "runtime/ctox.sqlite3";
+const DEFAULT_RUNTIME_CONFIG_RELATIVE_PATH: &str = "runtime/ctox-runtime.sqlite3";
 
 /// Call-scoped runtime configuration lookup.
 ///
@@ -34,10 +34,12 @@ impl<'a> WebStackContext<'a> {
     }
 }
 
-/// CTOX compatibility adapter for `runtime/ctox.sqlite3`.
+/// CTOX compatibility adapter for `runtime/ctox-runtime.sqlite3`.
 ///
 /// This is the only Web Stack component that knows the CTOX runtime-config SQL
-/// schema. It owns only the database path and opens it for each lookup.
+/// schema. `from_root` uses CTOX's authoritative runtime-config store without
+/// consulting the consolidated core database. The adapter owns only the database
+/// path and opens it for each lookup.
 #[derive(Debug, Clone)]
 pub struct CtoxRuntimeConfigStore {
     database_path: PathBuf,
@@ -193,23 +195,22 @@ mod tests {
 
     #[test]
     fn workjet_contexts_remain_isolated_across_threads() {
-        let root_a = Path::new("workjet-a");
-        let root_b = Path::new("workjet-b");
+        let shared_root = Path::new("shared-workjet-root");
         let store_a = WorkjetRuntimeConfigStore::new([("CONFLICT", "alpha")]);
         let store_b = WorkjetRuntimeConfigStore::new([("CONFLICT", "beta")]);
-        let context_a = WebStackContext::new(root_a, &store_a);
-        let context_b = WebStackContext::new(root_b, &store_b);
+        let context_a = WebStackContext::new(shared_root, &store_a);
+        let context_b = WebStackContext::new(shared_root, &store_b);
 
         std::thread::scope(|scope| {
             let a = scope.spawn(move || (context_a.root.to_path_buf(), context_a.get("CONFLICT")));
             let b = scope.spawn(move || (context_b.root.to_path_buf(), context_b.get("CONFLICT")));
             assert_eq!(
                 a.join().unwrap(),
-                (root_a.to_path_buf(), Some("alpha".into()))
+                (shared_root.to_path_buf(), Some("alpha".into()))
             );
             assert_eq!(
                 b.join().unwrap(),
-                (root_b.to_path_buf(), Some("beta".into()))
+                (shared_root.to_path_buf(), Some("beta".into()))
             );
         });
     }

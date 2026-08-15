@@ -138,8 +138,8 @@ scientific auto-discovery into a successful empty result.
 
 `ctox_web_search` defaults to provider `auto`, which cascades
 `Google → Brave → DuckDuckGo → Bing` with rate-limit cooldown and a quality
-gate. Set `CTOX_WEB_SEARCH_PROVIDER` in the CTOX SQLite runtime config to pin
-a specific backend.
+gate. Set `CTOX_WEB_SEARCH_PROVIDER` in CTOX's authoritative SQLite runtime
+config at `runtime/ctox-runtime.sqlite3` to pin a specific backend.
 
 | Provider | Notes |
 | --- | --- |
@@ -180,8 +180,9 @@ cookie-bootstrap profile flow — Playwright owns the entire Google path.
 | `CTOX_WEB_BROWSER_REFERENCE_DIR` | Directory containing `node_modules/playwright`. Defaults to `runtime/browser/interactive-reference`. |
 | `CTOX_WEB_EGRESS_ALLOW` | Comma-separated host allow-list that bypasses the SSRF egress guard (for deliberately-internal endpoints, e.g. a self-hosted SearXNG). Empty by default. |
 
-These keys are read from CTOX's local SQLite runtime config store, not from
-global process environment variables.
+These keys are read only from CTOX's authoritative local SQLite runtime config
+store at `runtime/ctox-runtime.sqlite3`, not from the consolidated core database
+at `runtime/ctox.sqlite3` or from global process environment variables.
 
 ## Egress (SSRF) guard
 

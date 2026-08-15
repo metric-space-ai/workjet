@@ -75,16 +75,48 @@ describe("built-in capability manifests", () => {
     }
   });
 
-  it("uses bounded object schemas with required task or query text and structured output", () => {
+  it("uses bounded object schemas with capability-specific required inputs", () => {
     for (const manifest of builtInCapabilityManifests) {
       expect(manifest.inputSchema.type).toBe("object");
       expect(manifest.inputSchema.additionalProperties).toBe(false);
       expect(manifest.inputSchema.required).toEqual([
-        manifest.id === "web-search" ? "query" : "task",
+        manifest.id === "web-search"
+          ? "query"
+          : manifest.id === "web-stack-browser"
+            ? "actions"
+            : "task",
       ]);
       expect(manifest.outputSchema.type).toBe("object");
       expect(manifest.outputSchema.additionalProperties).toBe(false);
       expect(manifest.outputSchema.required).toBeInstanceOf(Array);
     }
+  });
+
+  it("defines the browser contract as a strict bounded finite action vocabulary", () => {
+    const browser = builtInCapabilityManifests.find(
+      ({ id, version }) => id === "web-stack-browser" && version === "1.0.0",
+    );
+    expect(browser).toBeDefined();
+    const inputProperties = browser?.inputSchema.properties as Record<string, unknown> | undefined;
+    const actions = inputProperties?.actions as {
+      readonly minItems?: number;
+      readonly maxItems?: number;
+      readonly items?: { readonly oneOf?: ReadonlyArray<Record<string, unknown>> };
+    };
+    expect(actions.minItems).toBe(1);
+    expect(actions.maxItems).toBe(32);
+    expect(
+      actions.items?.oneOf?.map(
+        (action) =>
+          (action.properties as { readonly action: { readonly const: string } }).action.const,
+      ),
+    ).toEqual(["navigate", "observe", "click", "fill", "press"]);
+    expect(JSON.stringify(browser?.inputSchema)).not.toContain("source");
+    expect(JSON.stringify(browser?.inputSchema)).not.toContain("path");
+    expect(JSON.stringify(browser?.inputSchema)).not.toContain("environment");
+    const outputProperties = browser?.outputSchema.properties as
+      | Record<string, unknown>
+      | undefined;
+    expect(outputProperties?.observations).toMatchObject({ maxItems: 200 });
   });
 });

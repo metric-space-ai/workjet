@@ -24,6 +24,7 @@ import {
 } from "./toolkits/preview/tools.ts";
 import * as GreppySearch from "./toolkits/workjet/GreppySearch.ts";
 import { WorkjetToolkitRegistrationLive } from "./toolkits/workjet/GreppyTool.ts";
+import * as WebStackBrowser from "./toolkits/workjet/WebStackBrowser.ts";
 import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
 import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
 
@@ -222,7 +223,10 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
 
 const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
   WorkjetToolkitRegistrationLive.pipe(Layer.provide(GreppySearch.layer)),
-  WebStackToolkitRegistrationLive.pipe(Layer.provide(WebStackSearch.layer)),
+  WebStackToolkitRegistrationLive.pipe(
+    Layer.provideMerge(WebStackSearch.layer),
+    Layer.provide(WebStackBrowser.layer),
+  ),
 );
 
 const McpTransportLive = McpServer.layerHttp({

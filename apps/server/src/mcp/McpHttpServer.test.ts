@@ -15,7 +15,11 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
 import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
-import { WEB_SEARCH_MCP_TOOL_NAME } from "./toolkits/workjet/WebStackTool.ts";
+import {
+  WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
+  WEB_BROWSER_PREPARE_MCP_TOOL_NAME,
+  WEB_SEARCH_MCP_TOOL_NAME,
+} from "./toolkits/workjet/WebStackTool.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -191,10 +195,17 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
           },
         ],
         [
-          "both-token",
+          "browser-only-token",
           {
             ...invocation,
-            activeWorkjetMcpCapabilityIds: new Set(["greppy", "web-search"]),
+            activeWorkjetMcpCapabilityIds: new Set(["web-stack-browser"]),
+          },
+        ],
+        [
+          "all-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy", "web-search", "web-stack-browser"]),
             cwd: "/workspace/project",
           },
         ],
@@ -278,8 +289,20 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
       const greppyMissingCwd = yield* listTools("greppy-missing-cwd-token");
       const greppyOnly = yield* listTools("greppy-only-token");
       const webSearchOnly = yield* listTools("web-search-only-token");
-      const both = yield* listTools("both-token");
+      const browserOnly = yield* listTools("browser-only-token");
+      const all = yield* listTools("all-token");
 
+      for (const browserTool of [
+        WEB_BROWSER_PREPARE_MCP_TOOL_NAME,
+        WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
+      ]) {
+        expect(hidden).not.toContain(browserTool);
+        expect(greppyMissingCwd).not.toContain(browserTool);
+        expect(greppyOnly).not.toContain(browserTool);
+        expect(webSearchOnly).not.toContain(browserTool);
+        expect(browserOnly).toContain(browserTool);
+        expect(all).toContain(browserTool);
+      }
       expect(hidden).not.toContain(GREPPY_MCP_TOOL_NAME);
       expect(hidden).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(greppyMissingCwd).not.toContain(GREPPY_MCP_TOOL_NAME);
@@ -288,12 +311,15 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
       expect(greppyOnly).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(webSearchOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
       expect(webSearchOnly).toContain(WEB_SEARCH_MCP_TOOL_NAME);
-      expect(both).toContain(GREPPY_MCP_TOOL_NAME);
-      expect(both).toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      expect(browserOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(browserOnly).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      expect(all).toContain(GREPPY_MCP_TOOL_NAME);
+      expect(all).toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(hidden).toContain("preview_status");
       expect(greppyOnly).toContain("preview_status");
       expect(webSearchOnly).toContain("preview_status");
-      expect(both).toContain("preview_status");
+      expect(browserOnly).toContain("preview_status");
+      expect(all).toContain("preview_status");
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

@@ -126,14 +126,194 @@ const BUILT_IN_MANIFEST_LITERALS = [
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["task"],
+      required: ["actions"],
       properties: {
-        task: {
-          type: "string",
-          minLength: 1,
-          maxLength: 4000,
-          description: "A plain-language browser task.",
+        actions: {
+          type: "array",
+          minItems: 1,
+          maxItems: 32,
+          items: {
+            oneOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["action", "url"],
+                properties: {
+                  action: { const: "navigate" },
+                  url: { type: "string", minLength: 1, maxLength: 8000 },
+                },
+              },
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["action"],
+                properties: { action: { const: "observe" } },
+              },
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["action", "target"],
+                properties: {
+                  action: { const: "click" },
+                  target: {
+                    oneOf: [
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["selector"],
+                        properties: { selector: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["testId"],
+                        properties: { testId: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["role", "name"],
+                        properties: {
+                          role: { type: "string", minLength: 1, maxLength: 200 },
+                          name: { type: "string", minLength: 1, maxLength: 2000 },
+                        },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["label"],
+                        properties: { label: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["placeholder"],
+                        properties: {
+                          placeholder: { type: "string", minLength: 1, maxLength: 2000 },
+                        },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["text"],
+                        properties: { text: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                    ],
+                  },
+                },
+              },
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["action", "target", "value"],
+                properties: {
+                  action: { const: "fill" },
+                  target: {
+                    oneOf: [
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["selector"],
+                        properties: { selector: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["testId"],
+                        properties: { testId: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["role", "name"],
+                        properties: {
+                          role: { type: "string", minLength: 1, maxLength: 200 },
+                          name: { type: "string", minLength: 1, maxLength: 2000 },
+                        },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["label"],
+                        properties: { label: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["placeholder"],
+                        properties: {
+                          placeholder: { type: "string", minLength: 1, maxLength: 2000 },
+                        },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["text"],
+                        properties: { text: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                    ],
+                  },
+                  value: { type: "string", maxLength: 8000 },
+                },
+              },
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["action", "target", "key"],
+                properties: {
+                  action: { const: "press" },
+                  target: {
+                    oneOf: [
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["selector"],
+                        properties: { selector: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["testId"],
+                        properties: { testId: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["role", "name"],
+                        properties: {
+                          role: { type: "string", minLength: 1, maxLength: 200 },
+                          name: { type: "string", minLength: 1, maxLength: 2000 },
+                        },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["label"],
+                        properties: { label: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["placeholder"],
+                        properties: {
+                          placeholder: { type: "string", minLength: 1, maxLength: 2000 },
+                        },
+                      },
+                      {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["text"],
+                        properties: { text: { type: "string", minLength: 1, maxLength: 2000 } },
+                      },
+                    ],
+                  },
+                  key: { type: "string", minLength: 1, maxLength: 200 },
+                },
+              },
+            ],
+          },
         },
+        timeoutMs: { type: "integer", minimum: 1000, maximum: 300000 },
       },
     },
     outputSchema: {

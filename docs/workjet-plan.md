@@ -213,12 +213,22 @@ both modes.
   - [x] Add the per-thread Greppy activation toggle to the Code composer/thread
         settings without creating thread-, session-, harness-, or provider-scoped
         stores.
-- [ ] `web-search`: shared Web Stack search/read surface.
+- [ ] `web-search`: shared Web Stack search/read surface; the T3 adapter is
+      complete and CTOX parity remains open.
   - [x] Ship the first Workjet/T3 search surface through the existing
         per-session MCP server; commit `33a05b537` passes 19 focused TypeScript
         tests, the server typecheck, strict Rust Clippy, 450 Rust tests with 23
         ignored, four native boundary tests, and all 43 Web Stack fixture tests.
-  - [ ] Add the remaining read and deep-research surfaces.
+  - [x] Add the remaining bounded read and deep-research T3 surfaces. Commits
+        `4f7eddd53` and `3ec3b8aab` add exact native surface probes, strict
+        request decoding, canonical recursively closed output schemas,
+        schema-driven response projection, capability-gated MCP registration,
+        finite timeouts, and server-owned state. Independent gates pass with 57
+        focused TypeScript tests, strict all-feature/all-target Clippy, 450 Rust
+        library tests with 23 ignored, nine native boundary tests, and all 43
+        Node fixture tests. The package/server typechecks still report only the
+        already-known Workjet Effect diagnostics and remain a separate cleanup
+        gate.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.
   - [x] Ship the Workjet/T3 structured prepare and automation surface through
@@ -336,7 +346,9 @@ CTOX and the T3 harness adapter consume the same tagged package.
         harness, or provider identifier enters its server state path.
   - [x] Expose the structured browser prepare/automation schema through T3 MCP
         with the same SQL-free store and server-wide Web Stack state root.
-  - [ ] Add the read and deep-research T3 surfaces and the CTOX host adapter.
+  - [x] Add the read and deep-research T3 surfaces with canonical input/output
+        schemas and a strict native response projection.
+  - [ ] Add the CTOX host adapter for search, read, deep research, and browser.
 - [ ] Prove both adapters against a shared fixture suite.
 - [ ] Change CTOX to consume the pinned Workjet Web Stack package.
 - [ ] Remove the duplicate CTOX source only after parity.

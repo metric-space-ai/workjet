@@ -182,6 +182,10 @@ both modes.
         `web-search`, independent direct-call enforcement, a bounded native JSON
         process boundary, and one server-wide state root at
         `<ServerConfig.stateDir>/web-stack`.
+  - [x] Register the structured Web Stack browser prepare/automation adapter
+        with bearer grant `web-stack-browser`, independent direct-call
+        enforcement, exact native-surface probing, and a finite action AST that
+        exposes no raw JavaScript, shell, path, environment, or secret fields.
 - [ ] CTOX adapter: expose the same capabilities through typed Business OS MCP
       and/or validated CTOX business commands.
 - [ ] Keep CTOX Business OS data on WebRTC; MCP remains a control and tool
@@ -217,6 +221,12 @@ both modes.
   - [ ] Add the remaining read and deep-research surfaces.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.
+  - [x] Ship the Workjet/T3 structured prepare and automation surface through
+        the existing per-session MCP server. Commits `b81a8ee2a` and
+        `c429829b2` pass 39 focused TypeScript tests, both package typechecks,
+        strict Rust Clippy, 450 Rust tests with 23 ignored, seven native
+        boundary tests, and all 43 Web Stack fixture tests. Real installed-
+        browser E2E and CTOX adapter parity remain open.
 - [ ] Add room for later capabilities without changing thread-role contracts.
 
 ## 6. Wave 3 — move the CLIProxyAPI Rust port
@@ -324,8 +334,9 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Expose the first product-neutral search schema through T3 MCP using the
         SQL-free `WorkjetRuntimeConfigStore`; no CTOX SQLite, thread, session,
         harness, or provider identifier enters its server state path.
-  - [ ] Add the browser, read, and deep-research T3 surfaces and the CTOX host
-        adapter.
+  - [x] Expose the structured browser prepare/automation schema through T3 MCP
+        with the same SQL-free store and server-wide Web Stack state root.
+  - [ ] Add the read and deep-research T3 surfaces and the CTOX host adapter.
 - [ ] Prove both adapters against a shared fixture suite.
 - [ ] Change CTOX to consume the pinned Workjet Web Stack package.
 - [ ] Remove the duplicate CTOX source only after parity.

@@ -1026,7 +1026,7 @@ pub(crate) fn playwright_browser_cache_dir(reference_dir: &Path) -> PathBuf {
 }
 
 fn find_playwright_chromium_executable_in(cache_root: &Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(&cache_root).ok()?;
+    let entries = fs::read_dir(cache_root).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|value| value.to_str()) else {

@@ -461,10 +461,7 @@ fn domain_from_url(raw: &str) -> String {
         None => s,
     };
     let host_and_path = after_scheme.trim_start_matches('/');
-    let host = host_and_path
-        .split(|c: char| c == '/' || c == '?' || c == '#')
-        .next()
-        .unwrap_or("");
+    let host = host_and_path.split(['/', '?', '#']).next().unwrap_or("");
     let host = host.trim_start_matches("www.");
     host.trim().to_ascii_lowercase()
 }

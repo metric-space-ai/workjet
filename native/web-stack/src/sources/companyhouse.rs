@@ -439,10 +439,7 @@ mod tests {
         assert_eq!(m.tier(), Tier::S);
         assert_eq!(m.countries(), &[Country::De]);
         assert!(m.requires_credential().is_none());
-        assert!(m
-            .authoritative_for()
-            .iter()
-            .any(|f| *f == FieldKey::PersonTitel));
+        assert!(m.authoritative_for().contains(&FieldKey::PersonTitel));
     }
 
     #[test]
@@ -528,7 +525,7 @@ mod tests {
         assert_eq!(last.confidence, Confidence::Medium);
 
         // Person-Seite schreibt keinen Firmennamen.
-        assert!(by_key.get(&FieldKey::FirmaName).is_none());
+        assert!(!by_key.contains_key(&FieldKey::FirmaName));
     }
 
     /// End-to-end extraction against a frozen Companyhouse company profile.
@@ -556,9 +553,9 @@ mod tests {
         assert_eq!(name.confidence, Confidence::High);
 
         // Firmen-Seite schreibt keine Personen-Felder.
-        assert!(by_key.get(&FieldKey::PersonTitel).is_none());
-        assert!(by_key.get(&FieldKey::PersonVorname).is_none());
-        assert!(by_key.get(&FieldKey::PersonNachname).is_none());
+        assert!(!by_key.contains_key(&FieldKey::PersonTitel));
+        assert!(!by_key.contains_key(&FieldKey::PersonVorname));
+        assert!(!by_key.contains_key(&FieldKey::PersonNachname));
     }
 
     #[test]

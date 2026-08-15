@@ -502,8 +502,8 @@ mod tests {
         assert_eq!(name.confidence, Confidence::High);
 
         // Search-results page has no GuV/Anhang data → keine Finanzfelder.
-        assert!(by_key.get(&FieldKey::Umsatz).is_none());
-        assert!(by_key.get(&FieldKey::Mitarbeiter).is_none());
+        assert!(!by_key.contains_key(&FieldKey::Umsatz));
+        assert!(!by_key.contains_key(&FieldKey::Mitarbeiter));
     }
 
     /// Extracts `umsatz` and `mitarbeiter` from a Jahresabschluss

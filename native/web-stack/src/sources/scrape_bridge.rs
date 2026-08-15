@@ -498,7 +498,7 @@ fn recent_successful_result(
             }
         }
     }
-    cached_candidates.sort_by(|left, right| right.0.cmp(&left.0));
+    cached_candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.0));
     cached_candidates.dedup_by(|left, right| left.1 == right.1);
 
     for (_, run_id, records_path) in cached_candidates {

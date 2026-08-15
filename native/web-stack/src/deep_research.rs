@@ -73,9 +73,10 @@ pub struct DeepResearchRequest {
     pub persist_workspace: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DeepResearchDepth {
     Quick,
+    #[default]
     Standard,
     Exhaustive,
 }
@@ -128,12 +129,6 @@ impl DeepResearchDepth {
             Self::Standard => 32,
             Self::Exhaustive => 96,
         }
-    }
-}
-
-impl Default for DeepResearchDepth {
-    fn default() -> Self {
-        Self::Standard
     }
 }
 
@@ -247,7 +242,7 @@ pub fn run_ctox_deep_research_tool(root: &Path, request: &DeepResearchRequest) -
             "source_failures": payload.get("source_failures").cloned().unwrap_or_else(|| json!([])),
             "result_count": payload.get("results").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
         }));
-        collect_search_sources(&payload, plan, &mut seen_urls, &mut sources);
+        collect_search_sources(payload, plan, &mut seen_urls, &mut sources);
     }
     let database_runs = collect_scholarly_database_sources(
         root,
@@ -1372,7 +1367,7 @@ fn build_research_search_plan(
     if request.include_annas_archive {
         plans.push(ResearchSearchPlan {
             label: "annas_archive_metadata",
-            query: format!("{query}"),
+            query: query.to_string(),
             domains: vec!["annas-archive.org".to_string()],
             scholarly: true,
             metadata_only: true,
@@ -2439,7 +2434,7 @@ fn source_relevance_query(source: &Value, research_query: &str) -> String {
         }
         if !terms
             .iter()
-            .any(|existing| existing.eq_ignore_ascii_case(&term))
+            .any(|existing| existing.eq_ignore_ascii_case(term))
         {
             terms.push(term.clone());
         }
@@ -2495,10 +2490,9 @@ fn followup_data_sources(parent: &Value, read: &Value) -> Vec<Value> {
             let title = Url::parse(&url)
                 .ok()
                 .and_then(|parsed| {
-                    parsed.path_segments().and_then(|segments| {
+                    parsed.path_segments().and_then(|mut segments| {
                         segments
-                            .filter(|segment| !segment.eq_ignore_ascii_case("content"))
-                            .next_back()
+                            .rfind(|segment| !segment.eq_ignore_ascii_case("content"))
                             .map(ToOwned::to_owned)
                     })
                 })
@@ -2670,7 +2664,7 @@ fn collect_scholarly_database_sources(
                 Ok(items) => {
                     if provider == ScholarlySearchProvider::OpenAlex {
                         queue_scholarly_references(
-                            &items,
+                            items,
                             research_query,
                             1,
                             &mut citation_queue,
@@ -2691,7 +2685,7 @@ fn collect_scholarly_database_sources(
                     })
                 }
                 Err(err) => {
-                    let rate_limit = is_rate_limit_error(&err);
+                    let rate_limit = is_rate_limit_error(err);
                     if rate_limit {
                         rate_limited.insert(label);
                     }
@@ -2879,9 +2873,7 @@ fn resolve_scholarly_reference(root: &Path, reference_id: &str) -> Result<Schola
             result.open_access_pdf = openalex.open_access_pdf;
             result.open_access_license = openalex.open_access_license;
         }
-        result
-            .reference_ids
-            .extend(openalex.reference_ids.into_iter());
+        result.reference_ids.extend(openalex.reference_ids);
         result.reference_ids.sort();
         result.reference_ids.dedup();
         if result.snippet.is_none() {
@@ -3652,7 +3644,7 @@ fn extract_urls(text: &str) -> Vec<String> {
                 )
             });
             if trimmed.starts_with("https://") || trimmed.starts_with("http://") {
-                let url = trimmed.trim_end_matches(|c: char| matches!(c, '.' | ',' | ')' | ']'));
+                let url = trimmed.trim_end_matches(['.', ',', ')', ']']);
                 Url::parse(url).ok().map(|parsed| parsed.to_string())
             } else {
                 None

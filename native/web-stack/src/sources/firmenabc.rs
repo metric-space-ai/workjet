@@ -586,10 +586,7 @@ mod tests {
         assert_eq!(m.tier(), Tier::S);
         assert_eq!(m.countries(), &[Country::At]);
         assert!(m.requires_credential().is_none());
-        assert!(m
-            .authoritative_for()
-            .iter()
-            .any(|f| *f == FieldKey::FirmaName));
+        assert!(m.authoritative_for().contains(&FieldKey::FirmaName));
     }
 
     #[test]
@@ -681,7 +678,7 @@ mod tests {
 
         // Geschäftsführer: erster Eintrag im Profil ist „Herr Watzlawick Franz“.
         // person_geschlecht is intentionally never emitted (GDPR; WS2-03).
-        assert!(by_key.get(&FieldKey::PersonGeschlecht).is_none());
+        assert!(!by_key.contains_key(&FieldKey::PersonGeschlecht));
 
         let last = by_key
             .get(&FieldKey::PersonNachname)
@@ -696,7 +693,7 @@ mod tests {
         assert_eq!(first.confidence, Confidence::Medium);
 
         // Kein akademischer Titel beim ersten GF → person_titel fehlt.
-        assert!(by_key.get(&FieldKey::PersonTitel).is_none());
+        assert!(!by_key.contains_key(&FieldKey::PersonTitel));
     }
 
     #[test]

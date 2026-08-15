@@ -98,6 +98,8 @@ impl ResearchMode {
         }
     }
 
+    // Compatibility helper retained for existing CLI callers.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "have_data" | "a" => Some(Self::HaveData),
@@ -186,6 +188,8 @@ impl FieldKey {
         }
     }
 
+    // Compatibility helper retained for existing field-label callers.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "firma_name" | "firmierung" => Some(Self::FirmaName),
@@ -670,10 +674,7 @@ mod tests {
             "xing.com",
             "zefix.ch",
         ] {
-            assert!(
-                ids.iter().any(|id| *id == expected),
-                "missing source: {expected}"
-            );
+            assert!(ids.contains(&expected), "missing source: {expected}");
         }
     }
 

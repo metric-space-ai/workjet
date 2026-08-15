@@ -995,7 +995,7 @@ fn render_direct_web_read_payload(
     // fields. A successful transport or a shell/login response is not a
     // source read and must not reach an extractor.
     let extracted = if evidence_doc_is_admitted_for_read(&doc) {
-        match_source_for_url(&url).map(|module| {
+        match_source_for_url(url).map(|module| {
             let read = evidence_doc_to_source_read(&doc);
             let evidence = module.extract_fields(&read);
             let payload: Vec<Value> = evidence
@@ -1090,7 +1090,7 @@ fn render_direct_web_read_payload(
         },
         "dataset_content_extracted": evidence_doc_has_meaningful_content(&doc)
             && evidence_content_kind(&doc) == "page_content",
-        "context": render_direct_read_context(&read_query, &doc),
+        "context": render_direct_read_context(read_query, &doc),
         "extracted_fields": extracted,
         // DOM consumers can use the immutable HTML artifact or the dedicated
         // scrape/browser tools without putting the full body into model input.
@@ -1432,11 +1432,7 @@ fn evidence_doc_has_immutable_response(doc: &EvidenceDoc) -> bool {
         .response_artifact_path
         .as_deref()
         .and_then(|path| fs::read(path).ok());
-    let Some(body) = doc
-        .response_body
-        .as_deref()
-        .or_else(|| artifact_bytes.as_deref())
-    else {
+    let Some(body) = doc.response_body.as_deref().or(artifact_bytes.as_deref()) else {
         return false;
     };
     let Some(receipt) = doc.response_receipt.as_ref() else {
@@ -1698,7 +1694,7 @@ fn ctox_web_search_payload(
                 "transport_verified": transport_verified,
                 "content_extracted": content_extracted,
                 "evidence_eligible": content_extracted,
-                "checked_at": evidence.and_then(|doc| nonzero_checked_at(doc)),
+                "checked_at": evidence.and_then(nonzero_checked_at),
                 "http_status": evidence.and_then(|doc| doc.http_status),
                 "snapshot_hash": evidence.and_then(|doc| doc.snapshot_hash.clone()),
                 "source_tier": evidence.and_then(|doc| doc.source_tier.clone()),
@@ -2249,28 +2245,29 @@ impl<'a> WebSearchSession<'a> {
         // so the page fetches are independent and safe to run concurrently —
         // this turns the evidence-fetch latency from sum-of-pages into
         // slowest-single-page.
+        type EvidenceFetchResult = (usize, Result<(EvidenceDoc, Option<String>)>);
+
         let config = self.config;
-        let fetched: Vec<(usize, Result<(EvidenceDoc, Option<String>)>)> =
-            std::thread::scope(|scope| {
-                let handles: Vec<(usize, _)> = unique
-                    .iter()
-                    .map(|&(index, hit)| {
-                        (
-                            index,
-                            scope.spawn(move || build_evidence_doc(config, query, hit)),
-                        )
-                    })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|(index, handle)| {
-                        let result = handle
-                            .join()
-                            .unwrap_or_else(|_| Err(anyhow!("evidence fetch thread panicked")));
-                        (index, result)
-                    })
-                    .collect()
-            });
+        let fetched: Vec<EvidenceFetchResult> = std::thread::scope(|scope| {
+            let handles: Vec<(usize, _)> = unique
+                .iter()
+                .map(|&(index, hit)| {
+                    (
+                        index,
+                        scope.spawn(move || build_evidence_doc(config, query, hit)),
+                    )
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|(index, handle)| {
+                    let result = handle
+                        .join()
+                        .unwrap_or_else(|_| Err(anyhow!("evidence fetch thread panicked")));
+                    (index, result)
+                })
+                .collect()
+        });
 
         // Phase 3 (serial): memoize + write the page cache for each fetched doc.
         for (index, result) in fetched {
@@ -2494,10 +2491,8 @@ impl<'a> WebSearchSession<'a> {
         self.page_cache.entries.insert(storage_key.clone(), entry);
         for url in aliases {
             let key = normalize_url_cache_key(url);
-            if !key.is_empty() {
-                if key != storage_key {
-                    self.page_cache.aliases.insert(key, storage_key.clone());
-                }
+            if !key.is_empty() && key != storage_key {
+                self.page_cache.aliases.insert(key, storage_key.clone());
             }
         }
         self.page_cache_dirty = true;
@@ -3086,8 +3081,8 @@ fn google_search(
         "language": query.language.clone().unwrap_or_else(|| "de-DE".to_string()),
         "region": query.region.clone().unwrap_or_else(|| "DE".to_string()),
         "stateDir": state_dir.to_string_lossy(),
-        "maxResults": query.count.max(1).min(20),
-        "timeoutMs": config.timeout_ms.max(5_000).min(120_000),
+        "maxResults": query.count.clamp(1, 20),
+        "timeoutMs": config.timeout_ms.clamp(5_000, 120_000),
         "headless": true,
         "userAgent": config.user_agent,
     });
@@ -4367,6 +4362,8 @@ fn enforce_response_limits(
     Ok(fetched)
 }
 
+// Preserve the concrete ureq error so retry classification remains unchanged.
+#[allow(clippy::result_large_err)]
 fn fetch_http_page_content(config: &SearchConfig, hit: &SearchHit) -> Result<FetchedPageContent> {
     let max_attempts = if is_data_url_suffix(&hit.url) { 1 } else { 3 };
     let mut last_error: Option<anyhow::Error> = None;
@@ -4994,6 +4991,8 @@ fn fetch_github_supplemental_files(
         .collect()
 }
 
+// Keep repository traversal inputs explicit to preserve selection semantics.
+#[allow(clippy::too_many_arguments)]
 fn fetch_github_directory_summaries(
     config: &SearchConfig,
     owner: &str,
@@ -5026,6 +5025,8 @@ fn fetch_github_directory_summaries(
     files
 }
 
+// Keep recursive traversal state explicit to preserve ordering and bounds.
+#[allow(clippy::too_many_arguments)]
 fn collect_github_directory_summary(
     config: &SearchConfig,
     owner: &str,
@@ -6115,7 +6116,7 @@ fn github_embedded_payload(body: &str) -> Option<Value> {
     value.get("payload").cloned()
 }
 
-fn github_tree_items_from_payload<'a>(payload: &'a Value) -> Option<&'a [Value]> {
+fn github_tree_items_from_payload(payload: &Value) -> Option<&[Value]> {
     payload
         .get("codeViewRepoRoute")
         .and_then(|value| value.get("tree"))
@@ -6683,7 +6684,7 @@ fn guided_pdf_page_order(query: &str, page_numbers: &[u32], max_pdf_pages: usize
 }
 
 fn initial_pdf_window(max_pdf_pages: usize) -> usize {
-    max_pdf_pages.min(4).max(1)
+    max_pdf_pages.clamp(1, 4)
 }
 
 fn extract_pdf_page_hints(query: &str, total_pages: Option<usize>) -> Vec<u32> {
@@ -6820,8 +6821,7 @@ fn fallback_candidate_paragraphs(paragraphs: Vec<String>) -> Vec<String> {
 }
 
 fn fallback_summary(_hit: &SearchHit, text: &str) -> String {
-    let cleaned = trim_text(text, 360);
-    cleaned
+    trim_text(text, 360)
 }
 
 fn clean_pdf_text_for_llm(text: &str) -> String {
@@ -8152,9 +8152,9 @@ fn prune_expired_page_cache(file: &mut PageCacheFile, ttl_secs: u64) {
         .map(normalize_url_cache_key)
         .find(|key| !key.is_empty())
         .unwrap_or_else(|| old_key.clone());
-        let replace = compacted.get(&canonical).map_or(true, |current| {
-            current.created_at_epoch <= entry.created_at_epoch
-        });
+        let replace = compacted
+            .get(&canonical)
+            .is_none_or(|current| current.created_at_epoch <= entry.created_at_epoch);
         if replace {
             compacted.insert(canonical.clone(), entry.clone());
         }

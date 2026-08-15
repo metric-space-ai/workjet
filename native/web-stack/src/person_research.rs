@@ -924,12 +924,14 @@ fn confidence_rank(raw: Option<&str>) -> u8 {
 // Browser extract evidence
 // ---------------------------------------------------------------------------
 
+type BrowserExtractEvidence = (BTreeMap<FieldKey, Vec<Value>>, Vec<Value>);
+
 fn collect_browser_extract_evidence(
     root: &Path,
     company: &str,
     plans: &[PersonResearchPlan],
     requested: &[FieldKey],
-) -> Result<(BTreeMap<FieldKey, Vec<Value>>, Vec<Value>)> {
+) -> Result<BrowserExtractEvidence> {
     let db_path = root.join("runtime").join("ctox.sqlite3");
     if !db_path.is_file() {
         return Ok((BTreeMap::new(), Vec::new()));

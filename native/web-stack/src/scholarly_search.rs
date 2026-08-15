@@ -685,7 +685,7 @@ fn parse_metadata_line(line: &str) -> (Option<String>, Option<String>, Option<St
         return (None, None, None);
     }
     let tokens: Vec<&str> = line_trimmed
-        .split(|c: char| c == ',' || c == '·')
+        .split([',', '·'])
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .collect();
@@ -769,7 +769,7 @@ fn looks_like_file_size(token: &str) -> bool {
 }
 
 fn parse_tags(line: &str) -> Vec<String> {
-    line.split(|c: char| c == ',' || c == '·')
+    line.split([',', '·'])
         .map(|s| normalize_ws(s.trim()))
         .filter(|s| !s.is_empty())
         .take(8)

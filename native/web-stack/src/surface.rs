@@ -329,13 +329,12 @@ fn handle_sources_command(args: &[String]) -> Result<()> {
     let action = args.first().map(String::as_str).unwrap_or("");
     if matches!(action, "" | "help" | "-h" | "--help" | "list") {
         let country_filter =
-            find_flag_value(args, "--country").and_then(|raw| sources::Country::from_iso(raw));
+            find_flag_value(args, "--country").and_then(sources::Country::from_iso);
         let tier_filter: Vec<String> = find_flag_values(args, "--tier")
             .into_iter()
             .map(|s| s.trim().to_ascii_uppercase())
             .collect();
-        let field_filter =
-            find_flag_value(args, "--field").and_then(|raw| sources::FieldKey::from_str(raw));
+        let field_filter = find_flag_value(args, "--field").and_then(sources::FieldKey::from_str);
         let mut entries: Vec<Value> = Vec::new();
         for module in sources::list() {
             if let Some(c) = country_filter {

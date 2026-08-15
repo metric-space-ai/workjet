@@ -826,7 +826,7 @@ mod tests {
         assert_eq!(last.confidence, Confidence::Medium);
 
         // Public crawl exposes no concrete revenue → no umsatz field.
-        assert!(by_key.get(&FieldKey::Umsatz).is_none());
+        assert!(!by_key.contains_key(&FieldKey::Umsatz));
     }
 
     /// AT profile fixture — Geschäftsführer-Variante mit Firmenbuch (FN).

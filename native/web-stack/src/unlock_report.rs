@@ -1105,8 +1105,7 @@ fn adapter_row(
         retry.status,
         leakage.status,
     ]
-    .iter()
-    .any(|s| *s == CheckStatus::Fail);
+    .contains(&CheckStatus::Fail);
 
     let latest = state.runs.first();
     let (final_status, required_action) = if static_fail {

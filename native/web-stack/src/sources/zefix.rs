@@ -248,10 +248,9 @@ fn company_short_to_hit(entry: &Value) -> Option<SourceHit> {
     // lesbare SPA-Link liegt zusätzlich im Snippet.
     let api_url = if let Some(ehraid) = entry.get("ehraid").and_then(Value::as_i64) {
         format!("{API_BASE}/firm/{ehraid}.json")
-    } else if let Some(chid) = entry.get("chid").and_then(Value::as_str) {
-        format!("{API_BASE}/firm/{}.json", chid.trim())
     } else {
-        return None;
+        let chid = entry.get("chid").and_then(Value::as_str)?;
+        format!("{API_BASE}/firm/{}.json", chid.trim())
     };
     let profile_url = if let Some(ehraid) = entry.get("ehraid").and_then(Value::as_i64) {
         format!("{PROFILE_BASE}/{ehraid}")
@@ -537,7 +536,7 @@ fn parse_person_clause(clause: &str) -> Option<Person> {
         .skip(2)
         .map(|p| p.trim())
         .find(|p| is_funktion_token(p))
-        .map(|p| normalize_funktion(p))
+        .map(normalize_funktion)
         .unwrap_or_default();
 
     Some(Person {
@@ -665,7 +664,7 @@ fn find_swiss_plz_ort(text: &str) -> Option<(String, String)> {
         if window.iter().all(|b| b.is_ascii_digit()) && bytes[i + 4] == b' ' {
             // CH-PLZ liegt zwischen 1000 und 9999.
             let leading = bytes[i];
-            if leading >= b'1' && leading <= b'9' {
+            if (b'1'..=b'9').contains(&leading) {
                 // Boundary: davor sollte kein anderes Digit/Letter stehen.
                 let prev_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
                 if prev_ok {

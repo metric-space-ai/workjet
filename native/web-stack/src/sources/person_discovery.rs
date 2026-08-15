@@ -29,9 +29,9 @@
 //! from common DE/EN management-role tokens in the role string:
 //!
 //! * `c_level`  — CEO, CFO, COO, CTO, CSO, CMO, CIO, CHRO, Vorstand,
-//!                Geschäftsführer, Gründer, Founder, Managing Director
+//!   Geschäftsführer, Gründer, Founder, Managing Director
 //! * `senior`   — VP, Direktor, Head of, Bereichsleiter, Leiter,
-//!                Senior Manager, Partner
+//!   Senior Manager, Partner
 //! * `mid`      — Manager, Lead, Principal, Specialist
 //! * `unknown`  — anything else
 //!
@@ -136,7 +136,7 @@ impl SourceModule for PersonDiscovery {
             };
             // Skip duplicate profile URLs across multiple hits.
             let canonical = canonical_profile_url(network, &profile_slug);
-            if seen_profiles.iter().any(|p| *p == canonical) {
+            if seen_profiles.contains(&canonical) {
                 continue;
             }
             seen_profiles.push(canonical.clone());
@@ -260,10 +260,7 @@ fn canonical_profile_url(network: &str, slug: &str) -> String {
 /// person name. The role is the middle slice up to (but not including)
 /// the company segment.
 fn parse_title(raw: &str, company: &str) -> (Option<String>, Option<String>, Option<String>) {
-    let normalized = raw
-        .replace('\u{2013}', "-") // en dash
-        .replace('\u{2014}', "-") // em dash
-        .replace('|', "-");
+    let normalized = raw.replace(['\u{2013}', '\u{2014}', '|'], "-");
     let mut parts: Vec<String> = normalized
         .split(" - ")
         .map(|s| s.trim().to_string())
@@ -316,9 +313,7 @@ fn parse_title(raw: &str, company: &str) -> (Option<String>, Option<String>, Opt
 }
 
 fn split_name(raw: &str) -> (Option<String>, Option<String>) {
-    let clean = raw
-        .trim()
-        .trim_end_matches(|c: char| c == ':' || c == ',' || c == ';');
+    let clean = raw.trim().trim_end_matches([':', ',', ';']);
     if clean.is_empty() {
         return (None, None);
     }

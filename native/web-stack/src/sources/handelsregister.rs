@@ -13,11 +13,11 @@
 //!     Wenn die Suchengine die Trefferliste schon abgegriffen hat (Cache,
 //!     öffentlich zugängliche Snippets), liefert der Crawl bereits genug.
 //!   * `extract_fields` parst **beide** Roh-Antwortformen:
-//!       a) Treffer-Listen (`table.RegPortErg`) mit Firma + Sitz + Adresse,
-//!       b) Detail-Seiten („Aktueller Abdruck") mit Firma, Anschrift, Sitz,
-//!          Rechtsform und Personen-Block (Vorstand / Geschäftsführer /
-//!          Prokura). Personenzeilen folgen dem Schema
-//!          `Nachname, Vorname, Wohnort, *Geburtsdatum`.
+//!     Treffer-Listen (`table.RegPortErg`) mit Firma + Sitz + Adresse sowie
+//!     Detail-Seiten („Aktueller Abdruck") mit Firma, Anschrift, Sitz,
+//!     Rechtsform und Personen-Block (Vorstand / Geschäftsführer / Prokura).
+//!     Personenzeilen folgen dem Schema
+//!     `Nachname, Vorname, Wohnort, *Geburtsdatum`.
 //!     Sobald die Browser-Automation die JSF-Wall durchbricht und gerendertes
 //!     HTML zurückgibt, greift dieselbe Extraktion ohne Anpassung.
 //!   * `fetch_direct` bleibt `None`. Eine native API existiert nicht (RSS
@@ -471,10 +471,10 @@ fn parse_detail_table(table: &ElementRef<'_>) -> DetailRecord {
             | "geschäftsführerin"
             | "inhaber"
             | "persönlich haftender gesellschafter"
-            | "personlich haftender gesellschafter" => {
-                if record.first_person.is_none() {
-                    record.first_person = parse_person_block(&value_raw, role_note_for(&label));
-                }
+            | "personlich haftender gesellschafter"
+                if record.first_person.is_none() =>
+            {
+                record.first_person = parse_person_block(&value_raw, role_note_for(&label));
             }
             _ => {}
         }
@@ -919,8 +919,8 @@ mod tests {
         assert_eq!(city.value, "Igersheim");
 
         // Trefferliste kennt keine Personen → keine person_*-Felder.
-        assert!(by_key.get(&FieldKey::PersonVorname).is_none());
-        assert!(by_key.get(&FieldKey::PersonNachname).is_none());
+        assert!(!by_key.contains_key(&FieldKey::PersonVorname));
+        assert!(!by_key.contains_key(&FieldKey::PersonNachname));
     }
 
     /// End-to-end extraction against a frozen „Aktueller Abdruck" der

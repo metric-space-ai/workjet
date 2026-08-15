@@ -18,6 +18,8 @@ use std::path::Path;
 use std::time::Duration;
 
 const CONTRACT_JSON: &str = include_str!("../schema/web-stack-tools.v1.json");
+pub const WEB_STACK_CAPABILITY_ADAPTER_FIXTURE_V1_JSON: &str =
+    include_str!("../fixtures/capability-adapter-v1.json");
 const MAX_GENERAL_TEXT_CHARS: usize = 16_000;
 const MAX_ARRAY_ITEMS: usize = 100;
 const MAX_FIND_ITEMS: usize = 32;
@@ -47,13 +49,24 @@ pub enum WebStackCapabilityTool {
 }
 
 impl WebStackCapabilityTool {
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Search => "web_search",
             Self::Read => "web_read",
             Self::DeepResearch => "web_deep_research",
             Self::BrowserPrepare => "web_browser_prepare",
             Self::BrowserAutomate => "web_browser_automate",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "web_search" => Some(Self::Search),
+            "web_read" => Some(Self::Read),
+            "web_deep_research" => Some(Self::DeepResearch),
+            "web_browser_prepare" => Some(Self::BrowserPrepare),
+            "web_browser_automate" => Some(Self::BrowserAutomate),
+            _ => None,
         }
     }
 }

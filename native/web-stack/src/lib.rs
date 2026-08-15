@@ -59,6 +59,8 @@ pub use capability::WebStackCapabilityLimits;
 #[cfg(feature = "full")]
 pub use capability::WebStackCapabilityTool;
 #[cfg(feature = "full")]
+pub use capability::WEB_STACK_CAPABILITY_ADAPTER_FIXTURE_V1_JSON;
+#[cfg(feature = "full")]
 pub use deep_research::run_ctox_deep_research_tool;
 #[cfg(feature = "full")]
 pub use deep_research::run_deep_research_tool_with_context;

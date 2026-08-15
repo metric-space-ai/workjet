@@ -2,24 +2,27 @@ use ctox_web_stack::{
     execute_web_stack_capability, web_stack_capability_contracts, CtoxRuntimeConfigStore,
     RuntimeConfigStore, WebStackCapabilityErrorKind, WebStackCapabilityLimits,
     WebStackCapabilityTool, WebStackContext, WorkjetRuntimeConfigStore,
+    WEB_STACK_CAPABILITY_ADAPTER_FIXTURE_V1_JSON,
 };
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 fn fixture() -> Value {
-    serde_json::from_str(include_str!("../fixtures/capability-adapter-v1.json")).unwrap()
+    serde_json::from_str(WEB_STACK_CAPABILITY_ADAPTER_FIXTURE_V1_JSON).unwrap()
 }
 
 fn tool_for_name(name: &str) -> WebStackCapabilityTool {
-    match name {
-        "web_search" => WebStackCapabilityTool::Search,
-        "web_read" => WebStackCapabilityTool::Read,
-        "web_deep_research" => WebStackCapabilityTool::DeepResearch,
-        "web_browser_prepare" => WebStackCapabilityTool::BrowserPrepare,
-        "web_browser_automate" => WebStackCapabilityTool::BrowserAutomate,
-        _ => panic!("unknown fixture tool"),
+    WebStackCapabilityTool::from_name(name).expect("known fixture tool")
+}
+
+#[test]
+fn public_tool_name_mapping_round_trips_the_shared_fixture() {
+    for tool in fixture()["tools"].as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
+        assert_eq!(tool_for_name(name).name(), name);
     }
+    assert!(WebStackCapabilityTool::from_name("web_unknown").is_none());
 }
 
 fn temp_root(label: &str) -> PathBuf {

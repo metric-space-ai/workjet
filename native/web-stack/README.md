@@ -1,5 +1,24 @@
 # CTOX Web Stack
 
+## Shared finite capability host
+
+The public `capability` module is the product-neutral host boundary for the
+canonical five Web Stack tools: search, read, deep research, browser prepare,
+and browser automate. It embeds and verifies `schema/web-stack-tools.v1.json`,
+strictly decodes closed arguments, executes against a caller-supplied
+`WebStackContext`, projects only contract-defined response fields, and applies
+the caller's deterministic response-byte budget. Browser automation accepts
+only `navigate`, `observe`, `click`, `fill`, and `press`; the legacy
+arbitrary-JavaScript browser API is not reachable through this capability host.
+
+The crate owns the shared decoder, finite browser AST/compiler, execution,
+projection, contract descriptors, and response compaction. Embedding products
+own all state: the root path, `RuntimeConfigStore` implementation, credentials
+reachable through that store, and response limit. The Workjet binary is only a
+bounded JSON/config transport that builds a map-backed
+`WorkjetRuntimeConfigStore`; CTOX compatibility continues to use its existing
+SQLite-backed adapter outside the shared capability call.
+
 This crate is the owned compile boundary for the CTOX web surface:
 
 - `ctox_web_search`

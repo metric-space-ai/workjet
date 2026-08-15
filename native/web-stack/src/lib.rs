@@ -6,6 +6,8 @@
 
 pub mod browser;
 #[cfg(feature = "full")]
+pub mod capability;
+#[cfg(feature = "full")]
 pub mod deep_research;
 #[cfg(feature = "full")]
 pub(crate) mod egress;
@@ -42,6 +44,20 @@ pub use browser::BrowserCaptureRequest;
 pub use browser::BrowserPrepareOptions;
 pub use browser::PersistentBrowserHandle;
 pub use browser::PersistentBrowserSpawn;
+#[cfg(feature = "full")]
+pub use capability::execute_web_stack_capability;
+#[cfg(feature = "full")]
+pub use capability::web_stack_capability_contracts;
+#[cfg(feature = "full")]
+pub use capability::WebStackCapabilityContract;
+#[cfg(feature = "full")]
+pub use capability::WebStackCapabilityError;
+#[cfg(feature = "full")]
+pub use capability::WebStackCapabilityErrorKind;
+#[cfg(feature = "full")]
+pub use capability::WebStackCapabilityLimits;
+#[cfg(feature = "full")]
+pub use capability::WebStackCapabilityTool;
 #[cfg(feature = "full")]
 pub use deep_research::run_ctox_deep_research_tool;
 #[cfg(feature = "full")]

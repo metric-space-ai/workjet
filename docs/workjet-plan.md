@@ -285,6 +285,10 @@ Tasks:
 - [ ] Keep provider-neutral Track A separate from host adapters.
 - [ ] Move or recreate the conformance fixtures, differential runner, port map,
       and porting ledger.
+- [x] Remove the imported built-in Antigravity OAuth client credentials from
+      the current portable source and require one typed, zeroizing,
+      host-injected credential object for login and refresh. The older imported
+      credential-bearing Git blobs remain a separate publication-history gate.
 - [ ] Add a Workjet/T3 host adapter using Workjet's secret storage and lifecycle.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.

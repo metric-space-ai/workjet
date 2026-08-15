@@ -33,6 +33,7 @@ use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 pub(crate) const DEFAULT_REFERENCE_RELATIVE_DIR: &str = "runtime/browser/interactive-reference";
 const LOCAL_PLAYWRIGHT_BROWSERS_RELATIVE_DIR: &str = "ms-playwright";
 const MINIMUM_NODE_MAJOR: u64 = 18;
+const PATCHRIGHT_VERSION: &str = "1.55.0";
 
 #[derive(Debug, Clone, Serialize)]
 struct ToolStatus {
@@ -713,10 +714,11 @@ fn install_reference(
     ensure_humanlike_module(reference_dir)?;
     ensure_stealth_init_module(reference_dir)?;
     if run_npm_install {
+        let package_spec = format!("patchright@{PATCHRIGHT_VERSION}");
         run_command(
             reference_dir,
             "npm",
-            &["install", "patchright"],
+            &["install", "--save-exact", &package_spec],
             "failed to install patchright reference",
         )?;
     }
@@ -782,7 +784,7 @@ fn ensure_reference_package_json(reference_dir: &Path) -> Result<bool> {
             "install:chromium": "patchright install chromium"
         },
         "dependencies": {
-            "patchright": "^1.55.0"
+            "patchright": PATCHRIGHT_VERSION
         }
     });
     fs::write(
@@ -3054,6 +3056,7 @@ mod tests {
     use super::select_capture_browser_executable;
     #[cfg(unix)]
     use super::PersistentBrowserHandle;
+    use super::PATCHRIGHT_VERSION;
     use std::fs;
     #[cfg(unix)]
     use std::io::BufReader;
@@ -3144,7 +3147,7 @@ mod tests {
         assert!(created);
         assert_eq!(
             value["dependencies"]["patchright"].as_str(),
-            Some("^1.55.0")
+            Some(PATCHRIGHT_VERSION)
         );
         let _ = fs::remove_dir_all(&dir);
     }

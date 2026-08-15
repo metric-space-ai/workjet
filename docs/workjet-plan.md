@@ -1,6 +1,6 @@
 # Workjet master plan
 
-Status date: 2026-08-14
+Status date: 2026-08-15
 
 Canonical repository: `metric-space-ai/workjet`
 
@@ -366,8 +366,11 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
       launch-token exchange, and managed-instance refresh.
   - [x] Port authenticated session-package discovery behind an injected
         Electron-compatible fetch boundary with redacted typed failures.
-  - [ ] Port login, logout, cookie clearing, launch-token exchange, and refresh
-        lifecycle.
+  - [x] Own one dedicated persistent account/control-plane Electron session and
+        deterministic isolated instance sessions; port bounded single-flight
+        login, account-session refresh, scoped cookie/storage logout, and safe
+        popup/navigation handling.
+  - [ ] Port short-lived launch-token exchange and rotation.
 - [ ] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
@@ -381,6 +384,8 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 - [ ] Give each CTOX instance a stable isolated persistent session partition.
   - [x] Derive a collision-resistant Workjet-owned partition from the exact
         source and stable instance ID; reject server-provided partitions.
+  - [x] Resolve and memoize the validated partitions through Electron with a
+        default-deny permission policy and instance-scoped storage/cache wipe.
   - [ ] Bind each instance's `WebContentsView` and requests to its derived
         Electron session.
 - [ ] Destroy or detach guest views cleanly on logout, access revocation,
@@ -621,7 +626,7 @@ Workjet is complete only when all of the following are true:
        services.
    - [x] Land typed renderer contracts, session-package discovery, redacted
          failures, and deterministic partition derivation.
-   - [ ] Wire Electron session ownership, cookies, login/logout, and refresh.
+   - [x] Wire Electron session ownership, cookies, login/logout, and refresh.
 5. [x] Prepare tree-verified, history-preserving local import branches for
        CLIProxyAPI Rust and Web Stack.
 6. [ ] Apply the dual-license policy and provenance inventory while importing

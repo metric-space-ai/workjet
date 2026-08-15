@@ -27,6 +27,7 @@ under ignored `.deps/` or external build storage.
 | CTOX Business OS Desktop | `/Users/michaelwelsch/Documents/ctox/src/apps/business-os-desktop`   | CTOX commit `34fc7cc0978b6a1774342cb5468e90a6a0304564`; subtree `e2bf769fe90d116f131dbcf81e76151346e7c283`                                   | Selected subtree is clean. The wider CTOX checkout is dirty and must not be used as an implicit source snapshot. Package version `0.3.52`.                                     | No component license field or file exists. First-party files currently inherit CTOX's AGPL policy. Only Metric Space AI-owned or controlled files may receive `MIT OR AGPL-3.0-only`.                                                                                            | Port the desktop connection/session behavior into Workjet; keep Business OS source and release artifacts in CTOX. Review every copied file before adding dual SPDX.                               |
 | CLIProxyAPI Rust port    | `/Users/michaelwelsch/Documents/ctox/src/core/execution/cliproxyapi` | CTOX commit `cf92182afed8f31844cbb234657e992fd769cfdc`; subtree `9c0164ce5ffb6e799f9057700cb06bd56ecbc014`                                   | Selected subtree is clean. Crate `ctox-cliproxyapi` version `0.1.0`.                                                                                                           | Mixed provenance: upstream CLIProxyAPI is MIT; CTOX-authored port changes currently declare AGPL and may be offered as `MIT OR AGPL-3.0-only` where ownership permits. Preserve `LICENSE.upstream` (SHA-256 `87d0eee372775bafa8bf3f3d56dcbc0d9c7e0e06b9904f076d0b0ed70d288773`). | Import history, preserve upstream MIT notices, separate portable gateway code from CTOX product adapters, then publish a pinned package consumed by both products.                                |
 | CTOX Web Stack           | `/Users/michaelwelsch/Documents/ctox/src/tools/web-stack`            | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`; subtree `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84`                                   | Selected subtree is clean. Crate `ctox-web-stack` version `0.1.0`.                                                                                                             | Mixed at file level. CTOX-owned code may be dual-licensed. `humanlike.mjs` and `stealth_init.js` identify MIT-derived ports; Patchright is an Apache-2.0 runtime dependency. Those notices and terms remain independent.                                                         | Import history exactly; finish the file-level origin pass before dual-licensing or release, preserve compatibility names temporarily, and inject product-specific configuration through adapters. |
+| CTOX PDF parser          | `/Users/michaelwelsch/Documents/ctox/src/tools/pdf-parse`            | CTOX commit `ffbe9227257cc28418b3d21a5ec207727fbbe497`; subtree `34e648d4027df575cc0bf60221f36341e1856968`                                   | Selected subtree is clean. Crate `ctox-pdf-parse` version `0.1.0`; 59 tracked source, fixture, and parity files.                                                               | The component manifest declares MIT but the frozen subtree contains no standalone license text. Confirm and add the authorized component license/notice before release.                                                                                                          | Preserve its six reachable component commits under `native/pdf-parse/` so the Web Stack `full` feature builds from local source.                                                                  |
 | Greppy                   | `git@github.com:metric-space-ai/greppy.git`                          | commit `de078b47d1df5df7c086e4591162517328f979ec`; source archive SHA-256 `20e54f1339f1ec138665e0bc0371d4557a96ce166ce4620ecc3f0ad4266f01cf` | Source commit is pinned by Workjet. The local checkout contains an unrelated untracked `greppy` symlink and is therefore not a clean release input. Workspace version `0.3.1`. | Apache-2.0; retain `LICENSE` (SHA-256 `887fda41b617fdddcfeca9a77214b6ee7e20b5fc0194a7c69d33d0e63d7ca02b`) plus `THIRD_PARTY.md` and model/kernel terms.                                                                                                                          | Continue using the pinned external binary/source build and one server-owned store; do not vendor a second per-thread or per-harness copy.                                                         |
 
 The parent CTOX repository was at commit
@@ -50,6 +51,7 @@ GitHub yet.
 | ---------------- | ------------------------------- | ------------------------------------------ | ---------------------------- | ------------------------------------------ | -------------------------- | ------------------------------------------ |
 | Provider gateway | `codex/import-provider-gateway` | `9b3b6e1aa860e43fff958691b5aec6c5264145be` | 2                            | `9c0164ce5ffb6e799f9057700cb06bd56ecbc014` | `native/provider-gateway/` | `f3214e6179c3a8e43bce147ca04bd6dd48cc8821` |
 | Web Stack        | `codex/import-web-stack`        | `fb8a1f3bf411755fc1e1e1ffd90d2efc6cd33843` | 130 (126 non-merge, 4 merge) | `1ccc86dda8fa091c65bb5573c17e4fa4c1896b84` | `native/web-stack/`        | `eb4e0815ad15681a76ad62b16c71da16317bc559` |
+| PDF parser       | `codex/import-pdf-parse`        | `9982588926f361ac4799e6f98a0f6453e85f73fa` | 6                            | `34e648d4027df575cc0bf60221f36341e1856968` | `native/pdf-parse/`        | `07370e613172a4742f10f1ab1bc8e8e8c08655ce` |
 
 For each branch, the exported root tree was compared directly with
 `<frozen-ctox-commit>:<source-path>` and matched exactly. The local CTOX clone
@@ -60,13 +62,14 @@ subtree object was compared again with the exported root tree and matched
 exactly.
 
 The provider export contains 1,383 tracked source, test, fixture, SDK, example,
-and port-ledger files; the Web Stack export contains 131. Neither export tracks
-compiled binaries, archives, databases, credential material, dependency
-directories, or build output. Names such as `internal/runtime` and `internal/cache` in the
-provider export are Rust source modules, not generated runtime state. A bounded
-secret-pattern scan found no embedded private key or provider-token material;
-the only private-key marker is an expected assertion against generated test
-output in `internal/auth/vertex/keyutil.rs`.
+and port-ledger files; the Web Stack export contains 131; the PDF parser export
+contains 59. None tracks compiled binaries, archives, databases, credential
+material, dependency directories, or build output. Names such as
+`internal/runtime` and `internal/cache` in the provider export are Rust source
+modules, not generated runtime state. A bounded secret-pattern scan found no
+embedded private key or provider-token material; the only private-key marker is
+an expected assertion against generated test output in
+`internal/auth/vertex/keyutil.rs`.
 
 The import branches are intentionally source-faithful, not already
 product-neutral. At the import boundary the provider crate still used the
@@ -75,6 +78,19 @@ Web Stack still reads `runtime/ctox.sqlite3` directly in
 `src/runtime_config.rs`. The provider identity normalization is recorded below;
 the Web Stack configuration adapter remains post-import work. Neither task is
 grounds for discarding the verified source history.
+
+## Frozen Web Stack full-feature baseline
+
+With the exact imported Web Stack and PDF-parser trees, Workjet commit
+`17cd19f39` adds the nearest `scrape-targets/package.json` boundary required to
+keep the inherited `.js` executors in CommonJS mode beneath Workjet's ESM root.
+It changes no scrape logic. The full-feature Cargo gate then passes 444 Rust
+tests with zero failures and 23 explicitly ignored live-network tests. Its
+scrape-target integration wrapper also passes all 43 Node fixture gates.
+
+The first strict Rust 1.97 all-target Clippy run reports 64 pre-existing
+mechanical findings. No global lint allowance was added; normalization remains
+an explicit gate before adapter work is declared complete.
 
 ## Provider-gateway license normalization
 
@@ -170,6 +186,8 @@ recorded third-party terms.
   shell after CTOX publishes the first artifact consumed by Workjet.
 - Record file-level upstream commits/checksums for the Web Stack's derived
   browser-preparation assets before import.
+- Confirm the PDF parser's declared MIT grant and add its standalone license
+  text and copyright notice before release.
 - Reconcile CTOX's root npm `ISC` declaration with its AGPL root license and
   NOTICE.
 - Reconcile Greppy's `0.3.1` manifest with README/CITATION release text that

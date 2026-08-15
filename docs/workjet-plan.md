@@ -277,17 +277,25 @@ Current source: `ctox/src/tools/web-stack`
 Target ownership: Workjet owns one product-neutral Web Stack source package;
 CTOX and the T3 harness adapter consume the same tagged package.
 
-- [ ] Freeze the CTOX source commit and current Web Stack test evidence.
+- [x] Freeze the CTOX source commit and current Web Stack test evidence.
   - [x] Record the source commit and subtree object in
         `docs/workjet-source-provenance.md`.
-  - [ ] Capture a fresh green Web Stack gate at the frozen source before import.
+  - [x] Capture a fresh full-feature Web Stack gate against the frozen source
+        trees after import; add only the required CommonJS package boundary for
+        Workjet's ESM repository root.
 - [x] Move the crate to `native/web-stack/` with source history where practical.
   - [x] Prepare and tree-verify local branch `codex/import-web-stack` with 130
         reachable component commits.
   - [x] Merge the prepared history under `native/web-stack/` without changing
         its verified source tree.
-- [ ] Move or externalize the optional PDF parser dependency required by the
+- [x] Move or externalize the optional PDF parser dependency required by the
       `full` feature.
+  - [x] Import the exact frozen parser tree under `native/pdf-parse/` through
+        history branch `codex/import-pdf-parse` and verify all six reachable
+        component commits.
+- [ ] Normalize the imported Web Stack's Rust 1.97 all-target Clippy baseline;
+      the first strict run reports 64 pre-existing mechanical findings without
+      any global lint suppression.
 - [ ] Replace direct CTOX SQLite configuration reads with a small injected
       configuration/store trait.
 - [ ] Supply a Workjet/T3 adapter and a CTOX runtime-config adapter.

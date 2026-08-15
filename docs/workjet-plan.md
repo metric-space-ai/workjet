@@ -293,9 +293,10 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Import the exact frozen parser tree under `native/pdf-parse/` through
         history branch `codex/import-pdf-parse` and verify all six reachable
         component commits.
-- [ ] Normalize the imported Web Stack's Rust 1.97 all-target Clippy baseline;
-      the first strict run reports 64 pre-existing mechanical findings without
-      any global lint suppression.
+- [x] Normalize the imported Web Stack's Rust 1.97 all-target Clippy baseline;
+      commit `97c28f66f` resolves all 64 pre-existing mechanical findings with
+      only narrow, locally justified compatibility exceptions. Strict
+      all-target Clippy and the 444-Rust/43-Node full-feature gate pass.
 - [ ] Replace direct CTOX SQLite configuration reads with a small injected
       configuration/store trait.
 - [ ] Supply a Workjet/T3 adapter and a CTOX runtime-config adapter.

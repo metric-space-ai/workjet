@@ -88,9 +88,12 @@ It changes no scrape logic. The full-feature Cargo gate then passes 444 Rust
 tests with zero failures and 23 explicitly ignored live-network tests. Its
 scrape-target integration wrapper also passes all 43 Node fixture gates.
 
-The first strict Rust 1.97 all-target Clippy run reports 64 pre-existing
-mechanical findings. No global lint allowance was added; normalization remains
-an explicit gate before adapter work is declared complete.
+Workjet commit `97c28f66f` resolves the first strict Rust 1.97 all-target
+Clippy run's 64 pre-existing mechanical findings. It adds no crate-wide or
+module-wide lint suppression; the only compatibility exceptions are scoped to
+the exact public helpers or private functions they justify. The independent
+post-integration gate passes strict all-target Clippy, all 444 Rust tests, and
+all 43 Node fixture tests.
 
 ## Provider-gateway license normalization
 

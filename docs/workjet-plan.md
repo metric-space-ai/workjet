@@ -69,8 +69,9 @@ share runtime state.
       `node_modules`, build output, and local runtime state.
 - [ ] Add a tracked dependency manifest with versions and checksums for CTOX
       shell/release inputs; downloaded content stays under ignored `.deps/`.
-- [ ] Add a source provenance and license inventory for T3, CTOX Desktop,
-      CLIProxyAPI, Greppy, and the Web Stack.
+- [x] Add a source provenance and license inventory for T3, CTOX Desktop,
+      CLIProxyAPI, Greppy, and the Web Stack in
+      `docs/workjet-source-provenance.md`.
 - [ ] Keep upstream-compatible T3 changes in narrow commits. Do not perform a
       repository-wide internal rename from `t3code` to `workjet` unless required
       for a public product identifier.
@@ -227,9 +228,14 @@ Target ownership:
 
 Tasks:
 
-- [ ] Freeze and record the accepted CLIProxyAPI upstream pin and CTOX source
-      commit.
+- [x] Freeze and record the accepted CLIProxyAPI upstream pin, CTOX source
+      commit, subtree object, upstream MIT license, and accepted receipt digest
+      in `docs/workjet-source-provenance.md`.
 - [ ] Import the portable crate with file history where practical.
+  - [x] Prepare and tree-verify local branch
+        `codex/import-provider-gateway` with the two reachable component
+        commits.
+  - [ ] Merge the prepared history under `native/provider-gateway/`.
 - [ ] Place the canonical crate under `native/provider-gateway/`.
 - [ ] Rename the public package/binary from CTOX-specific names to Workjet
       provider-gateway names while retaining compatibility aliases for migration.
@@ -271,7 +277,13 @@ Target ownership: Workjet owns one product-neutral Web Stack source package;
 CTOX and the T3 harness adapter consume the same tagged package.
 
 - [ ] Freeze the CTOX source commit and current Web Stack test evidence.
+  - [x] Record the source commit and subtree object in
+        `docs/workjet-source-provenance.md`.
+  - [ ] Capture a fresh green Web Stack gate at the frozen source before import.
 - [ ] Move the crate to `native/web-stack/` with source history where practical.
+  - [x] Prepare and tree-verify local branch `codex/import-web-stack` with 130
+        reachable component commits.
+  - [ ] Merge the prepared history under `native/web-stack/`.
 - [ ] Move or externalize the optional PDF parser dependency required by the
       `full` feature.
 - [ ] Replace direct CTOX SQLite configuration reads with a small injected
@@ -346,8 +358,16 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 ### Main-process services
 
 - [ ] Port the instance model, registry normalization, and source merge/sort.
+  - [x] Add renderer-safe typed managed-instance contracts, bounded metadata,
+        duplicate rejection, and deterministic ctox.dev sorting.
+  - [ ] Merge local, SSH, invite, and pairing sources through the shared
+        registry.
 - [ ] Port ctox.dev login, logout, cookie clearing, session-package discovery,
       launch-token exchange, and managed-instance refresh.
+  - [x] Port authenticated session-package discovery behind an injected
+        Electron-compatible fetch boundary with redacted typed failures.
+  - [ ] Port login, logout, cookie clearing, launch-token exchange, and refresh
+        lifecycle.
 - [ ] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
@@ -359,6 +379,10 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 - [ ] Use Electron `WebContentsView`, matching Workjet's current guest-view
       architecture, rather than the deprecated CTOX `BrowserView` API.
 - [ ] Give each CTOX instance a stable isolated persistent session partition.
+  - [x] Derive a collision-resistant Workjet-owned partition from the exact
+        source and stable instance ID; reject server-provided partitions.
+  - [ ] Bind each instance's `WebContentsView` and requests to its derived
+        Electron session.
 - [ ] Destroy or detach guest views cleanly on logout, access revocation,
       removal, mode change, and app shutdown.
 
@@ -595,8 +619,11 @@ Workjet is complete only when all of the following are true:
 3. [x] Build the Code/CTOX product-mode shell state without yet loading a guest.
 4. [ ] Port ctox.dev instance discovery and session isolation into typed Electron
        services.
-5. [ ] Prepare history-preserving import branches for CLIProxyAPI Rust and Web
-       Stack.
+   - [x] Land typed renderer contracts, session-package discovery, redacted
+         failures, and deterministic partition derivation.
+   - [ ] Wire Electron session ownership, cookies, login/logout, and refresh.
+5. [x] Prepare tree-verified, history-preserving local import branches for
+       CLIProxyAPI Rust and Web Stack.
 6. [ ] Apply the dual-license policy and provenance inventory while importing
        CTOX-owned code.
 7. [ ] Land the first real local orchestrator → worker flow.

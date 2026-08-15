@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 AND (MIT OR AGPL-3.0-only)
+// Transposed and modified from https://github.com/run-llama/liteparse.git at commit 67726fc153393439f43d70268ba67d08bf49ed87.
 use ctox_pdf_parse::core::config::LiteParseConfig;
 use ctox_pdf_parse::core::types::{ForwardAnchors, ParsedPage, ProjectionTextBox, TextItem};
 use ctox_pdf_parse::processing::bbox::build_bounding_boxes;

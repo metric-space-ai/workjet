@@ -2,8 +2,33 @@
 name = "ctox-pdf-parse"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0 AND (MIT OR AGPL-3.0-only)"
 description = "CTOX internal PDF parsing and layout pipeline"
+exclude = ["tests/fixtures/**"]
+
+[[example]]
+name = "eval_fixture"
+required-features = ["pdfium"]
+
+[[example]]
+name = "inspect"
+required-features = ["pdfium"]
+
+[[example]]
+name = "inspect_boxes"
+required-features = ["pdfium"]
+
+[[example]]
+name = "inspect_chars"
+required-features = ["pdfium"]
+
+[[example]]
+name = "inspect_grid"
+required-features = ["pdfium"]
+
+[[example]]
+name = "suggest_fixture"
+required-features = ["pdfium"]
 
 [features]
 default = ["pdfium"]

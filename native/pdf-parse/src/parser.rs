@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 AND (MIT OR AGPL-3.0-only)
+// Transposed and modified from https://github.com/run-llama/liteparse.git at commit 67726fc153393439f43d70268ba67d08bf49ed87.
 use crate::core::config::{LiteParseConfig, LiteParseConfigOverrides, OutputFormat};
 use crate::core::types::ParseResult;
 use crate::engines::pdf::interface::{PdfEngine, PdfEngineError};

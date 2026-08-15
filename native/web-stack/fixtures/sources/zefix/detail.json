@@ -1,0 +1,13 @@
+{
+  "_fixture": "original synthetic Workjet registry-shaped data; all identifiers and publications are invented",
+  "name": "Workjet Example Holdings AG",
+  "ehraid": 900001,
+  "uidFormatted": "CHE-000.000.001",
+  "legalSeat": "Beispielwil",
+  "status": "EXISTIEREND",
+  "address": {"street":"Fixturegasse","houseNumber":"4","addon":"Haus Test","town":"Beispielwil","swissZipCode":"1234","country":"CH"},
+  "shabPub": [
+    {"message":"<FT TYPE=\"F\">Workjet Example Holdings AG</FT>. Ausgeschiedene Personen: Removed, Legacy, in Altort, Direktor. Eingetragene Personen neu oder mutierend: Fixture, Avery, von Beispielwil, in Musterort, Mitglied des Verwaltungsrates, mit Einzelunterschrift; Sample, Dr. Riley, von Musterort, in Beispielwil, Geschäftsführerin, mit Einzelunterschrift; Construct, Casey, von Testdorf, in Musterort, ohne Zeichnungsberechtigung. Statutenänderung: synthetisch."},
+    {"message":"Personen neu oder mutierend: Fixture, Avery, von Beispielwil, in Musterort, Mitglied des Verwaltungsrates, mit Einzelunterschrift; Example, Jordan, von Testdorf, in Beispielwil, Direktor, mit Kollektivunterschrift."}
+  ]
+}

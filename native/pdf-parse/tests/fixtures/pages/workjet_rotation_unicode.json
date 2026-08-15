@@ -1,0 +1,39 @@
+{
+  "id": "workjet-rotation-unicode",
+  "pdf": "synthetic-pdfs/workjet-rotation-unicode.pdf",
+  "page": 4,
+  "description": "Workjet synthetic rotated-order and composed-Unicode text contract.",
+  "expected_lines": [
+    "Workjet Rotation Contract",
+    "North → East → South → West",
+    "Riley Sample reads Café Ω."
+  ],
+  "required_patterns": [
+    "Café Ω",
+    "Ångström units"
+  ],
+  "ordered_phrases": [
+    "North",
+    "East",
+    "South",
+    "West",
+    "Riley Sample"
+  ],
+  "same_line_groups": [
+    [
+      "North",
+      "West"
+    ]
+  ],
+  "separate_line_groups": [
+    [
+      "Café Ω",
+      "Ångström units"
+    ]
+  ],
+  "forbidden_patterns": [
+    "Reversed Rotation Sequence"
+  ],
+  "allowed_missing_lines": 0,
+  "synthetic_text": "Workjet Rotation Contract\nNorth → East → South → West\nRiley Sample reads Café Ω.\nSynthetic Reference 0001 uses Ångström units."
+}

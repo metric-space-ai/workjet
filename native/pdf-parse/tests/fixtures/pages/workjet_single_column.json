@@ -1,0 +1,27 @@
+{
+  "id": "workjet-single-column",
+  "pdf": "synthetic-pdfs/workjet-single-column.pdf",
+  "page": 1,
+  "description": "Workjet synthetic single-column heading and ordered-body contract.",
+  "expected_lines": [
+    "Workjet Fixture Report",
+    "Synthetic Reference 0001",
+    "Avery Fixture prepared the amber queue."
+  ],
+  "required_patterns": [
+    "amber queue",
+    "violet note"
+  ],
+  "ordered_phrases": [
+    "Avery Fixture",
+    "Riley Sample",
+    "Fixture Systems"
+  ],
+  "same_line_groups": [],
+  "separate_line_groups": [],
+  "forbidden_patterns": [
+    "External Source Appendix"
+  ],
+  "allowed_missing_lines": 0,
+  "synthetic_text": "Workjet Fixture Report\nSynthetic Reference 0001\nAvery Fixture prepared the amber queue.\nRiley Sample verified the cobalt marker.\nFixture Systems archived the violet note."
+}

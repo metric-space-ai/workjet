@@ -1,0 +1,9 @@
+{
+  "_fixture": "original synthetic Workjet API-shaped data; id is invented",
+  "users": [{
+    "id": "synthetic_001",
+    "display_name": "Avery Fixture",
+    "permalink": "https://www.xing.com/profile/Avery_Fixture1",
+    "professional_experience": {"primary_company": {"name": "Workjet Fixture Systems GmbH", "title": "Fixture Operations Lead"}}
+  }]
+}

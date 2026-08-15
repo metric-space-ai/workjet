@@ -1,0 +1,28 @@
+{
+  "_fixture": "original synthetic Workjet API-shaped data; ids are invented",
+  "paging": {"count": 10, "start": 0, "total": 3},
+  "elements": [
+    {
+      "id": "urn:li:person:synthetic-001",
+      "publicIdentifier": "avery-fixture-0001",
+      "firstName": {"localized": {"en_US": "Avery"}, "preferredLocale": {"country": "US", "language": "en"}},
+      "lastName": {"localized": {"en_US": "Fixture"}, "preferredLocale": {"country": "US", "language": "en"}},
+      "headline": {"localized": {"en_US": "Fixture Operations Lead at Workjet Fixture Systems GmbH"}, "preferredLocale": {"country": "US", "language": "en"}},
+      "currentPositions": [{"title": "Fixture Operations Lead", "companyName": "Workjet Fixture Systems GmbH"}]
+    },
+    {
+      "id": "urn:li:person:synthetic-002",
+      "publicIdentifier": "riley-sample-0002",
+      "firstName": "Riley",
+      "lastName": "Sample",
+      "currentPositions": [{"title": "Test Analyst", "companyName": "Workjet Fixture Systems GmbH"}]
+    },
+    {
+      "id": "urn:li:person:synthetic-003",
+      "publicIdentifier": "casey-construct-0003",
+      "firstName": "Casey",
+      "lastName": "Construct",
+      "headline": "Quality Designer | Workjet Example Holdings AG"
+    }
+  ]
+}

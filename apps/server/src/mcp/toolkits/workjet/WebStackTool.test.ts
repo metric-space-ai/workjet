@@ -1,9 +1,15 @@
 import {
   builtInCapabilityManifests,
+  WEB_BROWSER_AUTOMATE_TOOL_CONTRACT,
+  WEB_BROWSER_PREPARE_TOOL_CONTRACT,
   WEB_DEEP_RESEARCH_INPUT_SCHEMA,
   WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
+  WEB_DEEP_RESEARCH_TOOL_CONTRACT,
   WEB_READ_INPUT_SCHEMA,
   WEB_READ_OUTPUT_SCHEMA,
+  WEB_READ_TOOL_CONTRACT,
+  WEB_SEARCH_TOOL_CONTRACT,
+  WEB_STACK_TOOLS,
 } from "@metric-space-ai/workjet-capabilities";
 import { expect, it, vi } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -152,6 +158,24 @@ function makeTestLayer(
   );
 }
 
+it.effect("registers exactly the canonical five-tool contract", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+
+    expect(server.tools).toHaveLength(WEB_STACK_TOOLS.length);
+    expect(new Set(server.tools.map(({ tool }) => tool.name))).toEqual(
+      new Set(WEB_STACK_TOOLS.map(({ name }) => name)),
+    );
+    for (const contract of WEB_STACK_TOOLS) {
+      const registered = server.tools.find(({ tool }) => tool.name === contract.name);
+      expect(registered?.tool.description).toBe(contract.description);
+      expect(registered?.tool.inputSchema).toEqual(contract.inputSchema);
+      expect(registered?.tool.outputSchema).toEqual(contract.outputSchema);
+      expect(registered?.tool.annotations).toEqual(contract.annotations);
+    }
+  }).pipe(Effect.provide(makeTestLayer({ search: () => Effect.succeed({ results: [] }) }))),
+);
+
 it.effect("registers Web Search with the canonical built-in MCP schemas and annotations", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -163,6 +187,8 @@ it.effect("registers Web Search with the canonical built-in MCP schemas and anno
     );
 
     expect(registered).toBeDefined();
+    expect(registered?.tool.inputSchema).toEqual(WEB_SEARCH_TOOL_CONTRACT.inputSchema);
+    expect(registered?.tool.outputSchema).toEqual(WEB_SEARCH_TOOL_CONTRACT.outputSchema);
     expect(registered?.tool.inputSchema).toEqual(manifest?.inputSchema);
     expect(registered?.tool.outputSchema).toEqual(manifest?.outputSchema);
     expect(registered?.tool.annotations).toMatchObject({
@@ -209,7 +235,10 @@ it.effect("independently denies direct calls without the Web Search grant", () =
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const denied = yield* server
-      .callTool({ name: WebStackTool.WEB_SEARCH_MCP_TOOL_NAME, arguments: { query: "rust" } })
+      .callTool({
+        name: WebStackTool.WEB_SEARCH_MCP_TOOL_NAME,
+        arguments: { query: "rust" },
+      })
       .pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, invocation([])),
         Effect.provideService(McpSchema.McpServerClient, client),
@@ -217,7 +246,10 @@ it.effect("independently denies direct calls without the Web Search grant", () =
 
     expect(denied.isError).toBe(true);
     expect(denied.structuredContent).toEqual({
-      error: { _tag: "WebStackMcpSearchError", reason: "capability-not-granted" },
+      error: {
+        _tag: "WebStackMcpSearchError",
+        reason: "capability-not-granted",
+      },
     });
     expect(denied.content).toEqual([{ type: "text", text: "Web Search failed." }]);
     expect(search).not.toHaveBeenCalled();
@@ -282,12 +314,17 @@ it.effect("calls Web Search without cwd and returns the exact manifest result", 
 
 it.effect("returns only a stable redacted reason for Web Search failures", () => {
   const secret = "SENSITIVE_NATIVE_STDERR";
-  const error = new WebStackSearch.WebStackSearchError({ reason: "process-exit" });
+  const error = new WebStackSearch.WebStackSearchError({
+    reason: "process-exit",
+  });
   Object.defineProperty(error, "internal", { value: secret });
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const response = yield* server
-      .callTool({ name: WebStackTool.WEB_SEARCH_MCP_TOOL_NAME, arguments: { query: secret } })
+      .callTool({
+        name: WebStackTool.WEB_SEARCH_MCP_TOOL_NAME,
+        arguments: { query: secret },
+      })
       .pipe(
         Effect.provideService(
           McpInvocationContext.McpInvocationContext,
@@ -319,16 +356,16 @@ it.effect("registers both browser tools with the browser manifest automation sch
     );
 
     expect(prepare).toBeDefined();
-    expect(prepare?.tool.inputSchema).toMatchObject({
-      type: "object",
-      additionalProperties: false,
-    });
+    expect(prepare?.tool.inputSchema).toEqual(WEB_BROWSER_PREPARE_TOOL_CONTRACT.inputSchema);
+    expect(prepare?.tool.outputSchema).toEqual(WEB_BROWSER_PREPARE_TOOL_CONTRACT.outputSchema);
     expect(prepare?.tool.annotations).toMatchObject({
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: true,
       openWorldHint: true,
     });
+    expect(automate?.tool.inputSchema).toEqual(WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.inputSchema);
+    expect(automate?.tool.outputSchema).toEqual(WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.outputSchema);
     expect(automate?.tool.inputSchema).toEqual(manifest?.inputSchema);
     expect(automate?.tool.outputSchema).toEqual(manifest?.outputSchema);
     expect(automate?.tool.annotations).toMatchObject({
@@ -390,7 +427,10 @@ it.effect("independently denies direct browser calls without the browser grant",
         );
       expect(denied.isError).toBe(true);
       expect(denied.structuredContent).toMatchObject({
-        error: { _tag: "WebStackMcpBrowserError", reason: "capability-not-granted" },
+        error: {
+          _tag: "WebStackMcpBrowserError",
+          reason: "capability-not-granted",
+        },
       });
       expect(denied.content).toEqual([{ type: "text", text: "Web Browser failed." }]);
     }
@@ -502,7 +542,10 @@ it.effect(
           Effect.provideService(McpSchema.McpServerClient, client),
         );
 
-      expect(prepare).toHaveBeenCalledWith({ installReference: true, installBrowser: true });
+      expect(prepare).toHaveBeenCalledWith({
+        installReference: true,
+        installBrowser: true,
+      });
       expect(automate).toHaveBeenCalledWith({
         actions: [
           { action: "navigate", url: "https://example.test/" },
@@ -529,6 +572,8 @@ it.effect("exposes read and deep research output schemas through MCP tools/list 
       ({ tool }) => tool.name === WebStackTool.WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
     );
 
+    expect(read?.tool.inputSchema).toEqual(WEB_READ_TOOL_CONTRACT.inputSchema);
+    expect(read?.tool.outputSchema).toEqual(WEB_READ_TOOL_CONTRACT.outputSchema);
     expect(read?.tool.inputSchema).toEqual(WEB_READ_INPUT_SCHEMA);
     expect(read?.tool.outputSchema).toEqual(WEB_READ_OUTPUT_SCHEMA);
     expect(read?.tool.annotations).toMatchObject({
@@ -538,6 +583,8 @@ it.effect("exposes read and deep research output schemas through MCP tools/list 
       idempotentHint: true,
       openWorldHint: true,
     });
+    expect(research?.tool.inputSchema).toEqual(WEB_DEEP_RESEARCH_TOOL_CONTRACT.inputSchema);
+    expect(research?.tool.outputSchema).toEqual(WEB_DEEP_RESEARCH_TOOL_CONTRACT.outputSchema);
     expect(research?.tool.inputSchema).toEqual(WEB_DEEP_RESEARCH_INPUT_SCHEMA);
     expect(research?.tool.outputSchema).toEqual(WEB_DEEP_RESEARCH_OUTPUT_SCHEMA);
     expect(research?.tool.annotations).toMatchObject({
@@ -683,7 +730,11 @@ it.effect("applies research defaults and returns successful structured evidence"
     const readResponse = yield* server
       .callTool({
         name: WebStackTool.WEB_READ_MCP_TOOL_NAME,
-        arguments: { url: "https://example.test/", find: ["evidence"], country: "CH" },
+        arguments: {
+          url: "https://example.test/",
+          find: ["evidence"],
+          country: "CH",
+        },
       })
       .pipe(
         Effect.provideService(
@@ -733,7 +784,9 @@ it.effect("applies research defaults and returns successful structured evidence"
 
 it.effect("returns only a stable reason for native research failures", () => {
   const secret = "SENSITIVE_URL_QUERY_STDERR";
-  const error = new WebStackResearch.WebStackResearchError({ reason: "process-exit" });
+  const error = new WebStackResearch.WebStackResearchError({
+    reason: "process-exit",
+  });
   Object.defineProperty(error, "internal", { value: secret });
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;

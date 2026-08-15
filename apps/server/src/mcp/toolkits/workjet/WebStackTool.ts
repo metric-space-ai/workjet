@@ -1,9 +1,10 @@
 import {
-  builtInCapabilityManifests,
-  WEB_DEEP_RESEARCH_INPUT_SCHEMA,
-  WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
-  WEB_READ_INPUT_SCHEMA,
-  WEB_READ_OUTPUT_SCHEMA,
+  WEB_BROWSER_AUTOMATE_TOOL_CONTRACT,
+  WEB_BROWSER_PREPARE_TOOL_CONTRACT,
+  WEB_DEEP_RESEARCH_TOOL_CONTRACT,
+  WEB_READ_TOOL_CONTRACT,
+  WEB_SEARCH_TOOL_CONTRACT,
+  type WebStackToolContract,
 } from "@metric-space-ai/workjet-capabilities";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,31 +19,11 @@ import * as WebStackBrowser from "./WebStackBrowser.ts";
 import * as WebStackResearch from "./WebStackResearch.ts";
 import * as WebStackSearch from "./WebStackSearch.ts";
 
-export const WEB_SEARCH_MCP_TOOL_NAME = "web_search";
-export const WEB_READ_MCP_TOOL_NAME = "web_read";
-export const WEB_DEEP_RESEARCH_MCP_TOOL_NAME = "web_deep_research";
-export const WEB_BROWSER_PREPARE_MCP_TOOL_NAME = "web_browser_prepare";
-export const WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME = "web_browser_automate";
-
-const webSearchManifest = builtInCapabilityManifests.find(
-  (manifest) =>
-    manifest.id === "web-search" &&
-    manifest.version === "1.0.0" &&
-    manifest.supportedAdapters.includes("t3-mcp"),
-);
-const webBrowserManifest = builtInCapabilityManifests.find(
-  (manifest) =>
-    manifest.id === "web-stack-browser" &&
-    manifest.version === "1.0.0" &&
-    manifest.supportedAdapters.includes("t3-mcp"),
-);
-
-if (!webSearchManifest) {
-  throw new Error("The built-in Web Search t3-mcp manifest is unavailable.");
-}
-if (!webBrowserManifest) {
-  throw new Error("The built-in Web Stack Browser t3-mcp manifest is unavailable.");
-}
+export const WEB_SEARCH_MCP_TOOL_NAME = WEB_SEARCH_TOOL_CONTRACT.name;
+export const WEB_READ_MCP_TOOL_NAME = WEB_READ_TOOL_CONTRACT.name;
+export const WEB_DEEP_RESEARCH_MCP_TOOL_NAME = WEB_DEEP_RESEARCH_TOOL_CONTRACT.name;
+export const WEB_BROWSER_PREPARE_MCP_TOOL_NAME = WEB_BROWSER_PREPARE_TOOL_CONTRACT.name;
+export const WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME = WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.name;
 
 const WebSearchInput = Schema.Struct({
   query: Schema.String.check(Schema.isNonEmpty(), Schema.isMinLength(1), Schema.isMaxLength(2_000)),
@@ -59,97 +40,66 @@ const enabledWhen = (capabilityId: "web-search" | "web-stack-browser") => () => 
   );
 };
 
-const annotations = (input: {
-  readonly title: string;
-  readonly readonly: boolean;
-  readonly destructive: boolean;
-  readonly idempotent: boolean;
-  readonly capabilityId: "web-search" | "web-stack-browser";
-}) =>
-  Context.make(Tool.Title, input.title).pipe(
-    Context.add(Tool.Readonly, input.readonly),
-    Context.add(Tool.Destructive, input.destructive),
-    Context.add(Tool.Idempotent, input.idempotent),
-    Context.add(Tool.OpenWorld, true),
-    Context.add(McpSchema.EnabledWhen, enabledWhen(input.capabilityId)),
+const annotations = (contract: WebStackToolContract) =>
+  Context.make(Tool.Title, contract.annotations.title).pipe(
+    Context.add(Tool.Readonly, contract.annotations.readOnlyHint),
+    Context.add(Tool.Destructive, contract.annotations.destructiveHint),
+    Context.add(Tool.Idempotent, contract.annotations.idempotentHint),
+    Context.add(Tool.OpenWorld, contract.annotations.openWorldHint),
+    Context.add(McpSchema.EnabledWhen, enabledWhen(contract.capabilityId)),
   );
 
-const webSearchAnnotations = annotations({
-  title: webSearchManifest.metadata.displayName,
-  readonly: true,
-  destructive: false,
-  idempotent: true,
-  capabilityId: "web-search",
-});
-const webReadAnnotations = annotations({
-  title: "Read Web Page",
-  readonly: true,
-  destructive: false,
-  idempotent: true,
-  capabilityId: "web-search",
-});
-const webDeepResearchAnnotations = annotations({
-  title: "Deep Web Research",
-  readonly: true,
-  destructive: false,
-  idempotent: false,
-  capabilityId: "web-search",
-});
-const webBrowserPrepareAnnotations = annotations({
-  title: "Prepare Web Browser",
-  readonly: false,
-  destructive: true,
-  idempotent: true,
-  capabilityId: "web-stack-browser",
-});
-const webBrowserAutomateAnnotations = annotations({
-  title: webBrowserManifest.metadata.displayName,
-  readonly: false,
-  destructive: true,
-  idempotent: false,
-  capabilityId: "web-stack-browser",
-});
+const webSearchAnnotations = annotations(WEB_SEARCH_TOOL_CONTRACT);
+const webReadAnnotations = annotations(WEB_READ_TOOL_CONTRACT);
+const webDeepResearchAnnotations = annotations(WEB_DEEP_RESEARCH_TOOL_CONTRACT);
+const webBrowserPrepareAnnotations = annotations(WEB_BROWSER_PREPARE_TOOL_CONTRACT);
+const webBrowserAutomateAnnotations = annotations(WEB_BROWSER_AUTOMATE_TOOL_CONTRACT);
 
 export const WebSearchMcpTool = {
-  name: WEB_SEARCH_MCP_TOOL_NAME,
-  description: webSearchManifest.metadata.description,
+  name: WEB_SEARCH_TOOL_CONTRACT.name,
+  description: WEB_SEARCH_TOOL_CONTRACT.description,
   annotations: webSearchAnnotations,
 } as const;
 
 export const WebReadMcpTool = {
-  name: WEB_READ_MCP_TOOL_NAME,
-  description:
-    "Reads one public web page through bounded evidence gates and returns normalized page evidence without local artifacts or raw bodies.",
+  name: WEB_READ_TOOL_CONTRACT.name,
+  description: WEB_READ_TOOL_CONTRACT.description,
   annotations: webReadAnnotations,
 } as const;
 
 export const WebDeepResearchMcpTool = {
-  name: WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
-  description:
-    "Performs bounded multi-source web research and returns verified source summaries, coverage, call counts, and a report scaffold.",
+  name: WEB_DEEP_RESEARCH_TOOL_CONTRACT.name,
+  description: WEB_DEEP_RESEARCH_TOOL_CONTRACT.description,
   annotations: webDeepResearchAnnotations,
 } as const;
 
 export const WebBrowserPrepareMcpTool = {
-  name: WEB_BROWSER_PREPARE_MCP_TOOL_NAME,
-  description:
-    "Checks browser automation readiness and optionally installs the bounded reference dependency and browser.",
+  name: WEB_BROWSER_PREPARE_TOOL_CONTRACT.name,
+  description: WEB_BROWSER_PREPARE_TOOL_CONTRACT.description,
   annotations: webBrowserPrepareAnnotations,
 } as const;
 
 export const WebBrowserAutomateMcpTool = {
-  name: WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
-  description: webBrowserManifest.metadata.description,
+  name: WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.name,
+  description: WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.description,
   annotations: webBrowserAutomateAnnotations,
 } as const;
 
 export const isWebSearchToolVisible = (
   invocation: McpInvocationContext.McpInvocationScope,
-): boolean => McpInvocationContext.hasActiveWorkjetMcpCapability(invocation, "web-search");
+): boolean =>
+  McpInvocationContext.hasActiveWorkjetMcpCapability(
+    invocation,
+    WEB_SEARCH_TOOL_CONTRACT.capabilityId,
+  );
 
 export const isWebBrowserToolVisible = (
   invocation: McpInvocationContext.McpInvocationScope,
-): boolean => McpInvocationContext.hasActiveWorkjetMcpCapability(invocation, "web-stack-browser");
+): boolean =>
+  McpInvocationContext.hasActiveWorkjetMcpCapability(
+    invocation,
+    WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.capabilityId,
+  );
 
 const toolAnnotations = (tool: {
   readonly annotations: Context.Context<McpSchema.EnabledWhen | Tool.Title>;
@@ -213,9 +163,9 @@ const safeBrowserFailureResult = (
 const webSearchFailureResult = (
   error: WebStackSearch.WebStackSearchError,
 ): Effect.Effect<McpSchema.CallToolResult> =>
-  Effect.logWarning("Web Search MCP call failed", { reason: error.reason }).pipe(
-    Effect.as(safeSearchFailureResult(error.reason)),
-  );
+  Effect.logWarning("Web Search MCP call failed", {
+    reason: error.reason,
+  }).pipe(Effect.as(safeSearchFailureResult(error.reason)));
 
 const webResearchFailureResult = (
   operation: "read" | "deep-research",
@@ -230,9 +180,10 @@ const webBrowserFailureResult = (
   tool: "prepare" | "automate",
   error: WebStackBrowser.WebStackBrowserError,
 ): Effect.Effect<McpSchema.CallToolResult> =>
-  Effect.logWarning("Web Browser MCP call failed", { tool, reason: error.reason }).pipe(
-    Effect.as(safeBrowserFailureResult(tool, error.reason)),
-  );
+  Effect.logWarning("Web Browser MCP call failed", {
+    tool,
+    reason: error.reason,
+  }).pipe(Effect.as(safeBrowserFailureResult(tool, error.reason)));
 
 const callResult = (result: unknown): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
@@ -249,8 +200,8 @@ const registerWebSearch = Effect.fn("McpHttpServer.registerWebSearch")(function*
     tool: new McpSchema.Tool({
       name: tool.name,
       description: tool.description,
-      inputSchema: webSearchManifest.inputSchema,
-      outputSchema: webSearchManifest.outputSchema,
+      inputSchema: WEB_SEARCH_TOOL_CONTRACT.inputSchema,
+      outputSchema: WEB_SEARCH_TOOL_CONTRACT.outputSchema,
       annotations: toolAnnotations(tool),
     }),
     annotations: tool.annotations,
@@ -261,10 +212,15 @@ const registerWebSearch = Effect.fn("McpHttpServer.registerWebSearch")(function*
           McpInvocationContext.McpInvocationContext,
         );
         return Effect.gen(function* () {
-          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-search");
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability(
+            WEB_SEARCH_TOOL_CONTRACT.capabilityId,
+          );
           const input = yield* decodeWebSearchInput(payload).pipe(
             Effect.mapError(
-              () => new McpSchema.InvalidParams({ message: "Invalid Web Search input." }),
+              () =>
+                new McpSchema.InvalidParams({
+                  message: "Invalid Web Search input.",
+                }),
             ),
           );
           return callResult(yield* webSearch.search({ query: input.query }));
@@ -288,8 +244,8 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
     tool: new McpSchema.Tool({
       name: WebReadMcpTool.name,
       description: WebReadMcpTool.description,
-      inputSchema: WEB_READ_INPUT_SCHEMA,
-      outputSchema: WEB_READ_OUTPUT_SCHEMA,
+      inputSchema: WEB_READ_TOOL_CONTRACT.inputSchema,
+      outputSchema: WEB_READ_TOOL_CONTRACT.outputSchema,
       annotations: toolAnnotations(WebReadMcpTool),
     }),
     annotations: WebReadMcpTool.annotations,
@@ -300,10 +256,14 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
           McpInvocationContext.McpInvocationContext,
         );
         return Effect.gen(function* () {
-          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-search");
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability(
+            WEB_READ_TOOL_CONTRACT.capabilityId,
+          );
           const input = WebStackResearch.decodeWebReadInput(payload);
           if (!input) {
-            return yield* new McpSchema.InvalidParams({ message: "Invalid Web Read input." });
+            return yield* new McpSchema.InvalidParams({
+              message: "Invalid Web Read input.",
+            });
           }
           return callResult(yield* research.read(input));
         }).pipe(
@@ -321,8 +281,8 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
     tool: new McpSchema.Tool({
       name: WebDeepResearchMcpTool.name,
       description: WebDeepResearchMcpTool.description,
-      inputSchema: WEB_DEEP_RESEARCH_INPUT_SCHEMA,
-      outputSchema: WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
+      inputSchema: WEB_DEEP_RESEARCH_TOOL_CONTRACT.inputSchema,
+      outputSchema: WEB_DEEP_RESEARCH_TOOL_CONTRACT.outputSchema,
       annotations: toolAnnotations(WebDeepResearchMcpTool),
     }),
     annotations: WebDeepResearchMcpTool.annotations,
@@ -333,7 +293,9 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
           McpInvocationContext.McpInvocationContext,
         );
         return Effect.gen(function* () {
-          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-search");
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability(
+            WEB_DEEP_RESEARCH_TOOL_CONTRACT.capabilityId,
+          );
           const input = WebStackResearch.decodeWebDeepResearchInput(payload);
           if (!input) {
             return yield* new McpSchema.InvalidParams({
@@ -353,41 +315,6 @@ const registerWebResearch = Effect.fn("McpHttpServer.registerWebResearch")(funct
   });
 });
 
-const BROWSER_PREPARE_INPUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    installReference: { type: "boolean" },
-    installBrowser: { type: "boolean" },
-  },
-} as const;
-
-const BROWSER_PREPARE_OUTPUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "ready",
-    "dependencyInstalled",
-    "browserInstalled",
-    "installAttempted",
-    "dependencyInstallRan",
-    "browserInstallRan",
-    "reason",
-  ],
-  properties: {
-    ready: { type: "boolean" },
-    dependencyInstalled: { type: "boolean" },
-    browserInstalled: { type: "boolean" },
-    installAttempted: { type: "boolean" },
-    dependencyInstallRan: { type: "boolean" },
-    browserInstallRan: { type: "boolean" },
-    reason: {
-      type: "string",
-      enum: ["ready", "runtime-unavailable", "dependency-missing", "browser-missing", "not-ready"],
-    },
-  },
-} as const;
-
 const registerWebBrowser = Effect.fn("McpHttpServer.registerWebBrowser")(function* () {
   const server = yield* McpServer.McpServer;
   const browser = yield* WebStackBrowser.WebStackBrowser;
@@ -396,8 +323,8 @@ const registerWebBrowser = Effect.fn("McpHttpServer.registerWebBrowser")(functio
     tool: new McpSchema.Tool({
       name: WebBrowserPrepareMcpTool.name,
       description: WebBrowserPrepareMcpTool.description,
-      inputSchema: BROWSER_PREPARE_INPUT_SCHEMA,
-      outputSchema: BROWSER_PREPARE_OUTPUT_SCHEMA,
+      inputSchema: WEB_BROWSER_PREPARE_TOOL_CONTRACT.inputSchema,
+      outputSchema: WEB_BROWSER_PREPARE_TOOL_CONTRACT.outputSchema,
       annotations: toolAnnotations(WebBrowserPrepareMcpTool),
     }),
     annotations: WebBrowserPrepareMcpTool.annotations,
@@ -408,7 +335,9 @@ const registerWebBrowser = Effect.fn("McpHttpServer.registerWebBrowser")(functio
           McpInvocationContext.McpInvocationContext,
         );
         return Effect.gen(function* () {
-          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-stack-browser");
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability(
+            WEB_BROWSER_PREPARE_TOOL_CONTRACT.capabilityId,
+          );
           const input = WebStackBrowser.decodeBrowserPrepareInput(payload);
           if (!input) {
             return yield* new McpSchema.InvalidParams({
@@ -431,8 +360,8 @@ const registerWebBrowser = Effect.fn("McpHttpServer.registerWebBrowser")(functio
     tool: new McpSchema.Tool({
       name: WebBrowserAutomateMcpTool.name,
       description: WebBrowserAutomateMcpTool.description,
-      inputSchema: webBrowserManifest.inputSchema,
-      outputSchema: webBrowserManifest.outputSchema,
+      inputSchema: WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.inputSchema,
+      outputSchema: WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.outputSchema,
       annotations: toolAnnotations(WebBrowserAutomateMcpTool),
     }),
     annotations: WebBrowserAutomateMcpTool.annotations,
@@ -443,7 +372,9 @@ const registerWebBrowser = Effect.fn("McpHttpServer.registerWebBrowser")(functio
           McpInvocationContext.McpInvocationContext,
         );
         return Effect.gen(function* () {
-          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("web-stack-browser");
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability(
+            WEB_BROWSER_AUTOMATE_TOOL_CONTRACT.capabilityId,
+          );
           const input = WebStackBrowser.decodeBrowserAutomationInput(payload);
           if (!input) {
             return yield* new McpSchema.InvalidParams({

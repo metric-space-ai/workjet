@@ -556,23 +556,25 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn ctx_at() -> SourceCtx<'static> {
+    fn ctx_at(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         // Static empty path is fine — the firmenabc module never reads
         // anything from `root`, and the borrow lives as long as the test.
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::At),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_de() -> SourceCtx<'static> {
+    fn ctx_de(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::De),
             mode: super::super::ResearchMode::UpdateFirm,
         }
@@ -592,7 +594,10 @@ mod tests {
     #[test]
     fn shape_query_at_pins_domain() {
         let shaped = module()
-            .shape_query("Red Bull GmbH", &ctx_at())
+            .shape_query(
+                "Red Bull GmbH",
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            )
             .expect("AT must shape");
         assert!(shaped.query.contains("Red Bull GmbH"));
         assert!(shaped.query.contains("firmenabc.at"));
@@ -601,18 +606,33 @@ mod tests {
 
     #[test]
     fn shape_query_non_at_returns_none() {
-        assert!(module().shape_query("Bosch GmbH", &ctx_de()).is_none());
+        assert!(module()
+            .shape_query(
+                "Bosch GmbH",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn shape_query_empty_returns_none() {
-        assert!(module().shape_query("   ", &ctx_at()).is_none());
+        assert!(module()
+            .shape_query(
+                "   ",
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn no_fetch_direct_override() {
         // Crawl-Pfad — der Trait-Default ist `None`, das ist der Vertrag.
-        assert!(module().fetch_direct(&ctx_at(), "Red Bull GmbH").is_none());
+        assert!(module()
+            .fetch_direct(
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+                "Red Bull GmbH"
+            )
+            .is_none());
     }
 
     /// End-to-end extraction against a frozen Red Bull GmbH profile.

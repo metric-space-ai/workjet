@@ -29,7 +29,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 use url::Url;
 
-use crate::runtime_config;
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 
 /// Default Anna's Archive base URL. Operators can point at a mirror via the
 /// `CTOX_ANNAS_ARCHIVE_BASE_URL` runtime-config key.
@@ -170,7 +170,15 @@ pub fn run_ctox_scholarly_search_tool(
     root: &Path,
     request: &ScholarlySearchRequest,
 ) -> Result<Value> {
-    let response = execute_scholarly_search(root, request)?;
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_scholarly_search_tool_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn run_scholarly_search_tool_with_context(
+    context: WebStackContext<'_>,
+    request: &ScholarlySearchRequest,
+) -> Result<Value> {
+    let response = execute_scholarly_search_with_context(context, request)?;
     Ok(json!({
         "ok": true,
         "tool": "ctox_scholarly_search",
@@ -186,69 +194,77 @@ pub fn execute_scholarly_search(
     root: &Path,
     request: &ScholarlySearchRequest,
 ) -> Result<ScholarlySearchResponse> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    execute_scholarly_search_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn execute_scholarly_search_with_context(
+    context: WebStackContext<'_>,
+    request: &ScholarlySearchRequest,
+) -> Result<ScholarlySearchResponse> {
     let query = request.query.trim();
     if query.is_empty() {
         bail!("ctox scholarly search requires a non-empty query");
     }
-    let provider = resolve_provider(root, request.provider);
+    let provider = resolve_provider(context, request.provider);
     match provider {
         // Anna's Archive shadow-archive search is governed by the
         // CTOX_SCHOLARLY_SEARCH_ENABLED kill-switch. The open academic metadata
         // APIs (Crossref / OpenAlex / Semantic Scholar) are legal open APIs and
         // are NOT gated by it — deep-research relies on them unconditionally,
         // and disabling shadow-archive search must not silently kill them.
-        ScholarlySearchProvider::Auto => auto_scholarly_search(root, request),
+        ScholarlySearchProvider::Auto => auto_scholarly_search(context, request),
         ScholarlySearchProvider::AnnasArchive => {
-            if !is_enabled(root) {
+            if !is_enabled(context) {
                 bail!("CTOX scholarly search is disabled (CTOX_SCHOLARLY_SEARCH_ENABLED=false)");
             }
-            annas_archive_search(root, request)
+            annas_archive_search(context, request)
         }
         ScholarlySearchProvider::Crossref => Ok(database_response(
-            root,
+            context,
             "crossref",
             request,
-            crossref_search(root, request)?,
+            crossref_search(context, request)?,
         )),
         ScholarlySearchProvider::OpenAlex => Ok(database_response(
-            root,
+            context,
             "openalex",
             request,
-            openalex_search(root, request)?,
+            openalex_search(context, request)?,
         )),
         ScholarlySearchProvider::SemanticScholar => Ok(database_response(
-            root,
+            context,
             "semantic_scholar",
             request,
-            semantic_scholar_search(root, request)?,
+            semantic_scholar_search(context, request)?,
         )),
     }
 }
 
 fn resolve_provider(
-    root: &Path,
+    context: WebStackContext<'_>,
     requested: Option<ScholarlySearchProvider>,
 ) -> ScholarlySearchProvider {
     if let Some(provider) = requested {
         return provider;
     }
-    if let Some(raw) = runtime_config::get(root, "CTOX_SCHOLARLY_SEARCH_PROVIDER") {
+    if let Some(raw) = context.get("CTOX_SCHOLARLY_SEARCH_PROVIDER") {
         return ScholarlySearchProvider::from_label(&raw);
     }
-    if runtime_config::get(root, "CTOX_ANNAS_ARCHIVE_BASE_URL").is_some() {
+    if context.get("CTOX_ANNAS_ARCHIVE_BASE_URL").is_some() {
         return ScholarlySearchProvider::AnnasArchive;
     }
     ScholarlySearchProvider::Auto
 }
 
 fn auto_scholarly_search(
-    root: &Path,
+    context: WebStackContext<'_>,
     request: &ScholarlySearchRequest,
 ) -> Result<ScholarlySearchResponse> {
     let providers = std::thread::scope(|scope| {
-        let crossref = scope.spawn(|| crossref_search(root, request));
-        let openalex = scope.spawn(|| openalex_search(root, request));
-        let semantic_scholar = scope.spawn(|| semantic_scholar_search(root, request));
+        let crossref = scope.spawn(|| crossref_search(context, request));
+        let openalex = scope.spawn(|| openalex_search(context, request));
+        let semantic_scholar = scope.spawn(|| semantic_scholar_search(context, request));
         [
             (
                 ScholarlySearchProvider::Crossref,
@@ -318,7 +334,7 @@ fn auto_scholarly_search(
         .map(|(provider, _)| provider.as_str())
         .collect::<Vec<_>>()
         .join(",");
-    let mut response = database_response(root, "auto", request, merged);
+    let mut response = database_response(context, "auto", request, merged);
     response.executed_url = format!("api:auto({provider_names})");
     response.source_policy = if failures.is_empty() {
         SOURCE_POLICY_NOTICE.to_string()
@@ -352,8 +368,9 @@ fn scholarly_result_identity(result: &ScholarlyResult) -> String {
     )
 }
 
-fn is_enabled(root: &Path) -> bool {
-    runtime_config::get(root, "CTOX_SCHOLARLY_SEARCH_ENABLED")
+fn is_enabled(context: WebStackContext<'_>) -> bool {
+    context
+        .get("CTOX_SCHOLARLY_SEARCH_ENABLED")
         .map(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
@@ -364,25 +381,28 @@ fn is_enabled(root: &Path) -> bool {
 }
 
 fn annas_archive_search(
-    root: &Path,
+    context: WebStackContext<'_>,
     request: &ScholarlySearchRequest,
 ) -> Result<ScholarlySearchResponse> {
-    let base_url = runtime_config::get(root, "CTOX_ANNAS_ARCHIVE_BASE_URL")
+    let base_url = context
+        .get("CTOX_ANNAS_ARCHIVE_BASE_URL")
         .unwrap_or_else(|| ANNAS_ARCHIVE_DEFAULT_BASE_URL.to_string());
-    let timeout_ms = runtime_config::get(root, "CTOX_SCHOLARLY_TIMEOUT_MS")
+    let timeout_ms = context
+        .get("CTOX_SCHOLARLY_TIMEOUT_MS")
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(8000);
-    let user_agent = runtime_config::get(root, "CTOX_SCHOLARLY_USER_AGENT")
+    let user_agent = context.get("CTOX_SCHOLARLY_USER_AGENT")
         .unwrap_or_else(|| {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36".to_string()
         });
-    let default_top_k = runtime_config::get(root, "CTOX_SCHOLARLY_TOP_K")
+    let default_top_k = context
+        .get("CTOX_SCHOLARLY_TOP_K")
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(10);
     let top_k = request.max_results.unwrap_or(default_top_k).clamp(1, 50);
     let page = request.page.unwrap_or(1).max(1);
 
-    let url = build_annas_archive_search_url(root, request, &base_url, page)?;
+    let url = build_annas_archive_search_url_with_context(context, request, &base_url, page)?;
 
     let agent = ureq::AgentBuilder::new()
         .user_agent(&user_agent)
@@ -413,7 +433,7 @@ fn annas_archive_search(
     }
 
     if request.with_oa_pdf {
-        augment_results_with_open_access_pdfs(root, &mut results);
+        augment_results_with_open_access_pdfs(context, &mut results);
     }
 
     Ok(ScholarlySearchResponse {
@@ -425,8 +445,24 @@ fn annas_archive_search(
     })
 }
 
+#[cfg(test)]
 fn build_annas_archive_search_url(
     root: &Path,
+    request: &ScholarlySearchRequest,
+    base_url: &str,
+    page: usize,
+) -> Result<Url> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    build_annas_archive_search_url_with_context(
+        WebStackContext::new(root, &store),
+        request,
+        base_url,
+        page,
+    )
+}
+
+fn build_annas_archive_search_url_with_context(
+    context: WebStackContext<'_>,
     request: &ScholarlySearchRequest,
     base_url: &str,
     page: usize,
@@ -435,8 +471,7 @@ fn build_annas_archive_search_url(
         .with_context(|| format!("invalid Anna's Archive base URL: {}", base_url))?;
     {
         let mut qp = url.query_pairs_mut();
-        let configured_default_lang =
-            runtime_config::get(root, "CTOX_ANNAS_ARCHIVE_DEFAULT_LANGUAGE");
+        let configured_default_lang = context.get("CTOX_ANNAS_ARCHIVE_DEFAULT_LANGUAGE");
         if request.languages.is_empty() {
             if let Some(lang) = configured_default_lang.as_deref() {
                 let trimmed = lang.trim();
@@ -893,25 +928,31 @@ fn is_doi_suffix_byte(b: u8) -> bool {
     !b.is_ascii_whitespace() && !matches!(b, b'<' | b'>' | b'"' | b'\'' | b'\\')
 }
 
-fn augment_results_with_open_access_pdfs(root: &Path, results: &mut [ScholarlyResult]) {
+fn augment_results_with_open_access_pdfs(
+    context: WebStackContext<'_>,
+    results: &mut [ScholarlyResult],
+) {
     // Unpaywall's API policy requires a real contact email on every request.
     // Never query it with a placeholder address: without an operator-configured
     // `CTOX_UNPAYWALL_EMAIL` we skip OA-PDF augmentation entirely rather than
     // violate the API terms (and risk getting the shared default blocked).
-    let Some(contact_email) = runtime_config::get(root, "CTOX_UNPAYWALL_EMAIL")
+    let Some(contact_email) = context
+        .get("CTOX_UNPAYWALL_EMAIL")
         .map(|email| email.trim().to_string())
         .filter(|email| !email.is_empty())
     else {
         return;
     };
-    let timeout_ms = runtime_config::get(root, "CTOX_SCHOLARLY_TIMEOUT_MS")
+    let timeout_ms = context
+        .get("CTOX_SCHOLARLY_TIMEOUT_MS")
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(8000);
-    let user_agent = runtime_config::get(root, "CTOX_SCHOLARLY_USER_AGENT")
+    let user_agent = context.get("CTOX_SCHOLARLY_USER_AGENT")
         .unwrap_or_else(|| {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36".to_string()
         });
-    let unpaywall_base = runtime_config::get(root, "CTOX_UNPAYWALL_BASE_URL")
+    let unpaywall_base = context
+        .get("CTOX_UNPAYWALL_BASE_URL")
         .unwrap_or_else(|| UNPAYWALL_DEFAULT_BASE_URL.to_string());
     if results.is_empty() {
         return;
@@ -1051,7 +1092,7 @@ fn trim_text(input: &str, max_len: usize) -> String {
 // ---------------------------------------------------------------------------
 
 fn database_response(
-    root: &Path,
+    context: WebStackContext<'_>,
     provider: &str,
     request: &ScholarlySearchRequest,
     mut results: Vec<ScholarlyResult>,
@@ -1062,7 +1103,7 @@ fn database_response(
         results.retain(|hit| hit.doi.is_some());
     }
     if request.with_oa_pdf {
-        augment_results_with_open_access_pdfs(root, &mut results);
+        augment_results_with_open_access_pdfs(context, &mut results);
     }
     for (index, hit) in results.iter_mut().enumerate() {
         hit.rank = index + 1;
@@ -1079,17 +1120,22 @@ fn database_response(
 /// Contact email for the Crossref / OpenAlex "polite pool" (better rate limits,
 /// and a way for the providers to reach the operator). Reuses the Unpaywall
 /// contact email when a dedicated one is not set. `None` → anonymous pool.
-fn scholarly_contact_email(root: &Path) -> Option<String> {
-    runtime_config::get(root, "CTOX_SCHOLARLY_CONTACT_EMAIL")
-        .or_else(|| runtime_config::get(root, "CTOX_UNPAYWALL_EMAIL"))
+fn scholarly_contact_email(context: WebStackContext<'_>) -> Option<String> {
+    context
+        .get("CTOX_SCHOLARLY_CONTACT_EMAIL")
+        .or_else(|| context.get("CTOX_UNPAYWALL_EMAIL"))
         .map(|email| email.trim().to_string())
         .filter(|email| !email.is_empty())
         .or_else(|| Some("research@ctox.dev".to_string()))
 }
 
-fn crossref_search(root: &Path, request: &ScholarlySearchRequest) -> Result<Vec<ScholarlyResult>> {
+fn crossref_search(
+    context: WebStackContext<'_>,
+    request: &ScholarlySearchRequest,
+) -> Result<Vec<ScholarlyResult>> {
     let limit = request.max_results.unwrap_or(20).clamp(1, 20);
-    let base = runtime_config::get(root, "CTOX_CROSSREF_BASE_URL")
+    let base = context
+        .get("CTOX_CROSSREF_BASE_URL")
         .unwrap_or_else(|| "https://api.crossref.org".to_string());
     let mut url = format!(
         "{}/works?rows={}&query.bibliographic={}",
@@ -1097,10 +1143,10 @@ fn crossref_search(root: &Path, request: &ScholarlySearchRequest) -> Result<Vec<
         limit,
         encode_query(request.query.trim())
     );
-    if let Some(email) = scholarly_contact_email(root) {
+    if let Some(email) = scholarly_contact_email(context) {
         url.push_str(&format!("&mailto={}", encode_query(&email)));
     }
-    let payload = fetch_json(root, &url)?;
+    let payload = fetch_json(context, &url)?;
     let items = payload
         .get("message")
         .and_then(|message| message.get("items"))
@@ -1122,6 +1168,15 @@ pub fn crossref_work_by_doi(
     raw_doi: &str,
     with_oa_pdf: bool,
 ) -> Result<ScholarlyResult> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    crossref_work_by_doi_with_context(WebStackContext::new(root, &store), raw_doi, with_oa_pdf)
+}
+
+pub fn crossref_work_by_doi_with_context(
+    context: WebStackContext<'_>,
+    raw_doi: &str,
+    with_oa_pdf: bool,
+) -> Result<ScholarlyResult> {
     let doi = raw_doi
         .trim()
         .trim_start_matches("https://doi.org/")
@@ -1132,13 +1187,14 @@ pub fn crossref_work_by_doi(
         bail!("invalid DOI reference");
     }
 
-    let base = runtime_config::get(root, "CTOX_CROSSREF_BASE_URL")
+    let base = context
+        .get("CTOX_CROSSREF_BASE_URL")
         .unwrap_or_else(|| "https://api.crossref.org".to_string());
     let mut url = format!("{}/works/{}", base.trim_end_matches('/'), encode_query(doi));
-    if let Some(email) = scholarly_contact_email(root) {
+    if let Some(email) = scholarly_contact_email(context) {
         url.push_str(&format!("?mailto={}", encode_query(&email)));
     }
-    let payload = fetch_json(root, &url)?;
+    let payload = fetch_json(context, &url)?;
     let item = payload
         .get("message")
         .filter(|value| value.is_object())
@@ -1153,7 +1209,7 @@ pub fn crossref_work_by_doi(
         bail!("Crossref exact DOI response did not match the requested DOI");
     }
     if with_oa_pdf {
-        augment_results_with_open_access_pdfs(root, std::slice::from_mut(&mut result));
+        augment_results_with_open_access_pdfs(context, std::slice::from_mut(&mut result));
     }
     Ok(result)
 }
@@ -1225,9 +1281,13 @@ fn crossref_open_access_pdf(item: &Value) -> Option<(String, String)> {
     Some((pdf.to_string(), license))
 }
 
-fn openalex_search(root: &Path, request: &ScholarlySearchRequest) -> Result<Vec<ScholarlyResult>> {
+fn openalex_search(
+    context: WebStackContext<'_>,
+    request: &ScholarlySearchRequest,
+) -> Result<Vec<ScholarlyResult>> {
     let limit = request.max_results.unwrap_or(25).clamp(1, 25);
-    let base = runtime_config::get(root, "CTOX_OPENALEX_BASE_URL")
+    let base = context
+        .get("CTOX_OPENALEX_BASE_URL")
         .unwrap_or_else(|| "https://api.openalex.org".to_string());
     let mut url = format!(
         "{}/works?per-page={}&search={}",
@@ -1235,10 +1295,10 @@ fn openalex_search(root: &Path, request: &ScholarlySearchRequest) -> Result<Vec<
         limit,
         encode_query(request.query.trim())
     );
-    if let Some(email) = scholarly_contact_email(root) {
+    if let Some(email) = scholarly_contact_email(context) {
         url.push_str(&format!("&mailto={}", encode_query(&email)));
     }
-    let payload = fetch_json(root, &url)?;
+    let payload = fetch_json(context, &url)?;
     let items = payload
         .get("results")
         .and_then(Value::as_array)
@@ -1284,11 +1344,12 @@ fn openalex_pdf_url(item: &Value) -> Option<String> {
 }
 
 fn semantic_scholar_search(
-    root: &Path,
+    context: WebStackContext<'_>,
     request: &ScholarlySearchRequest,
 ) -> Result<Vec<ScholarlyResult>> {
     let limit = request.max_results.unwrap_or(12).clamp(1, 20);
-    let base = runtime_config::get(root, "CTOX_SEMANTIC_SCHOLAR_BASE_URL")
+    let base = context
+        .get("CTOX_SEMANTIC_SCHOLAR_BASE_URL")
         .unwrap_or_else(|| "https://api.semanticscholar.org/graph/v1".to_string());
     let url = format!(
         "{}/paper/search?limit={}&fields=title,authors,year,url,abstract,venue,externalIds,openAccessPdf,isOpenAccess,references.paperId,references.externalIds&query={}",
@@ -1296,7 +1357,7 @@ fn semantic_scholar_search(
         limit,
         encode_query(request.query.trim())
     );
-    let payload = fetch_json(root, &url)?;
+    let payload = fetch_json(context, &url)?;
     let items = payload
         .get("data")
         .and_then(Value::as_array)
@@ -1367,8 +1428,18 @@ fn semantic_scholar_search(
     Ok(out)
 }
 
-pub(crate) fn openalex_work_by_id(root: &Path, work_id: &str) -> Result<ScholarlyResult> {
-    let base = runtime_config::get(root, "CTOX_OPENALEX_BASE_URL")
+#[cfg(test)]
+fn openalex_work_by_id(root: &Path, work_id: &str) -> Result<ScholarlyResult> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    openalex_work_by_id_with_context(WebStackContext::new(root, &store), work_id)
+}
+
+pub(crate) fn openalex_work_by_id_with_context(
+    context: WebStackContext<'_>,
+    work_id: &str,
+) -> Result<ScholarlyResult> {
+    let base = context
+        .get("CTOX_OPENALEX_BASE_URL")
         .unwrap_or_else(|| "https://api.openalex.org".to_string());
     let normalized = work_id
         .trim()
@@ -1378,10 +1449,10 @@ pub(crate) fn openalex_work_by_id(root: &Path, work_id: &str) -> Result<Scholarl
         bail!("invalid OpenAlex work id");
     }
     let mut url = format!("{}/works/{}", base.trim_end_matches('/'), normalized);
-    if let Some(email) = scholarly_contact_email(root) {
+    if let Some(email) = scholarly_contact_email(context) {
         url.push_str(&format!("?mailto={}", encode_query(&email)));
     }
-    let item = fetch_json(root, &url)?;
+    let item = fetch_json(context, &url)?;
     let title = item
         .get("display_name")
         .and_then(Value::as_str)
@@ -1400,7 +1471,10 @@ pub(crate) fn openalex_work_by_id(root: &Path, work_id: &str) -> Result<Scholarl
     Ok(openalex_item_to_result(&item, detail_url, title, doi, 1))
 }
 
-pub(crate) fn openalex_work_by_doi(root: &Path, raw_doi: &str) -> Result<ScholarlyResult> {
+pub(crate) fn openalex_work_by_doi_with_context(
+    context: WebStackContext<'_>,
+    raw_doi: &str,
+) -> Result<ScholarlyResult> {
     let doi = raw_doi
         .trim()
         .trim_start_matches("https://doi.org/")
@@ -1410,7 +1484,8 @@ pub(crate) fn openalex_work_by_doi(root: &Path, raw_doi: &str) -> Result<Scholar
     if !doi.to_ascii_lowercase().starts_with("10.") || !doi.contains('/') {
         bail!("invalid DOI reference");
     }
-    let base = runtime_config::get(root, "CTOX_OPENALEX_BASE_URL")
+    let base = context
+        .get("CTOX_OPENALEX_BASE_URL")
         .unwrap_or_else(|| "https://api.openalex.org".to_string());
     let identifier = format!("https://doi.org/{doi}");
     let mut url = format!(
@@ -1418,10 +1493,10 @@ pub(crate) fn openalex_work_by_doi(root: &Path, raw_doi: &str) -> Result<Scholar
         base.trim_end_matches('/'),
         encode_query(&identifier)
     );
-    if let Some(email) = scholarly_contact_email(root) {
+    if let Some(email) = scholarly_contact_email(context) {
         url.push_str(&format!("?mailto={}", encode_query(&email)));
     }
-    let item = fetch_json(root, &url)?;
+    let item = fetch_json(context, &url)?;
     let title = item
         .get("display_name")
         .and_then(Value::as_str)
@@ -1617,11 +1692,12 @@ fn encode_query(raw: &str) -> String {
     url::form_urlencoded::byte_serialize(raw.as_bytes()).collect()
 }
 
-fn fetch_json(root: &Path, url: &str) -> Result<Value> {
+fn fetch_json(context: WebStackContext<'_>, url: &str) -> Result<Value> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(8))
         .build();
-    let contact = scholarly_contact_email(root).unwrap_or_else(|| "research@ctox.dev".to_string());
+    let contact =
+        scholarly_contact_email(context).unwrap_or_else(|| "research@ctox.dev".to_string());
     let user_agent = format!("ctox-scholarly/0.1 (mailto:{contact})");
     let mut last_error = None;
     for attempt in 0..4u32 {
@@ -1981,18 +2057,11 @@ mod tests {
     // ----- End-to-end mock-server tests -----
 
     fn write_runtime_kv(db_path: &Path, key: &str, value: &str) {
-        use rusqlite::Connection;
-        let conn = Connection::open(db_path).expect("open mock kv db");
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS runtime_env_kv (env_key TEXT PRIMARY KEY, env_value TEXT NOT NULL)",
-            [],
-        )
-        .expect("create runtime_env_kv");
-        conn.execute(
-            "INSERT OR REPLACE INTO runtime_env_kv (env_key, env_value) VALUES (?1, ?2)",
-            rusqlite::params![key, value],
-        )
-        .expect("insert runtime kv");
+        let root = db_path
+            .parent()
+            .and_then(Path::parent)
+            .expect("runtime config root");
+        crate::runtime_config::set_ctox_value_for_test(root, key, value);
     }
 
     fn unique_test_root(tag: &str) -> std::path::PathBuf {

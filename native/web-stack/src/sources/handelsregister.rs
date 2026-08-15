@@ -726,31 +726,34 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn ctx_de() -> SourceCtx<'static> {
+    fn ctx_de(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::De),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_at() -> SourceCtx<'static> {
+    fn ctx_at(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::At),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_none() -> SourceCtx<'static> {
+    fn ctx_none(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: None,
             mode: super::super::ResearchMode::UpdateFirm,
         }
@@ -783,7 +786,10 @@ mod tests {
     #[test]
     fn shape_query_de_pins_both_domains() {
         let shaped = module()
-            .shape_query("WITTENSTEIN SE", &ctx_de())
+            .shape_query(
+                "WITTENSTEIN SE",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            )
             .expect("DE must shape");
         assert!(shaped.query.contains("WITTENSTEIN SE"));
         assert!(shaped.query.contains("site:handelsregister.de"));
@@ -799,21 +805,39 @@ mod tests {
 
     #[test]
     fn shape_query_non_de_returns_none() {
-        assert!(module().shape_query("Red Bull GmbH", &ctx_at()).is_none());
         assert!(module()
-            .shape_query("Roche Holding AG", &ctx_none())
+            .shape_query(
+                "Red Bull GmbH",
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
+        assert!(module()
+            .shape_query(
+                "Roche Holding AG",
+                &ctx_none(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
             .is_none());
     }
 
     #[test]
     fn shape_query_empty_returns_none() {
-        assert!(module().shape_query("   ", &ctx_de()).is_none());
+        assert!(module()
+            .shape_query(
+                "   ",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn no_fetch_direct_override() {
         // Crawl-Pfad — der Trait-Default ist `None`, das ist der Vertrag.
-        assert!(module().fetch_direct(&ctx_de(), "WITTENSTEIN SE").is_none());
+        assert!(module()
+            .fetch_direct(
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+                "WITTENSTEIN SE"
+            )
+            .is_none());
     }
 
     #[test]

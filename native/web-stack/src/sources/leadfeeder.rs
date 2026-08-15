@@ -25,9 +25,9 @@
 //!
 //! ## Credentials
 //!
-//! Der API-Key wird über die SQLite-Runtime-Config gelesen
-//! (`runtime_env_kv`-Tabelle, Key `LEADFEEDER_API_KEY`). Der Account-Id
-//! kommt aus derselben Tabelle unter `LEADFEEDER_ACCOUNT_ID`; fehlt sie,
+//! Der API-Key wird über den injizierten Runtime-Config-Store unter
+//! `LEADFEEDER_API_KEY` gelesen. Der Account-Id kommt aus demselben Store
+//! unter `LEADFEEDER_ACCOUNT_ID`; fehlt er,
 //! verwenden wir das dokumentierte `me` (das die API auf den eigenen
 //! Default-Account auflöst), damit ein Single-Account-Tenant out-of-the-box
 //! funktioniert. Ohne Token gibt `fetch_direct` ein
@@ -52,7 +52,6 @@ use super::{
     BrowserSourceRecipe, Confidence, Country, FieldEvidence, FieldKey, ShapedQuery, SourceCtx,
     SourceError, SourceHit, SourceModule, SourceReadResult, Tier,
 };
-use crate::runtime_config;
 
 const API_BASE: &str = "https://api.leadfeeder.com";
 const SECRET_NAME: &str = "LEADFEEDER_API_KEY";
@@ -141,7 +140,7 @@ impl SourceModule for Leadfeeder {
             return Some(Err(SourceError::NoMatch));
         }
 
-        let token = match runtime_config::get(ctx.root, SECRET_NAME) {
+        let token = match ctx.runtime_config.get(SECRET_NAME) {
             Some(t) => t,
             None => {
                 return Some(Err(SourceError::CredentialMissing {
@@ -149,7 +148,9 @@ impl SourceModule for Leadfeeder {
                 }));
             }
         };
-        let account_id = runtime_config::get(ctx.root, "LEADFEEDER_ACCOUNT_ID")
+        let account_id = ctx
+            .runtime_config
+            .get("LEADFEEDER_ACCOUNT_ID")
             .unwrap_or_else(|| ACCOUNT_DEFAULT.to_string());
 
         let agent = build_agent();
@@ -559,6 +560,7 @@ mod tests {
     fn shape_query_is_none_for_api_source() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -576,6 +578,7 @@ mod tests {
         for country in [Country::De, Country::At, Country::Ch] {
             let ctx = SourceCtx {
                 root: Path::new("/tmp/ctox-nonexistent-leadfeeder"),
+                runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
                 country: Some(country),
                 mode: ResearchMode::NewRecord,
             };
@@ -590,11 +593,11 @@ mod tests {
 
     #[test]
     fn fetch_direct_missing_credential_returns_credential_missing() {
-        // Point root at a directory that definitely has no runtime config
-        // SQLite — runtime_config::get returns None, fetch_direct must
-        // map this to CredentialMissing for the orchestrator.
+        // With no injected runtime setting, fetch_direct must map the absent
+        // token to CredentialMissing for the orchestrator.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-nonexistent-leadfeeder"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -613,6 +616,7 @@ mod tests {
     fn fetch_direct_empty_company_is_no_match() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-nonexistent-leadfeeder"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -728,10 +732,11 @@ mod tests {
     fn live_credential_missing_or_smoke() {
         // The repo has no Leadfeeder token by default; the live test
         // therefore *documents* the credential-missing path. If an
-        // operator wires LEADFEEDER_API_KEY into runtime_env_kv, the test
+        // operator injects LEADFEEDER_API_KEY into runtime config, the test
         // becomes a real smoke check against the API.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-leadfeeder-live"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };

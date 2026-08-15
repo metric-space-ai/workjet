@@ -35,12 +35,13 @@ use rusqlite::OptionalExtension;
 use serde_json::json;
 use serde_json::Value;
 
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 use crate::sources::{
     self, scrape_bridge, Country, FieldKey, ResearchMode, SourceCtx, SourceHit, SourceModule, Tier,
 };
 use crate::web_search::{
-    run_ctox_web_read_tool, run_ctox_web_search_tool, CanonicalWebSearchRequest, ContextSize,
-    DirectWebReadRequest, SearchUserLocation,
+    run_web_read_tool_with_context, run_web_search_tool_with_context, CanonicalWebSearchRequest,
+    ContextSize, DirectWebReadRequest, SearchUserLocation,
 };
 
 const MAX_HITS_PER_SOURCE: usize = 4;
@@ -95,6 +96,15 @@ pub fn run_ctox_person_research_tool(
     root: &Path,
     request: &PersonResearchRequest,
 ) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_tool_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn run_person_research_tool_with_context(
+    context: WebStackContext<'_>,
+    request: &PersonResearchRequest,
+) -> Result<Value> {
+    let root = context.root;
     let company = normalize_required_company(&request.company)?;
     if matches!(
         request.mode,
@@ -191,6 +201,7 @@ pub fn run_ctox_person_research_tool(
             .and_then(|m| {
                 let ctx = SourceCtx {
                     root,
+                    runtime_config: context.runtime_config,
                     country: Some(request.country),
                     mode: request.mode,
                 };
@@ -198,8 +209,8 @@ pub fn run_ctox_person_research_tool(
             })
             .unwrap_or_else(|| company.clone());
 
-        let search_payload = run_ctox_web_search_tool(
-            root,
+        let search_payload = run_web_search_tool_with_context(
+            context,
             &CanonicalWebSearchRequest {
                 query: effective_query,
                 external_web_access: None,
@@ -264,6 +275,7 @@ pub fn run_ctox_person_research_tool(
             if !hit_objs.is_empty() {
                 let ctx = SourceCtx {
                     root,
+                    runtime_config: context.runtime_config,
                     country: Some(request.country),
                     mode: request.mode,
                 };
@@ -314,8 +326,8 @@ pub fn run_ctox_person_research_tool(
             if !url_belongs_to_source(url, plan.source_id, plan.aliases, plan.host_suffixes) {
                 continue;
             }
-            let read_payload = run_ctox_web_read_tool(
-                root,
+            let read_payload = run_web_read_tool_with_context(
+                context,
                 &DirectWebReadRequest {
                     url: url.to_string(),
                     query: Some(company.clone()),
@@ -577,6 +589,7 @@ fn is_source_opted_in(module: &'static dyn SourceModule, include_private: &[Stri
 fn probe_api_path(module: &'static dyn SourceModule) -> bool {
     let ctx = SourceCtx {
         root: Path::new(""),
+        runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
         country: Some(*module.countries().first().unwrap_or(&Country::De)),
         mode: ResearchMode::NewRecord,
     };

@@ -35,6 +35,8 @@ use anyhow::anyhow;
 use anyhow::Result;
 use url::Url;
 
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
+
 /// Reject any URL whose scheme is not `http`/`https` before we touch the
 /// network. The IP-level guard lives in [`SsrfResolver`]; this is the
 /// fast-failing front door for the model-facing read tool.
@@ -54,6 +56,15 @@ pub fn assert_fetchable_url(raw: &str) -> Result<()> {
 /// server-side fetches; the persistent runner repeats scheme/IP-literal checks
 /// for redirects and subresources.
 pub fn assert_browser_egress_url(root: &Path, raw: &str) -> Result<()> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    assert_browser_egress_url_with_context(WebStackContext::new(root, &store), raw)
+}
+
+/// Product-neutral browser egress validation using call-scoped configuration.
+pub fn assert_browser_egress_url_with_context(
+    context: WebStackContext<'_>,
+    raw: &str,
+) -> Result<()> {
     if raw == "about:blank" {
         return Ok(());
     }
@@ -65,7 +76,7 @@ pub fn assert_browser_egress_url(root: &Path, raw: &str) -> Result<()> {
     let port = parsed
         .port_or_known_default()
         .ok_or_else(|| anyhow!("browser URL requires a known port"))?;
-    let resolver = SsrfResolver::new(allow_hosts_from_config(root));
+    let resolver = SsrfResolver::new(allow_hosts_from_context(context));
     ureq::Resolver::resolve(&resolver, &format!("{host}:{port}"))
         .map_err(|error| anyhow!("browser egress policy rejected destination: {error}"))?;
     Ok(())
@@ -82,10 +93,16 @@ pub fn host_of(raw: &str) -> Option<String> {
     })
 }
 
-/// Read the operator allow-list from the SQLite runtime config
-/// (`CTOX_WEB_EGRESS_ALLOW`, comma-separated host names). Empty by default.
+/// Read the operator allow-list from CTOX-compatible runtime configuration.
 pub fn allow_hosts_from_config(root: &Path) -> Vec<String> {
-    crate::runtime_config::get(root, "CTOX_WEB_EGRESS_ALLOW")
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    allow_hosts_from_context(WebStackContext::new(root, &store))
+}
+
+/// Read `CTOX_WEB_EGRESS_ALLOW` from the injected call-scoped store.
+pub fn allow_hosts_from_context(context: WebStackContext<'_>) -> Vec<String> {
+    context
+        .get("CTOX_WEB_EGRESS_ALLOW")
         .map(|raw| {
             raw.split(',')
                 .map(|part| part.trim().to_ascii_lowercase())
@@ -267,6 +284,26 @@ mod tests {
         assert!(assert_fetchable_url("gopher://example.com").is_err());
         assert!(assert_fetchable_url("https://example.com/ok").is_ok());
         assert!(assert_fetchable_url("http://example.com/ok").is_ok());
+    }
+
+    #[test]
+    fn injected_workjet_allow_hosts_require_no_sqlite_state() {
+        let root = std::env::temp_dir().join(format!(
+            "web-stack-egress-workjet-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([(
+            "CTOX_WEB_EGRESS_ALLOW",
+            " LocalHost, 127.0.0.1,example.test ",
+        )]);
+        let context = WebStackContext::new(&root, &store);
+
+        assert_eq!(
+            allow_hosts_from_context(context),
+            vec!["localhost", "127.0.0.1", "example.test"]
+        );
+        assert!(!crate::runtime_config::runtime_config_path(&root).exists());
     }
 
     #[test]

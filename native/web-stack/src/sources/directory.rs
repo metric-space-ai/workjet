@@ -229,10 +229,14 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn ctx(country: Country) -> SourceCtx<'static> {
+    fn ctx(
+        country: Country,
+        runtime_config: &dyn crate::runtime_config::RuntimeConfigStore,
+    ) -> SourceCtx<'_> {
         SourceCtx {
             country: Some(country),
             root: Path::new("."),
+            runtime_config,
             mode: super::super::ResearchMode::NewRecord,
         }
     }
@@ -240,22 +244,46 @@ mod tests {
     #[test]
     fn directory_sources_pin_their_domains() {
         assert!(moneyhouse()
-            .shape_query("Nests Sàrl", &ctx(Country::Ch))
+            .shape_query(
+                "Nests Sàrl",
+                &ctx(
+                    Country::Ch,
+                    &crate::runtime_config::WorkjetRuntimeConfigStore::default()
+                )
+            )
             .unwrap()
             .domains
             .contains(&"moneyhouse.ch".to_string()));
         assert!(rocketreach()
-            .shape_query("WITTENSTEIN SE", &ctx(Country::De))
+            .shape_query(
+                "WITTENSTEIN SE",
+                &ctx(
+                    Country::De,
+                    &crate::runtime_config::WorkjetRuntimeConfigStore::default()
+                )
+            )
             .unwrap()
             .domains
             .contains(&"rocketreach.com".to_string()));
         assert!(rocketreach()
-            .shape_query("WITTENSTEIN SE", &ctx(Country::De))
+            .shape_query(
+                "WITTENSTEIN SE",
+                &ctx(
+                    Country::De,
+                    &crate::runtime_config::WorkjetRuntimeConfigStore::default()
+                )
+            )
             .unwrap()
             .domains
             .contains(&"rocketreach.co".to_string()));
         assert!(moneyhouse()
-            .shape_query("Nests Sàrl", &ctx(Country::De))
+            .shape_query(
+                "Nests Sàrl",
+                &ctx(
+                    Country::De,
+                    &crate::runtime_config::WorkjetRuntimeConfigStore::default()
+                )
+            )
             .is_none());
         assert!(google_maps()
             .authoritative_for()
@@ -266,12 +294,24 @@ mod tests {
         assert!(google().authoritative_for().contains(&FieldKey::FirmaName));
         assert!(google().host_suffixes().contains(&"google.com"));
         assert!(google()
-            .shape_query("WITTENSTEIN SE", &ctx(Country::De))
+            .shape_query(
+                "WITTENSTEIN SE",
+                &ctx(
+                    Country::De,
+                    &crate::runtime_config::WorkjetRuntimeConfigStore::default()
+                )
+            )
             .unwrap()
             .query
             .contains("offizielle Website"));
         assert!(experte()
-            .shape_query("person@example.test", &ctx(Country::De))
+            .shape_query(
+                "person@example.test",
+                &ctx(
+                    Country::De,
+                    &crate::runtime_config::WorkjetRuntimeConfigStore::default()
+                )
+            )
             .is_none());
         assert!(rocketreach().host_suffixes().contains(&"rocketreach.co"));
         assert_eq!(

@@ -24,7 +24,8 @@ use std::time::Duration;
 use std::time::Instant;
 use url::Url;
 
-use crate::browser::{run_browser_automation, BrowserAutomationRequest};
+use crate::browser::{run_browser_automation_with_context, BrowserAutomationRequest};
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 
 const SEED_JSON: &str = include_str!("../assets/web_unlock_seed.json");
 
@@ -103,6 +104,16 @@ pub fn run_public_browser_fallback(
     ctox_bin: &Path,
     request: &PublicUnlockRequest,
 ) -> PublicUnlockOutcome {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_public_browser_fallback_with_context(WebStackContext::new(root, &store), ctox_bin, request)
+}
+
+pub fn run_public_browser_fallback_with_context(
+    context: WebStackContext<'_>,
+    ctox_bin: &Path,
+    request: &PublicUnlockRequest,
+) -> PublicUnlockOutcome {
+    let root = context.root;
     let rejected = |error: String| PublicUnlockOutcome {
         attempted: false,
         ok: false,
@@ -120,7 +131,9 @@ pub fn run_public_browser_fallback(
     if let Err(error) = validate_public_unlock_request(request) {
         return rejected(error.to_string());
     }
-    if let Err(error) = crate::egress::assert_browser_egress_url(root, &request.target_url) {
+    if let Err(error) =
+        crate::egress::assert_browser_egress_url_with_context(context, &request.target_url)
+    {
         return rejected(error.to_string());
     }
 
@@ -726,6 +739,12 @@ pub fn load_vectors(conn: &Connection, probe_filter: Option<&str>) -> Result<Vec
 }
 
 pub fn run_probe(root: &Path, probe: &Probe) -> Result<ProbeOutcome> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_probe_with_context(WebStackContext::new(root, &store), probe)
+}
+
+pub fn run_probe_with_context(context: WebStackContext<'_>, probe: &Probe) -> Result<ProbeOutcome> {
+    let root = context.root;
     let script_path = root.join(&probe.script_path);
     let source = std::fs::read_to_string(&script_path)
         .with_context(|| format!("failed to read probe script {}", script_path.display()))?;
@@ -740,8 +759,8 @@ pub fn run_probe(root: &Path, probe: &Probe) -> Result<ProbeOutcome> {
             "result": result,
         })
     } else {
-        run_browser_automation(
-            root,
+        run_browser_automation_with_context(
+            context,
             &BrowserAutomationRequest {
                 dir: None,
                 timeout_ms: Some(probe.timeout_ms),
@@ -895,6 +914,15 @@ fn last_run_summary(conn: &Connection, probe_id: &str) -> Result<Option<Value>> 
 }
 
 pub fn handle_unlock_command(root: &Path, args: &[String]) -> Result<()> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    handle_unlock_command_with_context(WebStackContext::new(root, &store), args)
+}
+
+pub fn handle_unlock_command_with_context(
+    context: WebStackContext<'_>,
+    args: &[String],
+) -> Result<()> {
+    let root = context.root;
     let sub = args.first().map(String::as_str).unwrap_or("help");
     match sub {
         "help" | "-h" | "--help" | "" => {
@@ -910,7 +938,7 @@ pub fn handle_unlock_command(root: &Path, args: &[String]) -> Result<()> {
             let probe_filter = first_positional(args);
             let record = args.iter().any(|a| a == "--record");
             let auto_repair = args.iter().any(|a| a == "--auto-repair");
-            cmd_baseline(root, probe_filter.as_deref(), record, auto_repair)
+            cmd_baseline(context, probe_filter.as_deref(), record, auto_repair)
         }
         "history" => {
             let probe_filter = first_positional(args);
@@ -1083,11 +1111,12 @@ fn cmd_list_vectors(root: &Path, probe_filter: Option<&str>) -> Result<()> {
 }
 
 fn cmd_baseline(
-    root: &Path,
+    context: WebStackContext<'_>,
     probe_filter: Option<&str>,
     record: bool,
     auto_repair: bool,
 ) -> Result<()> {
+    let root = context.root;
     let conn = open_db(root)?;
     let probes_all = load_probes(&conn, true)?;
     let probes: Vec<Probe> = if let Some(p) = probe_filter {
@@ -1101,7 +1130,7 @@ fn cmd_baseline(
     let mut all_passed = true;
     let mut summary: Vec<Value> = Vec::new();
     for probe in &probes {
-        let outcome = match run_probe(root, probe) {
+        let outcome = match run_probe_with_context(context, probe) {
             Ok(o) => o,
             Err(err) => {
                 all_passed = false;

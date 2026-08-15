@@ -388,31 +388,36 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn ctx_de() -> SourceCtx<'static> {
+    fn ctx_de(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::De),
             mode: super::super::ResearchMode::NewRecord,
         }
     }
 
-    fn ctx_at() -> SourceCtx<'static> {
+    fn ctx_at(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::At),
             mode: super::super::ResearchMode::NewRecord,
         }
     }
 
-    fn ctx_unknown_country() -> SourceCtx<'static> {
+    fn ctx_unknown_country(
+        runtime_config: &dyn crate::runtime_config::RuntimeConfigStore,
+    ) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: None,
             mode: super::super::ResearchMode::NewRecord,
         }
@@ -436,7 +441,10 @@ mod tests {
     #[test]
     fn shape_query_de_pins_domain_and_keyword() {
         let shaped = module()
-            .shape_query("WITTENSTEIN SE", &ctx_de())
+            .shape_query(
+                "WITTENSTEIN SE",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            )
             .expect("DE must shape");
         assert!(shaped.query.contains("WITTENSTEIN SE"));
         assert!(shaped.query.contains("Jahresabschluss"));
@@ -449,25 +457,43 @@ mod tests {
         // No country pin → still in. The orchestrator may not have a
         // country at hand for the initial query phase.
         let shaped = module()
-            .shape_query("WITTENSTEIN SE", &ctx_unknown_country())
+            .shape_query(
+                "WITTENSTEIN SE",
+                &ctx_unknown_country(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            )
             .expect("unknown country must shape");
         assert!(shaped.query.contains("Jahresabschluss"));
     }
 
     #[test]
     fn shape_query_non_de_returns_none() {
-        assert!(module().shape_query("Red Bull GmbH", &ctx_at()).is_none());
+        assert!(module()
+            .shape_query(
+                "Red Bull GmbH",
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn shape_query_empty_returns_none() {
-        assert!(module().shape_query("   ", &ctx_de()).is_none());
+        assert!(module()
+            .shape_query(
+                "   ",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn no_fetch_direct_override() {
         // Crawl-Pfad — kein direkter API-Call.
-        assert!(module().fetch_direct(&ctx_de(), "WITTENSTEIN SE").is_none());
+        assert!(module()
+            .fetch_direct(
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+                "WITTENSTEIN SE"
+            )
+            .is_none());
     }
 
     /// Extracts `firma_name` from a frozen Bundesanzeiger search-results

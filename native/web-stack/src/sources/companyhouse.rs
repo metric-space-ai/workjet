@@ -400,31 +400,36 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn ctx_de() -> SourceCtx<'static> {
+    fn ctx_de(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::De),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_at() -> SourceCtx<'static> {
+    fn ctx_at(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::At),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_unknown() -> SourceCtx<'static> {
+    fn ctx_unknown(
+        runtime_config: &dyn crate::runtime_config::RuntimeConfigStore,
+    ) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: None,
             mode: super::super::ResearchMode::UpdateFirm,
         }
@@ -445,7 +450,10 @@ mod tests {
     #[test]
     fn shape_query_de_pins_domain() {
         let shaped = module()
-            .shape_query("Manfred Schneider", &ctx_de())
+            .shape_query(
+                "Manfred Schneider",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            )
             .expect("DE must shape");
         assert!(shaped.query.contains("Manfred Schneider"));
         assert!(shaped.query.contains("companyhouse.de"));
@@ -457,26 +465,42 @@ mod tests {
         // Companyhouse-Matrix referenziert keine Nicht-DE-Zeile, also ist
         // None ⇒ erlaubt; Source-Filtering nach Land übernimmt Phase 4.
         assert!(module()
-            .shape_query("Manfred Schneider", &ctx_unknown())
+            .shape_query(
+                "Manfred Schneider",
+                &ctx_unknown(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
             .is_some());
     }
 
     #[test]
     fn shape_query_non_de_returns_none() {
         assert!(module()
-            .shape_query("Manfred Schneider", &ctx_at())
+            .shape_query(
+                "Manfred Schneider",
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
             .is_none());
     }
 
     #[test]
     fn shape_query_empty_returns_none() {
-        assert!(module().shape_query("   ", &ctx_de()).is_none());
+        assert!(module()
+            .shape_query(
+                "   ",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn no_fetch_direct_override() {
         // Crawl-Pfad — Trait-Default `None` ist der Vertrag.
-        assert!(module().fetch_direct(&ctx_de(), "Bayer AG").is_none());
+        assert!(module()
+            .fetch_direct(
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+                "Bayer AG"
+            )
+            .is_none());
     }
 
     /// End-to-end extraction against a frozen Companyhouse person profile.

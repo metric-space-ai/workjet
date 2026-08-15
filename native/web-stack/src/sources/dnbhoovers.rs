@@ -36,7 +36,6 @@ use super::{
     BrowserSourceRecipe, Confidence, Country, FieldEvidence, FieldKey, ShapedQuery, SourceCtx,
     SourceError, SourceHit, SourceModule, SourceReadResult, Tier,
 };
-use crate::runtime_config;
 
 const API_BASE: &str = "https://plus.dnb.com/v1";
 const TOKEN_ENDPOINT: &str = "https://plus.dnb.com/v3/token";
@@ -175,7 +174,7 @@ impl SourceModule for DnbHoovers {
 /// orchestrator-Pfad bleibt funktional, auch wenn nur eine Quelle bedient
 /// ist.
 fn resolve_token(ctx: &SourceCtx<'_>) -> Option<String> {
-    if let Some(value) = runtime_config::get(ctx.root, SECRET_NAME) {
+    if let Some(value) = ctx.runtime_config.get(SECRET_NAME) {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());
@@ -820,9 +819,27 @@ mod tests {
     }
 
     #[test]
+    fn injected_workjet_token_reaches_protected_source() {
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([(
+            SECRET_NAME,
+            " tenant-token ",
+        )]);
+        let ctx = SourceCtx {
+            root: Path::new("workjet-tenant"),
+            runtime_config: &store,
+            country: Some(Country::De),
+            mode: ResearchMode::NewRecord,
+        };
+
+        assert_eq!(resolve_token(&ctx).as_deref(), Some("tenant-token"));
+        assert!(!crate::runtime_config::runtime_config_path(ctx.root).exists());
+    }
+
+    #[test]
     fn shape_query_is_none_for_api_source() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-dnb"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -838,6 +855,7 @@ mod tests {
         for country in [Country::De, Country::At, Country::Ch] {
             let ctx = SourceCtx {
                 root: Path::new("/tmp/ctox-test-dnb-no-token"),
+                runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
                 country: Some(country),
                 mode: ResearchMode::NewRecord,
             };
@@ -860,6 +878,7 @@ mod tests {
     fn fetch_direct_empty_company_is_no_match() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-dnb"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -1051,6 +1070,7 @@ mod tests {
         // Treffer oder `NoMatch` liefern — beides ist OK.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-dnb-live"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };

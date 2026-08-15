@@ -15,22 +15,22 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use url::Url;
 
-use crate::scholarly_search::crossref_work_by_doi;
-use crate::scholarly_search::execute_scholarly_search;
-use crate::scholarly_search::openalex_work_by_doi;
-use crate::scholarly_search::openalex_work_by_id;
-use crate::scholarly_search::run_ctox_scholarly_search_tool;
+use crate::scholarly_search::crossref_work_by_doi_with_context;
+use crate::scholarly_search::execute_scholarly_search_with_context;
+use crate::scholarly_search::openalex_work_by_doi_with_context;
+use crate::scholarly_search::openalex_work_by_id_with_context;
+use crate::scholarly_search::run_scholarly_search_tool_with_context;
 use crate::scholarly_search::ScholarlyResult;
 use crate::scholarly_search::ScholarlySearchProvider;
 use crate::scholarly_search::ScholarlySearchRequest;
-use crate::web_search::run_ctox_web_read_tool;
-use crate::web_search::run_ctox_web_search_tool;
+use crate::web_search::run_web_read_tool_with_context;
+use crate::web_search::run_web_search_tool_with_context;
 use crate::web_search::CanonicalWebSearchRequest;
 use crate::web_search::ContextSize;
 use crate::web_search::DirectWebReadRequest;
 use crate::web_search::SearchUserLocation;
 
-use crate::runtime_config;
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 
 /// Research vertical profile. The deep-research skeleton is generic, but a few
 /// pieces (extra LSP/NDT search plans, the aerospace term-compression mapping,
@@ -45,8 +45,9 @@ enum ResearchProfile {
 }
 
 impl ResearchProfile {
-    fn resolve(root: &Path) -> Self {
-        match runtime_config::get(root, "CTOX_RESEARCH_PROFILE")
+    fn resolve(context: WebStackContext<'_>) -> Self {
+        match context
+            .get("CTOX_RESEARCH_PROFILE")
             .map(|raw| raw.trim().to_ascii_lowercase())
             .as_deref()
         {
@@ -142,8 +143,17 @@ struct ResearchSearchPlan {
 }
 
 pub fn run_ctox_deep_research_tool(root: &Path, request: &DeepResearchRequest) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_deep_research_tool_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn run_deep_research_tool_with_context(
+    context: WebStackContext<'_>,
+    request: &DeepResearchRequest,
+) -> Result<Value> {
+    let root = context.root;
     let query_text = normalize_required_query(&request.query)?;
-    let profile = ResearchProfile::resolve(root);
+    let profile = ResearchProfile::resolve(context);
     // Keep the topical core independent from the optional focus. The focus is
     // represented by its own plan below; appending it here made every facet
     // inherit the same long query and defeated systematic diversification.
@@ -173,8 +183,8 @@ pub fn run_ctox_deep_research_tool(root: &Path, request: &DeepResearchRequest) -
                     scope.spawn(move || {
                         (
                             *plan,
-                            run_ctox_web_search_tool(
-                                root,
+                            run_web_search_tool_with_context(
+                                context,
                                 &CanonicalWebSearchRequest {
                                     query: plan.query.clone(),
                                     external_web_access: None,
@@ -200,7 +210,7 @@ pub fn run_ctox_deep_research_tool(root: &Path, request: &DeepResearchRequest) -
     for plan in &plans {
         if plan.label == "annas_archive_metadata" {
             run_annas_archive_plan(
-                root,
+                context,
                 plan,
                 request,
                 &mut seen_urls,
@@ -245,7 +255,7 @@ pub fn run_ctox_deep_research_tool(root: &Path, request: &DeepResearchRequest) -
         collect_search_sources(payload, plan, &mut seen_urls, &mut sources);
     }
     let database_runs = collect_scholarly_database_sources(
-        root,
+        context,
         &search_query,
         &plans,
         request,
@@ -294,8 +304,8 @@ pub fn run_ctox_deep_research_tool(root: &Path, request: &DeepResearchRequest) -
             read_attempts += 1;
             if let Some(url) = read_url {
                 let relevance_query = source_relevance_query(&source, &search_query);
-                match run_ctox_web_read_tool(
-                    root,
+                match run_web_read_tool_with_context(
+                    context,
                     &DirectWebReadRequest {
                         url: url.clone(),
                         query: Some(relevance_query.clone()),
@@ -2156,7 +2166,7 @@ fn important_query_terms(query: &str) -> Vec<String> {
 }
 
 fn run_annas_archive_plan(
-    root: &Path,
+    context: WebStackContext<'_>,
     plan: &ResearchSearchPlan,
     request: &DeepResearchRequest,
     seen_urls: &mut BTreeSet<String>,
@@ -2175,7 +2185,7 @@ fn run_annas_archive_plan(
         with_oa_pdf: true,
         ..Default::default()
     };
-    match run_ctox_scholarly_search_tool(root, &scholarly_request) {
+    match run_scholarly_search_tool_with_context(context, &scholarly_request) {
         Ok(payload) => {
             search_runs.push(json!({
                 "label": plan.label,
@@ -2540,7 +2550,7 @@ fn extract_html_data_links(raw_html: &str, base_url: &str) -> Vec<String> {
 }
 
 fn collect_scholarly_database_sources(
-    root: &Path,
+    context: WebStackContext<'_>,
     research_query: &str,
     plans: &[ResearchSearchPlan],
     request: &DeepResearchRequest,
@@ -2570,42 +2580,44 @@ fn collect_scholarly_database_sources(
             with_oa_pdf: true,
             ..Default::default()
         };
-        runs.push(match execute_scholarly_search(root, &seed_request) {
-            Ok(response) => {
-                queue_scholarly_references(
-                    &response.results,
-                    research_query,
-                    1,
-                    &mut citation_queue,
-                    &mut queued_references,
-                );
-                let values = response
-                    .results
-                    .into_iter()
-                    .map(scholarly_result_to_db_value)
-                    .collect();
-                let count = push_database_sources(
-                    "scholarly_auto_seed",
-                    &seed_query,
-                    values,
-                    seen_urls,
-                    sources,
-                );
-                json!({
+        runs.push(
+            match execute_scholarly_search_with_context(context, &seed_request) {
+                Ok(response) => {
+                    queue_scholarly_references(
+                        &response.results,
+                        research_query,
+                        1,
+                        &mut citation_queue,
+                        &mut queued_references,
+                    );
+                    let values = response
+                        .results
+                        .into_iter()
+                        .map(scholarly_result_to_db_value)
+                        .collect();
+                    let count = push_database_sources(
+                        "scholarly_auto_seed",
+                        &seed_query,
+                        values,
+                        seen_urls,
+                        sources,
+                    );
+                    json!({
+                        "database": "scholarly_auto_seed",
+                        "query": seed_query,
+                        "ok": true,
+                        "result_count": count,
+                    })
+                }
+                Err(err) => json!({
                     "database": "scholarly_auto_seed",
                     "query": seed_query,
-                    "ok": true,
-                    "result_count": count,
-                })
-            }
-            Err(err) => json!({
-                "database": "scholarly_auto_seed",
-                "query": seed_query,
-                "ok": false,
-                "rate_limited": is_rate_limit_error(&err),
-                "error": err.to_string(),
-            }),
-        });
+                    "ok": false,
+                    "rate_limited": is_rate_limit_error(&err),
+                    "error": err.to_string(),
+                }),
+            },
+        );
     }
     let queries =
         scholarly_database_queries(research_query, plans, request.depth.database_query_budget());
@@ -2635,7 +2647,7 @@ fn collect_scholarly_database_sources(
                     (
                         label,
                         provider,
-                        scholarly_db_query(root, &query, provider, limit),
+                        scholarly_db_query(context, &query, provider, limit),
                     )
                 }));
             }
@@ -2702,7 +2714,7 @@ fn collect_scholarly_database_sources(
     }
     if request.include_papers {
         runs.push(follow_scholarly_reference_chain(
-            root,
+            context,
             research_query,
             request.depth,
             &mut citation_queue,
@@ -2763,13 +2775,13 @@ fn scholarly_seed_results(depth: DeepResearchDepth) -> usize {
 }
 
 fn scholarly_db_query(
-    root: &Path,
+    context: WebStackContext<'_>,
     query: &str,
     provider: ScholarlySearchProvider,
     limit: usize,
 ) -> Result<Vec<ScholarlyResult>> {
-    let response = execute_scholarly_search(
-        root,
+    let response = execute_scholarly_search_with_context(
+        context,
         &ScholarlySearchRequest {
             query: query.to_string(),
             provider: Some(provider),
@@ -2853,9 +2865,12 @@ fn supported_scholarly_reference_id(reference_id: &str) -> bool {
     value.contains("openalex.org/w") || (value.starts_with("10.") && value.contains('/'))
 }
 
-fn resolve_scholarly_reference(root: &Path, reference_id: &str) -> Result<ScholarlyResult> {
+fn resolve_scholarly_reference(
+    context: WebStackContext<'_>,
+    reference_id: &str,
+) -> Result<ScholarlyResult> {
     if reference_id.to_ascii_lowercase().contains("openalex.org/w") {
-        return openalex_work_by_id(root, reference_id);
+        return openalex_work_by_id_with_context(context, reference_id);
     }
 
     let doi = reference_id
@@ -2867,8 +2882,8 @@ fn resolve_scholarly_reference(root: &Path, reference_id: &str) -> Result<Schola
     if !doi.to_ascii_lowercase().starts_with("10.") || !doi.contains('/') {
         anyhow::bail!("unsupported scholarly reference id");
     }
-    let mut result = crossref_work_by_doi(root, doi, true)?;
-    if let Ok(openalex) = openalex_work_by_doi(root, doi) {
+    let mut result = crossref_work_by_doi_with_context(context, doi, true)?;
+    if let Ok(openalex) = openalex_work_by_doi_with_context(context, doi) {
         if result.open_access_pdf.is_none() {
             result.open_access_pdf = openalex.open_access_pdf;
             result.open_access_license = openalex.open_access_license;
@@ -2885,7 +2900,7 @@ fn resolve_scholarly_reference(root: &Path, reference_id: &str) -> Result<Schola
 }
 
 fn follow_scholarly_reference_chain(
-    root: &Path,
+    context: WebStackContext<'_>,
     research_query: &str,
     research_depth: DeepResearchDepth,
     queue: &mut VecDeque<(String, usize, String)>,
@@ -2923,7 +2938,7 @@ fn follow_scholarly_reference_chain(
                             reference_id,
                             *depth,
                             parent_id,
-                            resolve_scholarly_reference(root, reference_id),
+                            resolve_scholarly_reference(context, reference_id),
                         )
                     })
                 })

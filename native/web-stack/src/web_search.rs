@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use url::Url;
 
-use crate::runtime_config;
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ProviderKind {
@@ -205,8 +205,15 @@ pub enum OpenAiWebSearchCompatMode {
 }
 
 impl OpenAiWebSearchCompatMode {
+    #[cfg(test)]
     fn from_root(root: &Path) -> Self {
-        match runtime_config::get(root, "CTOX_WEB_SEARCH_OPENAI_MODE")
+        let store = CtoxRuntimeConfigStore::from_root(root);
+        Self::from_context(WebStackContext::new(root, &store))
+    }
+
+    fn from_context(context: WebStackContext<'_>) -> Self {
+        match context
+            .get("CTOX_WEB_SEARCH_OPENAI_MODE")
             .as_deref()
             .unwrap_or("local_stack")
             .trim()
@@ -246,41 +253,39 @@ struct SearchConfig {
 }
 
 impl SearchConfig {
-    fn from_root(root: &Path) -> Self {
+    fn from_context(context: WebStackContext<'_>) -> Self {
+        let root = context.root;
         Self {
             root: root.to_path_buf(),
-            enabled: read_bool(root, "CTOX_WEB_SEARCH_ENABLED", true),
-            provider: ProviderKind::from_config_value(runtime_config::get(
-                root,
-                "CTOX_WEB_SEARCH_PROVIDER",
-            )),
-            searxng_base_url: runtime_config::get(root, "CTOX_WEB_SEARCH_SEARXNG_BASE_URL"),
-            timeout_ms: read_u64(root, "CTOX_WEB_SEARCH_TIMEOUT_MS", 7000),
-            default_top_k: read_usize(root, "CTOX_WEB_SEARCH_TOP_K", 5),
-            max_top_k: read_usize(root, "CTOX_WEB_SEARCH_MAX_TOP_K", 8),
-            user_agent: runtime_config::get(root, "CTOX_WEB_SEARCH_USER_AGENT")
+            enabled: read_bool(context, "CTOX_WEB_SEARCH_ENABLED", true),
+            provider: ProviderKind::from_config_value(context.get("CTOX_WEB_SEARCH_PROVIDER")),
+            searxng_base_url: context.get("CTOX_WEB_SEARCH_SEARXNG_BASE_URL"),
+            timeout_ms: read_u64(context, "CTOX_WEB_SEARCH_TIMEOUT_MS", 7000),
+            default_top_k: read_usize(context, "CTOX_WEB_SEARCH_TOP_K", 5),
+            max_top_k: read_usize(context, "CTOX_WEB_SEARCH_MAX_TOP_K", 8),
+            user_agent: context.get("CTOX_WEB_SEARCH_USER_AGENT")
                 .unwrap_or_else(|| {
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36".to_string()
                 }),
-            default_language: runtime_config::get(root, "CTOX_WEB_SEARCH_LANGUAGE"),
-            default_region: runtime_config::get(root, "CTOX_WEB_SEARCH_REGION"),
-            default_safe_search: read_bool(root, "CTOX_WEB_SEARCH_SAFE", true),
-            cache_ttl_secs: read_u64(root, "CTOX_WEB_SEARCH_CACHE_TTL_SECS", 86_400),
-            page_cache_ttl_secs: read_u64(root, "CTOX_WEB_SEARCH_PAGE_CACHE_TTL_SECS", 259_200),
-            max_page_bytes: read_usize(root, "CTOX_WEB_SEARCH_MAX_PAGE_BYTES", 2_000_000),
+            default_language: context.get("CTOX_WEB_SEARCH_LANGUAGE"),
+            default_region: context.get("CTOX_WEB_SEARCH_REGION"),
+            default_safe_search: read_bool(context, "CTOX_WEB_SEARCH_SAFE", true),
+            cache_ttl_secs: read_u64(context, "CTOX_WEB_SEARCH_CACHE_TTL_SECS", 86_400),
+            page_cache_ttl_secs: read_u64(context, "CTOX_WEB_SEARCH_PAGE_CACHE_TTL_SECS", 259_200),
+            max_page_bytes: read_usize(context, "CTOX_WEB_SEARCH_MAX_PAGE_BYTES", 2_000_000),
             max_data_file_bytes: read_usize(
-                root,
+                context,
                 "CTOX_WEB_SEARCH_MAX_DATA_FILE_BYTES",
                 256_000_000,
             ),
-            max_page_chars: read_usize(root, "CTOX_WEB_SEARCH_MAX_PAGE_CHARS", 16_000),
-            max_pdf_pages: read_usize(root, "CTOX_WEB_SEARCH_MAX_PDF_PAGES", 12),
+            max_page_chars: read_usize(context, "CTOX_WEB_SEARCH_MAX_PAGE_CHARS", 16_000),
+            max_pdf_pages: read_usize(context, "CTOX_WEB_SEARCH_MAX_PDF_PAGES", 12),
             response_timeout_cap_ms: None,
             egress_allow_hosts: {
-                let mut hosts = crate::egress::allow_hosts_from_config(root);
+                let mut hosts = crate::egress::allow_hosts_from_context(context);
                 // A self-hosted SearXNG instance is a deliberate operator choice
                 // and may legitimately live on a private/loopback address.
-                if let Some(base) = runtime_config::get(root, "CTOX_WEB_SEARCH_SEARXNG_BASE_URL") {
+                if let Some(base) = context.get("CTOX_WEB_SEARCH_SEARXNG_BASE_URL") {
                     if let Some(host) = crate::egress::host_of(&base) {
                         hosts.push(host);
                     }
@@ -737,7 +742,15 @@ pub fn execute_canonical_web_search(
     root: &Path,
     request: &CanonicalWebSearchRequest,
 ) -> Result<Option<CanonicalWebSearchExecution>> {
-    let config = SearchConfig::from_root(root);
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    execute_canonical_web_search_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn execute_canonical_web_search_with_context(
+    context: WebStackContext<'_>,
+    request: &CanonicalWebSearchRequest,
+) -> Result<Option<CanonicalWebSearchExecution>> {
+    let config = SearchConfig::from_context(context);
     if !config.enabled {
         return Ok(None);
     }
@@ -765,46 +778,55 @@ pub fn execute_canonical_web_search(
     let call_id = format!("ws_ctox_{}", unix_ts());
     let query_variants = build_query_variants(&query_text, &query.text);
 
-    let execution = match execute_search(root, &config, &tool_request, &query_text, &query) {
-        Ok(result) => CanonicalWebSearchExecution {
-            injected_context: render_results_context(
-                &query_text,
-                &tool_request,
-                context_size,
-                &result,
-            ),
-            augmentation: WebSearchAugmentation {
-                calls: build_web_search_calls(&call_id, &result, tool_request.include_sources),
-                citations: result
-                    .hits
-                    .iter()
-                    .filter(|hit| {
-                        find_matching_evidence_doc(&result.evidence, &hit.url)
-                            .is_some_and(|doc| evidence_doc_is_admitted(doc, hit))
-                    })
-                    .take(3)
-                    .map(|hit| SearchCitation {
-                        title: hit.title.clone(),
-                        url: hit.url.clone(),
-                    })
-                    .collect(),
+    let execution =
+        match execute_search_with_context(context, &config, &tool_request, &query_text, &query) {
+            Ok(result) => CanonicalWebSearchExecution {
+                injected_context: render_results_context(
+                    &query_text,
+                    &tool_request,
+                    context_size,
+                    &result,
+                ),
+                augmentation: WebSearchAugmentation {
+                    calls: build_web_search_calls(&call_id, &result, tool_request.include_sources),
+                    citations: result
+                        .hits
+                        .iter()
+                        .filter(|hit| {
+                            find_matching_evidence_doc(&result.evidence, &hit.url)
+                                .is_some_and(|doc| evidence_doc_is_admitted(doc, hit))
+                        })
+                        .take(3)
+                        .map(|hit| SearchCitation {
+                            title: hit.title.clone(),
+                            url: hit.url.clone(),
+                        })
+                        .collect(),
+                },
             },
-        },
-        Err(err) => CanonicalWebSearchExecution {
-            injected_context: render_failure_context(&query_text, &tool_request, &err),
-            augmentation: WebSearchAugmentation::search_failure(
-                call_id,
-                query_text,
-                query_variants,
-            ),
-        },
-    };
+            Err(err) => CanonicalWebSearchExecution {
+                injected_context: render_failure_context(&query_text, &tool_request, &err),
+                augmentation: WebSearchAugmentation::search_failure(
+                    call_id,
+                    query_text,
+                    query_variants,
+                ),
+            },
+        };
 
     Ok(Some(execution))
 }
 
 pub fn run_ctox_web_search_tool(root: &Path, request: &CanonicalWebSearchRequest) -> Result<Value> {
-    let config = SearchConfig::from_root(root);
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_web_search_tool_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn run_web_search_tool_with_context(
+    context: WebStackContext<'_>,
+    request: &CanonicalWebSearchRequest,
+) -> Result<Value> {
+    let config = SearchConfig::from_context(context);
     if !config.enabled {
         return Ok(json!({
             "ok": false,
@@ -831,7 +853,7 @@ pub fn run_ctox_web_search_tool(root: &Path, request: &CanonicalWebSearchRequest
         region: derive_region(&config, &tool_request.user_location),
         safe_search: if config.default_safe_search { 1 } else { 0 },
     };
-    let result = execute_search(root, &config, &tool_request, &query_text, &query)?;
+    let result = execute_search_with_context(context, &config, &tool_request, &query_text, &query)?;
     let context = render_results_context(&query_text, &tool_request, context_size, &result);
     Ok(ctox_web_search_payload(
         &query_text,
@@ -843,7 +865,16 @@ pub fn run_ctox_web_search_tool(root: &Path, request: &CanonicalWebSearchRequest
 }
 
 pub fn run_ctox_web_read_tool(root: &Path, request: &DirectWebReadRequest) -> Result<Value> {
-    let mut config = SearchConfig::from_root(root);
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_web_read_tool_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn run_web_read_tool_with_context(
+    context: WebStackContext<'_>,
+    request: &DirectWebReadRequest,
+) -> Result<Value> {
+    let root = context.root;
+    let mut config = SearchConfig::from_context(context);
     config.response_timeout_cap_ms = request
         .timeout_cap_ms
         .map(|timeout_ms| timeout_ms.clamp(1_000, 180_000));
@@ -1612,7 +1643,15 @@ fn tier_label(tier: crate::sources::Tier) -> &'static str {
 }
 
 pub fn should_passthrough_openai_web_search(root: &Path, payload: &Value) -> bool {
-    OpenAiWebSearchCompatMode::from_root(root) == OpenAiWebSearchCompatMode::Passthrough
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    should_passthrough_openai_web_search_with_context(WebStackContext::new(root, &store), payload)
+}
+
+pub fn should_passthrough_openai_web_search_with_context(
+    context: WebStackContext<'_>,
+    payload: &Value,
+) -> bool {
+    OpenAiWebSearchCompatMode::from_context(context) == OpenAiWebSearchCompatMode::Passthrough
         && extract_web_search_request(payload).is_some()
 }
 
@@ -1620,10 +1659,18 @@ pub fn augment_responses_request(
     root: &Path,
     payload: &mut Value,
 ) -> Result<Option<WebSearchAugmentation>> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    augment_responses_request_with_context(WebStackContext::new(root, &store), payload)
+}
+
+pub fn augment_responses_request_with_context(
+    context: WebStackContext<'_>,
+    payload: &mut Value,
+) -> Result<Option<WebSearchAugmentation>> {
     let Some(request) = canonical_web_search_request_from_responses(payload) else {
         return Ok(None);
     };
-    let Some(execution) = execute_canonical_web_search(root, &request)? else {
+    let Some(execution) = execute_canonical_web_search_with_context(context, &request)? else {
         return Ok(None);
     };
     inject_developer_context(payload, execution.injected_context);
@@ -1822,6 +1869,7 @@ fn render_direct_read_context(query: &str, doc: &EvidenceDoc) -> String {
     lines.join("\n")
 }
 
+#[cfg(test)]
 fn execute_search(
     root: &Path,
     config: &SearchConfig,
@@ -1829,12 +1877,30 @@ fn execute_search(
     original_query: &str,
     query: &SearchQuery,
 ) -> Result<SearchResponse> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    execute_search_with_context(
+        WebStackContext::new(root, &store),
+        config,
+        tool_request,
+        original_query,
+        query,
+    )
+}
+
+fn execute_search_with_context(
+    context: WebStackContext<'_>,
+    config: &SearchConfig,
+    tool_request: &SearchToolRequest,
+    original_query: &str,
+    query: &SearchQuery,
+) -> Result<SearchResponse> {
+    let root = context.root;
     // Phase 3: resolve `--source <id>` pins before the provider cascade.
     // API-pathed source modules (`fetch_direct`) contribute hits directly;
     // crawl-pathed modules contribute additional allow-list domains via
     // their `shape_query`. The cascade then runs over the merged domain set.
     let (pinned_hits, pinned_domains, source_failures) =
-        run_pinned_sources_for_search(root, tool_request, original_query);
+        run_pinned_sources_for_search(context, tool_request, original_query);
     let mut effective = tool_request.clone();
     if !pinned_domains.is_empty() {
         effective.allowed_domains.extend(pinned_domains);
@@ -1859,7 +1925,7 @@ fn execute_search(
         });
     }
 
-    let mut response = search_with_query_plan(root, config, query, &planned_queries)?;
+    let mut response = search_with_query_plan(context, config, query, &planned_queries)?;
     response.hits = filter_hits_by_domain(response.hits, &tool_request.allowed_domains);
     response.hits = merge_pinned_hits(pinned_hits, response.hits);
     response.source_failures.extend(source_failures);
@@ -1886,12 +1952,13 @@ fn execute_search(
 /// domains for the cascade. Failures from individual modules are absorbed —
 /// the generic cascade is the fallback path.
 fn run_pinned_sources_for_search(
-    root: &Path,
+    context: WebStackContext<'_>,
     tool_request: &SearchToolRequest,
     original_query: &str,
 ) -> (Vec<SearchHit>, Vec<String>, Vec<SourceFailure>) {
     use crate::sources::{self, ResearchMode, SourceCtx, SourceError};
 
+    let root = context.root;
     if tool_request.pinned_sources.is_empty() {
         return (Vec::new(), Vec::new(), Vec::new());
     }
@@ -1903,6 +1970,7 @@ fn run_pinned_sources_for_search(
         .and_then(sources::Country::from_iso);
     let ctx = SourceCtx {
         root,
+        runtime_config: context.runtime_config,
         country,
         mode: ResearchMode::NewRecord,
     };
@@ -2001,17 +2069,18 @@ fn merge_pinned_hits(pinned: Vec<SearchHit>, generic: Vec<SearchHit>) -> Vec<Sea
 }
 
 fn search_with_query_plan(
-    root: &Path,
+    context: WebStackContext<'_>,
     config: &SearchConfig,
     base_query: &SearchQuery,
     planned_queries: &[String],
 ) -> Result<SearchResponse> {
+    let root = context.root;
     let mut merged_hits = Vec::new();
     let mut executed_queries = Vec::new();
     let mut providers = Vec::new();
     let auto_provider = config.provider == ProviderKind::Auto;
     let provider_candidates = search_provider_candidates(root, config.provider);
-    let provider_budget = auto_provider_budget(root, config.provider);
+    let provider_budget = auto_provider_budget_with_context(context, config.provider);
     let mut provider_cooldown_until = load_provider_cooldowns(root);
     let mut failures = Vec::new();
 
@@ -2034,7 +2103,7 @@ fn search_with_query_plan(
                 }
                 attempted_providers += 1;
             }
-            let response = match run_search_provider(root, config, &query, *provider) {
+            let response = match run_search_provider(context, config, &query, *provider) {
                 Ok(response) => response,
                 Err(err) if auto_provider => {
                     if let Some(cooldown_secs) = provider_block_cooldown_secs(&err) {
@@ -2140,11 +2209,21 @@ fn search_provider_candidates(root: &Path, provider: ProviderKind) -> Vec<Provid
     ]
 }
 
+#[cfg(test)]
 fn auto_provider_budget(root: &Path, provider: ProviderKind) -> usize {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    auto_provider_budget_with_context(WebStackContext::new(root, &store), provider)
+}
+
+fn auto_provider_budget_with_context(
+    context: WebStackContext<'_>,
+    provider: ProviderKind,
+) -> usize {
     if provider != ProviderKind::Auto {
         return usize::MAX;
     }
-    runtime_config::get(root, "CTOX_WEB_AUTO_PROVIDER_BUDGET")
+    context
+        .get("CTOX_WEB_AUTO_PROVIDER_BUDGET")
         .and_then(|raw| raw.trim().parse::<usize>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(4)
@@ -2176,11 +2255,12 @@ fn is_rate_limit_text(text: &str) -> bool {
 }
 
 fn run_search_provider(
-    root: &Path,
+    context: WebStackContext<'_>,
     config: &SearchConfig,
     query: &SearchQuery,
     provider: ProviderKind,
 ) -> Result<SearchResponse> {
+    let root = context.root;
     match provider {
         ProviderKind::Auto => unreachable!("auto provider must be expanded before execution"),
         ProviderKind::Google => google_search(root, config, query),
@@ -2188,7 +2268,7 @@ fn run_search_provider(
         ProviderKind::DuckDuckGo => duckduckgo_search(config, query),
         ProviderKind::Bing => bing_search(config, query),
         ProviderKind::Searxng => searxng_search(config, query),
-        ProviderKind::AnnasArchive => annas_archive_search_as_web(root, query),
+        ProviderKind::AnnasArchive => annas_archive_search_as_web(context, query),
         ProviderKind::Mock => Ok(mock_search(query)),
     }
 }
@@ -3246,7 +3326,10 @@ fn google_search(
     })
 }
 
-fn annas_archive_search_as_web(root: &Path, query: &SearchQuery) -> Result<SearchResponse> {
+fn annas_archive_search_as_web(
+    context: WebStackContext<'_>,
+    query: &SearchQuery,
+) -> Result<SearchResponse> {
     let request = crate::scholarly_search::ScholarlySearchRequest {
         query: query.text.clone(),
         provider: Some(crate::scholarly_search::ScholarlySearchProvider::AnnasArchive),
@@ -3254,7 +3337,8 @@ fn annas_archive_search_as_web(root: &Path, query: &SearchQuery) -> Result<Searc
         page: Some(query.offset / query.count.max(1) + 1),
         ..Default::default()
     };
-    let response = crate::scholarly_search::execute_scholarly_search(root, &request)?;
+    let response =
+        crate::scholarly_search::execute_scholarly_search_with_context(context, &request)?;
     let hits = response
         .results
         .into_iter()
@@ -8841,8 +8925,9 @@ fn normalize_domain(domain: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn read_bool(root: &Path, key: &str, default: bool) -> bool {
-    runtime_config::get(root, key)
+fn read_bool(context: WebStackContext<'_>, key: &str, default: bool) -> bool {
+    context
+        .get(key)
         .map(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
@@ -8852,14 +8937,16 @@ fn read_bool(root: &Path, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
-fn read_u64(root: &Path, key: &str, default: u64) -> u64 {
-    runtime_config::get(root, key)
+fn read_u64(context: WebStackContext<'_>, key: &str, default: u64) -> u64 {
+    context
+        .get(key)
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(default)
 }
 
-fn read_usize(root: &Path, key: &str, default: usize) -> usize {
-    runtime_config::get(root, key)
+fn read_usize(context: WebStackContext<'_>, key: &str, default: usize) -> usize {
+    context
+        .get(key)
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(default)
 }
@@ -13572,23 +13659,7 @@ mod tests {
     }
 
     fn set_runtime_config(root: &Path, key: &str, value: &str) {
-        let runtime_config = crate::runtime_config::runtime_config_path(root);
-        fs::create_dir_all(runtime_config.parent().unwrap()).unwrap();
-        let conn = rusqlite::Connection::open(runtime_config).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS runtime_env_kv (
-                env_key TEXT PRIMARY KEY,
-                env_value TEXT NOT NULL
-            );",
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO runtime_env_kv(env_key, env_value)
-             VALUES(?1, ?2)
-             ON CONFLICT(env_key) DO UPDATE SET env_value = excluded.env_value",
-            (key, value),
-        )
-        .unwrap();
+        crate::runtime_config::set_ctox_value_for_test(root, key, value);
     }
 
     #[cfg(unix)]

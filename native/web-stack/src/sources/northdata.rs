@@ -670,41 +670,45 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn ctx_de() -> SourceCtx<'static> {
+    fn ctx_de(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::De),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_at() -> SourceCtx<'static> {
+    fn ctx_at(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::At),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_ch() -> SourceCtx<'static> {
+    fn ctx_ch(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: Some(Country::Ch),
             mode: super::super::ResearchMode::UpdateFirm,
         }
     }
 
-    fn ctx_none() -> SourceCtx<'static> {
+    fn ctx_none(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let root = ROOT.get_or_init(|| PathBuf::from(""));
         SourceCtx {
             root,
+            runtime_config,
             country: None,
             mode: super::super::ResearchMode::UpdateFirm,
         }
@@ -737,7 +741,12 @@ mod tests {
 
     #[test]
     fn shape_query_dach_pins_domain() {
-        for ctx in [ctx_de(), ctx_at(), ctx_ch(), ctx_none()] {
+        for ctx in [
+            ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            ctx_ch(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            ctx_none(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+        ] {
             let shaped = module()
                 .shape_query("Siemens AG", &ctx)
                 .expect("DACH-tolerant shape");
@@ -749,13 +758,23 @@ mod tests {
 
     #[test]
     fn shape_query_empty_returns_none() {
-        assert!(module().shape_query("   ", &ctx_de()).is_none());
+        assert!(module()
+            .shape_query(
+                "   ",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
     fn no_fetch_direct_override() {
         // Crawl-Pfad — Trait-Default `None` ist der Vertrag.
-        assert!(module().fetch_direct(&ctx_de(), "Siemens AG").is_none());
+        assert!(module()
+            .fetch_direct(
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+                "Siemens AG"
+            )
+            .is_none());
     }
 
     /// End-to-end extraction against a frozen Siemens AG profile (DE).
@@ -959,9 +978,24 @@ mod tests {
         // We can at least confirm that DACH inputs all shape, which is the
         // positive half of the contract; the unsupported branch is dead
         // code today but kept for forward-compat.
-        assert!(module().shape_query("Bosch GmbH", &ctx_de()).is_some());
-        assert!(module().shape_query("Bosch GmbH", &ctx_at()).is_some());
-        assert!(module().shape_query("Bosch GmbH", &ctx_ch()).is_some());
+        assert!(module()
+            .shape_query(
+                "Bosch GmbH",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_some());
+        assert!(module()
+            .shape_query(
+                "Bosch GmbH",
+                &ctx_at(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_some());
+        assert!(module()
+            .shape_query(
+                "Bosch GmbH",
+                &ctx_ch(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_some());
     }
 
     #[test]

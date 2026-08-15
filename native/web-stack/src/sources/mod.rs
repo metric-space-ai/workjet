@@ -250,12 +250,12 @@ pub struct FieldEvidence {
 
 /// Context handed to source modules for a single research turn.
 ///
-/// `root` is the CTOX state root (the directory containing
-/// `runtime/ctox.sqlite3`), so a module can read API tokens via
-/// [`runtime_config::get`](crate::runtime_config::get) or — for encrypted
-/// credentials — via the `ctox secret get` CLI of the same binary.
+/// `root` is the caller's state root. Plain runtime settings and API tokens are
+/// resolved through the explicitly injected `runtime_config` store; encrypted
+/// credentials continue to use the `ctox secret get` CLI of the same binary.
 pub struct SourceCtx<'a> {
     pub root: &'a Path,
+    pub runtime_config: &'a dyn crate::runtime_config::RuntimeConfigStore,
     pub country: Option<Country>,
     pub mode: ResearchMode,
 }

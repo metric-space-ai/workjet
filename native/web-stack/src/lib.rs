@@ -11,7 +11,7 @@ pub mod deep_research;
 pub(crate) mod egress;
 #[cfg(feature = "full")]
 pub mod person_research;
-pub(crate) mod runtime_config;
+pub mod runtime_config;
 #[cfg(feature = "full")]
 pub mod scholarly_search;
 #[cfg(feature = "full")]
@@ -26,11 +26,17 @@ pub mod unlock_report;
 pub mod web_search;
 
 pub use browser::browser_doctor_report;
+pub use browser::browser_doctor_report_with_context;
 pub use browser::capture_browser_transport;
+pub use browser::capture_browser_transport_with_context;
 pub use browser::handle_browser_command;
+pub use browser::handle_browser_command_with_context;
 pub use browser::prepare_browser_environment;
+pub use browser::prepare_browser_environment_with_context;
 pub use browser::run_browser_automation;
+pub use browser::run_browser_automation_with_context;
 pub use browser::spawn_persistent_browser;
+pub use browser::spawn_persistent_browser_with_context;
 pub use browser::BrowserAutomationRequest;
 pub use browser::BrowserCaptureRequest;
 pub use browser::BrowserPrepareOptions;
@@ -39,13 +45,19 @@ pub use browser::PersistentBrowserSpawn;
 #[cfg(feature = "full")]
 pub use deep_research::run_ctox_deep_research_tool;
 #[cfg(feature = "full")]
+pub use deep_research::run_deep_research_tool_with_context;
+#[cfg(feature = "full")]
 pub use deep_research::DeepResearchDepth;
 #[cfg(feature = "full")]
 pub use deep_research::DeepResearchRequest;
 #[cfg(feature = "full")]
 pub use egress::allow_hosts_from_config as browser_egress_allow_hosts_from_config;
 #[cfg(feature = "full")]
+pub use egress::allow_hosts_from_context as browser_egress_allow_hosts_from_context;
+#[cfg(feature = "full")]
 pub use egress::assert_browser_egress_url;
+#[cfg(feature = "full")]
+pub use egress::assert_browser_egress_url_with_context;
 #[cfg(feature = "full")]
 pub use person_research::merge_person_research_source_records;
 #[cfg(feature = "full")]
@@ -53,11 +65,17 @@ pub use person_research::persist_person_research_workspace;
 #[cfg(feature = "full")]
 pub use person_research::run_ctox_person_research_tool;
 #[cfg(feature = "full")]
+pub use person_research::run_person_research_tool_with_context;
+#[cfg(feature = "full")]
 pub use person_research::PersonResearchRequest;
 #[cfg(feature = "full")]
 pub use scholarly_search::execute_scholarly_search;
 #[cfg(feature = "full")]
+pub use scholarly_search::execute_scholarly_search_with_context;
+#[cfg(feature = "full")]
 pub use scholarly_search::run_ctox_scholarly_search_tool;
+#[cfg(feature = "full")]
+pub use scholarly_search::run_scholarly_search_tool_with_context;
 #[cfg(feature = "full")]
 pub use scholarly_search::ScholarlyResult;
 #[cfg(feature = "full")]
@@ -77,9 +95,13 @@ pub use scholarly_search::UNPAYWALL_DEFAULT_BASE_URL;
 #[cfg(feature = "full")]
 pub use surface::handle_web_command;
 #[cfg(feature = "full")]
+pub use surface::handle_web_command_with_context;
+#[cfg(feature = "full")]
 pub use surface::WebScrapeRequest;
 #[cfg(feature = "full")]
 pub use unlock::handle_unlock_command;
+#[cfg(feature = "full")]
+pub use unlock::handle_unlock_command_with_context;
 #[cfg(feature = "full")]
 pub use unlock_report::generate_acceptance_report;
 #[cfg(feature = "full")]
@@ -87,11 +109,19 @@ pub use unlock_report::handle_report_command;
 #[cfg(feature = "full")]
 pub use web_search::augment_responses_request;
 #[cfg(feature = "full")]
+pub use web_search::augment_responses_request_with_context;
+#[cfg(feature = "full")]
 pub use web_search::execute_canonical_web_search;
+#[cfg(feature = "full")]
+pub use web_search::execute_canonical_web_search_with_context;
 #[cfg(feature = "full")]
 pub use web_search::run_ctox_web_read_tool;
 #[cfg(feature = "full")]
 pub use web_search::run_ctox_web_search_tool;
+#[cfg(feature = "full")]
+pub use web_search::run_web_read_tool_with_context;
+#[cfg(feature = "full")]
+pub use web_search::run_web_search_tool_with_context;
 #[cfg(feature = "full")]
 pub use web_search::CanonicalWebSearchExecution;
 #[cfg(feature = "full")]
@@ -104,3 +134,8 @@ pub use web_search::DirectWebReadRequest;
 pub use web_search::OpenAiWebSearchCompatMode;
 #[cfg(feature = "full")]
 pub use web_search::SearchUserLocation;
+
+pub use runtime_config::CtoxRuntimeConfigStore;
+pub use runtime_config::RuntimeConfigStore;
+pub use runtime_config::WebStackContext;
+pub use runtime_config::WorkjetRuntimeConfigStore;

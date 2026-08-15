@@ -4,26 +4,27 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::browser::capture_browser_transport;
-use crate::browser::prepare_browser_environment;
+use crate::browser::capture_browser_transport_with_context;
+use crate::browser::prepare_browser_environment_with_context;
 use crate::browser::read_browser_automation_source;
-use crate::browser::run_browser_automation;
+use crate::browser::run_browser_automation_with_context;
 use crate::browser::BrowserAutomationRequest;
 use crate::browser::BrowserCaptureRequest;
 use crate::browser::BrowserPrepareOptions;
-use crate::deep_research::run_ctox_deep_research_tool;
+use crate::deep_research::run_deep_research_tool_with_context;
 use crate::deep_research::DeepResearchDepth;
 use crate::deep_research::DeepResearchRequest;
-use crate::person_research::run_ctox_person_research_tool;
+use crate::person_research::run_person_research_tool_with_context;
 use crate::person_research::PersonResearchRequest;
-use crate::scholarly_search::run_ctox_scholarly_search_tool;
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
+use crate::scholarly_search::run_scholarly_search_tool_with_context;
 use crate::scholarly_search::ScholarlySearchProvider;
 use crate::scholarly_search::ScholarlySearchRequest;
 use crate::sources::Country as SourceCountry;
 use crate::sources::FieldKey as SourceFieldKey;
 use crate::sources::ResearchMode as SourceResearchMode;
-use crate::web_search::run_ctox_web_read_tool;
-use crate::web_search::run_ctox_web_search_tool;
+use crate::web_search::run_web_read_tool_with_context;
+use crate::web_search::run_web_search_tool_with_context;
 use crate::web_search::CanonicalWebSearchRequest;
 use crate::web_search::ContextSize;
 use crate::web_search::DirectWebReadRequest;
@@ -95,6 +96,16 @@ pub fn handle_web_command(
     args: &[String],
     scrape_executor: &dyn Fn(&Path, &[String]) -> Result<()>,
 ) -> Result<()> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    handle_web_command_with_context(WebStackContext::new(root, &store), args, scrape_executor)
+}
+
+pub fn handle_web_command_with_context(
+    context: WebStackContext<'_>,
+    args: &[String],
+    scrape_executor: &dyn Fn(&Path, &[String]) -> Result<()>,
+) -> Result<()> {
+    let root = context.root;
     let command = args.first().map(String::as_str).unwrap_or("");
     if matches!(command, "" | "help" | "-h" | "--help") {
         println!("{}", web_usage());
@@ -121,8 +132,8 @@ pub fn handle_web_command(
                 country: find_flag_value(args, "--country").map(|raw| raw.trim().to_string()),
                 ..SearchUserLocation::default()
             };
-            let payload = run_ctox_web_search_tool(
-                root,
+            let payload = run_web_search_tool_with_context(
+                context,
                 &CanonicalWebSearchRequest {
                     query: query.to_string(),
                     external_web_access: args.iter().any(|arg| arg == "--cached").then_some(false),
@@ -153,8 +164,8 @@ pub fn handle_web_command(
             let url = required_flag_value(args, "--url")
                 .or_else(|| args.get(1).map(String::as_str))
                 .context("usage: ctox web read --url <url> [--query <text>] [--find <text>]... [--workspace <path>] [--country <DE|AT|CH>]")?;
-            let payload = run_ctox_web_read_tool(
-                root,
+            let payload = run_web_read_tool_with_context(
+                context,
                 &DirectWebReadRequest {
                     url: url.to_string(),
                     query: find_flag_value(args, "--query").map(ToOwned::to_owned),
@@ -171,7 +182,7 @@ pub fn handle_web_command(
             )?;
             print_json(&payload)
         }
-        "scholarly" => handle_scholarly_command(root, &args[1..]),
+        "scholarly" => handle_scholarly_command(context, &args[1..]),
         "sources" => handle_sources_command(&args[1..]),
         "person-research" => {
             let company = required_flag_value(args, "--company")
@@ -198,8 +209,8 @@ pub fn handle_web_command(
                 .collect();
             let workspace = find_flag_value(args, "--workspace").map(PathBuf::from);
             let persist_workspace = !args.iter().any(|arg| arg == "--no-workspace");
-            let payload = run_ctox_person_research_tool(
-                root,
+            let payload = run_person_research_tool_with_context(
+                context,
                 &PersonResearchRequest {
                     company: company.to_string(),
                     country,
@@ -227,8 +238,8 @@ pub fn handle_web_command(
                 .transpose()
                 .context("failed to parse --max-sources")?
                 .unwrap_or(16);
-            let payload = run_ctox_deep_research_tool(
-                root,
+            let payload = run_deep_research_tool_with_context(
+                context,
                 &DeepResearchRequest {
                     query: query.to_string(),
                     focus: find_flag_value(args, "--focus").map(ToOwned::to_owned),
@@ -273,8 +284,8 @@ pub fn handle_web_command(
             scrape_executor(root, &forwarded)
         }
         "browser-prepare" => {
-            let payload = prepare_browser_environment(
-                root,
+            let payload = prepare_browser_environment_with_context(
+                context,
                 &BrowserPrepareOptions {
                     dir: find_flag_value(args, "--dir").map(PathBuf::from),
                     install_reference: args.iter().any(|arg| arg == "--install-reference"),
@@ -286,8 +297,8 @@ pub fn handle_web_command(
         }
         "browser-automation" => {
             let script_file = find_flag_value(args, "--script-file").map(PathBuf::from);
-            let payload = run_browser_automation(
-                root,
+            let payload = run_browser_automation_with_context(
+                context,
                 &BrowserAutomationRequest {
                     dir: find_flag_value(args, "--dir").map(PathBuf::from),
                     timeout_ms: find_flag_value(args, "--timeout-ms")
@@ -305,8 +316,8 @@ pub fn handle_web_command(
                 .context(
                     "usage: ctox web browser-capture --url <url> [--out-dir <path>] [--timeout-ms <n>]",
                 )?;
-            let payload = capture_browser_transport(
-                root,
+            let payload = capture_browser_transport_with_context(
+                context,
                 &BrowserCaptureRequest {
                     dir: find_flag_value(args, "--dir").map(PathBuf::from),
                     out_dir: find_flag_value(args, "--out-dir").map(PathBuf::from),
@@ -319,7 +330,7 @@ pub fn handle_web_command(
             )?;
             print_json(&payload)
         }
-        "unlock" => crate::unlock::handle_unlock_command(root, &args[1..]),
+        "unlock" => crate::unlock::handle_unlock_command_with_context(context, &args[1..]),
         _ => anyhow::bail!("{}", web_usage()),
     }
 }
@@ -419,7 +430,7 @@ fn sources_usage() -> &'static str {
     "usage:\n  ctox web sources list [--country <DE|AT|CH>] [--tier <P|S|C>]... [--field <field-key>]\n  ctox web sources info --id <source-id>"
 }
 
-fn handle_scholarly_command(root: &Path, args: &[String]) -> Result<()> {
+fn handle_scholarly_command(context: WebStackContext<'_>, args: &[String]) -> Result<()> {
     let action = args.first().map(String::as_str).unwrap_or("");
     if matches!(action, "" | "help" | "-h" | "--help") {
         println!("{}", scholarly_usage());
@@ -462,8 +473,8 @@ fn handle_scholarly_command(root: &Path, args: &[String]) -> Result<()> {
                 .context("failed to parse --page")?;
             let with_oa_pdf = args.iter().any(|arg| arg == "--with-oa-pdf");
             let only_doi = args.iter().any(|arg| arg == "--only-doi");
-            let payload = run_ctox_scholarly_search_tool(
-                root,
+            let payload = run_scholarly_search_tool_with_context(
+                context,
                 &ScholarlySearchRequest {
                     query: query.to_string(),
                     provider,

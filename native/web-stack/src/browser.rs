@@ -28,6 +28,8 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use url::Url;
 
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
+
 pub(crate) const DEFAULT_REFERENCE_RELATIVE_DIR: &str = "runtime/browser/interactive-reference";
 const LOCAL_PLAYWRIGHT_BROWSERS_RELATIVE_DIR: &str = "ms-playwright";
 const MINIMUM_NODE_MAJOR: u64 = 18;
@@ -106,22 +108,30 @@ struct BrowserAutomationDirective {
 }
 
 pub fn handle_browser_command(root: &Path, args: &[String]) -> Result<()> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    handle_browser_command_with_context(WebStackContext::new(root, &store), args)
+}
+
+pub fn handle_browser_command_with_context(
+    context: WebStackContext<'_>,
+    args: &[String],
+) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("");
     match command {
         "doctor" => {
-            let reference_dir = resolve_reference_dir(root, &args[1..]);
+            let reference_dir = resolve_reference_dir(context, &args[1..]);
             let report = build_doctor_report(&reference_dir)?;
             print_json(&serde_json::to_value(report)?)
         }
         "install-reference" => {
-            let reference_dir = resolve_reference_dir(root, &args[1..]);
+            let reference_dir = resolve_reference_dir(context, &args[1..]);
             let install_browser = args.iter().any(|arg| arg == "--install-browser");
             let skip_npm_install = args.iter().any(|arg| arg == "--skip-npm-install");
             let report = install_reference(&reference_dir, !skip_npm_install, install_browser)?;
             print_json(&serde_json::to_value(report)?)
         }
         "bootstrap" => {
-            let reference_dir = resolve_reference_dir(root, &args[1..]);
+            let reference_dir = resolve_reference_dir(context, &args[1..]);
             print_json(&bootstrap_payload(&reference_dir))
         }
         _ => anyhow::bail!(
@@ -131,7 +141,15 @@ pub fn handle_browser_command(root: &Path, args: &[String]) -> Result<()> {
 }
 
 pub fn browser_doctor_report(root: &Path, dir: Option<PathBuf>) -> Result<Value> {
-    let reference_dir = browser_reference_dir(root, dir);
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    browser_doctor_report_with_context(WebStackContext::new(root, &store), dir)
+}
+
+pub fn browser_doctor_report_with_context(
+    context: WebStackContext<'_>,
+    dir: Option<PathBuf>,
+) -> Result<Value> {
+    let reference_dir = browser_reference_dir(context, dir);
     let report = build_doctor_report(&reference_dir)?;
     Ok(serde_json::to_value(report)?)
 }
@@ -140,7 +158,15 @@ pub fn prepare_browser_environment(
     root: &Path,
     options: &BrowserPrepareOptions,
 ) -> Result<serde_json::Value> {
-    let reference_dir = browser_reference_dir(root, options.dir.clone());
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    prepare_browser_environment_with_context(WebStackContext::new(root, &store), options)
+}
+
+pub fn prepare_browser_environment_with_context(
+    context: WebStackContext<'_>,
+    options: &BrowserPrepareOptions,
+) -> Result<serde_json::Value> {
+    let reference_dir = browser_reference_dir(context, options.dir.clone());
     let install_report = if options.install_reference || options.install_browser {
         Some(serde_json::to_value(install_reference(
             &reference_dir,
@@ -180,7 +206,16 @@ pub fn read_browser_automation_source(script_file: Option<&Path>) -> Result<Stri
 }
 
 pub fn run_browser_automation(root: &Path, request: &BrowserAutomationRequest) -> Result<Value> {
-    let reference_dir = browser_reference_dir(root, request.dir.clone());
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_browser_automation_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn run_browser_automation_with_context(
+    context: WebStackContext<'_>,
+    request: &BrowserAutomationRequest,
+) -> Result<Value> {
+    let root = context.root;
+    let reference_dir = browser_reference_dir(context, request.dir.clone());
     fs::create_dir_all(&reference_dir).with_context(|| {
         format!(
             "failed to create browser automation reference dir {}",
@@ -281,7 +316,16 @@ fn record_browser_detection_signal(root: &Path, payload: &Value) {
 }
 
 pub fn capture_browser_transport(root: &Path, request: &BrowserCaptureRequest) -> Result<Value> {
-    let reference_dir = browser_reference_dir(root, request.dir.clone());
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    capture_browser_transport_with_context(WebStackContext::new(root, &store), request)
+}
+
+pub fn capture_browser_transport_with_context(
+    context: WebStackContext<'_>,
+    request: &BrowserCaptureRequest,
+) -> Result<Value> {
+    let root = context.root;
+    let reference_dir = browser_reference_dir(context, request.dir.clone());
     fs::create_dir_all(&reference_dir).with_context(|| {
         format!(
             "failed to create browser automation reference dir {}",
@@ -951,17 +995,20 @@ fn command_file_names(program: &str) -> Vec<String> {
     vec![program.to_string()]
 }
 
-fn resolve_reference_dir(root: &Path, args: &[String]) -> PathBuf {
-    browser_reference_dir(root, find_flag_value(args, "--dir").map(PathBuf::from))
+fn resolve_reference_dir(context: WebStackContext<'_>, args: &[String]) -> PathBuf {
+    browser_reference_dir(context, find_flag_value(args, "--dir").map(PathBuf::from))
 }
 
-fn browser_reference_dir(root: &Path, dir: Option<PathBuf>) -> PathBuf {
+fn browser_reference_dir(context: WebStackContext<'_>, dir: Option<PathBuf>) -> PathBuf {
+    let root = context.root;
     // Precedence: explicit `--dir`/request value, then the SQLite runtime config
     // key, then the default. Runtime config lives in the CTOX SQLite store (not
     // a process-env toggle) per the repository guardrails.
     let configured = dir
         .or_else(|| {
-            crate::runtime_config::get(root, "CTOX_WEB_BROWSER_REFERENCE_DIR").map(PathBuf::from)
+            context
+                .get("CTOX_WEB_BROWSER_REFERENCE_DIR")
+                .map(PathBuf::from)
         })
         .unwrap_or_else(|| PathBuf::from(DEFAULT_REFERENCE_RELATIVE_DIR));
     resolve_root_relative_path(root, configured)
@@ -1757,7 +1804,15 @@ pub fn spawn_persistent_browser(
     root: &Path,
     spawn: &PersistentBrowserSpawn,
 ) -> Result<PersistentBrowserHandle> {
-    let reference_dir = browser_reference_dir(root, spawn.dir.clone());
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    spawn_persistent_browser_with_context(WebStackContext::new(root, &store), spawn)
+}
+
+pub fn spawn_persistent_browser_with_context(
+    context: WebStackContext<'_>,
+    spawn: &PersistentBrowserSpawn,
+) -> Result<PersistentBrowserHandle> {
+    let reference_dir = browser_reference_dir(context, spawn.dir.clone());
     fs::create_dir_all(&reference_dir).with_context(|| {
         format!(
             "failed to create browser automation reference dir {}",
@@ -2984,6 +3039,7 @@ fn unix_ts() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::browser_doctor_report;
+    use super::browser_reference_dir;
     use super::build_browser_capture_runner_script;
     use super::build_browser_runner_script;
     use super::build_persistent_browser_runner_script;
@@ -3019,6 +3075,22 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("ctox-browser-{label}-{unique}"))
+    }
+
+    #[test]
+    fn injected_workjet_reference_dir_requires_no_sqlite_state() {
+        let root = temp_path("workjet-reference-dir");
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([(
+            "CTOX_WEB_BROWSER_REFERENCE_DIR",
+            "tenant/browser-runtime",
+        )]);
+        let context = crate::runtime_config::WebStackContext::new(&root, &store);
+
+        assert_eq!(
+            browser_reference_dir(context, None),
+            root.join("tenant/browser-runtime")
+        );
+        assert!(!crate::runtime_config::runtime_config_path(&root).exists());
     }
 
     #[test]

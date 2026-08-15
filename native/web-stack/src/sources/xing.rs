@@ -54,8 +54,6 @@ use std::time::Duration;
 use anyhow::anyhow;
 use serde_json::Value;
 
-use crate::runtime_config;
-
 use super::{
     BrowserSourceRecipe, Confidence, Country, FieldEvidence, FieldKey, ShapedQuery, SourceCtx,
     SourceError, SourceHit, SourceModule, SourceReadResult, Tier,
@@ -436,7 +434,7 @@ impl SourceModule for Xing {
 
         // The member-search API is optional. Browser authentication is the
         // supported default and is executed by the `xing-com` scrape target.
-        let token = runtime_config::get(ctx.root, SECRET_NAME)?;
+        let token = ctx.runtime_config.get(SECRET_NAME)?;
 
         let agent = build_agent();
         Some(perform_search(&agent, &token, trimmed))
@@ -779,6 +777,7 @@ mod tests {
     fn shape_query_falls_back_to_provider_scoped_profile_search() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -992,6 +991,7 @@ mod tests {
     fn fetch_direct_without_api_token_falls_back_to_browser_for_de() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-xing-no-secret"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -1007,6 +1007,7 @@ mod tests {
         // hermetic.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-xing-empty"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -1021,6 +1022,7 @@ mod tests {
         for country in [Country::At, Country::Ch] {
             let ctx = SourceCtx {
                 root: Path::new("/tmp/ctox-test-xing-no-secret"),
+                runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
                 country: Some(country),
                 mode: ResearchMode::NewRecord,
             };
@@ -1034,6 +1036,7 @@ mod tests {
     fn fetch_direct_with_unknown_country_falls_back_to_browser() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-xing-no-secret"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: None,
             mode: ResearchMode::NewRecord,
         };
@@ -1182,11 +1185,11 @@ mod tests {
         // relies on to skip the source on tenants that have not yet
         // onboarded the XING partner program.
         let tmp = std::env::temp_dir().join("ctox-web-stack-xing-live-smoke");
-        // Ensure the runtime DB at `<root>/runtime/ctox.sqlite3` does NOT
-        // exist (or contains no XING token) — using a non-existent dir is
-        // the cleanest way: `runtime_config::get` returns `None`.
+        // With no XING token in the injected runtime-config store, the
+        // adapter must take the credential-missing path.
         let ctx = SourceCtx {
             root: tmp.as_path(),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };

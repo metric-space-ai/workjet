@@ -31,9 +31,8 @@
 //!   Liefert das vollständige Personendetail mit `currentPositions`.
 //!
 //! Auth: `Authorization: Bearer <token>` (OAuth 2.0; Sales-Nav-Partner-
-//! Programm-Scope). Der Token liegt im SQLite-Runtime-Store unter
-//! `LINKEDIN_SALES_NAV_TOKEN` und wird über
-//! [`runtime_config::get`](crate::runtime_config::get) gelesen.
+//! Programm-Scope). Der Token wird aus dem injizierten Runtime-Config-Store
+//! unter `LINKEDIN_SALES_NAV_TOKEN` gelesen.
 //!
 //! ## Extrahierte Felder
 //!
@@ -54,7 +53,6 @@ use super::{
     BrowserSourceRecipe, Confidence, Country, FieldEvidence, FieldKey, ShapedQuery, SourceCtx,
     SourceError, SourceHit, SourceModule, SourceReadResult, Tier,
 };
-use crate::runtime_config;
 
 const API_BASE: &str = "https://api.linkedin.com/v2";
 const PROFILE_BASE: &str = "https://www.linkedin.com/in";
@@ -141,7 +139,7 @@ impl SourceModule for LinkedIn {
             return Some(Err(SourceError::NoMatch));
         }
 
-        let token = match runtime_config::get(ctx.root, SECRET_NAME) {
+        let token = match ctx.runtime_config.get(SECRET_NAME) {
             Some(t) => t,
             None => {
                 return Some(Err(SourceError::CredentialMissing {
@@ -550,6 +548,7 @@ mod tests {
     fn shape_query_is_none_for_api_source() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-linkedin"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -565,6 +564,7 @@ mod tests {
         // immediately surface CredentialMissing because no token is set.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-linkedin-unset"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: None,
             mode: ResearchMode::NewRecord,
         };
@@ -586,6 +586,7 @@ mod tests {
     fn fetch_direct_empty_company_is_no_match() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test-linkedin"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -597,11 +598,11 @@ mod tests {
 
     #[test]
     fn fetch_direct_missing_token_returns_credential_missing() {
-        // Pointing at a directory with no SQLite runtime store at all is
-        // the equivalent of "key not set" — runtime_config::get returns
-        // None, and we must surface CredentialMissing.
+        // An absent injected runtime setting is equivalent to "key not set",
+        // and we must surface CredentialMissing.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-this-path-does-not-exist-linkedin"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -760,11 +761,12 @@ mod tests {
     #[ignore = "live network; run with: cargo test -p ctox-web-stack -- --ignored sources::linkedin"]
     fn live_search_smoke_handles_credential_missing_cleanly() {
         // Live smoke test. With no LINKEDIN_SALES_NAV_TOKEN in the test
-        // root's SQLite runtime store, this MUST surface
+        // injected runtime-config store, this MUST surface
         // CredentialMissing — never a network panic, never a TOS-violating
         // fallback to scraping linkedin.com.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-linkedin-live-smoke-no-token"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };

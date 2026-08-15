@@ -520,9 +520,10 @@ mod tests {
     use crate::sources::ResearchMode;
     use std::path::Path;
 
-    fn ctx_de() -> SourceCtx<'static> {
+    fn ctx_de(runtime_config: &dyn crate::runtime_config::RuntimeConfigStore) -> SourceCtx<'_> {
         SourceCtx {
             root: Path::new(""),
+            runtime_config,
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         }
@@ -554,7 +555,10 @@ mod tests {
     #[test]
     fn shape_query_pins_both_networks() {
         let shaped = module()
-            .shape_query("DO & Co. AG", &ctx_de())
+            .shape_query(
+                "DO & Co. AG",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            )
             .expect("shape");
         assert!(shaped.query.contains("DO & Co. AG"));
         assert!(shaped.query.contains("site:linkedin.com/in"));
@@ -569,7 +573,12 @@ mod tests {
 
     #[test]
     fn shape_query_empty_returns_none() {
-        assert!(module().shape_query("   ", &ctx_de()).is_none());
+        assert!(module()
+            .shape_query(
+                "   ",
+                &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default())
+            )
+            .is_none());
     }
 
     #[test]
@@ -579,7 +588,11 @@ mod tests {
             "https://www.linkedin.com/in/attila-dogudan-1a2b3c/",
             "Wien, Österreich. ...",
         );
-        let fields = module().extract_from_hits(&ctx_de(), "DO & Co. AG", &[h]);
+        let fields = module().extract_from_hits(
+            &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            "DO & Co. AG",
+            &[h],
+        );
         let by_key: std::collections::HashMap<FieldKey, &FieldEvidence> =
             fields.iter().map(|(k, v)| (*k, v)).collect();
 
@@ -611,7 +624,11 @@ mod tests {
             "https://www.xing.com/profile/Anna_Maier",
             "Profil von Anna Maier auf XING ...",
         );
-        let fields = module().extract_from_hits(&ctx_de(), "Beispiel GmbH", &[h]);
+        let fields = module().extract_from_hits(
+            &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            "Beispiel GmbH",
+            &[h],
+        );
         let by_key: std::collections::HashMap<FieldKey, &FieldEvidence> =
             fields.iter().map(|(k, v)| (*k, v)).collect();
 
@@ -643,7 +660,11 @@ mod tests {
             "https://www.linkedin.com/in/anna-maier/?foo=1",
             "",
         );
-        let fields = module().extract_from_hits(&ctx_de(), "Beispiel GmbH", &[h1, h2]);
+        let fields = module().extract_from_hits(
+            &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            "Beispiel GmbH",
+            &[h1, h2],
+        );
         // Only one set of person fields emitted.
         let linkedin_count = fields
             .iter()
@@ -659,7 +680,11 @@ mod tests {
             "https://www.linkedin.com/company/do-co-ag/",
             "",
         );
-        let fields = module().extract_from_hits(&ctx_de(), "DO & Co. AG", &[h]);
+        let fields = module().extract_from_hits(
+            &ctx_de(&crate::runtime_config::WorkjetRuntimeConfigStore::default()),
+            "DO & Co. AG",
+            &[h],
+        );
         assert!(fields.is_empty());
     }
 

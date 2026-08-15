@@ -90,9 +90,10 @@ periodisch die Live-Pfade prüfen kann.
 
 ## Credentials
 
-Tier-C-Module lesen ihren Token über das `ctox secret get`-CLI ihres
-eigenen Binaries — `runtime_config::get` ist für unverschlüsselte
-Laufzeit-Konfiguration gedacht und nicht für Auth-Tokens. Konvention:
+Tier-C-Module erhalten unverschlüsselte Kompatibilitätswerte über den explizit
+injizierten Store in `SourceCtx::runtime_config`. Verschlüsselte Credentials
+werden unverändert über das `ctox secret get`-CLI des eigenen Binaries gelesen;
+die injizierte Store-Grenze führt keinen Environment-Fallback ein. Konvention:
 
 ```rust
 fn requires_credential(&self) -> Option<&'static str> {

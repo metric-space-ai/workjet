@@ -795,6 +795,7 @@ mod tests {
     fn shape_query_is_none_for_api_source() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::Ch),
             mode: ResearchMode::NewRecord,
         };
@@ -805,6 +806,7 @@ mod tests {
     fn fetch_direct_skips_non_ch_countries() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::De),
             mode: ResearchMode::NewRecord,
         };
@@ -823,6 +825,7 @@ mod tests {
         // circuits to `Some(Err(SourceError::NoMatch))`.
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: None,
             mode: ResearchMode::NewRecord,
         };
@@ -1019,6 +1022,7 @@ mod tests {
     fn live_search_smoke() {
         let ctx = SourceCtx {
             root: Path::new("/tmp/ctox-test"),
+            runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
             country: Some(Country::Ch),
             mode: ResearchMode::NewRecord,
         };

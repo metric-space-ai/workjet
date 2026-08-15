@@ -12,11 +12,6 @@
 // both compilation contexts.
 extern crate self as workjet_provider_gateway;
 
-#[allow(
-    clippy::collapsible_match,
-    clippy::question_mark,
-    clippy::unnecessary_fold
-)]
 pub mod internal;
 pub mod protocol;
 pub mod sdk;

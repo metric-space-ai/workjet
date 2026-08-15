@@ -623,15 +623,19 @@ fn rewrite_id_value(
             };
             changed || child_changed
         }),
-        Value::Array(array) => array.iter_mut().fold(false, |changed, child| {
-            rewrite_id_value(
-                child,
-                upstream_id,
-                downstream_id,
-                upstream_previous,
-                downstream_previous,
-            ) || changed
-        }),
+        Value::Array(array) => {
+            let mut changed = false;
+            for child in array {
+                changed = rewrite_id_value(
+                    child,
+                    upstream_id,
+                    downstream_id,
+                    upstream_previous,
+                    downstream_previous,
+                ) || changed;
+            }
+            changed
+        }
         _ => false,
     }
 }

@@ -763,10 +763,8 @@ impl ClaudeToResponsesState {
                                 .push_str(d["partial_json"].as_str().unwrap_or(""))
                         }
                     }
-                    "citations_delta" => {
-                        if !d["citation"].is_null() {
-                            self.annotations.push(d["citation"].clone())
-                        }
+                    "citations_delta" if !d["citation"].is_null() => {
+                        self.annotations.push(d["citation"].clone())
                     }
                     _ => {}
                 }

@@ -229,10 +229,8 @@ fn mixed_message_and_tool_use_distinct_output_indexes() {
                     message_index = data["output_index"].as_i64().unwrap_or(-1);
                 }
             }
-            Some("function_call") => {
-                if data["item"]["call_id"] == "call_choice1" {
-                    tool_index = data["output_index"].as_i64().unwrap_or(-1);
-                }
+            Some("function_call") if data["item"]["call_id"] == "call_choice1" => {
+                tool_index = data["output_index"].as_i64().unwrap_or(-1);
             }
             _ => {}
         }

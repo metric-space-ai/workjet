@@ -82,10 +82,9 @@ fn parse_duration(raw: &str) -> Option<Duration> {
         (v, Duration::from_millis(1))
     } else if let Some(v) = raw.strip_suffix('s') {
         (v, Duration::from_secs(1))
-    } else if let Some(v) = raw.strip_suffix('m') {
-        (v, Duration::from_secs(60))
     } else {
-        return None;
+        let v = raw.strip_suffix('m')?;
+        (v, Duration::from_secs(60))
     };
     let count = number.parse::<u32>().ok()?;
     (count > 0).then(|| multiplier * count)

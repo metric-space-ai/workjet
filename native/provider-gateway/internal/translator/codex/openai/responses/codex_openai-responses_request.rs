@@ -90,12 +90,11 @@ fn normalize_builtin_tool_array(value: Option<&mut Value>) -> bool {
     let Some(tools) = value.and_then(Value::as_array_mut) else {
         return false;
     };
-    tools
-        .iter_mut()
-        .filter_map(Value::as_object_mut)
-        .fold(false, |changed, tool| {
-            normalize_builtin_tool_type(tool.get_mut("type")) || changed
-        })
+    let mut changed = false;
+    for tool in tools.iter_mut().filter_map(Value::as_object_mut) {
+        changed = normalize_builtin_tool_type(tool.get_mut("type")) || changed;
+    }
+    changed
 }
 
 fn normalize_builtin_tool_type(value: Option<&mut Value>) -> bool {

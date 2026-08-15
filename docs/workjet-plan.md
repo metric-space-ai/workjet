@@ -338,6 +338,13 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Import the exact frozen parser tree under `native/pdf-parse/` through
         history branch `codex/import-pdf-parse` and verify all six reachable
         component commits.
+- [x] Replace every current `native/web-stack/fixtures/sources/**` website/API
+      snapshot with a minimal original synthetic Workjet fixture; parser tests
+      now assert exact fictional records, reserved-domain contacts, metadata,
+      optional branches, deduplication, and source-specific links.
+  - [ ] Before public history, perform and independently verify the one-time Git
+        history purge of the former imported snapshots. The current synthetic
+        tree and Cargo package exclusion do not close this publication gate.
 - [x] Normalize the imported Web Stack's Rust 1.97 all-target Clippy baseline;
       commit `97c28f66f` resolves all 64 pre-existing mechanical findings with
       only narrow, locally justified compatibility exceptions. Strict

@@ -48,8 +48,8 @@ löst keine CAPTCHAs. Andere Klassifikationen starten ihn nicht.
 Pro Quelle wird **genau eine** Datei angefasst:
 
 ```
-tools/web-stack/src/sources/<id>.rs
-tools/web-stack/fixtures/sources/<id>/<example>.{html|json|pdf}
+native/web-stack/src/sources/<id>.rs
+native/web-stack/fixtures/sources/<id>/<example>.{html|json|txt}
 ```
 
 `<id>` ist der kanonische Hostname ohne `www.`/`app.` (siehe
@@ -68,16 +68,23 @@ landen, mit Begründung im Commit. Wo möglich: existierende Deps benutzen
 
 ## Fixtures
 
-Tests laden eingefrorene Roh-Antworten aus `fixtures/sources/<id>/`.
-Pro Quelle mindestens **ein** Beispiel mit:
+Tests laden kleine, handgeschriebene Dokumente aus `fixtures/sources/<id>/`.
+Jede aktuelle Fixture ist ein originales synthetisches Workjet-Testartefakt,
+nicht eine gespeicherte, redigierte oder verkürzte Upstream-Antwort. Namen,
+Adressen und formatförmige IDs sind absichtlich fiktiv; Kontaktwerte verwenden
+reservierte `.example`- oder `.invalid`-Domains. Siehe auch die
+[Fixture-README](../../fixtures/sources/README.md).
 
-- einem bekannten Firmennamen, der reproduzierbar Treffer liefert,
-- der vollständigen Roh-Antwort der Quelle (HTML/JSON/PDF),
-- ggf. einer `expected.json` mit dem erwarteten `extract_fields`-Output.
+Die Dokumente enthalten nur die kleinsten Selektoren und API-Felder, die für
+die jeweiligen Parserzweige nötig sind. Tests prüfen exakte normalisierte
+Datensätze, Metadaten, optionale Felder, Deduplizierung und quellspezifische
+Link-Konstruktion. Die frühere importierte Snapshot-Historie ist dadurch noch
+nicht aus Git entfernt und muss vor einer Veröffentlichung einmalig bereinigt
+werden.
 
-`extract_fields` ist gegen Fixture-Daten unit-testbar und MUSS
-deterministisch sein. Live-Tests gegen die echte Quelle laufen
-zusätzlich, aber `#[ignore]`-markiert:
+`extract_fields` ist gegen diese synthetischen Fixture-Daten unit-testbar und
+MUSS deterministisch sein. Live-Tests gegen die echte Quelle laufen zusätzlich,
+aber `#[ignore]`-markiert:
 
 ```rust
 #[test]

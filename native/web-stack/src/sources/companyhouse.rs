@@ -503,22 +503,13 @@ mod tests {
             .is_none());
     }
 
-    /// End-to-end extraction against a frozen Companyhouse person profile.
-    ///
-    /// Fixture-Ursprung: rekonstruiertes Layout einer
-    /// `companyhouse.de/person/<Vorname>-<Nachname>`-Seite, manuell aus
-    /// dokumentierten Schema-Konventionen aufgebaut, weil die Live-Site
-    /// hinter Cloudflare und der Archive-Service zum Implementations-
-    /// Zeitpunkt offline waren. Struktur entspricht dem öffentlich
-    /// indexierten Heading-Pattern (Titel + Vorname + Nachname im `<h1>`,
-    /// gefolgt von Mandaten-Liste).
+    /// End-to-end extraction against a minimal synthetic person profile.
     #[test]
-    fn extract_person_fixture() {
-        let html =
-            include_str!("../../fixtures/sources/companyhouse/person_manfred_schneider.html");
+    fn extract_synthetic_person_fixture() {
+        let html = include_str!("../../fixtures/sources/companyhouse/person_profile.html");
         let page = SourceReadResult {
-            url: "https://www.companyhouse.de/person/Manfred-Schneider".to_string(),
-            title: "Dr. Manfred Schneider - Mandate, Beteiligungen | CompanyHouse".to_string(),
+            url: "https://www.companyhouse.de/person/Avery-Fixture".to_string(),
+            title: "Dr. Avery Fixture | Synthetic Companyhouse fixture".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -539,26 +530,26 @@ mod tests {
         let first = by_key
             .get(&FieldKey::PersonVorname)
             .expect("person_vorname extracted");
-        assert_eq!(first.value, "Manfred");
+        assert_eq!(first.value, "Avery");
         assert_eq!(first.confidence, Confidence::Medium);
 
         let last = by_key
             .get(&FieldKey::PersonNachname)
             .expect("person_nachname extracted");
-        assert_eq!(last.value, "Schneider");
+        assert_eq!(last.value, "Fixture");
         assert_eq!(last.confidence, Confidence::Medium);
 
         // Person-Seite schreibt keinen Firmennamen.
         assert!(!by_key.contains_key(&FieldKey::FirmaName));
     }
 
-    /// End-to-end extraction against a frozen Companyhouse company profile.
+    /// End-to-end extraction against a minimal synthetic company profile.
     #[test]
-    fn extract_company_fixture() {
-        let html = include_str!("../../fixtures/sources/companyhouse/firma_bayer_ag.html");
+    fn extract_synthetic_company_fixture() {
+        let html = include_str!("../../fixtures/sources/companyhouse/company_profile.html");
         let page = SourceReadResult {
-            url: "https://www.companyhouse.de/Bayer-AG-Leverkusen".to_string(),
-            title: "Bayer AG, Leverkusen | CompanyHouse".to_string(),
+            url: "https://www.companyhouse.de/Workjet-Fixture-Systems-GmbH".to_string(),
+            title: "Workjet Fixture Systems GmbH | Synthetic fixture".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -573,7 +564,7 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "Bayer AG");
+        assert_eq!(name.value, "Workjet Fixture Systems GmbH");
         assert_eq!(name.confidence, Confidence::High);
 
         // Firmen-Seite schreibt keine Personen-Felder.

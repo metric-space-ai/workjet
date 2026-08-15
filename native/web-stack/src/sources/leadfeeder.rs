@@ -523,10 +523,8 @@ mod tests {
     use crate::sources::{ResearchMode, SourceCtx};
     use std::path::Path;
 
-    const LEADS_FIXTURE: &str =
-        include_str!("../../fixtures/sources/leadfeeder/leads_wittenstein.json");
-    const CONTACTS_FIXTURE: &str =
-        include_str!("../../fixtures/sources/leadfeeder/contacts_wittenstein.json");
+    const LEADS_FIXTURE: &str = include_str!("../../fixtures/sources/leadfeeder/leads.json");
+    const CONTACTS_FIXTURE: &str = include_str!("../../fixtures/sources/leadfeeder/contacts.json");
 
     fn dummy_page(text: &str, url: &str) -> SourceReadResult {
         SourceReadResult {
@@ -636,14 +634,14 @@ mod tests {
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaEmail))
             .expect("firma_email present");
-        assert_eq!(firma_email.1.value, "info@wittenstein.de");
+        assert_eq!(firma_email.1.value, "hello@fixture-systems.example");
         assert!(matches!(firma_email.1.confidence, Confidence::High));
 
         let firma_domain = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaDomain))
             .expect("firma_domain present");
-        assert_eq!(firma_domain.1.value, "wittenstein.de");
+        assert_eq!(firma_domain.1.value, "fixture-systems.example");
         assert!(matches!(firma_domain.1.confidence, Confidence::High));
     }
 
@@ -660,15 +658,57 @@ mod tests {
             .filter(|(k, _)| matches!(k, FieldKey::PersonEmail))
             .map(|(_, ev)| (ev.value.clone(), ev.confidence))
             .collect();
-        assert!(
-            person_emails
-                .iter()
-                .any(|(v, _)| v == "manfred.weber@wittenstein.de"),
-            "expected Weber email, got: {person_emails:?}"
+        assert_eq!(
+            person_emails,
+            vec![(
+                "avery@fixture-systems.example".to_string(),
+                Confidence::Medium
+            )]
         );
-        for (_, conf) in &person_emails {
-            assert!(matches!(conf, Confidence::Medium));
-        }
+    }
+
+    #[test]
+    fn synthetic_fixtures_preserve_hits_contacts_and_pagination_metadata() {
+        let leads: Value = serde_json::from_str(LEADS_FIXTURE).expect("leads fixture json");
+        assert_eq!(
+            leads["meta"],
+            serde_json::json!({"total": 2, "page": 1, "per_page": 25})
+        );
+        let lead_hits = leads_to_hits(&leads, "synthetic-account");
+        assert_eq!(lead_hits.len(), 1);
+        assert_eq!(lead_hits[0].title, "Workjet Fixture Systems GmbH");
+        assert_eq!(
+            lead_hits[0].url,
+            "https://api.leadfeeder.com/accounts/synthetic-account/leads/synthetic-lead-001"
+        );
+        assert_eq!(
+            lead_hits[0].snippet,
+            "fixture-systems.example · Synthetic test systems"
+        );
+
+        let contacts: Value =
+            serde_json::from_str(CONTACTS_FIXTURE).expect("contacts fixture json");
+        assert_eq!(
+            contacts["meta"],
+            serde_json::json!({"total": 2, "page": 2, "per_page": 25})
+        );
+        let contact_hits = contacts_to_hits(&contacts, "synthetic-account");
+        assert_eq!(contact_hits.len(), 2);
+        assert_eq!(contact_hits[0].title, "Avery Fixture");
+        assert_eq!(
+            contact_hits[0].url,
+            "https://api.leadfeeder.com/accounts/synthetic-account/contacts/synthetic-contact-001"
+        );
+        assert_eq!(
+            contact_hits[0].snippet,
+            "Fixture Operations Lead · avery@fixture-systems.example"
+        );
+        assert_eq!(contact_hits[1].title, "Riley Sample");
+        assert_eq!(
+            contact_hits[1].url,
+            "https://api.leadfeeder.com/accounts/synthetic-account/contacts/synthetic-contact-002"
+        );
+        assert_eq!(contact_hits[1].snippet, "Test Analyst · missing");
     }
 
     #[test]

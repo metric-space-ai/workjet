@@ -80,13 +80,13 @@ exactly `patchright@1.55.0`; its notice is retained in
 `licenses/Patchright-Apache-2.0.txt`. Apache-2.0 is therefore documented
 separately rather than added to the crate's aggregate source expression.
 
-`fixtures/sources/**` contains test-only third-party/web-response fixture
-history with unresolved redistribution evidence. Cargo packaging excludes the
-entire path, and no package license grant should be inferred for it. Its
-presence in Git is not a claim that the history is publishable. Public Git
-history remains blocked until source-specific rights are established or the
-fixtures are replaced synthetically and any required history sanitization is
-complete.
+The current files in `fixtures/sources/**` are small, original synthetic
+Workjet test artifacts written from scratch; they contain fictional identities,
+reserved contact domains, and no captured upstream response bodies. Cargo
+packaging continues to exclude the path. Earlier imported commits still contain
+the former third-party/web-response snapshots, so this working-tree replacement
+does not make the repository history publishable. Public Git history remains
+blocked until the one-time fixture-history purge is completed and verified.
 
 ## Public scrape fallback
 

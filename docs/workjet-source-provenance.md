@@ -110,12 +110,13 @@ installs the separately licensed Apache-2.0 npm runtime exactly as
 `aabc60cdfbd6fccaaa1f24e4f9008cc85ff8fd4f`, npm integrity, and byte-identical
 Apache-2.0 notice are recorded separately.
 
-Cargo packaging excludes `native/web-stack/fixtures/sources/**`. That test-only
-third-party/web-response fixture history has unresolved redistribution evidence
-and is outside the package grants. Exclusion from the Cargo artifact does not
-make the existing Git history publishable: public history remains gated on
-source-specific rights or synthetic replacements plus any required history
-sanitization.
+Cargo packaging excludes `native/web-stack/fixtures/sources/**`. Every file in
+the current tree is now an original, minimal synthetic Workjet fixture using
+fictional identities and reserved contact domains; no captured upstream response
+body remains at HEAD. The earlier imported commits still contain the former
+third-party/web-response snapshots. Replacing the current tree does not make the
+existing Git history publishable: public history remains gated on a one-time,
+verified purge of that prior fixture history.
 
 ## Frozen Web Stack full-feature baseline
 
@@ -236,10 +237,12 @@ recorded third-party terms.
 
 - Record an immutable release URL and checksum for the versioned Business OS
   shell after CTOX publishes the first artifact consumed by Workjet.
-- Resolve source-specific rights for every Web Stack `fixtures/sources/**`
-  fixture or replace it synthetically, then sanitize history as required before
-  claiming that fixture history is publishable. Cargo package exclusion does
-  not resolve this Git-history gate.
+- [x] Replace every current Web Stack `fixtures/sources/**` artifact with a
+  minimal original synthetic fixture.
+- [ ] Purge the former imported Web Stack snapshots from prior Git commits and
+  verify the rewritten history before claiming that fixture history is
+  publishable. Cargo package exclusion and the clean current tree do not resolve
+  this Git-history gate.
 - Resolve source-specific rights for every PDF parser `tests/fixtures/**`
   document/page fixture or replace it synthetically, then pass the public
   history-sanitization gate before claiming that fixture history is publishable.

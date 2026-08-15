@@ -508,10 +508,8 @@ mod tests {
     use crate::sources::{ResearchMode, SourceCtx};
     use std::path::Path;
 
-    const SEARCH_FIXTURE: &str =
-        include_str!("../../fixtures/sources/linkedin/peoplesearch_wittenstein.json");
-    const DETAIL_FIXTURE: &str =
-        include_str!("../../fixtures/sources/linkedin/people_detail_abc123.json");
+    const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/linkedin/people_search.json");
+    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/linkedin/person_detail.json");
 
     fn dummy_page(text: &str, url: &str) -> SourceReadResult {
         SourceReadResult {
@@ -620,17 +618,39 @@ mod tests {
     #[test]
     fn parses_search_fixture_into_hits() {
         let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
+        assert_eq!(
+            value["paging"],
+            serde_json::json!({"count": 10, "start": 0, "total": 3})
+        );
         let hits = parse_search_hits(&value).expect("fixture has hits");
         assert_eq!(hits.len(), 3);
-        let anna = hits
-            .iter()
-            .find(|h| h.title == "Anna Müller")
-            .expect("Anna Müller hit");
+        assert_eq!(hits[0].title, "Avery Fixture");
         assert_eq!(
-            anna.url,
-            "https://www.linkedin.com/in/anna-mueller-wittenstein/"
+            hits[0].url,
+            "https://www.linkedin.com/in/avery-fixture-0001/"
         );
-        assert!(anna.snippet.contains("Geschäftsführerin"));
+        assert_eq!(
+            hits[0].snippet,
+            "Fixture Operations Lead at Workjet Fixture Systems GmbH"
+        );
+        assert_eq!(hits[1].title, "Riley Sample");
+        assert_eq!(
+            hits[1].url,
+            "https://www.linkedin.com/in/riley-sample-0002/"
+        );
+        assert_eq!(
+            hits[1].snippet,
+            "Test Analyst · Workjet Fixture Systems GmbH"
+        );
+        assert_eq!(hits[2].title, "Casey Construct");
+        assert_eq!(
+            hits[2].url,
+            "https://www.linkedin.com/in/casey-construct-0003/"
+        );
+        assert_eq!(
+            hits[2].snippet,
+            "Quality Designer | Workjet Example Holdings AG"
+        );
     }
 
     #[test]
@@ -652,7 +672,7 @@ mod tests {
     fn extracts_funktion_and_linkedin_from_search_hit() {
         let page = dummy_page(
             SEARCH_FIXTURE,
-            "https://api.linkedin.com/v2/peopleSearch?q=companyName&companyName=WITTENSTEIN%20SE",
+            "https://api.linkedin.com/v2/peopleSearch?q=companyName&companyName=Workjet%20Fixture%20Systems",
         );
         let fields = module().extract_fields(&page);
 
@@ -660,7 +680,7 @@ mod tests {
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::PersonFunktion))
             .expect("person_funktion");
-        assert_eq!(funktion.1.value, "Geschäftsführerin Vertrieb");
+        assert_eq!(funktion.1.value, "Fixture Operations Lead");
         assert!(matches!(funktion.1.confidence, Confidence::High));
 
         let linkedin = fields
@@ -669,7 +689,7 @@ mod tests {
             .expect("person_linkedin");
         assert_eq!(
             linkedin.1.value,
-            "https://www.linkedin.com/in/anna-mueller-wittenstein/"
+            "https://www.linkedin.com/in/avery-fixture-0001/"
         );
         assert!(matches!(linkedin.1.confidence, Confidence::High));
     }
@@ -678,7 +698,7 @@ mod tests {
     fn extracts_fields_from_detail_body() {
         let page = dummy_page(
             DETAIL_FIXTURE,
-            "https://api.linkedin.com/v2/people/(id:urn:li:person:abc123)",
+            "https://api.linkedin.com/v2/people/(id:urn:li:person:synthetic-001)",
         );
         let fields = module().extract_fields(&page);
 
@@ -687,7 +707,7 @@ mod tests {
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::PersonFunktion))
             .expect("person_funktion");
-        assert_eq!(funktion.1.value, "Geschäftsführerin Vertrieb");
+        assert_eq!(funktion.1.value, "Fixture Operations Lead");
         assert!(matches!(funktion.1.confidence, Confidence::High));
 
         // person_linkedin built from publicIdentifier
@@ -697,7 +717,7 @@ mod tests {
             .expect("person_linkedin");
         assert_eq!(
             linkedin.1.value,
-            "https://www.linkedin.com/in/anna-mueller-wittenstein/"
+            "https://www.linkedin.com/in/avery-fixture-0001/"
         );
 
         // person_geschlecht is intentionally never emitted (GDPR; WS2-03).

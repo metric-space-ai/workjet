@@ -698,10 +698,10 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    const SEARCH_FIXTURE: &str =
-        include_str!("../../fixtures/sources/xing/users_find_example_industrial.json");
-    const DETAIL_FIXTURE: &str =
-        include_str!("../../fixtures/sources/xing/users_detail_10368_abcdef.json");
+    const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/xing/users_search.json");
+    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/xing/user_detail.json");
+    const OPTIONAL_SEARCH_FIXTURE: &str =
+        include_str!("../../fixtures/sources/xing/users_search_optional.json");
 
     fn dummy_page(text: &str, url: &str) -> SourceReadResult {
         SourceReadResult {
@@ -1048,30 +1048,45 @@ mod tests {
     #[test]
     fn parses_search_fixture_into_hits() {
         let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
+        assert_eq!(value["users"]["total"], 3);
         let hits = parse_search_hits(&value).expect("fixture has hits");
         assert_eq!(hits.len(), 3, "fixture has three users");
-        let anna = hits
-            .iter()
-            .find(|h| h.url == "https://www.xing.com/profile/Anna_Schmidt10")
-            .expect("Anna Schmidt hit");
-        assert_eq!(anna.title, "Anna Schmidt");
-        assert!(
-            anna.snippet.contains("Leiterin Forschung & Entwicklung"),
-            "expected funktion in snippet, got: {}",
-            anna.snippet
+        assert_eq!(hits[0].title, "Avery Fixture");
+        assert_eq!(hits[0].url, "https://www.xing.com/profile/Avery_Fixture1");
+        assert_eq!(
+            hits[0].snippet,
+            "Fixture Operations Lead · Workjet Fixture Systems GmbH"
         );
-        assert!(
-            anna.snippet.contains("Example Industrial GmbH"),
-            "expected company in snippet, got: {}",
-            anna.snippet
+        assert_eq!(hits[1].title, "Riley Sample");
+        assert_eq!(hits[1].url, "https://www.xing.com/profile/Riley_Sample2");
+        assert_eq!(
+            hits[1].snippet,
+            "Test Analyst · Workjet Fixture Systems GmbH"
+        );
+        assert_eq!(hits[2].title, "Casey Construct");
+        assert_eq!(hits[2].url, "https://www.xing.com/profile/Casey_Construct3");
+        assert_eq!(
+            hits[2].snippet,
+            "Quality Designer · Workjet Example Holdings AG"
         );
     }
 
     #[test]
-    fn parses_search_fixture_caps_hits_at_max() {
-        let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
-        let hits = parse_search_hits(&value).expect("hits");
-        assert!(hits.len() <= MAX_HITS);
+    fn optional_search_fixture_falls_back_to_permalink_and_skips_unidentified_user() {
+        let value: Value =
+            serde_json::from_str(OPTIONAL_SEARCH_FIXTURE).expect("optional fixture json");
+        assert_eq!(value["users"]["total"], 2);
+        let hits = parse_search_hits(&value).expect("one identifiable hit");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(
+            hits[0].title,
+            "https://www.xing.com/profile/Synthetic_Optional1"
+        );
+        assert_eq!(
+            hits[0].url,
+            "https://www.xing.com/profile/Synthetic_Optional1"
+        );
+        assert_eq!(hits[0].snippet, "");
     }
 
     #[test]
@@ -1090,28 +1105,31 @@ mod tests {
 
     #[test]
     fn extracts_funktion_and_xing_from_detail_json_with_high_confidence() {
-        let page = dummy_page(DETAIL_FIXTURE, "https://api.xing.com/v1/users/10368_abcdef");
+        let page = dummy_page(
+            DETAIL_FIXTURE,
+            "https://api.xing.com/v1/users/synthetic_001",
+        );
         let fields = module().extract_fields(&page);
 
         let funktion = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::PersonFunktion))
             .expect("person_funktion");
-        assert_eq!(funktion.1.value, "Leiterin Forschung & Entwicklung");
+        assert_eq!(funktion.1.value, "Fixture Operations Lead");
         assert!(matches!(funktion.1.confidence, Confidence::High));
 
         let xing = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::PersonXing))
             .expect("person_xing");
-        assert_eq!(xing.1.value, "https://www.xing.com/profile/Anna_Schmidt10");
+        assert_eq!(xing.1.value, "https://www.xing.com/profile/Avery_Fixture1");
         assert!(matches!(xing.1.confidence, Confidence::High));
 
         // Both evidence rows must point at the canonical XING permalink,
         // not at the raw API URL — that's what downstream consumers expect.
         for (_, ev) in &fields {
             assert_eq!(
-                ev.source_url, "https://www.xing.com/profile/Anna_Schmidt10",
+                ev.source_url, "https://www.xing.com/profile/Avery_Fixture1",
                 "evidence source_url must be the permalink, got {}",
                 ev.source_url
             );
@@ -1129,12 +1147,12 @@ mod tests {
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::PersonFunktion))
             .expect("person_funktion");
-        assert_eq!(funktion.1.value, "Leiterin Forschung & Entwicklung");
+        assert_eq!(funktion.1.value, "Fixture Operations Lead");
         let xing = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::PersonXing))
             .expect("person_xing");
-        assert_eq!(xing.1.value, "https://www.xing.com/profile/Anna_Schmidt10");
+        assert_eq!(xing.1.value, "https://www.xing.com/profile/Avery_Fixture1");
     }
 
     #[test]

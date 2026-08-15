@@ -73,8 +73,9 @@ the crate's aggregate source expression.
 
 ## Excluded fixture history
 
-`fixtures/sources/**` is excluded from Cargo packaging and from the license
-grants described by this package. It contains test-only third-party/web-response
-fixture history with unresolved redistribution evidence. Do not publish that
-Git history unless source-specific rights are established or synthetic
-replacements and any required history sanitization are complete.
+The current `fixtures/sources/**` tree consists solely of original synthetic
+Workjet test artifacts and is excluded from Cargo packaging. It is not governed
+by the third-party source-family grants described above. Historical commits
+still retain the former imported website/API snapshots with unresolved
+redistribution evidence. Do not publish that Git history until the required
+one-time history sanitization is complete and independently verified.

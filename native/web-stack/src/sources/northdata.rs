@@ -777,18 +777,14 @@ mod tests {
             .is_none());
     }
 
-    /// End-to-end extraction against a frozen Siemens AG profile (DE).
-    ///
-    /// Fixture origin: `https://www.northdata.de/Siemens+Aktiengesellschaft,+M%C3%BCnchen/HRB+6684`
-    /// (live fetch 2026-05-14, logged out, structural reduction documented at
-    /// the top of the fixture).
+    /// End-to-end extraction against a minimal synthetic German profile.
     #[test]
-    fn extract_siemens_fixture() {
-        let html = include_str!("../../fixtures/sources/northdata/siemens_ag.html");
+    fn extract_synthetic_de_fixture() {
+        let html = include_str!("../../fixtures/sources/northdata/company_de.html");
         let page = SourceReadResult {
-            url: "https://www.northdata.de/Siemens+Aktiengesellschaft,+M%C3%BCnchen/HRB+6684"
+            url: "https://www.northdata.de/Workjet+Fixture+Systems+GmbH,+Beispielstadt/SYNTHETIC"
                 .to_string(),
-            title: "Siemens AG, München".to_string(),
+            title: "Workjet Fixture Systems GmbH, Beispielstadt".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -803,29 +799,29 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "Siemens AG");
+        assert_eq!(name.value, "Workjet Fixture Systems GmbH");
         assert_eq!(name.confidence, Confidence::High);
 
         let street = by_key
             .get(&FieldKey::FirmaAnschrift)
             .expect("firma_anschrift extracted");
-        assert_eq!(street.value, "Werner-von-Siemens-Str. 1");
+        assert_eq!(street.value, "Fixtureweg 7");
         assert_eq!(street.confidence, Confidence::High);
 
         let plz = by_key
             .get(&FieldKey::FirmaPlz)
             .expect("firma_plz extracted");
-        assert_eq!(plz.value, "80333");
+        assert_eq!(plz.value, "12345");
         assert_eq!(plz.confidence, Confidence::High);
 
         let city = by_key
             .get(&FieldKey::FirmaOrt)
             .expect("firma_ort extracted");
-        assert_eq!(city.value, "München");
+        assert_eq!(city.value, "Beispielstadt");
         assert_eq!(city.confidence, Confidence::High);
 
-        // First active person event in the bizq JSON is "Vorstand Veronika
-        // Bienert"; historic entries (`"old": true`) are filtered out.
+        // The first old and non-person events are skipped before the active
+        // synthetic Vorstand event is selected.
         let position = by_key
             .get(&FieldKey::PersonPosition)
             .expect("person_position extracted");
@@ -835,26 +831,27 @@ mod tests {
         let first = by_key
             .get(&FieldKey::PersonVorname)
             .expect("person_vorname extracted");
-        assert_eq!(first.value, "Veronika");
+        assert_eq!(first.value, "Riley");
         assert_eq!(first.confidence, Confidence::Medium);
 
         let last = by_key
             .get(&FieldKey::PersonNachname)
             .expect("person_nachname extracted");
-        assert_eq!(last.value, "Bienert");
+        assert_eq!(last.value, "Sample");
         assert_eq!(last.confidence, Confidence::Medium);
 
         // Public crawl exposes no concrete revenue → no umsatz field.
         assert!(!by_key.contains_key(&FieldKey::Umsatz));
     }
 
-    /// AT profile fixture — Geschäftsführer-Variante mit Firmenbuch (FN).
+    /// Austrian synthetic profile using the Geschäftsführer variant.
     #[test]
-    fn extract_red_bull_at_fixture() {
-        let html = include_str!("../../fixtures/sources/northdata/red_bull_gmbh_at.html");
+    fn extract_synthetic_at_fixture() {
+        let html = include_str!("../../fixtures/sources/northdata/company_at.html");
         let page = SourceReadResult {
-            url: "https://www.northdata.de/Red+Bull+GmbH,+Fuschl+am+See/FN+99738+x".to_string(),
-            title: "Red Bull GmbH, Fuschl am See".to_string(),
+            url: "https://www.northdata.de/Workjet+Example+Holdings+AG,+Beispielhafen/SYNTHETIC"
+                .to_string(),
+            title: "Workjet Example Holdings AG, Beispielhafen".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -869,23 +866,23 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "Red Bull GmbH");
+        assert_eq!(name.value, "Workjet Example Holdings AG");
         assert_eq!(name.confidence, Confidence::High);
 
         let street = by_key
             .get(&FieldKey::FirmaAnschrift)
             .expect("firma_anschrift extracted");
-        assert_eq!(street.value, "Am Brunnen 1");
+        assert_eq!(street.value, "Testpfad 7");
 
         let plz = by_key
             .get(&FieldKey::FirmaPlz)
             .expect("firma_plz extracted");
-        assert_eq!(plz.value, "5330");
+        assert_eq!(plz.value, "1234");
 
         let city = by_key
             .get(&FieldKey::FirmaOrt)
             .expect("firma_ort extracted");
-        assert_eq!(city.value, "Fuschl am See");
+        assert_eq!(city.value, "Beispielhafen");
 
         let position = by_key
             .get(&FieldKey::PersonPosition)
@@ -895,12 +892,12 @@ mod tests {
         let first = by_key
             .get(&FieldKey::PersonVorname)
             .expect("person_vorname extracted");
-        assert_eq!(first.value, "Franz");
+        assert_eq!(first.value, "Avery");
 
         let last = by_key
             .get(&FieldKey::PersonNachname)
             .expect("person_nachname extracted");
-        assert_eq!(last.value, "Watzlawick");
+        assert_eq!(last.value, "Fixture");
     }
 
     #[test]

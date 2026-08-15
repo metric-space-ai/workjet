@@ -635,18 +635,13 @@ mod tests {
             .is_none());
     }
 
-    /// End-to-end extraction against a frozen Red Bull GmbH profile.
-    ///
-    /// Fixture-Ursprung: `https://www.firmenabc.at/red-bull-gmbh_gsn`,
-    /// abgerufen über `web.archive.org` Snapshot `20250917001953`
-    /// (Originaldatum 2025-09-17). Gespeichert als HTML-Body genau so,
-    /// wie ihn ein crawl-pfad-Adapter vom Webstack bekäme.
+    /// End-to-end extraction against an original synthetic profile document.
     #[test]
-    fn extract_red_bull_fixture() {
-        let html = include_str!("../../fixtures/sources/firmenabc/red_bull_gmbh.html");
+    fn extract_synthetic_company_fixture() {
+        let html = include_str!("../../fixtures/sources/firmenabc/company_profile.html");
         let page = SourceReadResult {
-            url: "https://www.firmenabc.at/red-bull-gmbh_gsn".to_string(),
-            title: "Red Bull GmbH in Fuschl am See".to_string(),
+            url: "https://www.firmenabc.at/workjet-example-holdings_synthetic".to_string(),
+            title: "Workjet Example Holdings AG in Beispielhafen".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -663,57 +658,60 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "Red Bull GmbH");
+        assert_eq!(name.value, "Workjet Example Holdings AG");
         assert_eq!(name.confidence, Confidence::High);
 
         let street = by_key
             .get(&FieldKey::FirmaAnschrift)
             .expect("firma_anschrift extracted");
-        assert_eq!(street.value, "Am Brunnen 1");
+        assert_eq!(street.value, "Testpfad 7");
         assert_eq!(street.confidence, Confidence::High);
 
         let zip = by_key
             .get(&FieldKey::FirmaPlz)
             .expect("firma_plz extracted");
-        assert_eq!(zip.value, "5330");
+        assert_eq!(zip.value, "1234");
         assert_eq!(zip.confidence, Confidence::High);
 
         let city = by_key
             .get(&FieldKey::FirmaOrt)
             .expect("firma_ort extracted");
-        assert_eq!(city.value, "Fuschl am See");
+        assert_eq!(city.value, "Beispielhafen");
         assert_eq!(city.confidence, Confidence::High);
 
         let email = by_key
             .get(&FieldKey::FirmaEmail)
             .expect("firma_email extracted");
-        assert_eq!(email.value, "info@redbull.at");
+        assert_eq!(email.value, "office@holdings.example");
         assert_eq!(email.confidence, Confidence::High);
 
         let domain = by_key
             .get(&FieldKey::FirmaDomain)
             .expect("firma_domain extracted");
-        assert_eq!(domain.value, "redbull.at");
+        assert_eq!(domain.value, "holdings.example");
         assert_eq!(domain.confidence, Confidence::High);
 
-        // Geschäftsführer: erster Eintrag im Profil ist „Herr Watzlawick Franz“.
+        // Synthetic management label is last-name-first with a title prefix.
         // person_geschlecht is intentionally never emitted (GDPR; WS2-03).
         assert!(!by_key.contains_key(&FieldKey::PersonGeschlecht));
 
         let last = by_key
             .get(&FieldKey::PersonNachname)
             .expect("person_nachname extracted");
-        assert_eq!(last.value, "Watzlawick");
+        assert_eq!(last.value, "Fixture");
         assert_eq!(last.confidence, Confidence::Medium);
 
         let first = by_key
             .get(&FieldKey::PersonVorname)
             .expect("person_vorname extracted");
-        assert_eq!(first.value, "Franz");
+        assert_eq!(first.value, "Avery");
         assert_eq!(first.confidence, Confidence::Medium);
 
-        // Kein akademischer Titel beim ersten GF → person_titel fehlt.
-        assert!(!by_key.contains_key(&FieldKey::PersonTitel));
+        let title = by_key
+            .get(&FieldKey::PersonTitel)
+            .expect("person_titel extracted");
+        assert_eq!(title.value, "Dr.");
+        assert_eq!(title.confidence, Confidence::Medium);
     }
 
     #[test]

@@ -496,20 +496,13 @@ mod tests {
             .is_none());
     }
 
-    /// Extracts `firma_name` from a frozen Bundesanzeiger search-results
-    /// page.
-    ///
-    /// Fixture-Ursprung: Layout 1:1 nach dem öffentlichen Markup der
-    /// Bundesanzeiger-Volltextsuche
-    /// (`https://www.bundesanzeiger.de/pub/de/suche?13` mit `name=Wittenstein`),
-    /// auf eine Treffer-Zeile reduziert; Treffer-Zeile mit `data-id` und
-    /// dem `.title`-Block ist die offizielle DOM-Struktur.
+    /// Extracts `firma_name` from a minimal synthetic search-result document.
     #[test]
-    fn extract_search_results_html_fixture() {
-        let html = include_str!("../../fixtures/sources/bundesanzeiger/search_wittenstein.html");
+    fn extract_synthetic_search_result_fixture() {
+        let html = include_str!("../../fixtures/sources/bundesanzeiger/search_company.html");
         let page = SourceReadResult {
-            url: "https://www.bundesanzeiger.de/pub/de/suche?name=Wittenstein".to_string(),
-            title: "Suche - Bundesanzeiger".to_string(),
+            url: "https://www.bundesanzeiger.de/pub/de/suche?name=workjet-fixture".to_string(),
+            title: "Synthetic search fixture".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -524,7 +517,7 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "WITTENSTEIN SE");
+        assert_eq!(name.value, "Workjet Fixture Systems GmbH");
         assert_eq!(name.confidence, Confidence::High);
 
         // Search-results page has no GuV/Anhang data → keine Finanzfelder.
@@ -532,21 +525,13 @@ mod tests {
         assert!(!by_key.contains_key(&FieldKey::Mitarbeiter));
     }
 
-    /// Extracts `umsatz` and `mitarbeiter` from a Jahresabschluss
-    /// plaintext dump.
-    ///
-    /// Fixture-Ursprung: handgebaut aus der offiziellen
-    /// Bundesanzeiger-Veröffentlichungsstruktur eines HGB-§325-Pflicht-
-    /// Jahresabschlusses (Titelzeile + GuV-Block + Anhang-Angabe
-    /// „Arbeitnehmer im Jahresdurchschnitt"). Zahlen synthetisch, Layout
-    /// repräsentativ — der Orchestrator-Pfad liefert genau diesen
-    /// Plaintext nach Lauf durch `ctox_pdf_parse::parse_pdf_bytes` mit
-    /// `OutputFormat::Text`.
+    /// Extracts normalized annual-report fields from synthetic plaintext.
     #[test]
-    fn extract_jahresabschluss_pdf_fixture() {
-        let text = include_str!("../../fixtures/sources/bundesanzeiger/detail_wittenstein.txt");
+    fn extract_synthetic_annual_report_fixture() {
+        let text = include_str!("../../fixtures/sources/bundesanzeiger/annual_report.txt");
         let page = SourceReadResult {
-            url: "https://www.bundesanzeiger.de/pub/de/jahresabschluss?id=JA_4711_2023".to_string(),
+            url: "https://www.bundesanzeiger.de/pub/de/jahresabschluss?id=SYNTH-JA-0001"
+                .to_string(),
             title: String::new(),
             summary: String::new(),
             text: text.to_string(),
@@ -562,17 +547,17 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "WITTENSTEIN SE");
+        assert_eq!(name.value, "Workjet Fixture Systems GmbH");
         assert_eq!(name.confidence, Confidence::High);
 
         let umsatz = by_key.get(&FieldKey::Umsatz).expect("umsatz extracted");
-        assert_eq!(umsatz.value, "485.732.145,00");
+        assert_eq!(umsatz.value, "1.234.567,89");
         assert_eq!(umsatz.confidence, Confidence::High);
 
         let mitarbeiter = by_key
             .get(&FieldKey::Mitarbeiter)
             .expect("mitarbeiter extracted");
-        assert_eq!(mitarbeiter.value, "1842");
+        assert_eq!(mitarbeiter.value, "1234");
         assert_eq!(mitarbeiter.confidence, Confidence::High);
     }
 

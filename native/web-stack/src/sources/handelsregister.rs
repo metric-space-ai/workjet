@@ -897,15 +897,10 @@ mod tests {
         assert!(row.first_name.is_none());
     }
 
-    /// End-to-end extraction against a frozen WITTENSTEIN SE Treffer-Seite.
-    ///
-    /// Fixture-Ursprung: Markup einer öffentlich sichtbaren
-    /// `erweiterte-suche.xhtml`-Trefferliste; auf das stabile RegPortErg-
-    /// Schema reduziert. Captcha-Wall ist hier nicht abgebildet, weil die
-    /// Trefferliste erst nach erfolgreichem Captcha gerendert wird.
+    /// End-to-end extraction against a minimal synthetic result table.
     #[test]
-    fn extract_search_wittenstein_fixture() {
-        let html = include_str!("../../fixtures/sources/handelsregister/search_wittenstein.html");
+    fn extract_synthetic_search_fixture() {
+        let html = include_str!("../../fixtures/sources/handelsregister/search.html");
         let page = SourceReadResult {
             url: "https://www.handelsregister.de/rp_web/erweiterte-suche.xhtml".to_string(),
             title: "Suchergebnis - Handelsregister".to_string(),
@@ -923,39 +918,37 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "WITTENSTEIN SE");
+        assert_eq!(name.value, "Workjet Fixture Systems GmbH");
         assert_eq!(name.confidence, Confidence::High);
 
         let street = by_key
             .get(&FieldKey::FirmaAnschrift)
             .expect("firma_anschrift extracted");
-        assert_eq!(street.value, "Walter-Wittenstein-Straße 1");
+        assert_eq!(street.value, "Fixtureweg 7");
         assert_eq!(street.confidence, Confidence::High);
 
         let zip = by_key
             .get(&FieldKey::FirmaPlz)
             .expect("firma_plz extracted");
-        assert_eq!(zip.value, "97999");
+        assert_eq!(zip.value, "12345");
 
         let city = by_key
             .get(&FieldKey::FirmaOrt)
             .expect("firma_ort extracted");
-        assert_eq!(city.value, "Igersheim");
+        assert_eq!(city.value, "Beispielstadt");
 
         // Trefferliste kennt keine Personen → keine person_*-Felder.
         assert!(!by_key.contains_key(&FieldKey::PersonVorname));
         assert!(!by_key.contains_key(&FieldKey::PersonNachname));
     }
 
-    /// End-to-end extraction against a frozen „Aktueller Abdruck" der
-    /// WITTENSTEIN SE. Hier sollen Firma + Anschrift + Vorstand-Person
-    /// extrahiert werden.
+    /// End-to-end extraction against a minimal synthetic detail table.
     #[test]
-    fn extract_detail_wittenstein_fixture() {
-        let html = include_str!("../../fixtures/sources/handelsregister/detail_wittenstein.html");
+    fn extract_synthetic_detail_fixture() {
+        let html = include_str!("../../fixtures/sources/handelsregister/detail.html");
         let page = SourceReadResult {
             url: "https://www.handelsregister.de/rp_web/charge-info.xhtml".to_string(),
-            title: "Aktueller Abdruck - WITTENSTEIN SE".to_string(),
+            title: "Synthetic current record".to_string(),
             summary: String::new(),
             text: html.to_string(),
             is_pdf: false,
@@ -970,35 +963,35 @@ mod tests {
         let name = by_key
             .get(&FieldKey::FirmaName)
             .expect("firma_name extracted");
-        assert_eq!(name.value, "WITTENSTEIN SE");
+        assert_eq!(name.value, "Workjet Fixture Systems GmbH");
         assert_eq!(name.confidence, Confidence::High);
 
         let street = by_key
             .get(&FieldKey::FirmaAnschrift)
             .expect("firma_anschrift extracted");
-        assert_eq!(street.value, "Walter-Wittenstein-Straße 1");
+        assert_eq!(street.value, "Fixtureweg 7");
 
         let zip = by_key
             .get(&FieldKey::FirmaPlz)
             .expect("firma_plz extracted");
-        assert_eq!(zip.value, "97999");
+        assert_eq!(zip.value, "12345");
 
         let city = by_key
             .get(&FieldKey::FirmaOrt)
             .expect("firma_ort extracted");
-        assert_eq!(city.value, "Igersheim");
+        assert_eq!(city.value, "Beispielstadt");
 
-        // Vorstand: erster Eintrag ist „Schult, Bertram".
+        // Vorstand: the first synthetic entry is “Fixture, Avery”.
         let first = by_key
             .get(&FieldKey::PersonVorname)
             .expect("person_vorname extracted");
-        assert_eq!(first.value, "Bertram");
+        assert_eq!(first.value, "Avery");
         assert_eq!(first.confidence, Confidence::Medium);
 
         let last = by_key
             .get(&FieldKey::PersonNachname)
             .expect("person_nachname extracted");
-        assert_eq!(last.value, "Schult");
+        assert_eq!(last.value, "Fixture");
         assert_eq!(last.confidence, Confidence::Medium);
     }
 

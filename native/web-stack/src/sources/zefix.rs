@@ -761,8 +761,8 @@ mod tests {
     use crate::sources::{ResearchMode, SourceCtx};
     use std::path::Path;
 
-    const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/zefix/search_roche.json");
-    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/zefix/detail_roche.json");
+    const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/zefix/search.json");
+    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/zefix/detail.json");
 
     fn dummy_page(text: &str, url: &str) -> SourceReadResult {
         SourceReadResult {
@@ -838,30 +838,29 @@ mod tests {
     #[test]
     fn parses_search_fixture_into_hits() {
         let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
+        assert_eq!(value["offset"], 0);
+        assert_eq!(value["maxEntries"], 50);
+        assert_eq!(value["maxOffset"], 2);
         let hits = parse_search_hits(&value).expect("fixture has hits");
-        assert!(!hits.is_empty(), "expected at least one hit");
-        // Roche Holding AG should be among the top hits.
-        let roche = hits
-            .iter()
-            .find(|h| h.title == "Roche Holding AG")
-            .expect("Roche Holding AG hit");
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].title, "Workjet Example Holdings AG");
         assert_eq!(
-            roche.url,
-            "https://www.zefix.admin.ch/ZefixREST/api/v1/firm/154673.json"
+            hits[0].url,
+            "https://www.zefix.admin.ch/ZefixREST/api/v1/firm/900001.json"
         );
-        assert!(roche.snippet.contains("CHE-101.602.521"));
-        assert!(roche.snippet.contains("Basel"));
-        // The human-readable SPA URL is in the snippet for navigation.
-        assert!(roche
-            .snippet
-            .contains("https://www.zefix.admin.ch/de/search/entity/list/firm/154673"));
-    }
-
-    #[test]
-    fn parses_search_fixture_caps_hits_at_max() {
-        let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
-        let hits = parse_search_hits(&value).expect("hits");
-        assert!(hits.len() <= MAX_HITS);
+        assert_eq!(
+            hits[0].snippet,
+            "CHE-000.000.001 · Beispielwil · EXISTIEREND · profile: https://www.zefix.admin.ch/de/search/entity/list/firm/900001"
+        );
+        assert_eq!(hits[1].title, "Workjet Fixture Systems GmbH");
+        assert_eq!(
+            hits[1].url,
+            "https://www.zefix.admin.ch/ZefixREST/api/v1/firm/CH00000000002.json"
+        );
+        assert_eq!(
+            hits[1].snippet,
+            "CHE-000.000.002 · Musterort · EXISTIEREND · profile: https://www.zefix.admin.ch/de/search/entity/list/firm/CH00000000002"
+        );
     }
 
     #[test]
@@ -882,41 +881,41 @@ mod tests {
     fn extracts_address_fields_from_detail_json_with_high_confidence() {
         let page = dummy_page(
             DETAIL_FIXTURE,
-            "https://www.zefix.admin.ch/de/search/entity/list/firm/154673",
+            "https://www.zefix.admin.ch/de/search/entity/list/firm/900001",
         );
         let fields = module().extract_fields(&page);
         let name = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaName))
             .expect("firma_name");
-        assert_eq!(name.1.value, "Roche Holding AG");
+        assert_eq!(name.1.value, "Workjet Example Holdings AG");
         assert!(matches!(name.1.confidence, Confidence::High));
 
         let anschrift = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaAnschrift))
             .expect("firma_anschrift");
-        assert_eq!(anschrift.1.value, "Grenzacherstr. 124");
+        assert_eq!(anschrift.1.value, "Fixturegasse 4, Haus Test");
 
         let plz = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaPlz))
             .expect("firma_plz");
-        assert_eq!(plz.1.value, "4058");
+        assert_eq!(plz.1.value, "1234");
         assert!(matches!(plz.1.confidence, Confidence::High));
 
         let ort = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaOrt))
             .expect("firma_ort");
-        assert_eq!(ort.1.value, "Basel");
+        assert_eq!(ort.1.value, "Beispielwil");
     }
 
     #[test]
     fn extracts_persons_from_shab_pub_messages_as_medium() {
         let page = dummy_page(
             DETAIL_FIXTURE,
-            "https://www.zefix.admin.ch/de/search/entity/list/firm/154673",
+            "https://www.zefix.admin.ch/de/search/entity/list/firm/900001",
         );
         let fields = module().extract_fields(&page);
         let vornames: Vec<_> = fields
@@ -935,39 +934,20 @@ mod tests {
             .map(|(_, ev)| ev.value.clone())
             .collect();
 
-        // Persons in "neu oder mutierend" sections only.
-        assert!(
-            nachnames.iter().any(|n| n == "Rochet"),
-            "expected Rochet (new VR), got: {nachnames:?}"
+        assert_eq!(vornames, ["Avery", "Riley", "Casey", "Jordan"]);
+        assert_eq!(nachnames, ["Fixture", "Sample", "Construct", "Example"]);
+        assert_eq!(
+            funktionen,
+            [
+                "Mitglied des Verwaltungsrates",
+                "Geschäftsführerin",
+                "Direktor"
+            ]
         );
-        assert!(
-            vornames.iter().any(|v| v == "Lubomira"),
-            "expected Lubomira, got: {vornames:?}"
-        );
-        assert!(
-            nachnames.iter().any(|n| n == "Eschli"),
-            "expected Eschli, got: {nachnames:?}"
-        );
-        // Eschli's first name "Dr. Bruno" must lose the title prefix.
-        assert!(
-            vornames.iter().any(|v| v == "Bruno"),
-            "title prefix not stripped: {vornames:?}"
-        );
-
-        // Funktion text should be normalized to the canonical phrase.
-        assert!(
-            funktionen
-                .iter()
-                .any(|f| f == "Mitglied des Verwaltungsrates"),
-            "expected VR funktion, got: {funktionen:?}"
-        );
-
-        // "Süssmuth-Dyckerhoff" appears only in the "Ausgeschiedene
-        // Personen" section, which we deliberately skip.
-        assert!(
-            !nachnames.iter().any(|n| n == "Süssmuth-Dyckerhoff"),
-            "must skip ausgeschiedene Personen, got: {nachnames:?}"
-        );
+        // The duplicate Avery Fixture clause in the second publication is
+        // removed, and the departed Legacy Removed clause is excluded.
+        assert_eq!(vornames.iter().filter(|name| *name == "Avery").count(), 1);
+        assert!(!nachnames.iter().any(|name| name == "Removed"));
 
         // All person evidence must carry Medium confidence.
         for (key, ev) in &fields {
@@ -1006,9 +986,9 @@ mod tests {
 
     #[test]
     fn strip_ft_tags_removes_zefix_markup_and_decodes_apos() {
-        let input = "<FT TYPE=\"F\">Roche &apos;Holding&apos; AG</FT>";
+        let input = "<FT TYPE=\"F\">Workjet &apos;Fixture&apos; AG</FT>";
         let out = strip_ft_tags(input);
-        assert_eq!(out, "Roche 'Holding' AG");
+        assert_eq!(out, "Workjet 'Fixture' AG");
     }
 
     #[test]

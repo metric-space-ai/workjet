@@ -781,8 +781,8 @@ mod tests {
     use crate::sources::{ResearchMode, SourceCtx};
     use std::path::Path;
 
-    const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/dnbhoovers/search_sap.json");
-    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/dnbhoovers/detail_sap.json");
+    const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/dnbhoovers/search.json");
+    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/dnbhoovers/detail.json");
 
     fn dummy_page(text: &str, url: &str) -> SourceReadResult {
         SourceReadResult {
@@ -891,21 +891,19 @@ mod tests {
     #[test]
     fn parses_search_fixture_into_hits() {
         let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
+        assert_eq!(value["candidatesMatchedQuantity"], 2);
+        assert_eq!(value["candidatesReturnedQuantity"], 2);
         let hits = parse_search_hits(&value).expect("fixture has hits");
-        assert_eq!(hits.len(), 1);
-        let sap = &hits[0];
-        assert_eq!(sap.title, "SAP SE");
-        assert_eq!(sap.url, "https://plus.dnb.com/data/duns/316840271");
-        assert!(sap.snippet.contains("DUNS 316840271"));
-        assert!(sap.snippet.contains("Walldorf"));
-        assert!(sap.snippet.contains("Prepackaged Software"));
-    }
-
-    #[test]
-    fn parses_search_fixture_caps_hits_at_max() {
-        let value: Value = serde_json::from_str(SEARCH_FIXTURE).expect("fixture json");
-        let hits = parse_search_hits(&value).expect("hits");
-        assert!(hits.len() <= MAX_HITS);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].title, "Workjet Fixture Systems GmbH");
+        assert_eq!(hits[0].url, "https://plus.dnb.com/data/duns/000000001");
+        assert_eq!(
+            hits[0].snippet,
+            "DUNS 000000001 · Beispielstadt, DE · Synthetic software fixtures"
+        );
+        assert_eq!(hits[1].title, "Workjet Example Holdings AG");
+        assert_eq!(hits[1].url, "https://plus.dnb.com/data/duns/000000002");
+        assert_eq!(hits[1].snippet, "DUNS 000000002");
     }
 
     #[test]
@@ -924,7 +922,7 @@ mod tests {
 
     #[test]
     fn extract_fields_pulls_wz_code_high() {
-        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/316840271");
+        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/000000001");
         let fields = module().extract_fields(&page);
         let wz = fields
             .iter()
@@ -932,59 +930,56 @@ mod tests {
             .expect("wz_code");
         // The fixture has BOTH SIC and NACE Rev. 2; we prefer the NACE entry
         // because that is the European equivalent of the WZ-Code.
-        assert_eq!(wz.1.value, "5820");
+        assert_eq!(wz.1.value, "6201");
         assert!(matches!(wz.1.confidence, Confidence::High));
-        assert!(wz
-            .1
-            .note
-            .as_deref()
-            .unwrap_or("")
-            .contains("NACE Revision 2"));
+        assert_eq!(
+            wz.1.note.as_deref(),
+            Some("NACE Revision 2: Fixture software development")
+        );
     }
 
     #[test]
     fn extract_fields_pulls_umsatz_high_with_currency_and_year() {
-        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/316840271");
+        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/000000001");
         let fields = module().extract_fields(&page);
         let revenue = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::Umsatz))
             .expect("umsatz");
         // EUR is preferred over USD.
-        assert_eq!(revenue.1.value, "30287000000");
+        assert_eq!(revenue.1.value, "12345678");
         assert!(matches!(revenue.1.confidence, Confidence::High));
-        let note = revenue.1.note.as_deref().unwrap_or("");
-        assert!(note.contains("EUR"), "currency note missing: {note}");
-        assert!(note.contains("FY2024"), "year note missing: {note}");
+        assert_eq!(
+            revenue.1.note.as_deref(),
+            Some("EUR · FY2024 · Consolidated")
+        );
     }
 
     #[test]
     fn extract_fields_pulls_mitarbeiter_high() {
-        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/316840271");
+        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/000000001");
         let fields = module().extract_fields(&page);
         let employees = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::Mitarbeiter))
             .expect("mitarbeiter");
-        assert_eq!(employees.1.value, "107602");
+        assert_eq!(employees.1.value, "321");
         assert!(matches!(employees.1.confidence, Confidence::High));
-        assert!(employees
-            .1
-            .note
-            .as_deref()
-            .unwrap_or("")
-            .contains("Consolidated"));
+        assert_eq!(
+            employees.1.note.as_deref(),
+            Some("Consolidated · Synthetic")
+        );
     }
 
     #[test]
     fn extract_fields_pulls_firma_email_medium() {
-        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/316840271");
+        let page = dummy_page(DETAIL_FIXTURE, "https://plus.dnb.com/data/duns/000000001");
         let fields = module().extract_fields(&page);
         let email = fields
             .iter()
             .find(|(k, _)| matches!(k, FieldKey::FirmaEmail))
             .expect("firma_email");
-        assert_eq!(email.1.value, "info@sap.com");
+        assert_eq!(email.1.value, "hello@fixture-systems.example");
         assert!(matches!(email.1.confidence, Confidence::Medium));
     }
 

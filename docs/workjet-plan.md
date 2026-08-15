@@ -240,7 +240,7 @@ Tasks:
 - [x] Place the canonical crate under `native/provider-gateway/`.
 - [ ] Rename the public package/binary from CTOX-specific names to Workjet
       provider-gateway names while retaining compatibility aliases for migration.
-- [ ] Preserve origin and per-file license headers.
+- [x] Preserve origin and per-file license headers.
 - [ ] Keep provider-neutral Track A separate from host adapters.
 - [ ] Move or recreate the conformance fixtures, differential runner, port map,
       and porting ledger.
@@ -487,10 +487,10 @@ licensing claims.
       code shared with Workjet.
 - [x] Keep the T3-derived Workjet application under MIT by selecting the MIT
       option for dual-licensed CTOX-owned components in Workjet releases.
-- [ ] Add the dual SPDX expression only to files Metric Space AI owns or
+- [x] Add the dual SPDX expression only to files Metric Space AI owns or
       controls; do not relicense third-party contributions implicitly.
 - [ ] Preserve the T3 MIT copyright and license notices.
-- [ ] Preserve CLIProxyAPI upstream MIT provenance and the license applicable to
+- [x] Preserve CLIProxyAPI upstream MIT provenance and the license applicable to
       the Rust-port modifications.
 - [ ] Preserve Greppy Apache-2.0 notices.
 - [ ] Generate a release NOTICE/source-offer inventory.
@@ -631,7 +631,7 @@ Workjet is complete only when all of the following are true:
    - [x] Wire Electron session ownership, cookies, login/logout, and refresh.
 5. [x] Prepare tree-verified, history-preserving local import branches for
        CLIProxyAPI Rust and Web Stack.
-6. [ ] Apply the dual-license policy and provenance inventory while importing
+6. [x] Apply the dual-license policy and provenance inventory while importing
        CTOX-owned code.
 7. [ ] Land the first real local orchestrator → worker flow.
 8. [ ] Land one managed CTOX instance → Business OS WebRTC launch flow.

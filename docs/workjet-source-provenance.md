@@ -75,6 +75,23 @@ name and extensive CTOX port annotations, while the Web Stack still reads
 post-import adapter/rename tasks; they are not grounds for discarding the
 verified source history.
 
+## Provider-gateway license normalization
+
+Workjet commit `a860baa4b` applies the authorized provider-gateway policy after
+the source-faithful import. Exactly 1,233 Rust files now carry
+`SPDX-License-Identifier: MIT OR AGPL-3.0-only`; the two former header forms are
+absent. Existing `Origin` and upstream-reference annotations remain in place,
+and the scaffold generator emits the same SPDX expression for future mirrors.
+
+The crate manifest declares `MIT OR AGPL-3.0-only`. The added
+`native/provider-gateway/LICENSE.AGPL-3.0-only` is byte-identical to the CTOX
+root license at the authorized source revision (SHA-256
+`0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0`).
+`LICENSE.upstream` remains unchanged at SHA-256
+`87d0eee372775bafa8bf3f3d56dcbc0d9c7e0e06b9904f076d0b0ed70d288773`.
+This normalization does not change third-party dependency licenses or replace
+the final generated NOTICE/source-offer inventory.
+
 ## Accepted CLIProxyAPI upstream pin
 
 The Rust port has a separate, machine-recorded upstream base:

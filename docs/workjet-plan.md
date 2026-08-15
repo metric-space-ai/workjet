@@ -345,6 +345,11 @@ CTOX and the T3 harness adapter consume the same tagged package.
 - [x] Supply the SQL-free immutable `WorkjetRuntimeConfigStore` and the
       compatibility `CtoxRuntimeConfigStore`; adapter-conformance and
       concurrent-isolation tests pass with the 450-Rust/43-Node full gate.
+  - [x] Bind the CTOX compatibility adapter to the one authoritative CTOX
+        runtime-config store at `runtime/ctox-runtime.sqlite3`. Commit
+        `ef91a2b6e` proves that a conflicting value in the consolidated
+        `runtime/ctox.sqlite3` core database is ignored and introduces no
+        fallback, copying, synchronization, or second configuration authority.
 - [x] Keep compatibility names for CTOX tool calls during migration while
       introducing product-neutral manifest IDs. Commits `2779a1b50` and
       `2ad459fa8` add the canonical five-tool contract and shared host API

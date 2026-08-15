@@ -372,7 +372,7 @@ pub fn bbox_to_lines(
             let same_h = approx_eq(prev.h, bbox.h, median_height.max(2.0));
             let can_merge = same_y
                 && same_h
-                && ((x_delta > -0.5 && x_delta < 0.0) || (x_delta >= 0.0 && x_delta < 0.1))
+                && ((x_delta > -0.5 && x_delta < 0.0) || (0.0..0.1).contains(&x_delta))
                 && can_merge_markup(prev.markup.as_ref(), bbox.markup.as_ref());
 
             if can_merge {
@@ -1042,10 +1042,14 @@ fn render_lines_minimal(lines: &[Vec<ProjectionTextBox>]) -> String {
                     let previous_last = previous_fragment.trim_end().chars().last();
                     let current_first = fragment.trim_start().chars().next();
                     let mut spaces = rendered_spaces_between(previous, bbox);
-                    if explicit_boundary_space {
-                        spaces = 0;
-                    } else if spaces == 1
-                        && suppress_geometry_space(previous, bbox, previous_last, current_first)
+                    if explicit_boundary_space
+                        || (spaces == 1
+                            && suppress_geometry_space(
+                                previous,
+                                bbox,
+                                previous_last,
+                                current_first,
+                            ))
                     {
                         spaces = 0;
                     }

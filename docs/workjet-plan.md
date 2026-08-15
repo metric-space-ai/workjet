@@ -344,6 +344,9 @@ CTOX and the T3 harness adapter consume the same tagged package.
         the fixture evaluator and linearization expectations only; it adds no PDF
         extraction, rendering, or visual E2E claim, and leaves `parity/**`
         unchanged under its documented LiteParse transposition boundary.
+  - [x] Normalize the PDF parser strict all-target Clippy baseline so both the
+        no-default and all-feature modes are green; algorithm parity and tests
+        remain unchanged, with no PDF visual or extraction E2E coverage claim.
   - [ ] Before public history, perform and independently verify the one-time Git
         history purge of the former imported PDF fixture corpus. The synthetic
         current tree and Cargo package exclusion do not close this publication

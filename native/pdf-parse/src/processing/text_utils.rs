@@ -14,8 +14,8 @@ pub fn clean_ocr_table_artifacts(text: &str) -> String {
     }
 
     let stripped = trimmed
-        .trim_start_matches(|c: char| matches!(c, '|' | '[' | ']' | '(' | ')' | '{' | '}'))
-        .trim_end_matches(|c: char| matches!(c, '|' | '[' | ']' | '(' | ')' | '{' | '}'))
+        .trim_start_matches(['|', '[', ']', '(', ')', '{', '}'])
+        .trim_end_matches(['|', '[', ']', '(', ')', '{', '}'])
         .trim();
 
     if NUMERICISH_RE.is_match(stripped) {

@@ -1009,7 +1009,7 @@ fn line_quality_score(line: &[TextItem]) -> i32 {
 }
 
 fn text_quality_score(text: &str) -> i32 {
-    let tokens = alpha_tokens(&text);
+    let tokens = alpha_tokens(text);
     let raw_tokens = raw_alpha_tokens(text);
     let mut score = 0_i32;
 

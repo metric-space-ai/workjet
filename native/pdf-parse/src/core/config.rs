@@ -34,17 +34,12 @@ pub struct LiteParseConfigOverrides {
     pub password: Option<Option<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
+    #[default]
     Json,
     Text,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        Self::Json
-    }
 }
 
 impl Default for LiteParseConfig {

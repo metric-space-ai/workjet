@@ -15,6 +15,7 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
 import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
+import { WEB_SEARCH_MCP_TOOL_NAME } from "./toolkits/workjet/WebStackTool.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -168,17 +169,32 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
           },
         ],
         [
-          "missing-cwd-token",
+          "greppy-missing-cwd-token",
           {
             ...invocation,
             activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
           },
         ],
         [
-          "visible-token",
+          "greppy-only-token",
           {
             ...invocation,
             activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
+            cwd: "/workspace/project",
+          },
+        ],
+        [
+          "web-search-only-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["web-search"]),
+          },
+        ],
+        [
+          "both-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy", "web-search"]),
             cwd: "/workspace/project",
           },
         ],
@@ -259,14 +275,25 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
       });
 
       const hidden = yield* listTools("hidden-token");
-      const missingCwd = yield* listTools("missing-cwd-token");
-      const visible = yield* listTools("visible-token");
+      const greppyMissingCwd = yield* listTools("greppy-missing-cwd-token");
+      const greppyOnly = yield* listTools("greppy-only-token");
+      const webSearchOnly = yield* listTools("web-search-only-token");
+      const both = yield* listTools("both-token");
 
       expect(hidden).not.toContain(GREPPY_MCP_TOOL_NAME);
-      expect(missingCwd).not.toContain(GREPPY_MCP_TOOL_NAME);
-      expect(visible).toContain(GREPPY_MCP_TOOL_NAME);
+      expect(hidden).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      expect(greppyMissingCwd).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(greppyMissingCwd).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      expect(greppyOnly).toContain(GREPPY_MCP_TOOL_NAME);
+      expect(greppyOnly).not.toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      expect(webSearchOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(webSearchOnly).toContain(WEB_SEARCH_MCP_TOOL_NAME);
+      expect(both).toContain(GREPPY_MCP_TOOL_NAME);
+      expect(both).toContain(WEB_SEARCH_MCP_TOOL_NAME);
       expect(hidden).toContain("preview_status");
-      expect(visible).toContain("preview_status");
+      expect(greppyOnly).toContain("preview_status");
+      expect(webSearchOnly).toContain("preview_status");
+      expect(both).toContain("preview_status");
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

@@ -24,6 +24,8 @@ import {
 } from "./toolkits/preview/tools.ts";
 import * as GreppySearch from "./toolkits/workjet/GreppySearch.ts";
 import { WorkjetToolkitRegistrationLive } from "./toolkits/workjet/GreppyTool.ts";
+import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
+import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -218,8 +220,9 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
-const ProductionWorkjetToolkitRegistrationLive = WorkjetToolkitRegistrationLive.pipe(
-  Layer.provide(GreppySearch.layer),
+const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
+  WorkjetToolkitRegistrationLive.pipe(Layer.provide(GreppySearch.layer)),
+  WebStackToolkitRegistrationLive.pipe(Layer.provide(WebStackSearch.layer)),
 );
 
 const McpTransportLive = McpServer.layerHttp({

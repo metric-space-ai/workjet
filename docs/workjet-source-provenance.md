@@ -69,11 +69,12 @@ the only private-key marker is an expected assertion against generated test
 output in `internal/auth/vertex/keyutil.rs`.
 
 The import branches are intentionally source-faithful, not already
-product-neutral. The provider crate still uses the `ctox-cliproxyapi` package
-name and extensive CTOX port annotations, while the Web Stack still reads
-`runtime/ctox.sqlite3` directly in `src/runtime_config.rs`. Those are explicit
-post-import adapter/rename tasks; they are not grounds for discarding the
-verified source history.
+product-neutral. At the import boundary the provider crate still used the
+`ctox-cliproxyapi` package name and extensive CTOX port annotations, while the
+Web Stack still reads `runtime/ctox.sqlite3` directly in
+`src/runtime_config.rs`. The provider identity normalization is recorded below;
+the Web Stack configuration adapter remains post-import work. Neither task is
+grounds for discarding the verified source history.
 
 ## Provider-gateway license normalization
 
@@ -91,6 +92,23 @@ root license at the authorized source revision (SHA-256
 `87d0eee372775bafa8bf3f3d56dcbc0d9c7e0e06b9904f076d0b0ed70d288773`.
 This normalization does not change third-party dependency licenses or replace
 the final generated NOTICE/source-offer inventory.
+
+## Provider-gateway Workjet identity
+
+Workjet commit `e46180c91` makes `workjet-provider-gateway` the canonical Cargo
+package and server binary and changes the canonical Rust crate identifier to
+`workjet_provider_gateway`. Active differential and test scripts address the
+new package name. A behavior-identical `cliproxy-server` binary remains as a
+migration alias; both binaries resolve to the same typed server entrypoint and
+produce identical help output and exit status.
+
+The package rename deliberately leaves the existing
+`ctox-cliproxyapi-plugin-handshake-v1`, `ctox-cliproxyapi-plugin-pipe-v1`, and
+Windows named-pipe prefix unchanged. These are compatibility wire identifiers,
+not public package identity. Commit `0cbb6c883` removes a broad temporary Clippy
+allowance and applies five local, behavior-preserving Rust 1.97 cleanups. The
+post-normalization library gate passes 2,509 tests with zero failures and three
+ignored tests; all-target Clippy is warning-free.
 
 ## Accepted CLIProxyAPI upstream pin
 

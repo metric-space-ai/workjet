@@ -238,7 +238,7 @@ Tasks:
   - [x] Merge the prepared history under `native/provider-gateway/` without
         changing its verified source tree.
 - [x] Place the canonical crate under `native/provider-gateway/`.
-- [ ] Rename the public package/binary from CTOX-specific names to Workjet
+- [x] Rename the public package/binary from CTOX-specific names to Workjet
       provider-gateway names while retaining compatibility aliases for migration.
 - [x] Preserve origin and per-file license headers.
 - [ ] Keep provider-neutral Track A separate from host adapters.

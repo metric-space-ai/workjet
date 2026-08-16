@@ -492,7 +492,9 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         popup/navigation handling.
   - [x] Port the short-lived launch-token exchange for a selected managed
         ctox.dev instance without exposing the token to the renderer.
-  - [ ] Port in-guest launch-token rotation and refresh.
+  - [x] Port the in-guest managed-capability retry: a parameterless, isolated
+        preload event revalidates entitlement and consumes a fresh one-time
+        launch contract without exposing it to the renderer.
 - [ ] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
@@ -630,14 +632,19 @@ generated notices remains a release gate.
 
 ## 14. Upstream maintenance strategy
 
-- [ ] Keep `upstream/main` configured and fetch it regularly.
+- [x] Keep `upstream/main` configured and fetch it regularly.
 - [ ] Maintain a short, ordered Workjet patch stack: contracts, orchestration,
       capabilities, provider integration, CTOX services, shell UI, branding.
 - [ ] Prefer additive files and adapters over invasive rewrites of T3 core.
 - [ ] Avoid changing internal T3 identifiers that are not user-visible.
 - [ ] Rebase or merge upstream at the end of every completed wave and run the
       affected regression suite.
-- [ ] Track conflicts and recurring upstream hot spots in this document.
+- [x] Track conflicts and recurring upstream hot spots in this document.
+  - [ ] Reconnect sanitized Workjet baseline `39d3a27d3` to its tree-identical
+        public T3 baseline `6ae44b418` before a normal merge or pull request;
+        the current 225-commit downstream stack has no Git ancestry link.
+  - [ ] Reconcile the Workjet patch stack with refreshed `upstream/main`
+        `d484735c6` and record recurring conflicts after the first replay.
 - [ ] Contribute generally useful, non-Workjet-specific fixes upstream where
       practical.
 - [ ] Never commit `.deps`, build output, local databases, credentials, or

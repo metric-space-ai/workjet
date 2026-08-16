@@ -12,10 +12,12 @@ import {
   CtoxPairingInviteImportInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
+import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as IpcChannels from "../channels.ts";
@@ -150,7 +152,9 @@ export const importManualPairing: DesktopIpc.DesktopIpcMethod<
 
 export const removePairedInstance: DesktopIpc.DesktopIpcMethod<
   never,
-  CtoxInstanceRegistry.CtoxInstanceRegistry
+  | CtoxElectronSessions.CtoxElectronSessions
+  | CtoxGuestManager.CtoxGuestManager
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
 > = {
   channel: IpcChannels.CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL,
   handler: (raw) =>
@@ -165,14 +169,30 @@ export const removePairedInstance: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry
+      const removal = yield* registry
         .removePairedInstance(input.value.instanceId)
         .pipe(Effect.result);
+      if (Result.isFailure(removal)) {
+        return yield* encodeSafe(CtoxPairedInstanceRemoveResult, {
+          _tag: "failed",
+          code: removal.failure.code,
+        });
+      }
+
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+      const cleanup = yield* Effect.exit(
+        Effect.gen(function* () {
+          const deactivation = yield* guests.deactivateInstance(removal.success.id);
+          if (deactivation._tag !== "completed") return yield* Effect.fail(undefined);
+          yield* sessions.clearInstance(removal.success);
+        }),
+      );
       return yield* encodeSafe(
         CtoxPairedInstanceRemoveResult,
-        Result.isSuccess(result)
+        Exit.isSuccess(cleanup)
           ? { _tag: "completed" }
-          : { _tag: "failed", code: result.failure.code },
+          : { _tag: "failed", code: "persistence_failed" },
       );
     }),
 };
@@ -223,6 +243,7 @@ export const setGuestBounds: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager
 
 type CtoxIpcServices =
   | CtoxDevAuth.CtoxDevAuth
+  | CtoxElectronSessions.CtoxElectronSessions
   | CtoxGuestManager.CtoxGuestManager
   | CtoxInstanceRegistry.CtoxInstanceRegistry;
 

@@ -205,7 +205,7 @@ export class CtoxInstanceRegistry extends Context.Service<
     ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
     readonly removePairedInstance: (
       instanceId: string,
-    ) => Effect.Effect<void, CtoxInstanceRegistryError>;
+    ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
     /** Main-process-only launch resolution; its secret-bearing result never crosses IPC. */
     readonly resolvePairedLaunch: (
       instanceId: string,
@@ -1081,12 +1081,18 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           if (!instanceId.startsWith("paired:")) {
             return yield* registryError("managed_not_removable");
           }
+          if (!/^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(instanceId)) {
+            return yield* registryError("not_found");
+          }
           const [publicDocument, secretDocument] = yield* Effect.all([
             readPublicDocument(fileSystem, publicRegistryPath),
             readSecretDocument(fileSystem, secretRegistryPath),
           ]);
           yield* assertRegistryConsistency(publicDocument, secretDocument);
-          if (!publicDocument.instances.some((instance) => instance.id === instanceId)) {
+          const descriptor = publicDocument.instances.find(
+            (instance) => instance.id === instanceId,
+          );
+          if (descriptor === undefined || !isSafePersistedPairedInstance(descriptor)) {
             return yield* registryError("not_found");
           }
 
@@ -1100,6 +1106,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             version: REGISTRY_VERSION,
             records: secretDocument.records.filter((record) => record.id !== instanceId),
           });
+          return descriptor;
         }),
       ),
   });

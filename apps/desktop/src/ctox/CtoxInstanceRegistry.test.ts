@@ -543,6 +543,61 @@ describe("CtoxInstanceRegistry", () => {
     },
   );
 
+  it.effect("returns and removes the validated stored descriptor even after pairing expiry", () => {
+    let now = NOW;
+    const { memory, registry } = registryHarness({ nowEpochMs: () => now });
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const stored = yield* service.importManualPairing(manualPairing);
+      now = NOW + 60_000;
+
+      const merged = yield* service.merge({ _tag: "signed_out" });
+      assert.equal(merged._tag, "ready");
+      if (merged._tag === "ready") {
+        assert.equal(merged.instances[0]?.status, "pairing_expired");
+      }
+
+      const removed = yield* service.removePairedInstance(stored.id);
+      assert.deepEqual(removed, stored);
+      assert.equal(removed.status, "paired");
+      assert.notInclude(encodeUnknownJson(removed), "raw-room-secret");
+      assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", stored.id);
+      assert.notInclude(memory.files.get("/state/ctox/secrets.json") ?? "", stored.id);
+    });
+  });
+
+  it.effect("rejects malformed ids and corrupted persisted removal descriptors", () => {
+    const { memory, registry } = registryHarness();
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const stored = yield* service.importManualPairing(manualPairing);
+
+      assert.equal(
+        failureCode(yield* Effect.result(service.removePairedInstance("managed:tenant"))),
+        "managed_not_removable",
+      );
+      assert.equal(
+        failureCode(
+          yield* Effect.result(service.removePairedInstance("paired:manual_pairing:malformed")),
+        ),
+        "not_found",
+      );
+
+      const publicDocument = decodeUnknownJson(
+        memory.files.get("/state/ctox/instances.json") ?? "{}",
+      ) as { instances: Array<{ status: string }> };
+      const descriptor = publicDocument.instances[0];
+      assert.isDefined(descriptor);
+      descriptor.status = "pairing_expired";
+      memory.files.set("/state/ctox/instances.json", `${encodeUnknownJson(publicDocument)}\n`);
+
+      const corrupted = yield* Effect.result(service.removePairedInstance(stored.id));
+      assert.equal(failureCode(corrupted), "persistence_failed");
+      assert.include(memory.files.get("/state/ctox/instances.json") ?? "", stored.id);
+      assert.include(memory.files.get("/state/ctox/secrets.json") ?? "", stored.id);
+    });
+  });
+
   it.effect("marks a stored capability expired using the injected clock", () => {
     let now = NOW;
     const { registry } = registryHarness({ nowEpochMs: () => now });

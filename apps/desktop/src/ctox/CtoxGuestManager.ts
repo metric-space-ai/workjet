@@ -104,6 +104,7 @@ export class CtoxGuestManager extends Context.Service<
       bounds: CtoxGuestBounds,
     ) => Effect.Effect<CtoxManagedGuestResult>;
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
+    readonly deactivateInstance: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
     readonly setBounds: (bounds: CtoxGuestBounds) => Effect.Effect<CtoxManagedActionResult>;
   }
 >()("@t3tools/desktop/ctox/CtoxGuestManager") {}
@@ -294,6 +295,17 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return [{ _tag: "completed" }, undefined] as const;
       }),
     );
+
+    const deactivateInstance = (instanceId: string) =>
+      SynchronizedRef.modifyEffect(activeRef, (active) =>
+        Effect.sync(() => {
+          if (active?.instanceId !== instanceId) {
+            return [{ _tag: "completed" }, active] as const;
+          }
+          destroyGuest(active);
+          return [{ _tag: "completed" }, undefined] as const;
+        }),
+      );
 
     yield* Effect.addFinalizer(() => deactivate.pipe(Effect.asVoid));
 
@@ -487,7 +499,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
-    return CtoxGuestManager.of({ activate, deactivate, setBounds });
+    return CtoxGuestManager.of({ activate, deactivate, deactivateInstance, setBounds });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 
 export const layer = (options: CtoxGuestManagerOptions = {}) =>

@@ -267,6 +267,34 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("deactivates only an exactly matching active instance", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.activate(descriptor.id, bounds);
+
+      assert.deepEqual(yield* manager.deactivateInstance(pairedDescriptor.id), {
+        _tag: "completed",
+      });
+      expect(harness.views[0]?.close).not.toHaveBeenCalled();
+      assert.deepEqual(yield* manager.setBounds({ ...bounds, width: 900 }), {
+        _tag: "completed",
+      });
+
+      assert.deepEqual(yield* manager.deactivateInstance(descriptor.id), {
+        _tag: "completed",
+      });
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      assert.deepEqual(yield* manager.deactivateInstance(descriptor.id), {
+        _tag: "completed",
+      });
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("launches paired guests while ctox.dev is signed out or failed", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };

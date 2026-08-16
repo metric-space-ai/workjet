@@ -622,9 +622,24 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
 - local daemon and bundled-runtime smoke;
 - SSH password, host-key, attach, install, rotate, and revoke smokes;
 - packaged-app and signed-artifact smokes on supported platforms.
-  - [x] Add a cross-platform `T3CODE_DESKTOP_APP_DATA_DIR` override so packaged
-        smokes isolate Workjet/Electron `userData` under `/Volumes/tmp` without
-        repurposing `HOME` or touching the operator's normal desktop profile.
+  - [x] Add a cross-platform `T3CODE_DESKTOP_APP_DATA_DIR` override so all
+        app-managed `userData` resolution can target `/Volumes/tmp` without
+        repurposing `HOME`.
+  - [ ] Pass the same isolated path as Electron's startup
+        `--user-data-dir=<root>/t3code` in the packaged-smoke launcher and
+        assert it on child processes. A real packaged run proved that the GPU
+        process may start before Workjet calls `app.setPath`, so the environment
+        override alone is not a complete normal-profile isolation guarantee.
+  - [x] Build a real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp` from
+        the staged packaged layout. Omit `workspace:` dependencies from the
+        staged server runtime manifest because those Workjet packages are
+        already inlined in the server bundle; retain catalog dependency
+        resolution and its focused regression test.
+  - [ ] Make the isolated staged production install consume the repository's
+        locked resolutions (or an equivalently pinned generated lock) instead
+        of re-resolving package ranges from the network. The successful retry
+        still resolved a newer `@anthropic-ai/claude-agent-sdk` than the root
+        lock before Electron Builder ran.
   - [ ] Run the paired packaged-app smoke against the operator-selected real
         CTOX instance. Temporary Workjet profiles and invite files stay under
         `/Volumes/tmp`, but the smoke must not override `CTOX_ROOT`,
@@ -632,13 +647,21 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
   - [ ] Capture the browser peer ID only from the live WebRTC signaling
         handshake or another non-persistent runtime diagnostic, keep it out of
         logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
+    - [ ] Add a bounded CTOX advanced-status field for the browser's own live
+          signaling peer ID, populated only after the `init.yourPeerId`
+          handshake and never persisted or logged. The packaged Electron
+          `WebContentsView` changes renderer targets during navigation, so an
+          external CDP listener attached at view creation cannot reliably
+          observe that first frame; rejected smoke drafts must not replace this
+          with a broad browser-target hook, synthetic CTOX roots, or durable
+          test IPC.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
 `e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, `31fe2c70e`,
-`483df6064`, `a640dad00`, and `4dc74c432`; CTOX shell commits `aa7d64c22`,
+`483df6064`, `a640dad00`, `4dc74c432`, and `8672548b4`; CTOX shell commits `aa7d64c22`,
 `967043561`, and `144f4ddef`): 100 focused CTOX/registry/IPC/guest/UI tests,
 7 desktop-environment tests, 233 scripts tests, desktop/web/scripts typechecks,
-formatting, and `git diff --check` pass.
+36 focused desktop-artifact tests, formatting, and `git diff --check` pass.
 The real `business-os-shell-v0.1.0-rc.1` release was downloaded, verified, and
 revalidated from an ignored `.deps/` symlink backed by `/Volumes/tmp`; a real
 runtime integration test served that release successfully on loopback. Workjet
@@ -649,13 +672,20 @@ guest detachment and main-derived partition cleanup, including the partial
 registry-write failure path. This evidence does not yet cover a packaged
 Electron guest observing the native CTOX peer, packaged ready/revoked
 transitions or packaged partition deletion, local, SSH, or platform keychain
-parity. The packaged test can now isolate both Workjet state and Electron
-`userData` under `/Volumes/tmp`; an abandoned first smoke draft incorrectly
-isolated the CTOX CLI roots as well and is explicitly not accepted because it
-would test a synthetic empty instance instead of the selected closed CTOX
-instance. Independent Kimi review remains deferred because the required review
-provider is unavailable; adversarial self-review additionally caught and fixed
-cleanup being skipped after a partial registry removal.
+parity. The packaged test can now direct Workjet state and app-managed Electron
+`userData` under `/Volumes/tmp`, and the real unsigned macOS arm64 DMG/ZIP now
+build from the staged layout after removing bundled `workspace:` packages from
+the staged production manifest. Live packaged pairing reached the real selected
+CTOX instance without rewriting any CTOX root, but the external CDP capture
+stayed attached to Electron's pre-navigation target and could not observe the
+guest's first signaling frame. Those smoke drafts were removed rather than
+claiming revoke/recovery coverage. The run also proved that Electron's early GPU
+process needs an explicit `--user-data-dir` in addition to the app-level
+environment override. An earlier draft that pointed CTOX roots at a synthetic
+empty instance remains explicitly rejected. Independent Kimi review remains
+deferred because the required review provider is unavailable; adversarial
+self-review additionally caught and fixed cleanup being skipped after a partial
+registry removal.
 
 ## 11. Wave 8 — retire the standalone CTOX Desktop project
 
@@ -868,13 +898,26 @@ Workjet is complete only when all of the following are true:
 12. [ ] Run the packaged Electron paired-guest smoke against a real native CTOX
         peer and verify ready/revoked transitions plus the now-implemented
         partition cleanup in packaged runtime behavior.
-    - [x] Isolate packaged Workjet state and Electron `userData` beneath an
-          explicit `/Volumes/tmp` root without changing `HOME`.
-    - [ ] Keep the real CTOX instance selection intact; do not point CTOX roots
+    - [x] Add the app-level packaged Workjet state and Electron `userData`
+          override beneath an explicit `/Volumes/tmp` root without changing
+          `HOME`.
+    - [ ] Add the matching Electron startup `--user-data-dir` argument so even
+          pre-`app.setPath` GPU/network initialization is isolated, then assert
+          every packaged child process stays under the disposable profile.
+    - [x] Keep the real CTOX instance selection intact; do not point CTOX roots
           at the disposable Workjet smoke profile.
-    - [ ] Capture the ephemeral browser peer ID in memory, prove native
-          revoke/unrevoke and recovery, and leave no revocation behind on any
-          failure or signal path.
+    - [ ] Expose the browser's handshake-assigned peer ID through a bounded,
+          non-persistent CTOX advanced-status diagnostic; external CDP capture
+          does not survive the packaged WebContentsView's navigation target
+          swap reliably.
+    - [ ] Capture that ephemeral peer ID in memory, prove native revoke,
+          guaranteed-first unrevoke, healthy recovery, pairing removal, and
+          same-partition cookie/localStorage/CacheStorage deletion, and leave no
+          revocation behind on any failure or signal path.
+    - [x] Build the real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp`
+          from the packaged staging layout.
+    - [ ] Pin the staged production dependency install to repository lock
+          resolutions before treating packaged builds as reproducible/offline.
 13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
 14. [ ] Complete durable local orchestration semantics, then add authenticated

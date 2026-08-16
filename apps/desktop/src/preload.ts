@@ -150,6 +150,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     refresh: () => ipcRenderer.invoke(IpcChannels.CTOX_REFRESH_CHANNEL),
     login: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGIN_CHANNEL),
     logout: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGOUT_CHANNEL),
+    importInvite: (invite) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_INVITE_CHANNEL, { invite }),
+    importManualPairing: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_MANUAL_PAIRING_CHANNEL, input),
+    removePairedInstance: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL, { instanceId }),
     activate: (instanceId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
     deactivate: () => ipcRenderer.invoke(IpcChannels.CTOX_DEACTIVATE_CHANNEL),

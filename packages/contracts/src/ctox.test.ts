@@ -3,17 +3,25 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import {
+  CtoxDiscoveryResult,
   CtoxGuestBounds,
   CtoxManagedActivationInput,
   CtoxManagedDiscoveryResult,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
   CtoxManagedInstanceHealth,
+  CtoxManualPairingImportInput,
+  CtoxPairedInstanceImportResult,
+  CtoxPairedInstanceMutationFailureCode,
+  CtoxPairedInstanceRemoveInput,
+  CtoxPairingInviteImportInput,
 } from "./ctox.ts";
 
 const decodeInstance = Schema.decodeUnknownSync(CtoxManagedInstance);
 const decodeHealth = Schema.decodeUnknownSync(CtoxManagedInstanceHealth);
-const decodeDiscoveryResult = Schema.decodeUnknownSync(CtoxManagedDiscoveryResult);
+const decodeManagedDiscovery = Schema.decodeUnknownSync(CtoxManagedDiscoveryResult);
+const decodeDiscovery = Schema.decodeUnknownSync(CtoxDiscoveryResult);
+const control = String.fromCharCode(0);
 
 const validInstance = {
   id: "managed:tenant_skf",
@@ -30,33 +38,53 @@ const validInstance = {
   },
 } as const;
 
+const validManualPairing = {
+  displayName: "Office Business OS",
+  instanceId: "office-1",
+  syncRoom: "ctox-business-os:office-1",
+  signalingUrls: ["wss://signal.example.com/room"],
+  roomSecret: "room-secret",
+  capabilityToken: "capability-token",
+  capabilityExpiresAtMs: 1_900_000_000_000,
+  role: "admin",
+  userId: "user-1",
+} as const;
+
 describe("CTOX renderer contracts", () => {
-  it("decodes a renderer-safe managed instance and ready discovery result", () => {
+  it("decodes renderer-safe managed and paired descriptors", () => {
     expect(decodeInstance(validInstance)).toEqual(validInstance);
-    expect(decodeDiscoveryResult({ _tag: "ready", instances: [validInstance] })).toEqual({
-      _tag: "ready",
-      instances: [validInstance],
+    const paired = decodeInstance({
+      ...validInstance,
+      id: "paired:manual_pairing:stable",
+      source: "manual_pairing",
+      status: "paired",
+      healthSummary: {
+        dataPlane: "rxdb-webrtc",
+        dataPlaneReady: false,
+        httpDataProxy: false,
+        nativePeerObserved: false,
+      },
     });
+    expect(paired.source).toBe("manual_pairing");
+    expect(paired.status).toBe("paired");
   });
 
-  it.each(["ctox_dev", "local_daemon", "ssh_managed", "pairing_invite"])(
+  it.each(["ctox_dev", "local_daemon", "ssh_managed", "pairing_invite", "manual_pairing"])(
     "accepts source %s",
-    (source) => {
-      expect(
-        decodeInstance({
-          ...validInstance,
-          source,
-        }).source,
-      ).toBe(source);
-    },
+    (source) => expect(decodeInstance({ ...validInstance, source }).source).toBe(source),
   );
 
-  it.each(["available", "offline", "needs_auth", "pairing_expired", "installing", "error"])(
-    "accepts status %s",
-    (status) => {
-      expect(decodeInstance({ ...validInstance, status }).status).toBe(status);
-    },
-  );
+  it.each([
+    "available",
+    "offline",
+    "needs_auth",
+    "pairing_expired",
+    "paired",
+    "installing",
+    "error",
+  ])("accepts status %s", (status) => {
+    expect(decodeInstance({ ...validInstance, status }).status).toBe(status);
+  });
 
   it("rejects unsupported source and status values", () => {
     expect(() => decodeInstance({ ...validInstance, source: "remote_harness" })).toThrow();
@@ -70,8 +98,8 @@ describe("CTOX renderer contracts", () => {
 
   it("rejects unbounded, control-bearing, and unsafe optional renderer text", () => {
     expect(() => decodeInstance({ ...validInstance, id: "a".repeat(513) })).toThrow();
-    expect(() => decodeInstance({ ...validInstance, id: "bad\u0000id" })).toThrow();
-    expect(() => decodeInstance({ ...validInstance, displayName: "bad\u0000name" })).toThrow();
+    expect(() => decodeInstance({ ...validInstance, id: `bad${control}id` })).toThrow();
+    expect(() => decodeInstance({ ...validInstance, displayName: `bad${control}name` })).toThrow();
     expect(() => decodeInstance({ ...validInstance, displayName: "a".repeat(257) })).toThrow();
     expect(() => decodeInstance({ ...validInstance, role: "a".repeat(129) })).toThrow();
     expect(() =>
@@ -79,19 +107,101 @@ describe("CTOX renderer contracts", () => {
     ).toThrow();
   });
 
-  it("strips session partitions, tenant launch ids, tokens, URLs, and packed configs", () => {
+  it("strips all non-public pairing and launch metadata", () => {
     const decoded = decodeInstance({
       ...validInstance,
+      userDisplayName: "Private User",
+      pairingConfig: { syncRoom: "secret-room" },
       sessionPartition: "persist:server-controlled",
       tenantId: "tenant_skf",
       token: "secret",
       launchUrl: "https://ctox.dev/?token=secret",
-      ctox_config: "packed-secret",
+      ciphertext: "encrypted-secret",
     });
 
     expect(decoded).toEqual(validInstance);
     expect(JSON.stringify(decoded)).not.toContain("secret");
     expect(JSON.stringify(decoded)).not.toContain("partition");
+    expect(JSON.stringify(decoded)).not.toContain("Private User");
+  });
+
+  it("keeps raw managed discovery separate from unified merged discovery", () => {
+    expect(decodeManagedDiscovery({ _tag: "ready", instances: [validInstance] })).toEqual({
+      _tag: "ready",
+      instances: [validInstance],
+    });
+    expect(
+      decodeDiscovery({
+        _tag: "ready",
+        instances: [validInstance],
+        managedState: "failed",
+        managedFailureCode: "network_error",
+      }),
+    ).toEqual({
+      _tag: "ready",
+      instances: [validInstance],
+      managedState: "failed",
+      managedFailureCode: "network_error",
+    });
+    expect(decodeDiscovery({ _tag: "signed_out" })).toEqual({ _tag: "signed_out" });
+    expect(decodeDiscovery({ _tag: "failed", code: "http_error", httpStatus: 503 })).toEqual({
+      _tag: "failed",
+      code: "http_error",
+      httpStatus: 503,
+    });
+  });
+
+  it("bounds the renderer-facing instance collection", () => {
+    expect(() =>
+      decodeDiscovery({
+        _tag: "ready",
+        instances: Array.from({ length: 1_001 }, () => validInstance),
+      }),
+    ).toThrow();
+  });
+
+  it("bounds invite and manual pairing inputs and rejects controls or invalid rooms", () => {
+    const decodeInvite = Schema.decodeUnknownSync(CtoxPairingInviteImportInput);
+    const decodeManual = Schema.decodeUnknownSync(CtoxManualPairingImportInput);
+    expect(decodeInvite({ invite: "{}" })).toEqual({ invite: "{}" });
+    expect(() => decodeInvite({ invite: "x".repeat(65_537) })).toThrow();
+    expect(decodeManual(validManualPairing)).toEqual(validManualPairing);
+    expect(() =>
+      decodeManual({ ...validManualPairing, displayName: `bad${control}name` }),
+    ).toThrow();
+    expect(() => decodeManual({ ...validManualPairing, syncRoom: "other:office-1" })).toThrow();
+    expect(() =>
+      decodeManual({ ...validManualPairing, signalingUrls: Array(17).fill("wss://signal.test") }),
+    ).toThrow();
+    expect(() => decodeManual({ ...validManualPairing, capabilityExpiresAtMs: 1.5 })).toThrow();
+  });
+
+  it("defines exact mutation failure codes and strips secrets from IPC results", () => {
+    const decodeCode = Schema.decodeUnknownSync(CtoxPairedInstanceMutationFailureCode);
+    for (const code of [
+      "invalid_input",
+      "invalid_invite",
+      "unsafe_secret_storage",
+      "persistence_failed",
+      "not_found",
+      "managed_not_removable",
+    ] as const) {
+      expect(decodeCode(code)).toBe(code);
+    }
+    expect(() => decodeCode("invalid_pairing")).toThrow();
+
+    const decoded = Schema.decodeUnknownSync(CtoxPairedInstanceImportResult)({
+      _tag: "completed",
+      instance: { ...validInstance, roomSecret: "secret", signalingUrls: ["wss://secret"] },
+      capabilityToken: "secret",
+    });
+    expect(decoded).toEqual({ _tag: "completed", instance: validInstance });
+    expect(JSON.stringify(decoded)).not.toContain("secret");
+    expect(
+      Schema.decodeUnknownSync(CtoxPairedInstanceRemoveInput)({
+        instanceId: "paired:manual_pairing:stable",
+      }),
+    ).toEqual({ instanceId: "paired:manual_pairing:stable" });
   });
 
   it("accepts only finite nonnegative integer guest bounds and stable-id activation", () => {
@@ -109,40 +219,13 @@ describe("CTOX renderer contracts", () => {
   });
 
   it("keeps guest activation results free of launch data", () => {
-    const decodeGuestResult = Schema.decodeUnknownSync(CtoxManagedGuestResult);
     expect(
-      decodeGuestResult({
+      Schema.decodeUnknownSync(CtoxManagedGuestResult)({
         _tag: "ready",
         instanceId: validInstance.id,
         launchUrl: "https://ctox.dev/?ctox_config=secret",
         token: "secret",
       }),
     ).toEqual({ _tag: "ready", instanceId: validInstance.id });
-  });
-
-  it("decodes only explicit signed-out, ready, and redacted failure states", () => {
-    expect(decodeDiscoveryResult({ _tag: "signed_out" })).toEqual({ _tag: "signed_out" });
-    expect(decodeDiscoveryResult({ _tag: "failed", code: "http_error", httpStatus: 503 })).toEqual({
-      _tag: "failed",
-      code: "http_error",
-      httpStatus: 503,
-    });
-    expect(
-      decodeDiscoveryResult({
-        _tag: "failed",
-        code: "http_error",
-        httpStatus: 503,
-        responseBody: "secret",
-      }),
-    ).toEqual({ _tag: "failed", code: "http_error", httpStatus: 503 });
-  });
-
-  it("bounds the renderer-facing instance collection", () => {
-    expect(() =>
-      decodeDiscoveryResult({
-        _tag: "ready",
-        instances: Array.from({ length: 1_001 }, () => validInstance),
-      }),
-    ).toThrow();
   });
 });

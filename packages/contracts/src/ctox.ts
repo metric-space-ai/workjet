@@ -38,6 +38,7 @@ export const CtoxManagedInstanceSource = Schema.Literals([
   "local_daemon",
   "ssh_managed",
   "pairing_invite",
+  "manual_pairing",
 ]);
 export type CtoxManagedInstanceSource = typeof CtoxManagedInstanceSource.Type;
 
@@ -46,6 +47,7 @@ export const CtoxManagedInstanceStatus = Schema.Literals([
   "offline",
   "needs_auth",
   "pairing_expired",
+  "paired",
   "installing",
   "error",
 ]);
@@ -96,10 +98,10 @@ const CtoxManagedDiscoveryHttpStatus = Schema.Int.check(
  * Complete, IPC-safe discovery state. Failures expose only a fixed code and an
  * optional HTTP status: never a response body, thrown cause, URL, or payload.
  */
+const CtoxDiscoveryInstances = Schema.Array(CtoxManagedInstance).check(Schema.isMaxLength(1_000));
+
 export const CtoxManagedDiscoveryResult = Schema.Union([
-  Schema.TaggedStruct("ready", {
-    instances: Schema.Array(CtoxManagedInstance).check(Schema.isMaxLength(1_000)),
-  }),
+  Schema.TaggedStruct("ready", { instances: CtoxDiscoveryInstances }),
   Schema.TaggedStruct("signed_out", {}),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,
@@ -107,6 +109,88 @@ export const CtoxManagedDiscoveryResult = Schema.Union([
   }),
 ]);
 export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
+
+/** Unified managed and accountless-pairing discovery state exposed to the renderer. */
+export const CtoxDiscoveryResult = Schema.Union([
+  Schema.TaggedStruct("ready", {
+    instances: CtoxDiscoveryInstances,
+    managedState: Schema.optionalKey(Schema.Literals(["ready", "signed_out", "failed"])),
+    managedFailureCode: Schema.optionalKey(CtoxManagedDiscoveryFailureCode),
+  }),
+  Schema.TaggedStruct("signed_out", {}),
+  Schema.TaggedStruct("failed", {
+    code: CtoxManagedDiscoveryFailureCode,
+    httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+  }),
+]);
+export type CtoxDiscoveryResult = typeof CtoxDiscoveryResult.Type;
+
+const CtoxPairingInputText = TrimmedNonEmptyString.check(NoAsciiControlCharacters);
+const CtoxPairingDisplayName = CtoxPairingInputText.check(Schema.isMaxLength(256));
+const CtoxPairingInstanceIdentity = CtoxPairingInputText.check(
+  Schema.isMaxLength(256),
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/),
+);
+const CtoxPairingSyncRoom = CtoxPairingInputText.check(
+  Schema.isMaxLength(273),
+  Schema.isPattern(/^ctox-business-os:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/),
+);
+const CtoxPairingSignalingUrl = CtoxPairingInputText.check(Schema.isMaxLength(2_048));
+const CtoxPairingRoomSecret = CtoxPairingInputText.check(Schema.isMaxLength(4_096));
+const CtoxPairingCapabilityToken = CtoxPairingInputText.check(Schema.isMaxLength(16_384));
+const CtoxPairingUserId = CtoxPairingInputText.check(Schema.isMaxLength(256));
+const CtoxPairingExpirationMs = Schema.Int.check(Schema.isGreaterThan(0));
+
+/** A bounded raw invite JSON document or CTOX desktop invite link. */
+export const CtoxPairingInviteImportInput = Schema.Struct({
+  invite: Schema.String.check(Schema.isMaxLength(65_536)),
+});
+export type CtoxPairingInviteImportInput = typeof CtoxPairingInviteImportInput.Type;
+
+/** Manual WebRTC pairing input. Secret-bearing fields are main-process only. */
+export const CtoxManualPairingImportInput = Schema.Struct({
+  displayName: CtoxPairingDisplayName,
+  instanceId: Schema.optionalKey(CtoxPairingInstanceIdentity),
+  syncRoom: CtoxPairingSyncRoom,
+  signalingUrls: Schema.Array(CtoxPairingSignalingUrl).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(16),
+  ),
+  roomSecret: CtoxPairingRoomSecret,
+  capabilityToken: Schema.optionalKey(CtoxPairingCapabilityToken),
+  capabilityExpiresAtMs: Schema.optionalKey(CtoxPairingExpirationMs),
+  role: Schema.optionalKey(CtoxManagedInstanceRole),
+  userId: Schema.optionalKey(CtoxPairingUserId),
+});
+export type CtoxManualPairingImportInput = typeof CtoxManualPairingImportInput.Type;
+
+export const CtoxPairedInstanceRemoveInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+});
+export type CtoxPairedInstanceRemoveInput = typeof CtoxPairedInstanceRemoveInput.Type;
+
+export const CtoxPairedInstanceMutationFailureCode = Schema.Literals([
+  "invalid_input",
+  "invalid_invite",
+  "unsafe_secret_storage",
+  "persistence_failed",
+  "not_found",
+  "managed_not_removable",
+]);
+export type CtoxPairedInstanceMutationFailureCode =
+  typeof CtoxPairedInstanceMutationFailureCode.Type;
+
+export const CtoxPairedInstanceImportResult = Schema.Union([
+  Schema.TaggedStruct("completed", { instance: CtoxManagedInstance }),
+  Schema.TaggedStruct("failed", { code: CtoxPairedInstanceMutationFailureCode }),
+]);
+export type CtoxPairedInstanceImportResult = typeof CtoxPairedInstanceImportResult.Type;
+
+export const CtoxPairedInstanceRemoveResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", { code: CtoxPairedInstanceMutationFailureCode }),
+]);
+export type CtoxPairedInstanceRemoveResult = typeof CtoxPairedInstanceRemoveResult.Type;
 
 const CtoxGuestBoundCoordinate = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
@@ -147,7 +231,7 @@ export const CtoxManagedActionResult = Schema.Union([
 export type CtoxManagedActionResult = typeof CtoxManagedActionResult.Type;
 
 export const CtoxManagedLoginResult = Schema.Union([
-  Schema.TaggedStruct("completed", { discovery: CtoxManagedDiscoveryResult }),
+  Schema.TaggedStruct("completed", { discovery: CtoxDiscoveryResult }),
   Schema.TaggedStruct("cancelled", { reason: Schema.Literals(["closed", "timeout"]) }),
   Schema.TaggedStruct("failed", { code: Schema.Literal("authentication_failed") }),
 ]);

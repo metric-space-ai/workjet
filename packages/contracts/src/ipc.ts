@@ -93,11 +93,14 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings } from "./settings.ts";
 import type {
+  CtoxDiscoveryResult,
   CtoxGuestBounds,
   CtoxManagedActionResult,
-  CtoxManagedDiscoveryResult,
   CtoxManagedGuestResult,
   CtoxManagedLoginResult,
+  CtoxManualPairingImportInput,
+  CtoxPairedInstanceImportResult,
+  CtoxPairedInstanceRemoveResult,
 } from "./ctox.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -1098,9 +1101,14 @@ export interface DesktopBridge {
 }
 
 export interface DesktopCtoxBridge {
-  refresh: () => Promise<CtoxManagedDiscoveryResult>;
+  refresh: () => Promise<CtoxDiscoveryResult>;
   login: () => Promise<CtoxManagedLoginResult>;
   logout: () => Promise<CtoxManagedActionResult>;
+  importInvite: (invite: string) => Promise<CtoxPairedInstanceImportResult>;
+  importManualPairing: (
+    input: CtoxManualPairingImportInput,
+  ) => Promise<CtoxPairedInstanceImportResult>;
+  removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
   activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
   deactivate: () => Promise<CtoxManagedActionResult>;
   setGuestBounds: (bounds: CtoxGuestBounds) => Promise<CtoxManagedActionResult>;

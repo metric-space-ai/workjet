@@ -24,6 +24,7 @@ import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
+import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
@@ -184,9 +185,11 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
-const desktopCtoxControlLayer = Layer.mergeAll(CtoxDevAuth.layer(), CtoxManagedLaunch.layer()).pipe(
-  Layer.provideMerge(CtoxElectronSessions.layer),
-);
+const desktopCtoxControlLayer = Layer.mergeAll(
+  CtoxDevAuth.layer(),
+  CtoxInstanceRegistry.layer(),
+  CtoxManagedLaunch.layer(),
+).pipe(Layer.provideMerge(CtoxElectronSessions.layer));
 
 const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
 

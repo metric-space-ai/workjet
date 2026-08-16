@@ -115,10 +115,15 @@ function normalizePathname(pathname: string): string {
   return normalized || "/";
 }
 
+function stripBusinessOsPathPrefix(path: string): string {
+  if (path === "/business-os") return "/";
+  return path.startsWith("/business-os/") ? path.slice("/business-os".length) : path;
+}
+
 function isAllowedStaticAssetPath(path: string, method = "GET"): boolean {
   const normalizedMethod = method.trim().toUpperCase();
   if (normalizedMethod !== "GET" && normalizedMethod !== "HEAD") return false;
-  const assetPath = path.startsWith("/business-os/") ? path.slice("/business-os".length) : path;
+  const assetPath = stripBusinessOsPathPrefix(path);
   if (STATIC_ASSET_PATHS.has(assetPath)) return true;
   if (!STATIC_ASSET_PREFIXES.some((prefix) => assetPath.startsWith(prefix))) return false;
   const filename = assetPath.slice(assetPath.lastIndexOf("/") + 1);
@@ -160,11 +165,12 @@ export function isForbiddenCtoxDataRequest(
   }
   if (url.protocol === "http:" || url.protocol === "https:") {
     const path = normalizePathname(url.pathname);
-    if (path.startsWith("/api/business-os/") || path === "/api/business-os") {
-      if (!ALLOWED_CONTROL_PATHS.has(path)) return true;
+    const shellPath = stripBusinessOsPathPrefix(path);
+    if (shellPath.startsWith("/api/business-os/") || shellPath === "/api/business-os") {
+      if (!ALLOWED_CONTROL_PATHS.has(shellPath)) return true;
     }
-    if (path.startsWith("/rxdb/") && !path.startsWith("/rxdb/dist/")) return true;
-    if (path === "/commands" || path.startsWith("/commands/")) return true;
+    if (shellPath.startsWith("/rxdb/") && !shellPath.startsWith("/rxdb/dist/")) return true;
+    if (shellPath === "/commands" || shellPath.startsWith("/commands/")) return true;
   }
   if (!DATA_RESOURCE_TYPES.has(resourceType)) return false;
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return false;
@@ -176,7 +182,8 @@ export function isForbiddenCtoxDataRequest(
   }
   if (url.host !== launchHost) return false;
   const path = normalizePathname(url.pathname);
-  if (ALLOWED_CONTROL_PATHS.has(path) || path.startsWith("/rxdb/dist/")) return false;
+  const shellPath = stripBusinessOsPathPrefix(path);
+  if (ALLOWED_CONTROL_PATHS.has(shellPath) || shellPath.startsWith("/rxdb/dist/")) return false;
   return !isAllowedStaticAssetPath(path, method);
 }
 

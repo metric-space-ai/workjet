@@ -525,7 +525,7 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 - [ ] Use Electron `WebContentsView`, matching Workjet's current guest-view
       architecture, rather than the deprecated CTOX `BrowserView` API.
   - [x] Use a sandboxed `WebContentsView` for the managed ctox.dev guest path.
-- [ ] Give each CTOX instance a stable isolated persistent session partition.
+- [x] Give each CTOX instance a stable isolated persistent session partition.
   - [x] Derive a collision-resistant Workjet-owned partition from the exact
         source and stable instance ID; reject server-provided partitions.
   - [x] Resolve and memoize the validated partitions through Electron with a
@@ -534,15 +534,17 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         to its main-process-derived Electron session.
   - [x] Bind invite/manual-pairing guests to an equally isolated partition
         derived from the exact persisted paired source and stable ID.
-- [ ] Destroy or detach guest views cleanly on logout, access revocation,
+- [x] Destroy or detach guest views cleanly on logout, access revocation,
       removal, mode change, and app shutdown.
   - [x] Detach and destroy the managed guest on replacement, logout, discovery
         removal/revocation, mode exit, and service shutdown.
   - [x] Detach and destroy the paired guest on replacement, pairing removal or
         expiry, mode exit, and service shutdown.
-  - [ ] Clear the removed paired instance's persistent Electron storage/cache
+  - [x] Clear the removed paired instance's persistent Electron storage/cache
         after detaching its guest, without accepting a renderer-supplied
-        partition.
+        partition; continue the guest/session cleanup even when public registry
+        removal succeeded but encrypted-record cleanup reports a partial
+        persistence failure.
 
 ### Business OS shell delivery
 
@@ -622,8 +624,9 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
 - packaged-app and signed-artifact smokes on supported platforms.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
-`e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, and `31fe2c70e`; CTOX
-shell commits `aa7d64c22`, `967043561`, and `144f4ddef`): 93 focused
+`e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, `31fe2c70e`,
+`483df6064`, and `a640dad00`; CTOX shell commits `aa7d64c22`, `967043561`, and
+`144f4ddef`): 100 focused
 CTOX/registry/IPC/guest/UI tests, 233 scripts tests, desktop/web/scripts
 typechecks, formatting, and `git diff --check` pass.
 The real `business-os-shell-v0.1.0-rc.1` release was downloaded, verified, and
@@ -631,12 +634,14 @@ revalidated from an ignored `.deps/` symlink backed by `/Volumes/tmp`; a real
 runtime integration test served that release successfully on loopback. Workjet
 now launches paired entries with main-process-only packed WebRTC config through
 the pinned shell, while local/SSH and all Workjet HTTP data routes remain
-disabled. This evidence does not yet cover a packaged Electron guest observing
-the native CTOX peer, local, SSH, persistent-partition deletion, or platform
-keychain parity. Independent Kimi review remains deferred because the required
-review provider is unavailable; adversarial self-review added bounded cache
-verification, pinned runtime sentinel validation, no-referrer delivery, and a
-required secret-resolution service contract.
+disabled. The focused gate plus desktop typecheck proves targeted
+guest detachment and main-derived partition cleanup, including the partial
+registry-write failure path. This evidence does not yet cover a packaged
+Electron guest observing the native CTOX peer, packaged ready/revoked
+transitions or packaged partition deletion, local, SSH, or platform keychain
+parity. Independent Kimi review remains deferred because the required review
+provider is unavailable; adversarial self-review additionally caught and fixed
+cleanup being skipped after a partial registry removal.
 
 ## 11. Wave 8 — retire the standalone CTOX Desktop project
 
@@ -847,7 +852,8 @@ Workjet is complete only when all of the following are true:
 11. [x] Launch invite/manual-pairing entries through that shell using only the
         native packed `ctox_config` WebRTC context.
 12. [ ] Run the packaged Electron paired-guest smoke against a real native CTOX
-        peer and verify ready/revoked transitions plus partition cleanup.
+        peer and verify ready/revoked transitions plus the now-implemented
+        partition cleanup in packaged runtime behavior.
 13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
 14. [ ] Complete durable local orchestration semantics, then add authenticated

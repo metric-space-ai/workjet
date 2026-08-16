@@ -37,6 +37,23 @@ function descriptor(id = "managed:tenant-a"): CtoxManagedInstance {
   };
 }
 
+function pairedDescriptor(
+  source: "pairing_invite" | "manual_pairing" = "manual_pairing",
+): CtoxManagedInstance {
+  return {
+    id: `paired:${source}:abcdefghijklmnopqrstuv`,
+    source,
+    displayName: "Paired Office",
+    status: "paired",
+    healthSummary: {
+      dataPlane: "rxdb-webrtc",
+      dataPlaneReady: false,
+      httpDataProxy: false,
+      nativePeerObserved: false,
+    },
+  };
+}
+
 function partitionOf(instanceDescriptor: CtoxManagedInstance): string {
   return ctoxManagedSessionPartition({
     source: instanceDescriptor.source,
@@ -105,6 +122,48 @@ describe("CtoxElectronSessions", () => {
           partitionOf(instanceDescriptor),
         );
       }).pipe(Effect.provide(CtoxElectronSessions.layer)),
+  );
+
+  it.effect("uses deterministic source-isolated partitions for managed and paired instances", () =>
+    Effect.gen(function* () {
+      const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+      const managed = descriptor();
+      const invited = pairedDescriptor("pairing_invite");
+      const manual = pairedDescriptor("manual_pairing");
+
+      yield* sessions.instance(managed);
+      yield* sessions.instance(invited);
+      yield* sessions.instance(manual);
+
+      assert.deepEqual(fromPartition.mock.calls, [
+        [partitionOf(managed)],
+        [partitionOf(invited)],
+        [partitionOf(manual)],
+      ]);
+      assert.notEqual(partitionOf(invited), partitionOf(manual));
+    }).pipe(Effect.provide(CtoxElectronSessions.layer)),
+  );
+
+  it.effect("rejects mismatched paired, local, SSH, and arbitrary descriptors", () =>
+    Effect.gen(function* () {
+      const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+      const invalid = [
+        {
+          ...pairedDescriptor("manual_pairing"),
+          source: "pairing_invite" as const,
+        },
+        { ...descriptor(), id: "forged-instance", source: "local_daemon" as const },
+        { ...descriptor(), id: "ssh:tenant-a", source: "ssh_managed" as const },
+        { ...pairedDescriptor(), status: "pairing_expired" as const },
+      ];
+      for (const candidate of invalid) {
+        const error = yield* sessions.instance(candidate).pipe(Effect.flip);
+        assert.instanceOf(error, CtoxElectronSessions.CtoxElectronSessionDescriptorError);
+        assert.equal(error.message, "The CTOX instance session descriptor is invalid.");
+        assert.notInclude(error.message, candidate.id);
+      }
+      expect(fromPartition).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(CtoxElectronSessions.layer)),
   );
 
   it.effect("rejects non-managed descriptors before Electron resolution", () =>

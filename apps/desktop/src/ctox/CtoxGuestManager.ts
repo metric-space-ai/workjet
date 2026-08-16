@@ -15,8 +15,10 @@ import { WebContentsView, type BrowserWindow, type Session, type WebContents } f
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
+import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
 
 const SENSITIVE_QUERY_PARAMETERS = new Set([
@@ -274,7 +276,9 @@ function attachGuest(
 export const make = (options: CtoxGuestManagerOptions = {}) =>
   Effect.gen(function* () {
     const auth = yield* CtoxDevAuth.CtoxDevAuth;
+    const businessOsShell = yield* CtoxBusinessOsShell.CtoxBusinessOsShell;
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+    const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
     const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const electronShell = yield* ElectronShell.ElectronShell;
@@ -304,30 +308,54 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
       }
 
-      const discovery = yield* auth.refresh.pipe(Effect.option);
-      if (Option.isNone(discovery) || discovery.value._tag === "failed") {
-        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-      }
-      if (discovery.value._tag !== "ready") {
-        return [{ _tag: "revoked" }, undefined] as const;
-      }
-      const descriptor = discovery.value.instances.find(
-        (instance): instance is CtoxManagedInstance =>
-          instance.id === instanceId &&
-          instance.source === "ctox_dev" &&
-          instance.status === "available",
+      const managed = yield* auth.refresh.pipe(
+        Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
       );
+      const discovery = yield* registry.merge(managed);
+      const descriptor =
+        discovery._tag === "ready"
+          ? discovery.instances.find((instance) => instance.id === instanceId)
+          : undefined;
       if (descriptor === undefined) {
-        return [{ _tag: "revoked" }, undefined] as const;
+        const managedState =
+          discovery._tag === "ready" ? (discovery.managedState ?? "ready") : discovery._tag;
+        return managedState === "failed"
+          ? ([{ _tag: "failed", code: "guest_failed" }, undefined] as const)
+          : ([{ _tag: "revoked" }, undefined] as const);
       }
 
-      const launch = yield* launches.launch(descriptor).pipe(Effect.option);
+      let authoritativeDescriptor: CtoxManagedInstance;
+      let launch: Option.Option<CtoxBusinessOsShell.CtoxBusinessOsLaunch>;
+      if (
+        descriptor.source === "ctox_dev" &&
+        descriptor.status === "available" &&
+        descriptor.id.startsWith("managed:")
+      ) {
+        authoritativeDescriptor = descriptor;
+        launch = yield* launches.launch(descriptor).pipe(Effect.option);
+      } else if (
+        (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") &&
+        descriptor.status === "paired"
+      ) {
+        const resolved = yield* registry.resolvePairedLaunch(descriptor.id).pipe(Effect.option);
+        if (
+          Option.isNone(resolved) ||
+          resolved.value.descriptor.id !== descriptor.id ||
+          resolved.value.descriptor.source !== descriptor.source
+        ) {
+          return [{ _tag: "revoked" }, undefined] as const;
+        }
+        authoritativeDescriptor = resolved.value.descriptor;
+        launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
+      } else {
+        return [{ _tag: "revoked" }, undefined] as const;
+      }
       if (Option.isNone(launch)) {
         return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
       }
       const resolvedSession =
         existingSession === undefined
-          ? yield* sessions.instance(descriptor).pipe(Effect.option)
+          ? yield* sessions.instance(authoritativeDescriptor).pipe(Effect.option)
           : Option.some(existingSession);
       if (Option.isNone(resolvedSession)) {
         return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;

@@ -26,6 +26,7 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
+import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
 
 const REGISTRY_VERSION = 1;
 const MAX_INVITE_BYTES = 65_536;
@@ -187,6 +188,11 @@ export interface CtoxInstanceRegistryOptions {
   readonly nowEpochMs?: () => number;
 }
 
+export interface CtoxPairedLaunchDescriptor {
+  readonly descriptor: CtoxManagedInstance;
+  readonly config: CtoxBusinessOsLaunchConfig;
+}
+
 export class CtoxInstanceRegistry extends Context.Service<
   CtoxInstanceRegistry,
   {
@@ -200,6 +206,10 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly removePairedInstance: (
       instanceId: string,
     ) => Effect.Effect<void, CtoxInstanceRegistryError>;
+    /** Main-process-only launch resolution; its secret-bearing result never crosses IPC. */
+    readonly resolvePairedLaunch: (
+      instanceId: string,
+    ) => Effect.Effect<CtoxPairedLaunchDescriptor, CtoxInstanceRegistryError>;
   }
 >()("@t3tools/desktop/ctox/CtoxInstanceRegistry") {}
 
@@ -852,6 +862,106 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     return instances.sort(compareInstances);
   });
 
+  const resolvePairedLaunch = Effect.fn("CtoxInstanceRegistry.resolvePairedLaunch")(function* (
+    instanceId: string,
+  ) {
+    if (!/^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(instanceId)) {
+      return yield* registryError("not_found");
+    }
+    yield* assertSafeStorage();
+    const [publicDocument, secretDocument] = yield* Effect.all([
+      readPublicDocument(fileSystem, publicRegistryPath),
+      readSecretDocument(fileSystem, secretRegistryPath),
+    ]);
+    yield* assertRegistryConsistency(publicDocument, secretDocument);
+    const descriptor = publicDocument.instances.find((instance) => instance.id === instanceId);
+    const record = secretDocument.records.find((entry) => entry.id === instanceId);
+    if (
+      descriptor === undefined ||
+      record === undefined ||
+      !isSafePersistedPairedInstance(descriptor)
+    ) {
+      return yield* registryError("not_found");
+    }
+
+    const secret = yield* decryptSecret(record);
+    const expectedId = yield* stableId(secret.source, secret.instanceIdentity);
+    if (
+      expectedId !== descriptor.id ||
+      secret.source !== descriptor.source ||
+      descriptor.role !== secret.user?.role
+    ) {
+      return yield* registryError("persistence_failed");
+    }
+    const now = yield* currentTimeMillis;
+    const pairing = normalizePairing(
+      {
+        source: secret.source,
+        displayName: descriptor.displayName,
+        instanceIdentity: secret.instanceIdentity,
+        syncRoom: secret.syncRoom,
+        signalingUrls: secret.signalingUrls,
+        roomSecret: secret.roomSecret,
+        ...(secret.expiresAtMs === undefined ? {} : { expiresAtMs: secret.expiresAtMs }),
+        ...(secret.capabilityToken === undefined
+          ? {}
+          : { capabilityToken: secret.capabilityToken }),
+        ...(secret.capabilityExpiresAtMs === undefined
+          ? {}
+          : { capabilityExpiresAtMs: secret.capabilityExpiresAtMs }),
+        ...(secret.user?.role === undefined ? {} : { role: secret.user.role }),
+        ...(secret.user?.id === undefined ? {} : { userId: secret.user.id }),
+        ...(secret.user?.displayName === undefined
+          ? {}
+          : { userDisplayName: secret.user.displayName }),
+      },
+      now,
+    );
+    if (pairing === undefined) return yield* registryError("not_found");
+
+    const user = secret.user;
+    const role = user?.role;
+    const config: CtoxBusinessOsLaunchConfig = {
+      transport: "webrtc",
+      sync_room: pairing.syncRoom,
+      signaling_urls: pairing.signalingUrls,
+      signaling_room_password: pairing.roomSecret,
+      http_bridge_available: false,
+      desktop_instance: {
+        id: descriptor.id,
+        source: pairing.source,
+        display_name: descriptor.displayName,
+        domain: "",
+      },
+      ...(pairing.capabilityToken === undefined
+        ? {}
+        : {
+            session: {
+              authenticated: true as const,
+              source:
+                pairing.source === "pairing_invite"
+                  ? ("desktop_invite" as const)
+                  : ("desktop_manual_pairing" as const),
+              capability_token: pairing.capabilityToken,
+              ...(pairing.capabilityExpiresAtMs === undefined
+                ? {}
+                : { capability_expires_at_ms: pairing.capabilityExpiresAtMs }),
+              ...(user === undefined
+                ? {}
+                : {
+                    user: {
+                      ...(user.id === undefined ? {} : { id: user.id }),
+                      ...(user.displayName === undefined ? {} : { display_name: user.displayName }),
+                      ...(role === undefined ? {} : { role }),
+                      is_admin: role !== undefined && ["chef", "admin", "founder"].includes(role),
+                    },
+                  }),
+            },
+          }),
+    };
+    return { descriptor, config };
+  });
+
   const importPairing = Effect.fn("CtoxInstanceRegistry.importPairing")(function* (
     pairing: ValidatedPairing,
   ) {
@@ -939,6 +1049,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   });
 
   return CtoxInstanceRegistry.of({
+    resolvePairedLaunch: (instanceId) => registryLock.withPermit(resolvePairedLaunch(instanceId)),
     merge: (managed) =>
       registryLock.withPermit(
         readPairedInstances().pipe(

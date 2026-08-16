@@ -43,6 +43,7 @@ function registryLayer(
     importInvite: () => Effect.succeed(pairedInstance),
     importManualPairing: () => Effect.succeed(pairedInstance),
     removePairedInstance: () => Effect.void,
+    resolvePairedLaunch: () => Effect.die("unused"),
     ...overrides,
   });
   return Layer.succeed(CtoxInstanceRegistry.CtoxInstanceRegistry, service);

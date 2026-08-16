@@ -210,8 +210,10 @@ function makeFixture(
 function fixtureFetch(fixture: Fixture, counts?: { value: number }): CtoxBusinessOsShellFetch {
   return async (url) => {
     if (counts !== undefined) counts.value += 1;
-    if (url === CTOX_BUSINESS_OS_SHELL_MANIFEST_URL) return new Response(fixture.detachedManifest);
-    if (url === CTOX_BUSINESS_OS_SHELL_ARCHIVE_URL) return new Response(fixture.archive);
+    if (url === CTOX_BUSINESS_OS_SHELL_MANIFEST_URL)
+      return new Response(Uint8Array.from(fixture.detachedManifest));
+    if (url === CTOX_BUSINESS_OS_SHELL_ARCHIVE_URL)
+      return new Response(Uint8Array.from(fixture.archive));
     return new Response(null, { status: 404 });
   };
 }
@@ -537,7 +539,7 @@ it("cleans staging after interrupted streams and failing HTTP responses without 
     const secretBody = "do-not-log-response-body-secret";
     const interruptedFetch: CtoxBusinessOsShellFetch = async (url) => {
       if (url === CTOX_BUSINESS_OS_SHELL_MANIFEST_URL)
-        return new Response(fixture.detachedManifest);
+        return new Response(Uint8Array.from(fixture.detachedManifest));
       return new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {
@@ -587,11 +589,11 @@ it("preserves a concurrently published valid install", async () => {
     });
     const fetchImpl: CtoxBusinessOsShellFetch = async (url) => {
       if (url === CTOX_BUSINESS_OS_SHELL_MANIFEST_URL)
-        return new Response(fixture.detachedManifest);
+        return new Response(Uint8Array.from(fixture.detachedManifest));
       archiveRequests += 1;
       if (archiveRequests === 2) releaseArchiveRequests?.();
       await bothArchiveRequests;
-      return new Response(fixture.archive);
+      return new Response(Uint8Array.from(fixture.archive));
     };
 
     const [left, right] = await Promise.all([

@@ -103,7 +103,22 @@ export const make = Effect.gen(function* () {
   const validateInstance = (
     descriptor: CtoxManagedInstance,
   ): Effect.Effect<string, CtoxElectronSessionDescriptorError> => {
-    if (descriptor.source !== "ctox_dev" || !descriptor.id.startsWith("managed:")) {
+    const managed =
+      descriptor.source === "ctox_dev" &&
+      descriptor.status === "available" &&
+      /^managed:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(descriptor.id) &&
+      descriptor.healthSummary.httpDataProxy === false;
+    const paired =
+      (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") &&
+      descriptor.status === "paired" &&
+      descriptor.domain === undefined &&
+      descriptor.healthSummary.dataPlane === "rxdb-webrtc" &&
+      descriptor.healthSummary.dataPlaneReady === false &&
+      descriptor.healthSummary.httpDataProxy === false &&
+      descriptor.healthSummary.nativePeerObserved === false &&
+      descriptor.id.startsWith(`paired:${descriptor.source}:`) &&
+      /^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(descriptor.id);
+    if (!managed && !paired) {
       return Effect.fail(new CtoxElectronSessionDescriptorError());
     }
     const expectedPartition = ctoxManagedSessionPartition({

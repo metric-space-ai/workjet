@@ -112,7 +112,8 @@ export function isPairedCtoxInstance(instance: CtoxManagedInstance): boolean {
 }
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
-  return instance.source === "ctox_dev" && instance.status === "available";
+  if (instance.source === "ctox_dev") return instance.status === "available";
+  return isPairedCtoxInstance(instance) && instance.status === "paired";
 }
 
 export function getCtoxManagedState(discovery: "loading" | CtoxDiscoveryResult): CtoxManagedState {
@@ -453,7 +454,7 @@ function CtoxInstanceList({
               aria-pressed={selected}
               aria-busy={busy}
               disabled={!launchable || busy}
-              title={paired ? "The verified Business OS shell is required." : undefined}
+              title={paired && !launchable ? "This pairing is not available." : undefined}
               onClick={() => select(instance)}
             >
               <span className="block text-sm font-medium">{instance.displayName}</span>
@@ -947,9 +948,6 @@ export function CtoxSidebarShell() {
                       removingId={removingId}
                       onRemove={remove}
                     />
-                    <p className="mt-2 text-xs text-sidebar-muted-foreground">
-                      The verified Business OS shell is required to open paired instances.
-                    </p>
                   </>
                 )}
               </section>
@@ -1015,7 +1013,7 @@ function boundsOf(element: HTMLElement): CtoxGuestBounds {
   };
 }
 
-function ManagedGuestHost({ instance }: { readonly instance: CtoxManagedInstance }) {
+function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance }) {
   const { bridge, activationKey, connection, selectedId, setConnection } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
   const activatedKeyRef = useRef(0);
@@ -1062,11 +1060,11 @@ function ManagedGuestHost({ instance }: { readonly instance: CtoxManagedInstance
   }, [bounds, bridge, connection]);
 
   const fallback = {
-    connecting: "Connecting to the managed Business OS guest…",
+    connecting: "Connecting to the Business OS guest…",
     ready: `Business OS guest for ${instance.displayName} is ready.`,
-    error: "The managed Business OS guest could not be opened.",
-    revoked: "Access to this managed instance is no longer available.",
-    idle: "Select a managed instance to connect.",
+    error: "The Business OS guest could not be opened.",
+    revoked: "Access to this instance is no longer available.",
+    idle: "Select an instance to connect.",
   }[connection];
 
   return (
@@ -1074,7 +1072,7 @@ function ManagedGuestHost({ instance }: { readonly instance: CtoxManagedInstance
       ref={hostRef}
       className="relative min-h-0 flex-1 overflow-hidden bg-background"
       role="region"
-      aria-label={`Managed Business OS guest: ${instance.displayName}`}
+      aria-label={`Business OS guest: ${instance.displayName}`}
       data-ctox-native-guest-host=""
     >
       <p
@@ -1100,7 +1098,7 @@ export function CtoxMainShell() {
     connection === "revoked"
       ? {
           title: "Access revoked",
-          description: "Access to the selected managed instance is no longer available.",
+          description: "Access to the selected instance is no longer available.",
         }
       : discovery !== "loading" && discovery._tag === "failed"
         ? {
@@ -1114,8 +1112,7 @@ export function CtoxMainShell() {
             }
           : {
               title: "No instance selected",
-              description:
-                "Select an available managed instance from the sidebar to open Business OS.",
+              description: "Select an available instance from the sidebar to open Business OS.",
             };
 
   return (
@@ -1150,7 +1147,7 @@ export function CtoxMainShell() {
           </div>
         </Empty>
       ) : (
-        <ManagedGuestHost instance={selected} />
+        <CtoxGuestHost instance={selected} />
       )}
     </SidebarInset>
   );

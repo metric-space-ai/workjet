@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { expect, vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({}));
@@ -23,6 +24,8 @@ import {
 const NOW = 1_800_000_000_000;
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
+const decodeUnknownJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const manualPairing = {
   displayName: "Office Business OS",
@@ -213,6 +216,118 @@ describe("CtoxInstanceRegistry", () => {
       }
     });
   });
+
+  it.effect(
+    "resolves exact invite and manual WebRTC launch configs without exposing secrets",
+    () => {
+      const { memory, registry } = registryHarness();
+      return Effect.gen(function* () {
+        const service = yield* registry;
+        assert.isFunction(service.resolvePairedLaunch);
+        const invited = yield* service.importInvite(invite());
+        const inviteLaunch = yield* service.resolvePairedLaunch!(invited.id);
+        assert.deepEqual(inviteLaunch.descriptor, invited);
+        assert.deepEqual(inviteLaunch.config, {
+          transport: "webrtc",
+          sync_room: "ctox-business-os:office-room",
+          signaling_urls: ["wss://signal.example.com/room"],
+          signaling_room_password: "raw-invite-secret",
+          http_bridge_available: false,
+          desktop_instance: {
+            id: invited.id,
+            source: "pairing_invite",
+            display_name: "Invited Business OS",
+            domain: "",
+          },
+          session: {
+            authenticated: true,
+            source: "desktop_invite",
+            capability_token: "raw-invite-capability",
+            capability_expires_at_ms: NOW + 60_000,
+            user: {
+              id: "private-user-id",
+              display_name: "Private User",
+              role: "admin",
+              is_admin: true,
+            },
+          },
+        });
+
+        const manual = yield* service.importManualPairing(manualPairing);
+        const manualLaunch = yield* service.resolvePairedLaunch!(manual.id);
+        assert.deepEqual(manualLaunch.config.session, {
+          authenticated: true,
+          source: "desktop_manual_pairing",
+          capability_token: "raw-capability-token",
+          capability_expires_at_ms: NOW + 60_000,
+          user: { id: "private-user-id", role: "admin", is_admin: true },
+        });
+        assert.equal(manualLaunch.config.desktop_instance.source, "manual_pairing");
+        assert.notInclude(
+          encodeUnknownJson(yield* service.merge({ _tag: "signed_out" })),
+          "raw-room-secret",
+        );
+        assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", "raw-room-secret");
+      });
+    },
+  );
+
+  it.effect(
+    "omits sessions without a token and rejects missing, expired, fake, and corrupt records",
+    () => {
+      let now = NOW;
+      const { memory, registry } = registryHarness({ nowEpochMs: () => now });
+      return Effect.gen(function* () {
+        const service = yield* registry;
+        assert.isFunction(service.resolvePairedLaunch);
+        const withoutToken = yield* service.importManualPairing({
+          displayName: manualPairing.displayName,
+          instanceId: manualPairing.instanceId,
+          syncRoom: manualPairing.syncRoom,
+          signalingUrls: manualPairing.signalingUrls,
+          roomSecret: manualPairing.roomSecret,
+          role: manualPairing.role,
+          userId: manualPairing.userId,
+        });
+        const launch = yield* service.resolvePairedLaunch!(withoutToken.id);
+        assert.isUndefined(launch.config.session);
+
+        const fakeId = "paired:manual_pairing:abcdefghijklmnopqrstuv";
+        const fake = yield* Effect.result(service.resolvePairedLaunch!(fakeId));
+        assert.equal(failureCode(fake), "not_found");
+
+        const missing = yield* Effect.result(
+          service.resolvePairedLaunch!("paired:pairing_invite:abcdefghijklmnopqrstuv"),
+        );
+        assert.equal(failureCode(missing), "not_found");
+
+        const expiring = yield* service.importManualPairing(manualPairing);
+        now = NOW + 60_000;
+        const expired = yield* Effect.result(service.resolvePairedLaunch!(expiring.id));
+        assert.equal(failureCode(expired), "not_found");
+
+        now = NOW;
+        const secretDocument = decodeUnknownJson(
+          memory.files.get("/state/ctox/secrets.json") ?? "{}",
+        ) as {
+          records: Array<{ id: string; ciphertext: string }>;
+        };
+        const target = secretDocument.records.find((record) => record.id === withoutToken.id);
+        assert.isDefined(target);
+        target.ciphertext = Buffer.from('encrypted:{"version":1}', "utf8").toString("base64");
+        memory.files.set("/state/ctox/secrets.json", `${encodeUnknownJson(secretDocument)}\n`);
+        const corrupt = yield* Effect.result(service.resolvePairedLaunch!(withoutToken.id));
+        assert.equal(failureCode(corrupt), "persistence_failed");
+        if (Result.isFailure(corrupt)) {
+          assert.equal(
+            corrupt.failure.message,
+            "The CTOX paired instance registry operation failed.",
+          );
+          assert.notInclude(corrupt.failure.message, "raw-room-secret");
+        }
+      });
+    },
+  );
 
   it.effect("uses source-namespaced stable ids and deterministic merge ordering", () => {
     const { registry } = registryHarness();

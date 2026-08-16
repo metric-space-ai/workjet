@@ -203,7 +203,7 @@ describe("CTOX instance presentation", () => {
     expect(getCtoxManagedState({ _tag: "failed", code: "network_error" })).toBe("failed");
   });
 
-  it("only enables available managed rows until other launch adapters land", () => {
+  it("enables only available managed and exactly paired invite/manual rows", () => {
     const managed = instance({
       id: "managed:alpha",
       source: "ctox_dev",
@@ -214,6 +214,18 @@ describe("CTOX instance presentation", () => {
       source: "manual_pairing",
       displayName: "Paired Alpha",
       status: "paired",
+    });
+    const invited = instance({
+      id: "paired:pairing_invite:alpha",
+      source: "pairing_invite",
+      displayName: "Invited Alpha",
+      status: "paired",
+    });
+    const expired = instance({
+      id: "paired:manual_pairing:expired",
+      source: "manual_pairing",
+      displayName: "Expired Alpha",
+      status: "pairing_expired",
     });
     const local = instance({
       id: "local:alpha",
@@ -227,19 +239,23 @@ describe("CTOX instance presentation", () => {
     });
 
     expect(canActivateCtoxInstance(managed)).toBe(true);
-    expect(canActivateCtoxInstance(paired)).toBe(false);
+    expect(canActivateCtoxInstance(paired)).toBe(true);
+    expect(canActivateCtoxInstance(invited)).toBe(true);
+    expect(canActivateCtoxInstance(expired)).toBe(false);
     expect(canActivateCtoxInstance(local)).toBe(false);
     expect(canActivateCtoxInstance(ssh)).toBe(false);
 
     const markup = renderToStaticMarkup(
       <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "ready", instances: [] }}>
-        <CtoxManagedInstanceList instances={[managed, paired, local, ssh]} />
+        <CtoxManagedInstanceList instances={[managed, paired, invited, expired, local, ssh]} />
       </CtoxModeProvider>,
     );
 
     expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>[^]*Managed Alpha/);
+    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>[^]*Paired Alpha/);
+    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>[^]*Invited Alpha/);
     expect(markup).toMatch(
-      /<button[^>]*disabled=""[^>]*title="The verified Business OS shell is required\."[^>]*>[^]*Paired Alpha/,
+      /<button[^>]*disabled=""[^>]*title="This pairing is not available\."[^>]*>[^]*Expired Alpha/,
     );
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*Local Alpha/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*SSH Alpha/);
@@ -268,8 +284,8 @@ describe("CTOX bridge actions", () => {
     });
   });
 
-  it("never activates paired entries and still activates managed entries", async () => {
-    const activate = vi.fn(async () => ({ _tag: "ready" as const, instanceId: "managed:alpha" }));
+  it("activates paired and managed entries through the existing bridge", async () => {
+    const activate = vi.fn(async (instanceId: string) => ({ _tag: "ready" as const, instanceId }));
     const bridge = inertBridge({ activate });
     const bounds = { x: 1, y: 2, width: 300, height: 200 };
     const paired = instance({
@@ -284,14 +300,18 @@ describe("CTOX bridge actions", () => {
       displayName: "Managed Alpha",
     });
 
-    expect(activateCtoxInstance(bridge, paired, bounds)).toBeUndefined();
-    expect(activate).not.toHaveBeenCalled();
+    await expect(activateCtoxInstance(bridge, paired, bounds)).resolves.toEqual({
+      _tag: "ready",
+      instanceId: "paired:manual_pairing:alpha",
+    });
+    expect(activate).toHaveBeenCalledWith("paired:manual_pairing:alpha", bounds);
 
     await expect(activateCtoxInstance(bridge, managed, bounds)).resolves.toEqual({
       _tag: "ready",
       instanceId: "managed:alpha",
     });
-    expect(activate).toHaveBeenCalledExactlyOnceWith("managed:alpha", bounds);
+    expect(activate).toHaveBeenLastCalledWith("managed:alpha", bounds);
+    expect(activate).toHaveBeenCalledTimes(2);
   });
 
   it("rejects managed removal before calling the paired-instance bridge", async () => {
@@ -366,7 +386,9 @@ describe("CtoxMainShell", () => {
 
     expect(markup).toContain('data-ctox-main-shell=""');
     expect(markup).toContain("No instance selected");
-    expect(markup).toContain("Select an available managed instance");
+    expect(markup).toContain("Select an available instance");
+    expect(ctoxModeShellSource).not.toContain("Managed Business OS guest");
+    expect(ctoxModeShellSource).not.toContain("managed Business OS guest");
     expect(markup).not.toContain("iframe");
     expect(markup).not.toContain("webview");
   });

@@ -69,6 +69,8 @@ const CapabilityToken = SafeText.check(Schema.isMaxLength(16_384));
 const Role = SafeText.check(Schema.isMaxLength(128));
 const UserDisplayName = SafeText.check(Schema.isMaxLength(256));
 const UserId = SafeText.check(Schema.isMaxLength(256));
+const NativePeerId = SafeText.check(Schema.isMaxLength(256));
+const DesktopInviteLink = SafeText.check(Schema.isMaxLength(MAX_INVITE_BYTES));
 const Expiration = Schema.Int.check(Schema.isGreaterThan(0));
 const PairedSource = Schema.Literals(["pairing_invite", "manual_pairing"]);
 type PairedSource = typeof PairedSource.Type;
@@ -78,8 +80,11 @@ const InviteSessionUser = Schema.Struct({
   display_name: Schema.optionalKey(UserDisplayName),
   displayName: Schema.optionalKey(UserDisplayName),
   role: Schema.optionalKey(Role),
+  is_admin: Schema.optionalKey(Schema.Boolean),
 });
 const InviteSession = Schema.Struct({
+  authenticated: Schema.optionalKey(Schema.Literal(true)),
+  source: Schema.optionalKey(Schema.Literal("desktop_invite")),
   capability_token: Schema.optionalKey(CapabilityToken),
   capability_expires_at_ms: Schema.optionalKey(Expiration),
   user: Schema.optionalKey(InviteSessionUser),
@@ -89,15 +94,19 @@ const InvitePayload = Schema.Struct({
   version: Schema.Literal(1),
   display_name: DisplayName,
   instance_id: Schema.optionalKey(InstanceIdentity),
+  native_peer_id: Schema.optionalKey(NativePeerId),
   sync_room: SyncRoom,
   signaling_urls: Schema.Array(SignalingUrl).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
   signaling_room_password: RoomSecret,
   transport: Schema.optionalKey(Schema.Literal("webrtc")),
   expires_at: Schema.optionalKey(SafeText.check(Schema.isMaxLength(64))),
   expires_at_ms: Schema.optionalKey(Expiration),
+  data_plane: Schema.optionalKey(Schema.Literal("rxdb-webrtc")),
   capability_token: Schema.optionalKey(CapabilityToken),
   capability_expires_at_ms: Schema.optionalKey(Expiration),
   http_bridge_available: Schema.optionalKey(Schema.Literal(false)),
+  secret_value_in_payload: Schema.optionalKey(Schema.Literal(true)),
+  desktop_link: Schema.optionalKey(DesktopInviteLink),
   session: Schema.optionalKey(InviteSession),
 });
 type InvitePayload = typeof InvitePayload.Type;
@@ -767,7 +776,10 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       Effect.mapError(() => registryError("unsafe_secret_storage")),
     );
     const backend = yield* safeStorage.selectedStorageBackend;
-    if (!available || (Option.isSome(backend) && backend.value === "basic_text")) {
+    const unsafeBackend =
+      (Option.isSome(backend) && backend.value === "basic_text") ||
+      (environment.platform === "linux" && Option.isNone(backend));
+    if (!available || unsafeBackend) {
       return yield* registryError("unsafe_secret_storage");
     }
   });

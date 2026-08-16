@@ -37,19 +37,37 @@ const manualPairing = {
 } as const;
 
 function invite(overrides: Record<string, unknown> = {}): string {
+  const linkPayload = Buffer.from(
+    '{"type":"ctox-business-os-invite","version":1}',
+    "utf8",
+  ).toString("base64url");
   return JSON.stringify({
     type: "ctox-business-os-invite",
     version: 1,
     display_name: "Invited Business OS",
     instance_id: "office-1",
+    native_peer_id: "native-peer-1",
     sync_room: "ctox-business-os:office-room",
     signaling_urls: ["wss://signal.example.com/room"],
     signaling_room_password: "raw-invite-secret",
     transport: "webrtc",
     expires_at_ms: NOW + 60_000,
-    capability_token: "raw-invite-capability",
-    capability_expires_at_ms: NOW + 60_000,
+    data_plane: "rxdb-webrtc",
     http_bridge_available: false,
+    secret_value_in_payload: true,
+    desktop_link: `ctox-business-os-desktop://pair?payload=${linkPayload}`,
+    session: {
+      authenticated: true,
+      source: "desktop_invite",
+      capability_token: "raw-invite-capability",
+      capability_expires_at_ms: NOW + 60_000,
+      user: {
+        id: "private-user-id",
+        display_name: "Private User",
+        role: "admin",
+        is_admin: true,
+      },
+    },
     ...overrides,
   });
 }
@@ -142,11 +160,13 @@ function registryHarness(
     readonly fileSystem?: MemoryFileSystem;
     readonly storage?: ElectronSafeStorage.ElectronSafeStorage["Service"];
     readonly nowEpochMs?: () => number;
+    readonly platform?: NodeJS.Platform;
   } = {},
 ) {
   const memory = input.fileSystem ?? makeMemoryFileSystem();
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: "/state",
+    platform: input.platform ?? "darwin",
   } as DesktopEnvironment.DesktopEnvironment["Service"]);
   const registry = make({ nowEpochMs: input.nowEpochMs ?? (() => NOW) }).pipe(
     Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
@@ -241,14 +261,27 @@ describe("CtoxInstanceRegistry", () => {
         invite({ expires_at_ms: NOW }),
         invite({ capability_expires_at_ms: NOW }),
         invite({
-          capability_expires_at_ms: NOW,
           session: {
+            authenticated: true,
+            source: "desktop_invite",
+            capability_token: "raw-invite-capability",
+            capability_expires_at_ms: NOW,
+          },
+        }),
+        invite({
+          capability_token: "conflicting-capability",
+          session: {
+            authenticated: true,
+            source: "desktop_invite",
             capability_token: "raw-invite-capability",
             capability_expires_at_ms: NOW + 60_000,
           },
         }),
         invite({
+          capability_token: "raw-invite-capability",
           session: {
+            authenticated: true,
+            source: "desktop_invite",
             capability_token: "conflicting-capability",
             capability_expires_at_ms: NOW + 60_000,
           },
@@ -300,6 +333,18 @@ describe("CtoxInstanceRegistry", () => {
         assert.equal(failureCode(result), "unsafe_secret_storage");
         assert.isFalse(memory.files.has("/state/ctox/instances.json"));
       }
+
+      const linuxMemory = makeMemoryFileSystem();
+      const { registry: linuxRegistry } = registryHarness({
+        fileSystem: linuxMemory,
+        storage: safeStorage(),
+        platform: "linux",
+      });
+      const linuxResult = yield* Effect.result(
+        (yield* linuxRegistry).importManualPairing(manualPairing),
+      );
+      assert.equal(failureCode(linuxResult), "unsafe_secret_storage");
+      assert.isFalse(linuxMemory.files.has("/state/ctox/instances.json"));
     }),
   );
 

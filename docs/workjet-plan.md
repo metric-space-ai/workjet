@@ -625,11 +625,12 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
   - [x] Add a cross-platform `T3CODE_DESKTOP_APP_DATA_DIR` override so all
         app-managed `userData` resolution can target `/Volumes/tmp` without
         repurposing `HOME`.
-  - [ ] Pass the same isolated path as Electron's startup
+  - [x] Pass the same isolated path as Electron's startup
         `--user-data-dir=<root>/t3code` in the packaged-smoke launcher and
-        assert it on child processes. A real packaged run proved that the GPU
+        assert the exact disposable profile recursively on renderer, GPU, and
+        utility child processes. A prior real packaged run proved that the GPU
         process may start before Workjet calls `app.setPath`, so the environment
-        override alone is not a complete normal-profile isolation guarantee.
+        override alone was not a complete normal-profile isolation guarantee.
   - [x] Build a real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp` from
         the staged packaged layout. Omit `workspace:` dependencies from the
         staged server runtime manifest because those Workjet packages are
@@ -644,21 +645,35 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
         CTOX instance. Temporary Workjet profiles and invite files stay under
         `/Volumes/tmp`, but the smoke must not override `CTOX_ROOT`,
         `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance.
+    - [x] Add the macOS-first packaged smoke runner and focused tests. It uses
+          only the typed CTOX desktop bridge, keeps the real CTOX instance
+          roots intact, discovers changing `WebContentsView` CDP targets by
+          capability, retains invite and peer secrets only in memory, and
+          enforces unrevoke/recovery before pairing or profile cleanup.
   - [ ] Capture the browser peer ID only from the live WebRTC signaling
         handshake or another non-persistent runtime diagnostic, keep it out of
         logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
-    - [ ] Add a bounded CTOX advanced-status field for the browser's own live
+    - [x] Add a bounded CTOX advanced-status field for the browser's own live
           signaling peer ID, populated only after the `init.yourPeerId`
-          handshake and never persisted or logged. The packaged Electron
+          handshake and never persisted or logged. This is implemented in the
+          current CTOX checkout and its targeted signaling/bundle checks pass,
+          but it is not yet contained in the pinned `v0.1.0-rc.1` shell. The
+          packaged Electron
           `WebContentsView` changes renderer targets during navigation, so an
           external CDP listener attached at view creation cannot reliably
           observe that first frame; rejected smoke drafts must not replace this
           with a broad browser-target hook, synthetic CTOX roots, or durable
           test IPC.
+    - [ ] Restore or explicitly resolve the unrelated dirty-CTOX suite failures
+          (`97/102` currently pass), then commit the diagnostic without mixing
+          the other in-progress CTOX working-tree changes.
+    - [ ] Publish the next versioned Business OS shell with that diagnostic,
+          update Workjet's version/checksum/source pin, and revalidate the
+          downloaded artifact before running the live packaged smoke.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
 `e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, `31fe2c70e`,
-`483df6064`, `a640dad00`, `4dc74c432`, and `8672548b4`; CTOX shell commits `aa7d64c22`,
+`483df6064`, `a640dad00`, `4dc74c432`, `8672548b4`, and `aabaccbc5`; CTOX shell commits `aa7d64c22`,
 `967043561`, and `144f4ddef`): 100 focused CTOX/registry/IPC/guest/UI tests,
 7 desktop-environment tests, 233 scripts tests, desktop/web/scripts typechecks,
 36 focused desktop-artifact tests, formatting, and `git diff --check` pass.
@@ -681,11 +696,23 @@ stayed attached to Electron's pre-navigation target and could not observe the
 guest's first signaling frame. Those smoke drafts were removed rather than
 claiming revoke/recovery coverage. The run also proved that Electron's early GPU
 process needs an explicit `--user-data-dir` in addition to the app-level
-environment override. An earlier draft that pointed CTOX roots at a synthetic
-empty instance remains explicitly rejected. Independent Kimi review remains
-deferred because the required review provider is unavailable; adversarial
-self-review additionally caught and fixed cleanup being skipped after a partial
-registry removal.
+environment override. The new packaged smoke runner now supplies that argument,
+recursively verifies the disposable profile, and has 22 focused tests plus
+scripts typecheck, formatting, and `git diff --check` green. The bounded live
+browser-peer diagnostic is implemented in the dirty CTOX checkout; its targeted
+signaling-freshness and reproducible-bundle smokes pass, while the complete CTOX
+browser suite is currently `97/102`. Its five failures are command-consumer,
+command-type, replication-recovery, symmetric-capability-handshake, and task-ID
+inventory checks in the already dirty CTOX tree, so the diagnostic has not been
+committed or released over unrelated work. The pinned
+`business-os-shell-v0.1.0-rc.1` consequently does not expose the field required
+by the packaged runner; the live revoke/recovery/partition smoke remains open
+until a release-green successor is published and pinned. An earlier draft that
+pointed CTOX roots at a synthetic empty instance remains explicitly rejected.
+Independent Kimi review remains deferred because the required review provider
+is unavailable; adversarial self-review additionally caught and fixed cleanup
+being skipped after a partial registry removal and set the unrevoke barrier
+before an ambiguous native revoke result.
 
 ## 11. Wave 8 — retire the standalone CTOX Desktop project
 
@@ -901,19 +928,29 @@ Workjet is complete only when all of the following are true:
     - [x] Add the app-level packaged Workjet state and Electron `userData`
           override beneath an explicit `/Volumes/tmp` root without changing
           `HOME`.
-    - [ ] Add the matching Electron startup `--user-data-dir` argument so even
+    - [x] Add the matching Electron startup `--user-data-dir` argument so even
           pre-`app.setPath` GPU/network initialization is isolated, then assert
           every packaged child process stays under the disposable profile.
     - [x] Keep the real CTOX instance selection intact; do not point CTOX roots
           at the disposable Workjet smoke profile.
-    - [ ] Expose the browser's handshake-assigned peer ID through a bounded,
+    - [x] Expose the browser's handshake-assigned peer ID through a bounded,
           non-persistent CTOX advanced-status diagnostic; external CDP capture
           does not survive the packaged WebContentsView's navigation target
-          swap reliably.
-    - [ ] Capture that ephemeral peer ID in memory, prove native revoke,
+          swap reliably. Targeted CTOX checks pass in the current dirty checkout;
+          clean integration and release are still gated below.
+    - [x] Add the packaged smoke automation that captures that ephemeral peer ID
+          in memory, drives native revoke and guaranteed-first unrevoke, checks
+          healthy recovery, removes/reimports the pairing, verifies
+          cookie/localStorage/IndexedDB/CacheStorage partition deletion, and
+          retains Workjet/profile files if unrevoke cleanup fails.
+    - [ ] Restore the CTOX browser suite from `97/102` to a release-green state,
+          commit the diagnostic without absorbing unrelated dirty-tree work,
+          publish the next Business OS shell, and update Workjet's verified pin.
+    - [ ] Execute the packaged runner to prove native revoke,
           guaranteed-first unrevoke, healthy recovery, pairing removal, and
-          same-partition cookie/localStorage/CacheStorage deletion, and leave no
-          revocation behind on any failure or signal path.
+          same-partition cookie/localStorage/IndexedDB/CacheStorage deletion
+          against the operator-selected real CTOX instance, leaving no
+          revocation behind on any failure or catchable signal path.
     - [x] Build the real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp`
           from the packaged staging layout.
     - [ ] Pin the staged production dependency install to repository lock

@@ -187,13 +187,41 @@ describe("advanced status classification", () => {
             { code: "bad code" },
           ],
         },
+        desktopRuntime: {
+          dataPlaneStatus: "pending",
+          dataPlaneReason: "open-business-data-plane",
+          db: true,
+          syncConfig: true,
+          sync: false,
+          commandBus: false,
+          ignored: "secret",
+        },
       }).diagnostics,
     ).toEqual([
       "phase:reconnecting",
       "failure:authenticated",
       "error:instance_mismatch",
       "error:CtoxReplicationIoError",
+      "data-plane:pending",
+      "data-plane-reason:open-business-data-plane",
+      "runtime:db",
+      "runtime:syncConfig",
+      "missing:sync",
+      "missing:commandBus",
     ]);
+  });
+  it("rejects unrecognized desktop runtime diagnostic values", () => {
+    expect(
+      classifyAdvancedStatus({
+        ok: false,
+        desktopRuntime: {
+          dataPlaneStatus: "secret-status",
+          dataPlaneReason: "room-secret",
+          db: "yes",
+          syncConfig: null,
+        },
+      }).diagnostics,
+    ).toBeUndefined();
   });
   it("rejects missing, oversized, or control-bearing peer ids", () => {
     expect(classifyAdvancedStatus({ ok: true, sync: {} }).browserPeerId).toBeUndefined();

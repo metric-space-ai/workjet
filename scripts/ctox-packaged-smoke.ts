@@ -51,6 +51,15 @@ export interface ClassifiedStatus {
   readonly browserPeerId?: string;
   readonly diagnostics?: readonly string[];
 }
+const SAFE_DATA_PLANE_STATUSES = new Set(["idle", "pending", "ready", "failed", "unknown"]);
+const SAFE_DATA_PLANE_REASONS = new Set([
+  "none",
+  "bootstrap",
+  "open-business-data-plane",
+  "repair-business-data-plane",
+  "login-required",
+  "redacted",
+]);
 export type LifecycleEvent =
   | "paired"
   | "revoked"
@@ -276,6 +285,26 @@ export function classifyAdvancedStatus(value: unknown): ClassifiedStatus {
       const error = value as Record<string, unknown>;
       appendDiagnostic("error", error.code ?? error.name);
     }
+  }
+  const desktopRuntime =
+    typeof status.desktopRuntime === "object" &&
+    status.desktopRuntime !== null &&
+    !Array.isArray(status.desktopRuntime)
+      ? (status.desktopRuntime as Record<string, unknown>)
+      : undefined;
+  if (
+    typeof desktopRuntime?.dataPlaneStatus === "string" &&
+    SAFE_DATA_PLANE_STATUSES.has(desktopRuntime.dataPlaneStatus)
+  )
+    appendDiagnostic("data-plane", desktopRuntime.dataPlaneStatus);
+  if (
+    typeof desktopRuntime?.dataPlaneReason === "string" &&
+    SAFE_DATA_PLANE_REASONS.has(desktopRuntime.dataPlaneReason)
+  )
+    appendDiagnostic("data-plane-reason", desktopRuntime.dataPlaneReason);
+  for (const field of ["db", "syncConfig", "sync", "commandBus"] as const) {
+    if (desktopRuntime?.[field] === true) appendDiagnostic("runtime", field);
+    if (desktopRuntime?.[field] === false) appendDiagnostic("missing", field);
   }
   return {
     healthy: status.ok === true,
@@ -654,7 +683,25 @@ function assertActivated(value: unknown, instanceId: string): void {
   }
 }
 
-const STATUS_EXPRESSION = `(async () => globalThis.CTOX_BUSINESS_OS_STATUS.snapshot({ includeCounts: false, requiredCollections: ${JSON.stringify(REQUIRED_COLLECTIONS)} }))()`;
+const STATUS_EXPRESSION = `(async () => {
+  const snapshot = await globalThis.CTOX_BUSINESS_OS_STATUS.snapshot({ includeCounts: false, requiredCollections: ${JSON.stringify(REQUIRED_COLLECTIONS)} });
+  const app = globalThis.CTOX_BUSINESS_OS_APP;
+  const status = String(app?.dataPlaneReadyStatus || "unknown");
+  const allowedStatuses = ["idle", "pending", "ready", "failed"];
+  const reason = String(app?.dataPlaneReadyReason || "");
+  const allowedReasons = ["bootstrap", "open-business-data-plane", "repair-business-data-plane", "login-required"];
+  return {
+    ...snapshot,
+    desktopRuntime: {
+      dataPlaneStatus: allowedStatuses.includes(status) ? status : "unknown",
+      dataPlaneReason: allowedReasons.includes(reason) ? reason : (reason ? "redacted" : "none"),
+      db: Boolean(app?.db),
+      syncConfig: Boolean(app?.syncConfig),
+      sync: Boolean(app?.sync),
+      commandBus: Boolean(app?.commandBus),
+    },
+  };
+})()`;
 async function readStatus(port: number): Promise<ClassifiedStatus> {
   const target = await waitForTarget(port, GUEST_CAPABILITY, "navigated guest", 15_000);
   return classifyAdvancedStatus(await evaluateTarget(target, STATUS_EXPRESSION));

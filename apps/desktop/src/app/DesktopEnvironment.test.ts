@@ -98,6 +98,37 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
+  it.effect("uses the desktop app-data override before every platform default", () =>
+    Effect.gen(function* () {
+      const env = {
+        APPDATA: "C:\\Users\\alice\\AppData\\Roaming",
+        T3CODE_DESKTOP_APP_DATA_DIR: " /Volumes/tmp/workjet-app-data ",
+        XDG_CONFIG_HOME: "/home/alice/.config-custom",
+      };
+      const darwin = yield* makeEnvironment({ platform: "darwin" }, env);
+      const windows = yield* makeEnvironment({ platform: "win32" }, env);
+      const linux = yield* makeEnvironment({ platform: "linux" }, env);
+
+      assert.equal(darwin.appDataDirectory, "/Volumes/tmp/workjet-app-data");
+      assert.equal(windows.appDataDirectory, "/Volumes/tmp/workjet-app-data");
+      assert.equal(linux.appDataDirectory, "/Volumes/tmp/workjet-app-data");
+    }),
+  );
+
+  it.effect("keeps the macOS application-data default unchanged without the override", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { platform: "darwin" },
+        {
+          APPDATA: "/ignored/windows-app-data",
+          XDG_CONFIG_HOME: "/ignored/xdg-config",
+        },
+      );
+
+      assert.equal(environment.appDataDirectory, "/Users/alice/Library/Application Support");
+    }),
+  );
+
   it.effect("keeps implicit development state separate from production state", () =>
     Effect.gen(function* () {
       const development = yield* makeEnvironment(

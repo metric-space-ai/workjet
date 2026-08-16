@@ -505,7 +505,7 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
   - [x] Accept the canonical invite JSON and
         `ctox-business-os-desktop://pair?payload=...` shape emitted by the CTOX
         Rust service without widening the accepted schema to arbitrary links.
-  - [ ] Bind paired entries to the verified bundled Business OS shell and its
+  - [x] Bind paired entries to the verified bundled Business OS shell and its
         native WebRTC launch context; registry presence alone is not a launch
         or data-plane claim.
   - [ ] Port local-daemon discovery, ownership, lifecycle, and launch.
@@ -532,10 +532,17 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         default-deny permission policy and instance-scoped storage/cache wipe.
   - [x] Bind each managed instance's `WebContentsView`, navigation, and requests
         to its main-process-derived Electron session.
+  - [x] Bind invite/manual-pairing guests to an equally isolated partition
+        derived from the exact persisted paired source and stable ID.
 - [ ] Destroy or detach guest views cleanly on logout, access revocation,
       removal, mode change, and app shutdown.
   - [x] Detach and destroy the managed guest on replacement, logout, discovery
         removal/revocation, mode exit, and service shutdown.
+  - [x] Detach and destroy the paired guest on replacement, pairing removal or
+        expiry, mode exit, and service shutdown.
+  - [ ] Clear the removed paired instance's persistent Electron storage/cache
+        after detaching its guest, without accepting a renderer-supplied
+        partition.
 
 ### Business OS shell delivery
 
@@ -552,13 +559,15 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
       and file hashes before every cache hit or desktop package build.
 - [x] Package the verified shell artifact into Workjet release output outside
       ASAR as the single `ctox-business-os-shell` resource.
-- [ ] Inject only the packed `ctox_config` launch context expected by the shell.
-  - [ ] Resolve pairing secrets only in the Electron main process, never expose
+- [x] Inject only the packed `ctox_config` launch context expected by the shell.
+  - [x] Resolve pairing secrets only in the Electron main process, never expose
         them through renderer IPC, persistence, logs, or a durable launch URL.
-  - [ ] Serve only the verified static shell from a loopback/custom-protocol
+  - [x] Serve only the verified static shell from a loopback/custom-protocol
         boundary with no Business OS HTTP data endpoints.
-  - [ ] Prove identical shell resolution for ignored development `.deps/` and
+  - [x] Prove identical shell resolution for ignored development `.deps/` and
         packaged `process.resourcesPath` layouts.
+  - [x] Require the exact pinned completion sentinel before the runtime serves
+        a shell root, and send `Referrer-Policy: no-referrer` on every response.
 - [ ] Never implement Business OS collection, command, file, or status reads
       over Workjet HTTP.
 
@@ -578,6 +587,9 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         exist.
 - [x] Selecting a managed ctox.dev instance activates its native guest surface
       in the main region.
+- [x] Selecting a valid invite/manual-pairing instance activates the same guest
+      surface through the local verified shell; expired, local, SSH, and forged
+      entries remain non-launchable.
 - [ ] Show signed-out, needs-auth, unavailable, connecting, ready, and revoked
       states explicitly.
 - [ ] Keep CTOX Business OS chat inside the Business OS surface; do not convert
@@ -610,18 +622,21 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
 - packaged-app and signed-artifact smokes on supported platforms.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
-`e00ebfa61`, `9047bed3f`, `042f8af38`, and `d35d9ebbf`; CTOX shell commits
-`aa7d64c22`, `967043561`, and `144f4ddef`): 105 focused
-contract/registry/IPC/guest/UI tests, 233 scripts tests, scripts typecheck,
-formatting, and `git diff --check` pass.
+`e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, and `31fe2c70e`; CTOX
+shell commits `aa7d64c22`, `967043561`, and `144f4ddef`): 93 focused
+CTOX/registry/IPC/guest/UI tests, 233 scripts tests, desktop/web/scripts
+typechecks, formatting, and `git diff --check` pass.
 The real `business-os-shell-v0.1.0-rc.1` release was downloaded, verified, and
-revalidated from the ignored `.deps/` cache. The Workjet desktop build config
-packages that exact pinned shell outside ASAR. This evidence covers managed plus
-paired registry/management behavior and the shell supply chain; it does not yet
-cover paired shell launch, local, SSH, packaged Electron runtime launch, or
-platform-keychain parity. Independent Kimi review is deferred because the
-review provider was unavailable; adversarial self-review found and fixed
-unbounded cache-file verification before this status update.
+revalidated from an ignored `.deps/` symlink backed by `/Volumes/tmp`; a real
+runtime integration test served that release successfully on loopback. Workjet
+now launches paired entries with main-process-only packed WebRTC config through
+the pinned shell, while local/SSH and all Workjet HTTP data routes remain
+disabled. This evidence does not yet cover a packaged Electron guest observing
+the native CTOX peer, local, SSH, persistent-partition deletion, or platform
+keychain parity. Independent Kimi review remains deferred because the required
+review provider is unavailable; adversarial self-review added bounded cache
+verification, pinned runtime sentinel validation, no-referrer delivery, and a
+required secret-resolution service contract.
 
 ## 11. Wave 8 — retire the standalone CTOX Desktop project
 
@@ -829,9 +844,11 @@ Workjet is complete only when all of the following are true:
        pairing-secret store, and paired-instance management UI.
 10. [x] Publish and pin the versioned CTOX Business OS shell artifact, download
         it into ignored `.deps/`, and package only the checksum-verified artifact.
-11. [ ] Launch invite/manual-pairing entries through that shell using only the
+11. [x] Launch invite/manual-pairing entries through that shell using only the
         native packed `ctox_config` WebRTC context.
-12. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
+12. [ ] Run the packaged Electron paired-guest smoke against a real native CTOX
+        peer and verify ready/revoked transitions plus partition cleanup.
+13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
-13. [ ] Complete durable local orchestration semantics, then add authenticated
+14. [ ] Complete durable local orchestration semantics, then add authenticated
         cross-environment dispatch and recovery.

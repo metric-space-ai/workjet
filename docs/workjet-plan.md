@@ -2,6 +2,8 @@
 
 Status date: 2026-08-16
 
+Checklist progress: 63.0% (`170/270` complete, `100` open).
+
 Canonical repository: `metric-space-ai/workjet`
 
 Upstream repository: `pingdotgg/t3code`
@@ -655,21 +657,43 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
         logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
     - [x] Add a bounded CTOX advanced-status field for the browser's own live
           signaling peer ID, populated only after the `init.yourPeerId`
-          handshake and never persisted or logged. This is implemented in the
-          current CTOX checkout and its targeted signaling/bundle checks pass,
-          but it is not yet contained in the pinned `v0.1.0-rc.1` shell. The
-          packaged Electron
+          handshake and never persisted or logged. The change is isolated in
+          clean CTOX commit `1e2808814` on branch
+          `codex/browser-peer-shell-rc2`; it is not yet contained in the pinned
+          `v0.1.0-rc.1` shell. The packaged Electron
           `WebContentsView` changes renderer targets during navigation, so an
           external CDP listener attached at view creation cannot reliably
           observe that first frame; rejected smoke drafts must not replace this
           with a broad browser-target hook, synthetic CTOX roots, or durable
           test IPC.
-    - [ ] Restore or explicitly resolve the unrelated dirty-CTOX suite failures
-          (`97/102` currently pass), then commit the diagnostic without mixing
-          the other in-progress CTOX working-tree changes.
-    - [ ] Publish the next versioned Business OS shell with that diagnostic,
-          update Workjet's version/checksum/source pin, and revalidate the
-          downloaded artifact before running the live packaged smoke.
+    - [x] Restore the CTOX browser suite without absorbing the unrelated dirty
+          main checkout. Clean commit `71b80c625` refreshes the command-consumer,
+          command-type, and task-ID inventory generators. Commit `1e2808814`
+          also carries the narrow reconnect and bounded direct-push invariants
+          required by the already-committed recovery/handshake tests. The
+          release-strict suite passes `102/102` with the real Rust wire daemon
+          and no skips.
+    - [x] Restore the versioned shell publication source on the clean release
+          branch through commits `15abb6427`, `cbefe7521`, and `3572b3f56`,
+          including deterministic archive generation, manifest/checksum output,
+          no-clobber publication, and prerelease marking.
+    - [x] Push clean CTOX branch `codex/browser-peer-shell-rc2` so immutable
+          source commit `3572b3f56` is reachable from `metric-space-ai/ctox`;
+          the dirty main checkout and its unrelated work remain untouched.
+    - [x] Pass all 8 shell-builder tests, build `v0.1.0-rc.2` entirely under
+          `/Volumes/tmp`, and publish it as a GitHub prerelease through Actions
+          run `31949321934`. The Node 24 release build is byte-identical to an
+          independent local Node 24 build; detached and embedded manifests,
+          checksum, 1,768-file inventory, no-symlink invariant, source commit,
+          and prerelease flag are verified. Node 26 produces the same payload
+          inventory but different compressed bytes, so Node 24 remains part of
+          the pinned release toolchain.
+    - [x] Update Workjet's shell version, URL, checksum, size, inventory, and
+          source-commit pin to `v0.1.0-rc.2`; install and revalidate it through
+          ignored `.deps/` storage backed by `/Volumes/tmp`. The second prepare
+          is a verified cache hit, the expanded shell contains the transient
+          peer diagnostic, 17 focused tests pass, and desktop/scripts
+          typechecks have no errors.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
 `e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, `31fe2c70e`,
@@ -698,17 +722,34 @@ claiming revoke/recovery coverage. The run also proved that Electron's early GPU
 process needs an explicit `--user-data-dir` in addition to the app-level
 environment override. The new packaged smoke runner now supplies that argument,
 recursively verifies the disposable profile, and has 22 focused tests plus
-scripts typecheck, formatting, and `git diff --check` green. The bounded live
-browser-peer diagnostic is implemented in the dirty CTOX checkout; its targeted
-signaling-freshness and reproducible-bundle smokes pass, while the complete CTOX
-browser suite is currently `97/102`. Its five failures are command-consumer,
-command-type, replication-recovery, symmetric-capability-handshake, and task-ID
-inventory checks in the already dirty CTOX tree, so the diagnostic has not been
-committed or released over unrelated work. The pinned
-`business-os-shell-v0.1.0-rc.1` consequently does not expose the field required
-by the packaged runner; the live revoke/recovery/partition smoke remains open
-until a release-green successor is published and pinned. An earlier draft that
-pointed CTOX roots at a synthetic empty instance remains explicitly rejected.
+scripts typecheck, formatting, and `git diff --check` green.
+
+The next CTOX shell candidate is isolated on clean branch
+`codex/browser-peer-shell-rc2` above committed CTOX main `825ee651d`. Commit
+`71b80c625` repairs the three deterministic inventory gates; commit `1e2808814`
+adds the transient browser-peer status plus the production reconnect/batching
+invariants already required by committed tests; commits `15abb6427`,
+`cbefe7521`, and `3572b3f56` restore the hardened versioned-shell builder and
+prerelease workflow. The Rust wire daemon was built in a release target under
+`/Volumes/tmp`, and the release-strict Business OS suite passes `102/102` with
+zero failures and zero skips. Adversarial self-review found no HTTP data path,
+persistent peer identity, durable test IPC, logging surface, or mutation of the
+deterministic client identity.
+
+Clean branch `codex/browser-peer-shell-rc2` and annotated tag
+`business-os-shell-v0.1.0-rc.2` are published in `metric-space-ai/ctox` at
+`3572b3f56`. Actions run `31949321934` published a prerelease whose Node 24
+archive is byte-identical to the independent local Node 24 build: 129,003,880
+bytes, SHA-256 `60b362503785a82fe087be5a3360f2fff74afdbff51c32a8f4b448f907490495`,
+1,768 files, and no symlinks. Workjet now pins this exact release and revalidated
+its detached manifest, embedded inventory, archive, expanded files, completion
+sentinel, and cache-hit path under ignored `.deps/` storage backed by
+`/Volumes/tmp`. The pinned shell exposes the transient browser-peer diagnostic
+required by the packaged runner. The next proof sequence is to make the staged
+production dependency install consume locked resolutions, rebuild the unsigned
+package, and run the real revoke/unrevoke/recovery/partition smoke. An earlier
+draft that pointed CTOX roots at a synthetic empty instance remains explicitly
+rejected.
 Independent Kimi review remains deferred because the required review provider
 is unavailable; adversarial self-review additionally caught and fixed cleanup
 being skipped after a partial registry removal and set the unrevoke barrier
@@ -936,16 +977,25 @@ Workjet is complete only when all of the following are true:
     - [x] Expose the browser's handshake-assigned peer ID through a bounded,
           non-persistent CTOX advanced-status diagnostic; external CDP capture
           does not survive the packaged WebContentsView's navigation target
-          swap reliably. Targeted CTOX checks pass in the current dirty checkout;
-          clean integration and release are still gated below.
+          swap reliably. The diagnostic is isolated in clean CTOX commit
+          `1e2808814`; publication and Workjet pinning remain gated below.
     - [x] Add the packaged smoke automation that captures that ephemeral peer ID
           in memory, drives native revoke and guaranteed-first unrevoke, checks
           healthy recovery, removes/reimports the pairing, verifies
           cookie/localStorage/IndexedDB/CacheStorage partition deletion, and
           retains Workjet/profile files if unrevoke cleanup fails.
-    - [ ] Restore the CTOX browser suite from `97/102` to a release-green state,
-          commit the diagnostic without absorbing unrelated dirty-tree work,
-          publish the next Business OS shell, and update Workjet's verified pin.
+    - [x] Restore the CTOX browser suite to `102/102` with the real Rust wire
+          daemon and zero skips, and commit the inventory repairs plus transient
+          diagnostic on clean branch `codex/browser-peer-shell-rc2` without
+          absorbing unrelated dirty-tree work.
+    - [x] Restore the hardened versioned-shell builder and prerelease workflow
+          on that clean branch.
+    - [x] Push the clean CTOX branch, pass the shell-builder unit gate, and
+          build/publish/verify `business-os-shell-v0.1.0-rc.2` entirely from
+          `/Volumes/tmp` scratch output with the pinned Node 24 toolchain.
+    - [x] Update Workjet's immutable shell manifest/checksum/source pin, fetch
+          the release through ignored `.deps/` storage, and prove both fresh
+          installation and verified cache-hit paths.
     - [ ] Execute the packaged runner to prove native revoke,
           guaranteed-first unrevoke, healthy recovery, pairing removal, and
           same-partition cookie/localStorage/IndexedDB/CacheStorage deletion

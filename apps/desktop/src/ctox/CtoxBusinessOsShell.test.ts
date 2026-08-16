@@ -130,18 +130,22 @@ describe("CtoxBusinessOsShell", () => {
               const second = yield* shell.launch(config);
               assert.equal(first.launchOrigin, second.launchOrigin);
               const origin = new URL(first.launchOrigin);
+              const launchUrl = new URL(first.launchUrl);
               assert.equal(origin.hostname, "127.0.0.1");
               assert.notEqual(origin.port, "");
-              const packed = new URL(first.launchUrl).searchParams.get("ctox_config");
+              assert.equal(launchUrl.pathname, "/business-os/");
+              const packed = launchUrl.searchParams.get("ctox_config");
               if (packed === null) assert.fail("ctox_config is required");
               assert.deepEqual(
                 decodeUnknownJson(Buffer.from(packed, "base64url").toString("utf8")),
                 config,
               );
 
-              const get = yield* Effect.promise(() => request(first.launchOrigin, "/"));
+              const get = yield* Effect.promise(() =>
+                request(first.launchOrigin, launchUrl.pathname),
+              );
               const head = yield* Effect.promise(() =>
-                request(first.launchOrigin, "/assets/app.js", "HEAD"),
+                request(first.launchOrigin, "/business-os/assets/app.js", "HEAD"),
               );
               assert.equal(get.status, 200);
               assert.equal(get.body, "<h1>Business OS</h1>");
@@ -189,7 +193,9 @@ describe("CtoxBusinessOsShell", () => {
                 ["/assets/app.js", "POST", 405],
                 ["/%", "GET", 400],
                 ["/api/business-os/status", "GET", 403],
+                ["/business-os/api/business-os/status", "GET", 403],
                 ["/api/business-os/collections", "GET", 403],
+                ["/business-os/commands", "GET", 403],
                 ["/commands", "GET", 403],
                 ["/files", "GET", 403],
                 ["/session", "GET", 403],

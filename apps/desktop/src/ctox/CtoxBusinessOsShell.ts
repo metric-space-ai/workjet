@@ -17,6 +17,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_SENTINEL_BYTES = 16 * 1024;
 const LOOPBACK_HOST = "127.0.0.1";
+const SHELL_PATH_PREFIX = "/business-os";
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const CompletionSentinel = Schema.Struct({
   schema: Schema.Literal(businessOsShellManifest.schema),
@@ -179,6 +180,20 @@ function requestPath(rawUrl: string): string | undefined {
   return decoded;
 }
 
+function shellRelativePath(pathname: string): string {
+  const normalized = pathname.replace(/\/{2,}/g, "/");
+  if (
+    normalized === "" ||
+    normalized === "/" ||
+    normalized === SHELL_PATH_PREFIX ||
+    normalized === `${SHELL_PATH_PREFIX}/`
+  )
+    return "index.html";
+  return normalized.startsWith(`${SHELL_PATH_PREFIX}/`)
+    ? normalized.slice(SHELL_PATH_PREFIX.length + 1)
+    : normalized.replace(/^\/+/, "");
+}
+
 function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): void {
   server.on("request", (request, response) => {
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -194,13 +209,12 @@ function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): v
       reject(response, 400);
       return;
     }
-    if (isBusinessOsDataRoute(pathname)) {
+    const relative = shellRelativePath(pathname);
+    if (isBusinessOsDataRoute(pathname) || isBusinessOsDataRoute(`/${relative}`)) {
       reject(response, 403);
       return;
     }
 
-    const relative =
-      pathname === "/" || pathname === "" ? "index.html" : pathname.replace(/^\/+/, "");
     const candidate = NodePath.resolve(canonicalRoot, relative);
     if (candidate !== canonicalRoot && !candidate.startsWith(`${canonicalRoot}${NodePath.sep}`)) {
       reject(response, 403);
@@ -336,7 +350,7 @@ export const make = Effect.gen(function* () {
     launch: (config) =>
       Effect.gen(function* () {
         const running = yield* resolveServer;
-        const url = new URL("/", running.origin);
+        const url = new URL(`${SHELL_PATH_PREFIX}/`, running.origin);
         url.searchParams.set(
           "ctox_config",
           Buffer.from(encodeUnknownJson(config), "utf8").toString("base64url"),

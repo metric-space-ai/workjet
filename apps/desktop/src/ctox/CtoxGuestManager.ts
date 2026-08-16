@@ -41,6 +41,7 @@ const STATIC_ASSET_PATHS = new Set([
   "/system-apps.json",
   "/modules/registry.json",
   "/rxdb/src/v1_5_status.mjs",
+  "/rxdb/src/protocol-contract.generated.mjs",
 ]);
 const STATIC_ASSET_PREFIXES = [
   "/assets/",

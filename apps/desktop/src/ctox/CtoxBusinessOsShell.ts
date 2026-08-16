@@ -18,7 +18,10 @@ const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_SENTINEL_BYTES = 16 * 1024;
 const LOOPBACK_HOST = "127.0.0.1";
 const SHELL_PATH_PREFIX = "/business-os";
-const ALLOWED_RXDB_STATIC_MODULE_PATHS = new Set(["/rxdb/src/v1_5_status.mjs"]);
+const ALLOWED_RXDB_STATIC_MODULE_PATHS = new Set([
+  "/rxdb/src/v1_5_status.mjs",
+  "/rxdb/src/protocol-contract.generated.mjs",
+]);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const CompletionSentinel = Schema.Struct({
   schema: Schema.Literal(businessOsShellManifest.schema),

@@ -94,6 +94,10 @@ async function shellRoot(base: string, packaged: boolean): Promise<string> {
     NodePath.join(root, "rxdb", "src", "v1_5_status.mjs"),
     "export const ready = true;",
   );
+  await NodeFs.writeFile(
+    NodePath.join(root, "rxdb", "src", "protocol-contract.generated.mjs"),
+    "export const protocol = true;",
+  );
   return root;
 }
 
@@ -155,6 +159,12 @@ describe("CtoxBusinessOsShell", () => {
               const rxdbStaticModule = yield* Effect.promise(() =>
                 request(first.launchOrigin, "/business-os/rxdb/src/v1_5_status.mjs"),
               );
+              const rxdbStaticContract = yield* Effect.promise(() =>
+                request(
+                  first.launchOrigin,
+                  "/business-os/rxdb/src/protocol-contract.generated.mjs",
+                ),
+              );
               assert.equal(get.status, 200);
               assert.equal(get.body, "<h1>Business OS</h1>");
               assert.equal(get.headers["cache-control"], "no-store");
@@ -166,6 +176,8 @@ describe("CtoxBusinessOsShell", () => {
               assert.equal(head.headers["content-type"], "text/javascript; charset=utf-8");
               assert.equal(rxdbStaticModule.status, 200);
               assert.equal(rxdbStaticModule.body, "export const ready = true;");
+              assert.equal(rxdbStaticContract.status, 200);
+              assert.equal(rxdbStaticContract.body, "export const protocol = true;");
               return first.launchOrigin;
             }).pipe(
               Effect.provide(CtoxBusinessOsShell.layer),

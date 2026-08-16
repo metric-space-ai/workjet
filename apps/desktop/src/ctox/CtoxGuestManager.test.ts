@@ -472,6 +472,13 @@ describe("CtoxGuestManager", () => {
     ).toBe(false);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/business-os/rxdb/src/protocol-contract.generated.mjs",
+        "script",
+        "https://ctox.dev",
+      ),
+    ).toBe(false);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/business-os/rxdb/src/v1_5_status.mjs",
         "xhr",
         "https://ctox.dev",

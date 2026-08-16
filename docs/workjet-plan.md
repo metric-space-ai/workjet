@@ -622,13 +622,23 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
 - local daemon and bundled-runtime smoke;
 - SSH password, host-key, attach, install, rotate, and revoke smokes;
 - packaged-app and signed-artifact smokes on supported platforms.
+  - [x] Add a cross-platform `T3CODE_DESKTOP_APP_DATA_DIR` override so packaged
+        smokes isolate Workjet/Electron `userData` under `/Volumes/tmp` without
+        repurposing `HOME` or touching the operator's normal desktop profile.
+  - [ ] Run the paired packaged-app smoke against the operator-selected real
+        CTOX instance. Temporary Workjet profiles and invite files stay under
+        `/Volumes/tmp`, but the smoke must not override `CTOX_ROOT`,
+        `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance.
+  - [ ] Capture the browser peer ID only from the live WebRTC signaling
+        handshake or another non-persistent runtime diagnostic, keep it out of
+        logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
 `e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, `31fe2c70e`,
-`483df6064`, and `a640dad00`; CTOX shell commits `aa7d64c22`, `967043561`, and
-`144f4ddef`): 100 focused
-CTOX/registry/IPC/guest/UI tests, 233 scripts tests, desktop/web/scripts
-typechecks, formatting, and `git diff --check` pass.
+`483df6064`, `a640dad00`, and `4dc74c432`; CTOX shell commits `aa7d64c22`,
+`967043561`, and `144f4ddef`): 100 focused CTOX/registry/IPC/guest/UI tests,
+7 desktop-environment tests, 233 scripts tests, desktop/web/scripts typechecks,
+formatting, and `git diff --check` pass.
 The real `business-os-shell-v0.1.0-rc.1` release was downloaded, verified, and
 revalidated from an ignored `.deps/` symlink backed by `/Volumes/tmp`; a real
 runtime integration test served that release successfully on loopback. Workjet
@@ -639,7 +649,11 @@ guest detachment and main-derived partition cleanup, including the partial
 registry-write failure path. This evidence does not yet cover a packaged
 Electron guest observing the native CTOX peer, packaged ready/revoked
 transitions or packaged partition deletion, local, SSH, or platform keychain
-parity. Independent Kimi review remains deferred because the required review
+parity. The packaged test can now isolate both Workjet state and Electron
+`userData` under `/Volumes/tmp`; an abandoned first smoke draft incorrectly
+isolated the CTOX CLI roots as well and is explicitly not accepted because it
+would test a synthetic empty instance instead of the selected closed CTOX
+instance. Independent Kimi review remains deferred because the required review
 provider is unavailable; adversarial self-review additionally caught and fixed
 cleanup being skipped after a partial registry removal.
 
@@ -854,6 +868,13 @@ Workjet is complete only when all of the following are true:
 12. [ ] Run the packaged Electron paired-guest smoke against a real native CTOX
         peer and verify ready/revoked transitions plus the now-implemented
         partition cleanup in packaged runtime behavior.
+    - [x] Isolate packaged Workjet state and Electron `userData` beneath an
+          explicit `/Volumes/tmp` root without changing `HOME`.
+    - [ ] Keep the real CTOX instance selection intact; do not point CTOX roots
+          at the disposable Workjet smoke profile.
+    - [ ] Capture the ephemeral browser peer ID in memory, prove native
+          revoke/unrevoke and recovery, and leave no revocation behind on any
+          failure or signal path.
 13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
 14. [ ] Complete durable local orchestration semantics, then add authenticated

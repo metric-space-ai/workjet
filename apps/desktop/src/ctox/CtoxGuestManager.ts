@@ -37,7 +37,11 @@ const ALLOWED_CONTROL_PATHS = new Set([
   "/api/business-os/ctox/subscription-auth/callback",
 ]);
 const DATA_RESOURCE_TYPES = new Set(["xhr", "fetch", "websocket", "webSocket"]);
-const STATIC_ASSET_PATHS = new Set(["/system-apps.json", "/modules/registry.json"]);
+const STATIC_ASSET_PATHS = new Set([
+  "/system-apps.json",
+  "/modules/registry.json",
+  "/rxdb/src/v1_5_status.mjs",
+]);
 const STATIC_ASSET_PREFIXES = [
   "/assets/",
   "/desktop-apps/",
@@ -169,7 +173,12 @@ export function isForbiddenCtoxDataRequest(
     if (shellPath.startsWith("/api/business-os/") || shellPath === "/api/business-os") {
       if (!ALLOWED_CONTROL_PATHS.has(shellPath)) return true;
     }
-    if (shellPath.startsWith("/rxdb/") && !shellPath.startsWith("/rxdb/dist/")) return true;
+    if (
+      shellPath.startsWith("/rxdb/") &&
+      !shellPath.startsWith("/rxdb/dist/") &&
+      !isAllowedStaticAssetPath(shellPath, method)
+    )
+      return true;
     if (shellPath === "/commands" || shellPath.startsWith("/commands/")) return true;
   }
   if (!DATA_RESOURCE_TYPES.has(resourceType)) return false;
@@ -183,7 +192,12 @@ export function isForbiddenCtoxDataRequest(
   if (url.host !== launchHost) return false;
   const path = normalizePathname(url.pathname);
   const shellPath = stripBusinessOsPathPrefix(path);
-  if (ALLOWED_CONTROL_PATHS.has(shellPath) || shellPath.startsWith("/rxdb/dist/")) return false;
+  if (
+    ALLOWED_CONTROL_PATHS.has(shellPath) ||
+    shellPath.startsWith("/rxdb/dist/") ||
+    isAllowedStaticAssetPath(shellPath, method)
+  )
+    return false;
   return !isAllowedStaticAssetPath(path, method);
 }
 

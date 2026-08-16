@@ -465,8 +465,30 @@ describe("CtoxGuestManager", () => {
     ).toBe(false);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/business-os/rxdb/src/v1_5_status.mjs",
+        "script",
+        "https://ctox.dev",
+      ),
+    ).toBe(false);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/business-os/rxdb/src/v1_5_status.mjs",
+        "xhr",
+        "https://ctox.dev",
+        "POST",
+      ),
+    ).toBe(true);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/business-os/rxdb/private",
         "fetch",
+        "https://ctox.dev",
+      ),
+    ).toBe(true);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/business-os/rxdb/src/private.mjs",
+        "script",
         "https://ctox.dev",
       ),
     ).toBe(true);

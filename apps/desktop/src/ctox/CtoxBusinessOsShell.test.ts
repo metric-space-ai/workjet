@@ -89,6 +89,11 @@ async function shellRoot(base: string, packaged: boolean): Promise<string> {
   );
   await NodeFs.mkdir(NodePath.join(root, "assets"));
   await NodeFs.writeFile(NodePath.join(root, "assets", "app.js"), "export const ready = true;");
+  await NodeFs.mkdir(NodePath.join(root, "rxdb", "src"), { recursive: true });
+  await NodeFs.writeFile(
+    NodePath.join(root, "rxdb", "src", "v1_5_status.mjs"),
+    "export const ready = true;",
+  );
   return root;
 }
 
@@ -147,6 +152,9 @@ describe("CtoxBusinessOsShell", () => {
               const head = yield* Effect.promise(() =>
                 request(first.launchOrigin, "/business-os/assets/app.js", "HEAD"),
               );
+              const rxdbStaticModule = yield* Effect.promise(() =>
+                request(first.launchOrigin, "/business-os/rxdb/src/v1_5_status.mjs"),
+              );
               assert.equal(get.status, 200);
               assert.equal(get.body, "<h1>Business OS</h1>");
               assert.equal(get.headers["cache-control"], "no-store");
@@ -156,6 +164,8 @@ describe("CtoxBusinessOsShell", () => {
               assert.equal(head.status, 200);
               assert.equal(head.body, "");
               assert.equal(head.headers["content-type"], "text/javascript; charset=utf-8");
+              assert.equal(rxdbStaticModule.status, 200);
+              assert.equal(rxdbStaticModule.body, "export const ready = true;");
               return first.launchOrigin;
             }).pipe(
               Effect.provide(CtoxBusinessOsShell.layer),
@@ -196,6 +206,7 @@ describe("CtoxBusinessOsShell", () => {
                 ["/business-os/api/business-os/status", "GET", 403],
                 ["/api/business-os/collections", "GET", 403],
                 ["/business-os/commands", "GET", 403],
+                ["/business-os/rxdb/src/private.mjs", "GET", 403],
                 ["/commands", "GET", 403],
                 ["/files", "GET", 403],
                 ["/session", "GET", 403],

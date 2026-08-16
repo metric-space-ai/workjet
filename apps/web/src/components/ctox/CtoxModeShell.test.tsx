@@ -11,6 +11,7 @@ import { SidebarProvider } from "../ui/sidebar";
 import ctoxModeShellSource from "./CtoxModeShell.tsx?raw";
 import {
   activateCtoxInstance,
+  buildCtoxManualPairingInput,
   canActivateCtoxInstance,
   CTOX_IMPORT_ERROR_MESSAGE,
   CTOX_IMPORT_SUCCESS_MESSAGE,
@@ -202,7 +203,7 @@ describe("CTOX instance presentation", () => {
     expect(getCtoxManagedState({ _tag: "failed", code: "network_error" })).toBe("failed");
   });
 
-  it("disables paired rows while keeping available managed rows launchable", () => {
+  it("only enables available managed rows until other launch adapters land", () => {
     const managed = instance({
       id: "managed:alpha",
       source: "ctox_dev",
@@ -214,13 +215,25 @@ describe("CTOX instance presentation", () => {
       displayName: "Paired Alpha",
       status: "paired",
     });
+    const local = instance({
+      id: "local:alpha",
+      source: "local_daemon",
+      displayName: "Local Alpha",
+    });
+    const ssh = instance({
+      id: "ssh:alpha",
+      source: "ssh_managed",
+      displayName: "SSH Alpha",
+    });
 
     expect(canActivateCtoxInstance(managed)).toBe(true);
     expect(canActivateCtoxInstance(paired)).toBe(false);
+    expect(canActivateCtoxInstance(local)).toBe(false);
+    expect(canActivateCtoxInstance(ssh)).toBe(false);
 
     const markup = renderToStaticMarkup(
       <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "ready", instances: [] }}>
-        <CtoxManagedInstanceList instances={[managed, paired]} />
+        <CtoxManagedInstanceList instances={[managed, paired, local, ssh]} />
       </CtoxModeProvider>,
     );
 
@@ -228,10 +241,33 @@ describe("CTOX instance presentation", () => {
     expect(markup).toMatch(
       /<button[^>]*disabled=""[^>]*title="The verified Business OS shell is required\."[^>]*>[^]*Paired Alpha/,
     );
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*Local Alpha/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*SSH Alpha/);
   });
 });
 
 describe("CTOX bridge actions", () => {
+  it("omits empty optional manual-pairing fields and normalizes signaling input", () => {
+    expect(
+      buildCtoxManualPairingInput({
+        displayName: "Office",
+        instanceId: "",
+        syncRoom: "ctox-business-os:office",
+        signalingUrls: "wss://one.example\n wss://two.example,",
+        roomSecret: "room-secret",
+        capabilityToken: "",
+        capabilityExpiresAtMs: "",
+        role: "",
+        userId: "",
+      }),
+    ).toEqual({
+      displayName: "Office",
+      syncRoom: "ctox-business-os:office",
+      signalingUrls: ["wss://one.example", "wss://two.example"],
+      roomSecret: "room-secret",
+    });
+  });
+
   it("never activates paired entries and still activates managed entries", async () => {
     const activate = vi.fn(async () => ({ _tag: "ready" as const, instanceId: "managed:alpha" }));
     const bridge = inertBridge({ activate });
@@ -330,7 +366,7 @@ describe("CtoxMainShell", () => {
 
     expect(markup).toContain('data-ctox-main-shell=""');
     expect(markup).toContain("No instance selected");
-    expect(markup).toContain("Select an available managed, local, or SSH instance");
+    expect(markup).toContain("Select an available managed instance");
     expect(markup).not.toContain("iframe");
     expect(markup).not.toContain("webview");
   });

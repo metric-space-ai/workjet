@@ -40,6 +40,18 @@ export interface CtoxMutationOutcome {
   readonly message: string;
 }
 
+export interface CtoxManualPairingFormValues {
+  readonly displayName: string;
+  readonly instanceId: string;
+  readonly syncRoom: string;
+  readonly signalingUrls: string;
+  readonly roomSecret: string;
+  readonly capabilityToken: string;
+  readonly capabilityExpiresAtMs: string;
+  readonly role: string;
+  readonly userId: string;
+}
+
 export const CTOX_IMPORT_SUCCESS_MESSAGE = "Instance added.";
 export const CTOX_IMPORT_ERROR_MESSAGE =
   "Instance could not be added. Check the entry and try again.";
@@ -100,7 +112,7 @@ export function isPairedCtoxInstance(instance: CtoxManagedInstance): boolean {
 }
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
-  return instance.status === "available" && !isPairedCtoxInstance(instance);
+  return instance.source === "ctox_dev" && instance.status === "available";
 }
 
 export function getCtoxManagedState(discovery: "loading" | CtoxDiscoveryResult): CtoxManagedState {
@@ -169,6 +181,27 @@ export async function submitCtoxManualPairing(
   } catch {
     return { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
   }
+}
+
+export function buildCtoxManualPairingInput(
+  values: CtoxManualPairingFormValues,
+): CtoxManualPairingImportInput {
+  return {
+    displayName: values.displayName,
+    syncRoom: values.syncRoom,
+    signalingUrls: values.signalingUrls
+      .split(/[\n,]+/u)
+      .map((value) => value.trim())
+      .filter((value) => value !== ""),
+    roomSecret: values.roomSecret,
+    ...(values.instanceId === "" ? {} : { instanceId: values.instanceId }),
+    ...(values.capabilityToken === "" ? {} : { capabilityToken: values.capabilityToken }),
+    ...(values.capabilityExpiresAtMs === ""
+      ? {}
+      : { capabilityExpiresAtMs: Number(values.capabilityExpiresAtMs) }),
+    ...(values.role === "" ? {} : { role: values.role }),
+    ...(values.userId === "" ? {} : { userId: values.userId }),
+  };
 }
 
 export async function removeCtoxPairedInstance(
@@ -537,22 +570,17 @@ function PairingAddSurface({
     event.preventDefault();
     setSubmitting(true);
     setFeedback(null);
-    const input: CtoxManualPairingImportInput = {
+    const input = buildCtoxManualPairingInput({
       displayName,
+      instanceId,
       syncRoom,
-      signalingUrls: signalingUrls
-        .split(/[\n,]+/u)
-        .map((value) => value.trim())
-        .filter((value) => value !== ""),
+      signalingUrls,
       roomSecret,
-      ...(instanceId === "" ? {} : { instanceId }),
-      ...(capabilityToken === "" ? {} : { capabilityToken }),
-      ...(capabilityExpiresAtMs === ""
-        ? {}
-        : { capabilityExpiresAtMs: Number(capabilityExpiresAtMs) }),
+      capabilityToken,
+      capabilityExpiresAtMs,
       role,
       userId,
-    };
+    });
     void importManualPairing(input)
       .then(finish)
       .finally(() => setSubmitting(false));
@@ -668,6 +696,7 @@ function PairingAddSurface({
               onChange={(event) => setSignalingUrls(event.target.value)}
               autoComplete="off"
               required
+              maxLength={32_768}
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
@@ -705,24 +734,22 @@ function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Role
+            Role (optional)
             <input
               className={fieldClassName}
               value={role}
               onChange={(event) => setRole(event.target.value)}
               autoComplete="off"
-              required
               maxLength={128}
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            User ID
+            User ID (optional)
             <input
               className={fieldClassName}
               value={userId}
               onChange={(event) => setUserId(event.target.value)}
               autoComplete="off"
-              required
               maxLength={256}
             />
           </label>
@@ -1088,7 +1115,7 @@ export function CtoxMainShell() {
           : {
               title: "No instance selected",
               description:
-                "Select an available managed, local, or SSH instance from the sidebar to open Business OS.",
+                "Select an available managed instance from the sidebar to open Business OS.",
             };
 
   return (

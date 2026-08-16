@@ -183,14 +183,14 @@ export const removePairedInstance: DesktopIpc.DesktopIpcMethod<
       const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
       const cleanup = yield* Effect.exit(
         Effect.gen(function* () {
-          const deactivation = yield* guests.deactivateInstance(removal.success.id);
+          const deactivation = yield* guests.deactivateInstance(removal.success.descriptor.id);
           if (deactivation._tag !== "completed") return yield* Effect.fail(undefined);
-          yield* sessions.clearInstance(removal.success);
+          yield* sessions.clearInstance(removal.success.descriptor);
         }),
       );
       return yield* encodeSafe(
         CtoxPairedInstanceRemoveResult,
-        Exit.isSuccess(cleanup)
+        removal.success.secretRecordRemoved && Exit.isSuccess(cleanup)
           ? { _tag: "completed" }
           : { _tag: "failed", code: "persistence_failed" },
       );

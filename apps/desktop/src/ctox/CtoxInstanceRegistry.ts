@@ -193,6 +193,11 @@ export interface CtoxPairedLaunchDescriptor {
   readonly config: CtoxBusinessOsLaunchConfig;
 }
 
+export interface CtoxPairedInstanceRemoval {
+  readonly descriptor: CtoxManagedInstance;
+  readonly secretRecordRemoved: boolean;
+}
+
 export class CtoxInstanceRegistry extends Context.Service<
   CtoxInstanceRegistry,
   {
@@ -205,7 +210,7 @@ export class CtoxInstanceRegistry extends Context.Service<
     ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
     readonly removePairedInstance: (
       instanceId: string,
-    ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
+    ) => Effect.Effect<CtoxPairedInstanceRemoval, CtoxInstanceRegistryError>;
     /** Main-process-only launch resolution; its secret-bearing result never crosses IPC. */
     readonly resolvePairedLaunch: (
       instanceId: string,
@@ -1102,11 +1107,14 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             version: REGISTRY_VERSION,
             instances: publicDocument.instances.filter((instance) => instance.id !== instanceId),
           });
-          yield* writeSecrets({
+          const secretRecordRemoved = yield* writeSecrets({
             version: REGISTRY_VERSION,
             records: secretDocument.records.filter((record) => record.id !== instanceId),
-          });
-          return descriptor;
+          }).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
+          return { descriptor, secretRecordRemoved };
         }),
       ),
   });

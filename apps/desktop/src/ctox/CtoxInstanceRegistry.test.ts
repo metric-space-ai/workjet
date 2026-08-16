@@ -534,10 +534,11 @@ describe("CtoxInstanceRegistry", () => {
         }
 
         memory.failRenameTo.add("/state/ctox/secrets.json");
-        const removal = yield* Effect.result(service.removePairedInstance(instance.id));
-        assert.equal(failureCode(removal), "persistence_failed");
+        const removal = yield* service.removePairedInstance(instance.id);
+        assert.deepEqual(removal, { descriptor: instance, secretRecordRemoved: false });
         const publicRaw = memory.files.get("/state/ctox/instances.json") ?? "";
         assert.notInclude(publicRaw, instance.id);
+        assert.include(memory.files.get("/state/ctox/secrets.json") ?? "", instance.id);
         assert.deepEqual(yield* service.merge({ _tag: "signed_out" }), { _tag: "signed_out" });
       });
     },
@@ -558,9 +559,9 @@ describe("CtoxInstanceRegistry", () => {
       }
 
       const removed = yield* service.removePairedInstance(stored.id);
-      assert.deepEqual(removed, stored);
-      assert.equal(removed.status, "paired");
-      assert.notInclude(encodeUnknownJson(removed), "raw-room-secret");
+      assert.deepEqual(removed, { descriptor: stored, secretRecordRemoved: true });
+      assert.equal(removed.descriptor.status, "paired");
+      assert.notInclude(encodeUnknownJson(removed.descriptor), "raw-room-secret");
       assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", stored.id);
       assert.notInclude(memory.files.get("/state/ctox/secrets.json") ?? "", stored.id);
     });

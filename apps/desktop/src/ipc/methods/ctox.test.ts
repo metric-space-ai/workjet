@@ -43,7 +43,8 @@ function registryLayer(
     merge: (managed) => Effect.succeed(managed),
     importInvite: () => Effect.succeed(pairedInstance),
     importManualPairing: () => Effect.succeed(pairedInstance),
-    removePairedInstance: () => Effect.succeed(pairedInstance),
+    removePairedInstance: () =>
+      Effect.succeed({ descriptor: pairedInstance, secretRecordRemoved: true }),
     resolvePairedLaunch: () => Effect.die("unused"),
     ...overrides,
   });
@@ -244,7 +245,7 @@ describe("CTOX IPC methods", () => {
       const remove = vi.fn((instanceId: string) =>
         Effect.sync(() => {
           calls.push(`registry:${instanceId}`);
-          return authoritative;
+          return { descriptor: authoritative, secretRecordRemoved: true };
         }),
       );
       const resolvePairedLaunch = vi.fn(() => Effect.die("must not decrypt removal secrets"));
@@ -356,6 +357,28 @@ describe("CTOX IPC methods", () => {
       expect(sessionClear).toHaveBeenCalledExactlyOnceWith(pairedInstance);
       assert.notInclude(encodeUnknownJson(sessionResult), "session-secret-cause");
     });
+  });
+
+  it.effect("still detaches and clears after a partial registry removal", () => {
+    const deactivateInstance = vi.fn(() => Effect.succeed({ _tag: "completed" as const }));
+    const clearInstance = vi.fn(() => Effect.void);
+
+    return Effect.gen(function* () {
+      const result = yield* removePairedInstance.handler({ instanceId: pairedInstance.id });
+      assert.deepEqual(result, { _tag: "failed", code: "persistence_failed" });
+      expect(deactivateInstance).toHaveBeenCalledExactlyOnceWith(pairedInstance.id);
+      expect(clearInstance).toHaveBeenCalledExactlyOnceWith(pairedInstance);
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          registryLayer({
+            removePairedInstance: () =>
+              Effect.succeed({ descriptor: pairedInstance, secretRecordRemoved: false }),
+          }),
+          removalCleanupLayer({ deactivateInstance, clearInstance }),
+        ),
+      ),
+    );
   });
 
   it.effect("returns only renderer-safe import descriptors", () => {

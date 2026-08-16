@@ -876,16 +876,22 @@ async function extractValidatedArchive(
 
 async function hashFile(
   filePath: string,
+  expectedByteSize: number,
 ): Promise<{ readonly byteSize: number; readonly sha256: string }> {
   const before = await NodeFSP.lstat(filePath);
-  if (!before.isFile() || before.isSymbolicLink()) {
+  if (!before.isFile() || before.isSymbolicLink() || before.size !== expectedByteSize) {
     fail("cache-invalid", "Cached shell inventory entry is not a regular file.");
   }
   const noFollow = NodeFSConstants.O_NOFOLLOW ?? 0;
   const handle = await NodeFSP.open(filePath, NodeFSConstants.O_RDONLY | noFollow);
   try {
     const opened = await handle.stat();
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+    if (
+      !opened.isFile() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      opened.size !== expectedByteSize
+    ) {
       fail("cache-invalid", "Cached shell file changed while being opened.");
     }
     const hash = createHash("sha256");
@@ -901,7 +907,8 @@ async function hashFile(
       after.isSymbolicLink() ||
       !after.isFile() ||
       after.dev !== opened.dev ||
-      after.ino !== opened.ino
+      after.ino !== opened.ino ||
+      after.size !== expectedByteSize
     ) {
       fail("cache-invalid", "Cached shell file changed while being verified.");
     }
@@ -911,19 +918,65 @@ async function hashFile(
   }
 }
 
-async function collectInstallFiles(root: string): Promise<ReadonlyArray<string>> {
+async function readBoundedRegularFile(filePath: string, maxBytes: number): Promise<Buffer> {
+  const before = await NodeFSP.lstat(filePath);
+  if (!before.isFile() || before.isSymbolicLink() || before.size < 0 || before.size > maxBytes) {
+    fail("cache-invalid", "Cached shell metadata file exceeds its byte budget.");
+  }
+  const noFollow = NodeFSConstants.O_NOFOLLOW ?? 0;
+  const handle = await NodeFSP.open(filePath, NodeFSConstants.O_RDONLY | noFollow);
+  try {
+    const opened = await handle.stat();
+    if (
+      !opened.isFile() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      opened.size !== before.size
+    ) {
+      fail("cache-invalid", "Cached shell metadata changed while being opened.");
+    }
+    const bytes = await handle.readFile();
+    const after = await NodeFSP.lstat(filePath);
+    if (
+      after.isSymbolicLink() ||
+      !after.isFile() ||
+      after.dev !== opened.dev ||
+      after.ino !== opened.ino ||
+      after.size !== bytes.length
+    ) {
+      fail("cache-invalid", "Cached shell metadata changed while being read.");
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function collectInstallFiles(
+  root: string,
+  release: CtoxBusinessOsShellReleaseManifest,
+): Promise<ReadonlyArray<string>> {
   const files: string[] = [];
+  let entryCount = 0;
   async function walk(directory: string, relativeDirectory: string): Promise<void> {
     const entries = await NodeFSP.readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
       const relativePath =
         relativeDirectory.length > 0 ? `${relativeDirectory}/${entry.name}` : entry.name;
+      validateCanonicalRelativePath(relativePath, release.budgets.maxPathBytes);
+      entryCount += 1;
+      if (entryCount > release.budgets.maxTarEntries + 1) {
+        fail("cache-invalid", "Cached shell exceeds its entry budget.");
+      }
       const absolutePath = NodePath.join(directory, entry.name);
       if (entry.isSymbolicLink()) fail("cache-invalid", "Cached shell contains a symbolic link.");
       if (entry.isDirectory()) {
         await walk(absolutePath, relativePath);
       } else if (entry.isFile()) {
         files.push(relativePath);
+        if (files.length > release.budgets.maxFiles + 2) {
+          fail("cache-invalid", "Cached shell exceeds its file budget.");
+        }
       } else {
         fail("cache-invalid", "Cached shell contains a special filesystem entry.");
       }
@@ -964,8 +1017,9 @@ async function verifyInstall(
   if (!stat.isDirectory() || stat.isSymbolicLink())
     fail("cache-invalid", "Cached shell is not a directory.");
 
-  const sentinelBytes = await NodeFSP.readFile(
+  const sentinelBytes = await readBoundedRegularFile(
     NodePath.join(installPath, CTOX_BUSINESS_OS_SHELL_COMPLETION_SENTINEL),
+    16 * 1024,
   );
   const sentinel = parseJson(sentinelBytes, "Shell completion sentinel");
   if (!isRecord(sentinel) || !recordsEqual(sentinel, completionSentinel(release))) {
@@ -973,10 +1027,10 @@ async function verifyInstall(
   }
 
   const embeddedPath = NodePath.join(installPath, CTOX_BUSINESS_OS_SHELL_EMBEDDED_MANIFEST);
-  const embeddedBytes = await NodeFSP.readFile(embeddedPath);
-  if (embeddedBytes.length > release.budgets.maxManifestBytes) {
-    fail("cache-invalid", "Cached embedded manifest exceeds its byte budget.");
-  }
+  const embeddedBytes = await readBoundedRegularFile(
+    embeddedPath,
+    release.budgets.maxManifestBytes,
+  );
   if (sha256(embeddedBytes) !== release.embeddedManifestSha256) {
     fail("cache-invalid", "Cached embedded manifest SHA-256 does not match the pin.");
   }
@@ -995,13 +1049,13 @@ async function verifyInstall(
     sha256: sentinelHash,
   });
 
-  const actualFiles = await collectInstallFiles(installPath);
+  const actualFiles = await collectInstallFiles(installPath, release);
   if (actualFiles.length !== expected.size)
     fail("cache-invalid", "Cached shell has extra or missing files.");
   for (const relativePath of actualFiles) {
     const record = expected.get(relativePath);
     if (record === undefined) fail("cache-invalid", "Cached shell contains an unmanifested file.");
-    const actual = await hashFile(resolveInside(installPath, relativePath));
+    const actual = await hashFile(resolveInside(installPath, relativePath), record.byteSize);
     if (actual.byteSize !== record.byteSize || actual.sha256 !== record.sha256) {
       fail("cache-invalid", "Cached shell file bytes do not match the embedded inventory.");
     }

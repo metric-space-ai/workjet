@@ -287,6 +287,40 @@ it("installs a verified shell, reuses a revalidated cache, and rebuilds invalid 
   });
 });
 
+it("rejects oversized cache metadata and inventory files before reading their contents", async () => {
+  await withTempDirectory(async (dependencyRoot) => {
+    const fixture = makeFixture();
+    const installed = await prepareCtoxBusinessOsShellForTest({
+      dependencyRoot,
+      releaseManifest: fixture.release,
+      fetch: fixtureFetch(fixture),
+    });
+    const embeddedPath = NodePath.join(
+      installed.installPath,
+      CTOX_BUSINESS_OS_SHELL_EMBEDDED_MANIFEST,
+    );
+    await NodeFSP.truncate(embeddedPath, fixture.release.budgets.maxManifestBytes + 1);
+    await expectCode(
+      () => verifyCtoxBusinessOsShellInstall(installed.installPath, fixture.release),
+      ["cache-invalid"],
+    );
+
+    const rebuilt = await prepareCtoxBusinessOsShellForTest({
+      dependencyRoot,
+      releaseManifest: fixture.release,
+      fetch: fixtureFetch(fixture),
+    });
+    await NodeFSP.truncate(
+      NodePath.join(rebuilt.installPath, "index.html"),
+      fixture.release.budgets.maxFileBytes + 1,
+    );
+    await expectCode(
+      () => verifyCtoxBusinessOsShellInstall(rebuilt.installPath, fixture.release),
+      ["cache-invalid"],
+    );
+  });
+});
+
 it("resolves explicit, environment, and repository-local dependency roots", () => {
   assert.equal(
     resolveCtoxBusinessOsShellDependencyRoot({ repoRoot: "/repo", env: {} }),

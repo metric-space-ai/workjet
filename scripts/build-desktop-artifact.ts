@@ -68,6 +68,7 @@ const StageWorkspaceConfig = Schema.Struct({
   // Without allowBuilds the staged `vp install --prod` fails with
   // ERR_PNPM_IGNORED_BUILDS for packages that have lifecycle scripts.
   allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
@@ -78,6 +79,8 @@ const RepoRoot = Effect.service(Path.Path).pipe(
 );
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
+const decodePnpmLockfile = Schema.decodeEffect(fromYaml(Schema.Unknown));
+const encodePnpmLockfile = Schema.encodeEffect(fromYaml(Schema.Unknown));
 const decodeNodePtyManifest = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
 );
@@ -378,6 +381,48 @@ export class MissingServerProductionDependenciesError extends Schema.TaggedError
 ) {
   override get message(): string {
     return `Could not resolve production dependencies from ${this.manifestPath}.`;
+  }
+}
+
+const StageLockfileResolutionReason = Schema.Literals(["missing", "conflicting", "ambiguous"]);
+const StageLockfileResolutionSource = Schema.Literals(["importers", "packages", "patches"]);
+
+export class StageLockfileResolutionError extends Schema.TaggedErrorClass<StageLockfileResolutionError>()(
+  "StageLockfileResolutionError",
+  {
+    reason: StageLockfileResolutionReason,
+    source: StageLockfileResolutionSource,
+    dependencyName: Schema.String,
+    specifier: Schema.String,
+    candidates: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Stage lockfile has ${this.reason} repository resolution data for '${this.dependencyName}' (${this.specifier}) in ${this.source}.`;
+  }
+}
+
+export class StageLockfileReadError extends Schema.TaggedErrorClass<StageLockfileReadError>()(
+  "StageLockfileReadError",
+  {
+    lockfilePath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Could not read the repository lockfile at ${this.lockfilePath}.`;
+  }
+}
+
+export class StageLockfileSerializationError extends Schema.TaggedErrorClass<StageLockfileSerializationError>()(
+  "StageLockfileSerializationError",
+  {
+    lockfilePath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Could not serialize the staged lockfile at ${this.lockfilePath}.`;
   }
 }
 
@@ -691,7 +736,7 @@ interface StagePackageJson {
   };
 }
 
-export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
+export const STAGE_INSTALL_ARGS = ["install", "--prod", "--frozen-lockfile"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
   // T3 Code always passes the user's installed Claude executable to the SDK,
@@ -1038,10 +1083,11 @@ export function createStageWorkspaceConfig(input: {
   readonly platform: typeof BuildPlatform.Type;
   readonly arch: typeof BuildArch.Type;
   readonly allowBuilds?: Record<string, boolean>;
+  readonly catalog?: Record<string, string>;
   readonly patchedDependencies?: Record<string, string>;
   readonly overrides?: Record<string, string>;
 }): StageWorkspaceConfig {
-  const { platform, arch, allowBuilds, patchedDependencies, overrides } = input;
+  const { platform, arch, allowBuilds, catalog, patchedDependencies, overrides } = input;
   const hostOs = platform === "mac" ? "darwin" : platform === "win" ? "win32" : "linux";
   const hostCpu = arch === "universal" ? ["arm64", "x64"] : [arch];
   // Linux AppImages and Windows WSL backends both execute a Linux/glibc Node
@@ -1069,6 +1115,7 @@ export function createStageWorkspaceConfig(input: {
   return {
     supportedArchitectures,
     ...(allowBuilds && Object.keys(allowBuilds).length > 0 ? { allowBuilds } : {}),
+    ...(catalog && Object.keys(catalog).length > 0 ? { catalog } : {}),
     ...(patchedDependencies && Object.keys(patchedDependencies).length > 0
       ? { patchedDependencies }
       : {}),
@@ -1090,6 +1137,228 @@ export function createStagePatchedDependencies(
 function getPatchedDependencyPackageName(patchKey: string): string {
   const versionSeparator = patchKey.lastIndexOf("@");
   return versionSeparator > 0 ? patchKey.slice(0, versionSeparator) : patchKey;
+}
+
+interface StagePnpmLockfileInput {
+  readonly dependencies: Readonly<Record<string, string>>;
+  readonly devDependencies: Readonly<Record<string, string>>;
+  readonly promotedDependencyNames: ReadonlyArray<string>;
+  readonly sourceSpecifiers: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  readonly patchedDependencies: Readonly<Record<string, string>>;
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function asUnknownRecord(value: unknown): UnknownRecord | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : undefined;
+}
+
+function stageLockfileResolutionError(input: {
+  readonly reason: typeof StageLockfileResolutionReason.Type;
+  readonly source: typeof StageLockfileResolutionSource.Type;
+  readonly dependencyName: string;
+  readonly specifier: string;
+  readonly candidates?: ReadonlyArray<string>;
+}): StageLockfileResolutionError {
+  return new StageLockfileResolutionError({
+    ...input,
+    candidates: [...(input.candidates ?? [])],
+  });
+}
+
+function lockedResolutionBase(version: string): string {
+  const peerSuffixStart = version.indexOf("(");
+  return peerSuffixStart < 0 ? version : version.slice(0, peerSuffixStart);
+}
+
+function assertLockedGraphResolution(
+  packages: UnknownRecord,
+  snapshots: UnknownRecord,
+  dependencyName: string,
+  specifier: string,
+  version: string,
+): void {
+  const packageKey = `${dependencyName}@${lockedResolutionBase(version)}`;
+  const snapshotKey = `${dependencyName}@${version}`;
+  if (!Object.hasOwn(packages, packageKey) || !Object.hasOwn(snapshots, snapshotKey)) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "packages",
+      dependencyName,
+      specifier,
+      candidates: [version],
+    });
+  }
+}
+
+function resolveImporterLockedVersion(
+  importers: UnknownRecord,
+  packages: UnknownRecord,
+  snapshots: UnknownRecord,
+  dependencyName: string,
+  specifier: string,
+  sourceSpecifiers: StagePnpmLockfileInput["sourceSpecifiers"],
+): string {
+  const candidates: string[] = [];
+  const invalidSources: string[] = [];
+
+  for (const importerPath of Object.keys(sourceSpecifiers).sort()) {
+    const expectedSpecifier = sourceSpecifiers[importerPath]?.[dependencyName];
+    if (expectedSpecifier === undefined) continue;
+
+    const importer = asUnknownRecord(importers[importerPath]);
+    const dependencies = asUnknownRecord(importer?.dependencies);
+    const entry = asUnknownRecord(dependencies?.[dependencyName]);
+    const lockedSpecifier = entry?.specifier;
+    const lockedVersion = entry?.version;
+    if (
+      (lockedSpecifier !== expectedSpecifier && lockedSpecifier !== specifier) ||
+      typeof lockedVersion !== "string"
+    ) {
+      invalidSources.push(importerPath);
+      continue;
+    }
+    assertLockedGraphResolution(packages, snapshots, dependencyName, specifier, lockedVersion);
+    candidates.push(lockedVersion);
+  }
+
+  if (invalidSources.length > 0 || candidates.length === 0) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "importers",
+      dependencyName,
+      specifier,
+      candidates: invalidSources,
+    });
+  }
+
+  const uniqueCandidates = [...new Set(candidates)].sort();
+  if (uniqueCandidates.length > 1) {
+    throw stageLockfileResolutionError({
+      reason: "conflicting",
+      source: "importers",
+      dependencyName,
+      specifier,
+      candidates: uniqueCandidates,
+    });
+  }
+
+  return uniqueCandidates[0]!;
+}
+
+function resolvePromotedLockedVersion(
+  packages: UnknownRecord,
+  snapshots: UnknownRecord,
+  dependencyName: string,
+  specifier: string,
+): string {
+  const packagePrefix = `${dependencyName}@`;
+  const candidates = Object.keys(packages)
+    .filter((packageKey) => {
+      if (!packageKey.startsWith(packagePrefix)) return false;
+      const version = packageKey.slice(packagePrefix.length);
+      return lockedResolutionBase(version) === specifier;
+    })
+    .map((packageKey) => packageKey.slice(packagePrefix.length))
+    .sort();
+
+  if (candidates.length === 0) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "packages",
+      dependencyName,
+      specifier,
+    });
+  }
+  if (candidates.length > 1) {
+    throw stageLockfileResolutionError({
+      reason: "ambiguous",
+      source: "packages",
+      dependencyName,
+      specifier,
+      candidates,
+    });
+  }
+
+  const version = candidates[0]!;
+  assertLockedGraphResolution(packages, snapshots, dependencyName, specifier, version);
+  return version;
+}
+
+/**
+ * Re-home the tracked lockfile at the synthetic stage root without resolving any
+ * package again. The complete package/snapshot graph is retained; only the
+ * importer and staged patch hashes are derived for the generated package.json.
+ */
+export function createStagePnpmLockfile(
+  rootLockfile: unknown,
+  input: StagePnpmLockfileInput,
+): UnknownRecord {
+  const lockfile = asUnknownRecord(rootLockfile);
+  const importers = asUnknownRecord(lockfile?.importers);
+  const packages = asUnknownRecord(lockfile?.packages);
+  const snapshots = asUnknownRecord(lockfile?.snapshots);
+  if (!lockfile || !importers || !packages || !snapshots) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "importers",
+      dependencyName: "<lockfile>",
+      specifier: "pnpm-lock.yaml",
+    });
+  }
+
+  const promotedDependencyNames = new Set(input.promotedDependencyNames);
+  const createImporterGroup = (specifiers: Readonly<Record<string, string>>) =>
+    Object.fromEntries(
+      Object.keys(specifiers)
+        .sort()
+        .map((dependencyName) => {
+          const specifier = specifiers[dependencyName]!;
+          const version = promotedDependencyNames.has(dependencyName)
+            ? resolvePromotedLockedVersion(packages, snapshots, dependencyName, specifier)
+            : resolveImporterLockedVersion(
+                importers,
+                packages,
+                snapshots,
+                dependencyName,
+                specifier,
+                input.sourceSpecifiers,
+              );
+          return [dependencyName, { specifier, version }];
+        }),
+    );
+
+  const rootPatchedDependencies = asUnknownRecord(lockfile.patchedDependencies);
+  const stagePatchedDependencies = Object.fromEntries(
+    Object.keys(input.patchedDependencies)
+      .sort()
+      .map((patchKey) => {
+        const patchHash = rootPatchedDependencies?.[patchKey];
+        if (typeof patchHash !== "string") {
+          throw stageLockfileResolutionError({
+            reason: "missing",
+            source: "patches",
+            dependencyName: getPatchedDependencyPackageName(patchKey),
+            specifier: patchKey,
+          });
+        }
+        return [patchKey, patchHash];
+      }),
+  );
+
+  const { packageExtensionsChecksum: _packageExtensionsChecksum, ...stageLockfile } = lockfile;
+  return {
+    ...stageLockfile,
+    patchedDependencies: stagePatchedDependencies,
+    importers: {
+      ".": {
+        dependencies: createImporterGroup(input.dependencies),
+        devDependencies: createImporterGroup(input.devDependencies),
+      },
+    },
+  };
 }
 
 const AzureTrustedSigningOptionsConfig = Config.all({
@@ -2097,6 +2366,19 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const fs = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcessPlatform;
   const workspaceConfig = yield* readWorkspaceConfig();
+  const rootLockfilePath = path.join(repoRoot, "pnpm-lock.yaml");
+  const rootLockfileSource = yield* fs
+    .readFileString(rootLockfilePath)
+    .pipe(
+      Effect.mapError(
+        (cause) => new StageLockfileReadError({ lockfilePath: rootLockfilePath, cause }),
+      ),
+    );
+  const rootLockfile = yield* decodePnpmLockfile(rootLockfileSource).pipe(
+    Effect.mapError(
+      (cause) => new StageLockfileReadError({ lockfilePath: rootLockfilePath, cause }),
+    ),
+  );
   const workspaceCatalog = workspaceConfig.catalog ?? {};
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
@@ -2329,9 +2611,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* fs.writeFileString(macEntitlementsPath, renderMacPasskeyEntitlements(macPasskeySigning));
   }
 
-  const stageDependencies = {
-    ...resolvedServerDependencies,
-    ...resolvedDesktopRuntimeDependencies,
+  const targetFffNativeDependencies = {
     ...resolveFffNativeDependencies(
       options.platform,
       options.arch,
@@ -2348,6 +2628,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           serverPackageJson.dependencies["@ff-labs/fff-node"],
         )
       : {}),
+  };
+  const stageDependencies = {
+    ...resolvedServerDependencies,
+    ...resolvedDesktopRuntimeDependencies,
+    ...targetFffNativeDependencies,
   };
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
@@ -2390,6 +2675,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     platform: options.platform,
     arch: options.arch,
     allowBuilds: workspaceAllowBuilds,
+    catalog: workspaceCatalog,
     patchedDependencies: stagePatchedDependencies,
     overrides: resolvedOverrides,
   });
@@ -2398,6 +2684,31 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     path.join(stageAppDir, "pnpm-workspace.yaml"),
     stageWorkspaceConfigString,
   );
+
+  const stageLockfilePath = path.join(stageAppDir, "pnpm-lock.yaml");
+  const stageLockfile = yield* Effect.try({
+    try: () =>
+      createStagePnpmLockfile(rootLockfile, {
+        dependencies: stageDependencies,
+        devDependencies: { electron: electronVersion },
+        promotedDependencyNames: Object.keys(targetFffNativeDependencies),
+        sourceSpecifiers: {
+          "apps/server": serverPackageJson.dependencies,
+          "apps/desktop": desktopPackageJson.dependencies,
+        },
+        patchedDependencies: stagePatchedDependencies,
+      }),
+    catch: (cause) =>
+      Schema.is(StageLockfileResolutionError)(cause)
+        ? cause
+        : new StageLockfileSerializationError({ lockfilePath: stageLockfilePath, cause }),
+  });
+  const stageLockfileString = yield* encodePnpmLockfile(stageLockfile).pipe(
+    Effect.mapError(
+      (cause) => new StageLockfileSerializationError({ lockfilePath: stageLockfilePath, cause }),
+    ),
+  );
+  yield* fs.writeFileString(stageLockfilePath, stageLockfileString);
 
   if (Object.keys(stagePatchedDependencies).length > 0) {
     yield* fs.copy(path.join(repoRoot, "patches"), path.join(stageAppDir, "patches"));
@@ -2410,7 +2721,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       cwd: stageAppDir,
       shell: installCommand.shell,
     }),
-    { label: "vp install --prod", verbose: options.verbose },
+    { label: "vp install --prod --frozen-lockfile", verbose: options.verbose },
   );
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
 

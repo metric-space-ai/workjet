@@ -14,6 +14,7 @@ import {
   BuildCommandFailedError,
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
+  createStagePnpmLockfile,
   createBuildConfig,
   CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
   createDesktopExtraResources,
@@ -47,6 +48,7 @@ import {
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
   STAGE_INSTALL_ARGS,
+  StageLockfileResolutionError,
   WINDOWS_ASAR_UNPACK,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
@@ -89,6 +91,108 @@ function iconResizeSpawnerLayer(
       return Effect.succeed(mockProcess(exitCodes[commandIndex++] ?? 0));
     }),
   );
+}
+
+const LOCKED_CLAUDE_SDK =
+  "0.3.170(@anthropic-ai/sdk@0.93.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)";
+const LOCKED_EFFECT =
+  "4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)";
+const FFF_DARWIN_ARM64 = "@ff-labs/fff-bin-darwin-arm64";
+
+function makeRootLockFixture(input?: {
+  readonly desktopEffectVersion?: string;
+  readonly extraFffResolution?: string;
+}) {
+  const desktopEffectVersion = input?.desktopEffectVersion ?? LOCKED_EFFECT;
+  const extraFffResolution = input?.extraFffResolution;
+  return {
+    lockfileVersion: "9.0",
+    settings: {
+      autoInstallPeers: true,
+      excludeLinksFromLockfile: false,
+    },
+    packageExtensionsChecksum: "root-workspace-package-extensions",
+    patchedDependencies: {
+      "effect@4.0.0-beta.103": "af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6",
+      "unused@1.0.0": "unused-patch-hash",
+    },
+    importers: {
+      "apps/server": {
+        dependencies: {
+          "@anthropic-ai/claude-agent-sdk": {
+            specifier: "^0.3.170",
+            version: LOCKED_CLAUDE_SDK,
+          },
+          effect: {
+            specifier: "4.0.0-beta.103",
+            version: LOCKED_EFFECT,
+          },
+        },
+      },
+      "apps/desktop": {
+        dependencies: {
+          effect: {
+            specifier: "4.0.0-beta.103",
+            version: desktopEffectVersion,
+          },
+          electron: {
+            specifier: "41.5.0",
+            version: "41.5.0",
+          },
+        },
+      },
+    },
+    packages: {
+      "@anthropic-ai/claude-agent-sdk@0.3.170": {},
+      "effect@4.0.0-beta.103": {},
+      "electron@41.5.0": {},
+      [`${FFF_DARWIN_ARM64}@0.9.4`]: {},
+      ...(extraFffResolution ? { [`${FFF_DARWIN_ARM64}@${extraFffResolution}`]: {} } : {}),
+    },
+    snapshots: {
+      [`@anthropic-ai/claude-agent-sdk@${LOCKED_CLAUDE_SDK}`]: {},
+      [`effect@${LOCKED_EFFECT}`]: {},
+      [`effect@${desktopEffectVersion}`]: {},
+      "electron@41.5.0": {},
+      [`${FFF_DARWIN_ARM64}@0.9.4`]: {},
+      ...(extraFffResolution ? { [`${FFF_DARWIN_ARM64}@${extraFffResolution}`]: {} } : {}),
+    },
+  };
+}
+
+const stageLockInput = {
+  dependencies: {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.170",
+    effect: "4.0.0-beta.103",
+    [FFF_DARWIN_ARM64]: "0.9.4",
+  },
+  devDependencies: {
+    electron: "41.5.0",
+  },
+  promotedDependencyNames: [FFF_DARWIN_ARM64],
+  sourceSpecifiers: {
+    "apps/server": {
+      "@anthropic-ai/claude-agent-sdk": "^0.3.170",
+      effect: "catalog:",
+    },
+    "apps/desktop": {
+      effect: "catalog:",
+      electron: "41.5.0",
+    },
+  },
+  patchedDependencies: {
+    "effect@4.0.0-beta.103": "patches/effect@4.0.0-beta.103.patch",
+  },
+} as const;
+
+function captureStageLockError(run: () => unknown): StageLockfileResolutionError {
+  try {
+    run();
+  } catch (error) {
+    assert.instanceOf(error, StageLockfileResolutionError);
+    return error as StageLockfileResolutionError;
+  }
+  return assert.fail("Expected stage lockfile generation to fail.");
 }
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
@@ -242,8 +346,137 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
   });
 
+  it("builds the synthetic root importer from exact package specs and locked resolutions", () => {
+    const lockfile = createStagePnpmLockfile(makeRootLockFixture(), stageLockInput);
+
+    assert.deepStrictEqual(lockfile.importers, {
+      ".": {
+        dependencies: {
+          "@anthropic-ai/claude-agent-sdk": {
+            specifier: "^0.3.170",
+            version: LOCKED_CLAUDE_SDK,
+          },
+          [FFF_DARWIN_ARM64]: {
+            specifier: "0.9.4",
+            version: "0.9.4",
+          },
+          effect: {
+            specifier: "4.0.0-beta.103",
+            version: LOCKED_EFFECT,
+          },
+        },
+        devDependencies: {
+          electron: {
+            specifier: "41.5.0",
+            version: "41.5.0",
+          },
+        },
+      },
+    });
+    assert.deepStrictEqual(lockfile.patchedDependencies, {
+      "effect@4.0.0-beta.103": "af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6",
+    });
+    assert.notProperty(lockfile, "packageExtensionsChecksum");
+  });
+
+  it("keeps ranged, peer-qualified, and patched importer resolutions unchanged", () => {
+    const lockfile = createStagePnpmLockfile(makeRootLockFixture(), stageLockInput);
+    const importer = (lockfile.importers as Record<string, unknown>)["."] as {
+      readonly dependencies: Record<
+        string,
+        { readonly specifier: string; readonly version: string }
+      >;
+    };
+
+    assert.equal(
+      importer.dependencies["@anthropic-ai/claude-agent-sdk"]?.version,
+      LOCKED_CLAUDE_SDK,
+    );
+    assert.equal(importer.dependencies.effect?.version, LOCKED_EFFECT);
+    assert.equal(importer.dependencies["@anthropic-ai/claude-agent-sdk"]?.specifier, "^0.3.170");
+  });
+
+  it("promotes native packages only from an existing root-lock package", () => {
+    const lockfile = createStagePnpmLockfile(makeRootLockFixture(), stageLockInput);
+    const importer = (lockfile.importers as Record<string, unknown>)["."] as {
+      readonly dependencies: Record<string, { readonly version: string }>;
+    };
+    assert.equal(importer.dependencies[FFF_DARWIN_ARM64]?.version, "0.9.4");
+
+    const error = captureStageLockError(() =>
+      createStagePnpmLockfile(makeRootLockFixture(), {
+        ...stageLockInput,
+        dependencies: {
+          ...stageLockInput.dependencies,
+          "@ff-labs/fff-bin-darwin-x64": "0.9.4",
+        },
+        promotedDependencyNames: [FFF_DARWIN_ARM64, "@ff-labs/fff-bin-darwin-x64"],
+      }),
+    );
+    assert.equal(error.reason, "missing");
+    assert.equal(error.source, "packages");
+    assert.equal(error.dependencyName, "@ff-labs/fff-bin-darwin-x64");
+  });
+
+  it("fails closed on missing, conflicting, and ambiguous lock resolution data", () => {
+    const missingError = captureStageLockError(() =>
+      createStagePnpmLockfile(makeRootLockFixture(), {
+        ...stageLockInput,
+        dependencies: {
+          ...stageLockInput.dependencies,
+          "missing-package": "^1.0.0",
+        },
+        sourceSpecifiers: {
+          ...stageLockInput.sourceSpecifiers,
+          "apps/server": {
+            ...stageLockInput.sourceSpecifiers["apps/server"],
+            "missing-package": "^1.0.0",
+          },
+        },
+      }),
+    );
+    assert.equal(missingError.reason, "missing");
+    assert.equal(missingError.source, "importers");
+
+    const conflictingEffect = "4.0.0-beta.103(peer@1.0.0)";
+    const conflictingError = captureStageLockError(() =>
+      createStagePnpmLockfile(
+        makeRootLockFixture({ desktopEffectVersion: conflictingEffect }),
+        stageLockInput,
+      ),
+    );
+    assert.equal(conflictingError.reason, "conflicting");
+    assert.deepStrictEqual(conflictingError.candidates, [LOCKED_EFFECT, conflictingEffect]);
+
+    const ambiguousResolution = "0.9.4(peer@1.0.0)";
+    const ambiguousError = captureStageLockError(() =>
+      createStagePnpmLockfile(
+        makeRootLockFixture({ extraFffResolution: ambiguousResolution }),
+        stageLockInput,
+      ),
+    );
+    assert.equal(ambiguousError.reason, "ambiguous");
+    assert.equal(ambiguousError.source, "packages");
+    assert.deepStrictEqual(ambiguousError.candidates, ["0.9.4", ambiguousResolution]);
+  });
+
+  it("generates deterministically without mutating the parsed root lock", () => {
+    const rootLockfile = makeRootLockFixture();
+    const originalRootLockfile = structuredClone(rootLockfile);
+
+    const first = createStagePnpmLockfile(rootLockfile, stageLockInput);
+    const second = createStagePnpmLockfile(rootLockfile, stageLockInput);
+
+    assert.deepStrictEqual(first, second);
+    assert.equal(JSON.stringify(first), JSON.stringify(second));
+    assert.deepStrictEqual(rootLockfile, originalRootLockfile);
+    assert.notStrictEqual(first, rootLockfile);
+    assert.strictEqual(first.packages, rootLockfile.packages);
+    assert.strictEqual(first.snapshots, rootLockfile.snapshots);
+  });
+
   it("installs optional native dependencies for the target desktop architecture", () => {
-    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
+    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod", "--frozen-lockfile"]);
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],
@@ -291,6 +524,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "node-pty": true,
           "browser-tabs-lock": false,
         },
+        catalog: {
+          effect: "4.0.0-beta.103",
+        },
         patchedDependencies: {
           "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
         },
@@ -308,6 +544,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           electron: true,
           "node-pty": true,
           "browser-tabs-lock": false,
+        },
+        catalog: {
+          effect: "4.0.0-beta.103",
         },
         patchedDependencies: {
           "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",

@@ -22,8 +22,8 @@ import {
   verifyCtoxBusinessOsShellInstall,
 } from "./ctox-business-os-shell.ts";
 
-const VERSION = "0.1.0-rc.1";
-const SOURCE_COMMIT = "144f4ddefd387051613b66027815670414920828";
+const VERSION = "0.1.0-rc.2";
+const SOURCE_COMMIT = "3572b3f56cf3d3975327c83b25d902f64babc6a4";
 const ARCHIVE_ROOT = `ctox-business-os-shell-${VERSION}`;
 const ARCHIVE_FILENAME = `${ARCHIVE_ROOT}.tar.gz`;
 

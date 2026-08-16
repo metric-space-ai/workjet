@@ -67,7 +67,7 @@ share runtime state.
 - [x] Ignore dependency, cache, build, runtime, database, and agent-worktree
       directories, including `.dev`, `.dep`, `.deps`, `.cache`, `.vite-plus`,
       `node_modules`, build output, and local runtime state.
-- [ ] Add a tracked dependency manifest with versions and checksums for CTOX
+- [x] Add a tracked dependency manifest with versions and checksums for CTOX
       shell/release inputs; downloaded content stays under ignored `.deps/`.
 - [x] Add a source provenance and license inventory for T3, CTOX Desktop,
       CLIProxyAPI, Greppy, and the Web Stack in
@@ -539,13 +539,26 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 
 ### Business OS shell delivery
 
-- [ ] Keep Business OS source in the CTOX repository.
-- [ ] Publish a versioned Business OS shell artifact from CTOX releases.
-- [ ] Add a tracked Workjet manifest containing the shell version, source URL,
+- [x] Keep Business OS source in the CTOX repository.
+- [x] Publish a versioned Business OS shell artifact from CTOX releases.
+- [x] Add a tracked Workjet manifest containing the shell version, source URL,
       and checksum.
-- [ ] Download development/build inputs to ignored `.deps/`.
-- [ ] Package the verified shell artifact into Workjet release output.
+- [x] Pin the detached release manifest, embedded inventory, archive bytes,
+      expanded bytes, entry/file counts, path lengths, and individual file
+      hashes before accepting release input.
+- [x] Download development/build inputs to ignored `.deps/` through bounded,
+      checksum-verifying extraction and atomic cache publication.
+- [x] Revalidate cached metadata, entry budgets, exact inventory, file sizes,
+      and file hashes before every cache hit or desktop package build.
+- [x] Package the verified shell artifact into Workjet release output outside
+      ASAR as the single `ctox-business-os-shell` resource.
 - [ ] Inject only the packed `ctox_config` launch context expected by the shell.
+  - [ ] Resolve pairing secrets only in the Electron main process, never expose
+        them through renderer IPC, persistence, logs, or a durable launch URL.
+  - [ ] Serve only the verified static shell from a loopback/custom-protocol
+        boundary with no Business OS HTTP data endpoints.
+  - [ ] Prove identical shell resolution for ignored development `.deps/` and
+        packaged `process.resourcesPath` layouts.
 - [ ] Never implement Business OS collection, command, file, or status reads
       over Workjet HTTP.
 
@@ -596,24 +609,31 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
 - SSH password, host-key, attach, install, rotate, and revoke smokes;
 - packaged-app and signed-artifact smokes on supported platforms.
 
-Latest verified CTOX increment (commits `6f0fc627a`, `03a87bd70`,
-`e00ebfa61`, and `9047bed3f`): 105 focused contract/registry/IPC/guest/UI tests,
-the contracts, desktop, and web typechecks, formatting, and `git diff --check`
-pass. This evidence covers managed plus paired registry/management behavior; it
-does not cover paired shell launch, local, SSH, packaged Electron, or platform
-keychain parity.
+Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
+`e00ebfa61`, `9047bed3f`, `042f8af38`, and `d35d9ebbf`; CTOX shell commits
+`aa7d64c22`, `967043561`, and `144f4ddef`): 105 focused
+contract/registry/IPC/guest/UI tests, 233 scripts tests, scripts typecheck,
+formatting, and `git diff --check` pass.
+The real `business-os-shell-v0.1.0-rc.1` release was downloaded, verified, and
+revalidated from the ignored `.deps/` cache. The Workjet desktop build config
+packages that exact pinned shell outside ASAR. This evidence covers managed plus
+paired registry/management behavior and the shell supply chain; it does not yet
+cover paired shell launch, local, SSH, packaged Electron runtime launch, or
+platform-keychain parity. Independent Kimi review is deferred because the
+review provider was unavailable; adversarial self-review found and fixed
+unbounded cache-file verification before this status update.
 
 ## 11. Wave 8 — retire the standalone CTOX Desktop project
 
 This wave happens in the separate CTOX repository and only after the Workjet
 parity gate is green.
 
-- [ ] Start from a clean CTOX branch; do not mix or overwrite unrelated current
+- [x] Start from a clean CTOX branch; do not mix or overwrite unrelated current
       CTOX working-tree changes.
 - [ ] Remove `src/apps/business-os-desktop`.
 - [ ] Remove its separate packaging/release workflow and download links.
 - [ ] Point CTOX documentation to the Workjet Desktop application.
-- [ ] Keep the CTOX Business OS shell build and versioned shell artifact.
+- [x] Keep the CTOX Business OS shell build and versioned shell artifact.
 - [ ] Keep CTOX daemon, Sync Engine, Business OS, MCP channel, provider adapter,
       and Web Stack adapter.
 - [ ] Update release smoke tests so CTOX validates the artifacts consumed by
@@ -807,7 +827,7 @@ Workjet is complete only when all of the following are true:
 8. [x] Land one managed CTOX instance → Business OS WebRTC launch flow.
 9. [x] Land the shared managed + invite/manual-pairing registry, encrypted
        pairing-secret store, and paired-instance management UI.
-10. [ ] Publish and pin the versioned CTOX Business OS shell artifact, download
+10. [x] Publish and pin the versioned CTOX Business OS shell artifact, download
         it into ignored `.deps/`, and package only the checksum-verified artifact.
 11. [ ] Launch invite/manual-pairing entries through that shell using only the
         native packed `ctox_config` WebRTC context.

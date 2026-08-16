@@ -19,6 +19,7 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -274,6 +275,17 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
     ].filter((section): section is string => section !== undefined);
     const outputSuffix = outputSections.length > 0 ? `\n\n${outputSections.join("\n\n")}` : "";
     return `Command exited with non-zero exit code (${this.exitCode})${outputSuffix}`;
+  }
+}
+
+export class CtoxBusinessOsShellPreparationError extends Schema.TaggedErrorClass<CtoxBusinessOsShellPreparationError>()(
+  "CtoxBusinessOsShellPreparationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Could not prepare the verified CTOX Business OS shell dependency.";
   }
 }
 
@@ -702,12 +714,21 @@ export const WINDOWS_ASAR_UNPACK = [
   "apps/server/dist/**",
   ...CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
 ] as const;
-export const DESKTOP_EXTRA_RESOURCES = [
-  {
-    from: "apps/desktop/prod-resources/resource-monitor",
-    to: "resource-monitor",
-  },
-] as const;
+export const DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE = {
+  from: "apps/desktop/prod-resources/resource-monitor",
+  to: "resource-monitor",
+} as const;
+export const CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY = "ctox-business-os-shell";
+
+export function createDesktopExtraResources(businessOsShellInstallPath: string) {
+  return [
+    DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
+    {
+      from: businessOsShellInstallPath,
+      to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
+    },
+  ] as const;
+}
 
 export interface MacPasskeySigningConfiguration {
   readonly appId: string;
@@ -1868,6 +1889,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         readonly provisioningProfilePath: string;
       }
     | undefined,
+  businessOsShellInstallPath: string,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -1882,7 +1904,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // WINDOWS_ASAR_UNPACK); macOS and Linux stay packed — smart unpack
     // extracts native libraries, which fff-node finds in app.asar.unpacked.
     ...(platform === "win" ? { asarUnpack: [...WINDOWS_ASAR_UNPACK] } : {}),
-    extraResources: DESKTOP_EXTRA_RESOURCES,
+    extraResources: createDesktopExtraResources(businessOsShellInstallPath),
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
@@ -2062,6 +2084,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
+  const businessOsShell = yield* Effect.tryPromise({
+    try: () => prepareCtoxBusinessOsShell({ repoRoot }),
+    catch: (cause) => new CtoxBusinessOsShellPreparationError({ cause }),
+  });
+  yield* Effect.log(
+    `[desktop-artifact] Verified CTOX Business OS shell (${businessOsShell.cache}): ${businessOsShell.installPath}`,
+  );
 
   const platformConfig = PLATFORM_CONFIG[options.platform];
   if (!platformConfig) {
@@ -2330,6 +2359,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
             provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
           }
         : undefined,
+      businessOsShell.installPath,
     ),
     dependencies: stageDependencies,
     devDependencies: {

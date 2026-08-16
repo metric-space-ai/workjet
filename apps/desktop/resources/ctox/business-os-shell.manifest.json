@@ -1,0 +1,28 @@
+{
+  "schema": "ctox.business-os-shell.v1",
+  "version": "0.1.0-rc.1",
+  "sourceCommit": "144f4ddefd387051613b66027815670414920828",
+  "manifestUrl": "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.1/ctox-business-os-shell-0.1.0-rc.1.manifest.json",
+  "manifestByteLength": 341718,
+  "manifestSha256": "1d5dccaa9739d034aa93bf801607306c3bfe4a564079eee97c47d64434cac6a5",
+  "archiveUrl": "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.1/ctox-business-os-shell-0.1.0-rc.1.tar.gz",
+  "archiveFilename": "ctox-business-os-shell-0.1.0-rc.1.tar.gz",
+  "archiveRoot": "ctox-business-os-shell-0.1.0-rc.1",
+  "entry": "index.html",
+  "archiveByteLength": 128988323,
+  "archiveSha256": "cb37ee747aa4ef7ffb4003e69e7d8dda0033c00538e1a500e641cc33cbd1343d",
+  "embeddedManifestSha256": "286e94c24805cff3e1944ca3a5c3bf0252079ce48208ef6dbcb935b3246d1a2b",
+  "fileCount": 1768,
+  "maxRedirects": 5,
+  "requestTimeoutMs": 600000,
+  "budgets": {
+    "maxManifestBytes": 1048576,
+    "maxArchiveBytes": 134217728,
+    "maxTarEntries": 5000,
+    "maxFiles": 2000,
+    "maxFileBytes": 33554432,
+    "maxTotalFileBytes": 402653184,
+    "maxExpandedBytes": 419430400,
+    "maxPathBytes": 255
+  }
+}

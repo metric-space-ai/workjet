@@ -15,9 +15,11 @@ import {
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
+  CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
+  createDesktopExtraResources,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
-  DESKTOP_EXTRA_RESOURCES,
+  DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -330,6 +332,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
       const linux = yield* createBuildConfig(
         "linux",
@@ -339,6 +342,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
       const win = yield* createBuildConfig(
         "win",
@@ -348,6 +352,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
 
       assert.notProperty(mac, "asarUnpack");
@@ -361,6 +366,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       for (const config of [mac, linux, win]) {
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
         assert.deepStrictEqual(config.files, DESKTOP_FILE_EXCLUSIONS);
+        assert.deepStrictEqual(
+          config.extraResources,
+          createDesktopExtraResources("/verified/ctox-business-os-shell"),
+        );
       }
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
@@ -522,10 +531,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
-      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
-        entitlementsPath: "/tmp/entitlements.mac.plist",
-        provisioningProfilePath: "/tmp/t3code.provisionprofile",
-      });
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        true,
+        false,
+        undefined,
+        {
+          entitlementsPath: "/tmp/entitlements.mac.plist",
+          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+        },
+        "/verified/ctox-business-os-shell",
+      );
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.t3tools.t3code");
@@ -547,6 +565,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
 
       const win = config.win as Record<string, unknown>;
@@ -556,13 +575,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it("stages the resource monitor as an external executable resource", () => {
-    assert.deepStrictEqual(DESKTOP_EXTRA_RESOURCES, [
+  it("stages the resource monitor and verified shell as external resources", () => {
+    assert.deepStrictEqual(DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE, {
+      from: "apps/desktop/prod-resources/resource-monitor",
+      to: "resource-monitor",
+    });
+    assert.deepStrictEqual(createDesktopExtraResources("/verified/ctox-business-os-shell"), [
+      DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
       {
-        from: "apps/desktop/prod-resources/resource-monitor",
-        to: "resource-monitor",
+        from: "/verified/ctox-business-os-shell",
+        to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
       },
     ]);
+    assert.equal(CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY, "ctox-business-os-shell");
     assert.deepStrictEqual(resolveResourceMonitorRustTargets("mac", "universal"), [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",

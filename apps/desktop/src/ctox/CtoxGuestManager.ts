@@ -11,7 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
-import { WebContentsView, type BrowserWindow, type Session } from "electron";
+import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -66,11 +66,14 @@ const STATIC_ASSET_EXTENSIONS = new Set([
 ]);
 const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+export const REFRESH_MANAGED_LAUNCH_CHANNEL = "instance:refresh-managed-launch";
 
 interface ActiveGuest {
   readonly instanceId: string;
   readonly window: BrowserWindow;
   readonly view: WebContentsView;
+  readonly bounds: CtoxGuestBounds;
+  readonly browserSession: Session;
 }
 
 interface BeforeRequestDetails {
@@ -79,8 +82,16 @@ interface BeforeRequestDetails {
   readonly method?: string;
 }
 
+export interface CtoxGuestWebPreferences {
+  readonly session: Session;
+  readonly preload: string;
+  readonly sandbox: true;
+  readonly contextIsolation: true;
+  readonly nodeIntegration: false;
+}
+
 export interface CtoxGuestManagerOptions {
-  readonly createView?: (browserSession: Session) => WebContentsView | undefined;
+  readonly createView?: (webPreferences: CtoxGuestWebPreferences) => WebContentsView | undefined;
 }
 
 export class CtoxGuestManager extends Context.Service<
@@ -224,17 +235,12 @@ function installRequestGuard(session: Session, launchOrigin: string): boolean {
   }
 }
 
-function createGuestView(browserSession: Session): WebContentsView | undefined {
+export function createGuestView(
+  webPreferences: CtoxGuestWebPreferences,
+): WebContentsView | undefined {
   try {
-    const view = new WebContentsView({
-      webPreferences: {
-        session: browserSession,
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-    if (view.webContents.session === browserSession) return view;
+    const view = new WebContentsView({ webPreferences });
+    if (view.webContents.session === webPreferences.session) return view;
     try {
       if (!view.webContents.isDestroyed()) view.webContents.close();
     } catch {
@@ -276,6 +282,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const runPromise = Effect.runPromiseWith(context);
     const activeRef = yield* SynchronizedRef.make<ActiveGuest | undefined>(undefined);
 
+    const preloadPath = `${__dirname}/ctox-guest-preload.cjs`;
+
     const deactivate = SynchronizedRef.modifyEffect(activeRef, (active) =>
       Effect.sync(() => {
         destroyGuest(active);
@@ -285,6 +293,122 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
     yield* Effect.addFinalizer(() => deactivate.pipe(Effect.asVoid));
 
+    let refreshFromWebContents: (sender: WebContents) => void = () => undefined;
+
+    const prepareGuest = Effect.fn("CtoxGuestManager.prepareGuest")(function* (
+      instanceId: string,
+      bounds: CtoxGuestBounds,
+      existingSession?: Session,
+    ) {
+      if (!isValidBounds(bounds)) {
+        return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
+      }
+
+      const discovery = yield* auth.refresh.pipe(Effect.option);
+      if (Option.isNone(discovery) || discovery.value._tag === "failed") {
+        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+      }
+      if (discovery.value._tag !== "ready") {
+        return [{ _tag: "revoked" }, undefined] as const;
+      }
+      const descriptor = discovery.value.instances.find(
+        (instance): instance is CtoxManagedInstance =>
+          instance.id === instanceId &&
+          instance.source === "ctox_dev" &&
+          instance.status === "available",
+      );
+      if (descriptor === undefined) {
+        return [{ _tag: "revoked" }, undefined] as const;
+      }
+
+      const launch = yield* launches.launch(descriptor).pipe(Effect.option);
+      if (Option.isNone(launch)) {
+        return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+      }
+      const resolvedSession =
+        existingSession === undefined
+          ? yield* sessions.instance(descriptor).pipe(Effect.option)
+          : Option.some(existingSession);
+      if (Option.isNone(resolvedSession)) {
+        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+      }
+      const mainWindow = yield* electronWindow.main;
+      if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
+        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+      }
+
+      const view = (options.createView ?? createGuestView)({
+        session: resolvedSession.value,
+        preload: preloadPath,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+      });
+      if (view === undefined) {
+        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+      }
+      const failView = (): readonly [CtoxManagedGuestResult, undefined] => {
+        destroyGuest({
+          instanceId,
+          window: mainWindow.value,
+          view,
+          bounds,
+          browserSession: resolvedSession.value,
+        });
+        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+      };
+      if (!installRequestGuard(resolvedSession.value, launch.value.launchOrigin)) {
+        return failView();
+      }
+
+      const webContents = view.webContents;
+      try {
+        webContents.setWindowOpenHandler(({ url }) => {
+          if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
+          return { action: "deny" };
+        });
+        webContents.on("will-navigate", (event, url) => {
+          if (isAllowedCtoxTopFrameNavigation(url, launch.value.launchOrigin)) return;
+          event.preventDefault();
+          if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
+        });
+        webContents.on("did-finish-load", () => {
+          const currentUrl = webContents.getURL();
+          const scrubbed = scrubSensitiveCtoxUrl(currentUrl);
+          if (scrubbed === undefined || scrubbed === currentUrl) return;
+          void webContents
+            .executeJavaScript(
+              `history.replaceState(history.state, document.title, ${encodeUnknownJson(scrubbed)});`,
+              true,
+            )
+            .catch(() => undefined);
+        });
+        webContents.ipc.on(REFRESH_MANAGED_LAUNCH_CHANNEL, (_event, ...args) => {
+          if (args.length === 0) refreshFromWebContents(webContents);
+        });
+      } catch {
+        return failView();
+      }
+      if (!attachGuest(mainWindow.value, view, bounds)) return failView();
+
+      const active: ActiveGuest = {
+        instanceId,
+        window: mainWindow.value,
+        view,
+        bounds,
+        browserSession: resolvedSession.value,
+      };
+      const loaded = yield* Effect.tryPromise({
+        try: () => webContents.loadURL(launch.value.launchUrl),
+        catch: () => undefined,
+      }).pipe(Effect.option);
+      if (Option.isNone(loaded)) {
+        destroyGuest(active);
+        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+      }
+      return [{ _tag: "ready", instanceId }, active] as const;
+    });
+
     const activate = (
       instanceId: string,
       bounds: CtoxGuestBounds,
@@ -292,91 +416,29 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       SynchronizedRef.modifyEffect(activeRef, (current) =>
         Effect.gen(function* () {
           destroyGuest(current);
-          if (!isValidBounds(bounds)) {
-            return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
-          }
-
-          const discovery = yield* auth.refresh.pipe(Effect.option);
-          if (Option.isNone(discovery) || discovery.value._tag === "failed") {
-            return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-          }
-          if (discovery.value._tag !== "ready") {
-            return [{ _tag: "revoked" }, undefined] as const;
-          }
-          const descriptor = discovery.value.instances.find(
-            (instance): instance is CtoxManagedInstance =>
-              instance.id === instanceId &&
-              instance.source === "ctox_dev" &&
-              instance.status === "available",
-          );
-          if (descriptor === undefined) {
-            return [{ _tag: "revoked" }, undefined] as const;
-          }
-
-          const launch = yield* launches.launch(descriptor).pipe(Effect.option);
-          if (Option.isNone(launch)) {
-            return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
-          }
-          const browserSession = yield* sessions.instance(descriptor).pipe(Effect.option);
-          if (Option.isNone(browserSession)) {
-            return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-          }
-          const mainWindow = yield* electronWindow.main;
-          if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
-            return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-          }
-
-          const view = (options.createView ?? createGuestView)(browserSession.value);
-          if (view === undefined) {
-            return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-          }
-          const failView = (): readonly [CtoxManagedGuestResult, undefined] => {
-            destroyGuest({ instanceId, window: mainWindow.value, view });
-            return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-          };
-          if (!installRequestGuard(browserSession.value, launch.value.launchOrigin)) {
-            return failView();
-          }
-
-          const webContents = view.webContents;
-          try {
-            webContents.setWindowOpenHandler(({ url }) => {
-              if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
-              return { action: "deny" };
-            });
-            webContents.on("will-navigate", (event, url) => {
-              if (isAllowedCtoxTopFrameNavigation(url, launch.value.launchOrigin)) return;
-              event.preventDefault();
-              if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
-            });
-            webContents.on("did-finish-load", () => {
-              const currentUrl = webContents.getURL();
-              const scrubbed = scrubSensitiveCtoxUrl(currentUrl);
-              if (scrubbed === undefined || scrubbed === currentUrl) return;
-              void webContents
-                .executeJavaScript(
-                  `history.replaceState(history.state, document.title, ${encodeUnknownJson(scrubbed)});`,
-                  true,
-                )
-                .catch(() => undefined);
-            });
-          } catch {
-            return failView();
-          }
-          if (!attachGuest(mainWindow.value, view, bounds)) return failView();
-
-          const active: ActiveGuest = { instanceId, window: mainWindow.value, view };
-          const loaded = yield* Effect.tryPromise({
-            try: () => webContents.loadURL(launch.value.launchUrl),
-            catch: () => undefined,
-          }).pipe(Effect.option);
-          if (Option.isNone(loaded)) {
-            destroyGuest(active);
-            return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-          }
-          return [{ _tag: "ready", instanceId }, active] as const;
+          return yield* prepareGuest(instanceId, bounds);
         }),
       );
+
+    const refresh = (sender: WebContents) =>
+      SynchronizedRef.modifyEffect(activeRef, (active) => {
+        if (active === undefined || active.view.webContents !== sender || sender.isDestroyed()) {
+          return Effect.succeed([undefined, active] as const);
+        }
+        return Effect.gen(function* () {
+          destroyGuest(active);
+          const [, replacement] = yield* prepareGuest(
+            active.instanceId,
+            active.bounds,
+            active.browserSession,
+          );
+          return [undefined, replacement] as const;
+        });
+      });
+
+    refreshFromWebContents = (sender) => {
+      void runPromise(refresh(sender)).catch(() => undefined);
+    };
 
     const setBounds = (bounds: CtoxGuestBounds): Effect.Effect<CtoxManagedActionResult> =>
       SynchronizedRef.modifyEffect(activeRef, (active) =>
@@ -389,7 +451,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           }
           try {
             active.view.setBounds(bounds);
-            return [{ _tag: "completed" }, active];
+            return [{ _tag: "completed" }, { ...active, bounds }];
           } catch {
             destroyGuest(active);
             return [{ _tag: "failed", code: "guest_failed" }, undefined];

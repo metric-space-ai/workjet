@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -50,12 +50,21 @@ function makeGuestHarness() {
     readonly close: ReturnType<typeof vi.fn>;
     readonly loadURL: ReturnType<typeof vi.fn>;
     readonly setBounds: ReturnType<typeof vi.fn>;
+    readonly refresh: (...args: Array<unknown>) => void;
   }> = [];
-  const createView = vi.fn((resolvedSession: Session) => {
-    assert.strictEqual(resolvedSession, browserSession);
+  const createView = vi.fn((webPreferences: CtoxGuestManager.CtoxGuestWebPreferences) => {
+    assert.deepEqual(webPreferences, {
+      session: browserSession,
+      preload: webPreferences.preload,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    });
+    assert.match(webPreferences.preload, /ctox-guest-preload\.cjs$/);
     const close = vi.fn();
     const loadURL = vi.fn(async () => undefined);
     const setBounds = vi.fn();
+    let refreshHandler: ((event: unknown, ...args: Array<unknown>) => void) | undefined;
     const webContents = {
       session: browserSession,
       isDestroyed: vi.fn(() => false),
@@ -63,16 +72,31 @@ function makeGuestHarness() {
       loadURL,
       setWindowOpenHandler: vi.fn(),
       on: vi.fn(),
+      ipc: {
+        on: vi.fn((channel: string, handler: typeof refreshHandler) => {
+          assert.equal(channel, CtoxGuestManager.REFRESH_MANAGED_LAUNCH_CHANNEL);
+          refreshHandler = handler;
+        }),
+      },
       getURL: vi.fn(() => "https://ctox.dev/business-os/"),
       executeJavaScript: vi.fn(async () => undefined),
     };
     const view = { webContents, setBounds } as unknown as WebContentsView;
-    views.push({ view, close, loadURL, setBounds });
+    views.push({
+      view,
+      close,
+      loadURL,
+      setBounds,
+      refresh: (...args) => refreshHandler?.({}, ...args),
+    });
     return view;
   });
-  const refresh = Effect.succeed({ _tag: "ready", instances: [descriptor] } as const);
+  let discovery: CtoxManagedDiscoveryResult = {
+    _tag: "ready",
+    instances: [descriptor],
+  };
   const auth = CtoxDevAuth.CtoxDevAuth.of({
-    refresh,
+    refresh: Effect.suspend(() => Effect.succeed(discovery)),
     login: Effect.die("unused"),
     logout: Effect.void,
   });
@@ -122,6 +146,9 @@ function makeGuestHarness() {
     launch,
     layer,
     removeChildView,
+    setDiscovery: (value: CtoxManagedDiscoveryResult) => {
+      discovery = value;
+    },
     views,
   };
 }
@@ -140,7 +167,7 @@ describe("CtoxGuestManager", () => {
 
       const first = yield* manager.activate(descriptor.id, firstBounds);
       assert.deepEqual(first, { _tag: "ready", instanceId: descriptor.id });
-      assert.strictEqual(harness.createView.mock.calls[0]?.[0], harness.browserSession);
+      assert.strictEqual(harness.createView.mock.calls[0]?.[0].session, harness.browserSession);
       assert.deepEqual(harness.views[0]?.setBounds.mock.calls[0]?.[0], firstBounds);
       expect(harness.addChildView).toHaveBeenCalledWith(harness.views[0]?.view);
       expect(harness.beforeRequest).toHaveBeenCalledOnce();
@@ -159,6 +186,73 @@ describe("CtoxGuestManager", () => {
       expect(harness.views[1]?.close).toHaveBeenCalledOnce();
       expect(harness.removeChildView).toHaveBeenCalledWith(harness.views[1]?.view);
       expect(harness.launch).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect(
+    "refreshes only the active guest with one fresh launch in the same session and bounds",
+    () => {
+      const harness = makeGuestHarness();
+      const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.activate(descriptor.id, bounds);
+
+        let resolveLaunch!: (value: { launchUrl: string; launchOrigin: string }) => void;
+        const pendingLaunch = new Promise<{ launchUrl: string; launchOrigin: string }>(
+          (resolve) => {
+            resolveLaunch = resolve;
+          },
+        );
+        harness.launch.mockImplementation(() => Effect.promise(() => pendingLaunch));
+
+        harness.views[0]?.refresh();
+        harness.views[0]?.refresh();
+        harness.views[0]?.refresh("forged-argument");
+        yield* Effect.promise(() =>
+          vi.waitFor(() => expect(harness.launch).toHaveBeenCalledTimes(2)),
+        );
+        expect(harness.createView).toHaveBeenCalledTimes(1);
+
+        resolveLaunch({
+          launchUrl: "https://ctox.dev/business-os/?ctox_config=fresh-secret",
+          launchOrigin: "https://ctox.dev",
+        });
+        yield* Effect.promise(() => vi.waitFor(() => expect(harness.views).toHaveLength(2)));
+
+        expect(harness.createView.mock.calls[1]?.[0].session).toBe(harness.browserSession);
+        expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+        expect(harness.views[1]?.setBounds).toHaveBeenCalledWith(bounds);
+        expect(harness.views[1]?.loadURL).toHaveBeenCalledWith(
+          "https://ctox.dev/business-os/?ctox_config=fresh-secret",
+        );
+        expect(harness.launch).toHaveBeenCalledTimes(2);
+
+        harness.views[0]?.refresh();
+        yield* Effect.promise(() => new Promise((resolve) => setImmediate(resolve)));
+        expect(harness.launch).toHaveBeenCalledTimes(2);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect("fails closed when refreshed entitlement is revoked", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.activate(descriptor.id, bounds);
+      harness.setDiscovery({ _tag: "signed_out" });
+
+      harness.views[0]?.refresh();
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(harness.views[0]?.close).toHaveBeenCalledOnce()),
+      );
+
+      expect(harness.launch).toHaveBeenCalledOnce();
+      expect(harness.createView).toHaveBeenCalledOnce();
+      assert.deepEqual(yield* manager.setBounds(bounds), { _tag: "failed", code: "not_active" });
     }).pipe(Effect.provide(harness.layer));
   });
 

@@ -68,6 +68,13 @@ export default defineConfig({
       outDir: "dist-electron",
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
+      entry: { "ctox-guest-preload": "src/ctox/CtoxGuestPreload.ts" },
+    },
+    {
+      format: "cjs",
+      outDir: "dist-electron",
+      sourcemap: true,
+      outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/preview-pick-preload.ts"],
       deps: {
         alwaysBundle: (id) => id === "react-grab" || id.startsWith("react-grab/"),

@@ -173,7 +173,7 @@ both modes.
 - [x] Compile each thread's active prompt contributions into the native Codex
       developer-instructions and Claude Code system-prompt boundaries, plus a
       fingerprinted recovery-safe first-prompt adapter for Grok ACP.
-- [ ] T3 adapter: expose active tools through T3's existing per-session MCP
+- [x] T3 adapter: expose active tools through T3's existing per-session MCP
       server.
   - [x] Register the first production adapter, Greppy search, with bearer-scope
         `tools/list` filtering, independent `tools/call` enforcement, effective
@@ -480,9 +480,12 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 - [ ] Port the instance model, registry normalization, and source merge/sort.
   - [x] Add renderer-safe typed managed-instance contracts, bounded metadata,
         duplicate rejection, and deterministic ctox.dev sorting.
-  - [ ] Merge local, SSH, invite, and pairing sources through the shared
-        registry.
-- [ ] Port ctox.dev login, logout, cookie clearing, session-package discovery,
+  - [x] Merge managed discovery with persisted invite and manual-pairing
+        entries through one deterministic renderer-safe registry result; retain
+        paired entries when the ctox.dev account is signed out or unavailable.
+  - [ ] Add local-daemon and SSH-managed entries to the same registry result;
+        do not introduce a second renderer-side registry or discovery store.
+- [x] Port ctox.dev login, logout, cookie clearing, session-package discovery,
       launch-token exchange, and managed-instance refresh.
   - [x] Port authenticated session-package discovery behind an injected
         Electron-compatible fetch boundary with redacted typed failures.
@@ -496,8 +499,24 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         preload event revalidates entitlement and consumes a fresh one-time
         launch contract without exposing it to the renderer.
 - [ ] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
+  - [x] Port bounded invite and manual-pairing import, deterministic identity,
+        expiry handling, duplicate updates, removal, and strict rejection of
+        HTTP bridges or unsafe signaling URLs.
+  - [x] Accept the canonical invite JSON and
+        `ctox-business-os-desktop://pair?payload=...` shape emitted by the CTOX
+        Rust service without widening the accepted schema to arbitrary links.
+  - [ ] Bind paired entries to the verified bundled Business OS shell and its
+        native WebRTC launch context; registry presence alone is not a launch
+        or data-plane claim.
+  - [ ] Port local-daemon discovery, ownership, lifecycle, and launch.
+  - [ ] Port SSH-managed discovery, attach/install/rotate/revoke, and launch.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
+  - [x] Store pairing room/capability secrets separately from public instance
+        metadata using Electron Safe Storage; fail closed for unavailable,
+        Linux `basic_text`, and unknown Linux storage backends.
+  - [ ] Port the equivalent sudo and SSH credential handling and platform
+        keychain runtime smokes before claiming complete secret-storage parity.
 - [ ] Port host-key pinning and strict SSH command handling.
 - [ ] Port deep-link parsing with explicit user confirmation.
 - [ ] Port support-bundle redaction and crash-report metadata without secrets.
@@ -540,6 +559,10 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
       CTOX mode.
   - [x] Render the managed ctox.dev group with bounded status, role, source, and
         last-used metadata.
+  - [x] Render separate deterministic Managed and Paired groups, including
+        invite/manual source, role, expiry, removal, and non-launchable state.
+  - [ ] Render populated Local and SSH groups after their main-process sources
+        exist.
 - [x] Selecting a managed ctox.dev instance activates its native guest surface
       in the main region.
 - [ ] Show signed-out, needs-auth, unavailable, connecting, ready, and revoked
@@ -549,6 +572,11 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
 - [ ] Provide instance management and refresh actions without exposing secrets.
   - [x] Provide managed login, logout, and refresh actions through typed IPC
         without exposing tenant IDs, partitions, cookies, or launch tokens.
+  - [x] Provide invite/manual-pairing add and paired-instance removal through
+        typed IPC; keep room/capability values out of discovery responses,
+        renderer persistence, feedback copy, and launch URLs.
+  - [ ] Provide local-daemon and SSH-managed lifecycle actions with the same
+        renderer-secret boundary.
 - [ ] Ensure keyboard shortcuts and zoom target the active Workjet surface
       intentionally.
 
@@ -567,6 +595,13 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
 - local daemon and bundled-runtime smoke;
 - SSH password, host-key, attach, install, rotate, and revoke smokes;
 - packaged-app and signed-artifact smokes on supported platforms.
+
+Latest verified CTOX increment (commits `6f0fc627a`, `03a87bd70`,
+`e00ebfa61`, and `9047bed3f`): 105 focused contract/registry/IPC/guest/UI tests,
+the contracts, desktop, and web typechecks, formatting, and `git diff --check`
+pass. This evidence covers managed plus paired registry/management behavior; it
+does not cover paired shell launch, local, SSH, packaged Electron, or platform
+keychain parity.
 
 ## 11. Wave 8 — retire the standalone CTOX Desktop project
 
@@ -759,7 +794,7 @@ Workjet is complete only when all of the following are true:
 1. [x] Finish and verify Wave 1 thread-domain implementation.
 2. [x] Add the minimal capability-registry contract and prompt adapter interface.
 3. [x] Build the Code/CTOX product-mode shell state without yet loading a guest.
-4. [ ] Port ctox.dev instance discovery and session isolation into typed Electron
+4. [x] Port ctox.dev instance discovery and session isolation into typed Electron
        services.
    - [x] Land typed renderer contracts, session-package discovery, redacted
          failures, and deterministic partition derivation.
@@ -770,3 +805,13 @@ Workjet is complete only when all of the following are true:
        CTOX-owned code.
 7. [x] Land the first real local orchestrator → worker flow.
 8. [x] Land one managed CTOX instance → Business OS WebRTC launch flow.
+9. [x] Land the shared managed + invite/manual-pairing registry, encrypted
+       pairing-secret store, and paired-instance management UI.
+10. [ ] Publish and pin the versioned CTOX Business OS shell artifact, download
+        it into ignored `.deps/`, and package only the checksum-verified artifact.
+11. [ ] Launch invite/manual-pairing entries through that shell using only the
+        native packed `ctox_config` WebRTC context.
+12. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
+        green, retaining one registry and one renderer-secret boundary.
+13. [ ] Complete durable local orchestration semantics, then add authenticated
+        cross-environment dispatch and recovery.

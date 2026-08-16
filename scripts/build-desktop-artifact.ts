@@ -1803,6 +1803,23 @@ export function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
+export function resolveServerRuntimeDependencies(
+  dependencies: Record<string, string> | undefined,
+  catalog: Record<string, string>,
+): Record<string, string> {
+  if (!dependencies || Object.keys(dependencies).length === 0) {
+    return {};
+  }
+
+  const runtimeDependencies = Object.fromEntries(
+    Object.entries(dependencies).filter(
+      ([, dependencySpec]) => !dependencySpec.startsWith("workspace:"),
+    ),
+  );
+
+  return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/server");
+}
+
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
@@ -2119,7 +2136,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   });
 
   const resolvedServerDependencies = yield* Effect.try({
-    try: () => resolveCatalogDependencies(serverDependencies, workspaceCatalog, "apps/server"),
+    try: () => resolveServerRuntimeDependencies(serverDependencies, workspaceCatalog),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "server-production",

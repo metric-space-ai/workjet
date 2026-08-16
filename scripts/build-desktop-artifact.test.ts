@@ -32,6 +32,7 @@ import {
   resolveClerkPasskeyNativeArtifacts,
   resolveMacPasskeySigningConfiguration,
   resolveDesktopRuntimeDependencies,
+  resolveServerRuntimeDependencies,
   resolveFffNativeDependencies,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
@@ -181,6 +182,28 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       {
         "@effect/platform-node": "4.0.0-beta.59",
         effect: "4.0.0-beta.59",
+      },
+    );
+  });
+
+  it("omits bundled workspace packages from staged server dependencies", () => {
+    assert.deepStrictEqual(
+      resolveServerRuntimeDependencies(
+        {
+          "@effect/platform-node": "catalog:",
+          "@metric-space-ai/workjet-capabilities": "workspace:*",
+          effect: "catalog:",
+          "node-pty": "^1.1.0",
+        },
+        {
+          "@effect/platform-node": "4.0.0-beta.103",
+          effect: "4.0.0-beta.103",
+        },
+      ),
+      {
+        "@effect/platform-node": "4.0.0-beta.103",
+        effect: "4.0.0-beta.103",
+        "node-pty": "^1.1.0",
       },
     );
   });

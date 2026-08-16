@@ -210,9 +210,7 @@ function normalizeTenant(rawTenant: unknown): CtoxManagedInstance | undefined {
     source: "ctox_dev",
     displayName,
     status: rawTenant.launchAllowed === false ? "needs_auth" : "available",
-    sessionPartition: ctoxManagedSessionPartition({ source: "ctox_dev", id }),
     ...(domain === undefined ? {} : { domain }),
-    tenantId,
     ...(role === undefined ? {} : { role }),
     healthSummary: {
       dataPlane: "rxdb-webrtc",
@@ -240,17 +238,11 @@ export function normalizeCtoxDevSessionPackage(
   if (payload.account.tenants.length > 1_000) return undefined;
 
   const instances: CtoxManagedInstance[] = [];
-  const tenantIds = new Set<string>();
+  const instanceIds = new Set<string>();
   for (const rawTenant of payload.account.tenants) {
     const instance = normalizeTenant(rawTenant);
-    if (
-      instance === undefined ||
-      instance.tenantId === undefined ||
-      tenantIds.has(instance.tenantId)
-    ) {
-      return undefined;
-    }
-    tenantIds.add(instance.tenantId);
+    if (instance === undefined || instanceIds.has(instance.id)) return undefined;
+    instanceIds.add(instance.id);
     instances.push(instance);
   }
   return instances.sort(compareManagedInstances);

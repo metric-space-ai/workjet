@@ -93,6 +93,13 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings } from "./settings.ts";
 import type {
+  CtoxGuestBounds,
+  CtoxManagedActionResult,
+  CtoxManagedDiscoveryResult,
+  CtoxManagedGuestResult,
+  CtoxManagedLoginResult,
+} from "./ctox.ts";
+import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlPublishRepositoryInput,
@@ -1086,6 +1093,17 @@ export interface DesktopBridge {
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
+  /** Desktop-only managed CTOX guest surface. */
+  ctox?: DesktopCtoxBridge;
+}
+
+export interface DesktopCtoxBridge {
+  refresh: () => Promise<CtoxManagedDiscoveryResult>;
+  login: () => Promise<CtoxManagedLoginResult>;
+  logout: () => Promise<CtoxManagedActionResult>;
+  activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
+  deactivate: () => Promise<CtoxManagedActionResult>;
+  setGuestBounds: (bounds: CtoxGuestBounds) => Promise<CtoxManagedActionResult>;
 }
 
 export interface DesktopPreviewBridge {

@@ -16,14 +16,11 @@ const CtoxManagedInstanceDisplayName = TrimmedNonEmptyString.check(
   Schema.isMaxLength(256),
   NoAsciiControlCharacters,
 );
-const CtoxManagedInstanceId = TrimmedNonEmptyString.check(
+export const CtoxManagedInstanceId = TrimmedNonEmptyString.check(
   Schema.isMaxLength(512),
   NoAsciiControlCharacters,
 );
-const CtoxManagedInstanceTenantId = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(256),
-  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
-);
+export type CtoxManagedInstanceId = typeof CtoxManagedInstanceId.Type;
 const CtoxManagedInstanceRole = TrimmedNonEmptyString.check(
   Schema.isMaxLength(128),
   NoAsciiControlCharacters,
@@ -66,26 +63,18 @@ export const CtoxManagedInstanceHealth = Schema.Struct({
 });
 export type CtoxManagedInstanceHealth = typeof CtoxManagedInstanceHealth.Type;
 
-export const CtoxManagedInstanceSessionPartition = TrimmedNonEmptyString.check(
-  Schema.isPattern(
-    /^persist:workjet-ctox-(?:ctox_dev|local_daemon|ssh_managed|pairing_invite)-[a-f0-9]{64}$/,
-  ),
-);
-export type CtoxManagedInstanceSessionPartition = typeof CtoxManagedInstanceSessionPartition.Type;
-
 /**
  * The deliberately small instance descriptor which may cross into the
- * renderer. It contains no cookies, pairing material, launch tokens, or raw
- * control-plane payload.
+ * renderer. Session partitions and tenant launch identifiers are derived and
+ * retained by the main process; this value contains no cookies, pairing
+ * material, launch tokens, raw URLs, or control-plane payload.
  */
 export const CtoxManagedInstance = Schema.Struct({
   id: CtoxManagedInstanceId,
   source: CtoxManagedInstanceSource,
   displayName: CtoxManagedInstanceDisplayName,
   status: CtoxManagedInstanceStatus,
-  sessionPartition: CtoxManagedInstanceSessionPartition,
   domain: Schema.optionalKey(CtoxManagedInstanceHostname),
-  tenantId: Schema.optionalKey(CtoxManagedInstanceTenantId),
   role: Schema.optionalKey(CtoxManagedInstanceRole),
   healthSummary: CtoxManagedInstanceHealth,
 });
@@ -118,3 +107,57 @@ export const CtoxManagedDiscoveryResult = Schema.Union([
   }),
 ]);
 export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
+
+const CtoxGuestBoundCoordinate = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(2_147_483_647),
+);
+
+/** Browser content coordinates in Electron device-independent pixels. */
+export const CtoxGuestBounds = Schema.Struct({
+  x: CtoxGuestBoundCoordinate,
+  y: CtoxGuestBoundCoordinate,
+  width: CtoxGuestBoundCoordinate,
+  height: CtoxGuestBoundCoordinate,
+});
+export type CtoxGuestBounds = typeof CtoxGuestBounds.Type;
+
+export const CtoxManagedActivationInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  bounds: CtoxGuestBounds,
+});
+export type CtoxManagedActivationInput = typeof CtoxManagedActivationInput.Type;
+
+export const CtoxGuestBoundsInput = Schema.Struct({ bounds: CtoxGuestBounds });
+export type CtoxGuestBoundsInput = typeof CtoxGuestBoundsInput.Type;
+
+export const CtoxManagedActionFailureCode = Schema.Literals([
+  "invalid_input",
+  "authentication_failed",
+  "launch_failed",
+  "guest_failed",
+  "not_active",
+]);
+export type CtoxManagedActionFailureCode = typeof CtoxManagedActionFailureCode.Type;
+
+export const CtoxManagedActionResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", { code: CtoxManagedActionFailureCode }),
+]);
+export type CtoxManagedActionResult = typeof CtoxManagedActionResult.Type;
+
+export const CtoxManagedLoginResult = Schema.Union([
+  Schema.TaggedStruct("completed", { discovery: CtoxManagedDiscoveryResult }),
+  Schema.TaggedStruct("cancelled", { reason: Schema.Literals(["closed", "timeout"]) }),
+  Schema.TaggedStruct("failed", { code: Schema.Literal("authentication_failed") }),
+]);
+export type CtoxManagedLoginResult = typeof CtoxManagedLoginResult.Type;
+
+export const CtoxManagedGuestResult = Schema.Union([
+  Schema.TaggedStruct("ready", { instanceId: CtoxManagedInstanceId }),
+  Schema.TaggedStruct("revoked", {}),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "launch_failed", "guest_failed"]),
+  }),
+]);
+export type CtoxManagedGuestResult = typeof CtoxManagedGuestResult.Type;

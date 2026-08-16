@@ -146,6 +146,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
     };
   },
+  ctox: {
+    refresh: () => ipcRenderer.invoke(IpcChannels.CTOX_REFRESH_CHANNEL),
+    login: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGIN_CHANNEL),
+    logout: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGOUT_CHANNEL),
+    activate: (instanceId, bounds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
+    deactivate: () => ipcRenderer.invoke(IpcChannels.CTOX_DEACTIVATE_CHANNEL),
+    setGuestBounds: (bounds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SET_GUEST_BOUNDS_CHANNEL, { bounds }),
+  },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),
     closeTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CLOSE_TAB_CHANNEL, { tabId }),

@@ -51,12 +51,7 @@ describe("CTOX managed discovery", () => {
         source: "ctox_dev",
         displayName: "SKF",
         status: "available",
-        sessionPartition: ctoxManagedSessionPartition({
-          source: "ctox_dev",
-          id: "managed:tenant_skf",
-        }),
         domain: "acme.ctox.dev",
-        tenantId: "tenant_skf",
         role: "admin",
         healthSummary: {
           dataPlane: "rxdb-webrtc",
@@ -126,11 +121,6 @@ describe("CTOX managed discovery", () => {
       source: "ctox_dev",
       displayName: "tenant_safe",
       status: "available",
-      sessionPartition: ctoxManagedSessionPartition({
-        source: "ctox_dev",
-        id: "managed:tenant_safe",
-      }),
-      tenantId: "tenant_safe",
       healthSummary: {
         dataPlane: "rxdb-webrtc",
         dataPlaneReady: false,

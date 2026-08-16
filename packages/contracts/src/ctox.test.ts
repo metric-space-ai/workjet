@@ -3,7 +3,10 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import {
+  CtoxGuestBounds,
+  CtoxManagedActivationInput,
   CtoxManagedDiscoveryResult,
+  CtoxManagedGuestResult,
   CtoxManagedInstance,
   CtoxManagedInstanceHealth,
 } from "./ctox.ts";
@@ -17,10 +20,7 @@ const validInstance = {
   source: "ctox_dev",
   displayName: "SKF",
   status: "available",
-  sessionPartition:
-    "persist:workjet-ctox-ctox_dev-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   domain: "acme.ctox.dev",
-  tenantId: "tenant_skf",
   role: "admin",
   healthSummary: {
     dataPlane: "rxdb-webrtc",
@@ -46,7 +46,6 @@ describe("CTOX renderer contracts", () => {
         decodeInstance({
           ...validInstance,
           source,
-          sessionPartition: validInstance.sessionPartition.replace("ctox_dev", source),
         }).source,
       ).toBe(source);
     },
@@ -74,20 +73,51 @@ describe("CTOX renderer contracts", () => {
     expect(() => decodeInstance({ ...validInstance, id: "bad\u0000id" })).toThrow();
     expect(() => decodeInstance({ ...validInstance, displayName: "bad\u0000name" })).toThrow();
     expect(() => decodeInstance({ ...validInstance, displayName: "a".repeat(257) })).toThrow();
-    expect(() => decodeInstance({ ...validInstance, tenantId: "a".repeat(257) })).toThrow();
     expect(() => decodeInstance({ ...validInstance, role: "a".repeat(129) })).toThrow();
     expect(() =>
       decodeInstance({ ...validInstance, domain: "https://user:secret@ctox.dev" }),
     ).toThrow();
   });
 
-  it("rejects non-Workjet and malformed Electron session partitions", () => {
-    expect(() =>
-      decodeInstance({ ...validInstance, sessionPartition: "persist:ctox-managed-server-value" }),
-    ).toThrow();
-    expect(() =>
-      decodeInstance({ ...validInstance, sessionPartition: "persist:workjet-ctox-ctox_dev-short" }),
-    ).toThrow();
+  it("strips session partitions, tenant launch ids, tokens, URLs, and packed configs", () => {
+    const decoded = decodeInstance({
+      ...validInstance,
+      sessionPartition: "persist:server-controlled",
+      tenantId: "tenant_skf",
+      token: "secret",
+      launchUrl: "https://ctox.dev/?token=secret",
+      ctox_config: "packed-secret",
+    });
+
+    expect(decoded).toEqual(validInstance);
+    expect(JSON.stringify(decoded)).not.toContain("secret");
+    expect(JSON.stringify(decoded)).not.toContain("partition");
+  });
+
+  it("accepts only finite nonnegative integer guest bounds and stable-id activation", () => {
+    const decodeBounds = Schema.decodeUnknownSync(CtoxGuestBounds);
+    const decodeActivation = Schema.decodeUnknownSync(CtoxManagedActivationInput);
+    const bounds = { x: 1, y: 2, width: 800, height: 600 };
+    expect(decodeBounds(bounds)).toEqual(bounds);
+    expect(decodeActivation({ instanceId: validInstance.id, bounds })).toEqual({
+      instanceId: validInstance.id,
+      bounds,
+    });
+    for (const invalid of [-1, 1.5, Number.POSITIVE_INFINITY, 2_147_483_648]) {
+      expect(() => decodeBounds({ ...bounds, width: invalid })).toThrow();
+    }
+  });
+
+  it("keeps guest activation results free of launch data", () => {
+    const decodeGuestResult = Schema.decodeUnknownSync(CtoxManagedGuestResult);
+    expect(
+      decodeGuestResult({
+        _tag: "ready",
+        instanceId: validInstance.id,
+        launchUrl: "https://ctox.dev/?ctox_config=secret",
+        token: "secret",
+      }),
+    ).toEqual({ _tag: "ready", instanceId: validInstance.id });
   });
 
   it("decodes only explicit signed-out, ready, and redacted failure states", () => {

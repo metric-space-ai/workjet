@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import type { CtoxManagedInstance } from "@t3tools/contracts";
+import { assert, describe, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import type { BrowserWindow, Session, WebContentsView } from "electron";
+import { expect, vi } from "vite-plus/test";
+
+vi.mock("electron", () => ({ WebContentsView: class {} }));
+
+import * as ElectronShell from "../electron/ElectronShell.ts";
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as CtoxDevAuth from "./CtoxDevAuth.ts";
+import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
+import * as CtoxGuestManager from "./CtoxGuestManager.ts";
+import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
+
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+const descriptor: CtoxManagedInstance = {
+  id: "managed:tenant_skf",
+  source: "ctox_dev",
+  displayName: "SKF",
+  status: "available",
+  domain: "skf.ctox.dev",
+  role: "owner",
+  healthSummary: {
+    dataPlane: "rxdb-webrtc",
+    dataPlaneReady: true,
+    httpDataProxy: false,
+    nativePeerObserved: true,
+  },
+};
+
+function makeGuestHarness() {
+  const beforeRequest = vi.fn();
+  const browserSession = {
+    webRequest: { onBeforeRequest: beforeRequest },
+  } as unknown as Session;
+  const addChildView = vi.fn();
+  const removeChildView = vi.fn();
+  const mainWindow = {
+    isDestroyed: vi.fn(() => false),
+    contentView: { addChildView, removeChildView },
+  } as unknown as BrowserWindow;
+  const views: Array<{
+    readonly view: WebContentsView;
+    readonly close: ReturnType<typeof vi.fn>;
+    readonly loadURL: ReturnType<typeof vi.fn>;
+    readonly setBounds: ReturnType<typeof vi.fn>;
+  }> = [];
+  const createView = vi.fn((resolvedSession: Session) => {
+    assert.strictEqual(resolvedSession, browserSession);
+    const close = vi.fn();
+    const loadURL = vi.fn(async () => undefined);
+    const setBounds = vi.fn();
+    const webContents = {
+      session: browserSession,
+      isDestroyed: vi.fn(() => false),
+      close,
+      loadURL,
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn(),
+      getURL: vi.fn(() => "https://ctox.dev/business-os/"),
+      executeJavaScript: vi.fn(async () => undefined),
+    };
+    const view = { webContents, setBounds } as unknown as WebContentsView;
+    views.push({ view, close, loadURL, setBounds });
+    return view;
+  });
+  const refresh = Effect.succeed({ _tag: "ready", instances: [descriptor] } as const);
+  const auth = CtoxDevAuth.CtoxDevAuth.of({
+    refresh,
+    login: Effect.die("unused"),
+    logout: Effect.void,
+  });
+  const instance = vi.fn(() => Effect.succeed(browserSession));
+  const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
+    account: Effect.succeed(browserSession),
+    instance,
+    clearInstance: () => Effect.void,
+  });
+  const launch = vi.fn(() =>
+    Effect.succeed({
+      launchUrl: "https://ctox.dev/business-os/?ctox_config=transient-secret",
+      launchOrigin: "https://ctox.dev",
+    }),
+  );
+  const launches = CtoxManagedLaunch.CtoxManagedLaunch.of({ launch });
+  const electronWindow = ElectronWindow.ElectronWindow.of({
+    create: () => Effect.die("unused"),
+    main: Effect.succeed(Option.some(mainWindow)),
+    currentMainOrFirst: Effect.succeed(Option.some(mainWindow)),
+    focusedMainOrFirst: Effect.succeed(Option.some(mainWindow)),
+    setMain: () => Effect.void,
+    clearMain: () => Effect.void,
+    reveal: () => Effect.void,
+    sendAll: () => Effect.void,
+    destroyAll: Effect.void,
+    syncAllAppearance: () => Effect.void,
+  });
+  const electronShell = ElectronShell.ElectronShell.of({
+    openExternal: () => Effect.succeed(true),
+    copyText: () => Effect.void,
+  });
+  const dependencies = Layer.mergeAll(
+    Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+    Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
+    Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, launches),
+    Layer.succeed(ElectronWindow.ElectronWindow, electronWindow),
+    Layer.succeed(ElectronShell.ElectronShell, electronShell),
+  );
+  const layer = CtoxGuestManager.layer({ createView }).pipe(Layer.provide(dependencies));
+  return {
+    addChildView,
+    beforeRequest,
+    browserSession,
+    createView,
+    instance,
+    launch,
+    layer,
+    removeChildView,
+    views,
+  };
+}
+
+describe("CtoxGuestManager", () => {
+  it.effect("authoritatively selects managed instances and owns guest replacement cleanup", () => {
+    const harness = makeGuestHarness();
+    const firstBounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const secondBounds = { x: 300, y: 44, width: 980, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      const forged = yield* manager.activate("managed:forged", firstBounds);
+      assert.deepEqual(forged, { _tag: "revoked" });
+      expect(harness.launch).not.toHaveBeenCalled();
+
+      const first = yield* manager.activate(descriptor.id, firstBounds);
+      assert.deepEqual(first, { _tag: "ready", instanceId: descriptor.id });
+      assert.strictEqual(harness.createView.mock.calls[0]?.[0], harness.browserSession);
+      assert.deepEqual(harness.views[0]?.setBounds.mock.calls[0]?.[0], firstBounds);
+      expect(harness.addChildView).toHaveBeenCalledWith(harness.views[0]?.view);
+      expect(harness.beforeRequest).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledWith(
+        "https://ctox.dev/business-os/?ctox_config=transient-secret",
+      );
+      assert.notInclude(encodeUnknownJson(first), "transient-secret");
+
+      const second = yield* manager.activate(descriptor.id, secondBounds);
+      assert.deepEqual(second, { _tag: "ready", instanceId: descriptor.id });
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledWith(harness.views[0]?.view);
+      assert.deepEqual(harness.views[1]?.setBounds.mock.calls[0]?.[0], secondBounds);
+
+      yield* manager.deactivate;
+      expect(harness.views[1]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledWith(harness.views[1]?.view);
+      expect(harness.launch).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it("allows shell/control resources but blocks Business OS HTTP data routes", () => {
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/business-os/system-apps.json",
+        "fetch",
+        "https://ctox.dev",
+      ),
+    ).toBe(false);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/api/business-os/status",
+        "xhr",
+        "https://ctox.dev",
+      ),
+    ).toBe(false);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/api/business-os/records",
+        "xhr",
+        "https://ctox.dev",
+      ),
+    ).toBe(true);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/files",
+        "fetch",
+        "https://ctox.dev",
+      ),
+    ).toBe(true);
+    expect(
+      CtoxGuestManager.isAllowedCtoxTopFrameNavigation(
+        "https://ctox.dev/business-os/",
+        "https://ctox.dev",
+      ),
+    ).toBe(true);
+    expect(
+      CtoxGuestManager.isAllowedCtoxTopFrameNavigation("https://evil.example/", "https://ctox.dev"),
+    ).toBe(false);
+    expect(CtoxGuestManager.isSafeCtoxExternalUrl("file:///etc/passwd")).toBe(false);
+    expect(CtoxGuestManager.isSafeCtoxExternalUrl("https://docs.ctox.dev/")).toBe(true);
+  });
+});

@@ -44,7 +44,7 @@ import {
   useSidebarVisibility,
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { CtoxMainShell, CtoxSidebarShell } from "./ctox/CtoxModeShell";
+import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
@@ -139,6 +139,10 @@ function ProjectProjectionRetention() {
   return null;
 }
 
+function CtoxModeBoundary({ active, children }: { active: boolean; children: ReactNode }) {
+  return active ? <CtoxModeProvider>{children}</CtoxModeProvider> : children;
+}
+
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
@@ -219,38 +223,40 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
-      {!isCtoxShell ? <ProjectProjectionRetention /> : null}
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        data-app-sidebar=""
-        className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        resizable={{
-          maxWidth: sidebarMaximumWidth,
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-            nextWidth <= currentWidth ||
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-          onResize: setSidebarWidth,
-        }}
-      >
-        {isOnSettings ? (
-          <>
-            <SidebarChromeHeader isElectron={isElectron} />
-            <SettingsSidebarNav pathname={pathname} />
-          </>
-        ) : isCtoxShell ? (
-          <CtoxSidebarShell />
-        ) : legacySidebarEnabled ? (
-          <LegacyThreadSidebar />
-        ) : (
-          <ThreadSidebar />
-        )}
-        <SidebarRail onDoubleClick={resetSidebarWidth} />
-      </Sidebar>
-      {isCtoxShell ? <CtoxMainShell /> : children}
-      <SidebarControl />
+      <CtoxModeBoundary active={isCtoxShell}>
+        {!isCtoxShell ? <ProjectProjectionRetention /> : null}
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          data-app-sidebar=""
+          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+          resizable={{
+            maxWidth: sidebarMaximumWidth,
+            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+              nextWidth <= currentWidth ||
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+            onResize: setSidebarWidth,
+          }}
+        >
+          {isOnSettings ? (
+            <>
+              <SidebarChromeHeader isElectron={isElectron} />
+              <SettingsSidebarNav pathname={pathname} />
+            </>
+          ) : isCtoxShell ? (
+            <CtoxSidebarShell />
+          ) : legacySidebarEnabled ? (
+            <LegacyThreadSidebar />
+          ) : (
+            <ThreadSidebar />
+          )}
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
+        {isCtoxShell ? <CtoxMainShell /> : children}
+        <SidebarControl />
+      </CtoxModeBoundary>
     </SidebarProvider>
   );
 }

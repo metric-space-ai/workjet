@@ -490,7 +490,9 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         deterministic isolated instance sessions; port bounded single-flight
         login, account-session refresh, scoped cookie/storage logout, and safe
         popup/navigation handling.
-  - [ ] Port short-lived launch-token exchange and rotation.
+  - [x] Port the short-lived launch-token exchange for a selected managed
+        ctox.dev instance without exposing the token to the renderer.
+  - [ ] Port in-guest launch-token rotation and refresh.
 - [ ] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
@@ -501,15 +503,18 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
       secret scrubbing, and HTTP data/resource guards.
 - [ ] Use Electron `WebContentsView`, matching Workjet's current guest-view
       architecture, rather than the deprecated CTOX `BrowserView` API.
+  - [x] Use a sandboxed `WebContentsView` for the managed ctox.dev guest path.
 - [ ] Give each CTOX instance a stable isolated persistent session partition.
   - [x] Derive a collision-resistant Workjet-owned partition from the exact
         source and stable instance ID; reject server-provided partitions.
   - [x] Resolve and memoize the validated partitions through Electron with a
         default-deny permission policy and instance-scoped storage/cache wipe.
-  - [ ] Bind each instance's `WebContentsView` and requests to its derived
-        Electron session.
+  - [x] Bind each managed instance's `WebContentsView`, navigation, and requests
+        to its main-process-derived Electron session.
 - [ ] Destroy or detach guest views cleanly on logout, access revocation,
       removal, mode change, and app shutdown.
+  - [x] Detach and destroy the managed guest on replacement, logout, discovery
+        removal/revocation, mode exit, and service shutdown.
 
 ### Business OS shell delivery
 
@@ -531,12 +536,17 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
       instance/main surface and no guest or alternate Business OS data path.
 - [ ] Render CTOX instance groups, status, role, source, and last-used state in
       CTOX mode.
-- [ ] Selecting an instance activates its guest surface in the main region.
+  - [x] Render the managed ctox.dev group with bounded status, role, source, and
+        last-used metadata.
+- [x] Selecting a managed ctox.dev instance activates its native guest surface
+      in the main region.
 - [ ] Show signed-out, needs-auth, unavailable, connecting, ready, and revoked
       states explicitly.
 - [ ] Keep CTOX Business OS chat inside the Business OS surface; do not convert
       it into a T3 thread.
 - [ ] Provide instance management and refresh actions without exposing secrets.
+  - [x] Provide managed login, logout, and refresh actions through typed IPC
+        without exposing tenant IDs, partitions, cookies, or launch tokens.
 - [ ] Ensure keyboard shortcuts and zoom target the active Workjet surface
       intentionally.
 
@@ -752,4 +762,4 @@ Workjet is complete only when all of the following are true:
 6. [x] Apply the dual-license policy and provenance inventory while importing
        CTOX-owned code.
 7. [x] Land the first real local orchestrator → worker flow.
-8. [ ] Land one managed CTOX instance → Business OS WebRTC launch flow.
+8. [x] Land one managed CTOX instance → Business OS WebRTC launch flow.

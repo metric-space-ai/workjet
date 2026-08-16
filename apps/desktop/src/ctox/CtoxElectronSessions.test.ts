@@ -28,8 +28,6 @@ function descriptor(id = "managed:tenant-a"): CtoxManagedInstance {
     source: "ctox_dev",
     displayName: "Tenant A",
     status: "available",
-    sessionPartition: ctoxManagedSessionPartition({ source: "ctox_dev", id }),
-    tenantId: id.slice("managed:".length),
     healthSummary: {
       dataPlane: "rxdb-webrtc",
       dataPlaneReady: true,
@@ -37,6 +35,13 @@ function descriptor(id = "managed:tenant-a"): CtoxManagedInstance {
       nativePeerObserved: true,
     },
   };
+}
+
+function partitionOf(instanceDescriptor: CtoxManagedInstance): string {
+  return ctoxManagedSessionPartition({
+    source: instanceDescriptor.source,
+    id: instanceDescriptor.id,
+  });
 }
 
 function requestDecision(sessionPartition: string, permission: string): boolean {
@@ -93,25 +98,25 @@ describe("CtoxElectronSessions", () => {
         assert.notStrictEqual(firstAccount, firstInstance);
         assert.deepEqual(fromPartition.mock.calls, [
           [CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION],
-          [instanceDescriptor.sessionPartition],
+          [partitionOf(instanceDescriptor)],
         ]);
         assert.notEqual(
           CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION,
-          instanceDescriptor.sessionPartition,
+          partitionOf(instanceDescriptor),
         );
       }).pipe(Effect.provide(CtoxElectronSessions.layer)),
   );
 
-  it.effect("rejects a server-selected or mismatched partition before Electron resolution", () =>
+  it.effect("rejects non-managed descriptors before Electron resolution", () =>
     Effect.gen(function* () {
       const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
-      const arbitrary = { ...descriptor(), sessionPartition: "persist:arbitrary-secret-partition" };
-      const error = yield* sessions.instance(arbitrary as CtoxManagedInstance).pipe(Effect.flip);
+      const arbitrary = { ...descriptor(), id: "forged-instance", source: "local_daemon" as const };
+      const error = yield* sessions.instance(arbitrary).pipe(Effect.flip);
 
       assert.instanceOf(error, CtoxElectronSessions.CtoxElectronSessionDescriptorError);
       assert.equal(error.message, "The CTOX instance session descriptor is invalid.");
       expect(fromPartition).not.toHaveBeenCalled();
-      assert.notInclude(error.message, arbitrary.sessionPartition);
+      assert.notInclude(error.message, arbitrary.id);
     }).pipe(Effect.provide(CtoxElectronSessions.layer)),
   );
 
@@ -138,12 +143,12 @@ describe("CtoxElectronSessions", () => {
       }
 
       for (const permission of ["notifications", "clipboard-sanitized-write"]) {
-        assert.isTrue(requestDecision(instanceDescriptor.sessionPartition, permission));
-        assert.isTrue(checkDecision(instanceDescriptor.sessionPartition, permission));
+        assert.isTrue(requestDecision(partitionOf(instanceDescriptor), permission));
+        assert.isTrue(checkDecision(partitionOf(instanceDescriptor), permission));
       }
       for (const permission of ["clipboard-read", "clipboard-write", "geolocation", "midi"]) {
-        assert.isFalse(requestDecision(instanceDescriptor.sessionPartition, permission));
-        assert.isFalse(checkDecision(instanceDescriptor.sessionPartition, permission));
+        assert.isFalse(requestDecision(partitionOf(instanceDescriptor), permission));
+        assert.isFalse(checkDecision(partitionOf(instanceDescriptor), permission));
       }
     }).pipe(Effect.provide(CtoxElectronSessions.layer)),
   );
@@ -157,8 +162,8 @@ describe("CtoxElectronSessions", () => {
       yield* sessions.instance(second);
       yield* sessions.clearInstance(first);
 
-      const firstSession = fakeSessions.get(first.sessionPartition);
-      const secondSession = fakeSessions.get(second.sessionPartition);
+      const firstSession = fakeSessions.get(partitionOf(first));
+      const secondSession = fakeSessions.get(partitionOf(second));
       const accountSession = fakeSessions.get(CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION);
       assert.isDefined(firstSession);
       assert.isDefined(secondSession);

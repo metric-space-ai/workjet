@@ -103,14 +103,14 @@ export const make = Effect.gen(function* () {
   const validateInstance = (
     descriptor: CtoxManagedInstance,
   ): Effect.Effect<string, CtoxElectronSessionDescriptorError> => {
+    if (descriptor.source !== "ctox_dev" || !descriptor.id.startsWith("managed:")) {
+      return Effect.fail(new CtoxElectronSessionDescriptorError());
+    }
     const expectedPartition = ctoxManagedSessionPartition({
       source: descriptor.source,
       id: descriptor.id,
     });
-    if (
-      descriptor.sessionPartition !== expectedPartition ||
-      expectedPartition === CTOX_CONTROL_PLANE_PARTITION
-    ) {
+    if (expectedPartition === CTOX_CONTROL_PLANE_PARTITION) {
       return Effect.fail(new CtoxElectronSessionDescriptorError());
     }
     return Effect.succeed(expectedPartition);

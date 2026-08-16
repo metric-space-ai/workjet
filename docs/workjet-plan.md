@@ -1,6 +1,6 @@
 # Workjet master plan
 
-Status date: 2026-08-15
+Status date: 2026-08-16
 
 Canonical repository: `metric-space-ai/workjet`
 
@@ -186,11 +186,12 @@ both modes.
         with bearer grant `web-stack-browser`, independent direct-call
         enforcement, exact native-surface probing, and a finite action AST that
         exposes no raw JavaScript, shell, path, environment, or secret fields.
-- [ ] CTOX adapter: expose the same capabilities through typed Business OS MCP
-      and/or validated CTOX business commands.
-- [ ] Keep CTOX Business OS data on WebRTC; MCP remains a control and tool
+- [x] CTOX adapter: expose the same capabilities through typed Business OS MCP
+      while leaving validated business commands available for Business OS
+      workflows.
+- [x] Keep CTOX Business OS data on WebRTC; MCP remains a control and tool
       surface only.
-- [ ] Add adapter conformance tests proving the same manifest and JSON schemas
+- [x] Add adapter conformance tests proving the same manifest and JSON schemas
       are visible from T3 and CTOX.
 
 ### First capabilities
@@ -213,8 +214,8 @@ both modes.
   - [x] Add the per-thread Greppy activation toggle to the Code composer/thread
         settings without creating thread-, session-, harness-, or provider-scoped
         stores.
-- [ ] `web-search`: shared Web Stack search/read surface; the T3 adapter is
-      complete and CTOX parity remains open.
+- [x] `web-search`: shared Web Stack search/read surface consumed by both the T3
+      and CTOX MCP adapters.
   - [x] Ship the first Workjet/T3 search surface through the existing
         per-session MCP server; commit `20287044b` passes 19 focused TypeScript
         tests, the server typecheck, strict Rust Clippy, 450 Rust tests with 23
@@ -248,7 +249,7 @@ both modes.
         `f9b972167` pass 39 focused TypeScript tests, both package typechecks,
         strict Rust Clippy, 450 Rust tests with 23 ignored, seven native
         boundary tests, and all 43 Web Stack fixture tests. Real installed-
-        browser E2E and CTOX adapter parity remain open.
+        browser E2E remains open.
 - [ ] Add room for later capabilities without changing thread-role contracts.
 
 ## 6. Wave 3 — move the CLIProxyAPI Rust port
@@ -385,7 +386,7 @@ CTOX and the T3 harness adapter consume the same tagged package.
       content fencing, cache bounds, evidence receipts, and legal/ToS controls.
 - [ ] Keep browser dependencies and downloaded browsers under ignored `.deps`
       or runtime directories.
-- [ ] Expose the same search/read/deep-research/browser schemas through T3 MCP
+- [x] Expose the same search/read/deep-research/browser schemas through T3 MCP
       and CTOX's capability adapter.
   - [x] Expose the first product-neutral search schema through T3 MCP using the
         SQL-free `WorkjetRuntimeConfigStore`; no CTOX SQLite, thread, session,
@@ -395,18 +396,27 @@ CTOX and the T3 harness adapter consume the same tagged package.
   - [x] Add the read and deep-research T3 surfaces with canonical input/output
         schemas and a strict native response projection.
   - [x] Make the canonical schemas and finite execution boundary consumable by
-        both hosts through the shared package; Workjet/T3 now consumes them and
-        the CTOX product adapter remains the only missing host wiring.
-  - [ ] Add the CTOX host adapter for search, read, deep research, and browser.
-- [ ] Prove both adapters against a shared fixture suite.
+        both hosts through the shared package.
+  - [x] Add the CTOX host adapter for search, read, deep research, and browser.
+        CTOX commit `a2c422f56` consumes public Workjet revision `8726b9bf2`,
+        preserves the WebRTC data plane, maps the five canonical tools onto
+        channel plus server-authoritative Business OS policy, requires explicit
+        confirmation for browser automation, and redacts raw arguments from
+        audit metadata.
+- [x] Prove both adapters against a shared fixture suite.
   - [x] Add the canonical adapter fixture and consume it from Rust unit and
         downstream-facing public API tests, including invalid controls,
         redaction canaries, finite browser actions, host budgets, and host-owned
         state assertions.
-  - [ ] Run the same fixture through the CTOX MCP registration, grants, policy,
-        audit, and dispatch boundary.
-- [ ] Change CTOX to consume the pinned Workjet Web Stack package.
+  - [x] Run the same fixture through the CTOX MCP registration, grants, policy,
+        audit, and dispatch boundary. The focused CTOX gate passes all six
+        adapter tests, `cargo check --bin ctox`, `rustfmt --check`, and
+        `git diff --check`.
+- [x] Change CTOX to consume the pinned Workjet Web Stack package.
 - [ ] Remove the duplicate CTOX source only after parity.
+  - [ ] Reconcile the still-divergent local and Workjet `ctox-pdf-parse` trees
+        before collapsing Cargo's local and Git package instances; do not
+        silently substitute one implementation for the other.
 
 Mandatory gates include Rust tests and clippy, fixture/evidence tests, SSRF
 tests, browser-preparation smoke, web-search E2E, web-unlock E2E, and the shared

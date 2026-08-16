@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "vp test run"
+    "test": "vp test run",
+    "smoke:desktop:ctox-packaged": "node ctox-packaged-smoke.ts"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   INITIAL_LIFECYCLE_STATE,
+  cdpCommandError,
   checkChildProcessProfiles,
   classifyAdvancedStatus,
   cleanupActionOrder,
@@ -81,6 +82,24 @@ describe("bounded CDP target selection", () => {
   });
 });
 
+describe("safe CDP diagnostics", () => {
+  it("includes only the command and numeric protocol code", () => {
+    const error = cdpCommandError("Runtime.evaluate", {
+      code: -32_000,
+      message: "secret expression contents",
+      data: "sensitive invite",
+    });
+    expect(error.message).toBe("CDP Runtime.evaluate failed (code -32000)");
+    expect(error.message).not.toContain("secret");
+    expect(error.message).not.toContain("sensitive");
+  });
+  it("omits malformed protocol codes", () => {
+    expect(cdpCommandError("Runtime.evaluate", { code: "-32000" }).message).toBe(
+      "CDP Runtime.evaluate failed",
+    );
+  });
+});
+
 describe("recursive packaged child profile checks", () => {
   const records: readonly ProcessRecord[] = [
     { pid: 10, ppid: 1, command: "/Applications/Workjet" },
@@ -154,6 +173,27 @@ describe("advanced status classification", () => {
     expect(
       classifyAdvancedStatus({ ok: false, sync: { errors: [{ code: "peer_revoked" }] } }),
     ).toEqual({ healthy: false, peerRevoked: true });
+  });
+  it("keeps only bounded non-secret advanced status diagnostics", () => {
+    expect(
+      classifyAdvancedStatus({
+        ok: false,
+        failures: ["authenticated", "bad value", "x".repeat(81)],
+        sync: {
+          phase: "reconnecting",
+          collectionErrors: [
+            { code: "instance_mismatch", message: "secret" },
+            { name: "CtoxReplicationIoError", message: "invite payload" },
+            { code: "bad code" },
+          ],
+        },
+      }).diagnostics,
+    ).toEqual([
+      "phase:reconnecting",
+      "failure:authenticated",
+      "error:instance_mismatch",
+      "error:CtoxReplicationIoError",
+    ]);
   });
   it("rejects missing, oversized, or control-bearing peer ids", () => {
     expect(classifyAdvancedStatus({ ok: true, sync: {} }).browserPeerId).toBeUndefined();

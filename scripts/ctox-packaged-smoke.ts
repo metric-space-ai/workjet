@@ -49,6 +49,7 @@ export interface ClassifiedStatus {
   readonly healthy: boolean;
   readonly peerRevoked: boolean;
   readonly browserPeerId?: string;
+  readonly diagnostics?: readonly string[];
 }
 export type LifecycleEvent =
   | "paired"
@@ -137,6 +138,19 @@ export function selectTargetByCapability(probes: readonly TargetProbe[], label: 
   if (matches.length !== 1)
     throw new Error(`${label} target selection found ${matches.length} matches`);
   return matches[0]!;
+}
+
+export function cdpCommandError(method: string, value: unknown): Error {
+  const code =
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).code === "number" &&
+    Number.isSafeInteger((value as Record<string, unknown>).code)
+      ? ((value as Record<string, unknown>).code as number)
+      : undefined;
+  return new Error(
+    code === undefined ? `CDP ${method} failed` : `CDP ${method} failed (code ${code})`,
+  );
 }
 
 export function parseProcessTable(stdout: string): readonly ProcessRecord[] {
@@ -244,10 +258,30 @@ export function classifyAdvancedStatus(value: unknown): ClassifiedStatus {
     )
       ? peerId
       : undefined;
+  const diagnostics: string[] = [];
+  const appendDiagnostic = (prefix: string, item: unknown): void => {
+    if (
+      typeof item === "string" &&
+      /^[A-Za-z0-9_.:-]{1,80}$/u.test(item) &&
+      diagnostics.length < 32
+    )
+      diagnostics.push(`${prefix}:${item}`);
+  };
+  appendDiagnostic("phase", sync?.phase);
+  if (Array.isArray(status.failures))
+    for (const failure of status.failures) appendDiagnostic("failure", failure);
+  if (Array.isArray(sync?.collectionErrors)) {
+    for (const value of sync.collectionErrors.slice(0, 16)) {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+      const error = value as Record<string, unknown>;
+      appendDiagnostic("error", error.code ?? error.name);
+    }
+  }
   return {
     healthy: status.ok === true,
     peerRevoked: boundedContainsSignal(value, "peer_revoked"),
     ...(browserPeerId === undefined ? {} : { browserPeerId }),
+    ...(diagnostics.length === 0 ? {} : { diagnostics }),
   };
 }
 
@@ -429,7 +463,8 @@ class CdpClient {
       const waiter = this.pending.get(response.id);
       if (waiter === undefined) return;
       this.pending.delete(response.id);
-      if (response.error !== undefined) waiter.reject(new Error("CDP command failed"));
+      if (response.error !== undefined)
+        waiter.reject(cdpCommandError("Runtime.evaluate", response.error));
       else waiter.resolve(response.result);
     });
     socket.addEventListener("close", () => this.rejectAll(new Error("CDP connection closed")));
@@ -626,16 +661,26 @@ async function readStatus(port: number): Promise<ClassifiedStatus> {
 }
 async function waitForHealthyStatus(port: number, timeoutMs = 45_000): Promise<string> {
   const deadline = performance.now() + timeoutMs;
+  let diagnostics: readonly string[] = [];
   while (performance.now() < deadline) {
     try {
       const status = await readStatus(port);
+      diagnostics = status.diagnostics ?? [];
       if (status.healthy && status.browserPeerId !== undefined) return status.browserPeerId;
-    } catch {
+    } catch (error) {
       /* Navigation can replace the target between enumeration and evaluation. */
+      const message = error instanceof Error ? error.message : "unknown";
+      diagnostics = [
+        /^CDP [A-Za-z.]+ (?:failed|timed out)(?: \(code -?\d+\))?$/u.test(message)
+          ? `runtime:${message.replaceAll(" ", "_")}`
+          : "runtime:target-race",
+      ];
     }
     await pause(500);
   }
-  throw new Error("guest did not report healthy advanced status with a browser peer");
+  throw new Error(
+    `guest did not report healthy advanced status with a browser peer (${diagnostics.join(",") || "no-safe-diagnostics"})`,
+  );
 }
 async function waitForPersistentRevocation(port: number): Promise<void> {
   const deadline = performance.now() + 45_000;

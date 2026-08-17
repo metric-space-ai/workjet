@@ -1,21 +1,27 @@
-# Workjet master plan
+# CTOX Desktop App — implementation plan
 
-Status date: 2026-08-16
+Status date: 2026-08-17
 
-Checklist progress: 63.0% (`170/270` complete, `100` open).
+Checklist progress: 57.8% (`192/332` complete, `140` open).
 
-Canonical repository: `metric-space-ai/workjet`
+Current repository: `metric-space-ai/workjet`
+
+Target desktop repository: `metric-space-ai/ctox-desktop-app`
 
 Upstream repository: `pingdotgg/t3code`
 
-This document is the executable plan for turning the T3 Code fork into
-Workjet: one desktop application with a Code mode and a CTOX mode, native
-Workjet orchestration, shared skills and tools, and a shared Rust codebase for
-provider access and the Web Stack.
+This document is the executable plan for the separate CTOX Desktop App. The
+application combines a T3-derived Code tool with a Business OS client while
+keeping CTOX itself independently deployable and fully operational without the
+desktop application. `Workjet` is the internal orchestration subsystem used by
+Code mode, not the desktop product name.
 
 ## 1. Product contract
 
-Workjet is one desktop application with two distinct modes.
+CTOX Desktop App is one Electron client with two equal, mutually exclusive
+product modes. The persistent top-left control is labelled exactly
+`Code | Business OS`; switching modes replaces both the sidebar and the main
+surface rather than mounting one mode over the other.
 
 ### Code mode
 
@@ -28,7 +34,7 @@ Workjet is one desktop application with two distinct modes.
 - Keeps direct provider/model selection available for every thread.
 - Adds per-thread Greppy, Web Stack, web-search, and future skill/tool toggles.
 
-### CTOX mode
+### Business OS mode
 
 - Shows the CTOX instances available to the operator in the left sidebar.
 - Supports ctox.dev managed instances plus the existing local, SSH, invite, and
@@ -37,22 +43,83 @@ Workjet is one desktop application with two distinct modes.
   inside the main application surface.
 - Leaves Business OS records, commands, files, policy, and orchestration under
   the authority of the selected CTOX instance.
-- Keeps the CTOX Sync Engine WebRTC data plane unchanged. Workjet must not add
-  an HTTP data bridge or fallback.
+- Keeps the CTOX Sync Engine WebRTC data plane unchanged. CTOX Desktop App must
+  not add an HTTP data bridge or fallback.
 
-### Shared, not merged
+### Integrated modes with explicit authority boundaries
 
-The two modes share source packages and desktop infrastructure. They do not
-share runtime state.
+The two modes form one integrated product. They share the desktop shell,
+navigation, capability packages, selected source code, notifications, and
+explicit cross-mode workflows. Business OS is not merely a second application
+opened inside Code, and Code is not merely a link launched from Business OS.
+The modes remain separate runtime authorities, however, and a CTOX instance is
+not reclassified as a coding harness.
+
+Skills and tools follow a strict **one implementation, multiple host adapters**
+model:
+
+- Code harnesses (Codex, Claude Code, Grok, and later harnesses) and the CTOX
+  harness resolve capabilities from the same versioned catalog, manifests,
+  schemas, implementation packages, fixtures, and release artifacts.
+- A capability is implemented and maintained once. Code exposes it through the
+  per-session T3 MCP adapter; CTOX exposes it through the typed Business OS MCP
+  adapter. Host adapters may translate lifecycle, policy, and context, but may
+  not fork the capability implementation or its public schema.
+- Availability is shared; activation is independent. Code can enable a skill or
+  tool per thread, while each CTOX instance applies its own server-authoritative
+  policy and grants.
+- Secrets, indexes, caches, credentials, audit data, and mutable runtime state
+  remain inside their authority boundary. Sharing a skill implementation never
+  means sharing a CTOX instance's data with Code mode.
+
+Cross-mode integration uses typed references and authorized commands rather
+than a shared database or an untyped renderer bridge:
+
+- Business OS can create or delegate implementation work to a Code thread and
+  retain a durable link to the resulting environment, thread, run, and
+  artifacts.
+- Code can open permitted CTOX context, return results/evidence to the linked
+  Business OS work item, and request a review or follow-up through the CTOX MCP
+  command boundary.
+- Switching modes preserves the current counterpart/link context so the user
+  can move between a Business OS record and its Code work without searching.
+- Shared notifications, approvals, capability status, and command-palette
+  actions may span both modes, but every read or mutation is still authorized
+  by its owning T3 server environment or CTOX instance.
+- Cross-mode links contain stable typed references and redacted presentation
+  metadata only. They never copy provider credentials, pairing secrets, raw
+  database records, or unrestricted launch capabilities between authorities.
+
+### Cross-mode workflow bridge
+
+- [ ] Define versioned contracts for a cross-mode link containing the CTOX
+      authority/instance and Business OS object reference plus the Code
+      authority/environment/thread/run/artifact references; reject ambient or
+      renderer-invented authority.
+- [ ] Add `Delegate to Code`/`Open in Code` actions to eligible Business OS
+      work, creating or selecting a Code thread with an explicit scoped context
+      handoff and durable backlink.
+- [ ] Add `Return to Business OS`, result/evidence submission, review request,
+      and follow-up actions to linked Code threads through validated CTOX MCP
+      commands and the existing approval model.
+- [ ] Add a shared desktop link navigator and context-preserving mode switch;
+      opening a link selects the correct mode, sidebar entry, and main surface
+      without mounting both surfaces simultaneously.
+- [ ] Add unified, redacted notifications and pending-approval indicators that
+      route the user to the owning mode while keeping payload data in the
+      owning authority.
+- [ ] Prove local, remote, offline, revoked-access, stale-link, and deleted-
+      counterpart behavior without a shared database or a Business OS HTTP
+      data bridge.
 
 - Every closed CTOX instance runs its own CLI-proxy Rust runtime and owns its
   own provider credentials, pools, cooldowns, and routing state.
-- Workjet/T3 runs a different CLI-proxy runtime for all harnesses connected to
-  that T3 runtime.
+- Code mode runs a different CLI-proxy runtime for all coding harnesses
+  connected to that T3 runtime.
 - A CTOX instance is not a T3 harness.
 - CLI-proxy Rust and Web Stack have one canonical maintained source base used
   by both products.
-- Workjet/T3 uses exactly one Greppy store per server environment at
+- Code mode uses exactly one Greppy store per server environment at
   `<ServerConfig.stateDir>/greppy`. All local threads and harnesses share it;
   thread, provider-session, harness, and provider-instance IDs must never be
   components of that path. Each remote T3 server naturally owns its own local
@@ -62,8 +129,13 @@ share runtime state.
 ## 2. Repository and source policy
 
 - [x] Fork T3 Code into the `metric-space-ai` organization.
-- [x] Rename the repository and desktop product to `workjet` / Workjet.
-- [x] Keep `origin` on `metric-space-ai/workjet` and `upstream` on
+- [x] Create the initial T3-derived implementation repository as
+      `metric-space-ai/workjet`.
+- [ ] Rename/move that repository to `metric-space-ai/ctox-desktop-app` and set
+      the package, application, installer, updater, and release identity to
+      `CTOX Desktop App` before public distribution.
+- [x] Keep `origin` on the current `metric-space-ai/workjet` repository and
+      `upstream` on
       `pingdotgg/t3code`.
 - [x] Work on an isolated `codex/` feature branch.
 - [x] Ignore dependency, cache, build, runtime, database, and agent-worktree
@@ -84,19 +156,20 @@ and documentation belong in Git.
 ## 3. Target runtime topology
 
 ```text
-Workjet Desktop
-├── Workjet application shell
+CTOX Desktop App (optional client)
+├── shared CTOX desktop shell
 │   ├── Code mode renderer
-│   └── CTOX mode instance switcher + Business OS guest
-├── Workjet/T3 server
+│   └── Business OS mode instance switcher + Business OS guest
+├── Code-mode T3 server
 │   ├── T3 thread and workspace authority
 │   ├── Workjet orchestration coordinator
 │   ├── per-session T3 MCP server
-│   └── one Workjet provider-gateway runtime for all T3 harnesses
+│   └── one provider-gateway runtime for all coding harnesses
 └── shared source packages
     ├── provider-gateway (Rust CLIProxyAPI port)
     ├── web-stack (Rust)
-    └── capability registry + host adapters
+    ├── skill/tool catalog + canonical implementations
+    └── thin Code/T3 and CTOX/Business-OS host adapters
 
 Closed CTOX instance A                 Closed CTOX instance B
 ├── CTOX daemon                        ├── CTOX daemon
@@ -105,8 +178,9 @@ Closed CTOX instance A                 Closed CTOX instance B
 └── shared Web Stack package           └── shared Web Stack package
 ```
 
-The Workjet Desktop may connect to multiple CTOX instances, but it does not
-become their provider proxy or database authority.
+CTOX instances continue running when the desktop application is closed or not
+installed. CTOX Desktop App may connect to multiple instances, but it never
+becomes their provider proxy, database authority, or availability dependency.
 
 ## 4. Wave 1 — native Workjet thread domain
 
@@ -195,6 +269,16 @@ both modes.
       surface only.
 - [x] Add adapter conformance tests proving the same manifest and JSON schemas
       are visible from T3 and CTOX.
+- [ ] Enforce one canonical capability version lock for both hosts in release
+      assembly; fail the build when Code and CTOX resolve different manifests,
+      schemas, implementation revisions, or artifact hashes.
+- [ ] Add a cross-host conformance gate that invokes every dual-host capability
+      through both adapters against the same fixtures and compares canonical
+      success/error projections while allowing only documented host-policy
+      differences.
+- [ ] Make capability availability visible in both UIs from the same catalog:
+      per-thread toggles/settings in Code and instance-policy-derived controls
+      or status in Business OS, without duplicating capability metadata.
 
 ### First capabilities
 
@@ -263,6 +347,14 @@ Current evidence: the CTOX port ledger marks portable Track A complete at the
 accepted upstream pin, with 617/617 production files, 442/442 test files, and
 10/10 release gates.
 
+Implementation status on 2026-08-17: the first Workjet host-authority slice is
+present in source as a separate loopback-only Rust sidecar plus a typed,
+authorized Code-server lifecycle/status/catalog service. Focused contracts,
+authorization, configuration, and lifecycle tests pass after integration. The
+host-adapter checkbox remains open until the full Rust clippy/fmt/portable
+regression gates, packaging, real account path, and Settings account surface
+are green; harness routing has not been switched to the gateway yet.
+
 Target ownership:
 
 - Workjet owns the canonical portable Rust package and upstream-port ledger.
@@ -285,7 +377,7 @@ Tasks:
 - [x] Rename the public package/binary from CTOX-specific names to Workjet
       provider-gateway names while retaining compatibility aliases for migration.
 - [x] Preserve origin and per-file license headers.
-- [ ] Keep provider-neutral Track A separate from host adapters.
+- [x] Keep provider-neutral Track A separate from host adapters.
 - [ ] Move or recreate the conformance fixtures, differential runner, port map,
       and porting ledger.
 - [x] Remove the imported built-in Antigravity OAuth client credentials from
@@ -294,7 +386,20 @@ Tasks:
   - [x] Rewrite every owned, unpublished import/product ref before the first
         push so the two former literals are absent from all reachable blobs and
         commit messages; a 65,388-object exact-literal scan is clean.
-- [ ] Add a Workjet/T3 host adapter using Workjet's secret storage and lifecycle.
+- [x] Add a Workjet/T3 host adapter using Workjet's secret storage and lifecycle.
+  - [x] Add the isolated Rust host sidecar, private runtime configuration,
+        loopback-only readiness/management control plane, zeroized secret
+        resolution, and bounded start/stop lifecycle.
+  - [x] Integrate environment-authoritative status/catalog/start/stop RPCs with
+        explicit authorization, redaction, a Node platform boundary, and a
+        deterministic stopped test layer.
+  - [x] Verify 38 focused TypeScript tests, contracts typecheck, zero new
+        gateway/server diagnostics in the full server typecheck, 2 Rust unit
+        tests, 2 Rust integration tests, full portable gateway tests (2513
+        passed, 3 ignored), clippy with warnings denied, and formatting. The
+        unrelated existing server transfer-budget test still times out after
+        120 seconds (124/125 other server tests pass) and remains a regression
+        backlog item, not a host-adapter acceptance gap.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
 - [ ] Preserve direct provider/model selection in the composer; selection
@@ -431,6 +536,85 @@ Goal: turn the stored role metadata into real local and remote orchestration.
 - [ ] Add a radio-style `Code | Orchestrator` control without replacing the
       existing provider-specific Plan/Build control.
 - [ ] Add a neighboring settings gear for Workjet configuration.
+- [ ] Port the Swift Workjet configuration model into versioned Code-mode
+      contracts and migrations: orchestrator prompt, progress-board policy,
+      worker catalog, provider/model selection, computer target, telemetry,
+      execution limits, and verification state. Do not make the Electron
+      renderer or the legacy Swift application an authority for these values.
+  - [x] Add a versioned, server-authoritative Workjet configuration contract
+        and whole-object settings persistence with typed defaults and focused
+        migration/round-trip coverage.
+  - [x] Add reusable computer records that reference the existing Code
+        environment authority and declare per-computer harness availability
+        without duplicating SSH, relay, or Tailscale credentials.
+  - [x] Add reusable worker profiles with independent computer, harness,
+        route, model, reasoning, instructions, and capability selections.
+  - [x] Persist the managed prompt plus initial telemetry and execution-policy
+        settings independently from the worker catalog.
+  - [x] Add a server-authoritative, per-Code-environment worktree storage root
+        to Execution settings. New temporary Git worktrees must use the selected
+        writable disk (for example `/Volumes/tmp/workjet/worktrees`) without
+        moving active worktrees or relocating durable state, secrets, databases,
+        logs, attachments, or provider credentials. Validate absolute/canonical
+        path, safe root boundaries, writeability, available capacity, collision-
+        resistant repository namespaces, and restart-free application; expose
+        effective/default path plus health in the UI and preserve the current
+        environment-local default when unset.
+        Completed 17 August 2026: the selected Code server now validates and
+        persists the setting, reports the effective/default/canonical path,
+        writeability, and available capacity, and applies A→B changes without a
+        restart or moving existing worktrees. Automatic Git worktrees use
+        collision-resistant repository/ref namespaces while explicit paths stay
+        unchanged. Default/current/prior roots remain reviewable without
+        following a replaced prior-root symlink. The native Execution UI exposes
+        selected-server identity plus Check, Apply, and Use default actions and
+        the existing-worktree notice. Main-checkout verification passed 203/203
+        relevant tests, contracts/shared/web typechecks, the filtered server
+        typecheck, and a real validation of `/Volumes/tmp/workjet/worktrees` as
+        canonical and writable with 220,184,014,848 bytes available.
+        The complete Web + server + Electron bundle and the desktop startup
+        smoke also passed from the main checkout on 17 August 2026. This proves
+        build/startup integrity; it does not replace the still-open packaged
+        cross-mode and real-peer UI/E2E gates below.
+  - [ ] Replace the provisional LLM-route reference to Code provider-driver
+        instances with the real provider-gateway account/pool contract. Code
+        provider drivers represent harness runtimes and must not be presented
+        as OpenAI, Anthropic, Kimi, MiniMax, xAI, Z.ai, Antigravity, or custom
+        LLM accounts.
+  - [ ] Port the progress-board policy, verification state, provider capacity,
+        and inspectable one-shot migration/version steps from the Swift model.
+- [ ] Replace the current Greppy-only `/settings/workjet` page with the native
+      CTOX Code configuration surface covering Prompt, Providers, Computers,
+      Telemetry, Execution, and the editable worker catalog. Preserve the
+      existing per-thread provider/model controls rather than hiding them
+      behind global Workjet defaults.
+  - [x] Replace the Greppy-only page with compact Workers, Computers, LLM
+        routes, Prompt, Telemetry, Execution, and Capabilities tabs that use
+        the existing Code settings layout and search/deep-link behavior.
+  - [x] Add tested editors for reusable computers, harness availability, LLM
+        routes, and worker composition; keep Greppy in Capabilities instead of
+        treating it as Workjet itself.
+  - [x] Prove the native settings slice through 112 focused tests, direct
+        contracts/shared/web typechecks, a complete desktop build, and an
+        Electron UI pass at 1100 px and 840 px without page-level horizontal
+        overflow.
+  - [ ] Add the real provider-account surface backed by the shared Rust
+        provider gateway, environment-scoped secure credentials, account
+        pools, health/capacity, and model discovery. Do not reuse the existing
+        Codex/Claude/Grok provider-driver list as the LLM provider catalog.
+  - [ ] Replace declared harness availability with live environment-scoped
+        inspect/install/update/remove actions and consume the resulting truth
+        during worker validation and dispatch.
+- [ ] Add an orchestrator-scoped worker overview showing child threads grouped
+      under their parent with task, harness/model, environment/computer,
+      delivery/turn state, completion/result state, and actionable links to
+      open the ordinary worker thread.
+- [ ] Keep the normal Code sidebar authoritative: every created worker remains
+      visible as an ordinary local or remote thread even when the specialized
+      orchestrator overview is closed.
+- [ ] Migrate existing Swift Workjet configurations through a one-shot,
+      inspectable import/export path; after parity is proven, CTOX Code must
+      not require the Swift runtime or its local store.
 - [x] Compile deterministic Workjet role instructions through the existing
       managed-prompt path used by Codex, Claude Code, and Grok.
 - [x] Keep user/developer instructions clearly separated from managed Workjet
@@ -451,31 +635,149 @@ Goal: turn the stored role metadata into real local and remote orchestration.
 - [ ] Preserve direct activation of LLM/provider combinations on orchestrator
       and worker threads.
 
+### Distributed worker mailbox and delegation graph
+
+Worker communication is a Workjet protocol, not a Claude-, Codex-, Grok-,
+desktop-, or same-process feature. Every worker remains an ordinary thread on
+one authoritative Workjet/T3 server. A worker on any supported harness may
+send a message or delegate a prompt to an authorized thread on the same or a
+different computer. The recipient may be offline when the sender submits it.
+
+CTOX Code does not replicate T3's event store, worktrees, terminals, provider
+sessions, or credentials through RxDB and does not make Code servers
+multi-writer peers. It may reuse the audited CTOX Sync building blocks for
+device identity, encrypted peer sessions, revocation, checkpoints, reconnect,
+and an opportunistic direct WebRTC live path. The durable Workjet mailbox and
+the owning T3 server remain authoritative; the relay provides store-and-forward
+delivery whenever direct peers or desktop clients are offline. A desktop may
+cache only a redacted, read-only thread/worker projection for local-feeling
+navigation and must route every mutation to the thread's owning environment.
+
+The existing client-side remote-environment federation is not sufficient:
+delivery must continue while the Workjet Desktop is closed. Reuse T3 Connect's
+account, environment identity, public-key, DPoP, and environment-discovery
+foundations, but add a distinct, self-hostable coordination surface under
+`infra/relay`. The relay is a mailbox/router, never the authority for a thread,
+provider session, repository, Greppy store, capability grant, or execution
+result. Same-environment delivery may take a local fast path but must obey the
+same contracts and state machine as remote delivery.
+
+```text
+source thread -> source server outbox -> Workjet coordination relay
+                                      -> target server inbox -> target thread
+                                      <- receipt/result/review <-
+```
+
+A plain message and a delegation are related but distinct. A message informs
+another worker and may require no execution. A delegation carries a prompt,
+explicit scope and completion contract, schedules a target turn, and owns a
+durable lifecycle. Sending “message + task” creates both in one atomic command.
+
+- [ ] Define a globally routable worker address as account/workspace authority
+      plus `environmentId` and `threadId`; keep harness and provider IDs out of
+      the address so a thread can change model without breaking the route.
+- [ ] Add versioned contracts for `WorkerMessage`, `Delegation`,
+      `DelegationRef`, delivery receipt, result, review verdict, and bounded
+      artifact/context references.
+- [ ] Model delegation states explicitly: `queued | delivered | accepted |
+    running | needs-input | review-requested | changes-requested | completed |
+    failed | cancelled | expired`.
+- [ ] Persist source outbox, target inbox, delegation state, and thread-visible
+      message/delegation events transactionally on their authoritative servers.
+- [ ] Add the self-hostable Workjet coordination relay beside T3 Connect. It
+      resolves authorized environment identities, stores bounded offline
+      envelopes, routes receipts, and cannot execute turns or mutate threads.
+- [ ] Encrypt message/delegation payloads end to end to the target environment
+      key and sign the immutable routing envelope with the source environment
+      key; the relay may inspect only the minimum routing and expiry metadata.
+- [ ] Add narrowly scoped server credentials and ACL checks for send, receive,
+      reply, cancel, reassign, and review operations; account co-membership
+      alone must not grant cross-project or cross-environment execution rights.
+- [ ] Guarantee at-least-once transport with stable envelope IDs, idempotent
+      inbox insertion, acknowledgements, bounded retry/backoff, expiry, and a
+      dead-letter state visible to the user. Never promise exactly-once network
+      delivery; guarantee exactly-once delegation effects by deduplication.
+- [ ] Add a server-side mailbox reconciler that resumes after restart, applies
+      backpressure, orders events per delegation, and queues target prompts
+      while a thread already has an active turn.
+- [ ] Expose harness-neutral MCP tools `workjet_send_message`,
+      `workjet_delegate_task`, `workjet_reply`, `workjet_request_review`, and
+      `workjet_update_delegation`; all harnesses receive the same schemas and
+      authorization boundary from the per-session T3 MCP server.
+- [ ] Deliver accepted tasks through normal T3 `thread.turn.start` semantics
+      and the existing Codex, Claude Code, and Grok session adapters. Do not
+      implement direct harness-to-harness sockets or provider-specific remote
+      protocols.
+- [ ] Preserve the delegation link when a result returns to the source thread;
+      allow the source worker to ask a follow-up, request independent review,
+      or send `changes-requested` back to the original worker without creating
+      an unrelated task chain.
+- [ ] Represent review and revision as typed edges (`reviews`, `revises`,
+      `follows-up`) in one delegation graph, with configurable maximum depth,
+      review rounds, token/cost/time budgets, and approval gates to prevent
+      autonomous infinite loops.
+- [ ] Add interruption, cancellation, reassignment, target-offline, deleted-
+      thread, and target-version-skew handling with explicit terminal or
+      recoverable states; never silently drop a message or start it elsewhere.
+- [ ] Transfer context by immutable prompt snapshots and bounded references to
+      artifacts, diffs, files, and Greppy results instead of copying complete
+      chat histories. All Code-mode threads on one server continue to share its
+      single Greppy store; remote servers resolve references against their own
+      authorized environment state.
+- [ ] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
+      selection across connected computers, delivery/state badges, linked
+      source/target navigation, reply, follow-up, review, cancel, and reassign.
+- [ ] Add redacted audit/observability events and user notifications without
+      storing prompts, secrets, provider payloads, or artifact contents in
+      relay logs, traces, push notifications, or crash reports.
+- [ ] Prove the protocol with same-server and cross-computer mixed-harness E2E:
+      Codex -> Claude Code, Claude Code -> Grok, and Grok -> Codex, including
+      offline delivery, duplicate envelopes, restart recovery, busy targets,
+      review/changes-requested cycles, cancellation races, and revoked access.
+
 Abuse and reliability tests must cover duplicate dispatch, stale parent,
 deleted worker, server restart, network loss, cancellation race, terminal
 failure, remote version skew, and unauthorized cross-environment control.
 
-## 9. Wave 6 — Workjet application identity
+## 9. Wave 6 — CTOX Desktop App identity
 
 - [ ] Change the user-facing desktop name, About panel, package metadata,
-      installer names, app icons, update channel, and release filenames to Workjet.
-- [ ] Introduce `workjet:` and `workjet-dev:` protocol schemes.
+      installer names, app icons, update channel, and release filenames to
+      `CTOX Desktop App` without renaming internal packages, storage keys,
+      bundle IDs, or protocol schemes in the same change.
+  - [x] Rebrand the current macOS arm64 package, executable, title, release
+        filenames, and app icon to CTOX. The 17 August packaged Electron QA
+        proves `CTOX Desktop App (Alpha)`, no rendered T3 wordmark, a CTOX
+        `icon.icns`, and the final DMG/ZIP names.
+  - [ ] Finish the About-panel and update-channel identity audit on every
+        supported platform before closing the parent identity task.
+- [ ] Introduce `ctox-desktop:` and `ctox-desktop-dev:` protocol schemes while
+      keeping CTOX instance/invite protocols distinct.
 - [ ] Keep safe one-time migration support for existing T3 Code desktop links
       and user data where useful.
-- [ ] Use a distinct Workjet user-data directory; import legacy settings only
+- [ ] Use a distinct CTOX Desktop App user-data directory; import legacy
+      T3 Code/Workjet settings only
       through an explicit, tested migration.
 - [ ] Keep internal `@t3tools/*` package names where changing them adds only
       upstream merge cost.
 - [ ] Update visible copy without rewriting unrelated historical comments,
       storage keys, or contracts.
-- [ ] Add new Workjet brand assets only after the shell and behavior are stable.
+- [ ] Add CTOX Desktop App brand assets only after the shell and behavior are
+      stable.
+- [x] Default a fresh CTOX Desktop App profile to the coherent dark shell while
+      preserving explicit Light selection and the existing browser/system-theme
+      behavior. Cover both the synchronous boot script and React theme hook;
+      prove the packaged Code and Business OS surfaces are dark.
 
-## 10. Wave 7 — port CTOX Desktop into Workjet
+## 10. Wave 7 — port the legacy CTOX Desktop client into CTOX Desktop App
 
 Current source: `ctox/src/apps/business-os-desktop`
 
-The existing CTOX Desktop is not copied wholesale as a second Electron app. Its
-capabilities are ported into Workjet's typed Effect/Electron architecture.
+The existing CTOX Desktop wrapper is not copied wholesale as a second nested
+Electron app. Its client capabilities are ported into the T3-derived, typed
+Effect/Electron architecture of CTOX Desktop App. CTOX daemon, Sync Engine,
+Business OS authority, and Business OS web source remain in the independent
+CTOX project.
 
 ### Main-process services
 
@@ -538,6 +840,12 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         derived from the exact persisted paired source and stable ID.
 - [x] Destroy or detach guest views cleanly on logout, access revocation,
       removal, mode change, and app shutdown.
+  - [x] Add an atomic Electron main-process Business OS mode lease: activation
+        fails with `not_active` outside the mode, and mode exit destroys the
+        native guest before releasing the lease.
+  - [x] Make the visible Business OS -> Code switch await successful native
+        mode exit before rendering the Code surface; keep unmount cleanup as a
+        second idempotent boundary.
   - [x] Detach and destroy the managed guest on replacement, logout, discovery
         removal/revocation, mode exit, and service shutdown.
   - [x] Detach and destroy the paired guest on replacement, pairing removal or
@@ -573,16 +881,38 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
   - [x] Require the exact pinned completion sentinel before the runtime serves
         a shell root, and send `Referrer-Policy: no-referrer` on every response.
 - [ ] Never implement Business OS collection, command, file, or status reads
-      over Workjet HTTP.
+      over the Code/T3 HTTP server.
+
+### Business OS desktop-coherent theme
+
+- [x] Add a host-scoped CTOX Desktop theme layer and deterministic visual QA
+      shell in the CTOX repository. The source reuses the production Business
+      OS tokens and three-pane grammar, adds light/dark and responsive states,
+      and deliberately excludes the outer desktop mode switch and instance
+      sidebar (`metric-space-ai/ctox` commit `f5ee27eab`).
+- [ ] Load the theme stylesheet from the production Business OS shell while
+      leaving it inert for standalone/browser use unless the trusted desktop
+      host marker is present.
+- [ ] Set and clear the desktop host marker from the isolated Electron guest
+      lifecycle, including reload/recovery, without allowing page content or a
+      renderer-supplied URL parameter to claim desktop-host authority.
+- [ ] Publish and pin the first Business OS shell release containing the theme,
+      then prove dark/light plus three/two/one-pane layouts inside packaged
+      CTOX Desktop App and prove the standalone shell remains unchanged.
 
 ### Renderer
 
-- [x] Add the top-left `Code | CTOX` product-mode switch.
+- [x] Expose the top-left product-mode switch with the final visible labels
+      `Code | Business OS` (the persisted internal `ctox` value remains for
+      backward compatibility). The 17 August packaged Electron proof covers
+      mouse and radio-keyboard switching, no-wrap labels, the 840 px minimum
+      window, open/collapsed/restored sidebar states, and contained titlebar
+      geometry: the control ends at x=246 inside the 248 px compact sidebar.
 - [x] Preserve the T3 project/thread sidebar in Code mode.
 - [x] Add the persisted, Electron-only CTOX shell state with an explicit empty
       instance/main surface and no guest or alternate Business OS data path.
 - [ ] Render CTOX instance groups, status, role, source, and last-used state in
-      CTOX mode.
+      Business OS mode.
   - [x] Render the managed ctox.dev group with bounded status, role, source, and
         last-used metadata.
   - [x] Render separate deterministic Managed and Paired groups, including
@@ -606,7 +936,7 @@ capabilities are ported into Workjet's typed Effect/Electron architecture.
         renderer persistence, feedback copy, and launch URLs.
   - [ ] Provide local-daemon and SSH-managed lifecycle actions with the same
         renderer-secret boundary.
-- [ ] Ensure keyboard shortcuts and zoom target the active Workjet surface
+- [ ] Ensure keyboard shortcuts and zoom target the active desktop surface
       intentionally.
 
 ### Parity gate before CTOX removal
@@ -652,6 +982,30 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
           roots intact, discovers changing `WebContentsView` CDP targets by
           capability, retains invite and peer secrets only in memory, and
           enforces unrevoke/recovery before pairing or profile cleanup.
+    - [x] Rewrite the packaged smoke driver to use the visible `Code | Business
+    OS` control and the safe paired-instance row, verify DOM-relative
+          sidebar/chrome/main/guest geometry, and prove no guest target remains
+          after returning to Code; it no longer calls guest activation,
+          deactivation, or discovery directly.
+    - [x] Resolve packaged guest activation on a successful same-origin
+          top-frame navigation commit and keep the pending React activation
+          observable across ResizeObserver updates. The focused Web/Desktop
+          suite is `16/16` plus `43/43`, both affected direct typechecks pass,
+          and the fresh packaged host now advances from `connecting` to
+          `ready`.
+    - [x] Align the packaged health probe with CTOX lazy replication by using
+          the public `waitForHealthy()` contract, give only the expensive
+          Advanced Status snapshot a longer bounded CDP window, and emit only
+          allowlisted non-secret collection/transport diagnostics.
+    - [x] Repair the RC6 paired-guest WebRTC room handshake/stream activation.
+          The fresh packaged host now pairs through the authenticated room,
+          yields its ephemeral signaling peer ID, and reports initial,
+          streaming-ready, and checkpoint health for
+          `business_module_catalog`, `ctox_runtime_settings`,
+          `business_commands`, and `ctox_queue_tasks`.
+    - [ ] Rebuild the packaged app with the mode lease and UI-driven smoke, then
+          pass the real RC6 revoke/unrevoke/recovery run before closing this
+          gate.
   - [ ] Capture the browser peer ID only from the live WebRTC signaling
         handshake or another non-persistent runtime diagnostic, keep it out of
         logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
@@ -694,6 +1048,78 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
           is a verified cache hit, the expanded shell contains the transient
           peer diagnostic, 17 focused tests pass, and desktop/scripts
           typechecks have no errors.
+    - [x] Persist one browser device/session identity across reconnects through
+          `ctoxProtocol.peerSession.sessionId` while retaining the signaling
+          peer ID as socket-scoped diagnostics and legacy revocation input.
+    - [x] Enforce device-scoped revocation in the Business OS shell and cover
+          reconnect behavior without adding persistent test IPC or an HTTP data
+          path.
+    - [x] Reuse the authenticated paired-guest room handshake in RC6 so the
+          shell and native peer resolve the same room and all four required
+          replication streams can become healthy.
+    - [x] Build the deterministic RC6 shell payload under `/Volumes/tmp` at
+          source commit `1a7872378b698f1f89871f1372f969039606a8c4`; verify its
+          detached and embedded manifests, 1,768-file inventory, 128,452,286
+          byte local archive, and SHA-256
+          `a577d403f100f4cf7c7484db4b02123a49294740a78c456b1ae277916f2cd612`.
+          The canonical Node 24 release archive uses different compression
+          bytes while retaining the identical 1,768-file manifest payload and
+          embedded-manifest hash.
+    - [x] Publish immutable tag `business-os-shell-v0.1.0-rc.6` and its three
+          release assets from the clean shell branch without absorbing the
+          dirty CTOX main checkout. Actions run `31986068315` passed; the
+          canonical archive is 129,005,908 bytes with SHA-256
+          `59f320e7de8a6fb96957eea7254353d68ea25862e3997d0b4613281f5ddf828d`.
+    - [x] Pin Workjet's four shell identity/manifest surfaces to the locally
+          verified RC6 candidate and then the canonical published hashes; pass
+          89 focused tests plus desktop, web, and scripts typechecks without
+          changing `pnpm-lock.yaml`.
+    - [x] Build a fresh unsigned macOS arm64 package with the RC6 shell at
+          `/Volumes/tmp/workjet/t3code-desktop-mac-stage-0XIQd7` and retain the
+          exact ZIP as the current smoke candidate.
+    - [x] Prove the packaged desktop pairs with the real selected CTOX instance
+          and reports initial, live-streaming, and checkpoint health for all
+          four required collections.
+    - [x] Seed disposable Electron partition markers and apply the real durable
+          browser-session revocation through the packaged UI-driven run.
+    - [ ] Implement an independent store-backed
+          `WebRTCPeerSessionValidator` for native inbound and outbound traffic,
+          preserving the separate signaling validator and legacy wrappers.
+          The initial isolated worker snapshot passes four focused
+          accept/revoke tests and the complete locked Rust check, but its real
+          optimized packaged-app run never makes the four required streams
+          healthy. The validator hunks are now integrated into the newer
+          current source and its optimized ARM64 binary reaches healthy pairing
+          and accepts the durable revoke, yet the packaged guest still does not
+          remain unhealthy with `peer_revoked`. Cleanup verified unrevoke first,
+          removed the disposable profile, and restored the installed service
+          byte-for-byte with exactly one listener. The next repair must explain
+          this live-connection behavior rather than attributing it to snapshot
+          drift.
+    - [x] Apply only the four-file native validator delta to the dirty CTOX
+          main checkout, re-run its gates there, and retain all unrelated user
+          work unchanged. The current-source integration keeps startup
+          staggering, projection clocks, Eager-Pull, Browser-Live, auxiliary
+          requests, metrics, and cancellation intact; 5 focused tests,
+          formatting, the complete locked root check, and `git diff --check`
+          pass. The release compiler also produced a valid signed ARM64 binary
+          with SHA-256
+          `1c7448aec4eb6c8ac8adca0267c0f0394168eb508485972f293222dd5996d758`;
+          Cargo failed only after successful linking because its external
+          target `.fingerprint` directory disappeared, so the decisive smoke
+          executed the byte-identical linked artifact directly.
+    - [ ] Pass the complete packaged healthy → revoke → unhealthy → unrevoke →
+          healthy → remove/reimport sequence and verify guest detachment plus
+          Electron partition deletion.
+    - [ ] Wire the trusted Electron guest-host marker to the host-scoped
+          Business OS desktop theme, link the inert stylesheet in production,
+          and prove standalone Business OS remains visually unchanged.
+    - [x] Download RC6 through Workjet's normal network prepare path after
+          publication; verify the canonical Node 24 archive and manifests, then
+          pass a second full cache-hit inventory check under `/Volumes/tmp`.
+          The expanded 1,768-file payload and embedded-manifest hash are
+          identical to the independent local candidate; only the gzip archive
+          bytes and their detached size/hash fields differ by builder runtime.
 
 Latest verified CTOX increment (Workjet commits `6f0fc627a`, `03a87bd70`,
 `e00ebfa61`, `9047bed3f`, `042f8af38`, `d35d9ebbf`, `31fe2c70e`,
@@ -755,23 +1181,26 @@ is unavailable; adversarial self-review additionally caught and fixed cleanup
 being skipped after a partial registry removal and set the unrevoke barrier
 before an ambiguous native revoke result.
 
-## 11. Wave 8 — retire the standalone CTOX Desktop project
+## 11. Wave 8 — retire the legacy CTOX Electron wrapper
 
-This wave happens in the separate CTOX repository and only after the Workjet
-parity gate is green.
+This wave happens in the separate CTOX repository and only after the CTOX
+Desktop App parity gate is green. It removes only the legacy desktop wrapper;
+CTOX continues to run as an independent backend/harness without any desktop
+application.
 
 - [x] Start from a clean CTOX branch; do not mix or overwrite unrelated current
       CTOX working-tree changes.
 - [ ] Remove `src/apps/business-os-desktop`.
 - [ ] Remove its separate packaging/release workflow and download links.
-- [ ] Point CTOX documentation to the Workjet Desktop application.
+- [ ] Point optional desktop-client documentation to CTOX Desktop App without
+      presenting it as a CTOX runtime prerequisite.
 - [x] Keep the CTOX Business OS shell build and versioned shell artifact.
 - [ ] Keep CTOX daemon, Sync Engine, Business OS, MCP channel, provider adapter,
       and Web Stack adapter.
 - [ ] Update release smoke tests so CTOX validates the artifacts consumed by
-      Workjet instead of building another Electron application.
-- [ ] Verify local, managed, SSH, and invite workflows from Workjet against the
-      new CTOX commit before merging the deletion.
+      CTOX Desktop App instead of building another Electron application.
+- [ ] Verify local, managed, SSH, and invite workflows from CTOX Desktop App
+      against the new CTOX commit before merging the deletion.
 
 ## 12. Security invariants
 
@@ -790,7 +1219,9 @@ parity gate is green.
       defenses.
 - [ ] Scope T3 MCP tools to the current session/thread and capability grants.
 - [ ] Authenticate remote worker dispatch and prevent cross-environment
-      authority escalation.
+      authority escalation. Require signed, end-to-end encrypted delegation
+      envelopes, target-side capability checks, bounded payloads, expiry, and
+      revocable environment credentials.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
 
 ## 13. Licensing policy and release gate
@@ -863,7 +1294,10 @@ Representative Code-mode E2E:
 4. Select a provider/model routed through the local Workjet/T3 gateway.
 5. Dispatch a worker thread locally and another on a configured remote T3
    environment.
-6. Observe durable status, cancellation, result return, and restart recovery.
+6. Send a plain inter-worker message and a prompt delegation between different
+   harnesses and computers while the Workjet Desktop is closed.
+7. Observe delivery receipts, durable status, result return, follow-up,
+   independent review, changes-requested, cancellation, and restart recovery.
 
 Representative CTOX-mode E2E:
 
@@ -887,8 +1321,9 @@ Representative CTOX-mode E2E:
 
 ### M2 — shared capabilities
 
-- Capability registry, Greppy adapter, and shared Web Stack work in a local T3
-  thread with no CTOX changes yet.
+- One versioned capability catalog, canonical Greppy/Web Stack
+  implementations, and thin host adapters work from both a Code thread and a
+  CTOX instance without schema or implementation forks.
 
 ### M3 — shared provider source
 
@@ -898,22 +1333,24 @@ Representative CTOX-mode E2E:
 ### M4 — local orchestration
 
 - Orchestrator radio control, settings, prompt compiler, worker threads, and
-  local dispatch are complete.
+  the local mailbox/delegation state machine are complete.
 
 ### M5 — remote orchestration
 
-- Durable authenticated cross-environment worker dispatch and recovery are
-  complete.
+- Durable authenticated and end-to-end encrypted cross-environment messaging,
+  prompt delegation, result return, review/revision loops, and recovery are
+  complete across Codex, Claude Code, and Grok.
 
-### M6 — CTOX mode beta
+### M6 — Business OS mode beta
 
-- Workjet lists managed/local/SSH/invite instances and embeds the selected
-  Business OS over the existing WebRTC data plane.
+- CTOX Desktop App lists managed/local/SSH/invite instances and embeds the
+  selected Business OS over the existing WebRTC data plane.
 
-### M7 — one desktop application
+### M7 — one optional desktop application
 
-- Workjet passes CTOX Desktop parity, signed release evidence, and Code/CTOX
-  E2E; the standalone CTOX Electron app is removed from the CTOX repository.
+- CTOX Desktop App passes legacy desktop parity, signed release evidence, and
+  Code/Business OS E2E; the legacy CTOX Electron wrapper is removed from the
+  CTOX repository without making the CTOX backend depend on the app.
 
 ### M8 — public release
 
@@ -922,11 +1359,18 @@ Representative CTOX-mode E2E:
 
 ## 17. Definition of done
 
-Workjet is complete only when all of the following are true:
+CTOX Desktop App is complete only when all of the following are true:
 
-- One installed Workjet app switches cleanly between Code and CTOX modes.
+- One installed CTOX Desktop App switches cleanly between equal `Code` and
+  `Business OS` modes; neither mode overlays or visually owns the other.
 - Code mode retains upstream T3 behavior and adds durable native Workjet
   orchestration without a Swift runtime dependency.
+- Code harnesses and the CTOX harness consume the same versioned skill/tool
+  catalog, schemas, implementations, fixtures, and release artifacts through
+  different thin host adapters; no capability is maintained twice.
+- The same capability can be enabled in Code and CTOX, while activation,
+  authorization, secrets, indexes, caches, and mutable state remain scoped to
+  the owning Code server environment or CTOX instance.
 - Codex, Claude Code, Grok, and other enabled harnesses use the Workjet/T3
   provider-gateway runtime while retaining direct model selection.
 - Each CTOX instance remains closed and uses its own gateway runtime from the
@@ -935,8 +1379,9 @@ Workjet is complete only when all of the following are true:
   both modes through their respective adapters.
 - Managed and unmanaged CTOX instances launch the full Business OS through the
   unchanged WebRTC data plane.
-- The standalone CTOX Desktop project is gone, but the CTOX server/Business OS
-  project remains independent.
+- The legacy standalone CTOX Electron wrapper is gone, but the CTOX backend,
+  daemon, Sync Engine, Business OS, and web shell remain independently
+  deployable and operational without CTOX Desktop App.
 - The fork can absorb upstream T3 updates with a bounded patch stack.
 - All security, license, E2E, packaging, signing, and artifact-hygiene gates are
   green.
@@ -945,7 +1390,9 @@ Workjet is complete only when all of the following are true:
 
 1. [x] Finish and verify Wave 1 thread-domain implementation.
 2. [x] Add the minimal capability-registry contract and prompt adapter interface.
-3. [x] Build the Code/CTOX product-mode shell state without yet loading a guest.
+3. [ ] Finish the `Code | Business OS` product-mode shell and prove through a
+       packaged UI-driven smoke that the native guest can exist only inside the
+       selected Business OS main surface.
 4. [x] Port ctox.dev instance discovery and session isolation into typed Electron
        services.
    - [x] Land typed renderer contracts, session-package discovery, redacted
@@ -1007,5 +1454,33 @@ Workjet is complete only when all of the following are true:
           resolutions before treating packaged builds as reproducible/offline.
 13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
-14. [ ] Complete durable local orchestration semantics, then add authenticated
-        cross-environment dispatch and recovery.
+14. [ ] Complete the durable local mailbox/delegation state machine, then add
+        the authenticated coordination relay and mixed-harness cross-computer
+        messaging, prompt delegation, result, follow-up, and review/revision
+        flows specified in Wave 5.
+15. [ ] Add the configurable per-environment temporary worktree storage root,
+        prove new Code and orchestrated worker worktrees land on an operator-
+        selected `/Volumes/tmp` root, and prove existing active worktrees plus
+        durable state remain untouched when the setting changes.
+        The server setting, ordinary Code worktree creation, A→B transition,
+        explicit-path bypass, existing-worktree preservation, and real
+        `/Volumes/tmp` validation are complete. Keep this queue item open until a
+        dispatched orchestrated worker is proven end to end against that selected
+        root.
+        Decision (owner, 2026-08-17): one isolated Git worktree per dispatched
+        worker. The current shared contract — `WorkerDispatch` creates an
+        ordinary child thread inheriting the orchestrator's branch and
+        `worktreePath` — is rejected as the target semantics because parallel
+        workers can mutate the same files. Redesign requirements:
+    - `WorkerDispatch` creates one isolated worktree per worker beneath the
+      configured per-environment worktree storage root.
+    - Merge-back is the acknowledged cost. The orchestrator must plan
+      parallelization explicitly: assign disjoint file scopes per worker
+      brief, and fall back to sequential dispatch when disjoint scopes are
+      impossible or when estimated conflict rework outweighs the parallel
+      gain. Conflict rework is pure overhead, not a worker defect.
+    - Worktree cleanup on worker completion/abandonment; existing active
+      worktrees and durable state remain untouched.
+      Close this item only after a dispatched orchestrated worker is proven
+      end to end in its own isolated worktree beneath the operator-selected
+      root. Do not count synthetic path inheritance as proof.

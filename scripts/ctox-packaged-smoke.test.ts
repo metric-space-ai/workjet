@@ -5,6 +5,7 @@ import {
   checkChildProcessProfiles,
   classifyAdvancedStatus,
   cleanupActionOrder,
+  isCtoxShellGeometryContained,
   parseProcessTable,
   parseSmokeArguments,
   recursiveDescendants,
@@ -155,18 +156,53 @@ describe("recursive packaged child profile checks", () => {
   });
 });
 
+describe("visible Business OS product shell geometry", () => {
+  const geometry = {
+    viewport: { width: 1440, height: 900 },
+    sidebar: { left: 0, top: 0, right: 320, bottom: 900, width: 320, height: 900 },
+    main: { left: 320, top: 0, right: 1440, bottom: 900, width: 1120, height: 900 },
+    chrome: { left: 320, top: 0, right: 1440, bottom: 48, width: 1120, height: 48 },
+    host: { left: 320, top: 48, right: 1440, bottom: 900, width: 1120, height: 852 },
+  };
+
+  it("accepts a positive guest host right of the sidebar and below shell chrome", () => {
+    expect(isCtoxShellGeometryContained(geometry)).toBe(true);
+  });
+
+  it("rejects sidebar, chrome, and viewport overlap", () => {
+    expect(
+      isCtoxShellGeometryContained({
+        ...geometry,
+        host: { ...geometry.host, left: 319, width: 1121 },
+      }),
+    ).toBe(false);
+    expect(
+      isCtoxShellGeometryContained({
+        ...geometry,
+        host: { ...geometry.host, top: 47, height: 853 },
+      }),
+    ).toBe(false);
+    expect(
+      isCtoxShellGeometryContained({
+        ...geometry,
+        host: { ...geometry.host, right: 1441, width: 1121 },
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("advanced status classification", () => {
-  it("reads only one bounded browser peer from healthy sync status", () => {
+  it("reads only one bounded browser device from healthy sync status", () => {
     expect(
       classifyAdvancedStatus({
         ok: true,
-        sync: { browserPeerId: "browser-peer" },
+        sync: { browserDeviceId: "browser-device" },
         counts: { private: 2 },
       }),
     ).toEqual({
       healthy: true,
       peerRevoked: false,
-      browserPeerId: "browser-peer",
+      browserDeviceId: "browser-device",
     });
   });
   it("recognizes nested peer_revoked while unhealthy", () => {
@@ -181,6 +217,18 @@ describe("advanced status classification", () => {
         failures: ["authenticated", "bad value", "x".repeat(81)],
         sync: {
           phase: "reconnecting",
+          missingRequiredCollections: ["business_commands"],
+          initialSync: {
+            missingInitialReplication: ["business_commands"],
+            missingStreamingReady: ["ctox_queue_tasks"],
+            missingCheckpointEpoch: ["business_module_catalog"],
+          },
+          frameTransport: {
+            totals: { activePeerCount: 0 },
+            unhealthyCollections: [
+              { collection: "business_commands", reasons: ["no-active-peer"] },
+            ],
+          },
           collectionErrors: [
             { code: "instance_mismatch", message: "secret" },
             { name: "CtoxReplicationIoError", message: "invite payload" },
@@ -202,6 +250,12 @@ describe("advanced status classification", () => {
       "failure:authenticated",
       "error:instance_mismatch",
       "error:CtoxReplicationIoError",
+      "missing-required:business_commands",
+      "missing-initial:business_commands",
+      "missing-streaming:ctox_queue_tasks",
+      "missing-checkpoint:business_module_catalog",
+      "active-peers:0",
+      "transport:business_commands:no-active-peer",
       "data-plane:pending",
       "data-plane-reason:open-business-data-plane",
       "runtime:db",
@@ -223,13 +277,15 @@ describe("advanced status classification", () => {
       }).diagnostics,
     ).toBeUndefined();
   });
-  it("rejects missing, oversized, or control-bearing peer ids", () => {
-    expect(classifyAdvancedStatus({ ok: true, sync: {} }).browserPeerId).toBeUndefined();
+  it("rejects missing, oversized, or control-bearing device ids", () => {
+    expect(classifyAdvancedStatus({ ok: true, sync: {} }).browserDeviceId).toBeUndefined();
     expect(
-      classifyAdvancedStatus({ ok: true, sync: { browserPeerId: "x".repeat(257) } }).browserPeerId,
+      classifyAdvancedStatus({ ok: true, sync: { browserDeviceId: "x".repeat(257) } })
+        .browserDeviceId,
     ).toBeUndefined();
     expect(
-      classifyAdvancedStatus({ ok: true, sync: { browserPeerId: "bad\npeer" } }).browserPeerId,
+      classifyAdvancedStatus({ ok: true, sync: { browserDeviceId: "bad\ndevice" } })
+        .browserDeviceId,
     ).toBeUndefined();
   });
   it("bounds recursive signal inspection", () => {

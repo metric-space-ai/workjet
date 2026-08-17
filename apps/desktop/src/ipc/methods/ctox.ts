@@ -213,6 +213,34 @@ export const activate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxG
     }),
 };
 
+export const enterBusinessOsMode: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* guests.enterBusinessOsMode.pipe(
+        Effect.flatMap((result) => encodeSafe(CtoxManagedActionResult, result)),
+      );
+    }),
+};
+
+export const exitBusinessOsMode: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* guests.exitBusinessOsMode.pipe(
+        Effect.flatMap((result) => encodeSafe(CtoxManagedActionResult, result)),
+      );
+    }),
+};
+
 export const deactivate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
   channel: IpcChannels.CTOX_DEACTIVATE_CHANNEL,
   handler: () =>
@@ -254,6 +282,8 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   importInvite,
   importManualPairing,
   removePairedInstance,
+  enterBusinessOsMode,
+  exitBusinessOsMode,
   activate,
   deactivate,
   setGuestBounds,

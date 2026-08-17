@@ -201,28 +201,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
   });
 
-  it("switches desktop packaging product names to nightly for nightly builds", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (Alpha)");
-    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
+  it("uses the CTOX package name for every desktop release channel", () => {
+    assert.equal(resolveDesktopProductName("0.0.17"), "CTOX Desktop App");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "CTOX Desktop App");
   });
 
-  it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
-    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), {
-      macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
-    });
-
-    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), {
-      macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
-    });
+  it("uses CTOX app artwork for every packaged desktop platform", () => {
+    const expected = {
+      macIconPng: BRAND_ASSET_PATHS.ctoxAppIconPng,
+      macIconIcns: BRAND_ASSET_PATHS.ctoxMacIconIcns,
+      linuxIconPng: BRAND_ASSET_PATHS.ctoxAppIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.ctoxWindowsIconIco,
+    };
+    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), expected);
+    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), expected);
   });
 
-  it("switches the bundled splash and favicon branding for nightly versions", () => {
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
+  it("uses CTOX splash and favicon artwork for every desktop release channel", () => {
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "ctox");
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "ctox");
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
@@ -623,9 +620,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
+        { name: "CTOX Desktop App", schemes: ["t3code", "t3code-dev"] },
       ]);
       for (const config of [mac, linux, win]) {
+        assert.equal(config.productName, "CTOX Desktop App");
+        assert.equal(config.artifactName, "CTOX-Desktop-App-${version}-${arch}.${ext}");
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
         assert.deepStrictEqual(config.files, DESKTOP_FILE_EXCLUSIONS);
         assert.deepStrictEqual(
@@ -812,7 +811,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
-        { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
+        { name: "CTOX Desktop App", schemes: ["t3code", "t3code-dev"] },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );

@@ -2,6 +2,7 @@
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -74,13 +75,23 @@ function makeGuestHarness() {
     isDestroyed: vi.fn(() => false),
     contentView: { addChildView, removeChildView },
   } as unknown as BrowserWindow;
+  type EventHandler = (...args: Array<unknown>) => void;
+  let loadURLImplementation: (
+    url: string,
+    emit: (event: string, ...args: Array<unknown>) => void,
+  ) => Promise<void> = async (url, emit) => {
+    queueMicrotask(() => emit("did-frame-navigate", {}, url, 200, "OK", true, 1, 1));
+  };
   const views: Array<{
     readonly view: WebContentsView;
     readonly close: ReturnType<typeof vi.fn>;
     readonly loadURL: ReturnType<typeof vi.fn>;
     readonly setBounds: ReturnType<typeof vi.fn>;
     readonly executeJavaScript: ReturnType<typeof vi.fn>;
+    readonly destroy: () => void;
+    readonly emit: (event: string, ...args: Array<unknown>) => void;
     readonly finishLoad: () => void;
+    readonly listenerCount: (event: string) => number;
     readonly refresh: (...args: Array<unknown>) => void;
   }> = [];
   const createView = vi.fn((webPreferences: CtoxGuestManager.CtoxGuestWebPreferences) => {
@@ -92,20 +103,34 @@ function makeGuestHarness() {
       nodeIntegration: false,
     });
     assert.match(webPreferences.preload, /ctox-guest-preload\.cjs$/);
-    const close = vi.fn();
-    const loadURL = vi.fn(async (_url: string) => undefined);
+    const listeners = new Map<string, Set<EventHandler>>();
+    const emit = (event: string, ...args: Array<unknown>): void => {
+      for (const handler of [...(listeners.get(event) ?? [])]) handler(...args);
+    };
+    let destroyed = false;
+    const close = vi.fn(() => {
+      if (destroyed) return;
+      destroyed = true;
+      emit("destroyed");
+      listeners.clear();
+    });
+    const loadURL = vi.fn((url: string) => loadURLImplementation(url, emit));
     const setBounds = vi.fn();
     let refreshHandler: ((event: unknown, ...args: Array<unknown>) => void) | undefined;
-    let finishLoadHandler: (() => void) | undefined;
     const executeJavaScript = vi.fn(async () => undefined);
     const webContents = {
       session: browserSession,
-      isDestroyed: vi.fn(() => false),
+      isDestroyed: vi.fn(() => destroyed),
       close,
       loadURL,
       setWindowOpenHandler: vi.fn(),
-      on: vi.fn((event: string, handler: () => void) => {
-        if (event === "did-finish-load") finishLoadHandler = handler;
+      on: vi.fn((event: string, handler: EventHandler) => {
+        const handlers = listeners.get(event) ?? new Set<EventHandler>();
+        handlers.add(handler);
+        listeners.set(event, handlers);
+      }),
+      off: vi.fn((event: string, handler: EventHandler) => {
+        listeners.get(event)?.delete(handler);
       }),
       ipc: {
         on: vi.fn((channel: string, handler: typeof refreshHandler) => {
@@ -123,7 +148,14 @@ function makeGuestHarness() {
       loadURL,
       setBounds,
       executeJavaScript,
-      finishLoad: () => finishLoadHandler?.(),
+      destroy: () => {
+        destroyed = true;
+        emit("destroyed");
+        listeners.clear();
+      },
+      emit,
+      finishLoad: () => emit("did-finish-load"),
+      listenerCount: (event) => listeners.get(event)?.size ?? 0,
       refresh: (...args) => refreshHandler?.({}, ...args),
     });
     return view;
@@ -218,6 +250,14 @@ function makeGuestHarness() {
     setDiscovery: (value: CtoxManagedDiscoveryResult) => {
       discovery = value;
     },
+    setLoadURLImplementation: (
+      implementation: (
+        url: string,
+        emit: (event: string, ...args: Array<unknown>) => void,
+      ) => Promise<void>,
+    ) => {
+      loadURLImplementation = implementation;
+    },
     setPairedInstances: (value: readonly CtoxManagedInstance[]) => {
       pairedInstances = value;
     },
@@ -226,6 +266,265 @@ function makeGuestHarness() {
 }
 
 describe("CtoxGuestManager", () => {
+  it.effect(
+    "rejects activation outside Business OS mode and destroys the guest on mode exit",
+    () => {
+      const harness = makeGuestHarness();
+      const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+          _tag: "failed",
+          code: "not_active",
+        });
+        expect(harness.createView).not.toHaveBeenCalled();
+
+        yield* manager.enterBusinessOsMode;
+        assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+          _tag: "ready",
+          instanceId: descriptor.id,
+        });
+        yield* manager.exitBusinessOsMode;
+        expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+        expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+
+        assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+          _tag: "failed",
+          code: "not_active",
+        });
+        expect(harness.createView).toHaveBeenCalledOnce();
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect("resolves on a valid main-frame commit while loadURL remains pending", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => new Promise(() => undefined));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
+      );
+
+      harness.views[0]?.emit(
+        "did-frame-navigate",
+        {},
+        "https://ctox.dev/business-os/",
+        200,
+        "OK",
+        true,
+        1,
+        1,
+      );
+      assert.deepEqual(yield* Effect.promise(() => activation), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
+      expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+      expect(harness.views[0]?.listenerCount("will-navigate")).toBe(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("does not resolve activation from a subframe navigation", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => new Promise(() => undefined));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
+      );
+
+      harness.views[0]?.emit(
+        "did-frame-navigate",
+        {},
+        "https://ctox.dev/business-os/embedded",
+        200,
+        "OK",
+        false,
+        2,
+        2,
+      );
+      const state = yield* Effect.promise(() =>
+        Promise.race([
+          activation.then(() => "settled" as const),
+          new Promise<"pending">((resolve) => setImmediate(() => resolve("pending"))),
+        ]),
+      );
+      expect(state).toBe("pending");
+
+      harness.views[0]?.emit(
+        "did-frame-navigate",
+        {},
+        "https://ctox.dev/business-os/",
+        200,
+        "OK",
+        true,
+        1,
+        1,
+      );
+      assert.deepEqual(yield* Effect.promise(() => activation), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("fails and destroys the guest on a main-frame load failure before commit", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => new Promise(() => undefined));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
+      );
+
+      harness.views[0]?.emit(
+        "did-fail-load",
+        {},
+        -102,
+        "ERR_CONNECTION_REFUSED",
+        "https://ctox.dev/business-os/",
+        true,
+        1,
+        1,
+      );
+      assert.deepEqual(yield* Effect.promise(() => activation), {
+        _tag: "failed",
+        code: "guest_failed",
+      });
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
+      expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("handles a rejected loadURL before commit without an unhandled rejection", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const unhandled: Array<unknown> = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    harness.setLoadURLImplementation(() => Promise.reject(new Error("load failed")));
+
+    return Effect.gen(function* () {
+      process.on("unhandledRejection", onUnhandled);
+      try {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.enterBusinessOsMode;
+        assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+        yield* Effect.promise(() => new Promise((resolve) => setImmediate(resolve)));
+        expect(unhandled).toEqual([]);
+        expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+        expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+        expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+        expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
+        expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
+        expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("fails and cleans up when loadURL throws synchronously", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => {
+      throw new Error("load failed");
+    });
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+        _tag: "failed",
+        code: "guest_failed",
+      });
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
+      expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("fails activation when the view is destroyed before commit", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => new Promise(() => undefined));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
+      );
+
+      harness.views[0]?.destroy();
+      assert.deepEqual(yield* Effect.promise(() => activation), {
+        _tag: "failed",
+        code: "guest_failed",
+      });
+      expect(harness.views[0]?.close).not.toHaveBeenCalled();
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
+      expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("interrupts pending activation with deterministic guest and listener cleanup", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => new Promise(() => undefined));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      const activation = yield* Effect.forkChild(manager.activate(descriptor.id, bounds));
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
+      );
+
+      yield* Fiber.interrupt(activation);
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
+      expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+      expect(harness.views[0]?.listenerCount("will-navigate")).toBe(0);
+      assert.deepEqual(yield* manager.setBounds(bounds), {
+        _tag: "failed",
+        code: "not_active",
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("authoritatively selects managed instances and owns guest replacement cleanup", () => {
     const harness = makeGuestHarness();
     const firstBounds = { x: 280, y: 44, width: 1_000, height: 700 };
@@ -233,6 +532,7 @@ describe("CtoxGuestManager", () => {
 
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
       const forged = yield* manager.activate("managed:forged", firstBounds);
       assert.deepEqual(forged, { _tag: "revoked" });
       expect(harness.launch).not.toHaveBeenCalled();
@@ -273,6 +573,7 @@ describe("CtoxGuestManager", () => {
 
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
       yield* manager.activate(descriptor.id, bounds);
 
       assert.deepEqual(yield* manager.deactivateInstance(pairedDescriptor.id), {
@@ -303,6 +604,7 @@ describe("CtoxGuestManager", () => {
 
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
       const signedOut = yield* manager.activate(pairedDescriptor.id, bounds);
       assert.deepEqual(signedOut, { _tag: "ready", instanceId: pairedDescriptor.id });
       expect(harness.resolvePairedLaunch).toHaveBeenCalledExactlyOnceWith(pairedDescriptor.id);
@@ -358,6 +660,7 @@ describe("CtoxGuestManager", () => {
 
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
       for (const instanceId of ["local:office", "ssh:office", expired.id, forged.id]) {
         assert.deepEqual(yield* manager.activate(instanceId, bounds), { _tag: "revoked" });
       }
@@ -375,6 +678,7 @@ describe("CtoxGuestManager", () => {
 
       return Effect.gen(function* () {
         const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.enterBusinessOsMode;
         yield* manager.activate(descriptor.id, bounds);
 
         let resolveLaunch!: (value: { launchUrl: string; launchOrigin: string }) => void;
@@ -420,6 +724,7 @@ describe("CtoxGuestManager", () => {
 
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
       yield* manager.activate(descriptor.id, bounds);
       harness.setDiscovery({ _tag: "signed_out" });
 

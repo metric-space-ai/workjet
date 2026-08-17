@@ -62,6 +62,8 @@ function removalCleanupLayer(
   } = {},
 ) {
   const guests = CtoxGuestManager.CtoxGuestManager.of({
+    enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+    exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     activate: () => Effect.die("unused"),
     deactivate: Effect.succeed({ _tag: "completed" }),
     deactivateInstance: input.deactivateInstance ?? (() => Effect.succeed({ _tag: "completed" })),
@@ -82,6 +84,8 @@ describe("CTOX IPC methods", () => {
   it.effect("rejects malformed activation input before calling the guest manager", () => {
     const activateGuest = vi.fn(() => Effect.succeed({ _tag: "ready" as const, instanceId: "x" }));
     const guests = CtoxGuestManager.CtoxGuestManager.of({
+      enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+      exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
       activate: activateGuest,
       deactivate: Effect.succeed({ _tag: "completed" }),
       deactivateInstance: () => Effect.succeed({ _tag: "completed" }),

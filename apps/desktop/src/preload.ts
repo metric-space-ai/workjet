@@ -156,6 +156,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_MANUAL_PAIRING_CHANNEL, input),
     removePairedInstance: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL, { instanceId }),
+    enterBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL),
+    exitBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL),
     activate: (instanceId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
     deactivate: () => ipcRenderer.invoke(IpcChannels.CTOX_DEACTIVATE_CHANNEL),

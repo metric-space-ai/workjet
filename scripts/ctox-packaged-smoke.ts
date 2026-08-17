@@ -19,7 +19,6 @@ const REQUIRED_COLLECTIONS = [
   "business_commands",
   "ctox_queue_tasks",
 ] as const;
-const GUEST_BOUNDS = { x: 0, y: 0, width: 960, height: 720 } as const;
 
 export interface SmokeArguments {
   readonly workjetExecutable: string;
@@ -48,8 +47,23 @@ export interface ProfileCheck {
 export interface ClassifiedStatus {
   readonly healthy: boolean;
   readonly peerRevoked: boolean;
-  readonly browserPeerId?: string;
+  readonly browserDeviceId?: string;
   readonly diagnostics?: readonly string[];
+}
+export interface RectSnapshot {
+  readonly bottom: number;
+  readonly height: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly width: number;
+}
+export interface CtoxShellGeometry {
+  readonly viewport: { readonly height: number; readonly width: number };
+  readonly sidebar: RectSnapshot;
+  readonly main: RectSnapshot;
+  readonly chrome: RectSnapshot;
+  readonly host: RectSnapshot;
 }
 const SAFE_DATA_PLANE_STATUSES = new Set(["idle", "pending", "ready", "failed", "unknown"]);
 const SAFE_DATA_PLANE_REASONS = new Set([
@@ -257,15 +271,15 @@ export function classifyAdvancedStatus(value: unknown): ClassifiedStatus {
     typeof status.sync === "object" && status.sync !== null && !Array.isArray(status.sync)
       ? (status.sync as Record<string, unknown>)
       : undefined;
-  const peerId = sync?.browserPeerId;
-  const browserPeerId =
-    typeof peerId === "string" &&
-    peerId.length >= 1 &&
-    peerId.length <= 256 &&
-    [...peerId].every(
+  const deviceId = sync?.browserDeviceId;
+  const browserDeviceId =
+    typeof deviceId === "string" &&
+    deviceId.length >= 1 &&
+    deviceId.length <= 256 &&
+    [...deviceId].every(
       (character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127,
     )
-      ? peerId
+      ? deviceId
       : undefined;
   const diagnostics: string[] = [];
   const appendDiagnostic = (prefix: string, item: unknown): void => {
@@ -284,6 +298,50 @@ export function classifyAdvancedStatus(value: unknown): ClassifiedStatus {
       if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
       const error = value as Record<string, unknown>;
       appendDiagnostic("error", error.code ?? error.name);
+    }
+  }
+  if (Array.isArray(sync?.missingRequiredCollections)) {
+    for (const collection of sync.missingRequiredCollections.slice(0, 8))
+      appendDiagnostic("missing-required", collection);
+  }
+  const initialSync =
+    typeof sync?.initialSync === "object" &&
+    sync.initialSync !== null &&
+    !Array.isArray(sync.initialSync)
+      ? (sync.initialSync as Record<string, unknown>)
+      : undefined;
+  for (const [field, prefix] of [
+    ["missingInitialReplication", "missing-initial"],
+    ["missingStreamingReady", "missing-streaming"],
+    ["missingCheckpointEpoch", "missing-checkpoint"],
+  ] as const) {
+    const values = initialSync?.[field];
+    if (Array.isArray(values))
+      for (const collection of values.slice(0, 8)) appendDiagnostic(prefix, collection);
+  }
+  const frameTransport =
+    typeof sync?.frameTransport === "object" &&
+    sync.frameTransport !== null &&
+    !Array.isArray(sync.frameTransport)
+      ? (sync.frameTransport as Record<string, unknown>)
+      : undefined;
+  const totals =
+    typeof frameTransport?.totals === "object" &&
+    frameTransport.totals !== null &&
+    !Array.isArray(frameTransport.totals)
+      ? (frameTransport.totals as Record<string, unknown>)
+      : undefined;
+  if (Number.isSafeInteger(totals?.activePeerCount))
+    appendDiagnostic("active-peers", String(totals?.activePeerCount));
+  if (Array.isArray(frameTransport?.unhealthyCollections)) {
+    for (const value of frameTransport.unhealthyCollections.slice(0, 8)) {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+      const unhealthy = value as Record<string, unknown>;
+      if (!Array.isArray(unhealthy.reasons)) continue;
+      for (const reason of unhealthy.reasons.slice(0, 4)) {
+        if (typeof unhealthy.collection === "string" && typeof reason === "string")
+          appendDiagnostic("transport", `${unhealthy.collection}:${reason}`);
+      }
     }
   }
   const desktopRuntime =
@@ -309,7 +367,7 @@ export function classifyAdvancedStatus(value: unknown): ClassifiedStatus {
   return {
     healthy: status.ok === true,
     peerRevoked: boundedContainsSignal(value, "peer_revoked"),
-    ...(browserPeerId === undefined ? {} : { browserPeerId }),
+    ...(browserDeviceId === undefined ? {} : { browserDeviceId }),
     ...(diagnostics.length === 0 ? {} : { diagnostics }),
   };
 }
@@ -365,6 +423,51 @@ export function redactSensitive(input: string, secrets: readonly string[] = []):
       "$1=[REDACTED]",
     )
     .slice(0, 800);
+}
+
+function validRect(rect: RectSnapshot): boolean {
+  return (
+    [rect.bottom, rect.height, rect.left, rect.right, rect.top, rect.width].every(
+      Number.isFinite,
+    ) &&
+    rect.width > 0 &&
+    rect.height > 0 &&
+    rect.right > rect.left &&
+    rect.bottom > rect.top
+  );
+}
+
+export function isCtoxShellGeometryContained(geometry: CtoxShellGeometry): boolean {
+  const { viewport, sidebar, main, chrome, host } = geometry;
+  if (
+    !Number.isFinite(viewport.width) ||
+    !Number.isFinite(viewport.height) ||
+    viewport.width <= 0 ||
+    viewport.height <= 0 ||
+    ![sidebar, main, chrome, host].every(validRect)
+  )
+    return false;
+  return (
+    sidebar.left >= 0 &&
+    sidebar.top >= 0 &&
+    sidebar.right <= viewport.width &&
+    sidebar.bottom <= viewport.height &&
+    main.left >= sidebar.right &&
+    main.top >= 0 &&
+    main.right <= viewport.width &&
+    main.bottom <= viewport.height &&
+    chrome.left >= main.left &&
+    chrome.top >= main.top &&
+    chrome.right <= main.right &&
+    chrome.bottom <= main.bottom &&
+    host.left >= sidebar.right &&
+    host.left >= main.left &&
+    host.top >= chrome.bottom &&
+    host.right <= main.right &&
+    host.bottom <= main.bottom &&
+    host.right <= viewport.width &&
+    host.bottom <= viewport.height
+  );
 }
 
 function assertRuntimePaths(args: SmokeArguments): void {
@@ -527,13 +630,17 @@ class CdpClient {
     });
     return new CdpClient(socket);
   }
-  async evaluate(expression: string): Promise<unknown> {
-    const result = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-      userGesture: true,
-    });
+  async evaluate(expression: string, timeoutMs = 4_000): Promise<unknown> {
+    const result = await this.send(
+      "Runtime.evaluate",
+      {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+        userGesture: true,
+      },
+      timeoutMs,
+    );
     if (typeof result !== "object" || result === null)
       throw new Error("CDP evaluation returned no result");
     const record = result as Record<string, unknown>;
@@ -543,13 +650,17 @@ class CdpClient {
       throw new Error("CDP evaluation returned no value");
     return (remote as Record<string, unknown>).value;
   }
-  private send(method: string, params: Record<string, unknown>): Promise<unknown> {
+  private send(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<unknown> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error("CDP command timed out"));
-      }, 4_000);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);
@@ -572,11 +683,15 @@ class CdpClient {
   }
 }
 
-async function evaluateTarget(target: CdpTarget, expression: string): Promise<unknown> {
+async function evaluateTarget(
+  target: CdpTarget,
+  expression: string,
+  timeoutMs?: number,
+): Promise<unknown> {
   if (target.webSocketDebuggerUrl === undefined) throw new Error("target has no debugger endpoint");
   const client = await CdpClient.connect(target.webSocketDebuggerUrl);
   try {
-    return await client.evaluate(expression);
+    return await client.evaluate(expression, timeoutMs);
   } finally {
     client.close();
   }
@@ -626,18 +741,233 @@ async function waitForTarget(
   throw new Error(`${label} target did not appear`);
 }
 
-const MAIN_CAPABILITY = `(() => { const c = globalThis.desktopBridge?.ctox; return !!c && ["importInvite", "refresh", "activate", "deactivate", "removePairedInstance"].every((name) => typeof c[name] === "function"); })()`;
+const MAIN_CAPABILITY = `(() => { const c = globalThis.desktopBridge?.ctox; return !!c && ["importInvite", "removePairedInstance"].every((name) => typeof c[name] === "function"); })()`;
 const GUEST_CAPABILITY = `typeof globalThis.CTOX_BUSINESS_OS_STATUS?.snapshot === "function"`;
 function bridgeCallExpression(method: string, args: readonly unknown[]): string {
   return `(async () => { const c = globalThis.desktopBridge?.ctox; if (!c || typeof c[${JSON.stringify(method)}] !== "function") throw new Error("bridge unavailable"); return await c[${JSON.stringify(method)}](...${JSON.stringify(args)}); })()`;
+}
+async function evaluateMain(port: number, expression: string): Promise<unknown> {
+  const target = await waitForTarget(port, MAIN_CAPABILITY, "main renderer", 15_000);
+  return evaluateTarget(target, expression);
 }
 async function callBridge(
   port: number,
   method: string,
   args: readonly unknown[],
 ): Promise<unknown> {
-  const target = await waitForTarget(port, MAIN_CAPABILITY, "main renderer", 15_000);
-  return evaluateTarget(target, bridgeCallExpression(method, args));
+  return evaluateMain(port, bridgeCallExpression(method, args));
+}
+
+async function waitForMainCondition(
+  port: number,
+  expression: string,
+  label: string,
+  timeoutMs = 15_000,
+): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    try {
+      if ((await evaluateMain(port, expression)) === true) return;
+    } catch {
+      // The main renderer may be committing the product-mode replacement.
+    }
+    await pause(250);
+  }
+  throw new Error(`${label} did not appear`);
+}
+
+function productModeExpression(mode: "code" | "ctox"): string {
+  const selector = JSON.stringify(`[data-product-mode="${mode}"]`);
+  return `(() => {
+    const control = document.querySelector(${selector});
+    if (!(control instanceof HTMLButtonElement)) return false;
+    control.click();
+    return true;
+  })()`;
+}
+
+function productModeReadyExpression(mode: "code" | "ctox"): string {
+  const selector = JSON.stringify(`[data-product-mode="${mode}"]`);
+  if (mode === "ctox") {
+    return `(() => {
+      const control = document.querySelector(${selector});
+      return control instanceof HTMLButtonElement && control.getAttribute("aria-checked") === "true" &&
+        document.querySelector('[data-product-mode-shell="ctox"]') !== null &&
+        document.querySelector('[data-ctox-sidebar-shell]') !== null &&
+        document.querySelector('[data-ctox-main-shell]') !== null;
+    })()`;
+  }
+  return `(() => {
+    const control = document.querySelector(${selector});
+    return control instanceof HTMLButtonElement && control.getAttribute("aria-checked") === "true" &&
+      document.querySelector('[data-product-mode-shell="code"]') !== null &&
+      document.querySelector('[data-ctox-sidebar-shell]') === null &&
+      document.querySelector('[data-ctox-main-shell]') === null &&
+      document.querySelector('[data-ctox-native-guest-host]') === null;
+  })()`;
+}
+
+async function switchProductMode(port: number, mode: "code" | "ctox"): Promise<void> {
+  await waitForMainCondition(port, productModeExpression(mode), `${mode} product-mode control`);
+  await waitForMainCondition(port, productModeReadyExpression(mode), `${mode} product shell`);
+}
+
+const SELECT_IMPORTED_PAIRING_EXPRESSION = `(() => {
+  const rows = [...document.querySelectorAll('button[data-ctox-instance-source="pairing_invite"][data-ctox-instance-status="paired"]')]
+    .filter((row) => row instanceof HTMLButtonElement && !row.disabled);
+  if (rows.length !== 1) return false;
+  rows[0].click();
+  return true;
+})()`;
+
+async function selectImportedPairing(port: number): Promise<void> {
+  await waitForMainCondition(
+    port,
+    SELECT_IMPORTED_PAIRING_EXPRESSION,
+    "imported paired instance control",
+  );
+}
+
+const CTOX_SHELL_GEOMETRY_EXPRESSION = `(() => {
+  const sidebar = document.querySelector('[data-app-sidebar]');
+  const main = document.querySelector('[data-ctox-main-shell]');
+  const chrome = document.querySelector('[data-ctox-main-chrome]');
+  const host = document.querySelector('[data-ctox-native-guest-host]');
+  if (![sidebar, main, chrome, host].every((element) => element instanceof HTMLElement)) return null;
+  const sidebarStyle = getComputedStyle(sidebar);
+  if (sidebarStyle.display === "none" || sidebarStyle.visibility === "hidden") return null;
+  const snapshot = (element) => {
+    const rect = element.getBoundingClientRect();
+    return { bottom: rect.bottom, height: rect.height, left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+  };
+  return {
+    viewport: { height: innerHeight, width: innerWidth },
+    sidebar: snapshot(sidebar), main: snapshot(main), chrome: snapshot(chrome), host: snapshot(host),
+  };
+})()`;
+
+function parseRectSnapshot(value: unknown): RectSnapshot | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const fields = ["bottom", "height", "left", "right", "top", "width"] as const;
+  if (!fields.every((field) => typeof record[field] === "number")) return undefined;
+  return {
+    bottom: record.bottom as number,
+    height: record.height as number,
+    left: record.left as number,
+    right: record.right as number,
+    top: record.top as number,
+    width: record.width as number,
+  };
+}
+
+function parseCtoxShellGeometry(value: unknown): CtoxShellGeometry | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const viewport = record.viewport;
+  if (typeof viewport !== "object" || viewport === null || Array.isArray(viewport))
+    return undefined;
+  const viewportRecord = viewport as Record<string, unknown>;
+  if (typeof viewportRecord.width !== "number" || typeof viewportRecord.height !== "number")
+    return undefined;
+  const sidebar = parseRectSnapshot(record.sidebar);
+  const main = parseRectSnapshot(record.main);
+  const chrome = parseRectSnapshot(record.chrome);
+  const host = parseRectSnapshot(record.host);
+  if (sidebar === undefined || main === undefined || chrome === undefined || host === undefined)
+    return undefined;
+  return {
+    viewport: { width: viewportRecord.width, height: viewportRecord.height },
+    sidebar,
+    main,
+    chrome,
+    host,
+  };
+}
+
+async function waitForContainedGuestHost(port: number, timeoutMs = 15_000): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    try {
+      const geometry = parseCtoxShellGeometry(
+        await evaluateMain(port, CTOX_SHELL_GEOMETRY_EXPRESSION),
+      );
+      if (geometry !== undefined && isCtoxShellGeometryContained(geometry)) return;
+    } catch {
+      // Layout and selection can settle between target enumeration and evaluation.
+    }
+    await pause(250);
+  }
+  throw new Error("CTOX guest host was not contained by the visible product shell");
+}
+
+async function waitForGuestHostReady(port: number, timeoutMs = 15_000): Promise<void> {
+  try {
+    await waitForMainCondition(
+      port,
+      `document.querySelector('[data-ctox-native-guest-host][data-ctox-connection="ready"]') !== null`,
+      "ready CTOX guest host",
+      timeoutMs,
+    );
+  } catch {
+    let observed = "unavailable";
+    try {
+      const value = await evaluateMain(
+        port,
+        `document.querySelector('[data-ctox-native-guest-host]')?.getAttribute('data-ctox-connection') ?? "missing"`,
+      );
+      if (
+        typeof value === "string" &&
+        ["connecting", "error", "idle", "missing", "ready", "revoked"].includes(value)
+      ) {
+        observed = value;
+      }
+    } catch {
+      // The renderer may have exited while the timeout was being diagnosed.
+    }
+    throw new Error(`ready CTOX guest host did not appear (observed: ${observed})`);
+  }
+}
+
+async function countCapableTargets(port: number, capability: string): Promise<number> {
+  const targets = (await fetchTargets(port)).filter(
+    (target) => target.type === "page" && target.webSocketDebuggerUrl !== undefined,
+  );
+  let matches = 0;
+  for (const target of targets) {
+    try {
+      if ((await evaluateTarget(target, capability)) === true) matches += 1;
+    } catch {
+      // A destroyed guest target is equivalent to no active guest.
+    }
+  }
+  return matches;
+}
+
+async function waitForNoGuestTarget(port: number, timeoutMs = 15_000): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  let consecutive = 0;
+  while (performance.now() < deadline) {
+    try {
+      consecutive = (await countCapableTargets(port, GUEST_CAPABILITY)) === 0 ? consecutive + 1 : 0;
+      if (consecutive >= 2) return;
+    } catch {
+      consecutive = 0;
+    }
+    await pause(250);
+  }
+  throw new Error("native CTOX guest target remained active in Code mode");
+}
+
+async function leaveCtoxMode(port: number): Promise<void> {
+  await switchProductMode(port, "code");
+  await waitForNoGuestTarget(port);
+}
+
+async function enterCtoxAndSelectImportedPairing(port: number): Promise<void> {
+  await switchProductMode(port, "ctox");
+  await selectImportedPairing(port);
+  await waitForContainedGuestHost(port);
 }
 
 function resultTag(value: unknown): string | undefined {
@@ -660,31 +990,18 @@ function completedInstanceId(value: unknown): string {
 function assertCompleted(value: unknown, operation: string): void {
   if (resultTag(value) !== "completed") throw new Error(`${operation} did not complete`);
 }
-function assertDiscovered(value: unknown, instanceId: string): void {
-  if (resultTag(value) !== "ready") throw new Error("paired discovery was not ready");
-  const instances = (value as Record<string, unknown>).instances;
-  if (
-    !Array.isArray(instances) ||
-    !instances.some(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        (item as Record<string, unknown>).id === instanceId,
-    )
-  )
-    throw new Error("paired instance was not discovered");
-}
-function assertActivated(value: unknown, instanceId: string): void {
-  if (
-    resultTag(value) !== "ready" ||
-    (value as Record<string, unknown>).instanceId !== instanceId
-  ) {
-    throw new Error("paired guest activation did not become ready");
-  }
-}
 
 const STATUS_EXPRESSION = `(async () => {
-  const snapshot = await globalThis.CTOX_BUSINESS_OS_STATUS.snapshot({ includeCounts: false, requiredCollections: ${JSON.stringify(REQUIRED_COLLECTIONS)} });
+  const statusApi = globalThis.CTOX_BUSINESS_OS_STATUS;
+  const statusOptions = { includeCounts: false, requiredCollections: ${JSON.stringify(REQUIRED_COLLECTIONS)} };
+  let snapshot;
+  try {
+    snapshot = await statusApi.waitForHealthy({ ...statusOptions, timeoutMs: 15000, intervalMs: 500 });
+  } catch (error) {
+    snapshot = error && typeof error === "object" && error.status
+      ? error.status
+      : await statusApi.snapshot(statusOptions);
+  }
   const app = globalThis.CTOX_BUSINESS_OS_APP;
   const status = String(app?.dataPlaneReadyStatus || "unknown");
   const allowedStatuses = ["idle", "pending", "ready", "failed"];
@@ -704,7 +1021,7 @@ const STATUS_EXPRESSION = `(async () => {
 })()`;
 async function readStatus(port: number): Promise<ClassifiedStatus> {
   const target = await waitForTarget(port, GUEST_CAPABILITY, "navigated guest", 15_000);
-  return classifyAdvancedStatus(await evaluateTarget(target, STATUS_EXPRESSION));
+  return classifyAdvancedStatus(await evaluateTarget(target, STATUS_EXPRESSION, 20_000));
 }
 async function waitForHealthyStatus(port: number, timeoutMs = 45_000): Promise<string> {
   const deadline = performance.now() + timeoutMs;
@@ -713,7 +1030,7 @@ async function waitForHealthyStatus(port: number, timeoutMs = 45_000): Promise<s
     try {
       const status = await readStatus(port);
       diagnostics = status.diagnostics ?? [];
-      if (status.healthy && status.browserPeerId !== undefined) return status.browserPeerId;
+      if (status.healthy && status.browserDeviceId !== undefined) return status.browserDeviceId;
     } catch (error) {
       /* Navigation can replace the target between enumeration and evaluation. */
       const message = error instanceof Error ? error.message : "unknown";
@@ -726,7 +1043,7 @@ async function waitForHealthyStatus(port: number, timeoutMs = 45_000): Promise<s
     await pause(500);
   }
   throw new Error(
-    `guest did not report healthy advanced status with a browser peer (${diagnostics.join(",") || "no-safe-diagnostics"})`,
+    `guest did not report healthy advanced status with a browser device (${diagnostics.join(",") || "no-safe-diagnostics"})`,
   );
 }
 async function waitForPersistentRevocation(port: number): Promise<void> {
@@ -851,11 +1168,12 @@ async function run(): Promise<void> {
   let port: number | undefined;
   let invite: string | undefined;
   let instanceId: string | undefined;
-  let browserPeerId: string | undefined;
+  let browserDeviceId: string | undefined;
   let primaryError: unknown;
 
   const removePairing = async (): Promise<void> => {
     if (!state.paired || port === undefined || instanceId === undefined) return;
+    await leaveCtoxMode(port);
     assertCompleted(
       await callBridge(port, "removePairedInstance", [instanceId]),
       "pairing removal",
@@ -872,7 +1190,8 @@ async function run(): Promise<void> {
     )
       return;
     try {
-      assertActivated(await callBridge(port, "activate", [instanceId, GUEST_BOUNDS]), instanceId);
+      await enterCtoxAndSelectImportedPairing(port);
+      await waitForGuestHostReady(port);
       await waitForHealthyStatus(port);
       state = transitionLifecycle(state, "recovered");
     } catch (error) {
@@ -928,28 +1247,28 @@ async function run(): Promise<void> {
 
     instanceId = completedInstanceId(await callBridge(port, "importInvite", [invite]));
     state = transitionLifecycle(state, "paired");
-    assertDiscovered(await callBridge(port, "refresh", []), instanceId);
-    assertActivated(await callBridge(port, "activate", [instanceId, GUEST_BOUNDS]), instanceId);
-    browserPeerId = await waitForHealthyStatus(port);
-    sensitive.push(browserPeerId);
+    await enterCtoxAndSelectImportedPairing(port);
+    await waitForGuestHostReady(port);
+    browserDeviceId = await waitForHealthyStatus(port);
+    sensitive.push(browserDeviceId);
     phase("pairing: healthy");
 
     const markers = createMarkers();
     await checkMarkers(port, markers, "seed");
     phase("partition: markers seeded");
-    assertCompleted(await callBridge(port, "deactivate", []), "guest deactivation");
+    await leaveCtoxMode(port);
     // Mark the revocation barrier before invoking the CLI. A non-zero/timeout
     // result is ambiguous: the native store may already have accepted the
     // write, so cleanup must still issue and verify an idempotent unrevoke.
     state = transitionLifecycle(state, "revoked");
-    runCtox(args, ["business-os", "peer", "revoke", browserPeerId]);
+    runCtox(args, ["business-os", "peer", "revoke", browserDeviceId]);
     phase("revocation: applied");
 
-    assertActivated(await callBridge(port, "activate", [instanceId, GUEST_BOUNDS]), instanceId);
+    await enterCtoxAndSelectImportedPairing(port);
     await waitForPersistentRevocation(port);
     phase("revocation: guest remained unhealthy");
-    assertCompleted(await callBridge(port, "deactivate", []), "guest deactivation");
-    runCtox(args, ["business-os", "peer", "unrevoke", browserPeerId]);
+    await leaveCtoxMode(port);
+    runCtox(args, ["business-os", "peer", "unrevoke", browserDeviceId]);
     state = transitionLifecycle(state, "unrevoked");
     phase("revocation: removed");
 
@@ -959,8 +1278,8 @@ async function run(): Promise<void> {
     await removePairing();
     instanceId = completedInstanceId(await callBridge(port, "importInvite", [invite]));
     state = transitionLifecycle(state, "paired");
-    assertDiscovered(await callBridge(port, "refresh", []), instanceId);
-    assertActivated(await callBridge(port, "activate", [instanceId, GUEST_BOUNDS]), instanceId);
+    await enterCtoxAndSelectImportedPairing(port);
+    await waitForGuestHostReady(port);
     await waitForHealthyStatus(port);
     await checkMarkers(port, markers, "absent");
     phase("partition: removal verified");
@@ -970,9 +1289,9 @@ async function run(): Promise<void> {
     primaryError = error;
   } finally {
     // A successful revoke creates a strict barrier before pairing/profile cleanup.
-    if (state.revoked && !state.unrevoked && browserPeerId !== undefined) {
+    if (state.revoked && !state.unrevoked && browserDeviceId !== undefined) {
       try {
-        runCtox(args, ["business-os", "peer", "unrevoke", browserPeerId]);
+        runCtox(args, ["business-os", "peer", "unrevoke", browserDeviceId]);
         state = transitionLifecycle(state, "unrevoked");
         phase("cleanup: peer unrevoke verified");
       } catch {

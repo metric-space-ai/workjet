@@ -83,6 +83,11 @@ interface ActiveGuest {
   readonly browserSession: Session;
 }
 
+interface GuestState {
+  readonly businessOsModeActive: boolean;
+  readonly active: ActiveGuest | undefined;
+}
+
 interface BeforeRequestDetails {
   readonly url: string;
   readonly resourceType: string;
@@ -104,6 +109,8 @@ export interface CtoxGuestManagerOptions {
 export class CtoxGuestManager extends Context.Service<
   CtoxGuestManager,
   {
+    readonly enterBusinessOsMode: Effect.Effect<CtoxManagedActionResult>;
+    readonly exitBusinessOsMode: Effect.Effect<CtoxManagedActionResult>;
     readonly activate: (
       instanceId: string,
       bounds: CtoxGuestBounds,
@@ -296,6 +303,103 @@ function attachGuest(
   }
 }
 
+function isSuccessfulCtoxNavigationCommit(
+  rawUrl: string,
+  launchOrigin: string,
+  httpResponseCode: number,
+): boolean {
+  if (
+    !Number.isSafeInteger(httpResponseCode) ||
+    httpResponseCode < 200 ||
+    httpResponseCode >= 400
+  ) {
+    return false;
+  }
+  try {
+    const url = new URL(rawUrl);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === launchOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function waitForGuestNavigationCommit(
+  webContents: WebContents,
+  launchUrl: string,
+  launchOrigin: string,
+): Effect.Effect<boolean> {
+  let cleanup = (): void => undefined;
+  return Effect.tryPromise({
+    try: () =>
+      new Promise<boolean>((resolve) => {
+        let settled = false;
+        const removeListener = (event: string, listener: (...args: Array<never>) => void): void => {
+          try {
+            webContents.off(event as never, listener as never);
+          } catch {
+            // Destruction may race listener cleanup.
+          }
+        };
+        const onDidFrameNavigate = (
+          _event: unknown,
+          url: string,
+          httpResponseCode: number,
+          _httpStatusText: string,
+          isMainFrame: boolean,
+        ): void => {
+          if (!isMainFrame) return;
+          finish(isSuccessfulCtoxNavigationCommit(url, launchOrigin, httpResponseCode));
+        };
+        const onDidFailLoad = (
+          _event: unknown,
+          _errorCode: number,
+          _errorDescription: string,
+          _validatedUrl: string,
+          isMainFrame: boolean,
+        ): void => {
+          if (isMainFrame) finish(false);
+        };
+        const onWillNavigate = (
+          _event: { readonly preventDefault: () => void },
+          url: string,
+        ): void => {
+          if (!isAllowedCtoxTopFrameNavigation(url, launchOrigin)) finish(false);
+        };
+        const onDestroyed = (): void => finish(false);
+        cleanup = (): void => {
+          removeListener("did-frame-navigate", onDidFrameNavigate as never);
+          removeListener("did-fail-load", onDidFailLoad as never);
+          removeListener("will-navigate", onWillNavigate as never);
+          removeListener("destroyed", onDestroyed as never);
+        };
+        const finish = (committed: boolean): void => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(committed);
+        };
+
+        try {
+          webContents.on("did-frame-navigate", onDidFrameNavigate as never);
+          webContents.on("did-fail-load", onDidFailLoad as never);
+          webContents.on("will-navigate", onWillNavigate as never);
+          webContents.on("destroyed", onDestroyed);
+          const loading = webContents.loadURL(launchUrl);
+          void loading.then(
+            () => undefined,
+            () => finish(false),
+          );
+        } catch {
+          finish(false);
+        }
+      }),
+    catch: () => undefined,
+  }).pipe(
+    Effect.orElseSucceed(() => false),
+    Effect.ensuring(Effect.sync(() => cleanup())),
+  );
+}
+
 export const make = (options: CtoxGuestManagerOptions = {}) =>
   Effect.gen(function* () {
     const auth = yield* CtoxDevAuth.CtoxDevAuth;
@@ -307,29 +411,49 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const electronShell = yield* ElectronShell.ElectronShell;
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
-    const activeRef = yield* SynchronizedRef.make<ActiveGuest | undefined>(undefined);
+    const stateRef = yield* SynchronizedRef.make<GuestState>({
+      businessOsModeActive: false,
+      active: undefined,
+    });
 
     const preloadPath = `${__dirname}/ctox-guest-preload.cjs`;
 
-    const deactivate = SynchronizedRef.modifyEffect(activeRef, (active) =>
+    const enterBusinessOsMode = SynchronizedRef.modifyEffect(stateRef, (state) =>
+      Effect.succeed([
+        { _tag: "completed" } as const,
+        { ...state, businessOsModeActive: true },
+      ] as const),
+    );
+
+    const exitBusinessOsMode = SynchronizedRef.modifyEffect(stateRef, (state) =>
       Effect.sync(() => {
-        destroyGuest(active);
-        return [{ _tag: "completed" }, undefined] as const;
+        destroyGuest(state.active);
+        return [
+          { _tag: "completed" } as const,
+          { businessOsModeActive: false, active: undefined },
+        ] as const;
+      }),
+    );
+
+    const deactivate = SynchronizedRef.modifyEffect(stateRef, (state) =>
+      Effect.sync(() => {
+        destroyGuest(state.active);
+        return [{ _tag: "completed" } as const, { ...state, active: undefined }] as const;
       }),
     );
 
     const deactivateInstance = (instanceId: string) =>
-      SynchronizedRef.modifyEffect(activeRef, (active) =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.sync(() => {
-          if (active?.instanceId !== instanceId) {
-            return [{ _tag: "completed" }, active] as const;
+          if (state.active?.instanceId !== instanceId) {
+            return [{ _tag: "completed" } as const, state] as const;
           }
-          destroyGuest(active);
-          return [{ _tag: "completed" }, undefined] as const;
+          destroyGuest(state.active);
+          return [{ _tag: "completed" } as const, { ...state, active: undefined }] as const;
         }),
       );
 
-    yield* Effect.addFinalizer(() => deactivate.pipe(Effect.asVoid));
+    yield* Effect.addFinalizer(() => exitBusinessOsMode.pipe(Effect.asVoid));
 
     let refreshFromWebContents: (sender: WebContents) => void = () => undefined;
 
@@ -460,11 +584,18 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         bounds,
         browserSession: resolvedSession.value,
       };
-      const loaded = yield* Effect.tryPromise({
-        try: () => webContents.loadURL(launch.value.launchUrl),
-        catch: () => undefined,
-      }).pipe(Effect.option);
-      if (Option.isNone(loaded)) {
+      const committed = yield* waitForGuestNavigationCommit(
+        webContents,
+        launch.value.launchUrl,
+        launch.value.launchOrigin,
+      ).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            destroyGuest(active);
+          }),
+        ),
+      );
+      if (!committed) {
         destroyGuest(active);
         return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
       }
@@ -475,17 +606,22 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       instanceId: string,
       bounds: CtoxGuestBounds,
     ): Effect.Effect<CtoxManagedGuestResult> =>
-      SynchronizedRef.modifyEffect(activeRef, (current) =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.gen(function* () {
-          destroyGuest(current);
-          return yield* prepareGuest(instanceId, bounds);
+          if (!state.businessOsModeActive) {
+            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
+          }
+          destroyGuest(state.active);
+          const [result, active] = yield* prepareGuest(instanceId, bounds);
+          return [result, { ...state, active }] as const;
         }),
       );
 
     const refresh = (sender: WebContents) =>
-      SynchronizedRef.modifyEffect(activeRef, (active) => {
+      SynchronizedRef.modifyEffect(stateRef, (state) => {
+        const active = state.active;
         if (active === undefined || active.view.webContents !== sender || sender.isDestroyed()) {
-          return Effect.succeed([undefined, active] as const);
+          return Effect.succeed([undefined, state] as const);
         }
         return Effect.gen(function* () {
           destroyGuest(active);
@@ -494,7 +630,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             active.bounds,
             active.browserSession,
           );
-          return [undefined, replacement] as const;
+          return [undefined, { ...state, active: replacement }] as const;
         });
       });
 
@@ -503,25 +639,36 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     };
 
     const setBounds = (bounds: CtoxGuestBounds): Effect.Effect<CtoxManagedActionResult> =>
-      SynchronizedRef.modifyEffect(activeRef, (active) =>
-        Effect.sync((): readonly [CtoxManagedActionResult, ActiveGuest | undefined] => {
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.sync((): readonly [CtoxManagedActionResult, GuestState] => {
           if (!isValidBounds(bounds)) {
-            return [{ _tag: "failed", code: "invalid_input" }, active];
+            return [{ _tag: "failed", code: "invalid_input" }, state];
           }
+          const active = state.active;
           if (active === undefined) {
-            return [{ _tag: "failed", code: "not_active" }, active];
+            return [{ _tag: "failed", code: "not_active" }, state];
           }
           try {
             active.view.setBounds(bounds);
-            return [{ _tag: "completed" }, { ...active, bounds }];
+            return [{ _tag: "completed" }, { ...state, active: { ...active, bounds } }];
           } catch {
             destroyGuest(active);
-            return [{ _tag: "failed", code: "guest_failed" }, undefined];
+            return [
+              { _tag: "failed", code: "guest_failed" },
+              { ...state, active: undefined },
+            ];
           }
         }),
       );
 
-    return CtoxGuestManager.of({ activate, deactivate, deactivateInstance, setBounds });
+    return CtoxGuestManager.of({
+      enterBusinessOsMode,
+      exitBusinessOsMode,
+      activate,
+      deactivate,
+      deactivateInstance,
+      setBounds,
+    });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 
 export const layer = (options: CtoxGuestManagerOptions = {}) =>

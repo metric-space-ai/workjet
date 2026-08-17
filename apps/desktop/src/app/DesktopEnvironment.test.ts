@@ -63,6 +63,13 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
+      assert.deepEqual(environment.branding, {
+        baseName: "CTOX Desktop App",
+        stageLabel: "Dev",
+        displayName: "CTOX Desktop App (Dev)",
+      });
+      assert.equal(environment.displayName, "CTOX Desktop App (Dev)");
+      assert.equal(environment.developmentDockIconPath, "/repo/assets/ctox/ctox-app-icon.png");
       assert.equal(environment.rootDir, "/repo");
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
@@ -95,6 +102,25 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
+      assert.deepEqual(environment.branding, {
+        baseName: "CTOX Desktop App",
+        stageLabel: "Alpha",
+        displayName: "CTOX Desktop App (Alpha)",
+      });
+    }),
+  );
+
+  it.effect("uses the Nightly display name for nightly desktop versions", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment({
+        appVersion: "0.0.22-nightly.20260817.1",
+      });
+
+      assert.deepEqual(environment.branding, {
+        baseName: "CTOX Desktop App",
+        stageLabel: "Nightly",
+        displayName: "CTOX Desktop App (Nightly)",
+      });
     }),
   );
 

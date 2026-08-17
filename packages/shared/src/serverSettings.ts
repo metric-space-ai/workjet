@@ -131,6 +131,8 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    automaticWorktreeRoot,
+    workjet,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -169,8 +171,22 @@ export function applyServerSettingsPatch(
           }
         : undefined;
   const next = deepMerge(current, patchForMerge);
+  const previousAutomaticWorktreeRoots =
+    automaticWorktreeRoot !== undefined &&
+    automaticWorktreeRoot !== current.automaticWorktreeRoot &&
+    current.automaticWorktreeRoot.length > 0
+      ? [
+          ...current.previousAutomaticWorktreeRoots.filter(
+            (root) => root !== current.automaticWorktreeRoot,
+          ),
+          current.automaticWorktreeRoot,
+        ]
+      : current.previousAutomaticWorktreeRoots;
   const nextWithReplacementsBase = {
     ...next,
+    ...(automaticWorktreeRoot !== undefined
+      ? { automaticWorktreeRoot, previousAutomaticWorktreeRoots }
+      : {}),
     ...(backgroundActivity !== undefined
       ? {
           backgroundActivity: {
@@ -187,6 +203,7 @@ export function applyServerSettingsPatch(
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
       : {}),
+    ...(workjet !== undefined ? { workjet } : {}),
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),

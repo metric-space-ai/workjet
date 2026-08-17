@@ -11,6 +11,7 @@ import {
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import { WorkjetConfiguration, WorkjetConfigurationValue } from "./workjet.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -575,6 +576,11 @@ export const ServerSettings = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
+  automaticWorktreeRoot: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Server-internal compatibility roots retained so existing worktrees remain trusted. */
+  previousAutomaticWorktreeRoots: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
@@ -618,6 +624,7 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  workjet: WorkjetConfiguration,
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -626,6 +633,7 @@ export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerS
 
 export const ServerSettingsOperation = Schema.Literals([
   "normalize",
+  "validate-worktree-root",
   "check-exists",
   "read-file",
   "read-secret",
@@ -729,6 +737,7 @@ export const ServerSettingsPatch = Schema.Struct({
   backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
+  automaticWorktreeRoot: Schema.optionalKey(TrimmedString),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   sourceControlWritingStyle: Schema.optionalKey(
@@ -759,6 +768,8 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Whole-object replacement. Catalog arrays and removed records must never deep-merge.
+  workjet: Schema.optionalKey(WorkjetConfigurationValue),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

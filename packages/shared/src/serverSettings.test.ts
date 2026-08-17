@@ -1,8 +1,12 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
+  WorkjetComputerId,
+  WorkjetLlmRouteId,
+  WorkjetWorkerProfileId,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
@@ -296,6 +300,93 @@ describe("serverSettings helpers", () => {
       enabled: true,
       config: { homePath: "~/.codex" },
     });
+  });
+
+  it("replaces the whole Workjet catalog and removes stale records", () => {
+    const oldComputerId = WorkjetComputerId.make("computer-old");
+    const oldRouteId = WorkjetLlmRouteId.make("route-old");
+    const oldWorkerId = WorkjetWorkerProfileId.make("worker-old");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      workjet: {
+        ...DEFAULT_SERVER_SETTINGS.workjet,
+        computers: [
+          {
+            id: oldComputerId,
+            label: "Old computer",
+            environmentId: EnvironmentId.make("environment-old"),
+            presentationKind: "remote" as const,
+            harnesses: [],
+          },
+        ],
+        llmRoutes: [
+          {
+            id: oldRouteId,
+            label: "Old route",
+            providerInstanceId: ProviderInstanceId.make("codex_old"),
+          },
+        ],
+        workerProfiles: [
+          {
+            id: oldWorkerId,
+            name: "Old worker",
+            computerId: oldComputerId,
+            harness: "codex-cli" as const,
+            llmRouteId: oldRouteId,
+            modelId: "gpt-old",
+            reasoning: "automatic" as const,
+            capabilityIds: [],
+          },
+        ],
+      },
+    };
+
+    const next = applyServerSettingsPatch(current, {
+      workjet: {
+        schemaVersion: 1,
+        computers: [],
+        llmRoutes: [],
+        workerProfiles: [],
+        managedSystemPrompt: "Replacement prompt",
+        telemetry: current.workjet.telemetry,
+        execution: current.workjet.execution,
+      },
+    });
+
+    expect(next.workjet.computers).toEqual([]);
+    expect(next.workjet.llmRoutes).toEqual([]);
+    expect(next.workjet.workerProfiles).toEqual([]);
+    expect(next.workjet.managedSystemPrompt).toBe("Replacement prompt");
+  });
+
+  it("retains prior automatic roots across A to B migration and reset to default", () => {
+    const rootA = "/srv/worktrees/a";
+    const rootB = "/srv/worktrees/b";
+    const atA = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      automaticWorktreeRoot: rootA,
+    });
+    expect(atA.automaticWorktreeRoot).toBe(rootA);
+    expect(atA.previousAutomaticWorktreeRoots).toEqual([]);
+
+    const atB = applyServerSettingsPatch(atA, { automaticWorktreeRoot: rootB });
+    expect(atB.automaticWorktreeRoot).toBe(rootB);
+    expect(atB.previousAutomaticWorktreeRoots).toEqual([rootA]);
+
+    const atDefault = applyServerSettingsPatch(atB, { automaticWorktreeRoot: "" });
+    expect(atDefault.automaticWorktreeRoot).toBe("");
+    expect(atDefault.previousAutomaticWorktreeRoots).toEqual([rootA, rootB]);
+  });
+
+  it("does not duplicate prior roots when a configured root is revisited", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      automaticWorktreeRoot: "/srv/worktrees/b",
+      previousAutomaticWorktreeRoots: ["/srv/worktrees/a", "/srv/worktrees/b"],
+    };
+    const next = applyServerSettingsPatch(current, {
+      automaticWorktreeRoot: "/srv/worktrees/a",
+    });
+    expect(next.previousAutomaticWorktreeRoots).toEqual(["/srv/worktrees/a", "/srv/worktrees/b"]);
   });
 
   it("stores background activity profiles as a versioned object and syncs legacy aliases", () => {

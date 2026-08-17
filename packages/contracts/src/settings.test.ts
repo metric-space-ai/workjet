@@ -130,6 +130,58 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
+describe("ServerSettings Workjet catalog", () => {
+  it("hydrates legacy server settings with the empty Workjet configuration", () => {
+    expect(decodeServerSettings({}).workjet).toEqual({
+      schemaVersion: 1,
+      computers: [],
+      llmRoutes: [],
+      workerProfiles: [],
+      managedSystemPrompt: "",
+      telemetry: {
+        claudeCodeEvents: true,
+        sidecarEvents: true,
+        retentionDays: 14,
+      },
+      execution: {
+        probeTimeoutSeconds: 120,
+        turnTimeoutSeconds: 5_400,
+        degradationAllowed: true,
+      },
+    });
+  });
+
+  it("accepts a complete Workjet replacement in a settings patch", () => {
+    const workjet = decodeServerSettingsPatch({
+      workjet: {
+        schemaVersion: 1,
+        computers: [],
+        llmRoutes: [],
+        workerProfiles: [],
+        managedSystemPrompt: "Coordinate deliberately.",
+        telemetry: {
+          claudeCodeEvents: true,
+          sidecarEvents: false,
+          retentionDays: 30,
+        },
+        execution: {
+          probeTimeoutSeconds: 30,
+          turnTimeoutSeconds: 900,
+          degradationAllowed: false,
+        },
+      },
+    }).workjet;
+
+    expect(workjet?.managedSystemPrompt).toBe("Coordinate deliberately.");
+    expect(workjet?.telemetry).toEqual({
+      claudeCodeEvents: true,
+      sidecarEvents: false,
+      retentionDays: 30,
+    });
+    expect(workjet?.execution.degradationAllowed).toBe(false);
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
@@ -197,6 +249,25 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 describe("ServerSettings worktree defaults", () => {
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);
+  });
+
+  it("decodes legacy automatic worktree settings to the immutable default", () => {
+    const decoded = decodeServerSettings({});
+    expect(decoded.automaticWorktreeRoot).toBe("");
+    expect(decoded.previousAutomaticWorktreeRoots).toEqual([]);
+  });
+
+  it("trims configured and previous automatic worktree roots", () => {
+    const decoded = decodeServerSettings({
+      automaticWorktreeRoot: "  /srv/worktrees/current  ",
+      previousAutomaticWorktreeRoots: ["  /srv/worktrees/previous  "],
+    });
+    expect(decoded.automaticWorktreeRoot).toBe("/srv/worktrees/current");
+    expect(decoded.previousAutomaticWorktreeRoots).toEqual(["/srv/worktrees/previous"]);
+    expect(
+      decodeServerSettingsPatch({ automaticWorktreeRoot: "  /srv/worktrees/next  " })
+        .automaticWorktreeRoot,
+    ).toBe("/srv/worktrees/next");
   });
 
   it("accepts start-from-origin updates", () => {

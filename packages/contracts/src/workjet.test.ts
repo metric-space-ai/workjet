@@ -11,10 +11,17 @@ import {
 } from "./orchestration.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 import {
+  DEFAULT_WORKJET_CONFIGURATION,
   DEFAULT_WORKJET_THREAD_CONFIG,
   GreppyRuntimeSnapshot,
+  WorkjetConfiguration,
+  WorkjetGatewayCatalog,
+  WorkjetGatewayOperationError,
+  WorkjetGatewayStatus,
   WorkjetGreppyOperationError,
   WorkjetThreadConfig,
+  WorktreeStorageInspection,
+  WorktreeStorageInspectionInput,
 } from "./workjet.ts";
 
 const decodeWorkjetThreadConfig = Schema.decodeUnknownSync(WorkjetThreadConfig);
@@ -139,6 +146,220 @@ describe("Greppy runtime RPC contract", () => {
         reason: "arbitrary-server-message",
       }),
     ).toThrow();
+  });
+});
+
+describe("automatic worktree storage RPC contract", () => {
+  it("registers inspection on the selected server RPC group", () => {
+    expect(WS_METHODS.workjetWorktreesInspect).toBe("workjet.worktrees.inspect");
+    expect(WsRpcGroup.requests.has(WS_METHODS.workjetWorktreesInspect)).toBe(true);
+    expect(
+      Schema.decodeUnknownSync(WorktreeStorageInspectionInput)({ root: "  /srv/worktrees  " }),
+    ).toEqual({
+      root: "/srv/worktrees",
+    });
+  });
+
+  it("decodes valid health and bounded invalid diagnostics", () => {
+    expect(
+      Schema.decodeUnknownSync(WorktreeStorageInspection)({
+        status: "valid",
+        requestedRoot: "/srv/worktrees",
+        configuredRoot: "/srv/worktrees",
+        defaultRoot: "/var/lib/workjet/worktrees",
+        effectiveRoot: "/srv/worktrees",
+        canonicalRoot: "/srv/worktrees",
+        writable: true,
+        availableBytes: 123_456,
+      }),
+    ).toMatchObject({ status: "valid", availableBytes: 123_456 });
+
+    const invalid = Schema.decodeUnknownSync(WorktreeStorageInspection)({
+      status: "invalid",
+      requestedRoot: "relative",
+      configuredRoot: "",
+      defaultRoot: "/var/lib/workjet/worktrees",
+      effectiveRoot: "/var/lib/workjet/worktrees",
+      canonicalRoot: null,
+      writable: false,
+      availableBytes: null,
+      reason: "absolute-path-required",
+      message: "Enter an absolute path on the selected server.",
+      internalCause: "must not survive decoding",
+    });
+    expect(invalid.status).toBe("invalid");
+    if (invalid.status !== "invalid") throw new Error("expected an invalid inspection");
+    expect(invalid.reason).toBe("absolute-path-required");
+    expect(invalid).not.toHaveProperty("internalCause");
+  });
+});
+
+describe("Workjet provider gateway RPC contract", () => {
+  it("registers stable inspect and lifecycle method names", () => {
+    expect(WS_METHODS.workjetGatewayStatus).toBe("workjet.providerGateway.status");
+    expect(WS_METHODS.workjetGatewayCatalog).toBe("workjet.providerGateway.catalog");
+    expect(WS_METHODS.workjetGatewayStart).toBe("workjet.providerGateway.start");
+    expect(WS_METHODS.workjetGatewayStop).toBe("workjet.providerGateway.stop");
+    for (const method of [
+      WS_METHODS.workjetGatewayStatus,
+      WS_METHODS.workjetGatewayCatalog,
+      WS_METHODS.workjetGatewayStart,
+      WS_METHODS.workjetGatewayStop,
+    ]) {
+      expect(WsRpcGroup.requests.has(method)).toBe(true);
+    }
+  });
+
+  it("drops plaintext secrets and secret references from public payloads", () => {
+    const status = Schema.decodeUnknownSync(WorkjetGatewayStatus)({
+      schemaVersion: 1,
+      phase: "ready",
+      pid: 123,
+      providerEndpoint: "http://127.0.0.1:41000",
+      managementEndpoint: "http://127.0.0.1:41001",
+      failureReason: null,
+      configuredAccountCount: 1,
+      configuredModelCount: 1,
+      apiKey: "must-not-escape",
+      secretRef: { scope: "workjet-provider-gateway", name: "provider.secret" },
+    });
+    const catalog = Schema.decodeUnknownSync(WorkjetGatewayCatalog)({
+      schemaVersion: 1,
+      accounts: [
+        {
+          id: "account-1",
+          label: "Primary",
+          provider: "codex",
+          enabled: true,
+          priority: 10,
+          weight: 1,
+          modelIds: ["gpt-5.6"],
+          accessToken: "must-not-escape",
+        },
+      ],
+      pools: [
+        {
+          id: "pool-1",
+          label: "Codex pool",
+          provider: "codex",
+          accountIds: ["account-1"],
+          modelIds: ["gpt-5.6"],
+        },
+      ],
+      routes: [
+        {
+          id: "route-1",
+          label: "Default",
+          poolId: "pool-1",
+          provider: "codex",
+          modelIds: ["gpt-5.6"],
+        },
+      ],
+      models: [
+        {
+          id: "gpt-5.6",
+          displayName: "GPT-5.6",
+          providers: ["codex"],
+          accountIds: ["account-1"],
+        },
+      ],
+    });
+
+    expect(JSON.stringify({ status, catalog })).not.toContain("must-not-escape");
+    expect(JSON.stringify({ status, catalog })).not.toContain("secretRef");
+  });
+
+  it("limits operation failures to typed redacted reasons", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetGatewayOperationError)({
+      _tag: "WorkjetGatewayOperationError",
+      reason: "process-exit",
+      stderr: "Authorization: Bearer secret",
+      configPath: "/private/path",
+    });
+    expect(decoded.reason).toBe("process-exit");
+    expect(JSON.stringify(decoded)).not.toContain("Bearer");
+  });
+});
+
+describe("WorkjetConfiguration", () => {
+  it("decodes missing legacy catalog data to a valid empty configuration", () => {
+    expect(Schema.decodeUnknownSync(WorkjetConfiguration)({})).toEqual(
+      DEFAULT_WORKJET_CONFIGURATION,
+    );
+    expect(DEFAULT_WORKJET_CONFIGURATION).toEqual({
+      schemaVersion: 1,
+      computers: [],
+      llmRoutes: [],
+      workerProfiles: [],
+      managedSystemPrompt: "",
+      telemetry: {
+        claudeCodeEvents: true,
+        sidecarEvents: true,
+        retentionDays: 14,
+      },
+      execution: {
+        probeTimeoutSeconds: 120,
+        turnTimeoutSeconds: 5_400,
+        degradationAllowed: true,
+      },
+    });
+  });
+
+  it("keeps reusable routes model-free and credential-free", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      llmRoutes: [
+        {
+          id: "route-main",
+          label: "Main account",
+          providerInstanceId: "codex_personal",
+          modelId: "must-not-persist-here",
+          apiKey: "must-not-persist-here",
+        },
+      ],
+    });
+
+    expect(decoded.llmRoutes).toEqual([
+      {
+        id: "route-main",
+        label: "Main account",
+        providerInstanceId: "codex_personal",
+      },
+    ]);
+    expect(JSON.stringify(decoded.llmRoutes)).not.toContain("must-not-persist-here");
+  });
+
+  it("decodes missing per-computer harnesses and worker capabilities safely", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      computers: [
+        {
+          id: "computer-1",
+          label: "Remote devbox",
+          environmentId: "environment-remote",
+          presentationKind: "ssh",
+        },
+      ],
+      llmRoutes: [
+        {
+          id: "route-1",
+          label: "Codex work",
+          providerInstanceId: "codex_work",
+        },
+      ],
+      workerProfiles: [
+        {
+          id: "worker-1",
+          name: "Completion",
+          computerId: "computer-1",
+          harness: "codex-cli",
+          llmRouteId: "route-1",
+          modelId: "gpt-5.6-sol",
+          reasoning: "high",
+        },
+      ],
+    });
+
+    expect(decoded.computers[0]?.harnesses).toEqual([]);
+    expect(decoded.workerProfiles[0]?.capabilityIds).toEqual([]);
   });
 });
 

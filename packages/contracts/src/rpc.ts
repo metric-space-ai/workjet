@@ -190,7 +190,15 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
-import { GreppyRuntimeSnapshot, WorkjetGreppyOperationError } from "./workjet.ts";
+import {
+  GreppyRuntimeSnapshot,
+  WorkjetGatewayCatalog,
+  WorkjetGatewayOperationError,
+  WorkjetGatewayStatus,
+  WorkjetGreppyOperationError,
+  WorktreeStorageInspection,
+  WorktreeStorageInspectionInput,
+} from "./workjet.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -276,6 +284,13 @@ export const WS_METHODS = {
   // Workjet server-wide capability management
   workjetGreppyInspect: "workjet.greppy.inspect",
   workjetGreppyInstall: "workjet.greppy.install",
+  workjetWorktreesInspect: "workjet.worktrees.inspect",
+
+  // Environment-scoped Workjet provider gateway authority
+  workjetGatewayStatus: "workjet.providerGateway.status",
+  workjetGatewayCatalog: "workjet.providerGateway.catalog",
+  workjetGatewayStart: "workjet.providerGateway.start",
+  workjetGatewayStop: "workjet.providerGateway.stop",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -487,6 +502,41 @@ export const WsWorkjetGreppyInstallRpc = Rpc.make(WS_METHODS.workjetGreppyInstal
   payload: Schema.Struct({}),
   success: GreppyRuntimeSnapshot,
   error: WorkjetGreppyRpcError,
+});
+
+export const WsWorkjetWorktreesInspectRpc = Rpc.make(WS_METHODS.workjetWorktreesInspect, {
+  payload: WorktreeStorageInspectionInput,
+  success: WorktreeStorageInspection,
+  error: EnvironmentAuthorizationError,
+});
+
+const WorkjetGatewayRpcError = Schema.Union([
+  WorkjetGatewayOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetGatewayStatusRpc = Rpc.make(WS_METHODS.workjetGatewayStatus, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsWorkjetGatewayCatalogRpc = Rpc.make(WS_METHODS.workjetGatewayCatalog, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayCatalog,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayStartRpc = Rpc.make(WS_METHODS.workjetGatewayStart, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayStatus,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayStopRpc = Rpc.make(WS_METHODS.workjetGatewayStop, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayStatus,
+  error: WorkjetGatewayRpcError,
 });
 
 const PullRequestRpcError = Schema.Union([
@@ -1019,6 +1069,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetBackgroundPolicyRpc,
   WsWorkjetGreppyInspectRpc,
   WsWorkjetGreppyInstallRpc,
+  WsWorkjetWorktreesInspectRpc,
+  WsWorkjetGatewayStatusRpc,
+  WsWorkjetGatewayCatalogRpc,
+  WsWorkjetGatewayStartRpc,
+  WsWorkjetGatewayStopRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

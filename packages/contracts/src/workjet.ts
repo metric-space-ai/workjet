@@ -1,5 +1,14 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
+import {
+  EnvironmentId,
+  NonNegativeInt,
+  PositiveInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+  TrimmedString,
+} from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
@@ -7,11 +16,184 @@ export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
 export const WorkjetCapabilityId = Schema.Literals(["greppy", "web-search", "web-stack-browser"]);
 export type WorkjetCapabilityId = typeof WorkjetCapabilityId.Type;
 
+export const WorkjetComputerId = TrimmedNonEmptyString.pipe(Schema.brand("WorkjetComputerId"));
+export type WorkjetComputerId = typeof WorkjetComputerId.Type;
+
+export const WorkjetLlmRouteId = TrimmedNonEmptyString.pipe(Schema.brand("WorkjetLlmRouteId"));
+export type WorkjetLlmRouteId = typeof WorkjetLlmRouteId.Type;
+
+export const WorkjetWorkerProfileId = TrimmedNonEmptyString.pipe(
+  Schema.brand("WorkjetWorkerProfileId"),
+);
+export type WorkjetWorkerProfileId = typeof WorkjetWorkerProfileId.Type;
+
+export const WorkjetHarness = Schema.Literals([
+  "claude-code",
+  "codex-cli",
+  "opencode",
+  "grok-cli",
+  "cursor-agent",
+  "pi-code",
+]);
+export type WorkjetHarness = typeof WorkjetHarness.Type;
+
+/** Presentation only. The referenced Code environment remains transport authority. */
+export const WorkjetComputerPresentationKind = Schema.Literals([
+  "local",
+  "t3-connect",
+  "ssh",
+  "tailscale",
+  "remote",
+]);
+export type WorkjetComputerPresentationKind = typeof WorkjetComputerPresentationKind.Type;
+
+export const WorkjetHarnessConfiguration = Schema.Struct({
+  harness: WorkjetHarness,
+  available: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  executableOverride: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type WorkjetHarnessConfiguration = typeof WorkjetHarnessConfiguration.Type;
+
+export const WorkjetComputer = Schema.Struct({
+  id: WorkjetComputerId,
+  label: TrimmedNonEmptyString,
+  environmentId: EnvironmentId,
+  presentationKind: WorkjetComputerPresentationKind,
+  harnesses: Schema.Array(WorkjetHarnessConfiguration).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+});
+export type WorkjetComputer = typeof WorkjetComputer.Type;
+
+/** A non-secret route to credentials protected by the provider-instance settings authority. */
+export const WorkjetLlmRoute = Schema.Struct({
+  id: WorkjetLlmRouteId,
+  label: TrimmedNonEmptyString,
+  providerInstanceId: ProviderInstanceId,
+});
+export type WorkjetLlmRoute = typeof WorkjetLlmRoute.Type;
+
+export const WorkjetReasoningSelection = Schema.Literals([
+  "automatic",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+  "ultracode",
+  "ultrathink",
+]);
+export type WorkjetReasoningSelection = typeof WorkjetReasoningSelection.Type;
+
+export const WorkjetWorkerProfile = Schema.Struct({
+  id: WorkjetWorkerProfileId,
+  name: TrimmedNonEmptyString,
+  instructions: Schema.optionalKey(TrimmedString),
+  computerId: WorkjetComputerId,
+  harness: WorkjetHarness,
+  llmRouteId: WorkjetLlmRouteId,
+  modelId: TrimmedNonEmptyString,
+  reasoning: WorkjetReasoningSelection,
+  capabilityIds: Schema.Array(WorkjetCapabilityId).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+});
+export type WorkjetWorkerProfile = typeof WorkjetWorkerProfile.Type;
+
+export const WorkjetExecutionConfiguration = Schema.Struct({
+  probeTimeoutSeconds: PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(120))),
+  turnTimeoutSeconds: PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(5_400))),
+  degradationAllowed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type WorkjetExecutionConfiguration = typeof WorkjetExecutionConfiguration.Type;
+
+export const WorkjetTelemetryConfiguration = Schema.Struct({
+  claudeCodeEvents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidecarEvents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  retentionDays: PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(14))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type WorkjetTelemetryConfiguration = typeof WorkjetTelemetryConfiguration.Type;
+
+/**
+ * Server-authoritative reusable Workjet catalog. Provider credentials, transport
+ * connection details, and per-thread orchestration state intentionally live elsewhere.
+ */
+/** Whole-object value schema without an outer default, used by patch contracts. */
+export const WorkjetConfigurationValue = Schema.Struct({
+  schemaVersion: Schema.Literal(1).pipe(Schema.withDecodingDefault(Effect.succeed(1 as const))),
+  computers: Schema.Array(WorkjetComputer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  llmRoutes: Schema.Array(WorkjetLlmRoute).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  workerProfiles: Schema.Array(WorkjetWorkerProfile).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  managedSystemPrompt: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  telemetry: WorkjetTelemetryConfiguration,
+  execution: WorkjetExecutionConfiguration,
+});
+
+/** Persisted settings schema; an absent legacy value decodes to the typed default. */
+export const WorkjetConfiguration = WorkjetConfigurationValue.pipe(
+  Schema.withDecodingDefault(Effect.succeed({})),
+);
+export type WorkjetConfiguration = typeof WorkjetConfiguration.Type;
+
+export const DEFAULT_WORKJET_CONFIGURATION: WorkjetConfiguration = Schema.decodeSync(
+  WorkjetConfiguration,
+)({});
+
 export const WorkjetParentThreadReference = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
 });
 export type WorkjetParentThreadReference = typeof WorkjetParentThreadReference.Type;
+
+export const WorktreeStorageInspectionInput = Schema.Struct({
+  root: TrimmedString,
+});
+export type WorktreeStorageInspectionInput = typeof WorktreeStorageInspectionInput.Type;
+
+export const WorktreeStorageInvalidReason = Schema.Literals([
+  "absolute-path-required",
+  "not-found",
+  "not-directory",
+  "not-writable",
+  "space-unavailable",
+  "filesystem-root",
+  "home-directory",
+  "project-boundary",
+  "server-boundary",
+  "contains-protected-location",
+  "inside-checkout",
+]);
+export type WorktreeStorageInvalidReason = typeof WorktreeStorageInvalidReason.Type;
+
+const WorktreeStorageInspectionContext = {
+  requestedRoot: Schema.String,
+  configuredRoot: Schema.String,
+  defaultRoot: Schema.String,
+  effectiveRoot: Schema.String,
+} as const;
+
+export const WorktreeStorageInspection = Schema.Union([
+  Schema.Struct({
+    ...WorktreeStorageInspectionContext,
+    status: Schema.Literal("valid"),
+    canonicalRoot: Schema.String,
+    writable: Schema.Literal(true),
+    availableBytes: NonNegativeInt,
+  }),
+  Schema.Struct({
+    ...WorktreeStorageInspectionContext,
+    status: Schema.Literal("invalid"),
+    canonicalRoot: Schema.NullOr(Schema.String),
+    writable: Schema.Boolean,
+    availableBytes: Schema.NullOr(NonNegativeInt),
+    reason: WorktreeStorageInvalidReason,
+    message: Schema.String,
+  }),
+]);
+export type WorktreeStorageInspection = typeof WorktreeStorageInspection.Type;
 
 /** Portable public contract for the server-wide managed Greppy runtime. */
 export const GreppyRuntimeAvailability = Schema.Literals([
@@ -131,3 +313,128 @@ export const DEFAULT_WORKJET_THREAD_CONFIG = {
   managedInstructions: "",
   enabledCapabilityIds: [],
 } as const satisfies WorkjetThreadConfig;
+
+/** Provider accounts owned by the environment-scoped Workjet gateway, not harness drivers. */
+export const WorkjetGatewayProvider = Schema.Literals(["claude", "codex", "antigravity"]);
+export type WorkjetGatewayProvider = typeof WorkjetGatewayProvider.Type;
+
+export const WorkjetGatewayAccountId = TrimmedNonEmptyString.pipe(
+  Schema.brand("WorkjetGatewayAccountId"),
+);
+export type WorkjetGatewayAccountId = typeof WorkjetGatewayAccountId.Type;
+
+export const WorkjetGatewayPoolId = TrimmedNonEmptyString.pipe(
+  Schema.brand("WorkjetGatewayPoolId"),
+);
+export type WorkjetGatewayPoolId = typeof WorkjetGatewayPoolId.Type;
+
+export const WorkjetGatewayRouteId = TrimmedNonEmptyString.pipe(
+  Schema.brand("WorkjetGatewayRouteId"),
+);
+export type WorkjetGatewayRouteId = typeof WorkjetGatewayRouteId.Type;
+
+export const WorkjetGatewayAccountSummary = Schema.Struct({
+  id: WorkjetGatewayAccountId,
+  label: TrimmedNonEmptyString,
+  provider: WorkjetGatewayProvider,
+  enabled: Schema.Boolean,
+  priority: Schema.Number,
+  weight: PositiveInt,
+  modelIds: Schema.Array(TrimmedNonEmptyString),
+});
+export type WorkjetGatewayAccountSummary = typeof WorkjetGatewayAccountSummary.Type;
+
+export const WorkjetGatewayPoolSummary = Schema.Struct({
+  id: WorkjetGatewayPoolId,
+  label: TrimmedNonEmptyString,
+  provider: WorkjetGatewayProvider,
+  accountIds: Schema.Array(WorkjetGatewayAccountId),
+  modelIds: Schema.Array(TrimmedNonEmptyString),
+});
+export type WorkjetGatewayPoolSummary = typeof WorkjetGatewayPoolSummary.Type;
+
+export const WorkjetGatewayRouteSummary = Schema.Struct({
+  id: WorkjetGatewayRouteId,
+  label: TrimmedNonEmptyString,
+  poolId: WorkjetGatewayPoolId,
+  provider: WorkjetGatewayProvider,
+  modelIds: Schema.Array(TrimmedNonEmptyString),
+});
+export type WorkjetGatewayRouteSummary = typeof WorkjetGatewayRouteSummary.Type;
+
+export const WorkjetGatewayModelSummary = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  displayName: TrimmedNonEmptyString,
+  providers: Schema.Array(WorkjetGatewayProvider),
+  accountIds: Schema.Array(WorkjetGatewayAccountId),
+});
+export type WorkjetGatewayModelSummary = typeof WorkjetGatewayModelSummary.Type;
+
+export const WorkjetGatewayCatalog = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  accounts: Schema.Array(WorkjetGatewayAccountSummary),
+  pools: Schema.Array(WorkjetGatewayPoolSummary),
+  routes: Schema.Array(WorkjetGatewayRouteSummary),
+  models: Schema.Array(WorkjetGatewayModelSummary),
+});
+export type WorkjetGatewayCatalog = typeof WorkjetGatewayCatalog.Type;
+
+export const WorkjetGatewayPhase = Schema.Literals([
+  "stopped",
+  "starting",
+  "ready",
+  "stopping",
+  "faulted",
+]);
+export type WorkjetGatewayPhase = typeof WorkjetGatewayPhase.Type;
+
+export const WorkjetGatewayFailureReason = Schema.Literals([
+  "host-unavailable",
+  "invalid-configuration",
+  "secret-unavailable",
+  "startup-timeout",
+  "invalid-readiness",
+  "management-unavailable",
+  "process-exit",
+  "shutdown-timeout",
+]);
+export type WorkjetGatewayFailureReason = typeof WorkjetGatewayFailureReason.Type;
+
+/** Redacted environment-local runtime status. Secret references and process output are excluded. */
+export const WorkjetGatewayStatus = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  phase: WorkjetGatewayPhase,
+  pid: Schema.NullOr(PositiveInt),
+  providerEndpoint: Schema.NullOr(TrimmedNonEmptyString),
+  managementEndpoint: Schema.NullOr(TrimmedNonEmptyString),
+  failureReason: Schema.NullOr(WorkjetGatewayFailureReason),
+  configuredAccountCount: Schema.Number,
+  configuredModelCount: Schema.Number,
+});
+export type WorkjetGatewayStatus = typeof WorkjetGatewayStatus.Type;
+
+export class WorkjetGatewayOperationError extends Schema.TaggedErrorClass<WorkjetGatewayOperationError>()(
+  "WorkjetGatewayOperationError",
+  { reason: WorkjetGatewayFailureReason },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "host-unavailable":
+        return "The Workjet provider gateway host is unavailable.";
+      case "invalid-configuration":
+        return "The Workjet provider gateway configuration is invalid.";
+      case "secret-unavailable":
+        return "A Workjet provider gateway credential is unavailable.";
+      case "startup-timeout":
+        return "The Workjet provider gateway did not become ready in time.";
+      case "invalid-readiness":
+        return "The Workjet provider gateway returned an invalid readiness record.";
+      case "management-unavailable":
+        return "The Workjet provider gateway control plane is unavailable.";
+      case "process-exit":
+        return "The Workjet provider gateway process exited unexpectedly.";
+      case "shutdown-timeout":
+        return "The Workjet provider gateway did not stop in time.";
+    }
+  }
+}

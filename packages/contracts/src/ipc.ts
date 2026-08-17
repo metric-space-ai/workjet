@@ -1109,6 +1109,8 @@ export interface DesktopCtoxBridge {
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxPairedInstanceImportResult>;
   removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
+  enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
+  exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
   deactivate: () => Promise<CtoxManagedActionResult>;
   setGuestBounds: (bounds: CtoxGuestBounds) => Promise<CtoxManagedActionResult>;

@@ -241,7 +241,7 @@ export const CtoxManagedGuestResult = Schema.Union([
   Schema.TaggedStruct("ready", { instanceId: CtoxManagedInstanceId }),
   Schema.TaggedStruct("revoked", {}),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "launch_failed", "guest_failed"]),
+    code: Schema.Literals(["invalid_input", "launch_failed", "guest_failed", "not_active"]),
   }),
 ]);
 export type CtoxManagedGuestResult = typeof CtoxManagedGuestResult.Type;

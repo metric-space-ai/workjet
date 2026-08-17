@@ -87,6 +87,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
+import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -117,6 +118,7 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
@@ -377,6 +379,7 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const worktreeStorage = yield* Effect.serviceOption(WorktreeStorage.WorktreeStorage);
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -420,6 +423,7 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
+      const providerGateway = yield* ProviderGateway.ProviderGatewayService;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1620,6 +1624,31 @@ const makeWsRpcLayer = (
               .pipe(Effect.mapError(GreppyRuntime.toWorkjetGreppyOperationError)),
             { "rpc.aggregate": "workjet" },
           ),
+        [WS_METHODS.workjetWorktreesInspect]: ({ root }) =>
+          observeRpcEffect(
+            WS_METHODS.workjetWorktreesInspect,
+            Option.match(worktreeStorage, {
+              onNone: () => Effect.die("Automatic worktree storage is not configured."),
+              onSome: (storage) => storage.inspect(root),
+            }),
+            { "rpc.aggregate": "workjet" },
+          ),
+        [WS_METHODS.workjetGatewayStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayStatus, providerGateway.status(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayCatalog]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayCatalog, providerGateway.catalog(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayStart]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayStart, providerGateway.start(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayStop]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayStop, providerGateway.stop(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",
@@ -2304,6 +2333,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
+    const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     return HttpRouter.add(
@@ -2330,6 +2360,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               Layer.provide(Layer.succeed(GreppyRuntime.GreppyRuntime, greppyRuntime)),
+              Layer.provide(Layer.succeed(ProviderGateway.ProviderGatewayService, providerGateway)),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),

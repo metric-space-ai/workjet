@@ -13,6 +13,7 @@ import * as Duration from "effect/Duration";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -690,5 +691,45 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         "sk-or-secret",
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect(
+    "canonicalizes valid worktree roots and rejects protected roots before persistence",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        // Canonicalize so expectations survive macOS's /var -> /private/var symlink.
+        const container = yield* fileSystem.realPath(
+          yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "t3code-server-settings-worktrees-",
+          }),
+        );
+        const target = path.join(container, "target");
+        const symlink = path.join(container, "selected-root");
+        yield* fileSystem.makeDirectory(target, { recursive: true });
+        yield* fileSystem.symlink(target, symlink);
+
+        const accepted = yield* serverSettings.updateSettings({ automaticWorktreeRoot: symlink });
+        assert.equal(accepted.automaticWorktreeRoot, target);
+        assert.equal(
+          (yield* decodeServerSettings(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath)),
+          )).automaticWorktreeRoot,
+          target,
+        );
+
+        const rejected = yield* Effect.flip(
+          serverSettings.updateSettings({ automaticWorktreeRoot: serverConfig.baseDir }),
+        );
+        assert.deepInclude(rejected, {
+          _tag: "ServerSettingsError",
+          operation: "validate-worktree-root",
+        });
+        assert.equal((yield* serverSettings.getSettings).automaticWorktreeRoot, target);
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });

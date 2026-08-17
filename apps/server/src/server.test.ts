@@ -114,6 +114,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -309,6 +310,33 @@ const makeAuthTestLayer = () =>
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(ServerSecretStore.layer),
   );
+
+const stoppedProviderGatewayStatus = {
+  schemaVersion: 1,
+  phase: "stopped",
+  pid: null,
+  providerEndpoint: null,
+  managementEndpoint: null,
+  failureReason: null,
+  configuredAccountCount: 0,
+  configuredModelCount: 0,
+} as const;
+const stoppedProviderGatewayCatalog = {
+  schemaVersion: 1,
+  accounts: [],
+  pools: [],
+  routes: [],
+  models: [],
+} as const;
+const providerGatewayTestLayer = Layer.succeed(
+  ProviderGateway.ProviderGatewayService,
+  ProviderGateway.ProviderGatewayService.of({
+    status: () => Effect.succeed(stoppedProviderGatewayStatus),
+    catalog: () => Effect.succeed(stoppedProviderGatewayCatalog),
+    start: () => Effect.succeed(stoppedProviderGatewayStatus),
+    stop: () => Effect.succeed(stoppedProviderGatewayStatus),
+  }),
+);
 
 const makeBrowserOtlpPayload = (spanName: string) =>
   Effect.gen(function* () {
@@ -975,6 +1003,7 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.cloudCliTokenManager,
         }),
       ),
+      Layer.provide(providerGatewayTestLayer),
       Layer.provideMerge(makeAuthTestLayer()),
       Layer.provideMerge(ServerSecretStore.layer),
       Layer.provide(workspaceAndProjectServicesLayer),

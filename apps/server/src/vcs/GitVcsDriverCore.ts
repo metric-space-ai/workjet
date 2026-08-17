@@ -36,7 +36,7 @@ import {
   parseRemoteNamesInGitOrder,
   parseRemoteRefWithRemoteNames,
 } from "../git/remoteRefs.ts";
-import { ServerConfig } from "../config.ts";
+import * as WorktreeStorage from "../worktree/WorktreeStorage.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
@@ -702,7 +702,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const { worktreesDir } = yield* ServerConfig;
+  const worktreeStorage = yield* Effect.serviceOption(WorktreeStorage.WorktreeStorage);
   const crypto = yield* Crypto.Crypto;
 
   const executeRaw: GitVcsDriver.GitVcsDriver["Service"]["execute"] = Effect.fnUntraced(
@@ -2752,9 +2752,40 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     "createWorktree",
   )(function* (input) {
     const targetBranch = input.newRefName ?? input.refName;
-    const sanitizedBranch = targetBranch.replace(/\//g, "-");
-    const repoName = path.basename(input.cwd);
-    const worktreePath = input.path ?? path.join(worktreesDir, repoName, sanitizedBranch);
+    const worktreePath =
+      input.path !== null
+        ? input.path
+        : yield* resolveGitCommonDir(input.cwd).pipe(
+            Effect.flatMap((gitCommonDir) =>
+              Option.match(worktreeStorage, {
+                onNone: () =>
+                  Effect.fail(
+                    new WorktreeStorage.WorktreeStorageUnavailableError({
+                      reason: "settings-unavailable",
+                      message: "Automatic worktree storage was not configured.",
+                    }),
+                  ),
+                onSome: (storage) =>
+                  storage.resolveAutomaticPath({
+                    cwd: input.cwd,
+                    gitCommonDir,
+                    ref: targetBranch,
+                  }),
+              }),
+            ),
+            Effect.mapError((cause) =>
+              Schema.is(GitCommandError)(cause)
+                ? cause
+                : new GitCommandError({
+                    operation: "GitVcsDriver.createWorktree.resolveAutomaticPath",
+                    command: "git worktree add",
+                    cwd: input.cwd,
+                    argumentCount: 0,
+                    detail: "The automatic worktree storage location is unavailable.",
+                    cause,
+                  }),
+            ),
+          );
     const args = input.newRefName
       ? ["worktree", "add", "-b", input.newRefName, worktreePath, input.refName]
       : ["worktree", "add", worktreePath, input.refName];

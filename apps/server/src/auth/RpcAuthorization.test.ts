@@ -39,6 +39,27 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("authorizes automatic worktree storage inspection as an orchestration read", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetWorktreesInspect)).toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
+
+  it("separates provider gateway reads from lifecycle operation", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayStatus)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayCatalog)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayStart)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayStop)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("allows relay status reads without granting relay installation access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
       AuthRelayReadScope,

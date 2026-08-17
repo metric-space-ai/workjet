@@ -3,6 +3,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import {
@@ -18,6 +19,7 @@ import {
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as WorktreeStorage from "../worktree/WorktreeStorage.ts";
 
 export class ReviewService extends Context.Service<
   ReviewService,
@@ -37,6 +39,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const worktreeStorage = yield* Effect.serviceOption(WorktreeStorage.WorktreeStorage);
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -66,13 +69,19 @@ export const make = Effect.gen(function* () {
     operation: "ReviewService.getDiffPreview" | "ReviewService.getDiffFileContents",
     cwd: string,
   ) {
-    const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
+    const [candidate, workspaceRoot, trustedWorktreeRoots] = yield* Effect.all([
       canonicalizePath(cwd),
       canonicalizePath(config.cwd),
-      canonicalizePath(config.worktreesDir),
+      Option.match(worktreeStorage, {
+        onNone: () => Effect.succeed([]),
+        onSome: (storage) => storage.trustedRoots,
+      }),
     ]);
 
-    if (isWithinRoot(candidate, workspaceRoot) || isWithinRoot(candidate, worktreesRoot)) {
+    if (
+      isWithinRoot(candidate, workspaceRoot) ||
+      trustedWorktreeRoots.some((root) => isWithinRoot(candidate, root))
+    ) {
       return;
     }
 

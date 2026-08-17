@@ -39,6 +39,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as WorktreeStorage from "../worktree/WorktreeStorage.ts";
 import * as GitManager from "./GitManager.ts";
 
 interface FakeGhScenario {
@@ -629,7 +630,15 @@ function makeManager(input?: {
 
   const serverSettingsLayer = ServerSettings.ServerSettingsService.layerTest(input?.serverSettings);
 
+  // Mirror production wiring: automatic PR worktrees resolve their storage
+  // path through WorktreeStorage backed by the test server settings.
+  const worktreeStorageLayer = WorktreeStorage.layer.pipe(
+    Layer.provide(serverSettingsLayer),
+    Layer.provide(serverConfigLayer),
+    Layer.provide(NodeServices.layer),
+  );
   const vcsDriverLayer = GitVcsDriver.layer.pipe(
+    Layer.provideMerge(worktreeStorageLayer),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(serverConfigLayer),
@@ -672,8 +681,19 @@ function makeManager(input?: {
 
 const asThreadId = (threadId: string) => threadId as ThreadId;
 
+// The suite-level driver is memoized by it.layer, so WorktreeStorage must be
+// wired here (mirroring production) for automatic PR worktree resolution.
+const GitManagerSuiteConfigLayer = ServerConfig.layerTest(process.cwd(), {
+  prefix: "t3-git-manager-test-",
+});
+const GitManagerSuiteWorktreeStorageLayer = WorktreeStorage.layer.pipe(
+  Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+  Layer.provide(GitManagerSuiteConfigLayer),
+  Layer.provide(NodeServices.layer),
+);
 const GitManagerTestLayer = GitVcsDriver.layer.pipe(
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-manager-test-" })),
+  Layer.provideMerge(GitManagerSuiteWorktreeStorageLayer),
+  Layer.provide(GitManagerSuiteConfigLayer),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
 );

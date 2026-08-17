@@ -35,6 +35,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
+import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import {
@@ -304,6 +305,7 @@ export const make = (options?: StartupOptions) =>
     const keybindings = yield* Keybindings.Keybindings;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
     const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
+    const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
@@ -343,6 +345,20 @@ export const make = (options?: StartupOptions) =>
               environmentVariable: error.environmentVariable,
               cause: error.cause,
             }),
+          ),
+        ),
+      );
+
+      yield* Effect.logDebug("startup phase: starting Workjet provider gateway");
+      yield* runStartupPhase(
+        "provider-gateway.start",
+        providerGateway.start().pipe(
+          Effect.catch((error) =>
+            error.reason === "invalid-configuration"
+              ? Effect.logDebug("Workjet provider gateway is not configured")
+              : Effect.logWarning("Workjet provider gateway did not start", {
+                  reason: error.reason,
+                }),
           ),
         ),
       );

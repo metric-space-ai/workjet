@@ -1,0 +1,32 @@
+[package]
+name = "workjet-provider-gateway-host"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR AGPL-3.0-only"
+description = "Environment-scoped Workjet host for the portable provider gateway"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "workjet-provider-gateway-host"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = [
+  "fs",
+  "io-util",
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time",
+] }
+workjet-provider-gateway = { path = "../provider-gateway" }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"

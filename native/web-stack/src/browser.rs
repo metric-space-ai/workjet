@@ -520,6 +520,20 @@ fn capture_chrome_extra_args(headless_without_gui: bool, linux: bool) -> Vec<&'s
 }
 
 fn build_doctor_report(reference_dir: &Path) -> Result<BrowserDoctorReport> {
+    build_browser_readiness_report(reference_dir, true)
+}
+
+/// Build the browser prerequisite report. The explicit doctor command asks
+/// for a real launch/screenshot smoke; production browser startup must not.
+///
+/// Running the smoke here used to launch a throw-away Chromium, open a page,
+/// take a screenshot and close it immediately before launching the user's
+/// actual persistent Chromium. Besides adding cold-start latency, that extra
+/// process competes with the real streamed session for CPU and memory.
+fn build_browser_readiness_report(
+    reference_dir: &Path,
+    run_smoke: bool,
+) -> Result<BrowserDoctorReport> {
     let package_json_exists = reference_dir.join("package.json").exists();
     let node_modules_exists = reference_dir.join("node_modules").is_dir();
     let runner_dependency_declared = read_runner_dependency_declared(reference_dir)?;
@@ -540,22 +554,25 @@ fn build_doctor_report(reference_dir: &Path) -> Result<BrowserDoctorReport> {
         .map(|major| major >= MINIMUM_NODE_MAJOR)
         .unwrap_or(false);
     let ok = node.available && npm.available && npx.available;
-    let smoke =
-        if ok && node_version_compatible && runner_dependency_installed && runner_browser_installed
-        {
-            run_browser_smoke(reference_dir, chromium_fallback_executable.as_deref())
-        } else {
-            BrowserSmokeReport {
-                ran: false,
-                ok: false,
-                timeout_ms: 8_000,
-                stdout: None,
-                stderr: None,
-                error: Some("skipped because browser prerequisites are incomplete".to_string()),
-            }
-        };
-    let automation_ready =
+    let prerequisites_ready =
         ok && node_version_compatible && runner_dependency_installed && runner_browser_installed;
+    let smoke = if prerequisites_ready && run_smoke {
+        run_browser_smoke(reference_dir, chromium_fallback_executable.as_deref())
+    } else {
+        BrowserSmokeReport {
+            ran: false,
+            ok: prerequisites_ready,
+            timeout_ms: 0,
+            stdout: None,
+            stderr: None,
+            error: Some(if prerequisites_ready {
+                "skipped on the production session-start hot path".to_string()
+            } else {
+                "skipped because browser prerequisites are incomplete".to_string()
+            }),
+        }
+    };
+    let automation_ready = prerequisites_ready;
     Ok(BrowserDoctorReport {
         ok,
         reference_dir: reference_dir.to_path_buf(),
@@ -583,7 +600,10 @@ fn ensure_browser_automation_ready(
     reference_dir: &Path,
     context_label: &str,
 ) -> Result<BrowserDoctorReport> {
-    let mut doctor = build_doctor_report(reference_dir)?;
+    // This function sits on every capture and persistent-session start. Only
+    // inspect prerequisites here; the explicit doctor command owns the costly
+    // Chromium launch/screenshot smoke.
+    let mut doctor = build_browser_readiness_report(reference_dir, false)?;
     if doctor.automation_ready {
         return Ok(doctor);
     }
@@ -592,7 +612,7 @@ fn ensure_browser_automation_ready(
     let install_browser = !doctor.runner_browser_installed;
     if run_npm_install || install_browser {
         install_reference(reference_dir, run_npm_install, install_browser)?;
-        doctor = build_doctor_report(reference_dir)?;
+        doctor = build_browser_readiness_report(reference_dir, false)?;
         if doctor.automation_ready {
             return Ok(doctor);
         }
@@ -3043,6 +3063,7 @@ mod tests {
     use super::browser_doctor_report;
     use super::browser_reference_dir;
     use super::build_browser_capture_runner_script;
+    use super::build_browser_readiness_report;
     use super::build_browser_runner_script;
     use super::build_persistent_browser_runner_script;
     use super::capture_chrome_extra_args;
@@ -3150,6 +3171,16 @@ mod tests {
             Some(PATCHRIGHT_VERSION)
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn production_browser_readiness_never_launches_the_doctor_smoke() {
+        let reference_dir = temp_path("hot-path-readiness");
+        fs::create_dir_all(&reference_dir).unwrap();
+        let report = build_browser_readiness_report(&reference_dir, false).unwrap();
+        assert!(!report.smoke.ran);
+        assert_eq!(report.smoke.timeout_ms, 0);
+        let _ = fs::remove_dir_all(&reference_dir);
     }
 
     #[test]

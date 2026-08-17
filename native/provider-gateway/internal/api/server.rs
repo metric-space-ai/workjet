@@ -77,6 +77,33 @@ where
     write_messages_route_response(stream, &mut response, None).await
 }
 
+/// Serves both provider-independent Responses and Claude Messages on a
+/// host-owned listener without request logging. This is the provider-neutral
+/// binding for hosts whose policy forbids retaining request bodies entirely.
+pub async fn serve_provider_connection<S, R, C>(
+    stream: &mut S,
+    responses_handler: &R,
+    messages_handler: Option<&C>,
+    models_response: &ClaudeMessagesHttpResponse,
+    auxiliary_handler: Option<&dyn AuxiliaryRouteHandler>,
+) -> io::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    R: OpenAiResponsesRouteHandler + ?Sized,
+    C: ClaudeMessagesRouteHandler + ?Sized,
+{
+    serve_provider_connection_with_auxiliary_timeout(
+        stream,
+        responses_handler,
+        messages_handler,
+        models_response,
+        auxiliary_handler,
+        None,
+        PROVIDER_CONNECTION_HEADER_TIMEOUT,
+    )
+    .await
+}
+
 /// Serves both provider-independent Responses and Claude Messages on one CTOX
 /// loopback listener while retaining route-specific handlers and envelopes.
 pub async fn serve_provider_connection_with_logging<S, R, C>(
@@ -124,7 +151,7 @@ where
         messages_handler,
         models_response,
         auxiliary_handler,
-        policy,
+        Some(policy),
         PROVIDER_CONNECTION_HEADER_TIMEOUT,
     )
     .await
@@ -149,7 +176,7 @@ where
         messages_handler,
         models_response,
         None,
-        policy,
+        Some(policy),
         header_timeout,
     )
     .await
@@ -161,7 +188,7 @@ async fn serve_provider_connection_with_auxiliary_timeout<S, R, C>(
     messages_handler: Option<&C>,
     models_response: &ClaudeMessagesHttpResponse,
     auxiliary_handler: Option<&dyn AuxiliaryRouteHandler>,
-    policy: &RequestLoggingPolicy,
+    policy: Option<&RequestLoggingPolicy>,
     header_timeout: Duration,
 ) -> io::Result<()>
 where
@@ -177,7 +204,7 @@ where
             return write_response(stream, &response).await;
         }
     };
-    let mut response_writer = response_writer_for_request(&request, policy);
+    let mut response_writer = policy.and_then(|policy| response_writer_for_request(&request, policy));
     let route = resolve_server_route(&request.target);
     let write_result = if route == ServerRoute::Models {
         let mut response = ClaudeMessagesRouteResponse::Buffered(if request.method == "GET" {
@@ -234,7 +261,9 @@ where
             .await
             .map_err(|_| io::Error::other("request logger worker panicked"))
             .and_then(|result| result);
-        policy.metrics().record(&logging_result);
+        if let Some(policy) = policy {
+            policy.metrics().record(&logging_result);
+        }
     }
     write_result
 }

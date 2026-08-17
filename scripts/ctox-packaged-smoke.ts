@@ -1049,17 +1049,25 @@ async function waitForHealthyStatus(port: number, timeoutMs = 45_000): Promise<s
 async function waitForPersistentRevocation(port: number): Promise<void> {
   const deadline = performance.now() + 45_000;
   let consecutive = 0;
+  let lastObservation = "none";
   while (performance.now() < deadline) {
     try {
       const status = await readStatus(port);
       consecutive = !status.healthy && status.peerRevoked ? consecutive + 1 : 0;
+      const observation = `healthy=${status.healthy} peerRevoked=${status.peerRevoked} diagnostics=${(status.diagnostics ?? []).join(",") || "-"}`;
+      if (observation !== lastObservation) {
+        lastObservation = observation;
+        phase(`revocation-wait: ${observation}`);
+      }
       if (consecutive >= 2) return;
     } catch {
       consecutive = 0;
     }
     await pause(750);
   }
-  throw new Error("guest did not remain unhealthy with peer_revoked status");
+  throw new Error(
+    `guest did not remain unhealthy with peer_revoked status (last: ${lastObservation})`,
+  );
 }
 
 interface Markers {

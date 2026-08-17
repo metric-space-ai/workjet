@@ -680,8 +680,8 @@ durable lifecycle. Sending “message + task” creates both in one atomic comma
       `DelegationRef`, delivery receipt, result, review verdict, and bounded
       artifact/context references.
 - [ ] Model delegation states explicitly: `queued | delivered | accepted |
-    running | needs-input | review-requested | changes-requested | completed |
-    failed | cancelled | expired`.
+  running | needs-input | review-requested | changes-requested | completed |
+  failed | cancelled | expired`.
 - [ ] Persist source outbox, target inbox, delegation state, and thread-visible
       message/delegation events transactionally on their authoritative servers.
 - [ ] Add the self-hostable Workjet coordination relay beside T3 Connect. It
@@ -983,7 +983,7 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
           capability, retains invite and peer secrets only in memory, and
           enforces unrevoke/recovery before pairing or profile cleanup.
     - [x] Rewrite the packaged smoke driver to use the visible `Code | Business
-    OS` control and the safe paired-instance row, verify DOM-relative
+OS` control and the safe paired-instance row, verify DOM-relative
           sidebar/chrome/main/guest geometry, and prove no guest target remains
           after returning to Code; it no longer calls guest activation,
           deactivation, or discovery directly.
@@ -1448,6 +1448,21 @@ CTOX Desktop App is complete only when all of the following are true:
           same-partition cookie/localStorage/IndexedDB/CacheStorage deletion
           against the operator-selected real CTOX instance, leaving no
           revocation behind on any failure or catchable signal path.
+          Executed 2026-08-17 against the live local instance (shell rc.6,
+          packaged build `ctox-desktop-ui-fixed-20260817`), twice, both runs
+          failed with verified negative results and clean guaranteed-first
+          unrevoke cleanup (no revocation left behind): 1. Real product gap (CTOX side): `is_peer_valid` gates only the
+          connect stream (`core/rxdb/.../index_mod.rs`), so revoking a peer
+          with an established WebRTC session does not sever it — the guest
+          stayed healthy through the 45 s window instead of reporting
+          `peer_revoked`. Revocation is enforced at connect time only
+          (`rxdb_peer.rs` "deny ... at connect time"). Active-session
+          termination on revoke must be added in the CTOX repository and
+          released as a new pinned shell/daemon before this proof can pass. 2. Independent harness flake: one run died earlier with
+          `CDP command timed out` before first health — the known packaged
+          WebContentsView CDP instability. The runner now logs each
+          revocation-wait observation transition to make the next runs
+          diagnosable.
     - [x] Build the real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp`
           from the packaged staging layout.
     - [ ] Pin the staged production dependency install to repository lock

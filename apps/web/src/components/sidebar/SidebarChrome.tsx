@@ -16,6 +16,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { resolveWorkjetProductMode } from "../../workjetProductMode";
+import ctoxMarkUrl from "../../../../../assets/ctox/ctox-app-icon.png";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -61,6 +62,19 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   const handleProductModeChange = useCallback(
     (nextMode: WorkjetProductMode) => {
       if (nextMode === productMode) return;
+      if (productMode === "ctox" && nextMode === "code") {
+        const exitBusinessOsMode = window.desktopBridge?.ctox?.exitBusinessOsMode;
+        if (typeof exitBusinessOsMode === "function") {
+          void exitBusinessOsMode()
+            .then((result) => {
+              if (result._tag === "completed") {
+                updateClientSettings({ workjetProductMode: nextMode });
+              }
+            })
+            .catch(() => undefined);
+          return;
+        }
+      }
       updateClientSettings({ workjetProductMode: nextMode });
     },
     [productMode, updateClientSettings],
@@ -70,13 +84,14 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     <SidebarHeader
       className={cn(
         "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
-        isElectron && "drag-region",
+        isElectron && "drag-region gap-0",
       )}
     >
       {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
       <SidebarTrigger
         className={cn(
-          "relative z-10 md:hidden",
+          "relative z-10",
+          isElectron ? "ml-[var(--workspace-controls-left)]" : "md:hidden",
           backdropVariant &&
             "focus-visible:ring-white/90 [&_svg]:stroke-white/90! [&_svg]:opacity-100! [&_svg]:hover:stroke-white! [:hover,[data-pressed]]:bg-white/15",
           backdropVariant && resolveSidebarStageFocusRingOffsetClass(backdropVariant),
@@ -110,8 +125,14 @@ const WORKJET_PRODUCT_MODES: ReadonlyArray<{
   readonly value: WorkjetProductMode;
 }> = [
   { label: "Code", value: "code" },
-  { label: "CTOX", value: "ctox" },
+  { label: "Business OS", value: "ctox" },
 ];
+
+export function resolveProductModeKeyboardTarget(key: string): WorkjetProductMode | null {
+  if (key === "ArrowLeft" || key === "ArrowUp" || key === "Home") return "code";
+  if (key === "ArrowRight" || key === "ArrowDown" || key === "End") return "ctox";
+  return null;
+}
 
 export function WorkjetProductModeSwitch({
   mode,
@@ -123,17 +144,13 @@ export function WorkjetProductModeSwitch({
   onModeChange: (mode: WorkjetProductMode) => void;
 }) {
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    let nextMode: WorkjetProductMode | null = null;
-    if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "Home") {
-      nextMode = "code";
-    } else if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "End") {
-      nextMode = "ctox";
-    }
+    const nextMode = resolveProductModeKeyboardTarget(event.key);
     if (nextMode === null) return;
 
     event.preventDefault();
     onModeChange(nextMode);
-    event.currentTarget.parentElement
+    event.currentTarget
+      .closest('[role="radiogroup"]')
       ?.querySelector<HTMLButtonElement>(`[data-product-mode="${nextMode}"]`)
       ?.focus();
   };
@@ -141,15 +158,16 @@ export function WorkjetProductModeSwitch({
   return (
     <div
       className={cn(
-        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1.5 rounded-md px-1 outline-hidden",
+        "product-mode-switch sidebar-brand relative z-10 ml-[var(--workspace-titlebar-control-gap)] h-7 w-[7.25rem] min-w-0 shrink-0 items-center rounded-md outline-hidden",
         onBackdrop ? "text-white" : "text-foreground",
       )}
+      data-desktop-layout="titlebar"
+      data-product-mode-switch=""
     >
-      <T3Wordmark />
       <div
         aria-label="Workjet product mode"
         className={cn(
-          "flex h-6 items-center rounded-md border p-0.5",
+          "flex h-6 min-w-0 flex-1 items-center whitespace-nowrap rounded-md border p-0.5",
           onBackdrop ? "border-white/20 bg-black/10" : "border-sidebar-border bg-sidebar-accent/35",
         )}
         role="radiogroup"
@@ -172,7 +190,7 @@ export function WorkjetProductModeSwitch({
               <button
                 aria-checked={isSelected}
                 className={cn(
-                  "h-5 rounded-sm px-1.5 text-[11px] font-medium leading-none outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  "h-5 shrink-0 whitespace-nowrap rounded-sm px-1 text-[10px] font-medium leading-none outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                   isSelected
                     ? onBackdrop
                       ? "bg-white/20 text-white"
@@ -208,7 +226,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <T3Wordmark />
+      <CtoxMark />
       <span
         className={cn(
           "-translate-y-px truncate text-sm font-medium tracking-tight",
@@ -221,19 +239,14 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   );
 }
 
-function T3Wordmark() {
+function CtoxMark() {
   return (
-    <svg
-      aria-label="T3"
-      className="h-2.5 w-auto shrink-0"
-      viewBox="15.5309 37 94.3941 56.96"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"
-        fill="currentColor"
-      />
-    </svg>
+    <img
+      alt="CTOX"
+      className="size-3.5 shrink-0 rounded-[2px] object-contain"
+      draggable={false}
+      src={ctoxMarkUrl}
+    />
   );
 }
 

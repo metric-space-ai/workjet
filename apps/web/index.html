@@ -247,7 +247,8 @@
             storedTheme === "dark" ||
             storedTheme === "system" ||
             themeModes !== null;
-          const theme = isKnownTheme && storedTheme ? storedTheme : "system";
+          const desktopDefaultTheme = window.desktopBridge === undefined ? "system" : "dark";
+          const theme = isKnownTheme && storedTheme ? storedTheme : desktopDefaultTheme;
           const isThemed = isKnownTheme && themeModes !== null;
           const baseAppearance = customTheme ? customTheme.appearance : "light";
           const systemMode = prefersDark ? "dark" : "light";
@@ -452,13 +453,13 @@
         object-fit: contain;
       }
     </style>
-    <title>T3 Code (Alpha)</title>
+    <title>CTOX Desktop App (Alpha)</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Code splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        <div id="boot-shell-card" aria-label="CTOX Desktop App splash screen">
+          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="CTOX Desktop App" />
         </div>
       </div>
     </div>

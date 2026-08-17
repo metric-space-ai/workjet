@@ -176,7 +176,9 @@ export function readThemePreference(): Theme {
   if (raw !== null && isKnownThemePreference(raw)) {
     return canonicalThemePreference(raw);
   }
-  return DEFAULT_THEME_SNAPSHOT.theme;
+  // CTOX Desktop is dark-first. Existing explicit preferences still win;
+  // only a genuinely fresh desktop profile receives the dark default.
+  return window.desktopBridge === undefined ? DEFAULT_THEME_SNAPSHOT.theme : "dark";
 }
 
 export function writeThemePreference(theme: Theme): void {

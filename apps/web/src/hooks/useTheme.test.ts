@@ -82,6 +82,21 @@ describe("theme failure handling", () => {
     expect(readThemePreference()).toBe("t3-chat");
   });
 
+  it("uses dark for a fresh desktop profile while preserving explicit preferences", async () => {
+    const storage = createStorage();
+    vi.stubGlobal("window", {
+      desktopBridge: {},
+      localStorage: storage,
+      matchMedia: () => ({ matches: false }),
+    });
+
+    const { readThemePreference } = await import("./useTheme");
+    expect(readThemePreference()).toBe("dark");
+
+    storage.setItem("t3code:theme", "light");
+    expect(readThemePreference()).toBe("light");
+  });
+
   it("falls back during initial theme application and logs only safe attributes", async () => {
     const cause = new Error("private browsing storage failure");
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -101,6 +101,10 @@ function SidebarControl() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar]);
 
+  if (isElectron && isSidebarVisible) {
+    return null;
+  }
+
   return (
     <div
       className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 flex h-[var(--workspace-topbar-height)] items-center"
@@ -222,7 +226,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate, pathname]);
 
   return (
-    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
+    <SidebarProvider
+      className="h-dvh! min-h-0!"
+      data-product-mode-shell={isCtoxShell ? "ctox" : "code"}
+      defaultOpen
+      style={sidebarProviderStyle}
+    >
       <CtoxModeBoundary active={isCtoxShell}>
         {!isCtoxShell ? <ProjectProjectionRetention /> : null}
         <Sidebar

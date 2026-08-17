@@ -23,6 +23,14 @@ export const BRAND_ASSET_PATHS = {
   nightlyWebFavicon32Png: "assets/nightly/nightly-web-favicon-32x32.png",
   nightlyWebAppleTouchIconPng: "assets/nightly/nightly-web-apple-touch-180.png",
 
+  ctoxAppIconPng: "assets/ctox/ctox-app-icon.png",
+  ctoxMacIconIcns: "assets/ctox/ctox-app-icon.icns",
+  ctoxWindowsIconIco: "assets/ctox/ctox-windows.ico",
+  ctoxWebFaviconIco: "assets/ctox/ctox-web-favicon.ico",
+  ctoxWebFavicon16Png: "assets/ctox/ctox-web-favicon-16x16.png",
+  ctoxWebFavicon32Png: "assets/ctox/ctox-web-favicon-32x32.png",
+  ctoxWebAppleTouchIconPng: "assets/ctox/ctox-web-apple-touch-180.png",
+
   developmentDesktopIconPng: "assets/dev/blueprint-macos-1024.png",
   developmentWindowsIconIco: "assets/dev/blueprint-windows.ico",
   developmentWebFaviconIco: "assets/dev/blueprint-web-favicon.ico",
@@ -31,7 +39,7 @@ export const BRAND_ASSET_PATHS = {
   developmentWebAppleTouchIconPng: "assets/dev/blueprint-web-apple-touch-180.png",
 } as const;
 
-export type WebAssetBrand = "development" | "nightly" | "production";
+export type WebAssetBrand = "ctox" | "development" | "nightly" | "production";
 
 export const WEB_ASSET_CHANNELS = ["latest", "nightly"] as const;
 
@@ -58,6 +66,12 @@ const WEB_ICON_TARGET_FILENAMES = {
 } as const;
 
 const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
+  ctox: {
+    faviconIco: BRAND_ASSET_PATHS.ctoxWebFaviconIco,
+    favicon16Png: BRAND_ASSET_PATHS.ctoxWebFavicon16Png,
+    favicon32Png: BRAND_ASSET_PATHS.ctoxWebFavicon32Png,
+    appleTouchIconPng: BRAND_ASSET_PATHS.ctoxWebAppleTouchIconPng,
+  },
   development: {
     faviconIco: BRAND_ASSET_PATHS.developmentWebFaviconIco,
     favicon16Png: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
@@ -103,9 +117,6 @@ export function resolveWebIconOverrides(
   ];
 }
 
-export const DEVELOPMENT_ICON_OVERRIDES = resolveWebIconOverrides("development", "dist/client");
+export const DEVELOPMENT_ICON_OVERRIDES = resolveWebIconOverrides("ctox", "dist/client");
 
-export const DEVELOPMENT_PUBLIC_ICON_OVERRIDES = resolveWebIconOverrides(
-  "development",
-  "apps/web/public",
-);
+export const DEVELOPMENT_PUBLIC_ICON_OVERRIDES = resolveWebIconOverrides("ctox", "apps/web/public");

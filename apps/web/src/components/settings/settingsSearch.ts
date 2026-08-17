@@ -192,6 +192,47 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
   },
   {
+    id: "workjet-workers",
+    title: "Workers",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-computers",
+    title: "Computers",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-llm-routes",
+    title: "LLM routes",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-prompt",
+    title: "Prompt",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-telemetry",
+    title: "Telemetry",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-execution",
+    title: "Execution",
+    to: "/settings/workjet",
+  },
+  {
+    id: "automatic-worktree-storage",
+    title: "Automatic worktree storage",
+    to: "/settings/workjet",
+    targetId: "workjet-execution",
+  },
+  {
+    id: "workjet-capabilities",
+    title: "Capabilities",
+    to: "/settings/workjet",
+  },
+  {
     id: "greppy-runtime",
     title: "Greppy Runtime",
     to: "/settings/workjet",

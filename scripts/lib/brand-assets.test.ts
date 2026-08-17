@@ -31,29 +31,29 @@ describe("brand-assets", () => {
     ]);
   });
 
-  it("maps server build web assets to development icons", () => {
+  it("maps the desktop renderer to CTOX icons", () => {
     expect(DEVELOPMENT_ICON_OVERRIDES[0]).toEqual({
-      sourceRelativePath: BRAND_ASSET_PATHS.developmentWebFaviconIco,
+      sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFaviconIco,
       targetRelativePath: "dist/client/favicon.ico",
     });
   });
 
-  it("maps development web assets to the public splash and favicon files", () => {
+  it("maps CTOX web assets to the development splash and favicon files", () => {
     expect(DEVELOPMENT_PUBLIC_ICON_OVERRIDES).toEqual([
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.developmentWebFaviconIco,
+        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFaviconIco,
         targetRelativePath: "apps/web/public/favicon.ico",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
+        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFavicon16Png,
         targetRelativePath: "apps/web/public/favicon-16x16.png",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
+        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFavicon32Png,
         targetRelativePath: "apps/web/public/favicon-32x32.png",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
+        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebAppleTouchIconPng,
         targetRelativePath: "apps/web/public/apple-touch-icon.png",
       },
     ]);
@@ -81,6 +81,16 @@ describe("brand-assets", () => {
   it("maps package versions to web asset brands", () => {
     expect(resolveWebAssetBrandForPackageVersion("0.0.29")).toBe("production");
     expect(resolveWebAssetBrandForPackageVersion("0.0.29-nightly.20260723.882")).toBe("nightly");
+  });
+
+  it("declares CTOX macOS and renderer artwork", () => {
+    expect(BRAND_ASSET_PATHS.ctoxAppIconPng).toBe("assets/ctox/ctox-app-icon.png");
+    expect(BRAND_ASSET_PATHS.ctoxMacIconIcns).toBe("assets/ctox/ctox-app-icon.icns");
+    expect(BRAND_ASSET_PATHS.ctoxWindowsIconIco).toBe("assets/ctox/ctox-windows.ico");
+    expect(resolveWebIconOverrides("ctox", "dist/client")).toContainEqual({
+      sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebAppleTouchIconPng,
+      targetRelativePath: "dist/client/apple-touch-icon.png",
+    });
   });
 
   it("keeps development, nightly, and production icon families separate", () => {

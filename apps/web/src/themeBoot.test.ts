@@ -42,6 +42,7 @@ function runBootScript(options: {
   storage?: Record<string, string>;
   storageThrows?: boolean;
   prefersDark: boolean;
+  desktop?: boolean;
 }): BootResult {
   const classes = new Set<string>();
   const bootVariables: Record<string, string> = {};
@@ -75,6 +76,7 @@ function runBootScript(options: {
     querySelectorAll: (selector: string) => (selector === 'meta[name="theme-color"]' ? [meta] : []),
   };
   const fakeWindow = {
+    ...(options.desktop ? { desktopBridge: {} } : {}),
     localStorage: {
       getItem: (key: string): string | null => {
         if (options.storageThrows) throw new Error("storage blocked");
@@ -255,6 +257,18 @@ describe("index.html boot script", () => {
   it.each(parityCases)("matches the runtime appearance: $name", ({ storage, prefersDark }) => {
     const boot = runBootScript({ storage, prefersDark });
     expect(boot.isDark).toBe(runtimeResolvedAppearance(storage, prefersDark) === "dark");
+  });
+
+  it("uses the dark CTOX default only for a fresh desktop profile", () => {
+    expect(runBootScript({ storage: {}, prefersDark: false, desktop: true }).isDark).toBe(true);
+    expect(runBootScript({ storage: {}, prefersDark: false }).isDark).toBe(false);
+    expect(
+      runBootScript({
+        storage: { [THEME_STORAGE_KEY]: "light" },
+        prefersDark: false,
+        desktop: true,
+      }).isDark,
+    ).toBe(false);
   });
 
   it("marks built-in and custom themes on the document element", () => {

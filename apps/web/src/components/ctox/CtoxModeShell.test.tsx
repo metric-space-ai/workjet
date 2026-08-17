@@ -1,4 +1,8 @@
-import type { CtoxManagedInstance, DesktopCtoxBridge } from "@t3tools/contracts";
+import type {
+  CtoxManagedGuestResult,
+  CtoxManagedInstance,
+  DesktopCtoxBridge,
+} from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -13,6 +17,7 @@ import {
   activateCtoxInstance,
   buildCtoxManualPairingInput,
   canActivateCtoxInstance,
+  claimCtoxGuestActivation,
   CTOX_IMPORT_ERROR_MESSAGE,
   CTOX_IMPORT_SUCCESS_MESSAGE,
   CTOX_REMOVE_ERROR_MESSAGE,
@@ -22,10 +27,14 @@ import {
   CtoxSidebarShell,
   getCtoxManagedState,
   groupCtoxInstances,
+  isCurrentCtoxGuestActivation,
   releaseCtoxGuest,
   removeCtoxPairedInstance,
+  resolveCtoxGuestBounds,
+  retainCtoxGuestBounds,
   submitCtoxInvite,
   submitCtoxManualPairing,
+  trackCtoxGuestActivation,
 } from "./CtoxModeShell";
 
 const healthy = {
@@ -59,11 +68,24 @@ function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBri
     importInvite: async () => ({ _tag: "failed", code: "invalid_invite" }),
     importManualPairing: async () => ({ _tag: "failed", code: "invalid_input" }),
     removePairedInstance: async () => ({ _tag: "completed" }),
+    enterBusinessOsMode: async () => ({ _tag: "completed" }),
+    exitBusinessOsMode: async () => ({ _tag: "completed" }),
     activate: async () => ({ _tag: "failed", code: "launch_failed" }),
     deactivate: async () => ({ _tag: "completed" }),
     setGuestBounds: async () => ({ _tag: "completed" }),
     ...overrides,
   };
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
 }
 
 describe("CTOX instance presentation", () => {
@@ -251,14 +273,118 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>[^]*Managed Alpha/);
-    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>[^]*Paired Alpha/);
-    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>[^]*Invited Alpha/);
+    expect(markup).toMatch(
+      /<button(?![^>]*disabled)[^>]*data-ctox-instance-source="ctox_dev"[^>]*data-ctox-instance-status="available"[^>]*>[^]*Managed Alpha/,
+    );
+    expect(markup).toMatch(
+      /<button(?![^>]*disabled)[^>]*data-ctox-instance-source="manual_pairing"[^>]*data-ctox-instance-status="paired"[^>]*>[^]*Paired Alpha/,
+    );
+    expect(markup).toMatch(
+      /<button(?![^>]*disabled)[^>]*data-ctox-instance-source="pairing_invite"[^>]*data-ctox-instance-status="paired"[^>]*>[^]*Invited Alpha/,
+    );
     expect(markup).toMatch(
       /<button[^>]*disabled=""[^>]*title="This pairing is not available\."[^>]*>[^]*Expired Alpha/,
     );
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*Local Alpha/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*SSH Alpha/);
+  });
+});
+
+describe("CTOX native guest bounds", () => {
+  it("inscribes integer native bounds within the renderer host", () => {
+    expect(
+      resolveCtoxGuestBounds({ left: 320.2, top: 48.2, right: 1279.8, bottom: 719.8 }),
+    ).toEqual({ x: 321, y: 49, width: 958, height: 670 });
+    expect(resolveCtoxGuestBounds({ left: -2.4, top: -1.1, right: 0.4, bottom: 0.9 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    });
+  });
+
+  it("retains equal bounds without state identity churn", () => {
+    const current = { x: 12, y: 24, width: 800, height: 600 };
+
+    expect(retainCtoxGuestBounds(current, { ...current })).toBe(current);
+    expect(retainCtoxGuestBounds(current, { ...current, width: 801 })).toEqual({
+      ...current,
+      width: 801,
+    });
+  });
+
+  it("keeps one pending activation observable across a genuine bounds update", async () => {
+    const pending = deferred<CtoxManagedGuestResult>();
+    const activate = vi.fn(() => pending.promise);
+    const activatedKey = { current: 0 };
+    const states: string[] = [];
+    const bridge = inertBridge();
+    const activation = {
+      activationKey: 1,
+      bridge,
+      instanceId: "managed:alpha",
+      modeReady: true,
+      selectedId: "managed:alpha",
+    };
+    const currentActivation = activation;
+    let bounds = { x: 12, y: 24, width: 800, height: 600 };
+
+    expect(claimCtoxGuestActivation(activatedKey, activation.activationKey)).toBe(true);
+    trackCtoxGuestActivation(
+      activate(),
+      () => isCurrentCtoxGuestActivation(true, currentActivation, activation),
+      (state) => states.push(state),
+    );
+
+    bounds = retainCtoxGuestBounds(bounds, { ...bounds, width: 960, height: 720 });
+    expect(bounds).toEqual({ x: 12, y: 24, width: 960, height: 720 });
+    expect(claimCtoxGuestActivation(activatedKey, activation.activationKey)).toBe(false);
+    expect(activate).toHaveBeenCalledOnce();
+
+    pending.resolve({ _tag: "ready", instanceId: "managed:alpha" });
+    await pending.promise;
+    await Promise.resolve();
+
+    expect(states).toEqual(["ready"]);
+  });
+
+  it("ignores pending results after unmount or activation identity changes", async () => {
+    const bridge = inertBridge();
+    const expected = {
+      activationKey: 1,
+      bridge,
+      instanceId: "managed:alpha",
+      modeReady: true,
+      selectedId: "managed:alpha",
+    };
+
+    expect(isCurrentCtoxGuestActivation(false, expected, expected)).toBe(false);
+    expect(isCurrentCtoxGuestActivation(true, { ...expected, activationKey: 2 }, expected)).toBe(
+      false,
+    );
+    expect(
+      isCurrentCtoxGuestActivation(
+        true,
+        { ...expected, instanceId: "managed:beta", selectedId: "managed:beta" },
+        expected,
+      ),
+    ).toBe(false);
+
+    const pending = deferred<CtoxManagedGuestResult>();
+    const states: string[] = [];
+    let current = expected;
+    trackCtoxGuestActivation(
+      pending.promise,
+      () => isCurrentCtoxGuestActivation(true, current, expected),
+      (state) => states.push(state),
+    );
+
+    current = { ...expected, activationKey: 2 };
+    pending.resolve({ _tag: "ready", instanceId: "managed:alpha" });
+    await pending.promise;
+    await Promise.resolve();
+
+    expect(states).toEqual([]);
   });
 });
 
@@ -385,6 +511,7 @@ describe("CtoxMainShell", () => {
     );
 
     expect(markup).toContain('data-ctox-main-shell=""');
+    expect(markup).toContain('data-ctox-main-chrome=""');
     expect(markup).toContain("No instance selected");
     expect(markup).toContain("Select an available instance");
     expect(ctoxModeShellSource).not.toContain("Managed Business OS guest");

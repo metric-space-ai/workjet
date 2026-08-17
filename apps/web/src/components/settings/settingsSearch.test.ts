@@ -70,13 +70,42 @@ describe("searchSettings", () => {
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
   });
 
-  it("registers Workjet and Greppy as first-class settings destinations", () => {
+  it("registers the Workjet catalog areas before Greppy runtime", () => {
+    expect(searchSettings("workers")).toEqual([
+      { id: "workjet-workers", title: "Workers", to: "/settings/workjet" },
+    ]);
+    expect(searchSettings("llm routes")).toEqual([
+      { id: "workjet-llm-routes", title: "LLM routes", to: "/settings/workjet" },
+    ]);
     expect(searchSettings("greppy runtime")).toEqual([
       {
         id: "greppy-runtime",
         title: "Greppy Runtime",
         to: "/settings/workjet",
       },
+    ]);
+    expect(searchSettings("worktree storage")).toEqual([
+      {
+        id: "automatic-worktree-storage",
+        title: "Automatic worktree storage",
+        to: "/settings/workjet",
+        targetId: "workjet-execution",
+      },
+    ]);
+
+    const workjetIds = SETTINGS_SEARCH_ITEMS.filter((item) => item.to === "/settings/workjet").map(
+      (item) => item.id,
+    );
+    expect(workjetIds).toEqual([
+      "workjet-workers",
+      "workjet-computers",
+      "workjet-llm-routes",
+      "workjet-prompt",
+      "workjet-telemetry",
+      "workjet-execution",
+      "automatic-worktree-storage",
+      "workjet-capabilities",
+      "greppy-runtime",
     ]);
   });
 

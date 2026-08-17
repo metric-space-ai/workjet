@@ -12,6 +12,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -92,6 +93,7 @@ interface CtoxModeContextValue {
   readonly selectedId: string | null;
   readonly activationKey: number;
   readonly connection: CtoxConnectionState;
+  readonly modeReady: boolean;
   readonly bridge: DesktopCtoxBridge | undefined;
   readonly refresh: () => void;
   readonly login: () => void;
@@ -226,6 +228,10 @@ export function releaseCtoxGuest(bridge: DesktopCtoxBridge | undefined): void {
   void bridge?.deactivate().catch(() => undefined);
 }
 
+export function releaseCtoxMode(bridge: DesktopCtoxBridge | undefined): void {
+  void bridge?.exitBusinessOsMode().catch(() => undefined);
+}
+
 function useCtoxMode(): CtoxModeContextValue {
   const value = useContext(CtoxModeContext);
   if (value === null) throw new Error("CTOX mode shell must be rendered inside CtoxModeProvider.");
@@ -246,6 +252,7 @@ export function CtoxModeProvider({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activationKey, setActivationKey] = useState(0);
   const [connection, setConnection] = useState<CtoxConnectionState>("idle");
+  const [modeReady, setModeReady] = useState(bridge === undefined);
   const mountedRef = useRef(true);
   const selectedIdRef = useRef<string | null>(null);
 
@@ -364,12 +371,24 @@ export function CtoxModeProvider({
     setConnection("connecting");
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     mountedRef.current = true;
+    setModeReady(bridge === undefined);
+    if (bridge !== undefined) {
+      void bridge
+        .enterBusinessOsMode()
+        .then((result) => {
+          if (mountedRef.current && result._tag === "completed") setModeReady(true);
+        })
+        .catch(() => undefined);
+    }
     refresh();
     return () => {
       mountedRef.current = false;
-      releaseCtoxGuest(bridge);
+      setModeReady(false);
+      // Request native detachment during the mode-switch commit, before the
+      // Code shell can be painted underneath a stale WebContentsView.
+      releaseCtoxMode(bridge);
     };
   }, [bridge, refresh]);
 
@@ -380,6 +399,7 @@ export function CtoxModeProvider({
       selectedId,
       activationKey,
       connection,
+      modeReady,
       bridge,
       refresh,
       login,
@@ -399,6 +419,7 @@ export function CtoxModeProvider({
       importManualPairing,
       login,
       logout,
+      modeReady,
       refresh,
       refreshing,
       removePairedInstance,
@@ -453,6 +474,8 @@ function CtoxInstanceList({
               )}
               aria-pressed={selected}
               aria-busy={busy}
+              data-ctox-instance-source={instance.source}
+              data-ctox-instance-status={instance.status}
               disabled={!launchable || busy}
               title={paired && !launchable ? "This pairing is not available." : undefined}
               onClick={() => select(instance)}
@@ -1003,26 +1026,118 @@ export function CtoxSidebarShell() {
   );
 }
 
+export function resolveCtoxGuestBounds(
+  rect: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
+): CtoxGuestBounds {
+  const x = Math.max(0, Math.ceil(rect.left));
+  const y = Math.max(0, Math.ceil(rect.top));
+  const right = Math.max(x, Math.floor(rect.right));
+  const bottom = Math.max(y, Math.floor(rect.bottom));
+  return { x, y, width: right - x, height: bottom - y };
+}
+
 function boundsOf(element: HTMLElement): CtoxGuestBounds {
-  const rect = element.getBoundingClientRect();
-  return {
-    x: Math.max(0, Math.round(rect.x)),
-    y: Math.max(0, Math.round(rect.y)),
-    width: Math.max(0, Math.round(rect.width)),
-    height: Math.max(0, Math.round(rect.height)),
-  };
+  return resolveCtoxGuestBounds(element.getBoundingClientRect());
+}
+
+export function retainCtoxGuestBounds(
+  current: CtoxGuestBounds | null,
+  next: CtoxGuestBounds,
+): CtoxGuestBounds {
+  return current !== null &&
+    current.x === next.x &&
+    current.y === next.y &&
+    current.width === next.width &&
+    current.height === next.height
+    ? current
+    : next;
+}
+
+export function claimCtoxGuestActivation(
+  activatedKey: { current: number },
+  activationKey: number,
+): boolean {
+  if (activatedKey.current === activationKey) return false;
+  activatedKey.current = activationKey;
+  return true;
+}
+
+interface CtoxGuestActivationState {
+  readonly activationKey: number;
+  readonly bridge: DesktopCtoxBridge | undefined;
+  readonly instanceId: string;
+  readonly modeReady: boolean;
+  readonly selectedId: string | null;
+}
+
+export function isCurrentCtoxGuestActivation(
+  mounted: boolean,
+  current: CtoxGuestActivationState,
+  expected: CtoxGuestActivationState,
+): boolean {
+  return (
+    mounted &&
+    current.activationKey === expected.activationKey &&
+    current.bridge === expected.bridge &&
+    current.instanceId === expected.instanceId &&
+    current.modeReady === expected.modeReady &&
+    current.selectedId === expected.selectedId
+  );
+}
+
+export function trackCtoxGuestActivation(
+  activation: Promise<CtoxManagedGuestResult>,
+  isCurrent: () => boolean,
+  setConnection: (state: CtoxConnectionState) => void,
+): void {
+  void activation.then(
+    (result) => {
+      if (!isCurrent()) return;
+      if (result._tag === "ready") setConnection("ready");
+      else if (result._tag === "revoked") setConnection("revoked");
+      else setConnection("error");
+    },
+    () => {
+      if (isCurrent()) setConnection("error");
+    },
+  );
 }
 
 function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance }) {
-  const { bridge, activationKey, connection, selectedId, setConnection } = useCtoxMode();
+  const { bridge, activationKey, connection, modeReady, selectedId, setConnection } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(true);
   const activatedKeyRef = useRef(0);
+  const activationStateRef = useRef({
+    activationKey,
+    bridge,
+    instanceId: instance.id,
+    modeReady,
+    selectedId,
+  });
+  activationStateRef.current = {
+    activationKey,
+    bridge,
+    instanceId: instance.id,
+    modeReady,
+    selectedId,
+  };
   const [bounds, setBounds] = useState<CtoxGuestBounds | null>(null);
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
     if (host === null || typeof ResizeObserver === "undefined") return;
-    const report = () => setBounds(boundsOf(host));
+    const report = () => {
+      const next = boundsOf(host);
+      setBounds((current) => retainCtoxGuestBounds(current, next));
+    };
     const observer = new ResizeObserver(report);
     observer.observe(host);
     report();
@@ -1030,29 +1145,38 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
   }, []);
 
   useEffect(() => {
-    if (bounds === null || selectedId === null || activatedKeyRef.current === activationKey) return;
-    activatedKeyRef.current = activationKey;
+    if (
+      bounds === null ||
+      bounds.width === 0 ||
+      bounds.height === 0 ||
+      !modeReady ||
+      selectedId !== instance.id ||
+      !claimCtoxGuestActivation(activatedKeyRef, activationKey)
+    )
+      return;
+    const expectedActivation = {
+      activationKey,
+      bridge,
+      instanceId: instance.id,
+      modeReady,
+      selectedId,
+    };
     const activation = activateCtoxInstance(bridge, instance, bounds);
     if (activation === undefined) {
       setConnection("error");
       return;
     }
-    let cancelled = false;
-    void activation.then(
-      (result) => {
-        if (cancelled) return;
-        if (result._tag === "ready") setConnection("ready");
-        else if (result._tag === "revoked") setConnection("revoked");
-        else setConnection("error");
-      },
-      () => {
-        if (!cancelled) setConnection("error");
-      },
+    trackCtoxGuestActivation(
+      activation,
+      () =>
+        isCurrentCtoxGuestActivation(
+          mountedRef.current,
+          activationStateRef.current,
+          expectedActivation,
+        ),
+      setConnection,
     );
-    return () => {
-      cancelled = true;
-    };
-  }, [activationKey, bounds, bridge, instance, selectedId, setConnection]);
+  }, [activationKey, bounds, bridge, instance, modeReady, selectedId, setConnection]);
 
   useEffect(() => {
     if (bridge === undefined || bounds === null || connection !== "ready") return;
@@ -1073,6 +1197,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       className="relative min-h-0 flex-1 overflow-hidden bg-background"
       role="region"
       aria-label={`Business OS guest: ${instance.displayName}`}
+      data-ctox-connection={connection}
       data-ctox-native-guest-host=""
     >
       <p
@@ -1121,6 +1246,7 @@ export function CtoxMainShell() {
       data-ctox-main-shell=""
     >
       <header
+        data-ctox-main-chrome=""
         className={cn(
           "workspace-topbar drag-region border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
           COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,

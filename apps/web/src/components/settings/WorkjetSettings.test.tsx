@@ -1,5 +1,7 @@
 import {
+  DEFAULT_WORKJET_CONFIGURATION,
   EnvironmentId,
+  ProviderDriverKind,
   WorkjetGreppyOperationError,
   type GreppyRuntimeSnapshot,
 } from "@t3tools/contracts";
@@ -8,12 +10,28 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...original,
+    useNavigate: () => () => Promise.resolve(),
+    useLocation: ({ select }: { select: (location: { hash: string }) => unknown }) =>
+      select({ hash: "" }),
+  };
+});
+
 import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
 import {
+  automaticWorktreeStorageControlState,
   GreppyRuntimeSectionView,
   greppyOperationFailureDescription,
   greppyRuntimeAction,
+  formatAvailableBytes,
+  performAutomaticWorktreeStorageAction,
   performGreppyRuntimeInstall,
+  WorkjetSettingsView,
+  workjetLlmProviderInstances,
+  workjetSectionFromHash,
 } from "./WorkjetSettings";
 
 const baseSnapshot = {
@@ -37,6 +55,203 @@ function render(
     />,
   );
 }
+
+describe("Workjet configuration settings", () => {
+  const greppy = {
+    snapshot: null,
+    isInitialLoading: false,
+    hasInspectFailure: false,
+    isRefreshing: false,
+    isOperating: false,
+    onRefresh: () => undefined,
+    onInstall: () => undefined,
+  };
+  const automaticWorktreeStorage = {
+    configuredRoot: "",
+    selectedServerLabel: "Code server",
+    selectedServerId: EnvironmentId.make("code-server"),
+    inspection: {
+      status: "valid" as const,
+      requestedRoot: "",
+      configuredRoot: "",
+      defaultRoot: "/srv/workjet/worktrees",
+      effectiveRoot: "/srv/workjet/worktrees",
+      canonicalRoot: "/srv/workjet/worktrees",
+      writable: true as const,
+      availableBytes: 125_000_000_000,
+    },
+    error: null,
+    isChecking: false,
+    isApplying: false,
+    onCheck: () => undefined,
+    onApply: () => undefined,
+  };
+
+  it("renders compact tabs and opens workers by default", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetSettingsView
+        configuration={DEFAULT_WORKJET_CONFIGURATION}
+        providerInstances={{
+          codex_work: {
+            driver: ProviderDriverKind.make("codex"),
+            displayName: "Codex Work",
+          },
+        }}
+        environments={[]}
+        environmentsReady={false}
+        greppy={greppy}
+        automaticWorktreeStorage={automaticWorktreeStorage}
+        onChange={() => undefined}
+      />,
+    );
+
+    const tabs = [
+      "Workers",
+      "Computers",
+      "LLM routes",
+      "Prompt",
+      "Telemetry",
+      "Execution",
+      "Capabilities",
+    ];
+    for (const tab of tabs) expect(markup).toContain(`>${tab}<`);
+    expect(markup).toContain('role="tablist"');
+    expect(markup).toContain("No saved workers");
+    expect(markup).not.toContain("Connection targets");
+    expect(markup).not.toContain("Greppy Runtime");
+    expect(markup).not.toContain("remote execution is implemented");
+  });
+
+  it("opens telemetry and capabilities as distinct settings areas", () => {
+    const telemetryMarkup = renderToStaticMarkup(
+      <WorkjetSettingsView
+        configuration={DEFAULT_WORKJET_CONFIGURATION}
+        providerInstances={{}}
+        environments={[]}
+        environmentsReady
+        greppy={greppy}
+        automaticWorktreeStorage={automaticWorktreeStorage}
+        defaultSection="telemetry"
+        onChange={() => undefined}
+      />,
+    );
+    expect(telemetryMarkup).toContain("Claude Code events");
+    expect(telemetryMarkup).toContain("Sidecar events");
+    expect(telemetryMarkup).toContain("Workjet telemetry retention days");
+    expect(telemetryMarkup).not.toContain("Greppy Runtime");
+
+    const capabilitiesMarkup = renderToStaticMarkup(
+      <WorkjetSettingsView
+        configuration={DEFAULT_WORKJET_CONFIGURATION}
+        providerInstances={{}}
+        environments={[]}
+        environmentsReady
+        greppy={greppy}
+        automaticWorktreeStorage={automaticWorktreeStorage}
+        defaultSection="capabilities"
+        onChange={() => undefined}
+      />,
+    );
+    expect(capabilitiesMarkup).toContain("Shared capabilities");
+    expect(capabilitiesMarkup).toContain("Greppy Runtime");
+  });
+
+  it("shows selected-server automatic storage health in Execution", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetSettingsView
+        configuration={DEFAULT_WORKJET_CONFIGURATION}
+        providerInstances={{}}
+        environments={[]}
+        environmentsReady
+        greppy={greppy}
+        automaticWorktreeStorage={{
+          ...automaticWorktreeStorage,
+          configuredRoot: "/Volumes/worktrees",
+          inspection: {
+            ...automaticWorktreeStorage.inspection,
+            requestedRoot: "/Volumes/worktrees",
+            configuredRoot: "/Volumes/worktrees",
+            effectiveRoot: "/Volumes/worktrees",
+            canonicalRoot: "/Volumes/worktrees",
+          },
+        }}
+        defaultSection="execution"
+        onChange={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("Automatic worktree storage");
+    expect(markup).toContain("Selected server: Code server · code-server");
+    expect(markup).toContain("Writable · 125 GB available");
+    expect(markup).toContain("Effective canonical path:");
+    expect(markup).toContain("Use default");
+    expect(markup).toContain(
+      "Only newly created automatic worktrees use the location; existing worktrees are not moved.",
+    );
+    expect(formatAvailableBytes(1_500_000_000)).toBe("1.50 GB");
+  });
+
+  it("checks, applies, and resets storage only through valid selected-server controls", () => {
+    const onCheck = vi.fn();
+    const onApply = vi.fn();
+    const storage = {
+      ...automaticWorktreeStorage,
+      configuredRoot: "/srv/worktrees-a",
+      inspection: {
+        ...automaticWorktreeStorage.inspection,
+        requestedRoot: "/srv/worktrees-b",
+        configuredRoot: "/srv/worktrees-a",
+        effectiveRoot: "/srv/worktrees-a",
+        canonicalRoot: "/srv/worktrees-b",
+      },
+      onCheck,
+      onApply,
+    };
+
+    expect(automaticWorktreeStorageControlState(storage, "  /srv/worktrees-b  ")).toMatchObject({
+      requestedRoot: "/srv/worktrees-b",
+      canCheck: true,
+      canApply: true,
+      canReset: true,
+    });
+    performAutomaticWorktreeStorageAction(storage, "check", "  /srv/worktrees-b  ");
+    performAutomaticWorktreeStorageAction(storage, "apply", "  /srv/worktrees-b  ");
+    performAutomaticWorktreeStorageAction(storage, "reset", "  /srv/worktrees-b  ");
+    expect(onCheck).toHaveBeenCalledTimes(1);
+    expect(onCheck).toHaveBeenCalledWith("/srv/worktrees-b");
+    expect(onApply.mock.calls).toEqual([["/srv/worktrees-b"], [""]]);
+
+    const staleInspection = {
+      ...storage,
+      inspection: { ...storage.inspection, requestedRoot: "/srv/other" },
+    };
+    expect(automaticWorktreeStorageControlState(staleInspection, "/srv/worktrees-b").canApply).toBe(
+      false,
+    );
+    performAutomaticWorktreeStorageAction(staleInspection, "apply", "/srv/worktrees-b");
+    expect(onApply).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps settings-search targets to their tab", () => {
+    expect(workjetSectionFromHash("#workjet-computers")).toBe("computers");
+    expect(workjetSectionFromHash("workjet-telemetry")).toBe("telemetry");
+    expect(workjetSectionFromHash("#greppy-runtime")).toBe("capabilities");
+    expect(workjetSectionFromHash("#unknown")).toBeNull();
+  });
+
+  it("does not confuse Code harness drivers with Workjet LLM accounts", () => {
+    const instances = workjetLlmProviderInstances({
+      codex_work: { driver: ProviderDriverKind.make("codex"), displayName: "Codex Work" },
+      claude_work: { driver: ProviderDriverKind.make("claudeAgent") },
+      gateway_account: {
+        driver: ProviderDriverKind.make("workjetGateway"),
+        displayName: "OpenAI production",
+      },
+    });
+
+    expect(Object.keys(instances)).toEqual(["gateway_account"]);
+  });
+});
 
 describe("Workjet Greppy runtime settings", () => {
   it("registers the Workjet sidebar destination", () => {

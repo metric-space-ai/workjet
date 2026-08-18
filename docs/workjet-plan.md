@@ -400,6 +400,23 @@ Tasks:
         unrelated existing server transfer-budget test still times out after
         120 seconds (124/125 other server tests pass) and remains a regression
         backlog item, not a host-adapter acceptance gap.
+- [ ] Routing design (2026-08-18, ready to implement): provider sessions are
+      routed through the gateway by injecting harness base-URL and API-key
+      environment variables through the EXISTING per-instance
+      `ProviderInstanceEnvironment` merge point (`mergeProviderInstanceEnvironment`
+      feeds every driver's `processEnv`), not by forking driver internals.
+      Prerequisites: (1) a STABLE provider-endpoint port per environment
+      (today the host binds `127.0.0.1:0`, so every restart would break
+      long-lived sessions — persist an allocated port in the gateway
+      configuration and pass it into the host config); (2) a
+      server-minted gateway API key via the management `api-keys` surface,
+      stored as a server secret and injected per session; (3) per-harness
+      env mapping verified against the installed CLIs (Claude:
+      `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`; Codex: provider base-URL
+      config/env; Grok ACP: first-prompt adapter config) — verify each
+      against the real binaries before enabling. Composer model selection
+      resolves to a gateway route/profile; sessions without a routed
+      selection keep today's direct behavior until cutover.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
 - [ ] Preserve direct provider/model selection in the composer; selection

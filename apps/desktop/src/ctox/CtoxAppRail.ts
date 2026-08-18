@@ -80,12 +80,15 @@ export function mergeRailApps(input: {
   readonly live?: {
     readonly apps: readonly CtoxLiveGuestApp[];
     readonly activeModuleId: string | null;
+    readonly openModuleIds?: readonly string[];
   };
   readonly nowEpochMs: number;
 }): readonly CtoxInstanceApp[] {
   const cachedById = new Map(input.cached.map((app) => [app.id, app]));
   const liveById = new Map((input.live?.apps ?? []).map((app) => [app.id, app]));
   const activeId = input.live?.activeModuleId ?? null;
+  const openIds = new Set(input.live?.openModuleIds ?? []);
+  if (activeId !== null) openIds.add(activeId);
   const rows: CtoxInstanceApp[] = [];
   const seen = new Set<string>();
   for (const id of input.docked) {
@@ -99,15 +102,17 @@ export function mergeRailApps(input: {
       id,
       ...(title === undefined ? {} : { title }),
       docked: true,
-      open: id === activeId,
+      open: openIds.has(id),
       ...(lastSeenAt === undefined ? {} : { lastSeenAt }),
     });
   }
-  if (activeId !== null && !seen.has(activeId) && CTOX_APP_MODULE_ID_PATTERN.test(activeId)) {
-    const live = liveById.get(activeId);
-    const title = live?.title ?? cachedById.get(activeId)?.title;
+  for (const id of openIds) {
+    if (seen.has(id) || !CTOX_APP_MODULE_ID_PATTERN.test(id)) continue;
+    seen.add(id);
+    const live = liveById.get(id);
+    const title = live?.title ?? cachedById.get(id)?.title;
     rows.push({
-      id: activeId,
+      id,
       ...(title === undefined ? {} : { title }),
       docked: false,
       open: true,

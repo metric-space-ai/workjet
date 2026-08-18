@@ -311,7 +311,13 @@ export const listApps: DesktopIpc.DesktopIpcMethod<
         docked: state.docked,
         cached: state.apps,
         ...(observation._tag === "completed"
-          ? { live: { apps: observation.apps, activeModuleId: observation.activeModuleId } }
+          ? {
+              live: {
+                apps: observation.apps,
+                activeModuleId: observation.activeModuleId,
+                openModuleIds: observation.openModuleIds,
+              },
+            }
           : {}),
         nowEpochMs,
       });

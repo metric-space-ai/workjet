@@ -23,7 +23,11 @@ describe("mergeRailApps", () => {
     const apps = mergeRailApps({
       docked: ["crm", "ledger"],
       cached: [{ id: "crm", title: "CRM", lastSeenAt: NOW - 1_000 }],
-      live: { apps: [{ id: "ledger", title: "Ledger" }], activeModuleId: "ledger" },
+      live: {
+        apps: [{ id: "ledger", title: "Ledger" }],
+        activeModuleId: "ledger",
+        openModuleIds: ["ledger"],
+      },
       nowEpochMs: NOW,
     });
     assert.deepEqual(apps, [
@@ -36,7 +40,11 @@ describe("mergeRailApps", () => {
     const openRows = mergeRailApps({
       docked: [],
       cached: [],
-      live: { apps: [{ id: "notes", title: "Notes" }], activeModuleId: "notes" },
+      live: {
+        apps: [{ id: "notes", title: "Notes" }],
+        activeModuleId: null,
+        openModuleIds: ["notes"],
+      },
       nowEpochMs: NOW,
     });
     assert.deepEqual(openRows, [
@@ -45,7 +53,7 @@ describe("mergeRailApps", () => {
     const closedRows = mergeRailApps({
       docked: [],
       cached: [{ id: "notes", title: "Notes", lastSeenAt: NOW - 5 }],
-      live: { apps: [{ id: "notes", title: "Notes" }], activeModuleId: null },
+      live: { apps: [{ id: "notes", title: "Notes" }], activeModuleId: null, openModuleIds: [] },
       nowEpochMs: NOW,
     });
     assert.deepEqual(closedRows, []);

@@ -459,6 +459,7 @@ describe("CTOX app rail IPC methods", () => {
             { id: "notes", title: "Notes" },
           ],
           activeModuleId: "notes",
+          openModuleIds: ["notes"],
         }),
     });
     return Effect.gen(function* () {

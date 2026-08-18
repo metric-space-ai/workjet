@@ -143,6 +143,7 @@ export type CtoxGuestAppsObservation =
       readonly _tag: "completed";
       readonly apps: readonly CtoxGuestAppObservation[];
       readonly activeModuleId: string | null;
+      readonly openModuleIds: readonly string[];
     }
   | { readonly _tag: "failed"; readonly code: "not_active" | "guest_failed" };
 
@@ -163,10 +164,29 @@ const GUEST_LIST_APPS_EXPRESSION = `(() => {
     apps.push(title.length > 0 ? { id, title } : { id });
     if (apps.length >= ${MAX_GUEST_APPS}) break;
   }
-  const activeId = typeof app.activeModule?.id === "string" && idPattern.test(app.activeModule.id)
-    ? app.activeModule.id
-    : null;
-  return { ok: true, apps, activeModule: activeId };
+  // Window-desktop shells keep activeModule at "desktop" and track open apps
+  // as windows; each window's ownerId is the owning module id.
+  const openIds = [];
+  let focusedOwner = null;
+  const manager = app.windowManager;
+  if (manager && typeof manager.listWindows === "function") {
+    for (const win of manager.listWindows()) {
+      const rawOwner = typeof win?.ownerId === "string" ? win.ownerId : "";
+      // Window owner ids are prefixed ("module:tickets", "desktop-app:browser");
+      // normalize exactly like the shell does for icons.
+      const owner = rawOwner.replace(/^(desktop-app|module):/, "");
+      if (!idPattern.test(owner)) continue;
+      if (!openIds.includes(owner)) openIds.push(owner);
+      if (win?.isFocused === true) focusedOwner = owner;
+      if (openIds.length >= 32) break;
+    }
+  }
+  const activeId = focusedOwner !== null
+    ? focusedOwner
+    : typeof app.activeModule?.id === "string" && idPattern.test(app.activeModule.id)
+      ? app.activeModule.id
+      : null;
+  return { ok: true, apps, activeModule: activeId, openModules: openIds };
 })()`;
 
 function buildGuestOpenModuleExpression(moduleId: string): string {
@@ -190,14 +210,19 @@ function stripControlCharacters(value: string): string {
   return out;
 }
 
-function decodeGuestAppsObservation(
-  raw: unknown,
-): { apps: readonly CtoxGuestAppObservation[]; activeModuleId: string | null } | undefined {
+function decodeGuestAppsObservation(raw: unknown):
+  | {
+      apps: readonly CtoxGuestAppObservation[];
+      activeModuleId: string | null;
+      openModuleIds: readonly string[];
+    }
+  | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const record = raw as {
     readonly ok?: unknown;
     readonly apps?: unknown;
     readonly activeModule?: unknown;
+    readonly openModules?: unknown;
   };
   if (record.ok !== true || !Array.isArray(record.apps)) return undefined;
   const apps: CtoxGuestAppObservation[] = [];
@@ -217,7 +242,14 @@ function decodeGuestAppsObservation(
     typeof record.activeModule === "string" && CTOX_APP_MODULE_ID_PATTERN.test(record.activeModule)
       ? record.activeModule
       : null;
-  return { apps, activeModuleId };
+  const openModuleIds: string[] = [];
+  if (Array.isArray(record.openModules)) {
+    for (const value of record.openModules.slice(0, 32)) {
+      if (typeof value !== "string" || !CTOX_APP_MODULE_ID_PATTERN.test(value)) continue;
+      if (!openModuleIds.includes(value)) openModuleIds.push(value);
+    }
+  }
+  return { apps, activeModuleId, openModuleIds };
 }
 
 function normalizePathname(pathname: string): string {

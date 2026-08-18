@@ -538,16 +538,23 @@ function CtoxInstanceAppRail({
   useEffect(() => {
     if (bridge === undefined) return;
     let cancelled = false;
-    void bridge.listApps(instance.id).then(
-      (result) => {
-        if (cancelled || result._tag !== "completed") return;
-        setApps(result.apps);
-        setSource(result.source);
-      },
-      () => undefined,
-    );
+    const load = () => {
+      void bridge.listApps(instance.id).then(
+        (result) => {
+          if (cancelled || result._tag !== "completed") return;
+          setApps(result.apps);
+          setSource(result.source);
+        },
+        () => undefined,
+      );
+    };
+    load();
+    // The guest navigates internally without notifying the renderer, so a
+    // connected instance polls its rail to pick up newly opened modules.
+    const interval = instanceReady ? setInterval(load, 8_000) : undefined;
     return () => {
       cancelled = true;
+      if (interval !== undefined) clearInterval(interval);
     };
   }, [appRailVersion, bridge, instance.id, instanceReady]);
 

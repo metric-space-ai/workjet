@@ -38,6 +38,7 @@ const RailCachedApp = Schema.Struct({
 type RailCachedApp = typeof RailCachedApp.Type;
 const RailInstanceRecord = Schema.Struct({
   instanceId: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(512)),
+  workspaceName: Schema.optionalKey(RailAppTitle),
   docked: Schema.Array(RailModuleId).check(Schema.isMaxLength(MAX_DOCKED_APPS)),
   apps: Schema.Array(RailCachedApp).check(Schema.isMaxLength(MAX_RAIL_APPS)),
 });
@@ -67,6 +68,7 @@ export interface CtoxLiveGuestApp {
 export interface CtoxRailInstanceState {
   readonly docked: readonly string[];
   readonly apps: readonly RailCachedApp[];
+  readonly workspaceName?: string;
 }
 
 /**
@@ -156,6 +158,7 @@ export class CtoxAppRail extends Context.Service<
       instanceId: string,
       live: readonly CtoxLiveGuestApp[],
       nowEpochMs: number,
+      workspaceName?: string,
     ) => Effect.Effect<void, CtoxAppRailError>;
     readonly removeInstance: (instanceId: string) => Effect.Effect<void, CtoxAppRailError>;
   }
@@ -223,7 +226,11 @@ export const make = Effect.fn("CtoxAppRail.make")(function* () {
         Effect.gen(function* () {
           const document = yield* readDocument();
           const record = document.instances.find((entry) => entry.instanceId === instanceId);
-          return { docked: record?.docked ?? [], apps: record?.apps ?? [] };
+          return {
+            docked: record?.docked ?? [],
+            apps: record?.apps ?? [],
+            ...(record?.workspaceName === undefined ? {} : { workspaceName: record.workspaceName }),
+          };
         }),
       ),
     setDocked: (instanceId, moduleId, docked) =>
@@ -234,9 +241,10 @@ export const make = Effect.fn("CtoxAppRail.make")(function* () {
           : withoutModule;
         return { ...record, docked: nextDocked };
       }),
-    recordLiveApps: (instanceId, live, nowEpochMs) =>
+    recordLiveApps: (instanceId, live, nowEpochMs, workspaceName) =>
       modifyRecord(instanceId, (record) => ({
         ...record,
+        ...(workspaceName === undefined || workspaceName.length === 0 ? {} : { workspaceName }),
         apps: refreshRailCache({ cached: record.apps, live, nowEpochMs }),
       })),
     removeInstance: (instanceId) => modifyRecord(instanceId, () => undefined),

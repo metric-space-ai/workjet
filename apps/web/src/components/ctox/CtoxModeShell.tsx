@@ -526,9 +526,11 @@ function statusLabel(instance: CtoxManagedInstance): string {
 function CtoxInstanceAppRail({
   instance,
   launchable,
+  onWorkspaceName,
 }: {
   readonly instance: CtoxManagedInstance;
   readonly launchable: boolean;
+  readonly onWorkspaceName?: (name: string) => void;
 }) {
   const { bridge, selectedId, connection, openApp, setAppDocked, appRailVersion } = useCtoxMode();
   const [apps, setApps] = useState<readonly CtoxInstanceApp[]>([]);
@@ -544,6 +546,7 @@ function CtoxInstanceAppRail({
           if (cancelled || result._tag !== "completed") return;
           setApps(result.apps);
           setSource(result.source);
+          if (result.workspaceName !== undefined) onWorkspaceName?.(result.workspaceName);
         },
         () => undefined,
       );
@@ -643,6 +646,110 @@ export function CtoxAppRailList({
   );
 }
 
+/** Connection dot color, project-row style: state at a glance, detail in the tooltip. */
+function instanceDotClass(instance: CtoxManagedInstance, connected: boolean): string {
+  if (connected) return "bg-emerald-500";
+  if (instance.status === "error" || instance.status === "offline") return "bg-red-500/80";
+  if (
+    instance.status === "needs_auth" ||
+    instance.status === "pairing_expired" ||
+    instance.status === "installing"
+  )
+    return "bg-amber-500/90";
+  return "bg-sidebar-muted-foreground/50";
+}
+
+function CtoxInstanceCard({
+  instance,
+  removingId,
+  onRemove,
+}: {
+  readonly instance: CtoxManagedInstance;
+  readonly removingId?: string | null | undefined;
+  readonly onRemove?: ((instance: CtoxManagedInstance) => void) | undefined;
+}) {
+  const { selectedId, connection, select } = useCtoxMode();
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const selected = selectedId === instance.id;
+  const busy = selected && connection === "connecting";
+  const connected = selected && connection === "ready";
+  const launchable = canActivateCtoxInstance(instance);
+  const paired = isPairedCtoxInstance(instance);
+  const title = workspaceName ?? instance.displayName;
+  const meta = [SOURCE_LABELS[instance.source], instance.role, instance.domain]
+    .filter(Boolean)
+    .join(" · ");
+  const detailTitle = [
+    workspaceName === null ? undefined : instance.displayName,
+    meta,
+    statusLabel(instance),
+    paired && !launchable ? "This pairing is not available." : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <div
+      className={cn(
+        "group/ctox-instance rounded-lg border transition-colors",
+        selected
+          ? "border-sidebar-primary/50 bg-sidebar-accent text-sidebar-accent-foreground"
+          : "border-sidebar-border/70 bg-sidebar-accent/20 text-sidebar-foreground",
+        !launchable && "opacity-70",
+      )}
+    >
+      <div className="flex items-start">
+        <button
+          type="button"
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-left",
+            launchable ? "hover:bg-sidebar-accent/50" : "cursor-not-allowed",
+          )}
+          aria-pressed={selected}
+          aria-busy={busy}
+          data-ctox-instance-source={instance.source}
+          data-ctox-instance-status={instance.status}
+          disabled={!launchable || busy}
+          title={detailTitle}
+          onClick={() => select(instance)}
+        >
+          <span
+            aria-hidden
+            className={cn("size-2 shrink-0 rounded-full", instanceDotClass(instance, connected))}
+          />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{title}</span>
+            {meta === "" ? null : (
+              <span className="mt-0.5 block truncate text-xs text-sidebar-muted-foreground">
+                {meta}
+              </span>
+            )}
+          </span>
+        </button>
+        {paired && onRemove !== undefined ? (
+          <button
+            type="button"
+            className="invisible mt-2 mr-2 shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground group-hover/ctox-instance:visible hover:text-sidebar-foreground focus-visible:visible disabled:opacity-50"
+            disabled={removingId === instance.id}
+            aria-busy={removingId === instance.id}
+            aria-label={`Remove ${title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(instance);
+            }}
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+      <CtoxInstanceAppRail
+        instance={instance}
+        launchable={launchable}
+        onWorkspaceName={setWorkspaceName}
+      />
+    </div>
+  );
+}
+
 function CtoxInstanceList({
   instances,
   label,
@@ -654,77 +761,16 @@ function CtoxInstanceList({
   readonly removingId?: string | null;
   readonly onRemove?: (instance: CtoxManagedInstance) => void;
 }) {
-  const { selectedId, connection, select } = useCtoxMode();
   return (
     <div className="space-y-2" aria-label={label}>
-      {instances.map((instance) => {
-        const selected = selectedId === instance.id;
-        const busy = selected && connection === "connecting";
-        const launchable = canActivateCtoxInstance(instance);
-        const paired = isPairedCtoxInstance(instance);
-        return (
-          <div
-            key={instance.id}
-            className={cn(
-              "rounded-lg border transition-colors",
-              selected
-                ? "border-sidebar-primary/50 bg-sidebar-accent text-sidebar-accent-foreground"
-                : "border-sidebar-border/70 bg-sidebar-accent/20 text-sidebar-foreground",
-              !launchable && "opacity-70",
-            )}
-          >
-            <button
-              type="button"
-              className={cn(
-                "w-full px-3 py-2.5 text-left",
-                launchable ? "hover:bg-sidebar-accent/50" : "cursor-not-allowed",
-              )}
-              aria-pressed={selected}
-              aria-busy={busy}
-              data-ctox-instance-source={instance.source}
-              data-ctox-instance-status={instance.status}
-              disabled={!launchable || busy}
-              title={paired && !launchable ? "This pairing is not available." : undefined}
-              onClick={() => select(instance)}
-            >
-              <span className="block text-sm font-medium">{instance.displayName}</span>
-              <span className="mt-0.5 block text-xs text-sidebar-muted-foreground">
-                Source: {SOURCE_LABELS[instance.source]}
-              </span>
-              {instance.role !== undefined || instance.domain !== undefined ? (
-                <span className="mt-0.5 block text-xs text-sidebar-muted-foreground">
-                  {[
-                    instance.role === undefined ? undefined : `Role: ${instance.role}`,
-                    instance.domain === undefined ? undefined : `Domain: ${instance.domain}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              ) : null}
-              <span className="mt-1 block text-xs text-sidebar-muted-foreground">
-                Status: {statusLabel(instance)}
-              </span>
-            </button>
-            <CtoxInstanceAppRail instance={instance} launchable={launchable} />
-            {paired && onRemove !== undefined ? (
-              <div className="border-t border-sidebar-border/60 px-3 py-1.5 text-right">
-                <button
-                  type="button"
-                  className="text-xs text-sidebar-muted-foreground underline-offset-2 hover:text-sidebar-foreground hover:underline disabled:opacity-50"
-                  disabled={removingId === instance.id}
-                  aria-busy={removingId === instance.id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRemove(instance);
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
+      {instances.map((instance) => (
+        <CtoxInstanceCard
+          key={instance.id}
+          instance={instance}
+          removingId={removingId}
+          onRemove={onRemove}
+        />
+      ))}
     </div>
   );
 }

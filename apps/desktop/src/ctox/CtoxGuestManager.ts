@@ -144,6 +144,7 @@ export type CtoxGuestAppsObservation =
       readonly apps: readonly CtoxGuestAppObservation[];
       readonly activeModuleId: string | null;
       readonly openModuleIds: readonly string[];
+      readonly workspaceName?: string;
     }
   | { readonly _tag: "failed"; readonly code: "not_active" | "guest_failed" };
 
@@ -186,7 +187,11 @@ const GUEST_LIST_APPS_EXPRESSION = `(() => {
     : typeof app.activeModule?.id === "string" && idPattern.test(app.activeModule.id)
       ? app.activeModule.id
       : null;
-  return { ok: true, apps, activeModule: activeId, openModules: openIds };
+  const branding = app.workspaceBranding;
+  const workspaceName = branding && branding.custom === true && typeof branding.name === "string"
+    ? branding.name.trim().slice(0, ${MAX_GUEST_APP_TITLE_LENGTH})
+    : "";
+  return { ok: true, apps, activeModule: activeId, openModules: openIds, workspaceName };
 })()`;
 
 function buildGuestOpenModuleExpression(moduleId: string): string {
@@ -249,7 +254,17 @@ function decodeGuestAppsObservation(raw: unknown):
       if (!openModuleIds.includes(value)) openModuleIds.push(value);
     }
   }
-  return { apps, activeModuleId, openModuleIds };
+  const rawWorkspaceName = (record as { readonly workspaceName?: unknown }).workspaceName;
+  const workspaceName =
+    typeof rawWorkspaceName === "string"
+      ? stripControlCharacters(rawWorkspaceName).trim().slice(0, MAX_GUEST_APP_TITLE_LENGTH)
+      : "";
+  return {
+    apps,
+    activeModuleId,
+    openModuleIds,
+    ...(workspaceName.length > 0 ? { workspaceName } : {}),
+  };
 }
 
 function normalizePathname(pathname: string): string {

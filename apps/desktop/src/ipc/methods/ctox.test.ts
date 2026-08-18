@@ -489,6 +489,7 @@ describe("CTOX app rail IPC methods", () => {
           { id: "notes", title: "Notes" },
         ],
         expect.any(Number),
+        undefined,
       );
     }).pipe(
       Effect.provide(

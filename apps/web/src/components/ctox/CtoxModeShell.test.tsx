@@ -154,11 +154,10 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("Paired");
     expect(markup).toContain("Local");
     expect(markup).toContain("SSH");
-    expect(markup).toContain("Source: ctox.dev");
-    expect(markup).toContain("Source: Manual pairing");
-    expect(markup).toContain("Role: owner · Domain: alpha.ctox.dev");
-    expect(markup).toContain("Status: Available · WebRTC ready");
-    expect(markup).toContain("Status: Paired · WebRTC unavailable");
+    expect(markup).toContain("ctox.dev · owner · alpha.ctox.dev");
+    expect(markup).toContain("Manual pairing · member");
+    expect(markup).toContain("Available · WebRTC ready");
+    expect(markup).toContain("Paired · WebRTC unavailable");
     expect(markup).not.toContain("room-secret-must-not-render");
     expect(markup).not.toContain("tenant-launch-token-must-not-render");
     expect(markup).not.toContain("partition-must-not-render");
@@ -223,7 +222,7 @@ describe("CTOX instance presentation", () => {
 
     expect(markup).toContain("ctox.dev discovery failed. Paired instances remain available.");
     expect(markup).toContain("Paired Office");
-    expect(markup).toContain("Status: Pairing expired · WebRTC unavailable");
+    expect(markup).toContain("Pairing expired · WebRTC unavailable");
   });
 
   it("infers legacy managed-only discovery without overriding explicit managed state", () => {
@@ -292,7 +291,7 @@ describe("CTOX instance presentation", () => {
       /<button(?![^>]*disabled)[^>]*data-ctox-instance-source="pairing_invite"[^>]*data-ctox-instance-status="paired"[^>]*>[^]*Invited Alpha/,
     );
     expect(markup).toMatch(
-      /<button[^>]*disabled=""[^>]*title="This pairing is not available\."[^>]*>[^]*Expired Alpha/,
+      /<button[^>]*disabled=""[^>]*title="[^"]*This pairing is not available\."[^>]*>[^]*Expired Alpha/,
     );
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*Local Alpha/);
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*SSH Alpha/);

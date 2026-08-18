@@ -301,12 +301,14 @@ export const listApps: DesktopIpc.DesktopIpcMethod<
         // Persist what the live guest reports so a disconnected instance can
         // still render its rail from the last known state.
         yield* rail
-          .recordLiveApps(instanceId, observation.apps, nowEpochMs)
+          .recordLiveApps(instanceId, observation.apps, nowEpochMs, observation.workspaceName)
           .pipe(Effect.orElseSucceed(() => undefined));
       }
       const state = yield* rail
         .stateForInstance(instanceId)
-        .pipe(Effect.orElseSucceed(() => ({ docked: [], apps: [] }) as const));
+        .pipe(
+          Effect.orElseSucceed((): CtoxAppRail.CtoxRailInstanceState => ({ docked: [], apps: [] })),
+        );
       const apps = CtoxAppRail.mergeRailApps({
         docked: state.docked,
         cached: state.apps,
@@ -321,10 +323,15 @@ export const listApps: DesktopIpc.DesktopIpcMethod<
           : {}),
         nowEpochMs,
       });
+      const workspaceName =
+        observation._tag === "completed" && observation.workspaceName !== undefined
+          ? observation.workspaceName
+          : state.workspaceName;
       return yield* encodeSafe(CtoxInstanceAppsResult, {
         _tag: "completed",
         instanceId,
         source: observation._tag === "completed" ? "live" : "cache",
+        ...(workspaceName === undefined ? {} : { workspaceName }),
         apps,
       });
     }),

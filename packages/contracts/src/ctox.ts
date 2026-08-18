@@ -273,6 +273,8 @@ export const CtoxInstanceAppsResult = Schema.Union([
     instanceId: CtoxManagedInstanceId,
     /** "live" when read from the active guest; "cache" for the persisted last known state. */
     source: Schema.Literals(["live", "cache"]),
+    /** Human workspace name observed on the guest (e.g. workspace branding). */
+    workspaceName: Schema.optional(CtoxAppTitle),
     apps: Schema.Array(CtoxInstanceApp),
   }),
   Schema.TaggedStruct("failed", { code: CtoxAppActionFailureCode }),

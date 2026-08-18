@@ -21,6 +21,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { Plus, RefreshCw } from "lucide-react";
+
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
@@ -595,10 +597,7 @@ export function CtoxAppRailList({
   if (apps.length === 0) return null;
   const stale = !instanceReady || source === "cache";
   return (
-    <ul
-      className="space-y-0.5 border-t border-sidebar-border/40 px-1.5 py-1"
-      aria-label={`Apps of ${instance.displayName}`}
-    >
+    <ul className="space-y-0.5 py-0.5 pl-4" aria-label={`Apps of ${instance.displayName}`}>
       {apps.map((app) => {
         const open = app.open && instanceReady;
         return (
@@ -688,21 +687,16 @@ function CtoxInstanceCard({
     .filter(Boolean)
     .join("\n");
   return (
-    <div
-      className={cn(
-        "group/ctox-instance rounded-lg border transition-colors",
-        selected
-          ? "border-sidebar-primary/50 bg-sidebar-accent text-sidebar-accent-foreground"
-          : "border-sidebar-border/70 bg-sidebar-accent/20 text-sidebar-foreground",
-        !launchable && "opacity-70",
-      )}
-    >
-      <div className="flex items-start">
+    <div className={cn("group/ctox-instance", !launchable && "opacity-70")}>
+      <div className="flex items-center">
         <button
           type="button"
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-left",
-            launchable ? "hover:bg-sidebar-accent/50" : "cursor-not-allowed",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+            selected
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground",
+            launchable ? "hover:bg-sidebar-accent/40" : "cursor-not-allowed",
           )}
           aria-pressed={selected}
           aria-busy={busy}
@@ -716,19 +710,12 @@ function CtoxInstanceCard({
             aria-hidden
             className={cn("size-2 shrink-0 rounded-full", instanceDotClass(instance, connected))}
           />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{title}</span>
-            {meta === "" ? null : (
-              <span className="mt-0.5 block truncate text-xs text-sidebar-muted-foreground">
-                {meta}
-              </span>
-            )}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
         {paired && onRemove !== undefined ? (
           <button
             type="button"
-            className="invisible mt-2 mr-2 shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground group-hover/ctox-instance:visible hover:text-sidebar-foreground focus-visible:visible disabled:opacity-50"
+            className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground group-hover/ctox-instance:visible hover:text-sidebar-foreground focus-visible:visible disabled:opacity-50"
             disabled={removingId === instance.id}
             aria-busy={removingId === instance.id}
             aria-label={`Remove ${title}`}
@@ -1074,11 +1061,11 @@ function ManagedAccountState({
   }
   if (state === "signed_out") {
     return (
-      <div className="rounded-lg border border-sidebar-border/70 bg-sidebar-accent/20 px-3 py-3">
-        <p className="text-sm font-medium text-sidebar-foreground">Signed out of ctox.dev</p>
+      <div className="flex items-center justify-between gap-2 px-2 py-1">
+        <p className="truncate text-xs text-sidebar-muted-foreground">Signed out of ctox.dev</p>
         <button
           type="button"
-          className="mt-3 rounded-md bg-sidebar-primary px-3 py-1.5 text-xs font-medium text-sidebar-primary-foreground disabled:opacity-50"
+          className="shrink-0 text-xs font-medium text-sidebar-primary underline-offset-2 hover:underline disabled:opacity-50"
           onClick={login}
           disabled={refreshing}
           aria-busy={refreshing}
@@ -1090,10 +1077,7 @@ function ManagedAccountState({
   }
   if (state === "failed") {
     return (
-      <p
-        className="rounded-lg border border-destructive/30 px-3 py-3 text-sm text-destructive"
-        role="alert"
-      >
+      <p className="px-2 py-1 text-xs text-destructive" role="alert">
         {hasPairedInstances
           ? "ctox.dev discovery failed. Paired instances remain available."
           : "ctox.dev discovery failed. Try refreshing."}
@@ -1142,31 +1126,43 @@ export function CtoxSidebarShell() {
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="text-sm font-medium text-sidebar-foreground">CTOX instances</p>
-            <button
-              type="button"
-              className="rounded-md border border-sidebar-border px-2 py-1 text-xs text-sidebar-foreground disabled:opacity-50"
-              onClick={refresh}
-              disabled={refreshing}
-              aria-busy={refreshing}
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
+                onClick={refresh}
+                disabled={refreshing}
+                aria-busy={refreshing}
+                aria-label="Refresh instances"
+                title="Refresh"
+              >
+                <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
+                onClick={() => {
+                  setMutationFeedback(null);
+                  setAddOpen((open) => !open);
+                }}
+                disabled={bridge === undefined}
+                aria-label="Add instance"
+                aria-expanded={addOpen}
+                title="Add instance"
+              >
+                <Plus className="size-3.5" aria-hidden />
+              </button>
+            </div>
           </div>
 
           {bridge === undefined ? (
-            <p
-              className="mb-3 rounded-lg border border-sidebar-border/70 px-3 py-2 text-xs text-sidebar-muted-foreground"
-              role="status"
-            >
+            <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
               CTOX desktop services are unavailable.
             </p>
           ) : null}
 
           {discovery !== "loading" && discovery._tag === "failed" ? (
-            <p
-              className="rounded-lg border border-destructive/30 px-3 py-3 text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-xs text-destructive" role="alert">
               CTOX instance discovery failed. Try refreshing.
             </p>
           ) : (
@@ -1260,19 +1256,7 @@ export function CtoxSidebarShell() {
 
           {addOpen ? (
             <PairingAddSurface onClose={() => setAddOpen(false)} onImported={setMutationFeedback} />
-          ) : (
-            <button
-              type="button"
-              className="mt-4 w-full rounded-md border border-sidebar-border px-2 py-1.5 text-xs text-sidebar-foreground hover:bg-sidebar-accent/40 disabled:opacity-50"
-              onClick={() => {
-                setMutationFeedback(null);
-                setAddOpen(true);
-              }}
-              disabled={bridge === undefined}
-            >
-              Add instance
-            </button>
-          )}
+          ) : null}
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Explicit Node platform boundary injected into the Effect gateway service.
 import { spawn } from "node:child_process";
 import * as NodeFs from "node:fs/promises";
+import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 
 import type {
@@ -122,4 +123,16 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     const text = await readBoundedResponse(response, maximumBytes);
     return text.trim() === "" ? null : (JSON.parse(text) as unknown);
   },
+  allocateLoopbackPort: () =>
+    new Promise<number>((resolve, reject) => {
+      const server = NodeNet.createServer();
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        server.close(() => {
+          if (address !== null && typeof address === "object") resolve(address.port);
+          else reject(new Error("no port"));
+        });
+      });
+    }),
 };

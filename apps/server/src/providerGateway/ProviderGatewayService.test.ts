@@ -235,6 +235,11 @@ describe("ProviderGatewayService", () => {
     expect(runtimeWrite).toBeDefined();
     // A bootstrap host must not name a default provider.
     expect(runtimeWrite).not.toContain("defaultProvider");
+    // The start reserves and persists a stable provider port, and the host
+    // config binds it instead of an ephemeral port.
+    const configurationWrite = harness.writes.find((content) => content.includes('"providerPort"'));
+    expect(configurationWrite).toBeDefined();
+    expect(runtimeWrite).not.toContain('"providerAddress": "127.0.0.1:0"');
   });
 
   it("refuses OAuth operations while the gateway is not running", async () => {

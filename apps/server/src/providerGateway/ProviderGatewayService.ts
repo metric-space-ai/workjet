@@ -89,6 +89,8 @@ export interface ProviderGatewayPlatform {
     method: "GET" | "POST" | "DELETE",
     maximumBytes: number,
   ) => Promise<unknown>;
+  /** Reserve a currently free loopback TCP port for the stable provider endpoint. */
+  readonly allocateLoopbackPort: () => Promise<number>;
 }
 
 export interface ProviderGatewayServiceShape {
@@ -383,7 +385,18 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     const runStart = async (): Promise<WorkjetGatewayStatus> => {
       if (currentStatus.phase === "ready") return currentStatus;
       if (stopFlight !== undefined) await stopFlight;
-      const configuration = await loadConfiguration();
+      let configuration = await loadConfiguration();
+      if (configuration.providerPort === undefined) {
+        // Reserve a stable provider port once so harness sessions routed
+        // through the gateway survive gateway restarts.
+        const providerPort = await platform.allocateLoopbackPort().catch(() => undefined);
+        if (providerPort !== undefined) {
+          configuration = { ...configuration, providerPort };
+          await platform
+            .writePrivateText(configurationPath, `${JSON.stringify(configuration, null, 2)}\n`)
+            .catch(() => undefined);
+        }
+      }
       currentCatalog = gatewayCatalog(configuration);
       currentStatus = {
         schemaVersion: 1,
@@ -771,6 +784,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         accounts,
         pools: existing?.pools ?? [],
         routes: existing?.routes ?? [],
+        ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
         ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
       };
       const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));

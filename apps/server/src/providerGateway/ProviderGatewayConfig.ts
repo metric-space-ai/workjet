@@ -66,6 +66,12 @@ export interface ProviderGatewayConfiguration {
   readonly accounts: ReadonlyArray<GatewayAccount>;
   readonly pools: ReadonlyArray<WorkjetGatewayPoolSummary>;
   readonly routes: ReadonlyArray<WorkjetGatewayRouteSummary>;
+  /**
+   * Stable loopback port for the provider endpoint. Allocated once and then
+   * persisted so harness sessions routed through the gateway survive gateway
+   * restarts; absent means an ephemeral port.
+   */
+  readonly providerPort?: number;
   readonly antigravityOauth?: {
     readonly clientIdSecret: GatewaySecretReference;
     readonly clientSecretSecret: GatewaySecretReference;
@@ -335,6 +341,7 @@ export const decodeProviderGatewayConfiguration = (
       "accounts",
       "pools",
       "routes",
+      "providerPort",
       "antigravityOauth",
     ])
   ) {
@@ -345,6 +352,16 @@ export const decodeProviderGatewayConfiguration = (
     !Array.isArray(value.accounts) ||
     value.accounts.length > MAX_ACCOUNTS ||
     defaultProvider === undefined
+  ) {
+    return undefined;
+  }
+  const providerPort = value.providerPort;
+  if (
+    providerPort !== undefined &&
+    (typeof providerPort !== "number" ||
+      !Number.isSafeInteger(providerPort) ||
+      providerPort < 1024 ||
+      providerPort > 65_535)
   ) {
     return undefined;
   }
@@ -385,6 +402,7 @@ export const decodeProviderGatewayConfiguration = (
     accounts: typedAccounts,
     pools,
     routes,
+    ...(providerPort !== undefined ? { providerPort } : {}),
     ...(antigravityOauth ? { antigravityOauth } : {}),
   };
 };
@@ -449,7 +467,7 @@ export const rustHostConfiguration = (
   secretRoot: string,
 ) => ({
   schema: "workjet.provider-gateway-host.v1",
-  providerAddress: "127.0.0.1:0",
+  providerAddress: `127.0.0.1:${configuration.providerPort ?? 0}`,
   managementAddress: "127.0.0.1:0",
   secretRoot,
   managementSecret: { scope: GATEWAY_SECRET_SCOPE, name: MANAGEMENT_SECRET_NAME },

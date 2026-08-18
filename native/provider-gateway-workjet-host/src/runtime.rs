@@ -117,12 +117,18 @@ fn proxy_url(
         .transpose()
 }
 
+/// Assembles the provider routing surface. Returns `Ok(None)` for a host that
+/// has no provider account at all - a bootstrap host whose provider endpoint
+/// has nothing to route to yet, but whose management surface must still run.
 pub fn build_provider_routes(
     config: &ValidatedRuntimeConfig,
-    default_provider: &str,
+    default_provider: Option<&str>,
     store: Arc<WorkjetSecretStore>,
     antigravity_oauth: Option<(RuntimeSecretRef, RuntimeSecretRef)>,
-) -> Result<ProviderRoutes, RuntimeBuildError> {
+) -> Result<Option<ProviderRoutes>, RuntimeBuildError> {
+    let Some(default_provider) = default_provider else {
+        return Ok(None);
+    };
     let account_clock: Arc<dyn AccountStateClock> = Arc::new(SystemAccountClock);
     let mut auxiliary_handlers: Vec<Arc<dyn AuxiliaryRouteHandler>> = Vec::new();
 
@@ -332,12 +338,12 @@ pub fn build_provider_routes(
     let auxiliary = (!auxiliary_handlers.is_empty()).then(|| {
         Arc::new(AuxiliaryRouteChain::new(auxiliary_handlers)) as Arc<dyn AuxiliaryRouteHandler>
     });
-    Ok(ProviderRoutes {
+    Ok(Some(ProviderRoutes {
         responses,
         messages,
         auxiliary,
         models: claude_models_response(&model_catalog(config), false),
-    })
+    }))
 }
 
 fn model_catalog(config: &ValidatedRuntimeConfig) -> Vec<ClaudeModel> {
@@ -397,7 +403,7 @@ fn model_catalog(config: &ValidatedRuntimeConfig) -> Vec<ClaudeModel> {
 pub struct HostManagementSource {
     provider_endpoint: String,
     management_endpoint: String,
-    default_provider: String,
+    default_provider: Option<String>,
     summary: ManagementRuntimeConfigSummary,
 }
 
@@ -405,7 +411,7 @@ impl HostManagementSource {
     pub fn new(
         provider_endpoint: String,
         management_endpoint: String,
-        default_provider: String,
+        default_provider: Option<String>,
         config: &ValidatedRuntimeConfig,
     ) -> Self {
         let providers = [
@@ -477,23 +483,34 @@ impl HostManagementSource {
     }
 }
 
+impl HostManagementSource {
+    /// A host without any provider account is up but has nothing to route to.
+    fn provider_phase(&self) -> ManagementRuntimePhase {
+        if self.default_provider.is_some() {
+            ManagementRuntimePhase::Ready
+        } else {
+            ManagementRuntimePhase::WaitingForSubscription
+        }
+    }
+}
+
 impl ManagementRuntimeStatusSource for HostManagementSource {
     fn snapshot(&self) -> ManagementRuntimeStatus {
         ManagementRuntimeStatus {
             schema: "workjet.provider-gateway.runtime-status.v1".to_owned(),
             main_responses_gateway: ManagementRuntimeEndpoint {
-                phase: ManagementRuntimePhase::Ready,
+                phase: self.provider_phase(),
                 listen_addr: self.provider_endpoint.clone(),
             },
             codex_subscription_gateway: ManagementRuntimeEndpoint {
-                phase: ManagementRuntimePhase::Ready,
+                phase: self.provider_phase(),
                 listen_addr: self.provider_endpoint.clone(),
             },
             management_gateway: ManagementRuntimeEndpoint {
                 phase: ManagementRuntimePhase::Ready,
                 listen_addr: self.management_endpoint.clone(),
             },
-            active_provider: Some(self.default_provider.clone()),
+            active_provider: self.default_provider.clone(),
             active_model: None,
         }
     }

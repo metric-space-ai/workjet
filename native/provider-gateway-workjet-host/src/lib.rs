@@ -142,15 +142,14 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
     if !provider_address.ip().is_loopback() || !management_address.ip().is_loopback() {
         return Err(HostError::Bind);
     }
-    let routes = Arc::new(
-        build_provider_routes(
-            &config.runtime,
-            &config.default_provider,
-            store,
-            config.antigravity_oauth,
-        )
-        .map_err(|_| HostError::Runtime)?,
-    );
+    let routes = build_provider_routes(
+        &config.runtime,
+        config.default_provider.as_deref(),
+        store,
+        config.antigravity_oauth,
+    )
+    .map_err(|_| HostError::Runtime)?
+    .map(Arc::new);
     let provider_endpoint = format!("http://{provider_address}");
     let management_endpoint = format!("http://{management_address}");
     let management_source = Arc::new(HostManagementSource::new(
@@ -191,6 +190,14 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
                     }
                     let routes = routes.clone();
                     connections.spawn(async move {
+                        let Some(routes) = routes else {
+                            // Bootstrap host: no account is configured yet, so
+                            // there is nothing to route to. Refuse cleanly
+                            // instead of pretending to serve a provider.
+                            return refuse_provider_connection(&mut stream)
+                                .await
+                                .map_err(|_| HostError::Task);
+                        };
                         serve_provider_connection(
                             &mut stream,
                             routes.responses.as_ref(),
@@ -247,6 +254,38 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
         management_address,
         tasks: vec![provider_task, management_task],
     })
+}
+
+const MAX_REFUSED_REQUEST_HEAD_BYTES: usize = 8 * 1024;
+const PROVIDER_UNAVAILABLE_BODY: &[u8] = b"{\"error\":\"no provider account is configured\"}";
+
+/// Answers a provider request on a host that has no account configured yet.
+/// The request head is drained first so the client reads the refusal instead
+/// of a connection reset.
+async fn refuse_provider_connection<S>(stream: &mut S) -> std::io::Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let mut head = Vec::new();
+    let mut byte = [0_u8; 1];
+    while head.len() < MAX_REFUSED_REQUEST_HEAD_BYTES {
+        match stream.read(&mut byte).await {
+            Ok(0) | Err(_) => break,
+            Ok(_) => head.push(byte[0]),
+        }
+        if head.ends_with(b"\r\n\r\n") {
+            break;
+        }
+    }
+    let header = format!(
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        PROVIDER_UNAVAILABLE_BODY.len()
+    );
+    stream.write_all(header.as_bytes()).await?;
+    stream.write_all(PROVIDER_UNAVAILABLE_BODY).await?;
+    stream.flush().await?;
+    stream.shutdown().await
 }
 
 fn antigravity_oauth_client(

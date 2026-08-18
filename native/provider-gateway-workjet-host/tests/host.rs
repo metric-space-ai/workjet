@@ -35,7 +35,7 @@ fn config(root: &std::path::Path) -> HostConfig {
         management_secret: secret("management"),
         antigravity_oauth_client_id_secret: None,
         antigravity_oauth_client_secret_secret: None,
-        default_provider: "codex".to_owned(),
+        default_provider: Some("codex".to_owned()),
         runtime: CliproxyRuntimeConfig {
             request_timeout_ms: 1_000,
             routing_strategy: SchedulerStrategy::RoundRobin,
@@ -487,4 +487,101 @@ async fn gates_the_one_time_credential_claim_on_the_key_and_on_session_completio
     assert!(after_failure.starts_with("HTTP/1.1 409"), "{after_failure}");
 
     host.shutdown().await.unwrap();
+}
+
+fn bootstrap_config(root: &std::path::Path) -> HostConfig {
+    let mut config = config(root);
+    config.default_provider = None;
+    config.runtime.codex_accounts = Vec::new();
+    config
+}
+
+#[tokio::test]
+async fn boots_a_bootstrap_host_without_any_configured_account() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+
+    // The minimal bootstrap document carries no accounts and no default
+    // provider at all; `defaultProvider` is simply absent.
+    let serialized = serde_json::to_value(bootstrap_config(root.path())).unwrap();
+    assert!(serialized.get("defaultProvider").is_none(), "{serialized}");
+
+    let mut host =
+        workjet_provider_gateway_host::start(bootstrap_config(root.path()).validate().unwrap())
+            .await
+            .unwrap();
+    let key = "07".repeat(32);
+    let address = host.management_address();
+
+    // Readiness is still emitted.
+    assert_eq!(host.readiness().phase, "ready");
+    assert!(host.management_address().ip().is_loopback());
+
+    // Runtime status is served and reports honestly that nothing routes yet.
+    let status =
+        management_request(address, "GET", "/v0/management/runtime-status", Some(&key)).await;
+    assert!(status.starts_with("HTTP/1.1 200"), "{status}");
+    let payload: serde_json::Value = serde_json::from_str(body_of(&status)).unwrap();
+    assert_eq!(payload["management_gateway"]["phase"], "ready");
+    assert_eq!(
+        payload["main_responses_gateway"]["phase"],
+        "waiting_for_subscription"
+    );
+    assert!(payload.get("active_provider").is_none(), "{payload}");
+
+    // The runtime summary is served with no providers and no default provider.
+    let summary =
+        management_request(address, "GET", "/v0/management/runtime-config", Some(&key)).await;
+    assert!(summary.starts_with("HTTP/1.1 200"), "{summary}");
+    let payload: serde_json::Value = serde_json::from_str(body_of(&summary)).unwrap();
+    assert_eq!(
+        payload["schema"],
+        "workjet.provider-gateway.runtime-summary.v1"
+    );
+    assert_eq!(payload["providers"].as_array().unwrap().len(), 0);
+    assert!(payload.get("default_provider").is_none(), "{payload}");
+
+    // The whole OAuth surface works, which is the point of booting empty.
+    let started = management_request(
+        address,
+        "GET",
+        "/v0/management/codex-auth-url?state=bootstrap-state",
+        Some(&key),
+    )
+    .await;
+    assert!(started.starts_with("HTTP/1.1 200"), "{started}");
+    let payload: serde_json::Value = serde_json::from_str(body_of(&started)).unwrap();
+    assert_eq!(payload["provider"], "codex");
+    assert!(payload["authorization_url"]
+        .as_str()
+        .unwrap()
+        .contains("state=bootstrap-state"));
+
+    let claim = management_request(
+        address,
+        "POST",
+        "/v0/management/oauth/session/bootstrap-state/claim",
+        Some(&key),
+    )
+    .await;
+    assert!(claim.starts_with("HTTP/1.1 409"), "{claim}");
+
+    // The provider endpoint refuses cleanly instead of routing.
+    let refused = management_request(host.provider_address(), "GET", "/v1/models", None).await;
+    assert!(refused.starts_with("HTTP/1.1 503"), "{refused}");
+    assert!(body_of(&refused).contains("no provider account is configured"));
+
+    host.shutdown().await.unwrap();
+}
+
+#[test]
+fn rejects_a_named_default_provider_that_has_no_enabled_account() {
+    let root = tempfile::tempdir().unwrap();
+    let mut config = bootstrap_config(root.path());
+    config.default_provider = Some("codex".to_owned());
+    assert_eq!(
+        config.validate().err().unwrap(),
+        workjet_provider_gateway_host::config::HostConfigError::InvalidDefaultProvider
+    );
 }

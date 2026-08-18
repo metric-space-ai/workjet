@@ -90,7 +90,11 @@ pub struct ManagementProviderConfigSummary {
 pub struct ManagementRuntimeConfigSummary {
     pub schema: String,
     pub revision: u64,
-    pub default_provider: String,
+    /// Absent while no provider account is configured at all. A deployment
+    /// that has accounts always carries the field, so its wire shape is
+    /// unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_provider: Option<String>,
     pub providers: Vec<ManagementProviderConfigSummary>,
 }
 
@@ -978,7 +982,7 @@ mod tests {
         ManagementRuntimeConfigSummary {
             schema: MANAGEMENT_RUNTIME_CONFIG_SCHEMA.to_owned(),
             revision,
-            default_provider: "claude".to_owned(),
+            default_provider: Some("claude".to_owned()),
             providers: vec![ManagementProviderConfigSummary {
                 provider: "claude".to_owned(),
                 account_count: 1,

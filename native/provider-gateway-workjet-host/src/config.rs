@@ -22,7 +22,10 @@ pub struct HostConfig {
     pub antigravity_oauth_client_id_secret: Option<RuntimeSecretRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub antigravity_oauth_client_secret_secret: Option<RuntimeSecretRef>,
-    pub default_provider: String,
+    /// Absent (or null) while no provider account is configured yet. A named
+    /// provider must still have an enabled account, exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_provider: Option<String>,
     pub runtime: CliproxyRuntimeConfig,
 }
 
@@ -61,7 +64,7 @@ pub struct ValidatedHostConfig {
     pub secret_root: PathBuf,
     pub management_secret: RuntimeSecretRef,
     pub antigravity_oauth: Option<(RuntimeSecretRef, RuntimeSecretRef)>,
-    pub default_provider: String,
+    pub default_provider: Option<String>,
     pub runtime: ValidatedRuntimeConfig,
 }
 
@@ -74,10 +77,16 @@ impl HostConfig {
         {
             return Err(HostConfigError::NonLoopbackAddress);
         }
-        if !matches!(
-            self.default_provider.as_str(),
-            "claude" | "codex" | "antigravity"
-        ) {
+        let default_provider = self
+            .default_provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider| !provider.is_empty())
+            .map(str::to_owned);
+        if default_provider
+            .as_deref()
+            .is_some_and(|provider| !matches!(provider, "claude" | "codex" | "antigravity"))
+        {
             return Err(HostConfigError::InvalidDefaultProvider);
         }
         let reference_allowed = |reference: &RuntimeSecretRef| {
@@ -94,10 +103,23 @@ impl HostConfig {
         if !reference_allowed(&self.management_secret) {
             return Err(HostConfigError::InvalidSecretReference);
         }
-        let runtime = self
-            .runtime
-            .validate()
-            .map_err(|_| HostConfigError::InvalidRuntime)?;
+        // A bootstrap host carries no account at all. The portable runtime
+        // already models this as an outer-host runtime whose routes live
+        // outside the portable account lists; every other configuration keeps
+        // the strict portable validation, so an all-disabled account set still
+        // fails exactly as before.
+        let bootstrap = self.runtime.claude_accounts.is_empty()
+            && self.runtime.codex_accounts.is_empty()
+            && self.runtime.antigravity_accounts.is_empty();
+        if bootstrap && default_provider.is_some() {
+            return Err(HostConfigError::InvalidDefaultProvider);
+        }
+        let runtime = if bootstrap {
+            self.runtime.validate_for_extension_host()
+        } else {
+            self.runtime.validate()
+        }
+        .map_err(|_| HostConfigError::InvalidRuntime)?;
         let runtime_refs_allowed = runtime.claude_accounts().iter().all(|account| {
             reference_allowed(&account.access_token_secret)
                 && reference_allowed(&account.refresh_token_secret)
@@ -137,20 +159,28 @@ impl HostConfig {
             (None, None) if runtime.antigravity_accounts().is_empty() => None,
             _ => return Err(HostConfigError::InvalidSecretReference),
         };
-        let default_is_enabled = match self.default_provider.as_str() {
-            "claude" => runtime
+        // A host that carries no account at all is a legitimate bootstrap
+        // state: the management surface must come up so the very first OAuth
+        // login can happen. Any configured account still demands a named,
+        // enabled default provider, so established deployments are unchanged.
+        let configured_accounts = runtime.claude_accounts().len()
+            + runtime.codex_accounts().len()
+            + runtime.antigravity_accounts().len();
+        let default_is_enabled = match default_provider.as_deref() {
+            Some("claude") => runtime
                 .claude_accounts()
                 .iter()
                 .any(|account| !account.disabled),
-            "codex" => runtime
+            Some("codex") => runtime
                 .codex_accounts()
                 .iter()
                 .any(|account| !account.disabled),
-            "antigravity" => runtime
+            Some("antigravity") => runtime
                 .antigravity_accounts()
                 .iter()
                 .any(|account| !account.disabled),
-            _ => false,
+            Some(_) => false,
+            None => configured_accounts == 0,
         };
         if !default_is_enabled {
             return Err(HostConfigError::InvalidDefaultProvider);
@@ -161,7 +191,7 @@ impl HostConfig {
             secret_root: self.secret_root,
             management_secret: self.management_secret,
             antigravity_oauth,
-            default_provider: self.default_provider,
+            default_provider,
             runtime,
         })
     }

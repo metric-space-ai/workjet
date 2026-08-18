@@ -1,6 +1,7 @@
 import type {
   CtoxDiscoveryResult,
   CtoxGuestBounds,
+  CtoxHostThemeTokenKey,
   CtoxInstanceApp,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
@@ -376,6 +377,9 @@ export function CtoxModeProvider({
 
   const select = useCallback((instance: CtoxManagedInstance) => {
     if (!canActivateCtoxInstance(instance)) return;
+    // Re-selecting the already-connected instance must not tear the guest
+    // down; the row click then only surfaces the instance and its apps.
+    if (selectedIdRef.current === instance.id) return;
     selectedIdRef.current = instance.id;
     setSelectedId(instance.id);
     setActivationKey((current) => current + 1);
@@ -433,6 +437,45 @@ export function CtoxModeProvider({
     pendingOpenRef.current = null;
     dispatchOpenApp(pending.instanceId, pending.moduleId);
   }, [connection, dispatchOpenApp]);
+
+  useEffect(() => {
+    if (bridge === undefined || typeof window === "undefined") return;
+    const pushHostTheme = () => {
+      const root = document.documentElement;
+      const styles = getComputedStyle(root);
+      const pick = (name: string) => styles.getPropertyValue(name).trim();
+      const tokens: { [K in CtoxHostThemeTokenKey]?: string } = {};
+      const assign = (key: CtoxHostThemeTokenKey, value: string) => {
+        if (value !== "") tokens[key] = value;
+      };
+      assign("bg", pick("--background"));
+      assign("surface", pick("--card"));
+      assign("surface-2", pick("--secondary"));
+      assign("surface-3", pick("--popover"));
+      assign("line", pick("--border"));
+      assign("hairline", pick("--border"));
+      assign("text", pick("--foreground"));
+      assign("text-strong", pick("--foreground"));
+      assign("muted", pick("--muted-foreground"));
+      assign("accent", pick("--primary"));
+      assign("accent-foreground", pick("--primary-foreground"));
+      assign("accent-soft", pick("--accent"));
+      void bridge
+        .setHostTheme({
+          scheme: root.classList.contains("dark") ? "dark" : "light",
+          tokens,
+        })
+        .catch(() => undefined);
+    };
+    pushHostTheme();
+    // Appearance changes rewrite class/data attributes on <html>.
+    const observer = new MutationObserver(pushHostTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme", "style"],
+    });
+    return () => observer.disconnect();
+  }, [bridge]);
 
   const setAppDocked = useCallback(
     (instance: CtoxManagedInstance, moduleId: string, docked: boolean) => {

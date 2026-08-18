@@ -95,6 +95,7 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   CtoxAppActionResult,
   CtoxDiscoveryResult,
+  CtoxHostThemeInput,
   CtoxGuestBounds,
   CtoxInstanceAppsResult,
   CtoxManagedActionResult,
@@ -1130,6 +1131,8 @@ export interface DesktopCtoxBridge {
     moduleId: string,
     docked: boolean,
   ) => Promise<CtoxAppActionResult>;
+  /** Project the host appearance theme into the Business OS guest. */
+  setHostTheme: (theme: CtoxHostThemeInput) => Promise<CtoxManagedActionResult>;
 }
 
 export interface DesktopPreviewBridge {

@@ -173,6 +173,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         moduleId,
         docked,
       }),
+    setHostTheme: (theme) => ipcRenderer.invoke(IpcChannels.CTOX_SET_HOST_THEME_CHANNEL, theme),
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

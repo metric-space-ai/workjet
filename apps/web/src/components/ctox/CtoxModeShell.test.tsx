@@ -82,6 +82,7 @@ function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBri
     }),
     openApp: async () => ({ _tag: "completed" }),
     setAppDocked: async () => ({ _tag: "completed" }),
+    setHostTheme: async () => ({ _tag: "completed" }),
     ...overrides,
   };
 }

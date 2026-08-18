@@ -1,5 +1,6 @@
 import {
   CtoxAppActionResult,
+  CtoxHostThemeInput,
   CtoxDiscoveryResult,
   CtoxGuestBoundsInput,
   CtoxInstanceAppsInput,
@@ -391,6 +392,24 @@ export const setAppDocked: DesktopIpc.DesktopIpcMethod<never, CtoxAppRail.CtoxAp
     }),
 };
 
+export const setHostTheme: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
+  channel: IpcChannels.CTOX_SET_HOST_THEME_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const input = yield* Schema.decodeUnknownEffect(CtoxHostThemeInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxManagedActionResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      return yield* encodeSafe(CtoxManagedActionResult, yield* guests.setHostTheme(input.value));
+    }),
+};
+
 type CtoxIpcServices =
   | CtoxAppRail.CtoxAppRail
   | CtoxDevAuth.CtoxDevAuth
@@ -413,4 +432,5 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   listApps,
   openApp,
   setAppDocked,
+  setHostTheme,
 ];

@@ -301,6 +301,58 @@ export const CtoxAppActionResult = Schema.Union([
 ]);
 export type CtoxAppActionResult = typeof CtoxAppActionResult.Type;
 
+/** Allowlisted theme token keys the guest shell understands (--ctox-host-*). */
+export const CtoxHostThemeTokenKey = Schema.Literals([
+  "bg",
+  "surface",
+  "surface-2",
+  "surface-3",
+  "line",
+  "hairline",
+  "text",
+  "text-strong",
+  "muted",
+  "accent",
+  "accent-foreground",
+  "accent-soft",
+]);
+export type CtoxHostThemeTokenKey = typeof CtoxHostThemeTokenKey.Type;
+
+/** A bounded CSS color value; never arbitrary CSS. */
+const CtoxHostThemeColor = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(72),
+  Schema.isPattern(
+    /^(#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\([^;{}<>"'`\\]{1,64}\))$/,
+  ),
+);
+
+/**
+ * The Workjet appearance theme projected into the Business OS guest. The
+ * renderer derives it from its own resolved CSS variables, so built-in and
+ * user-created themes translate identically.
+ */
+const CtoxHostThemeTokenValue = Schema.optionalKey(CtoxHostThemeColor);
+export const CtoxHostThemeInput = Schema.Struct({
+  scheme: Schema.Literals(["light", "dark"]),
+  tokens: Schema.Struct({
+    bg: CtoxHostThemeTokenValue,
+    surface: CtoxHostThemeTokenValue,
+    "surface-2": CtoxHostThemeTokenValue,
+    "surface-3": CtoxHostThemeTokenValue,
+    line: CtoxHostThemeTokenValue,
+    hairline: CtoxHostThemeTokenValue,
+    text: CtoxHostThemeTokenValue,
+    "text-strong": CtoxHostThemeTokenValue,
+    muted: CtoxHostThemeTokenValue,
+    accent: CtoxHostThemeTokenValue,
+    "accent-foreground": CtoxHostThemeTokenValue,
+    "accent-soft": CtoxHostThemeTokenValue,
+  }),
+});
+export type CtoxHostThemeInput = typeof CtoxHostThemeInput.Type;
+
 export const CtoxManagedLoginResult = Schema.Union([
   Schema.TaggedStruct("completed", { discovery: CtoxDiscoveryResult }),
   Schema.TaggedStruct("cancelled", { reason: Schema.Literals(["closed", "timeout"]) }),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import type {
   CtoxGuestBounds,
+  CtoxHostThemeInput,
   CtoxManagedActionResult,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
@@ -126,8 +127,12 @@ export class CtoxGuestManager extends Context.Service<
       moduleId: string,
       bounds: CtoxGuestBounds,
     ) => Effect.Effect<CtoxManagedActionResult>;
+    /** Project the host appearance theme into the guest (persists across guests). */
+    readonly setHostTheme: (theme: CtoxHostThemeInput) => Effect.Effect<CtoxManagedActionResult>;
   }
 >()("@t3tools/desktop/ctox/CtoxGuestManager") {}
+
+export const CTOX_APPLY_HOST_THEME_CHANNEL = "instance:apply-host-theme";
 
 export const CTOX_APP_MODULE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAX_GUEST_APPS = 128;
@@ -557,6 +562,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const electronShell = yield* ElectronShell.ElectronShell;
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
+    let latestHostTheme: CtoxHostThemeInput | undefined;
     const stateRef = yield* SynchronizedRef.make<GuestState>({
       businessOsModeActive: false,
       active: undefined,
@@ -705,6 +711,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
         });
         webContents.on("did-finish-load", () => {
+          if (latestHostTheme !== undefined) {
+            try {
+              webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, latestHostTheme);
+            } catch {
+              /* guest may be tearing down */
+            }
+          }
           const currentUrl = webContents.getURL();
           const scrubbed = scrubSensitiveCtoxUrl(currentUrl);
           if (scrubbed === undefined || scrubbed === currentUrl) return;
@@ -896,6 +909,22 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         );
       });
 
+    const setHostTheme = (theme: CtoxHostThemeInput): Effect.Effect<CtoxManagedActionResult> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.sync((): readonly [CtoxManagedActionResult, GuestState] => {
+          latestHostTheme = theme;
+          const active = state.active;
+          if (active !== undefined && !active.view.webContents.isDestroyed()) {
+            try {
+              active.view.webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, theme);
+            } catch {
+              /* guest may be tearing down */
+            }
+          }
+          return [{ _tag: "completed" }, state];
+        }),
+      );
+
     return CtoxGuestManager.of({
       enterBusinessOsMode,
       exitBusinessOsMode,
@@ -905,6 +934,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       setBounds,
       readGuestApps,
       openGuestApp,
+      setHostTheme,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 

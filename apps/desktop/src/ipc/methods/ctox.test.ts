@@ -15,10 +15,14 @@ import {
   activate,
   importInvite,
   importManualPairing,
+  listApps,
   login,
+  openApp,
   refresh,
   removePairedInstance,
+  setAppDocked,
 } from "./ctox.ts";
+import * as CtoxAppRail from "../../ctox/CtoxAppRail.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -68,6 +72,8 @@ function removalCleanupLayer(
     deactivate: Effect.succeed({ _tag: "completed" }),
     deactivateInstance: input.deactivateInstance ?? (() => Effect.succeed({ _tag: "completed" })),
     setBounds: () => Effect.die("unused"),
+    readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
+    openGuestApp: () => Effect.die("unused"),
   });
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.die("unused"),
@@ -90,6 +96,8 @@ describe("CTOX IPC methods", () => {
       deactivate: Effect.succeed({ _tag: "completed" }),
       deactivateInstance: () => Effect.succeed({ _tag: "completed" }),
       setBounds: () => Effect.succeed({ _tag: "completed" }),
+      readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
+      openGuestApp: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -408,4 +416,191 @@ describe("CTOX IPC methods", () => {
       ),
     );
   });
+});
+
+describe("CTOX app rail IPC methods", () => {
+  const NOW_APPS = 1_800_000_000_000;
+
+  function guestsWithApps(overrides: Partial<CtoxGuestManager.CtoxGuestManager["Service"]> = {}) {
+    return CtoxGuestManager.CtoxGuestManager.of({
+      enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+      exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+      activate: () => Effect.die("unused"),
+      deactivate: Effect.succeed({ _tag: "completed" }),
+      deactivateInstance: () => Effect.succeed({ _tag: "completed" }),
+      setBounds: () => Effect.die("unused"),
+      readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
+      openGuestApp: () => Effect.die("unused"),
+      ...overrides,
+    });
+  }
+
+  function railLayer(overrides: Partial<CtoxAppRail.CtoxAppRail["Service"]> = {}) {
+    return Layer.succeed(
+      CtoxAppRail.CtoxAppRail,
+      CtoxAppRail.CtoxAppRail.of({
+        stateForInstance: () => Effect.succeed({ docked: [], apps: [] }),
+        setDocked: () => Effect.void,
+        recordLiveApps: () => Effect.void,
+        removeInstance: () => Effect.void,
+        ...overrides,
+      }),
+    );
+  }
+
+  it.effect("merges docked and open apps from a live guest and refreshes the cache", () => {
+    const recordLiveApps = vi.fn(() => Effect.void);
+    const guests = guestsWithApps({
+      readGuestApps: () =>
+        Effect.succeed({
+          _tag: "completed",
+          apps: [
+            { id: "crm", title: "CRM" },
+            { id: "notes", title: "Notes" },
+          ],
+          activeModuleId: "notes",
+        }),
+    });
+    return Effect.gen(function* () {
+      const result = yield* listApps.handler({ instanceId: "inst-a" });
+      const decoded = result as {
+        readonly _tag: string;
+        readonly source?: string;
+        readonly apps?: readonly {
+          readonly id: string;
+          readonly docked: boolean;
+          readonly open: boolean;
+        }[];
+      };
+      assert.equal(decoded._tag, "completed");
+      assert.equal(decoded.source, "live");
+      assert.deepEqual(
+        decoded.apps?.map((app) => [app.id, app.docked, app.open]),
+        [
+          ["crm", true, false],
+          ["notes", false, true],
+        ],
+      );
+      expect(recordLiveApps).toHaveBeenCalledWith(
+        "inst-a",
+        [
+          { id: "crm", title: "CRM" },
+          { id: "notes", title: "Notes" },
+        ],
+        expect.any(Number),
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests),
+          railLayer({
+            recordLiveApps,
+            stateForInstance: () =>
+              Effect.succeed({
+                docked: ["crm"],
+                apps: [{ id: "crm", title: "CRM", lastSeenAt: NOW_APPS }],
+              }),
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("serves the cached rail when the guest is not active", () =>
+    Effect.gen(function* () {
+      const result = yield* listApps.handler({ instanceId: "inst-a" });
+      const decoded = result as {
+        readonly _tag: string;
+        readonly source?: string;
+        readonly apps?: readonly { readonly id: string; readonly open: boolean }[];
+      };
+      assert.equal(decoded._tag, "completed");
+      assert.equal(decoded.source, "cache");
+      assert.deepEqual(
+        decoded.apps?.map((app) => [app.id, app.open]),
+        [["crm", false]],
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.succeed(CtoxGuestManager.CtoxGuestManager, guestsWithApps()),
+          railLayer({
+            stateForInstance: () =>
+              Effect.succeed({
+                docked: ["crm"],
+                apps: [{ id: "crm", title: "CRM", lastSeenAt: NOW_APPS }],
+              }),
+          }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("rejects malformed open-app input before touching the guest", () => {
+    const openGuestApp = vi.fn(() => Effect.succeed({ _tag: "completed" as const }));
+    return Effect.gen(function* () {
+      const result = yield* openApp.handler({
+        instanceId: "inst-a",
+        moduleId: "../escape",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+      });
+      assert.deepEqual(result, { _tag: "failed", code: "invalid_input" });
+      expect(openGuestApp).not.toHaveBeenCalled();
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(CtoxGuestManager.CtoxGuestManager, guestsWithApps({ openGuestApp })),
+      ),
+    );
+  });
+
+  it.effect("maps guest activation failures onto the app action result", () =>
+    Effect.gen(function* () {
+      const result = yield* openApp.handler({
+        instanceId: "inst-a",
+        moduleId: "crm",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+      });
+      assert.deepEqual(result, { _tag: "failed", code: "guest_failed" });
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(
+          CtoxGuestManager.CtoxGuestManager,
+          guestsWithApps({
+            openGuestApp: () => Effect.succeed({ _tag: "failed", code: "launch_failed" }),
+          }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("persists dock toggles and reports persistence failures", () => {
+    const setDocked = vi.fn(() => Effect.void);
+    return Effect.gen(function* () {
+      const ok = yield* setAppDocked.handler({
+        instanceId: "inst-a",
+        moduleId: "crm",
+        docked: true,
+      });
+      assert.deepEqual(ok, { _tag: "completed" });
+      expect(setDocked).toHaveBeenCalledWith("inst-a", "crm", true);
+    }).pipe(Effect.provide(railLayer({ setDocked })));
+  });
+
+  it.effect("reports persistence failures from the rail store", () =>
+    Effect.gen(function* () {
+      const result = yield* setAppDocked.handler({
+        instanceId: "inst-a",
+        moduleId: "crm",
+        docked: false,
+      });
+      assert.deepEqual(result, { _tag: "failed", code: "persistence_failed" });
+    }).pipe(
+      Effect.provide(
+        railLayer({
+          setDocked: () =>
+            Effect.fail(new CtoxAppRail.CtoxAppRailError({ code: "persistence_failed" })),
+        }),
+      ),
+    ),
+  );
 });

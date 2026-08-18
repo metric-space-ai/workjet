@@ -1,6 +1,7 @@
 import type {
   CtoxDiscoveryResult,
   CtoxGuestBounds,
+  CtoxInstanceApp,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
   CtoxManagedInstanceSource,
@@ -105,6 +106,14 @@ interface CtoxModeContextValue {
   readonly removePairedInstance: (instance: CtoxManagedInstance) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => void;
   readonly setConnection: (state: CtoxConnectionState) => void;
+  /** Open a Business OS app: activates the instance guest if needed. */
+  readonly openApp: (instance: CtoxManagedInstance, moduleId: string) => void;
+  /** Pin or unpin an app on the instance rail (taskbar model). */
+  readonly setAppDocked: (instance: CtoxManagedInstance, moduleId: string, docked: boolean) => void;
+  /** Bumped whenever rail-relevant state changed; app rails reload on it. */
+  readonly appRailVersion: number;
+  /** The guest host reports its latest bounds for app-open activations. */
+  readonly reportGuestBounds: (bounds: CtoxGuestBounds) => void;
 }
 
 const CtoxModeContext = createContext<CtoxModeContextValue | null>(null);
@@ -371,6 +380,71 @@ export function CtoxModeProvider({
     setConnection("connecting");
   }, []);
 
+  const [appRailVersion, setAppRailVersion] = useState(0);
+  const guestBoundsRef = useRef<CtoxGuestBounds | null>(null);
+  const pendingOpenRef = useRef<{ instanceId: string; moduleId: string } | null>(null);
+
+  const reportGuestBounds = useCallback((bounds: CtoxGuestBounds) => {
+    guestBoundsRef.current = bounds;
+  }, []);
+
+  const dispatchOpenApp = useCallback(
+    (instanceId: string, moduleId: string) => {
+      if (bridge === undefined) return;
+      const bounds = guestBoundsRef.current ?? { x: 0, y: 0, width: 1, height: 1 };
+      void bridge
+        .openApp(instanceId, moduleId, bounds)
+        .catch(() => undefined)
+        .then(() => {
+          if (mountedRef.current) setAppRailVersion((current) => current + 1);
+        });
+    },
+    [bridge],
+  );
+
+  const openApp = useCallback(
+    (instance: CtoxManagedInstance, moduleId: string) => {
+      if (!canActivateCtoxInstance(instance)) return;
+      if (selectedIdRef.current === instance.id) {
+        pendingOpenRef.current = null;
+        dispatchOpenApp(instance.id, moduleId);
+        return;
+      }
+      // Selecting first keeps the renderer's activation flow authoritative;
+      // the open dispatches once the guest reports ready.
+      pendingOpenRef.current = { instanceId: instance.id, moduleId };
+      select(instance);
+    },
+    [dispatchOpenApp, select],
+  );
+
+  useEffect(() => {
+    if (connection !== "ready") {
+      if (connection === "idle" || connection === "error" || connection === "revoked") {
+        pendingOpenRef.current = null;
+      }
+      return;
+    }
+    setAppRailVersion((current) => current + 1);
+    const pending = pendingOpenRef.current;
+    if (pending === null || pending.instanceId !== selectedIdRef.current) return;
+    pendingOpenRef.current = null;
+    dispatchOpenApp(pending.instanceId, pending.moduleId);
+  }, [connection, dispatchOpenApp]);
+
+  const setAppDocked = useCallback(
+    (instance: CtoxManagedInstance, moduleId: string, docked: boolean) => {
+      if (bridge === undefined) return;
+      void bridge
+        .setAppDocked(instance.id, moduleId, docked)
+        .catch(() => undefined)
+        .then(() => {
+          if (mountedRef.current) setAppRailVersion((current) => current + 1);
+        });
+    },
+    [bridge],
+  );
+
   useLayoutEffect(() => {
     mountedRef.current = true;
     setModeReady(bridge === undefined);
@@ -409,9 +483,14 @@ export function CtoxModeProvider({
       removePairedInstance,
       select,
       setConnection,
+      openApp,
+      setAppDocked,
+      appRailVersion,
+      reportGuestBounds,
     }),
     [
       activationKey,
+      appRailVersion,
       bridge,
       connection,
       discovery,
@@ -420,11 +499,14 @@ export function CtoxModeProvider({
       login,
       logout,
       modeReady,
+      openApp,
       refresh,
       refreshing,
       removePairedInstance,
+      reportGuestBounds,
       select,
       selectedId,
+      setAppDocked,
     ],
   );
 
@@ -434,6 +516,124 @@ export function CtoxModeProvider({
 function statusLabel(instance: CtoxManagedInstance): string {
   const health = instance.healthSummary.dataPlaneReady ? "WebRTC ready" : "WebRTC unavailable";
   return `${STATUS_LABELS[instance.status]} · ${health}`;
+}
+
+/**
+ * The T3 analogy row set: instance = project, app = session. Docked apps are
+ * always listed (greyed via the disabled instance state while disconnected);
+ * undocked apps appear only while open; the open app carries a dock-style dot.
+ */
+function CtoxInstanceAppRail({
+  instance,
+  launchable,
+}: {
+  readonly instance: CtoxManagedInstance;
+  readonly launchable: boolean;
+}) {
+  const { bridge, selectedId, connection, openApp, setAppDocked, appRailVersion } = useCtoxMode();
+  const [apps, setApps] = useState<readonly CtoxInstanceApp[]>([]);
+  const [source, setSource] = useState<"live" | "cache">("cache");
+  const instanceReady = selectedId === instance.id && connection === "ready";
+
+  useEffect(() => {
+    if (bridge === undefined) return;
+    let cancelled = false;
+    void bridge.listApps(instance.id).then(
+      (result) => {
+        if (cancelled || result._tag !== "completed") return;
+        setApps(result.apps);
+        setSource(result.source);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [appRailVersion, bridge, instance.id, instanceReady]);
+
+  return (
+    <CtoxAppRailList
+      instance={instance}
+      apps={apps}
+      instanceReady={instanceReady}
+      source={source}
+      launchable={launchable}
+      onOpen={(moduleId) => openApp(instance, moduleId)}
+      onToggleDock={(moduleId, docked) => setAppDocked(instance, moduleId, docked)}
+    />
+  );
+}
+
+/** Pure app-rail rows; exported for deterministic state rendering in tests. */
+export function CtoxAppRailList({
+  instance,
+  apps,
+  instanceReady,
+  source,
+  launchable,
+  onOpen,
+  onToggleDock,
+}: {
+  readonly instance: CtoxManagedInstance;
+  readonly apps: readonly CtoxInstanceApp[];
+  readonly instanceReady: boolean;
+  readonly source: "live" | "cache";
+  readonly launchable: boolean;
+  readonly onOpen: (moduleId: string) => void;
+  readonly onToggleDock: (moduleId: string, docked: boolean) => void;
+}) {
+  if (apps.length === 0) return null;
+  const stale = !instanceReady || source === "cache";
+  return (
+    <ul
+      className="space-y-0.5 border-t border-sidebar-border/40 px-1.5 py-1"
+      aria-label={`Apps of ${instance.displayName}`}
+    >
+      {apps.map((app) => {
+        const open = app.open && instanceReady;
+        return (
+          <li key={app.id} className="group/ctox-app flex items-center gap-1">
+            <button
+              type="button"
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+                open
+                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent/40",
+                stale && !open && "text-sidebar-muted-foreground",
+                !launchable && "cursor-not-allowed opacity-60",
+              )}
+              disabled={!launchable}
+              aria-current={open ? "true" : undefined}
+              data-ctox-app-id={app.id}
+              data-ctox-app-open={open}
+              data-ctox-app-docked={app.docked}
+              title={launchable ? undefined : "This instance is not available."}
+              onClick={() => onOpen(app.id)}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  open ? "bg-sidebar-primary" : "bg-sidebar-muted-foreground/40",
+                )}
+              />
+              <span className="truncate">{app.title ?? app.id}</span>
+            </button>
+            <button
+              type="button"
+              className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-app:visible"
+              title={app.docked ? "Undock app" : "Dock app"}
+              aria-label={`${app.docked ? "Undock" : "Dock"} ${app.title ?? app.id}`}
+              onClick={() => onToggleDock(app.id, !app.docked)}
+            >
+              {app.docked ? "Unpin" : "Pin"}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function CtoxInstanceList({
@@ -498,6 +698,7 @@ function CtoxInstanceList({
                 Status: {statusLabel(instance)}
               </span>
             </button>
+            <CtoxInstanceAppRail instance={instance} launchable={launchable} />
             {paired && onRemove !== undefined ? (
               <div className="border-t border-sidebar-border/60 px-3 py-1.5 text-right">
                 <button
@@ -1104,7 +1305,15 @@ export function trackCtoxGuestActivation(
 }
 
 function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance }) {
-  const { bridge, activationKey, connection, modeReady, selectedId, setConnection } = useCtoxMode();
+  const {
+    bridge,
+    activationKey,
+    connection,
+    modeReady,
+    selectedId,
+    setConnection,
+    reportGuestBounds,
+  } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
   const activatedKeyRef = useRef(0);
@@ -1136,13 +1345,14 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
     if (host === null || typeof ResizeObserver === "undefined") return;
     const report = () => {
       const next = boundsOf(host);
+      reportGuestBounds(next);
       setBounds((current) => retainCtoxGuestBounds(current, next));
     };
     const observer = new ResizeObserver(report);
     observer.observe(host);
     report();
     return () => observer.disconnect();
-  }, []);
+  }, [reportGuestBounds]);
 
   useEffect(() => {
     if (

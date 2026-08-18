@@ -93,8 +93,10 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings } from "./settings.ts";
 import type {
+  CtoxAppActionResult,
   CtoxDiscoveryResult,
   CtoxGuestBounds,
+  CtoxInstanceAppsResult,
   CtoxManagedActionResult,
   CtoxManagedGuestResult,
   CtoxManagedLoginResult,
@@ -1114,6 +1116,20 @@ export interface DesktopCtoxBridge {
   activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
   deactivate: () => Promise<CtoxManagedActionResult>;
   setGuestBounds: (bounds: CtoxGuestBounds) => Promise<CtoxManagedActionResult>;
+  /** Docked-or-open apps of one instance (live from the guest, cache otherwise). */
+  listApps: (instanceId: string) => Promise<CtoxInstanceAppsResult>;
+  /** Activate the instance guest if needed and open the module directly. */
+  openApp: (
+    instanceId: string,
+    moduleId: string,
+    bounds: CtoxGuestBounds,
+  ) => Promise<CtoxAppActionResult>;
+  /** Pin or unpin an app on the instance's rail (taskbar model). */
+  setAppDocked: (
+    instanceId: string,
+    moduleId: string,
+    docked: boolean,
+  ) => Promise<CtoxAppActionResult>;
 }
 
 export interface DesktopPreviewBridge {

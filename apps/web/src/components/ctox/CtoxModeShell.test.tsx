@@ -21,6 +21,7 @@ import {
   CTOX_IMPORT_ERROR_MESSAGE,
   CTOX_IMPORT_SUCCESS_MESSAGE,
   CTOX_REMOVE_ERROR_MESSAGE,
+  CtoxAppRailList,
   CtoxMainShell,
   CtoxManagedInstanceList,
   CtoxModeProvider,
@@ -73,6 +74,14 @@ function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBri
     activate: async () => ({ _tag: "failed", code: "launch_failed" }),
     deactivate: async () => ({ _tag: "completed" }),
     setGuestBounds: async () => ({ _tag: "completed" }),
+    listApps: async (instanceId) => ({
+      _tag: "completed",
+      instanceId,
+      source: "cache",
+      apps: [],
+    }),
+    openApp: async () => ({ _tag: "completed" }),
+    setAppDocked: async () => ({ _tag: "completed" }),
     ...overrides,
   };
 }
@@ -526,5 +535,88 @@ describe("CtoxMainShell", () => {
     expect(ctoxModeShellSource).not.toMatch(/\bfetch\s*\(/u);
     expect(ctoxModeShellSource).not.toMatch(/\bXMLHttpRequest\b/u);
     expect(ctoxModeShellSource).not.toMatch(/\baxios\b/u);
+  });
+});
+
+describe("CTOX app rail presentation", () => {
+  const railInstance = instance({
+    id: "paired:manual_pairing:rail",
+    source: "manual_pairing",
+    displayName: "Rail Office",
+    status: "paired",
+    healthSummary: unavailable,
+  });
+  const railApps = [
+    { id: "crm", title: "CRM", docked: true, open: false, lastSeenAt: 1 },
+    { id: "ledger", title: "Ledger", docked: true, open: true, lastSeenAt: 2 },
+    { id: "notes", title: "Notes", docked: false, open: true, lastSeenAt: 3 },
+  ] as const;
+
+  it("distinguishes docked, open, and undocked-open app rows", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxAppRailList
+        instance={railInstance}
+        apps={railApps}
+        instanceReady={true}
+        source="live"
+        launchable={true}
+        onOpen={() => undefined}
+        onToggleDock={() => undefined}
+      />,
+    );
+    expect(markup).toContain('data-ctox-app-id="crm"');
+    expect(markup).toContain('data-ctox-app-docked="true"');
+    expect(markup).toContain('data-ctox-app-docked="false"');
+    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain("CRM");
+    expect(markup).toContain("Unpin");
+    expect(markup).toContain("Pin");
+  });
+
+  it("greys the rail and closes open markers while the instance is disconnected", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxAppRailList
+        instance={railInstance}
+        apps={railApps}
+        instanceReady={false}
+        source="cache"
+        launchable={false}
+        onOpen={() => undefined}
+        onToggleDock={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain('aria-current="true"');
+    expect(markup).toContain("cursor-not-allowed");
+    expect(markup).toContain("This instance is not available.");
+  });
+
+  it("renders nothing for an instance without rail apps", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxAppRailList
+        instance={railInstance}
+        apps={[]}
+        instanceReady={false}
+        source="cache"
+        launchable={true}
+        onOpen={() => undefined}
+        onToggleDock={() => undefined}
+      />,
+    );
+    expect(markup).toBe("");
+  });
+
+  it("falls back to the module id when an app has no title", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxAppRailList
+        instance={railInstance}
+        apps={[{ id: "warehouse", docked: true, open: false }]}
+        instanceReady={true}
+        source="live"
+        launchable={true}
+        onOpen={() => undefined}
+        onToggleDock={() => undefined}
+      />,
+    );
+    expect(markup).toContain("warehouse");
   });
 });

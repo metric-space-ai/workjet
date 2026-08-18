@@ -118,8 +118,107 @@ export class CtoxGuestManager extends Context.Service<
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivateInstance: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
     readonly setBounds: (bounds: CtoxGuestBounds) => Effect.Effect<CtoxManagedActionResult>;
+    /** Bounded read of the active guest's installed modules and active module. */
+    readonly readGuestApps: (instanceId: string) => Effect.Effect<CtoxGuestAppsObservation>;
+    /** Activate the instance if needed, then open the module in its guest. */
+    readonly openGuestApp: (
+      instanceId: string,
+      moduleId: string,
+      bounds: CtoxGuestBounds,
+    ) => Effect.Effect<CtoxManagedActionResult>;
   }
 >()("@t3tools/desktop/ctox/CtoxGuestManager") {}
+
+export const CTOX_APP_MODULE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const MAX_GUEST_APPS = 128;
+const MAX_GUEST_APP_TITLE_LENGTH = 128;
+
+export interface CtoxGuestAppObservation {
+  readonly id: string;
+  readonly title?: string;
+}
+
+export type CtoxGuestAppsObservation =
+  | {
+      readonly _tag: "completed";
+      readonly apps: readonly CtoxGuestAppObservation[];
+      readonly activeModuleId: string | null;
+    }
+  | { readonly _tag: "failed"; readonly code: "not_active" | "guest_failed" };
+
+// Fixed, renderer-independent expression: reads only bounded module identity
+// data from the guest's own app state. Never interpolates untrusted input.
+const GUEST_LIST_APPS_EXPRESSION = `(() => {
+  const app = globalThis.CTOX_BUSINESS_OS_APP;
+  if (!app || !Array.isArray(app.modules)) return { ok: false };
+  const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+  const apps = [];
+  for (const mod of app.modules) {
+    const id = typeof mod?.id === "string" ? mod.id : "";
+    if (!idPattern.test(id)) continue;
+    const rawTitle = typeof mod?.title === "string"
+      ? mod.title
+      : typeof mod?.name === "string" ? mod.name : "";
+    const title = rawTitle.trim().slice(0, ${MAX_GUEST_APP_TITLE_LENGTH});
+    apps.push(title.length > 0 ? { id, title } : { id });
+    if (apps.length >= ${MAX_GUEST_APPS}) break;
+  }
+  const activeId = typeof app.activeModule?.id === "string" && idPattern.test(app.activeModule.id)
+    ? app.activeModule.id
+    : null;
+  return { ok: true, apps, activeModule: activeId };
+})()`;
+
+function buildGuestOpenModuleExpression(moduleId: string): string {
+  // The id is validated against CTOX_APP_MODULE_ID_PATTERN before this point;
+  // JSON-encoding keeps the embedded literal inert either way.
+  return `(async () => {
+  const app = globalThis.CTOX_BUSINESS_OS_APP;
+  if (!app || typeof app.openModule !== "function") return { ok: false };
+  await app.openModule(${JSON.stringify(moduleId)});
+  return { ok: true };
+})()`;
+}
+
+function stripControlCharacters(value: string): string {
+  let out = "";
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code <= 0x1f || code === 0x7f) continue;
+    out += character;
+  }
+  return out;
+}
+
+function decodeGuestAppsObservation(
+  raw: unknown,
+): { apps: readonly CtoxGuestAppObservation[]; activeModuleId: string | null } | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const record = raw as {
+    readonly ok?: unknown;
+    readonly apps?: unknown;
+    readonly activeModule?: unknown;
+  };
+  if (record.ok !== true || !Array.isArray(record.apps)) return undefined;
+  const apps: CtoxGuestAppObservation[] = [];
+  for (const entry of record.apps.slice(0, MAX_GUEST_APPS)) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const candidate = entry as { readonly id?: unknown; readonly title?: unknown };
+    if (typeof candidate.id !== "string" || !CTOX_APP_MODULE_ID_PATTERN.test(candidate.id)) {
+      continue;
+    }
+    const title =
+      typeof candidate.title === "string"
+        ? stripControlCharacters(candidate.title).trim().slice(0, MAX_GUEST_APP_TITLE_LENGTH)
+        : "";
+    apps.push(title.length > 0 ? { id: candidate.id, title } : { id: candidate.id });
+  }
+  const activeModuleId =
+    typeof record.activeModule === "string" && CTOX_APP_MODULE_ID_PATTERN.test(record.activeModule)
+      ? record.activeModule
+      : null;
+  return { apps, activeModuleId };
+}
 
 function normalizePathname(pathname: string): string {
   const normalized = pathname.replace(/\/{2,}/g, "/").toLowerCase();
@@ -661,6 +760,95 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const readGuestApps = (instanceId: string): Effect.Effect<CtoxGuestAppsObservation> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxGuestAppsObservation, GuestState],
+          never
+        > {
+          const active = state.active;
+          if (
+            active === undefined ||
+            active.instanceId !== instanceId ||
+            active.view.webContents.isDestroyed()
+          ) {
+            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
+          }
+          const raw = yield* Effect.tryPromise({
+            try: () => active.view.webContents.executeJavaScript(GUEST_LIST_APPS_EXPRESSION, true),
+            catch: () => undefined,
+          }).pipe(Effect.orElseSucceed(() => undefined));
+          const observation = decodeGuestAppsObservation(raw);
+          if (observation === undefined) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
+          }
+          return [{ _tag: "completed", ...observation } as const, state] as const;
+        }),
+      );
+
+    const openGuestApp = (
+      instanceId: string,
+      moduleId: string,
+      bounds: CtoxGuestBounds,
+    ): Effect.Effect<CtoxManagedActionResult> =>
+      Effect.gen(function* () {
+        if (!CTOX_APP_MODULE_ID_PATTERN.test(moduleId) || !isValidBounds(bounds)) {
+          return { _tag: "failed", code: "invalid_input" } as const;
+        }
+        const currentlyActive = yield* SynchronizedRef.get(stateRef).pipe(
+          Effect.map(
+            (state) =>
+              state.active !== undefined &&
+              state.active.instanceId === instanceId &&
+              !state.active.view.webContents.isDestroyed(),
+          ),
+        );
+        if (!currentlyActive) {
+          const activation = yield* activate(instanceId, bounds);
+          if (activation._tag !== "ready") {
+            return {
+              _tag: "failed",
+              code: activation._tag === "failed" ? activation.code : "guest_failed",
+            } as const;
+          }
+        }
+        return yield* SynchronizedRef.modifyEffect(stateRef, (state) =>
+          Effect.gen(function* (): Generator<
+            Effect.Effect<unknown>,
+            readonly [CtoxManagedActionResult, GuestState],
+            never
+          > {
+            const active = state.active;
+            if (
+              active === undefined ||
+              active.instanceId !== instanceId ||
+              active.view.webContents.isDestroyed()
+            ) {
+              return [{ _tag: "failed", code: "not_active" } as const, state] as const;
+            }
+            const opened = yield* Effect.tryPromise({
+              try: () =>
+                active.view.webContents.executeJavaScript(
+                  buildGuestOpenModuleExpression(moduleId),
+                  true,
+                ),
+              catch: () => undefined,
+            }).pipe(Effect.orElseSucceed(() => undefined));
+            const succeeded =
+              typeof opened === "object" &&
+              opened !== null &&
+              (opened as { readonly ok?: unknown }).ok === true;
+            return [
+              succeeded
+                ? ({ _tag: "completed" } as const)
+                : ({ _tag: "failed", code: "guest_failed" } as const),
+              state,
+            ] as const;
+          }),
+        );
+      });
+
     return CtoxGuestManager.of({
       enterBusinessOsMode,
       exitBusinessOsMode,
@@ -668,6 +856,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       deactivate,
       deactivateInstance,
       setBounds,
+      readGuestApps,
+      openGuestApp,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 

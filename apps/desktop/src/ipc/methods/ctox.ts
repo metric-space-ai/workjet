@@ -1,21 +1,28 @@
 import {
+  CtoxAppActionResult,
   CtoxDiscoveryResult,
   CtoxGuestBoundsInput,
+  CtoxInstanceAppsInput,
+  CtoxInstanceAppsResult,
   CtoxManagedActionResult,
   CtoxManagedActivationInput,
   CtoxManagedGuestResult,
   CtoxManagedLoginResult,
   CtoxManualPairingImportInput,
+  CtoxOpenAppInput,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveInput,
   CtoxPairedInstanceRemoveResult,
   CtoxPairingInviteImportInput,
+  CtoxSetAppDockedInput,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import * as CtoxAppRail from "../../ctox/CtoxAppRail.ts";
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
@@ -269,7 +276,110 @@ export const setGuestBounds: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager
       }),
   };
 
+export const listApps: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxAppRail.CtoxAppRail | CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_LIST_APPS_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxInstanceAppsInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxInstanceAppsResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const instanceId = input.value.instanceId;
+      const rail = yield* CtoxAppRail.CtoxAppRail;
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const nowEpochMs = yield* DateTime.now.pipe(Effect.map(DateTime.toEpochMillis));
+      const observation = yield* guests.readGuestApps(instanceId);
+      if (observation._tag === "completed") {
+        // Persist what the live guest reports so a disconnected instance can
+        // still render its rail from the last known state.
+        yield* rail
+          .recordLiveApps(instanceId, observation.apps, nowEpochMs)
+          .pipe(Effect.orElseSucceed(() => undefined));
+      }
+      const state = yield* rail
+        .stateForInstance(instanceId)
+        .pipe(Effect.orElseSucceed(() => ({ docked: [], apps: [] }) as const));
+      const apps = CtoxAppRail.mergeRailApps({
+        docked: state.docked,
+        cached: state.apps,
+        ...(observation._tag === "completed"
+          ? { live: { apps: observation.apps, activeModuleId: observation.activeModuleId } }
+          : {}),
+        nowEpochMs,
+      });
+      return yield* encodeSafe(CtoxInstanceAppsResult, {
+        _tag: "completed",
+        instanceId,
+        source: observation._tag === "completed" ? "live" : "cache",
+        apps,
+      });
+    }),
+};
+
+export const openApp: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
+  channel: IpcChannels.CTOX_OPEN_APP_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const input = yield* Schema.decodeUnknownEffect(CtoxOpenAppInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxAppActionResult, { _tag: "failed", code: "invalid_input" });
+      }
+      const result = yield* guests.openGuestApp(
+        input.value.instanceId,
+        input.value.moduleId,
+        input.value.bounds,
+      );
+      return yield* encodeSafe(
+        CtoxAppActionResult,
+        result._tag === "completed"
+          ? { _tag: "completed" }
+          : {
+              _tag: "failed",
+              code:
+                result.code === "invalid_input" || result.code === "not_active"
+                  ? result.code
+                  : "guest_failed",
+            },
+      );
+    }),
+};
+
+export const setAppDocked: DesktopIpc.DesktopIpcMethod<never, CtoxAppRail.CtoxAppRail> = {
+  channel: IpcChannels.CTOX_SET_APP_DOCKED_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const rail = yield* CtoxAppRail.CtoxAppRail;
+      const input = yield* Schema.decodeUnknownEffect(CtoxSetAppDockedInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxAppActionResult, { _tag: "failed", code: "invalid_input" });
+      }
+      const result = yield* rail
+        .setDocked(input.value.instanceId, input.value.moduleId, input.value.docked)
+        .pipe(Effect.result);
+      return yield* encodeSafe(
+        CtoxAppActionResult,
+        Result.isSuccess(result)
+          ? { _tag: "completed" }
+          : { _tag: "failed", code: "persistence_failed" },
+      );
+    }),
+};
+
 type CtoxIpcServices =
+  | CtoxAppRail.CtoxAppRail
   | CtoxDevAuth.CtoxDevAuth
   | CtoxElectronSessions.CtoxElectronSessions
   | CtoxGuestManager.CtoxGuestManager
@@ -287,4 +397,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   activate,
   deactivate,
   setGuestBounds,
+  listApps,
+  openApp,
+  setAppDocked,
 ];

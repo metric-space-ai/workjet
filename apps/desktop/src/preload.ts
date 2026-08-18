@@ -163,6 +163,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     deactivate: () => ipcRenderer.invoke(IpcChannels.CTOX_DEACTIVATE_CHANNEL),
     setGuestBounds: (bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_SET_GUEST_BOUNDS_CHANNEL, { bounds }),
+    listApps: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_LIST_APPS_CHANNEL, { instanceId }),
+    openApp: (instanceId, moduleId, bounds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_OPEN_APP_CHANNEL, { instanceId, moduleId, bounds }),
+    setAppDocked: (instanceId, moduleId, docked) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SET_APP_DOCKED_CHANNEL, {
+        instanceId,
+        moduleId,
+        docked,
+      }),
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

@@ -89,3 +89,6 @@ export const CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL = "desktop:ctox-exit-business-os
 export const CTOX_ACTIVATE_CHANNEL = "desktop:ctox-activate";
 export const CTOX_DEACTIVATE_CHANNEL = "desktop:ctox-deactivate";
 export const CTOX_SET_GUEST_BOUNDS_CHANNEL = "desktop:ctox-set-guest-bounds";
+export const CTOX_LIST_APPS_CHANNEL = "desktop:ctox-list-apps";
+export const CTOX_OPEN_APP_CHANNEL = "desktop:ctox-open-app";
+export const CTOX_SET_APP_DOCKED_CHANNEL = "desktop:ctox-set-app-docked";

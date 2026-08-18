@@ -230,6 +230,75 @@ export const CtoxManagedActionResult = Schema.Union([
 ]);
 export type CtoxManagedActionResult = typeof CtoxManagedActionResult.Type;
 
+/**
+ * A Business OS module surfaced in the sidebar as a directly selectable app —
+ * the CTOX analog of a T3 chat session under its project. Docked apps are
+ * user-pinned to the rail (taskbar model) and stay listed even while closed
+ * or disconnected; undocked apps appear only while open in the guest.
+ */
+export const CtoxAppModuleId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
+);
+export type CtoxAppModuleId = typeof CtoxAppModuleId.Type;
+
+const CtoxAppTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(128), NoAsciiControlCharacters);
+
+export const CtoxInstanceApp = Schema.Struct({
+  id: CtoxAppModuleId,
+  title: Schema.optional(CtoxAppTitle),
+  docked: Schema.Boolean,
+  open: Schema.Boolean,
+  /** Epoch milliseconds of the last time this app was observed on the guest. */
+  lastSeenAt: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+});
+export type CtoxInstanceApp = typeof CtoxInstanceApp.Type;
+
+export const CtoxInstanceAppsInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+});
+export type CtoxInstanceAppsInput = typeof CtoxInstanceAppsInput.Type;
+
+export const CtoxAppActionFailureCode = Schema.Literals([
+  "invalid_input",
+  "not_active",
+  "guest_failed",
+  "persistence_failed",
+  "not_found",
+]);
+export type CtoxAppActionFailureCode = typeof CtoxAppActionFailureCode.Type;
+
+export const CtoxInstanceAppsResult = Schema.Union([
+  Schema.TaggedStruct("completed", {
+    instanceId: CtoxManagedInstanceId,
+    /** "live" when read from the active guest; "cache" for the persisted last known state. */
+    source: Schema.Literals(["live", "cache"]),
+    apps: Schema.Array(CtoxInstanceApp),
+  }),
+  Schema.TaggedStruct("failed", { code: CtoxAppActionFailureCode }),
+]);
+export type CtoxInstanceAppsResult = typeof CtoxInstanceAppsResult.Type;
+
+export const CtoxOpenAppInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  moduleId: CtoxAppModuleId,
+  bounds: CtoxGuestBounds,
+});
+export type CtoxOpenAppInput = typeof CtoxOpenAppInput.Type;
+
+export const CtoxSetAppDockedInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  moduleId: CtoxAppModuleId,
+  docked: Schema.Boolean,
+});
+export type CtoxSetAppDockedInput = typeof CtoxSetAppDockedInput.Type;
+
+export const CtoxAppActionResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", { code: CtoxAppActionFailureCode }),
+]);
+export type CtoxAppActionResult = typeof CtoxAppActionResult.Type;
+
 export const CtoxManagedLoginResult = Schema.Union([
   Schema.TaggedStruct("completed", { discovery: CtoxDiscoveryResult }),
   Schema.TaggedStruct("cancelled", { reason: Schema.Literals(["closed", "timeout"]) }),

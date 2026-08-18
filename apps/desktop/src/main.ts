@@ -21,6 +21,7 @@ import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
+import * as CtoxAppRail from "./ctox/CtoxAppRail.ts";
 import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
@@ -190,6 +191,7 @@ const desktopCtoxControlLayer = Layer.mergeAll(
   CtoxBusinessOsShell.layer,
   CtoxDevAuth.layer(),
   CtoxInstanceRegistry.layer(),
+  CtoxAppRail.layer(),
   CtoxManagedLaunch.layer(),
 ).pipe(Layer.provideMerge(CtoxElectronSessions.layer));
 

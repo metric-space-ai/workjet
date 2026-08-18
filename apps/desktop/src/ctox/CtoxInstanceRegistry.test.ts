@@ -370,6 +370,36 @@ describe("CtoxInstanceRegistry", () => {
     });
   });
 
+  it.effect("resolves an opaque stable identity key that survives re-pairing", () => {
+    const { memory, registry } = registryHarness();
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const manual = yield* service.importManualPairing(manualPairing);
+      const manualKey = yield* service.stableIdentityKey(manual.id);
+      assert.match(manualKey, /^ctox:[A-Za-z0-9_-]{22}$/);
+      // The identity is instance-scoped, not id- or source-scoped: the same
+      // CTOX instance keeps its key across pairing sources and re-imports.
+      const invited = yield* service.importInvite(invite());
+      assert.notEqual(invited.id, manual.id);
+      assert.equal(yield* service.stableIdentityKey(invited.id), manualKey);
+      const other = yield* service.importManualPairing({
+        ...manualPairing,
+        instanceId: "other-office",
+      });
+      assert.notEqual(yield* service.stableIdentityKey(other.id), manualKey);
+      // The raw identity never reaches the key or the public document.
+      assert.notInclude(manualKey, manualPairing.instanceId);
+      assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", "office-1");
+
+      const missing = yield* Effect.result(
+        service.stableIdentityKey("paired:manual_pairing:abcdefghijklmnopqrstuv"),
+      );
+      assert.equal(failureCode(missing), "not_found");
+      const managed = yield* Effect.result(service.stableIdentityKey("managed:tenant"));
+      assert.equal(failureCode(managed), "not_found");
+    });
+  });
+
   it.effect("rejects expired, bridged, oversized, malformed-room, and dangerous URL inputs", () =>
     Effect.gen(function* () {
       const invalidInvites = [

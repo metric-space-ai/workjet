@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import {
@@ -17,6 +18,8 @@ import {
 type CtoxAppRailService = CtoxAppRail["Service"];
 
 const NOW = 1_800_000_000_000;
+const decodeUnknownJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 describe("mergeRailApps", () => {
   it("orders docked apps first and marks the active module open", () => {
@@ -118,6 +121,8 @@ describe("refreshRailCache", () => {
 });
 
 describe("CtoxAppRail store", () => {
+  const keyA = { identity: "ctox:instance-a", legacyInstanceId: "inst-a" } as const;
+
   const harness = <A>(body: (rail: CtoxAppRailService) => Effect.Effect<A, CtoxAppRailError>) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -140,28 +145,111 @@ describe("CtoxAppRail store", () => {
     Effect.gen(function* () {
       yield* harness((rail) =>
         Effect.gen(function* () {
-          yield* rail.setDocked("inst-a", "crm", true);
-          yield* rail.setDocked("inst-a", "ledger", true);
-          yield* rail.setDocked("inst-a", "crm", false);
-          yield* rail.recordLiveApps("inst-a", [{ id: "notes", title: "Notes" }], NOW);
-          const stateA = yield* rail.stateForInstance("inst-a");
+          yield* rail.setDocked(keyA, "crm", true);
+          yield* rail.setDocked(keyA, "ledger", true);
+          yield* rail.setDocked(keyA, "crm", false);
+          yield* rail.recordLiveApps(keyA, [{ id: "notes", title: "Notes" }], NOW);
+          const stateA = yield* rail.stateForInstance(keyA);
           assert.deepEqual(stateA.docked, ["ledger"]);
           assert.deepEqual(stateA.apps, [{ id: "notes", title: "Notes", lastSeenAt: NOW }]);
-          const stateB = yield* rail.stateForInstance("inst-b");
+          const stateB = yield* rail.stateForInstance({ identity: "ctox:instance-b" });
           assert.deepEqual(stateB, { docked: [], apps: [] });
-          yield* rail.removeInstance("inst-a");
-          const removed = yield* rail.stateForInstance("inst-a");
+          yield* rail.removeInstance(keyA);
+          const removed = yield* rail.stateForInstance(keyA);
           assert.deepEqual(removed, { docked: [], apps: [] });
         }),
       );
     }),
   );
 
+  it.effect("keeps docked pins and cached apps across a remove and re-pair", () =>
+    harness((rail) =>
+      Effect.gen(function* () {
+        yield* rail.setDocked({ ...keyA, legacyInstanceId: "paired:x:first" }, "crm", true);
+        yield* rail.recordLiveApps(
+          { ...keyA, legacyInstanceId: "paired:x:first" },
+          [{ id: "crm", title: "CRM" }],
+          NOW,
+          "Office",
+        );
+        // Re-pairing the same CTOX instance yields a new registry id but the
+        // same stable identity.
+        const state = yield* rail.stateForInstance({
+          ...keyA,
+          legacyInstanceId: "paired:x:second",
+        });
+        assert.deepEqual(state.docked, ["crm"]);
+        assert.deepEqual(state.apps, [{ id: "crm", title: "CRM", lastSeenAt: NOW }]);
+        assert.equal(state.workspaceName, "Office");
+      }),
+    ),
+  );
+
+  it.effect("adopts a v1 record for the resolved identity and drops unresolved ones", () =>
+    harness((rail) =>
+      Effect.gen(function* () {
+        yield* rail.setDocked({ identity: "seed" }, "seed-app", true);
+        return rail;
+      }),
+    ).pipe(
+      Effect.flatMap(({ result: rail, stateDir, fs, path }) =>
+        Effect.gen(function* () {
+          const railPath = path.join(stateDir, "ctox", "app-rail.json");
+          yield* fs.writeFileString(
+            railPath,
+            `${encodeUnknownJson({
+              version: 1,
+              instances: [
+                {
+                  instanceId: "paired:x:first",
+                  workspaceName: "Office",
+                  docked: ["crm"],
+                  apps: [{ id: "crm", title: "CRM", lastSeenAt: NOW }],
+                },
+                { instanceId: "paired:y:other", docked: ["ledger"], apps: [] },
+              ],
+            })}\n`,
+          );
+
+          const migrated = yield* rail.stateForInstance({
+            identity: keyA.identity,
+            legacyInstanceId: "paired:x:first",
+          });
+          assert.deepEqual(migrated.docked, ["crm"]);
+          assert.deepEqual(migrated.apps, [{ id: "crm", title: "CRM", lastSeenAt: NOW }]);
+          assert.equal(migrated.workspaceName, "Office");
+
+          const stored = decodeUnknownJson(yield* fs.readFileString(railPath)) as {
+            readonly version: number;
+            readonly instances: readonly { readonly identity: string }[];
+          };
+          assert.equal(stored.version, 2);
+          assert.deepEqual(
+            stored.instances.map((record) => record.identity),
+            [keyA.identity, "legacy:paired:y:other"],
+          );
+
+          // The adopted record now answers to the re-paired registry id.
+          const rePaired = yield* rail.stateForInstance({
+            identity: keyA.identity,
+            legacyInstanceId: "paired:x:third",
+          });
+          assert.deepEqual(rePaired.docked, ["crm"]);
+          // A v1 record whose identity was never resolved is not served
+          // under a stable identity.
+          const unresolved = yield* rail.stateForInstance({ identity: "ctox:unknown" });
+          assert.deepEqual(unresolved, { docked: [], apps: [] });
+        }),
+      ),
+      Effect.orDie,
+    ),
+  );
+
   it.effect("falls back to an empty rail when the store file is corrupt", () =>
     Effect.gen(function* () {
       yield* harness((rail) =>
         Effect.gen(function* () {
-          yield* rail.setDocked("inst-a", "crm", true);
+          yield* rail.setDocked(keyA, "crm", true);
           return rail;
         }),
       ).pipe(
@@ -169,11 +257,11 @@ describe("CtoxAppRail store", () => {
           Effect.gen(function* () {
             const railPath = path.join(stateDir, "ctox", "app-rail.json");
             yield* fs.writeFileString(railPath, "{ not json");
-            const state = yield* rail.stateForInstance("inst-a");
+            const state = yield* rail.stateForInstance(keyA);
             assert.deepEqual(state, { docked: [], apps: [] });
             // A later write repairs the store.
-            yield* rail.setDocked("inst-a", "crm", true);
-            const repaired = yield* rail.stateForInstance("inst-a");
+            yield* rail.setDocked(keyA, "crm", true);
+            const repaired = yield* rail.stateForInstance(keyA);
             assert.deepEqual(repaired.docked, ["crm"]);
           }),
         ),

@@ -211,6 +211,15 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly removePairedInstance: (
       instanceId: string,
     ) => Effect.Effect<CtoxPairedInstanceRemoval, CtoxInstanceRegistryError>;
+    /**
+     * Main-process-only identity of the paired CTOX instance behind a registry
+     * id. The result is an opaque digest of the instance identity, so it stays
+     * equal across re-pairing and across the two pairing sources while never
+     * exposing the identity itself.
+     */
+    readonly stableIdentityKey: (
+      instanceId: string,
+    ) => Effect.Effect<string, CtoxInstanceRegistryError>;
     /** Main-process-only launch resolution; its secret-bearing result never crosses IPC. */
     readonly resolvePairedLaunch: (
       instanceId: string,
@@ -809,6 +818,15 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     return `paired:${source}:${Encoding.encodeBase64Url(digest).slice(0, 22)}`;
   });
 
+  const instanceIdentityKey = Effect.fn("CtoxInstanceRegistry.instanceIdentityKey")(function* (
+    instanceIdentity: string,
+  ) {
+    const digest = yield* crypto
+      .digest("SHA-256", textEncoder.encode(`ctox-instance\0${instanceIdentity}`))
+      .pipe(Effect.mapError(() => registryError("persistence_failed")));
+    return `ctox:${Encoding.encodeBase64Url(digest).slice(0, 22)}`;
+  });
+
   const decryptSecret = Effect.fn("CtoxInstanceRegistry.decryptSecret")(function* (
     record: SecretRegistryDocument["records"][number],
   ) {
@@ -967,6 +985,34 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     return { descriptor, config };
   });
 
+  const stableIdentityKey = Effect.fn("CtoxInstanceRegistry.stableIdentityKey")(function* (
+    instanceId: string,
+  ) {
+    if (!/^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(instanceId)) {
+      return yield* registryError("not_found");
+    }
+    yield* assertSafeStorage();
+    const [publicDocument, secretDocument] = yield* Effect.all([
+      readPublicDocument(fileSystem, publicRegistryPath),
+      readSecretDocument(fileSystem, secretRegistryPath),
+    ]);
+    const descriptor = publicDocument.instances.find((instance) => instance.id === instanceId);
+    const record = secretDocument.records.find((entry) => entry.id === instanceId);
+    if (
+      descriptor === undefined ||
+      record === undefined ||
+      !isSafePersistedPairedInstance(descriptor)
+    ) {
+      return yield* registryError("not_found");
+    }
+    const secret = yield* decryptSecret(record);
+    const expectedId = yield* stableId(secret.source, secret.instanceIdentity);
+    if (expectedId !== descriptor.id || secret.source !== descriptor.source) {
+      return yield* registryError("persistence_failed");
+    }
+    return yield* instanceIdentityKey(secret.instanceIdentity);
+  });
+
   const importPairing = Effect.fn("CtoxInstanceRegistry.importPairing")(function* (
     pairing: ValidatedPairing,
   ) {
@@ -1055,6 +1101,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   return CtoxInstanceRegistry.of({
     resolvePairedLaunch: (instanceId) => registryLock.withPermit(resolvePairedLaunch(instanceId)),
+    stableIdentityKey: (instanceId) => registryLock.withPermit(stableIdentityKey(instanceId)),
     merge: (managed) =>
       registryLock.withPermit(
         readPairedInstances().pipe(

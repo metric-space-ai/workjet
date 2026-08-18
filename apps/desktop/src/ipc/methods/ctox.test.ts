@@ -50,6 +50,7 @@ function registryLayer(
     removePairedInstance: () =>
       Effect.succeed({ descriptor: pairedInstance, secretRecordRemoved: true }),
     resolvePairedLaunch: () => Effect.die("unused"),
+    stableIdentityKey: () => failedRegistry("not_found"),
     ...overrides,
   });
   return Layer.succeed(CtoxInstanceRegistry.CtoxInstanceRegistry, service);
@@ -486,7 +487,7 @@ describe("CTOX app rail IPC methods", () => {
         ],
       );
       expect(recordLiveApps).toHaveBeenCalledWith(
-        "inst-a",
+        { identity: "instance:inst-a", legacyInstanceId: "inst-a" },
         [
           { id: "crm", title: "CRM" },
           { id: "notes", title: "Notes" },
@@ -496,7 +497,7 @@ describe("CTOX app rail IPC methods", () => {
       );
     }).pipe(
       Effect.provide(
-        Layer.merge(
+        Layer.mergeAll(
           Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests),
           railLayer({
             recordLiveApps,
@@ -506,6 +507,7 @@ describe("CTOX app rail IPC methods", () => {
                 apps: [{ id: "crm", title: "CRM", lastSeenAt: NOW_APPS }],
               }),
           }),
+          registryLayer(),
         ),
       ),
     );
@@ -527,7 +529,7 @@ describe("CTOX app rail IPC methods", () => {
       );
     }).pipe(
       Effect.provide(
-        Layer.merge(
+        Layer.mergeAll(
           Layer.succeed(CtoxGuestManager.CtoxGuestManager, guestsWithApps()),
           railLayer({
             stateForInstance: () =>
@@ -536,6 +538,7 @@ describe("CTOX app rail IPC methods", () => {
                 apps: [{ id: "crm", title: "CRM", lastSeenAt: NOW_APPS }],
               }),
           }),
+          registryLayer(),
         ),
       ),
     ),
@@ -587,8 +590,63 @@ describe("CTOX app rail IPC methods", () => {
         docked: true,
       });
       assert.deepEqual(ok, { _tag: "completed" });
-      expect(setDocked).toHaveBeenCalledWith("inst-a", "crm", true);
-    }).pipe(Effect.provide(railLayer({ setDocked })));
+      expect(setDocked).toHaveBeenCalledWith(
+        { identity: "instance:inst-a", legacyInstanceId: "inst-a" },
+        "crm",
+        true,
+      );
+    }).pipe(Effect.provide(Layer.merge(railLayer({ setDocked }), registryLayer())));
+  });
+
+  it.effect("keys the rail on the stable identity of a paired instance", () => {
+    const setDocked = vi.fn(() => Effect.void);
+    const stableIdentityKey = vi.fn(() => Effect.succeed("ctox:stable-office"));
+    const firstPairing = "paired:manual_pairing:abcdefghijklmnopqrstuv";
+    const rePaired = "paired:pairing_invite:bcdefghijklmnopqrstuvw";
+
+    return Effect.gen(function* () {
+      assert.deepEqual(
+        yield* setAppDocked.handler({ instanceId: firstPairing, moduleId: "crm", docked: true }),
+        { _tag: "completed" },
+      );
+      // The same CTOX instance keeps its rail record after remove and re-pair.
+      assert.deepEqual(
+        yield* setAppDocked.handler({ instanceId: rePaired, moduleId: "ledger", docked: true }),
+        { _tag: "completed" },
+      );
+      expect(setDocked).toHaveBeenNthCalledWith(
+        1,
+        { identity: "ctox:stable-office", legacyInstanceId: firstPairing },
+        "crm",
+        true,
+      );
+      expect(setDocked).toHaveBeenNthCalledWith(
+        2,
+        { identity: "ctox:stable-office", legacyInstanceId: rePaired },
+        "ledger",
+        true,
+      );
+      expect(stableIdentityKey).toHaveBeenCalledTimes(2);
+    }).pipe(
+      Effect.provide(Layer.merge(railLayer({ setDocked }), registryLayer({ stableIdentityKey }))),
+    );
+  });
+
+  it.effect("falls back to the registry id when the stable identity is unresolvable", () => {
+    const setDocked = vi.fn(() => Effect.void);
+    const unresolvable = "paired:manual_pairing:abcdefghijklmnopqrstuv";
+
+    return Effect.gen(function* () {
+      assert.deepEqual(
+        yield* setAppDocked.handler({ instanceId: unresolvable, moduleId: "crm", docked: true }),
+        { _tag: "completed" },
+      );
+      expect(setDocked).toHaveBeenCalledWith(
+        { identity: `instance:${unresolvable}`, legacyInstanceId: unresolvable },
+        "crm",
+        true,
+      );
+    }).pipe(Effect.provide(Layer.merge(railLayer({ setDocked }), registryLayer())));
   });
 
   it.effect("reports persistence failures from the rail store", () =>
@@ -601,10 +659,13 @@ describe("CTOX app rail IPC methods", () => {
       assert.deepEqual(result, { _tag: "failed", code: "persistence_failed" });
     }).pipe(
       Effect.provide(
-        railLayer({
-          setDocked: () =>
-            Effect.fail(new CtoxAppRail.CtoxAppRailError({ code: "persistence_failed" })),
-        }),
+        Layer.merge(
+          railLayer({
+            setDocked: () =>
+              Effect.fail(new CtoxAppRail.CtoxAppRailError({ code: "persistence_failed" })),
+          }),
+          registryLayer(),
+        ),
       ),
     ),
   );

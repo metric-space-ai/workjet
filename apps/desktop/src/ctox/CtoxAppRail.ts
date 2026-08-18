@@ -11,7 +11,14 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
-const RAIL_VERSION = 1;
+const RAIL_VERSION = 2;
+const LEGACY_RAIL_VERSION = 1;
+/**
+ * Identity of a v1 record that has not been claimed by a stable identity yet.
+ * A v1 document was keyed on the renderer registry id, which changes whenever
+ * the same CTOX instance is paired again.
+ */
+const LEGACY_KEY_PREFIX = "legacy:";
 const RAIL_FILE = "app-rail.json";
 export const MAX_RAIL_APPS = 128;
 export const MAX_DOCKED_APPS = 64;
@@ -36,8 +43,13 @@ const RailCachedApp = Schema.Struct({
   lastSeenAt: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 type RailCachedApp = typeof RailCachedApp.Type;
+const RailInstanceKeyText = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(512),
+);
 const RailInstanceRecord = Schema.Struct({
-  instanceId: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(512)),
+  identity: RailInstanceKeyText,
   workspaceName: Schema.optionalKey(RailAppTitle),
   docked: Schema.Array(RailModuleId).check(Schema.isMaxLength(MAX_DOCKED_APPS)),
   apps: Schema.Array(RailCachedApp).check(Schema.isMaxLength(MAX_RAIL_APPS)),
@@ -48,7 +60,34 @@ const RailDocument = Schema.Struct({
   instances: Schema.Array(RailInstanceRecord).check(Schema.isMaxLength(MAX_RAIL_INSTANCES)),
 });
 type RailDocument = typeof RailDocument.Type;
+const LegacyRailDocument = Schema.Struct({
+  version: Schema.Literal(LEGACY_RAIL_VERSION),
+  instances: Schema.Array(
+    Schema.Struct({
+      instanceId: RailInstanceKeyText,
+      workspaceName: Schema.optionalKey(RailAppTitle),
+      docked: Schema.Array(RailModuleId).check(Schema.isMaxLength(MAX_DOCKED_APPS)),
+      apps: Schema.Array(RailCachedApp).check(Schema.isMaxLength(MAX_RAIL_APPS)),
+    }),
+  ).check(Schema.isMaxLength(MAX_RAIL_INSTANCES)),
+});
+type LegacyRailDocument = typeof LegacyRailDocument.Type;
 const RailDocumentJson = Schema.fromJsonString(RailDocument);
+const StoredRailDocumentJson = Schema.fromJsonString(
+  Schema.Union([RailDocument, LegacyRailDocument]),
+);
+
+/** Carry a v1 record forward under its legacy key so it can still be claimed. */
+function migrateStoredDocument(document: RailDocument | LegacyRailDocument): RailDocument {
+  if (document.version === RAIL_VERSION) return document;
+  return {
+    version: RAIL_VERSION,
+    instances: document.instances.map(({ instanceId, ...record }) => ({
+      ...record,
+      identity: `${LEGACY_KEY_PREFIX}${instanceId}`,
+    })),
+  };
+}
 
 const EMPTY_DOCUMENT: RailDocument = { version: RAIL_VERSION, instances: [] };
 
@@ -63,6 +102,18 @@ const railError = (code: "persistence_failed") => new CtoxAppRailError({ code })
 export interface CtoxLiveGuestApp {
   readonly id: string;
   readonly title?: string;
+}
+
+/**
+ * Rail records are keyed on the stable identity of the CTOX instance, which the
+ * main process resolves from the renderer registry id. The registry id changes
+ * when the same instance is paired again; the identity does not, so docked pins
+ * and the cached app list survive a remove and re-pair.
+ */
+export interface CtoxRailInstanceKey {
+  readonly identity: string;
+  /** Renderer registry id, used only to claim a not-yet-migrated v1 record. */
+  readonly legacyInstanceId?: string;
 }
 
 export interface CtoxRailInstanceState {
@@ -147,20 +198,20 @@ export class CtoxAppRail extends Context.Service<
   CtoxAppRail,
   {
     readonly stateForInstance: (
-      instanceId: string,
+      key: CtoxRailInstanceKey,
     ) => Effect.Effect<CtoxRailInstanceState, CtoxAppRailError>;
     readonly setDocked: (
-      instanceId: string,
+      key: CtoxRailInstanceKey,
       moduleId: string,
       docked: boolean,
     ) => Effect.Effect<void, CtoxAppRailError>;
     readonly recordLiveApps: (
-      instanceId: string,
+      key: CtoxRailInstanceKey,
       live: readonly CtoxLiveGuestApp[],
       nowEpochMs: number,
       workspaceName?: string,
     ) => Effect.Effect<void, CtoxAppRailError>;
-    readonly removeInstance: (instanceId: string) => Effect.Effect<void, CtoxAppRailError>;
+    readonly removeInstance: (key: CtoxRailInstanceKey) => Effect.Effect<void, CtoxAppRailError>;
   }
 >()("@t3tools/desktop/ctox/CtoxAppRail") {}
 
@@ -179,7 +230,8 @@ export const make = Effect.fn("CtoxAppRail.make")(function* () {
       .readFileString(railPath)
       .pipe(Effect.mapError(() => railError("persistence_failed")));
     // A corrupt rail store must never break the sidebar: fall back to empty.
-    return yield* Schema.decodeEffect(RailDocumentJson)(contents.trim()).pipe(
+    return yield* Schema.decodeEffect(StoredRailDocumentJson)(contents.trim()).pipe(
+      Effect.map(migrateStoredDocument),
       Effect.orElseSucceed(() => EMPTY_DOCUMENT),
     );
   });
@@ -204,28 +256,52 @@ export const make = Effect.fn("CtoxAppRail.make")(function* () {
       .pipe(Effect.mapError(() => railError("persistence_failed")));
   });
 
+  /** The stable identity first, then the v1 record the registry id left behind. */
+  const findRecord = (document: RailDocument, key: CtoxRailInstanceKey) =>
+    document.instances.find((record) => record.identity === key.identity) ??
+    (key.legacyInstanceId === undefined
+      ? undefined
+      : document.instances.find(
+          (record) => record.identity === `${LEGACY_KEY_PREFIX}${key.legacyInstanceId}`,
+        ));
+
   const modifyRecord = (
-    instanceId: string,
+    key: CtoxRailInstanceKey,
     update: (record: RailInstanceRecord) => RailInstanceRecord | undefined,
   ) =>
     lock.withPermit(
       Effect.gen(function* () {
         const document = yield* readDocument();
-        const existing = document.instances.find((record) => record.instanceId === instanceId);
-        const updated = update(existing ?? { instanceId, docked: [], apps: [] });
-        const others = document.instances.filter((record) => record.instanceId !== instanceId);
+        const existing = findRecord(document, key);
+        const updated = update(existing ?? { identity: key.identity, docked: [], apps: [] });
+        const others = document.instances.filter(
+          (record) => record !== existing && record.identity !== key.identity,
+        );
         const instances =
-          updated === undefined ? others : [...others, updated].slice(0, MAX_RAIL_INSTANCES);
+          updated === undefined
+            ? others
+            : [...others, { ...updated, identity: key.identity }].slice(0, MAX_RAIL_INSTANCES);
         yield* writeDocument({ version: RAIL_VERSION, instances });
       }),
     );
 
   return CtoxAppRail.of({
-    stateForInstance: (instanceId) =>
+    stateForInstance: (key) =>
       lock.withPermit(
         Effect.gen(function* () {
           const document = yield* readDocument();
-          const record = document.instances.find((entry) => entry.instanceId === instanceId);
+          const record = findRecord(document, key);
+          if (record !== undefined && record.identity !== key.identity) {
+            // Claim the v1 record now, while the registry id it was written
+            // under is still the current one. A failed rewrite is not fatal:
+            // the state below is served either way.
+            yield* writeDocument({
+              version: RAIL_VERSION,
+              instances: document.instances.map((entry) =>
+                entry === record ? { ...entry, identity: key.identity } : entry,
+              ),
+            }).pipe(Effect.orElseSucceed(() => undefined));
+          }
           return {
             docked: record?.docked ?? [],
             apps: record?.apps ?? [],
@@ -233,21 +309,21 @@ export const make = Effect.fn("CtoxAppRail.make")(function* () {
           };
         }),
       ),
-    setDocked: (instanceId, moduleId, docked) =>
-      modifyRecord(instanceId, (record) => {
+    setDocked: (key, moduleId, docked) =>
+      modifyRecord(key, (record) => {
         const withoutModule = record.docked.filter((id) => id !== moduleId);
         const nextDocked = docked
           ? [...withoutModule, moduleId].slice(-MAX_DOCKED_APPS)
           : withoutModule;
         return { ...record, docked: nextDocked };
       }),
-    recordLiveApps: (instanceId, live, nowEpochMs, workspaceName) =>
-      modifyRecord(instanceId, (record) => ({
+    recordLiveApps: (key, live, nowEpochMs, workspaceName) =>
+      modifyRecord(key, (record) => ({
         ...record,
         ...(workspaceName === undefined || workspaceName.length === 0 ? {} : { workspaceName }),
         apps: refreshRailCache({ cached: record.apps, live, nowEpochMs }),
       })),
-    removeInstance: (instanceId) => modifyRecord(instanceId, () => undefined),
+    removeInstance: (key) => modifyRecord(key, () => undefined),
   });
 });
 

@@ -35,6 +35,27 @@ function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I
   return Schema.encodeUnknownEffect(schema)(value).pipe(Effect.orDie);
 }
 
+const RAIL_INSTANCE_KEY_PREFIX = "instance:";
+
+/**
+ * The renderer only ever supplies the registry id, which a paired instance
+ * loses when it is removed and paired again. Resolve the stable identity of a
+ * paired instance in the main process; managed ids are already stable, and an
+ * unresolvable id degrades to the rail key it had before.
+ */
+const railKeyFor = Effect.fn("ctox.railKeyFor")(function* (instanceId: string) {
+  const fallback: CtoxAppRail.CtoxRailInstanceKey = {
+    identity: `${RAIL_INSTANCE_KEY_PREFIX}${instanceId}`,
+    legacyInstanceId: instanceId,
+  };
+  if (!instanceId.startsWith("paired:")) return fallback;
+  const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+  const identity = yield* registry
+    .stableIdentityKey(instanceId)
+    .pipe(Effect.orElseSucceed(() => undefined));
+  return identity === undefined ? fallback : { identity, legacyInstanceId: instanceId };
+});
+
 export const refresh: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxDevAuth.CtoxDevAuth | CtoxInstanceRegistry.CtoxInstanceRegistry
@@ -279,7 +300,9 @@ export const setGuestBounds: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager
 
 export const listApps: DesktopIpc.DesktopIpcMethod<
   never,
-  CtoxAppRail.CtoxAppRail | CtoxGuestManager.CtoxGuestManager
+  | CtoxAppRail.CtoxAppRail
+  | CtoxGuestManager.CtoxGuestManager
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
 > = {
   channel: IpcChannels.CTOX_LIST_APPS_CHANNEL,
   handler: (raw) =>
@@ -296,17 +319,18 @@ export const listApps: DesktopIpc.DesktopIpcMethod<
       const instanceId = input.value.instanceId;
       const rail = yield* CtoxAppRail.CtoxAppRail;
       const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const railKey = yield* railKeyFor(instanceId);
       const nowEpochMs = yield* DateTime.now.pipe(Effect.map(DateTime.toEpochMillis));
       const observation = yield* guests.readGuestApps(instanceId);
       if (observation._tag === "completed") {
         // Persist what the live guest reports so a disconnected instance can
         // still render its rail from the last known state.
         yield* rail
-          .recordLiveApps(instanceId, observation.apps, nowEpochMs, observation.workspaceName)
+          .recordLiveApps(railKey, observation.apps, nowEpochMs, observation.workspaceName)
           .pipe(Effect.orElseSucceed(() => undefined));
       }
       const state = yield* rail
-        .stateForInstance(instanceId)
+        .stateForInstance(railKey)
         .pipe(
           Effect.orElseSucceed((): CtoxAppRail.CtoxRailInstanceState => ({ docked: [], apps: [] })),
         );
@@ -369,7 +393,10 @@ export const openApp: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGu
     }),
 };
 
-export const setAppDocked: DesktopIpc.DesktopIpcMethod<never, CtoxAppRail.CtoxAppRail> = {
+export const setAppDocked: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxAppRail.CtoxAppRail | CtoxInstanceRegistry.CtoxInstanceRegistry
+> = {
   channel: IpcChannels.CTOX_SET_APP_DOCKED_CHANNEL,
   handler: (raw) =>
     Effect.gen(function* () {
@@ -380,8 +407,9 @@ export const setAppDocked: DesktopIpc.DesktopIpcMethod<never, CtoxAppRail.CtoxAp
       if (input._tag === "None") {
         return yield* encodeSafe(CtoxAppActionResult, { _tag: "failed", code: "invalid_input" });
       }
+      const railKey = yield* railKeyFor(input.value.instanceId);
       const result = yield* rail
-        .setDocked(input.value.instanceId, input.value.moduleId, input.value.docked)
+        .setDocked(railKey, input.value.moduleId, input.value.docked)
         .pipe(Effect.result);
       return yield* encodeSafe(
         CtoxAppActionResult,

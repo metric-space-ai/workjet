@@ -189,6 +189,7 @@ function makeGuestHarness() {
     importManualPairing: () => Effect.die("unused"),
     removePairedInstance: () => Effect.die("unused"),
     resolvePairedLaunch,
+    stableIdentityKey: () => Effect.die("unused"),
   });
   const instance = vi.fn(() => Effect.succeed(browserSession));
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({

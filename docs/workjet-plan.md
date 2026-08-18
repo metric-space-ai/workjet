@@ -680,8 +680,8 @@ durable lifecycle. Sending “message + task” creates both in one atomic comma
       `DelegationRef`, delivery receipt, result, review verdict, and bounded
       artifact/context references.
 - [ ] Model delegation states explicitly: `queued | delivered | accepted |
-  running | needs-input | review-requested | changes-requested | completed |
-  failed | cancelled | expired`.
+running | needs-input | review-requested | changes-requested | completed |
+failed | cancelled | expired`.
 - [ ] Persist source outbox, target inbox, delegation state, and thread-visible
       message/delegation events transactionally on their authoritative servers.
 - [ ] Add the self-hostable Workjet coordination relay beside T3 Connect. It
@@ -976,36 +976,30 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
   - [ ] Run the paired packaged-app smoke against the operator-selected real
         CTOX instance. Temporary Workjet profiles and invite files stay under
         `/Volumes/tmp`, but the smoke must not override `CTOX_ROOT`,
-        `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance.
-    - [x] Add the macOS-first packaged smoke runner and focused tests. It uses
-          only the typed CTOX desktop bridge, keeps the real CTOX instance
-          roots intact, discovers changing `WebContentsView` CDP targets by
-          capability, retains invite and peer secrets only in memory, and
-          enforces unrevoke/recovery before pairing or profile cleanup.
-    - [x] Rewrite the packaged smoke driver to use the visible `Code | Business
+        `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance. - [x] Add the macOS-first packaged smoke runner and focused tests. It uses
+        only the typed CTOX desktop bridge, keeps the real CTOX instance
+        roots intact, discovers changing `WebContentsView` CDP targets by
+        capability, retains invite and peer secrets only in memory, and
+        enforces unrevoke/recovery before pairing or profile cleanup. - [x] Rewrite the packaged smoke driver to use the visible `Code | Business
 OS` control and the safe paired-instance row, verify DOM-relative
-          sidebar/chrome/main/guest geometry, and prove no guest target remains
-          after returning to Code; it no longer calls guest activation,
-          deactivation, or discovery directly.
-    - [x] Resolve packaged guest activation on a successful same-origin
-          top-frame navigation commit and keep the pending React activation
-          observable across ResizeObserver updates. The focused Web/Desktop
-          suite is `16/16` plus `43/43`, both affected direct typechecks pass,
-          and the fresh packaged host now advances from `connecting` to
-          `ready`.
-    - [x] Align the packaged health probe with CTOX lazy replication by using
-          the public `waitForHealthy()` contract, give only the expensive
-          Advanced Status snapshot a longer bounded CDP window, and emit only
-          allowlisted non-secret collection/transport diagnostics.
-    - [x] Repair the RC6 paired-guest WebRTC room handshake/stream activation.
-          The fresh packaged host now pairs through the authenticated room,
-          yields its ephemeral signaling peer ID, and reports initial,
-          streaming-ready, and checkpoint health for
-          `business_module_catalog`, `ctox_runtime_settings`,
-          `business_commands`, and `ctox_queue_tasks`.
-    - [ ] Rebuild the packaged app with the mode lease and UI-driven smoke, then
-          pass the real RC6 revoke/unrevoke/recovery run before closing this
-          gate.
+        sidebar/chrome/main/guest geometry, and prove no guest target remains
+        after returning to Code; it no longer calls guest activation,
+        deactivation, or discovery directly. - [x] Resolve packaged guest activation on a successful same-origin
+        top-frame navigation commit and keep the pending React activation
+        observable across ResizeObserver updates. The focused Web/Desktop
+        suite is `16/16` plus `43/43`, both affected direct typechecks pass,
+        and the fresh packaged host now advances from `connecting` to
+        `ready`. - [x] Align the packaged health probe with CTOX lazy replication by using
+        the public `waitForHealthy()` contract, give only the expensive
+        Advanced Status snapshot a longer bounded CDP window, and emit only
+        allowlisted non-secret collection/transport diagnostics. - [x] Repair the RC6 paired-guest WebRTC room handshake/stream activation.
+        The fresh packaged host now pairs through the authenticated room,
+        yields its ephemeral signaling peer ID, and reports initial,
+        streaming-ready, and checkpoint health for
+        `business_module_catalog`, `ctox_runtime_settings`,
+        `business_commands`, and `ctox_queue_tasks`. - [ ] Rebuild the packaged app with the mode lease and UI-driven smoke, then
+        pass the real RC6 revoke/unrevoke/recovery run before closing this
+        gate.
   - [ ] Capture the browser peer ID only from the live WebRTC signaling
         handshake or another non-persistent runtime diagnostic, keep it out of
         logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
@@ -1443,26 +1437,39 @@ CTOX Desktop App is complete only when all of the following are true:
     - [x] Update Workjet's immutable shell manifest/checksum/source pin, fetch
           the release through ignored `.deps/` storage, and prove both fresh
           installation and verified cache-hit paths.
-    - [ ] Execute the packaged runner to prove native revoke,
+    - [x] Execute the packaged runner to prove native revoke,
           guaranteed-first unrevoke, healthy recovery, pairing removal, and
           same-partition cookie/localStorage/IndexedDB/CacheStorage deletion
           against the operator-selected real CTOX instance, leaving no
           revocation behind on any failure or catchable signal path.
-          Executed 2026-08-17 against the live local instance (shell rc.6,
-          packaged build `ctox-desktop-ui-fixed-20260817`), twice, both runs
-          failed with verified negative results and clean guaranteed-first
-          unrevoke cleanup (no revocation left behind): 1. Real product gap (CTOX side): `is_peer_valid` gates only the
-          connect stream (`core/rxdb/.../index_mod.rs`), so revoking a peer
-          with an established WebRTC session does not sever it — the guest
-          stayed healthy through the 45 s window instead of reporting
-          `peer_revoked`. Revocation is enforced at connect time only
-          (`rxdb_peer.rs` "deny ... at connect time"). Active-session
-          termination on revoke must be added in the CTOX repository and
-          released as a new pinned shell/daemon before this proof can pass. 2. Independent harness flake: one run died earlier with
-          `CDP command timed out` before first health — the known packaged
-          WebContentsView CDP instability. The runner now logs each
-          revocation-wait observation transition to make the next runs
-          diagnosable.
+          PASSED 2026-08-18 against the live local instance (packaged build
+          from this branch with pinned shell `0.1.0-rc.7`; all phases green
+          including persistent `peer_revoked`, healthy recovery after
+          unrevoke, pairing removal, and partition deletion). The 2026-08-17
+          runs failed with verified negative results (clean unrevoke cleanup
+          both times) and surfaced two real CTOX product gaps, both fixed on
+          `metric-space-ai/ctox` branch `codex/ctox-rc7-active-revocation`
+          (merge to main pending): 1. Revocation only gated new connections: `is_peer_valid` /
+          `is_peer_session_valid` ran at connect/handshake time only, so a
+          peer revoked mid-session kept its established WebRTC session.
+          Fixed with a periodic server-side revocation sweep that records
+          each peer's handshake session identity and severs peers whose
+          transport or session identity is revoked (commits `684a989` and
+          `d177311`; regression tests
+          `revocation_sweep_severs_established_peer` and
+          `revocation_sweep_severs_peer_with_revoked_session_identity`;
+          crate suite 385 ok, browser suite 104/104 with real wire daemon). 2. The revoked guest lost its revocation reason: after severing,
+          the native peer denies the revoked device at connect time
+          without a handshake, so status snapshots decayed to
+          `no-active-peer`. Fixed by latching `peer_revoked` in the
+          shell's advanced status (`noPeerRevocation` check plus
+          `sync.peerRevocation`) until required collections stream again
+          (commit `cccb672`, released and pinned as
+          `business-os-shell-v0.1.0-rc.7`).
+          Two runner flake classes remain documented: packaged
+          WebContentsView CDP timeouts (retry), and instance-side outages
+          (native peer watchdog respawn); both are distinguishable via the
+          runner's revocation-wait observation logging.
     - [x] Build the real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp`
           from the packaged staging layout.
     - [ ] Pin the staged production dependency install to repository lock

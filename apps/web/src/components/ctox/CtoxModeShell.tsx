@@ -1457,27 +1457,35 @@ export function CtoxMainShell() {
               description: "Select an available instance from the sidebar to open Business OS.",
             };
 
+  // Business OS brings its own full shell header; while the guest is ready
+  // the Workjet chrome row would just double it, so it collapses entirely and
+  // the guest surface takes the full height. It returns for connecting/error
+  // states, which need the status line (and a drag region) anyway.
+  const chromeHidden = selected !== undefined && connection === "ready";
+
   return (
     <SidebarInset
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
-      <header
-        data-ctox-main-chrome=""
-        className={cn(
-          "workspace-topbar drag-region border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-          COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        )}
-      >
-        <span className="text-xs font-medium text-muted-foreground/60 wco:pr-[var(--workspace-native-controls-inset)]">
-          {selected === undefined ? "CTOX" : selected.displayName}
-        </span>
-        {selected !== undefined ? (
-          <span className="ml-auto text-xs text-muted-foreground" role="status">
-            {connection}
+      {chromeHidden ? null : (
+        <header
+          data-ctox-main-chrome=""
+          className={cn(
+            "workspace-topbar drag-region border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
+            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          )}
+        >
+          <span className="text-xs font-medium text-muted-foreground/60 wco:pr-[var(--workspace-native-controls-inset)]">
+            {selected === undefined ? "CTOX" : selected.displayName}
           </span>
-        ) : null}
-      </header>
+          {selected !== undefined ? (
+            <span className="ml-auto text-xs text-muted-foreground" role="status">
+              {connection}
+            </span>
+          ) : null}
+        </header>
+      )}
       {selected === undefined ? (
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">

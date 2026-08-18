@@ -461,6 +461,16 @@ it.effect(
         ]);
         assert.notInclude(worktreeList, workerRef.replace(/[^A-Za-z0-9._-]+/g, "-"));
 
+        // `git worktree remove` does not delete the branch, so the rollback
+        // deletes the ref explicitly. No dangling `workjet/worker/<uuid>`.
+        const remainingRefs = yield* git(fixture.repositoryRoot, [
+          "for-each-ref",
+          "--format=%(refname:short)",
+          "refs/heads/",
+        ]);
+        assert.notInclude(remainingRefs, workerRef);
+        assert.notInclude(remainingRefs, WORKER_REF_PREFIX);
+
         const parentAfter = yield* checkoutState(fixture.repositoryRoot);
         assert.deepStrictEqual(parentAfter, parentBefore);
       }),

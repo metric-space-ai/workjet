@@ -201,9 +201,16 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           Effect.mapError(() => failure("worktree-failed")),
         );
       // Only ever remove what this dispatch created, and only when a rollback
-      // actually runs.
+      // actually runs. `git worktree remove` leaves the branch behind, so the
+      // throwaway worker ref is deleted too — otherwise every rolled-back
+      // dispatch would leak a dangling `workjet/worker/<uuid>`.
       const removeWorkerWorktree = Effect.suspend(() =>
-        gitWorkflow.removeWorktree({ cwd: gitCwd, path: workerWorktree.path, force: true }),
+        gitWorkflow.removeWorktree({ cwd: gitCwd, path: workerWorktree.path, force: true }).pipe(
+          // Lazy: the ref is only deleted once the worktree is actually gone.
+          Effect.andThen(() =>
+            gitWorkflow.deleteBranch({ cwd: gitCwd, refName: workerRefName, force: true }),
+          ),
+        ),
       ).pipe(Effect.exit);
 
       const createCommand = {

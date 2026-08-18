@@ -48,6 +48,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
+import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -247,7 +248,11 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
-  Layer.provideMerge(ThreadDeletionReactorLive),
+  Layer.provideMerge(
+    // Worker worktree release is a thread-deletion reaction, so its service is
+    // provided directly to the reactor that consumes `thread.deleted`.
+    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
+  ),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );

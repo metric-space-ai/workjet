@@ -21,6 +21,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
+  WorkjetThreadRole,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Option from "effect/Option";
@@ -43,6 +44,21 @@ export interface ProjectionThreadCheckpointContext {
   readonly workspaceRoot: string;
   readonly worktreePath: string | null;
   readonly checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>;
+}
+
+/**
+ * The narrow thread facts needed to clean up an isolated worker checkout after
+ * the thread is gone. Deliberately readable for deleted and archived rows: the
+ * cleanup reaction runs after `thread.deleted`, so an active-only read would
+ * race the projector and see nothing.
+ */
+export interface ProjectionThreadWorktreeCleanupContext {
+  readonly threadId: ThreadId;
+  readonly projectId: ProjectId;
+  readonly workspaceRoot: string;
+  readonly workjetRole: WorkjetThreadRole;
+  readonly branch: string | null;
+  readonly worktreePath: string | null;
 }
 
 export interface ProjectionFullThreadDiffContext {
@@ -146,6 +162,19 @@ export interface ProjectionSnapshotQueryShape {
   readonly getThreadCheckpointContext: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<ProjectionThreadCheckpointContext>, ProjectionRepositoryError>;
+
+  /**
+   * Read the narrow context needed to clean up a thread's isolated worker
+   * checkout. Unlike the shell/detail reads this deliberately ignores
+   * `deleted_at`/`archived_at`, because the cleanup reaction runs after the
+   * thread has already been deleted.
+   */
+  readonly getThreadWorktreeCleanupContext: (
+    threadId: ThreadId,
+  ) => Effect.Effect<
+    Option.Option<ProjectionThreadWorktreeCleanupContext>,
+    ProjectionRepositoryError
+  >;
 
   /**
    * Read only the narrow context needed to compute a full-thread diff from

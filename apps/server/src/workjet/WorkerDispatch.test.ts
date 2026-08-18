@@ -98,10 +98,12 @@ const makeHarness = (input?: {
   readonly failCommandTypes?: ReadonlyArray<OrchestrationCommand["type"]>;
   readonly failWorktreeCreate?: boolean;
   readonly failWorktreeRemove?: boolean;
+  readonly failBranchDelete?: boolean;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
   const worktreeCreates: Array<WorktreeCreateRecord> = [];
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
+  const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
   let idIndex = 0;
   const sources: WorkerDispatchSources = {
     // Deterministic and unbounded, so a second dispatch in the same harness gets
@@ -173,6 +175,10 @@ const makeHarness = (input?: {
         worktreeRemovals.push({ cwd: removeInput.cwd, path: removeInput.path });
         return input?.failWorktreeRemove ? Effect.fail(gitCommandFailure) : Effect.void;
       },
+      deleteBranch: (deleteInput: { readonly cwd: string; readonly refName: string }) => {
+        branchDeletions.push({ cwd: deleteInput.cwd, refName: deleteInput.refName });
+        return input?.failBranchDelete ? Effect.fail(gitCommandFailure) : Effect.void;
+      },
     } as unknown as GitWorkflowService["Service"];
     return yield* makeWorkerDispatchWithSources(sources).pipe(
       Effect.provideService(OrchestrationEngineService, engine),
@@ -180,7 +186,7 @@ const makeHarness = (input?: {
       Effect.provideService(GitWorkflowService, gitWorkflow),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
-  return { commands, service, worktreeCreates, worktreeRemovals };
+  return { commands, service, worktreeCreates, worktreeRemovals, branchDeletions };
 };
 
 const workerRefFor = (threadId: string) => `${WORKER_REF_PREFIX}${threadId}`;
@@ -380,7 +386,7 @@ it.effect("does not delete after create failure and rolls back bounded turn-star
 
 it.effect("creates one isolated worker worktree beneath the configured storage root", () =>
   Effect.gen(function* () {
-    const { commands, worktreeCreates, worktreeRemovals, service } = makeHarness();
+    const { commands, worktreeCreates, worktreeRemovals, branchDeletions, service } = makeHarness();
     const workerDispatch = yield* service;
 
     yield* workerDispatch.dispatch(invocation, { task: "Bounded worker task." });
@@ -398,6 +404,9 @@ it.effect("creates one isolated worker worktree beneath the configured storage r
     // The parent checkout and ref stay exactly as they were.
     expect(worktreeCreates[0]!.path).not.toBe(parent.worktreePath);
     expect(worktreeRemovals).toEqual([]);
+    // A successful dispatch keeps its ref; only the durable deletion boundary
+    // (ThreadDeletionReactor) or a rollback releases it.
+    expect(branchDeletions).toEqual([]);
     expect(commands[0]).toMatchObject({
       type: "thread.create",
       branch: workerRefFor(ids[0]),
@@ -461,12 +470,20 @@ it.effect("removes only the worktree this dispatch created when rollback runs", 
     expect(turnFailure.worktreeRemovals).toEqual([
       { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
     ]);
-    // The orchestrator's own worktree is never a removal target.
+    // `git worktree remove` leaves the branch behind, so the rollback must
+    // delete this dispatch's own worker ref too — and only that one.
+    expect(turnFailure.branchDeletions).toEqual([
+      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
+    ]);
+    // The orchestrator's own worktree and ref are never removal targets.
     expect(turnFailure.worktreeRemovals.some(({ path }) => path === parent.worktreePath)).toBe(
       false,
     );
+    expect(turnFailure.branchDeletions.some(({ refName }) => refName === parent.branch)).toBe(
+      false,
+    );
 
-    // A create failure must not leak the worktree either.
+    // A create failure must not leak the worktree or the ref either.
     const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
     const createService = yield* createFailure.service;
     const createError = yield* createService
@@ -475,6 +492,9 @@ it.effect("removes only the worktree this dispatch created when rollback runs", 
     expect(createError.reason).toBe("create-failed");
     expect(createFailure.worktreeRemovals).toEqual([
       { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
+    ]);
+    expect(createFailure.branchDeletions).toEqual([
+      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
     ]);
 
     // A failed worktree removal is reported as a rollback failure.
@@ -488,5 +508,23 @@ it.effect("removes only the worktree this dispatch created when rollback runs", 
       .pipe(Effect.flip);
     expect(removeError.reason).toBe("rollback-failed");
     expect(JSON.stringify(removeError)).not.toContain("downstream git secret");
+    // A failed worktree removal short-circuits before the ref delete.
+    expect(removeFailure.branchDeletions).toEqual([]);
+
+    // A failed ref deletion is a rollback failure too: the dangling ref is the
+    // exact leak this path exists to prevent.
+    const branchFailure = makeHarness({
+      failCommandTypes: ["thread.turn.start"],
+      failBranchDelete: true,
+    });
+    const branchService = yield* branchFailure.service;
+    const branchError = yield* branchService
+      .dispatch(invocation, { task: "Branch failure task." })
+      .pipe(Effect.flip);
+    expect(branchError.reason).toBe("rollback-failed");
+    expect(branchFailure.branchDeletions).toEqual([
+      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
+    ]);
+    expect(JSON.stringify(branchError)).not.toContain("downstream git secret");
   }),
 );

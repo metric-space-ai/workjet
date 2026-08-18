@@ -95,6 +95,14 @@ export class GitWorkflowService extends Context.Service<
       readonly oldBranch: string;
       readonly newBranch: string;
     }) => Effect.Effect<{ readonly branch: string }, GitManagerServiceError>;
+    /**
+     * Delete a local branch ref. `git worktree remove` leaves the branch
+     * behind, so any caller that owns a throwaway ref (isolated worker
+     * branches) must delete it explicitly.
+     */
+    readonly deleteBranch: (
+      input: GitVcsDriver.GitDeleteBranchInput,
+    ) => Effect.Effect<void, GitCommandError>;
   }
 >()("t3/git/GitWorkflowService") {}
 
@@ -330,6 +338,10 @@ export const make = Effect.gen(function* () {
     renameBranch: (input) =>
       ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(
         Effect.andThen(git.renameBranch(input)),
+      ),
+    deleteBranch: (input) =>
+      ensureGitCommand("GitWorkflowService.deleteBranch", input.cwd).pipe(
+        Effect.andThen(git.deleteBranch(input)),
       ),
   });
 });

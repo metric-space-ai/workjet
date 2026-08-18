@@ -968,11 +968,13 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
         staged server runtime manifest because those Workjet packages are
         already inlined in the server bundle; retain catalog dependency
         resolution and its focused regression test.
-  - [ ] Make the isolated staged production install consume the repository's
+  - [x] Make the isolated staged production install consume the repository's
         locked resolutions (or an equivalently pinned generated lock) instead
-        of re-resolving package ranges from the network. The successful retry
-        still resolved a newer `@anthropic-ai/claude-agent-sdk` than the root
-        lock before Electron Builder ran.
+        of re-resolving package ranges from the network. Commit `e5b731a02`
+        derives a stage `pnpm-lock.yaml` from the root lock
+        (`createStagePnpmLockfile`) and installs with
+        `vp install --prod --frozen-lockfile`; drift between the staged
+        manifest and the lock fails the build.
   - [ ] Run the paired packaged-app smoke against the operator-selected real
         CTOX instance. Temporary Workjet profiles and invite files stay under
         `/Volumes/tmp`, but the smoke must not override `CTOX_ROOT`,
@@ -1472,8 +1474,10 @@ CTOX Desktop App is complete only when all of the following are true:
           runner's revocation-wait observation logging.
     - [x] Build the real unsigned macOS arm64 DMG and ZIP under `/Volumes/tmp`
           from the packaged staging layout.
-    - [ ] Pin the staged production dependency install to repository lock
+    - [x] Pin the staged production dependency install to repository lock
           resolutions before treating packaged builds as reproducible/offline.
+          Done in commit `e5b731a02` (stage lockfile derived from the root
+          lock plus `--frozen-lockfile` staging install).
 13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
 14. [ ] Complete the durable local mailbox/delegation state machine, then add

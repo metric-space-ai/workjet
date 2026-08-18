@@ -114,7 +114,7 @@ describe("CtoxBusinessOsShell", () => {
         CtoxBusinessOsShell.resolveCtoxBusinessOsShellRoot(
           environment({ rootDir: "/repo", resourcesPath: "/resources", isPackaged: false }),
         ),
-      ).toBe(NodePath.join("/repo", ".deps", "ctox-business-os-shell", "0.1.0-rc.7"));
+      ).toBe(NodePath.join("/repo", ".deps", "ctox-business-os-shell", "0.1.0-rc.8"));
       await shellRoot(base, false);
     } finally {
       await NodeFs.rm(base, { recursive: true, force: true });

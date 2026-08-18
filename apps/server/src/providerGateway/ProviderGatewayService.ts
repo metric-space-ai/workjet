@@ -301,11 +301,24 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return currentStatus;
     };
 
+    // A missing configuration file is the bootstrap state: the host starts
+    // with only its management/OAuth surface so the first login can happen.
+    const bootstrapConfiguration: ProviderGatewayConfiguration = {
+      schemaVersion: 1,
+      defaultProvider: "claude",
+      accounts: [],
+      pools: [],
+      routes: [],
+    };
+
     const loadConfiguration = async (): Promise<ProviderGatewayConfiguration> => {
       let raw: string;
       try {
         raw = await platform.readText(configurationPath, CONFIG_MAX_BYTES);
-      } catch {
+      } catch (error) {
+        if (isRecord(error) && (error as { readonly code?: unknown }).code === "ENOENT") {
+          return bootstrapConfiguration;
+        }
         throw safeError("invalid-configuration");
       }
       let parsed: unknown;

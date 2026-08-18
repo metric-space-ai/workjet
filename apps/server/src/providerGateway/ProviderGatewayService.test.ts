@@ -214,6 +214,29 @@ describe("ProviderGatewayService", () => {
     expect(kills).toContain("SIGTERM");
   });
 
+  it("boots the bootstrap host when no configuration file exists yet", async () => {
+    const harness = readyHarness();
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      readText: async () => {
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+    };
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        const status = yield* gateway.start();
+        expect(status.phase).toBe("ready");
+        expect(status.configuredAccountCount).toBe(0);
+      }),
+    );
+    const runtimeWrite = harness.writes.find((content) =>
+      content.includes("workjet.provider-gateway-host.v1"),
+    );
+    expect(runtimeWrite).toBeDefined();
+    // A bootstrap host must not name a default provider.
+    expect(runtimeWrite).not.toContain("defaultProvider");
+  });
+
   it("refuses OAuth operations while the gateway is not running", async () => {
     const harness = readyHarness();
     await expect(

@@ -459,7 +459,9 @@ export const rustHostConfiguration = (
         antigravityOauthClientSecretSecret: configuration.antigravityOauth.clientSecretSecret,
       }
     : {}),
-  defaultProvider: configuration.defaultProvider,
+  // A bootstrap host with zero accounts must not name a default provider; the
+  // host rejects that combination.
+  ...(configuration.accounts.length > 0 ? { defaultProvider: configuration.defaultProvider } : {}),
   runtime: {
     request_timeout_ms: 30_000,
     routing_strategy: "round-robin",

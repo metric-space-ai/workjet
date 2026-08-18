@@ -343,7 +343,6 @@ export const decodeProviderGatewayConfiguration = (
   const defaultProvider = provider(value.defaultProvider);
   if (
     !Array.isArray(value.accounts) ||
-    value.accounts.length === 0 ||
     value.accounts.length > MAX_ACCOUNTS ||
     defaultProvider === undefined
   ) {
@@ -352,9 +351,12 @@ export const decodeProviderGatewayConfiguration = (
   const accounts = value.accounts.map(parseAccount);
   if (accounts.some((account) => account === undefined)) return undefined;
   const typedAccounts = accounts as ReadonlyArray<GatewayAccount>;
+  // An empty account list is a valid bootstrap state: the host starts with
+  // only the management/OAuth surface so the first login can happen at all.
   if (
     !unique(typedAccounts.map((account) => account.id)) ||
-    !typedAccounts.some((account) => account.enabled && account.provider === defaultProvider)
+    (typedAccounts.length > 0 &&
+      !typedAccounts.some((account) => account.enabled && account.provider === defaultProvider))
   ) {
     return undefined;
   }

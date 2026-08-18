@@ -193,6 +193,10 @@ import { VcsError } from "./vcs.ts";
 import {
   GreppyRuntimeSnapshot,
   WorkjetGatewayCatalog,
+  WorkjetGatewayOauthPollInput,
+  WorkjetGatewayOauthPollResult,
+  WorkjetGatewayOauthSession,
+  WorkjetGatewayOauthStartInput,
   WorkjetGatewayOperationError,
   WorkjetGatewayStatus,
   WorkjetGreppyOperationError,
@@ -291,6 +295,9 @@ export const WS_METHODS = {
   workjetGatewayCatalog: "workjet.providerGateway.catalog",
   workjetGatewayStart: "workjet.providerGateway.start",
   workjetGatewayStop: "workjet.providerGateway.stop",
+  workjetGatewayOauthStart: "workjet.providerGateway.oauthStart",
+  workjetGatewayOauthPoll: "workjet.providerGateway.oauthPoll",
+  workjetGatewayOauthCancel: "workjet.providerGateway.oauthCancel",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -536,6 +543,24 @@ export const WsWorkjetGatewayStartRpc = Rpc.make(WS_METHODS.workjetGatewayStart,
 export const WsWorkjetGatewayStopRpc = Rpc.make(WS_METHODS.workjetGatewayStop, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayStatus,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayOauthStartRpc = Rpc.make(WS_METHODS.workjetGatewayOauthStart, {
+  payload: WorkjetGatewayOauthStartInput,
+  success: WorkjetGatewayOauthSession,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayOauthPollRpc = Rpc.make(WS_METHODS.workjetGatewayOauthPoll, {
+  payload: WorkjetGatewayOauthPollInput,
+  success: WorkjetGatewayOauthPollResult,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayOauthCancelRpc = Rpc.make(WS_METHODS.workjetGatewayOauthCancel, {
+  payload: WorkjetGatewayOauthPollInput,
+  success: Schema.Struct({}),
   error: WorkjetGatewayRpcError,
 });
 
@@ -1074,6 +1099,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayCatalogRpc,
   WsWorkjetGatewayStartRpc,
   WsWorkjetGatewayStopRpc,
+  WsWorkjetGatewayOauthStartRpc,
+  WsWorkjetGatewayOauthPollRpc,
+  WsWorkjetGatewayOauthCancelRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

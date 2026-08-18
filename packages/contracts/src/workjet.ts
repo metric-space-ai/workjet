@@ -379,6 +379,39 @@ export const WorkjetGatewayCatalog = Schema.Struct({
 });
 export type WorkjetGatewayCatalog = typeof WorkjetGatewayCatalog.Type;
 
+/**
+ * One provider OAuth login flow through the local gateway host. The user opens
+ * `authorizationUrl` in their own browser and completes the provider login
+ * there; Workjet never sees or types credentials. `state` is the opaque
+ * session handle for polling and cancellation.
+ */
+export const WorkjetGatewayOauthSession = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  provider: WorkjetGatewayProvider,
+  state: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128))),
+  authorizationUrl: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(2048))),
+});
+export type WorkjetGatewayOauthSession = typeof WorkjetGatewayOauthSession.Type;
+
+export const WorkjetGatewayOauthStartInput = Schema.Struct({
+  provider: WorkjetGatewayProvider,
+});
+export type WorkjetGatewayOauthStartInput = typeof WorkjetGatewayOauthStartInput.Type;
+
+export const WorkjetGatewayOauthPollInput = Schema.Struct({
+  state: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128))),
+});
+export type WorkjetGatewayOauthPollInput = typeof WorkjetGatewayOauthPollInput.Type;
+
+/** Redacted poll result: account identities only, never credential material. */
+export const WorkjetGatewayOauthPollResult = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  pending: Schema.Boolean,
+  failed: Schema.Boolean,
+  completedAccountIds: Schema.Array(WorkjetGatewayAccountId),
+});
+export type WorkjetGatewayOauthPollResult = typeof WorkjetGatewayOauthPollResult.Type;
+
 export const WorkjetGatewayPhase = Schema.Literals([
   "stopped",
   "starting",
@@ -397,6 +430,9 @@ export const WorkjetGatewayFailureReason = Schema.Literals([
   "management-unavailable",
   "process-exit",
   "shutdown-timeout",
+  "gateway-not-ready",
+  "oauth-unavailable",
+  "oauth-session-invalid",
 ]);
 export type WorkjetGatewayFailureReason = typeof WorkjetGatewayFailureReason.Type;
 
@@ -435,6 +471,12 @@ export class WorkjetGatewayOperationError extends Schema.TaggedErrorClass<Workje
         return "The Workjet provider gateway process exited unexpectedly.";
       case "shutdown-timeout":
         return "The Workjet provider gateway did not stop in time.";
+      case "gateway-not-ready":
+        return "The Workjet provider gateway is not running.";
+      case "oauth-unavailable":
+        return "The Workjet provider gateway login flow is unavailable.";
+      case "oauth-session-invalid":
+        return "The Workjet provider gateway login session is invalid or expired.";
     }
   }
 }

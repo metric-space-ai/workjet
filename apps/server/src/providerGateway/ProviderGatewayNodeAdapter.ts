@@ -109,4 +109,17 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     });
     return JSON.parse(await readBoundedResponse(response, maximumBytes)) as unknown;
   },
+  managementRequest: async (endpoint, route, key, method, maximumBytes) => {
+    const response = await fetch(new URL(route, endpoint), {
+      method,
+      headers: { authorization: `Bearer ${key}` },
+      // The host's request reader requires a Content-Length on POST.
+      ...(method === "POST" ? { body: "" } : {}),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error("unavailable");
+    if (response.body === null) return null;
+    const text = await readBoundedResponse(response, maximumBytes);
+    return text.trim() === "" ? null : (JSON.parse(text) as unknown);
+  },
 };

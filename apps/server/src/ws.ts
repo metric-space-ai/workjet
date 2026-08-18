@@ -1649,6 +1649,20 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.workjetGatewayStop, providerGateway.stop(), {
             "rpc.aggregate": "workjet-provider-gateway",
           }),
+        [WS_METHODS.workjetGatewayOauthStart]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayOauthStart, providerGateway.oauthStart(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayOauthPoll]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayOauthPoll, providerGateway.oauthPoll(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayOauthCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayOauthCancel,
+            providerGateway.oauthCancel(input).pipe(Effect.as({})),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",

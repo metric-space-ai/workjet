@@ -1,7 +1,13 @@
 import {
+  WorkjetGatewayAccountId,
   WorkjetGatewayOperationError,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayFailureReason,
+  type WorkjetGatewayOauthPollInput,
+  type WorkjetGatewayOauthPollResult,
+  type WorkjetGatewayOauthSession,
+  type WorkjetGatewayOauthStartInput,
+  type WorkjetGatewayProvider,
   type WorkjetGatewayStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -20,6 +26,7 @@ import {
   MANAGEMENT_SECRET_NAME,
   rustHostConfiguration,
   secretStoreName,
+  type GatewayAccount,
   type GatewaySecretReference,
   type ProviderGatewayConfiguration,
 } from "./ProviderGatewayConfig.ts";
@@ -74,6 +81,14 @@ export interface ProviderGatewayPlatform {
     key: string,
     maximumBytes: number,
   ) => Promise<unknown>;
+  /** Management call with an explicit method; returns null for an empty body. */
+  readonly managementRequest: (
+    endpoint: string,
+    route: string,
+    key: string,
+    method: "GET" | "POST" | "DELETE",
+    maximumBytes: number,
+  ) => Promise<unknown>;
 }
 
 export interface ProviderGatewayServiceShape {
@@ -81,6 +96,22 @@ export interface ProviderGatewayServiceShape {
   readonly catalog: () => Effect.Effect<WorkjetGatewayCatalog, WorkjetGatewayOperationError>;
   readonly start: () => Effect.Effect<WorkjetGatewayStatus, WorkjetGatewayOperationError>;
   readonly stop: () => Effect.Effect<WorkjetGatewayStatus, WorkjetGatewayOperationError>;
+  /** Begin a provider OAuth login; the user opens the returned URL themselves. */
+  readonly oauthStart: (
+    input: WorkjetGatewayOauthStartInput,
+  ) => Effect.Effect<WorkjetGatewayOauthSession, WorkjetGatewayOperationError>;
+  /**
+   * Poll a login session. On completion this claims the one-time credentials
+   * from the host, persists them into the server secret store plus the gateway
+   * configuration, and restarts the gateway; token material never reaches the
+   * renderer.
+   */
+  readonly oauthPoll: (
+    input: WorkjetGatewayOauthPollInput,
+  ) => Effect.Effect<WorkjetGatewayOauthPollResult, WorkjetGatewayOperationError>;
+  readonly oauthCancel: (
+    input: WorkjetGatewayOauthPollInput,
+  ) => Effect.Effect<void, WorkjetGatewayOperationError>;
 }
 
 export class ProviderGatewayService extends Context.Service<
@@ -531,6 +562,283 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return flight;
     };
 
+    const OAUTH_BEGIN_ROUTES: Record<WorkjetGatewayProvider, string> = {
+      claude: "/v0/management/anthropic-auth-url",
+      codex: "/v0/management/codex-auth-url",
+      antigravity: "/v0/management/antigravity-auth-url",
+    };
+    const HOST_PROVIDERS: Record<string, WorkjetGatewayProvider> = {
+      anthropic: "claude",
+      codex: "codex",
+      antigravity: "antigravity",
+    };
+    const MAX_TOKEN_BYTES = 32 * 1024;
+    const textEncoder = new TextEncoder();
+
+    const requireManagement = (): { readonly endpoint: string; readonly key: string } => {
+      if (
+        currentStatus.phase !== "ready" ||
+        currentStatus.managementEndpoint === null ||
+        managementCredential === undefined
+      ) {
+        throw safeError("gateway-not-ready");
+      }
+      return { endpoint: currentStatus.managementEndpoint, key: managementCredential };
+    };
+
+    const boundedText = (value: unknown, maximumLength: number): string | undefined =>
+      typeof value === "string" && value.trim() !== "" && value.length <= maximumLength
+        ? value
+        : undefined;
+
+    const runOauthStart = async (
+      input: WorkjetGatewayOauthStartInput,
+    ): Promise<WorkjetGatewayOauthSession> => {
+      const { endpoint, key } = requireManagement();
+      let response: unknown;
+      try {
+        response = await platform.managementGet(
+          endpoint,
+          OAUTH_BEGIN_ROUTES[input.provider],
+          key,
+          MANAGEMENT_MAX_BYTES,
+        );
+      } catch {
+        throw safeError("oauth-unavailable");
+      }
+      if (!isRecord(response)) throw safeError("oauth-unavailable");
+      const state = boundedText(response.state, 128);
+      const authorizationUrl = boundedText(response.authorization_url, 2048);
+      if (
+        state === undefined ||
+        authorizationUrl === undefined ||
+        !(authorizationUrl.startsWith("https://") || authorizationUrl.startsWith("http://"))
+      ) {
+        throw safeError("oauth-unavailable");
+      }
+      return { schemaVersion: 1, provider: input.provider, state, authorizationUrl };
+    };
+
+    const secretSlug = (value: string): string => {
+      const slug = value
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^[-.]+|[-.]+$/g, "")
+        .slice(0, 48);
+      return slug === "" ? "account" : slug;
+    };
+
+    interface ClaimedCredential {
+      readonly provider: WorkjetGatewayProvider;
+      readonly label: string;
+      readonly models: ReadonlyArray<string>;
+      readonly secrets: Readonly<Record<string, string>>;
+    }
+
+    const REQUIRED_SECRET_KEYS: Record<WorkjetGatewayProvider, ReadonlyArray<string>> = {
+      claude: ["access_token_secret", "refresh_token_secret"],
+      codex: ["id_token_secret", "access_token_secret", "refresh_token_secret"],
+      antigravity: ["access_token_secret", "refresh_token_secret", "state_secret"],
+    };
+
+    const decodeClaim = (value: unknown): ReadonlyArray<ClaimedCredential> => {
+      if (!isRecord(value) || !Array.isArray(value.credentials) || value.credentials.length === 0) {
+        throw safeError("oauth-session-invalid");
+      }
+      return value.credentials.map((entry): ClaimedCredential => {
+        if (!isRecord(entry) || !isRecord(entry.account) || !isRecord(entry.secrets)) {
+          throw safeError("oauth-session-invalid");
+        }
+        const hostProvider =
+          typeof entry.account.provider === "string" ? entry.account.provider : "";
+        const provider = HOST_PROVIDERS[hostProvider];
+        if (provider === undefined) throw safeError("oauth-session-invalid");
+        const secrets: Record<string, string> = {};
+        for (const secretKey of REQUIRED_SECRET_KEYS[provider]) {
+          const secretValue = entry.secrets[secretKey];
+          if (
+            typeof secretValue !== "string" ||
+            secretValue === "" ||
+            platform.byteLength(secretValue) > MAX_TOKEN_BYTES
+          ) {
+            throw safeError("oauth-session-invalid");
+          }
+          secrets[secretKey] = secretValue;
+        }
+        const label =
+          boundedText(entry.account.label, 160) ??
+          boundedText(entry.account.auth_index, 160) ??
+          "account";
+        const models = Array.isArray(entry.account.models)
+          ? entry.account.models.flatMap((model) => {
+              const bounded = boundedText(model, 160);
+              return bounded === undefined ? [] : [bounded.trim()];
+            })
+          : [];
+        return { provider, label, models: [...new Set(models)].slice(0, 256), secrets };
+      });
+    };
+
+    const persistClaimedAccounts = async (
+      claimed: ReadonlyArray<ClaimedCredential>,
+    ): Promise<ReadonlyArray<string>> => {
+      const existing = await loadConfiguration().catch(() => undefined);
+      const accounts: Array<GatewayAccount> = [...(existing?.accounts ?? [])];
+      const usedIds = new Set(accounts.map((account) => account.id));
+      const createdIds: Array<string> = [];
+      for (const credential of claimed) {
+        if (credential.provider === "antigravity" && existing?.antigravityOauth === undefined) {
+          // Without the OAuth client secrets the resulting configuration could
+          // never decode or start; refuse instead of writing a broken config.
+          throw safeError("invalid-configuration");
+        }
+        const base = `${credential.provider}-${secretSlug(credential.label)}`;
+        let id = base;
+        for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${base}-${suffix}`;
+        usedIds.add(id);
+        const reference = (kind: string): GatewaySecretReference => ({
+          scope: GATEWAY_SECRET_SCOPE,
+          name: `account-${id}-${kind}`,
+        });
+        const writeSecret = async (ref: GatewaySecretReference, value: string): Promise<void> => {
+          await runPromise(secrets.set(secretStoreName(ref), textEncoder.encode(value))).catch(
+            () => {
+              throw safeError("secret-unavailable");
+            },
+          );
+        };
+        const common = {
+          id,
+          label: credential.label,
+          enabled: true,
+          priority: 0,
+          weight: 1,
+          models: credential.models,
+        };
+        if (credential.provider === "claude") {
+          const accessTokenSecret = reference("access-token");
+          const refreshTokenSecret = reference("refresh-token");
+          await writeSecret(accessTokenSecret, credential.secrets["access_token_secret"] ?? "");
+          await writeSecret(refreshTokenSecret, credential.secrets["refresh_token_secret"] ?? "");
+          accounts.push({ ...common, provider: "claude", accessTokenSecret, refreshTokenSecret });
+        } else if (credential.provider === "codex") {
+          const idTokenSecret = reference("id-token");
+          const accessTokenSecret = reference("access-token");
+          const refreshTokenSecret = reference("refresh-token");
+          await writeSecret(idTokenSecret, credential.secrets["id_token_secret"] ?? "");
+          await writeSecret(accessTokenSecret, credential.secrets["access_token_secret"] ?? "");
+          await writeSecret(refreshTokenSecret, credential.secrets["refresh_token_secret"] ?? "");
+          accounts.push({
+            ...common,
+            provider: "codex",
+            idTokenSecret,
+            accessTokenSecret,
+            refreshTokenSecret,
+          });
+        } else {
+          const accessTokenSecret = reference("access-token");
+          const refreshTokenSecret = reference("refresh-token");
+          const stateSecret = reference("state");
+          await writeSecret(accessTokenSecret, credential.secrets["access_token_secret"] ?? "");
+          await writeSecret(refreshTokenSecret, credential.secrets["refresh_token_secret"] ?? "");
+          await writeSecret(stateSecret, credential.secrets["state_secret"] ?? "");
+          accounts.push({
+            ...common,
+            provider: "antigravity",
+            accessTokenSecret,
+            refreshTokenSecret,
+            stateSecret,
+          });
+        }
+        createdIds.push(id);
+      }
+      const candidate = {
+        schemaVersion: 1,
+        defaultProvider: existing?.defaultProvider ?? claimed[0]?.provider ?? "claude",
+        accounts,
+        pools: existing?.pools ?? [],
+        routes: existing?.routes ?? [],
+        ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+      };
+      const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
+      if (decoded === undefined) throw safeError("invalid-configuration");
+      await platform
+        .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
+        .catch(() => {
+          throw safeError("invalid-configuration");
+        });
+      return createdIds;
+    };
+
+    const runOauthPoll = async (
+      input: WorkjetGatewayOauthPollInput,
+    ): Promise<WorkjetGatewayOauthPollResult> => {
+      const { endpoint, key } = requireManagement();
+      let response: unknown;
+      try {
+        response = await platform.managementGet(
+          endpoint,
+          `/v0/management/oauth/status?state=${encodeURIComponent(input.state)}`,
+          key,
+          MANAGEMENT_MAX_BYTES,
+        );
+      } catch {
+        throw safeError("oauth-session-invalid");
+      }
+      if (!isRecord(response)) throw safeError("oauth-session-invalid");
+      if (response.pending === true) {
+        return { schemaVersion: 1, pending: true, failed: false, completedAccountIds: [] };
+      }
+      if (typeof response.error === "string" && response.error !== "") {
+        return { schemaVersion: 1, pending: false, failed: true, completedAccountIds: [] };
+      }
+      if (!Array.isArray(response.credentials) || response.credentials.length === 0) {
+        return { schemaVersion: 1, pending: false, failed: true, completedAccountIds: [] };
+      }
+      let claim: unknown;
+      try {
+        claim = await platform.managementRequest(
+          endpoint,
+          `/v0/management/oauth/session/${encodeURIComponent(input.state)}/claim`,
+          key,
+          "POST",
+          MANAGEMENT_MAX_BYTES,
+        );
+      } catch {
+        throw safeError("oauth-session-invalid");
+      }
+      const createdIds = await persistClaimedAccounts(decodeClaim(claim));
+      // Reload the gateway so the new account is served; a failed restart is
+      // visible through status() and must not undo the successful login.
+      try {
+        await stopSingleFlight();
+        await startSingleFlight();
+      } catch {
+        // status() carries the failure reason.
+      }
+      return {
+        schemaVersion: 1,
+        pending: false,
+        failed: false,
+        completedAccountIds: createdIds.map((id) => WorkjetGatewayAccountId.make(id)),
+      };
+    };
+
+    const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
+      const { endpoint, key } = requireManagement();
+      try {
+        await platform.managementRequest(
+          endpoint,
+          `/v0/management/oauth/session/${encodeURIComponent(input.state)}`,
+          key,
+          "DELETE",
+          MANAGEMENT_MAX_BYTES,
+        );
+      } catch {
+        throw safeError("oauth-session-invalid");
+      }
+    };
+
     yield* Effect.addFinalizer(() =>
       Effect.promise(() =>
         stopSingleFlight().then(
@@ -586,6 +894,24 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           try: stopSingleFlight,
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("shutdown-timeout"),
+        }),
+      oauthStart: (input) =>
+        Effect.tryPromise({
+          try: () => runOauthStart(input),
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
+        }),
+      oauthPoll: (input) =>
+        Effect.tryPromise({
+          try: () => runOauthPoll(input),
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
+        }),
+      oauthCancel: (input) =>
+        Effect.tryPromise({
+          try: () => runOauthCancel(input),
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("oauth-session-invalid"),
         }),
     });
   });

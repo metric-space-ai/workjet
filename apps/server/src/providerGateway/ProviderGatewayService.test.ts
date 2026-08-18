@@ -214,6 +214,173 @@ describe("ProviderGatewayService", () => {
     expect(kills).toContain("SIGTERM");
   });
 
+  it("refuses OAuth operations while the gateway is not running", async () => {
+    const harness = readyHarness();
+    await expect(
+      runGateway(harness.platform, (gateway) => gateway.oauthStart({ provider: "codex" })),
+    ).rejects.toMatchObject({
+      _tag: "WorkjetGatewayOperationError",
+      reason: "gateway-not-ready",
+    });
+  });
+
+  it("runs begin, poll, claim, persist, and reload for a provider login", async () => {
+    const storedSecrets = new Map<string, string>();
+    const secretStore = ServerSecretStore.ServerSecretStore.of({
+      get: () => Effect.succeed(Option.some(new TextEncoder().encode("provider-secret"))),
+      set: (name, value) =>
+        Effect.sync(() => {
+          storedSecrets.set(name, new TextDecoder().decode(value));
+        }),
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
+      remove: () => Effect.void,
+    });
+    const writes: Array<{ readonly path: string; readonly content: string }> = [];
+    const claims: Array<string> = [];
+    let spawnCount = 0;
+    let polls = 0;
+    const spawnProcess = (): GatewayHostProcess => {
+      const exit = deferredExit();
+      return {
+        pid: 321,
+        stdout: iterable([
+          '{"schema":"workjet.provider-gateway-host.readiness.v1","pid":321,"providerEndpoint":"http://127.0.0.1:41000/","managementEndpoint":"http://127.0.0.1:41001/","phase":"ready"}\n',
+        ]),
+        stderr: iterable([]),
+        exit: exit.promise,
+        kill: (signal) => {
+          exit.resolve({ code: null, signal });
+          return true;
+        },
+      };
+    };
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      readText: async (path) => {
+        if (path.endsWith("provider-gateway.json")) {
+          const written = writes.findLast((entry) => entry.path.endsWith("provider-gateway.json"));
+          return written?.content ?? configuration;
+        }
+        return configuration;
+      },
+      writePrivateText: async (path, content) => {
+        writes.push({ path, content });
+      },
+      remove: async () => undefined,
+      spawn: () => {
+        spawnCount += 1;
+        return spawnProcess();
+      },
+      managementGet: async (_endpoint, route) => {
+        if (route.endsWith("codex-auth-url")) {
+          return {
+            provider: "codex",
+            state: "state-1",
+            authorization_url: "https://auth.example.test/authorize?state=state-1",
+          };
+        }
+        if (route.startsWith("/v0/management/oauth/status")) {
+          polls += 1;
+          return polls === 1
+            ? { pending: true, error: null, credentials: [] }
+            : {
+                pending: false,
+                error: null,
+                credentials: [{ id: "codex:acct", provider: "codex", label: "user@example.test" }],
+              };
+        }
+        return route.endsWith("runtime-status")
+          ? { schema: "workjet.provider-gateway.runtime-status.v1" }
+          : { schema: "workjet.provider-gateway.runtime-summary.v1" };
+      },
+      managementRequest: async (_endpoint, route, _key, method) => {
+        claims.push(`${method} ${route}`);
+        return {
+          credentials: [
+            {
+              account: {
+                id: "codex:acct",
+                auth_index: "acct",
+                label: "user@example.test",
+                provider: "codex",
+                disabled: false,
+                models: [],
+              },
+              secrets: {
+                id_token_secret: "id-token-material",
+                access_token_secret: "access-token-material",
+                refresh_token_secret: "refresh-token-material",
+              },
+            },
+          ],
+        };
+      },
+    };
+
+    await Effect.scoped(
+      Effect.gen(function* () {
+        const gateway = yield* make({ platform, executable: "/gateway-host" });
+        yield* gateway.start();
+        const session = yield* gateway.oauthStart({ provider: "codex" });
+        expect(session.state).toBe("state-1");
+        expect(session.authorizationUrl.startsWith("https://")).toBe(true);
+        const first = yield* gateway.oauthPoll({ state: session.state });
+        expect(first.pending).toBe(true);
+        const second = yield* gateway.oauthPoll({ state: session.state });
+        expect(second.pending).toBe(false);
+        expect(second.failed).toBe(false);
+        expect(second.completedAccountIds).toEqual(["codex-user-example.test"]);
+      }),
+    ).pipe(
+      Effect.provideService(ServerConfig.ServerConfig, testConfig),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, secretStore),
+      Effect.runPromise,
+    );
+
+    expect(claims).toEqual(["POST /v0/management/oauth/session/state-1/claim"]);
+    expect(
+      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-access-token"),
+    ).toBe("access-token-material");
+    expect(
+      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-id-token"),
+    ).toBe("id-token-material");
+    expect(
+      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-refresh-token"),
+    ).toBe("refresh-token-material");
+    const configWrite = writes.findLast((entry) => entry.path.endsWith("provider-gateway.json"));
+    expect(configWrite).toBeDefined();
+    expect(configWrite?.content).toContain('"codex-user-example.test"');
+    expect(configWrite?.content).not.toContain("access-token-material");
+    expect(configWrite?.content).not.toContain("refresh-token-material");
+    // The login reloads the gateway so the new account is served.
+    expect(spawnCount).toBe(2);
+  });
+
+  it("reports a failed login without claiming credentials", async () => {
+    const harness = readyHarness();
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      managementGet: async (endpoint, route, key, maximumBytes) => {
+        if (route.startsWith("/v0/management/oauth/status")) {
+          return { pending: false, error: "denied", credentials: [] };
+        }
+        return harness.platform.managementGet(endpoint, route, key, maximumBytes);
+      },
+      managementRequest: async () => {
+        throw new Error("claim must not run");
+      },
+    };
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const result = yield* gateway.oauthPoll({ state: "state-x" });
+        expect(result.failed).toBe(true);
+        expect(result.completedAccountIds).toEqual([]);
+      }),
+    );
+  });
+
   it("rejects malformed readiness as a redacted protocol failure", async () => {
     const exit = deferredExit();
     const process: GatewayHostProcess = {

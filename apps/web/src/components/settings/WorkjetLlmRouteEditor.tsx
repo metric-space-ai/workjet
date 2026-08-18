@@ -1,7 +1,7 @@
 import {
   ProviderInstanceId,
   WorkjetLlmRouteId,
-  type ProviderInstanceConfig,
+  type WorkjetGatewayAccountSummary,
   type WorkjetLlmRoute,
 } from "@t3tools/contracts";
 import { useMemo, useState } from "react";
@@ -20,51 +20,49 @@ export interface WorkjetLlmRouteDraft {
 
 export function createWorkjetLlmRouteDraft(input: {
   readonly route?: WorkjetLlmRoute | null;
-  readonly providerInstances: Readonly<Record<string, ProviderInstanceConfig>>;
+  readonly accounts: ReadonlyArray<WorkjetGatewayAccountSummary>;
   readonly id?: string;
 }): WorkjetLlmRouteDraft {
   return {
     id: input.route?.id ?? input.id ?? randomUUID(),
     label: input.route?.label ?? "",
-    providerInstanceId:
-      input.route?.providerInstanceId ?? Object.keys(input.providerInstances)[0] ?? "",
+    providerInstanceId: input.route?.providerInstanceId ?? input.accounts[0]?.id ?? "",
   };
 }
 
 export function saveWorkjetLlmRouteDraft(draft: WorkjetLlmRouteDraft): WorkjetLlmRoute {
   const label = draft.label.trim();
   if (!label) throw new Error("Enter an LLM route label.");
-  if (!draft.providerInstanceId) throw new Error("Choose a provider instance.");
+  if (!draft.providerInstanceId) throw new Error("Choose a provider-gateway account.");
   return {
     id: WorkjetLlmRouteId.make(draft.id),
     label,
+    // The stored reference is a Workjet provider-gateway account id. The field
+    // still carries the `ProviderInstanceId` brand because the route contract
+    // predates the gateway account identity; changing the brand is a contracts
+    // migration, not a settings change.
     providerInstanceId: ProviderInstanceId.make(draft.providerInstanceId),
   };
 }
 
 export function WorkjetLlmRouteEditor({
   route = null,
-  providerInstances,
+  accounts,
   onSave,
   onCancel,
 }: {
   readonly route?: WorkjetLlmRoute | null;
-  readonly providerInstances: Readonly<Record<string, ProviderInstanceConfig>>;
+  readonly accounts: ReadonlyArray<WorkjetGatewayAccountSummary>;
   readonly onSave: (route: WorkjetLlmRoute) => void;
   readonly onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState(() =>
-    createWorkjetLlmRouteDraft({ route, providerInstances }),
-  );
+  const [draft, setDraft] = useState(() => createWorkjetLlmRouteDraft({ route, accounts }));
   const [error, setError] = useState<string | null>(null);
   const entries = useMemo(
-    () =>
-      Object.entries(providerInstances).sort((left, right) =>
-        (left[1].displayName ?? left[0]).localeCompare(right[1].displayName ?? right[0]),
-      ),
-    [providerInstances],
+    () => [...accounts].sort((left, right) => left.label.localeCompare(right.label)),
+    [accounts],
   );
-  const selected = providerInstances[draft.providerInstanceId];
+  const selected = entries.find((account) => account.id === draft.providerInstanceId);
 
   return (
     <form
@@ -94,7 +92,7 @@ export function WorkjetLlmRouteEditor({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="workjet-route-provider">Provider instance</Label>
+          <Label htmlFor="workjet-route-provider">Provider-gateway account</Label>
           <Select
             value={draft.providerInstanceId || null}
             onValueChange={(value) => {
@@ -102,15 +100,18 @@ export function WorkjetLlmRouteEditor({
               setError(null);
             }}
           >
-            <SelectTrigger id="workjet-route-provider" aria-label="LLM route provider instance">
+            <SelectTrigger
+              id="workjet-route-provider"
+              aria-label="LLM route provider-gateway account"
+            >
               <SelectValue>
-                {selected?.displayName ?? draft.providerInstanceId ?? "Choose provider instance"}
+                {selected?.label ?? draft.providerInstanceId ?? "Choose provider-gateway account"}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
-              {entries.map(([id, instance]) => (
-                <SelectItem key={id} value={id}>
-                  {instance.displayName ?? id} · {instance.driver}
+              {entries.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.label} · {account.provider}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -118,8 +119,8 @@ export function WorkjetLlmRouteEditor({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        Routes store only a reference to an existing provider instance. Models stay on workers, and
-        provider credentials stay protected by the provider-gateway account authority.
+        Routes store only a reference to an existing provider-gateway account. Models stay on
+        workers, and provider credentials stay protected by the provider-gateway account authority.
       </p>
       {entries.length === 0 ? (
         <p role="status" className="text-xs text-muted-foreground">

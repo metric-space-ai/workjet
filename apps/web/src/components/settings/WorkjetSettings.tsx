@@ -3,7 +3,6 @@ import type {
   GreppyRuntimeReason,
   GreppyRuntimeSnapshot,
   GreppyRuntimeSource,
-  ProviderInstanceConfig,
   WorktreeStorageInspection,
   WorkjetComputer,
   WorkjetComputerPresentationKind,
@@ -356,18 +355,6 @@ export function workjetEnvironmentTargetOptions(
     });
 }
 
-const WORKJET_PROVIDER_GATEWAY_DRIVER = "workjetGateway";
-
-export function workjetLlmProviderInstances(
-  providerInstances: Readonly<Record<string, ProviderInstanceConfig>>,
-): Readonly<Record<string, ProviderInstanceConfig>> {
-  return Object.fromEntries(
-    Object.entries(providerInstances).filter(
-      ([, instance]) => instance.driver === WORKJET_PROVIDER_GATEWAY_DRIVER,
-    ),
-  );
-}
-
 function replaceCatalogItem<T extends { readonly id: string }>(
   items: ReadonlyArray<T>,
   item: T,
@@ -678,7 +665,6 @@ export function AutomaticWorktreeStorageSettings({
 
 export function WorkjetSettingsView({
   configuration,
-  providerInstances,
   environments,
   environmentsReady,
   greppy,
@@ -688,7 +674,6 @@ export function WorkjetSettingsView({
   onChange,
 }: {
   readonly configuration: WorkjetConfiguration;
-  readonly providerInstances: Readonly<Record<string, ProviderInstanceConfig>>;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
   readonly environmentsReady: boolean;
   readonly greppy: GreppySectionState;
@@ -945,7 +930,7 @@ export function WorkjetSettingsView({
               <WorkjetLlmRouteEditor
                 key={editingRoute?.id ?? "new-route"}
                 route={editingRoute}
-                providerInstances={providerInstances}
+                accounts={gateway.catalog?.accounts ?? []}
                 onCancel={() => {
                   setAddingRoute(false);
                   setEditingRouteId(null);
@@ -1421,7 +1406,6 @@ export function WorkjetSettings() {
   return (
     <WorkjetSettingsView
       configuration={settings.workjet}
-      providerInstances={workjetLlmProviderInstances(settings.providerInstances)}
       environments={workjetEnvironmentTargetOptions(environments)}
       environmentsReady={environmentsReady}
       greppy={{

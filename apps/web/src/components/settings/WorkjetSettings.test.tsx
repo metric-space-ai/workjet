@@ -1,7 +1,7 @@
 import {
   DEFAULT_WORKJET_CONFIGURATION,
   EnvironmentId,
-  ProviderDriverKind,
+  WorkjetGatewayAccountId,
   WorkjetGreppyOperationError,
   type GreppyRuntimeSnapshot,
 } from "@t3tools/contracts";
@@ -30,7 +30,6 @@ import {
   performAutomaticWorktreeStorageAction,
   performGreppyRuntimeInstall,
   WorkjetSettingsView,
-  workjetLlmProviderInstances,
   workjetSectionFromHash,
 } from "./WorkjetSettings";
 
@@ -106,12 +105,6 @@ describe("Workjet configuration settings", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        providerInstances={{
-          codex_work: {
-            driver: ProviderDriverKind.make("codex"),
-            displayName: "Codex Work",
-          },
-        }}
         environments={[]}
         environmentsReady={false}
         greppy={greppy}
@@ -143,7 +136,6 @@ describe("Workjet configuration settings", () => {
     const telemetryMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        providerInstances={{}}
         environments={[]}
         environmentsReady
         greppy={greppy}
@@ -161,7 +153,6 @@ describe("Workjet configuration settings", () => {
     const capabilitiesMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        providerInstances={{}}
         environments={[]}
         environmentsReady
         greppy={greppy}
@@ -179,7 +170,6 @@ describe("Workjet configuration settings", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        providerInstances={{}}
         environments={[]}
         environmentsReady
         greppy={greppy}
@@ -259,17 +249,42 @@ describe("Workjet configuration settings", () => {
     expect(workjetSectionFromHash("#unknown")).toBeNull();
   });
 
-  it("does not confuse Code harness drivers with Workjet LLM accounts", () => {
-    const instances = workjetLlmProviderInstances({
-      codex_work: { driver: ProviderDriverKind.make("codex"), displayName: "Codex Work" },
-      claude_work: { driver: ProviderDriverKind.make("claudeAgent") },
-      gateway_account: {
-        driver: ProviderDriverKind.make("workjetGateway"),
-        displayName: "OpenAI production",
-      },
-    });
+  it("routes the LLM-route editor at gateway accounts, never harness drivers", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetSettingsView
+        configuration={DEFAULT_WORKJET_CONFIGURATION}
+        environments={[]}
+        environmentsReady
+        greppy={greppy}
+        gateway={{
+          ...gateway,
+          catalog: {
+            schemaVersion: 1,
+            accounts: [
+              {
+                id: WorkjetGatewayAccountId.make("account-claude-1"),
+                label: "Claude Work",
+                provider: "claude",
+                enabled: true,
+                priority: 1,
+                weight: 1,
+                modelIds: ["claude-opus"],
+              },
+            ],
+            pools: [],
+            routes: [],
+            models: [],
+          },
+        }}
+        automaticWorktreeStorage={automaticWorktreeStorage}
+        defaultSection="provider-accounts"
+        onChange={() => undefined}
+      />,
+    );
 
-    expect(Object.keys(instances)).toEqual(["gateway_account"]);
+    expect(markup).toContain("Claude Work");
+    expect(markup).toContain("Add account");
+    expect(markup).not.toContain("workjetGateway");
   });
 });
 

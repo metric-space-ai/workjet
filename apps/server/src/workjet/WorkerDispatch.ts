@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -43,6 +44,7 @@ export type WorkerDispatchFailureReason =
   | "parent-not-orchestrator"
   | "duplicate-capabilities"
   | "capability-escalation"
+  | "worktree-failed"
   | "create-failed"
   | "turn-start-failed"
   | "rollback-failed";
@@ -56,6 +58,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       "parent-not-orchestrator",
       "duplicate-capabilities",
       "capability-escalation",
+      "worktree-failed",
       "create-failed",
       "turn-start-failed",
       "rollback-failed",
@@ -74,6 +77,8 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
         return "Worker capability selections must not contain duplicates.";
       case "capability-escalation":
         return "The requested worker capabilities exceed the parent grants.";
+      case "worktree-failed":
+        return "The isolated worker worktree could not be created.";
       case "create-failed":
         return "The worker thread could not be created.";
       case "turn-start-failed":
@@ -102,6 +107,13 @@ export interface WorkerDispatchSources {
 
 const DEFAULT_TITLE_MAX_LENGTH = 120;
 
+/**
+ * Namespace for isolated worker branches. The worker thread id is a v4 UUID, so
+ * the resulting ref is collision-resistant across concurrent dispatches and
+ * gives `WorktreeStorage.resolveAutomaticPath` a distinct per-worker directory.
+ */
+export const WORKER_REF_PREFIX = "workjet/worker/";
+
 export const deriveWorkerTitle = (task: string): string => {
   const normalized = task.trim().replace(/\s+/g, " ");
   if (normalized.length <= DEFAULT_TITLE_MAX_LENGTH) return normalized;
@@ -115,6 +127,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
 ) {
   const engine = yield* OrchestrationEngineService;
   const query = yield* ProjectionSnapshotQuery;
+  const gitWorkflow = yield* GitWorkflowService;
 
   const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
     function* (invocation, input) {
@@ -158,6 +171,41 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       const createdAt = yield* sources.nowIso;
       const title = input.title?.trim() || deriveWorkerTitle(input.task);
 
+      // The owner decision of 2026-08-17 rejects worktree inheritance: parallel
+      // workers must never share a checkout. Every worker therefore gets its own
+      // Git worktree beneath the server-authoritative storage root, branched
+      // from the orchestrator's current ref.
+      const gitCwd =
+        parent.worktreePath ??
+        (yield* query.getProjectShellById(parent.projectId).pipe(
+          Effect.map(
+            (projectOption) => Option.getOrUndefined(projectOption)?.workspaceRoot ?? null,
+          ),
+          Effect.orElseSucceed(() => null),
+        ));
+      if (gitCwd === null) {
+        return yield* failure("worktree-failed");
+      }
+      const workerRefName = `${WORKER_REF_PREFIX}${workerThreadId}`;
+      const workerWorktree = yield* gitWorkflow
+        .createWorktree({
+          cwd: gitCwd,
+          // `path: null` routes the location through WorktreeStorage, keeping the
+          // worker checkout beneath the operator-selected storage root.
+          path: null,
+          refName: parent.branch ?? "HEAD",
+          newRefName: workerRefName,
+        })
+        .pipe(
+          Effect.map((created) => created.worktree),
+          Effect.mapError(() => failure("worktree-failed")),
+        );
+      // Only ever remove what this dispatch created, and only when a rollback
+      // actually runs.
+      const removeWorkerWorktree = Effect.suspend(() =>
+        gitWorkflow.removeWorktree({ cwd: gitCwd, path: workerWorktree.path, force: true }),
+      ).pipe(Effect.exit);
+
       const createCommand = {
         type: "thread.create",
         commandId: createCommandId,
@@ -174,13 +222,14 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           managedInstructions: parent.workjetConfig.managedInstructions,
           enabledCapabilityIds,
         },
-        branch: parent.branch,
-        worktreePath: parent.worktreePath,
+        branch: workerWorktree.refName,
+        worktreePath: workerWorktree.path,
         createdAt,
       } as const satisfies OrchestrationCommand;
 
       const createExit = yield* Effect.exit(engine.dispatch(createCommand));
       if (createExit._tag === "Failure") {
+        yield* removeWorkerWorktree;
         return yield* failure("create-failed");
       }
 
@@ -207,8 +256,11 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           threadId: workerThreadId,
         } as const satisfies OrchestrationCommand;
         const rollbackExit = yield* Effect.exit(engine.dispatch(rollbackCommand));
+        const worktreeRollbackExit = yield* removeWorkerWorktree;
         return yield* failure(
-          rollbackExit._tag === "Failure" ? "rollback-failed" : "turn-start-failed",
+          rollbackExit._tag === "Failure" || worktreeRollbackExit._tag === "Failure"
+            ? "rollback-failed"
+            : "turn-start-failed",
         );
       }
 

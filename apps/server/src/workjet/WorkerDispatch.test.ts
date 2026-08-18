@@ -12,12 +12,18 @@ import {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
+  WorktreeStorage,
+  layerTest as worktreeStorageLayerTest,
+} from "../worktree/WorktreeStorage.ts";
+import {
   deriveWorkerTitle,
   makeWorkerDispatchWithSources,
+  WORKER_REF_PREFIX,
   type WorkerDispatchSources,
 } from "./WorkerDispatch.ts";
 
@@ -62,17 +68,45 @@ const ids = [
   "00000000-0000-4000-8000-000000000004",
   "00000000-0000-4000-8000-000000000005",
 ] as const;
+const nthId = (index: number) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
 const now = "2026-08-15T12:34:56.000Z";
+const worktreeRoot = "/Volumes/tmp/workjet/worktrees";
+const workspaceRoot = "/workspace/project";
+
+/**
+ * Mirrors the real `WorktreeStorage.resolveAutomaticPath` contract: a directory
+ * beneath the server-authoritative root, keyed by repository and ref.
+ */
+const worktreeStorageLayer = worktreeStorageLayerTest({
+  resolveAutomaticPath: (storageInput) =>
+    Effect.succeed(
+      `${worktreeRoot}/repository-hash/${storageInput.ref.replace(/[^A-Za-z0-9._-]+/g, "-")}`,
+    ),
+  trustedRoots: [worktreeRoot],
+});
+
+interface WorktreeCreateRecord {
+  readonly cwd: string;
+  readonly refName: string;
+  readonly newRefName: string | undefined;
+  readonly path: string;
+}
 
 const makeHarness = (input?: {
   readonly currentParent?: OrchestrationThread | undefined;
   readonly queryFails?: boolean;
   readonly failCommandTypes?: ReadonlyArray<OrchestrationCommand["type"]>;
+  readonly failWorktreeCreate?: boolean;
+  readonly failWorktreeRemove?: boolean;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
+  const worktreeCreates: Array<WorktreeCreateRecord> = [];
+  const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   let idIndex = 0;
   const sources: WorkerDispatchSources = {
-    randomUUID: Effect.sync(() => ids[idIndex++]!),
+    // Deterministic and unbounded, so a second dispatch in the same harness gets
+    // genuinely fresh identifiers instead of reusing the first worker's id.
+    randomUUID: Effect.sync(() => nthId(idIndex++)),
     nowIso: Effect.succeed(now),
   };
   const engine = {
@@ -97,13 +131,61 @@ const makeHarness = (input?: {
                 : Option.some(input.currentParent)
               : Option.some(parent),
           ),
+    getProjectShellById: () => Effect.succeed(Option.some({ workspaceRoot })),
   } as unknown as ProjectionSnapshotQuery["Service"];
-  const service = makeWorkerDispatchWithSources(sources).pipe(
-    Effect.provideService(OrchestrationEngineService, engine),
-    Effect.provideService(ProjectionSnapshotQuery, query),
-  );
-  return { commands, service };
+  const gitCommandFailure = {
+    _tag: "GitCommandError",
+    detail: "downstream git secret",
+  } as const;
+  const service = Effect.gen(function* () {
+    const storage = yield* WorktreeStorage;
+    const gitWorkflow = {
+      createWorktree: (worktreeInput: {
+        readonly cwd: string;
+        readonly refName: string;
+        readonly newRefName?: string;
+        readonly path: string | null;
+      }) => {
+        if (input?.failWorktreeCreate) return Effect.fail(gitCommandFailure);
+        const ref = worktreeInput.newRefName ?? worktreeInput.refName;
+        return (
+          worktreeInput.path === null
+            ? storage.resolveAutomaticPath({
+                cwd: worktreeInput.cwd,
+                gitCommonDir: `${worktreeInput.cwd}/.git`,
+                ref,
+              })
+            : Effect.succeed(worktreeInput.path)
+        ).pipe(
+          Effect.mapError(() => gitCommandFailure),
+          Effect.map((path) => {
+            worktreeCreates.push({
+              cwd: worktreeInput.cwd,
+              refName: worktreeInput.refName,
+              newRefName: worktreeInput.newRefName,
+              path,
+            });
+            return { worktree: { path, refName: ref } };
+          }),
+        );
+      },
+      removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
+        worktreeRemovals.push({ cwd: removeInput.cwd, path: removeInput.path });
+        return input?.failWorktreeRemove ? Effect.fail(gitCommandFailure) : Effect.void;
+      },
+    } as unknown as GitWorkflowService["Service"];
+    return yield* makeWorkerDispatchWithSources(sources).pipe(
+      Effect.provideService(OrchestrationEngineService, engine),
+      Effect.provideService(ProjectionSnapshotQuery, query),
+      Effect.provideService(GitWorkflowService, gitWorkflow),
+    );
+  }).pipe(Effect.provide(worktreeStorageLayer));
+  return { commands, service, worktreeCreates, worktreeRemovals };
 };
+
+const workerRefFor = (threadId: string) => `${WORKER_REF_PREFIX}${threadId}`;
+const workerPathFor = (threadId: string) =>
+  `${worktreeRoot}/repository-hash/${workerRefFor(threadId).replace(/[^A-Za-z0-9._-]+/g, "-")}`;
 
 it.effect("dispatches exact normal create and turn-start commands with inherited state", () =>
   Effect.gen(function* () {
@@ -138,8 +220,8 @@ it.effect("dispatches exact normal create and turn-start commands with inherited
           managedInstructions: "Keep changes bounded.",
           enabledCapabilityIds: ["greppy", "web-search"],
         },
-        branch: "feature/work",
-        worktreePath: "/workspace/worktree",
+        branch: workerRefFor(ids[0]),
+        worktreePath: workerPathFor(ids[0]),
         createdAt: now,
       },
       {
@@ -293,5 +375,118 @@ it.effect("does not delete after create failure and rolls back bounded turn-star
     expect(rollbackError.reason).toBe("rollback-failed");
     expect(JSON.stringify(rollbackError)).not.toContain("downstream secret");
     expect(JSON.stringify(rollbackError)).not.toContain("Sensitive rollback task");
+  }),
+);
+
+it.effect("creates one isolated worker worktree beneath the configured storage root", () =>
+  Effect.gen(function* () {
+    const { commands, worktreeCreates, worktreeRemovals, service } = makeHarness();
+    const workerDispatch = yield* service;
+
+    yield* workerDispatch.dispatch(invocation, { task: "Bounded worker task." });
+
+    expect(worktreeCreates).toEqual([
+      {
+        cwd: parent.worktreePath,
+        // Branched from the orchestrator's current ref.
+        refName: "feature/work",
+        newRefName: workerRefFor(ids[0]),
+        path: workerPathFor(ids[0]),
+      },
+    ]);
+    expect(worktreeCreates[0]!.path.startsWith(`${worktreeRoot}/`)).toBe(true);
+    // The parent checkout and ref stay exactly as they were.
+    expect(worktreeCreates[0]!.path).not.toBe(parent.worktreePath);
+    expect(worktreeRemovals).toEqual([]);
+    expect(commands[0]).toMatchObject({
+      type: "thread.create",
+      branch: workerRefFor(ids[0]),
+      worktreePath: workerPathFor(ids[0]),
+    });
+    expect(parent.worktreePath).toBe("/workspace/worktree");
+    expect(parent.branch).toBe("feature/work");
+  }),
+);
+
+it.effect("gives two dispatches disjoint worktrees and refs", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const workerDispatch = yield* harness.service;
+    yield* workerDispatch.dispatch(invocation, { task: "First worker." });
+    yield* workerDispatch.dispatch(invocation, { task: "Second worker." });
+
+    expect(harness.worktreeCreates).toHaveLength(2);
+    const [firstCreate, secondCreate] = harness.worktreeCreates as [
+      WorktreeCreateRecord,
+      WorktreeCreateRecord,
+    ];
+    expect(firstCreate.cwd).toBe(secondCreate.cwd);
+    // Same parent checkout, but never the same worker checkout or ref.
+    expect(firstCreate.newRefName).not.toBe(secondCreate.newRefName);
+    expect(firstCreate.path).not.toBe(secondCreate.path);
+    for (const created of [firstCreate, secondCreate]) {
+      expect(created.path.startsWith(`${worktreeRoot}/`)).toBe(true);
+      expect(created.path).not.toBe(parent.worktreePath);
+    }
+  }),
+);
+
+it.effect("fails bounded when the isolated worker worktree cannot be created", () =>
+  Effect.gen(function* () {
+    const { commands, worktreeRemovals, service } = makeHarness({ failWorktreeCreate: true });
+    const workerDispatch = yield* service;
+
+    const error = yield* workerDispatch
+      .dispatch(invocation, { task: "Sensitive worktree task." })
+      .pipe(Effect.flip);
+
+    expect(error.reason).toBe("worktree-failed");
+    expect(JSON.stringify(error)).not.toContain("downstream git secret");
+    expect(JSON.stringify(error)).not.toContain("Sensitive worktree task");
+    // Nothing was created, so nothing may be removed.
+    expect(commands).toEqual([]);
+    expect(worktreeRemovals).toEqual([]);
+  }),
+);
+
+it.effect("removes only the worktree this dispatch created when rollback runs", () =>
+  Effect.gen(function* () {
+    const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
+    const turnService = yield* turnFailure.service;
+    const turnError = yield* turnService
+      .dispatch(invocation, { task: "Rolled back task." })
+      .pipe(Effect.flip);
+
+    expect(turnError.reason).toBe("turn-start-failed");
+    expect(turnFailure.worktreeRemovals).toEqual([
+      { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
+    ]);
+    // The orchestrator's own worktree is never a removal target.
+    expect(turnFailure.worktreeRemovals.some(({ path }) => path === parent.worktreePath)).toBe(
+      false,
+    );
+
+    // A create failure must not leak the worktree either.
+    const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
+    const createService = yield* createFailure.service;
+    const createError = yield* createService
+      .dispatch(invocation, { task: "Create failure task." })
+      .pipe(Effect.flip);
+    expect(createError.reason).toBe("create-failed");
+    expect(createFailure.worktreeRemovals).toEqual([
+      { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
+    ]);
+
+    // A failed worktree removal is reported as a rollback failure.
+    const removeFailure = makeHarness({
+      failCommandTypes: ["thread.turn.start"],
+      failWorktreeRemove: true,
+    });
+    const removeService = yield* removeFailure.service;
+    const removeError = yield* removeService
+      .dispatch(invocation, { task: "Removal failure task." })
+      .pipe(Effect.flip);
+    expect(removeError.reason).toBe("rollback-failed");
+    expect(JSON.stringify(removeError)).not.toContain("downstream git secret");
   }),
 );

@@ -1530,3 +1530,14 @@ CTOX Desktop App is complete only when all of the following are true:
       Close this item only after a dispatched orchestrated worker is proven
       end to end in its own isolated worktree beneath the operator-selected
       root. Do not count synthetic path inheritance as proof.
+      Progress 2026-08-18 (commit `fb3d9f407`): `WorkerDispatch.dispatch` now
+      creates one worktree per worker via `GitWorkflowService.createWorktree`
+      with `path: null` (routed through `WorktreeStorage.resolveAutomaticPath`),
+      branched from the parent ref under `workjet/worker/<workerThreadId>`;
+      rollback on create/turn-start failure also removes the new worktree, and
+      isolation is mandatory (`worktree-failed` instead of silent inheritance).
+      10 focused tests pass; zero new server diagnostics. Still open before
+      closing: the end-to-end proof with a real dispatched worker, a durable
+      completion/abandonment cleanup hook (no such lifecycle boundary exists in
+      the server yet — rollback-path cleanup only), and deleting the worker
+      branch ref after worktree removal.

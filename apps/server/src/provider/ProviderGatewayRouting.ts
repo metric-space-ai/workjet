@@ -71,7 +71,7 @@ export const GATEWAY_CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";
  * CLI. Anything absent here is intentionally left unrouted rather than
  * routed with guessed variables.
  */
-export const GATEWAY_ROUTABLE_DRIVERS = ["claude", "codex"] as const;
+export const GATEWAY_ROUTABLE_DRIVERS = ["claudeAgent", "codex"] as const;
 export type GatewayRoutableDriver = (typeof GATEWAY_ROUTABLE_DRIVERS)[number];
 
 export function isGatewayRoutableDriver(driver: string): driver is GatewayRoutableDriver {
@@ -127,7 +127,7 @@ export function gatewayRoutingEnvironmentOverlay(input: {
   readonly existingLaunchArgs?: string | undefined;
 }): Record<string, string> {
   const baseUrl = normalizeGatewayBaseUrl(input.providerEndpoint);
-  if (input.driver === "claude") {
+  if (input.driver === "claudeAgent") {
     // ANTHROPIC_AUTH_TOKEN is deliberately NOT set. Claude Code treats it as
     // an OAuth-style bearer and prefers it over ANTHROPIC_API_KEY; setting
     // both makes which credential is sent depend on CLI version.

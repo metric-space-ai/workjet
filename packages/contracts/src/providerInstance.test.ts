@@ -206,3 +206,39 @@ describe("ProviderInstanceConfigMap", () => {
     ).toThrow();
   });
 });
+
+describe("routeViaGateway (additive gateway routing opt-in)", () => {
+  const encodeProviderInstanceConfig = Schema.encodeUnknownSync(ProviderInstanceConfig);
+
+  it("is absent — not false — when an existing envelope never opted in", () => {
+    const decoded = decodeProviderInstanceConfig({ driver: "codex" });
+
+    // Absence is what makes this additive: envelopes written before the
+    // setting existed decode unchanged and need no migration step.
+    expect(decoded).not.toHaveProperty("routeViaGateway");
+  });
+
+  it("round-trips an explicit opt-in", () => {
+    const decoded = decodeProviderInstanceConfig({
+      driver: "claudeAgent",
+      displayName: "Claude Gateway",
+      routeViaGateway: true,
+      environment: [{ name: "FOO", value: "bar" }],
+    });
+
+    expect(decoded.routeViaGateway).toBe(true);
+    expect(encodeProviderInstanceConfig(decoded)).toMatchObject({ routeViaGateway: true });
+  });
+
+  it("round-trips an explicit opt-out", () => {
+    const decoded = decodeProviderInstanceConfig({ driver: "codex", routeViaGateway: false });
+
+    expect(decoded.routeViaGateway).toBe(false);
+  });
+
+  it("rejects a non-boolean opt-in", () => {
+    expect(() =>
+      decodeProviderInstanceConfig({ driver: "codex", routeViaGateway: "yes" }),
+    ).toThrow();
+  });
+});

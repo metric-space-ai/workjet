@@ -491,6 +491,19 @@ export function ProviderInstanceCard({
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
   };
 
+  // Absent means "not routed", so turning the toggle off drops the key
+  // rather than persisting `false` — that keeps envelopes that never opted
+  // in byte-identical to what they were before this setting existed.
+  const routeViaGateway = instance.routeViaGateway ?? false;
+  const updateRouteViaGateway = (value: boolean) => {
+    const { routeViaGateway: _omit, ...rest } = instance;
+    onUpdate(
+      value
+        ? ({ ...rest, routeViaGateway: true } as ProviderInstanceConfig)
+        : (rest as ProviderInstanceConfig),
+    );
+  };
+
   const updateEnvironment = (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => {
     const cleaned = environment.filter((variable) => variable.name.trim().length > 0);
     const { environment: _omit, ...rest } = instance;
@@ -754,6 +767,24 @@ export function ProviderInstanceCard({
                 onCommit={updateAccentColor}
                 commitDelayMs={120}
                 description="Used to distinguish this instance in picker rails and model lists."
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-xs font-medium text-foreground">
+                  Route via Workjet gateway
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Send this instance&rsquo;s sessions through the Workjet provider gateway instead
+                  of the harness&rsquo;s own account; sessions fail to start while the gateway is
+                  not running.
+                </span>
+              </div>
+              <Switch
+                checked={routeViaGateway}
+                onCheckedChange={(checked) => updateRouteViaGateway(Boolean(checked))}
+                aria-label={`Route ${displayName} via Workjet gateway`}
               />
             </div>
 

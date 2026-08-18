@@ -166,6 +166,56 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("httpDataProxy");
   });
 
+  it("renders discovered local daemons as a non-launchable Local group", () => {
+    const local = instance({
+      id: "local:AAAAAAAAAAAAAAAAAAAAAA",
+      source: "local_daemon",
+      displayName: "Workshop Business OS",
+      healthSummary: unavailable,
+    });
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          instances: [
+            local,
+            instance({
+              id: "local:BBBBBBBBBBBBBBBBBBBBBB",
+              source: "local_daemon",
+              displayName: "Stopped Daemon",
+              status: "offline",
+              healthSummary: unavailable,
+            }),
+          ],
+        }}
+      >
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+
+    expect(canActivateCtoxInstance(local)).toBe(false);
+    expect(markup).toContain('id="ctox-local-heading"');
+    expect(markup).toContain("Local CTOX instances");
+    expect(markup).toContain("Workshop Business OS");
+    expect(markup).toContain("Stopped Daemon");
+    expect(markup).toContain(
+      "Local daemon\nAvailable · WebRTC unavailable\nLocal CTOX daemons cannot be opened yet.",
+    );
+    expect(markup).toContain(
+      "Local daemon\nOffline · WebRTC unavailable\nLocal CTOX daemons cannot be opened yet.",
+    );
+    // Same flat row style as Managed and Paired, but inert and muted.
+    expect(markup).toContain('data-ctox-instance-source="local_daemon"');
+    expect(markup).toContain("bg-sidebar-muted-foreground/50");
+    expect(markup.match(/data-ctox-instance-source="local_daemon"[^>]*disabled/g)).toHaveLength(2);
+    // A local row offers no Remove control; only paired entries are removable.
+    expect(markup).not.toContain("Remove Workshop Business OS");
+  });
+
   it("keeps ctox.dev sign-in available beside paired results", () => {
     const markup = renderToStaticMarkup(
       <CtoxModeProvider

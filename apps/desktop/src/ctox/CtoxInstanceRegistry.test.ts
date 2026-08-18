@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import type { CtoxManagedInstance } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
@@ -14,6 +15,7 @@ vi.mock("electron", () => ({}));
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
+import type * as CtoxLocalDaemonSource from "./CtoxLocalDaemonSource.ts";
 import {
   CtoxInstanceRegistryError,
   make,
@@ -164,6 +166,7 @@ function registryHarness(
     readonly storage?: ElectronSafeStorage.ElectronSafeStorage["Service"];
     readonly nowEpochMs?: () => number;
     readonly platform?: NodeJS.Platform;
+    readonly localDaemon?: CtoxLocalDaemonSource.CtoxLocalDaemonDiscoveryOptions;
   } = {},
 ) {
   const memory = input.fileSystem ?? makeMemoryFileSystem();
@@ -171,7 +174,12 @@ function registryHarness(
     stateDir: "/state",
     platform: input.platform ?? "darwin",
   } as DesktopEnvironment.DesktopEnvironment["Service"]);
-  const registry = make({ nowEpochMs: input.nowEpochMs ?? (() => NOW) }).pipe(
+  const registry = make({
+    nowEpochMs: input.nowEpochMs ?? (() => NOW),
+    // Local discovery is off unless a test supplies a state root, so the
+    // developer machine's own CTOX installation cannot influence a test.
+    localDaemon: input.localDaemon ?? { env: {} },
+  }).pipe(
     Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     Effect.provideService(ElectronSafeStorage.ElectronSafeStorage, input.storage ?? safeStorage()),
     Effect.provideService(FileSystem.FileSystem, memory.service),
@@ -645,9 +653,141 @@ describe("CtoxInstanceRegistry", () => {
     });
   });
 
-  it("preserves the original managed result when no paired entries exist", () => {
+  it("preserves the original managed result when no paired or local entries exist", () => {
     const managed = { _tag: "failed", code: "network_error" } as const;
     expect(mergeCtoxInstanceSources(managed, [])).toBe(managed);
+    expect(mergeCtoxInstanceSources(managed, [], [])).toBe(managed);
+  });
+
+  it("orders the one registry result deterministically across all three sources", () => {
+    const instance = (
+      source: CtoxManagedInstance["source"],
+      id: string,
+      displayName: string,
+    ): CtoxManagedInstance => ({
+      id,
+      source,
+      displayName,
+      status: source === "local_daemon" ? "available" : "paired",
+      healthSummary: {
+        dataPlane: "rxdb-webrtc",
+        dataPlaneReady: false,
+        httpDataProxy: false,
+        nativePeerObserved: false,
+      },
+    });
+    const managed = {
+      _tag: "ready",
+      instances: [
+        instance("ctox_dev", "managed:b", "Bravo"),
+        instance("ctox_dev", "managed:a", "Alpha"),
+      ],
+    } as const;
+    const paired = [instance("manual_pairing", "paired:manual_pairing:m", "Zulu")];
+    const local = [
+      instance("local_daemon", "local:2", "Warehouse"),
+      instance("local_daemon", "local:1", "Warehouse"),
+      // A duplicate local id collapses instead of appearing twice.
+      instance("local_daemon", "local:1", "Warehouse"),
+    ];
+
+    const merged = mergeCtoxInstanceSources(managed, paired, local);
+    assert.equal(merged._tag, "ready");
+    if (merged._tag !== "ready") return;
+    assert.deepEqual(
+      merged.instances.map((entry) => [entry.source, entry.id]),
+      [
+        ["ctox_dev", "managed:a"],
+        ["ctox_dev", "managed:b"],
+        ["manual_pairing", "paired:manual_pairing:m"],
+        ["local_daemon", "local:1"],
+        ["local_daemon", "local:2"],
+      ],
+    );
+    assert.equal(merged.managedState, "ready");
+    assert.deepEqual(merged, mergeCtoxInstanceSources(managed, paired, local.toReversed()));
+  });
+
+  it.effect("merges discovered local daemons into the one registry result", () => {
+    const memory = makeMemoryFileSystem();
+    memory.files.set(
+      "/local-state/instance.json",
+      JSON.stringify({
+        version: 1,
+        instanceId: "workshop-1",
+        displayName: "Workshop Business OS",
+        status: "running",
+        lastSeenAt: NOW - 1_000,
+      }),
+    );
+    const { registry } = registryHarness({
+      fileSystem: memory,
+      localDaemon: { env: { CTOX_STATE_ROOT: "/local-state" }, nowEpochMs: () => NOW },
+    });
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const paired = yield* service.importManualPairing(manualPairing);
+      const merged = yield* service.merge({ _tag: "signed_out" });
+      assert.equal(merged._tag, "ready");
+      if (merged._tag !== "ready") return;
+      assert.equal(merged.managedState, "signed_out");
+      assert.deepEqual(
+        merged.instances.map((entry) => [entry.source, entry.displayName, entry.status]),
+        [
+          ["manual_pairing", "Office Business OS", "paired"],
+          ["local_daemon", "Workshop Business OS", "available"],
+        ],
+      );
+
+      const local = merged.instances[1];
+      assert.isDefined(local);
+      assert.match(local.id, /^local:[A-Za-z0-9_-]{22}$/);
+      assert.isFalse(local.healthSummary.dataPlaneReady);
+      assert.isFalse(local.healthSummary.nativePeerObserved);
+      assert.isFalse(local.healthSummary.httpDataProxy);
+      // Local entries are discovered only; they are never persisted.
+      assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", local.id);
+      assert.notInclude(encodeUnknownJson(merged), "workshop-1");
+      assert.notInclude(encodeUnknownJson(merged), "/local-state");
+      assert.deepEqual(yield* service.merge({ _tag: "signed_out" }), merged);
+      assert.equal(paired.source, "manual_pairing");
+    });
+  });
+
+  it.effect("keeps local daemons visible when the pairing registry is unreadable", () => {
+    const memory = makeMemoryFileSystem();
+    memory.files.set("/state/ctox/instances.json", '{"version":1,"instances":"corrupt"}');
+    memory.files.set(
+      "/local-state/instance.json",
+      JSON.stringify({ version: 1, instanceId: "workshop-1", status: "stopped" }),
+    );
+    const { registry } = registryHarness({
+      fileSystem: memory,
+      localDaemon: { env: { CTOX_STATE_ROOT: "/local-state" }, nowEpochMs: () => NOW },
+    });
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const merged = yield* service.merge({ _tag: "signed_out" });
+      assert.equal(merged._tag, "ready");
+      if (merged._tag !== "ready") return;
+      assert.deepEqual(
+        merged.instances.map((entry) => [entry.source, entry.status]),
+        [["local_daemon", "offline"]],
+      );
+    });
+  });
+
+  it.effect("ignores a corrupt local descriptor without failing discovery", () => {
+    const memory = makeMemoryFileSystem();
+    memory.files.set("/local-state/instance.json", '{"version":1,"instanceId":');
+    const { registry } = registryHarness({
+      fileSystem: memory,
+      localDaemon: { env: { CTOX_STATE_ROOT: "/local-state" }, nowEpochMs: () => NOW },
+    });
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      assert.deepEqual(yield* service.merge({ _tag: "signed_out" }), { _tag: "signed_out" });
+    });
   });
 
   it.effect("accepts a single canonical desktop invite link", () => {

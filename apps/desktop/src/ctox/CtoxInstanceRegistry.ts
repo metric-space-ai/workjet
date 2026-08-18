@@ -27,6 +27,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
+import {
+  discoverCtoxLocalDaemonInstances,
+  type CtoxLocalDaemonDiscoveryOptions,
+} from "./CtoxLocalDaemonSource.ts";
 
 const REGISTRY_VERSION = 1;
 const MAX_INVITE_BYTES = 65_536;
@@ -186,6 +190,8 @@ interface ValidatedPairing {
 
 export interface CtoxInstanceRegistryOptions {
   readonly nowEpochMs?: () => number;
+  /** Overrides for read-only local-daemon discovery; the defaults are derived here. */
+  readonly localDaemon?: CtoxLocalDaemonDiscoveryOptions;
 }
 
 export interface CtoxPairedLaunchDescriptor {
@@ -589,23 +595,29 @@ function compareInstances(left: CtoxManagedInstance, right: CtoxManagedInstance)
   return 0;
 }
 
+/**
+ * The one registry result. Locally discovered daemons join the same merge as
+ * managed and paired entries: deduplicated by source and id, capacity-bounded
+ * with the persisted local sources first, and sorted deterministically.
+ */
 export function mergeCtoxInstanceSources(
   managed: CtoxManagedDiscoveryResult,
   paired: readonly CtoxManagedInstance[],
+  local: readonly CtoxManagedInstance[] = [],
 ): CtoxDiscoveryResult {
-  if (paired.length === 0) return managed;
+  if (paired.length === 0 && local.length === 0) return managed;
 
-  const pairedBySourceAndId = new Map<string, CtoxManagedInstance>();
-  for (const instance of paired) {
-    pairedBySourceAndId.set(`${instance.source}\0${instance.id}`, instance);
+  const ownedBySourceAndId = new Map<string, CtoxManagedInstance>();
+  for (const instance of [...paired, ...local]) {
+    ownedBySourceAndId.set(`${instance.source}\0${instance.id}`, instance);
   }
-  const retainedPaired = [...pairedBySourceAndId.values()].sort(compareInstances).slice(0, 1_000);
-  const capacityForManaged = 1_000 - retainedPaired.length;
+  const retainedOwned = [...ownedBySourceAndId.values()].sort(compareInstances).slice(0, 1_000);
+  const capacityForManaged = 1_000 - retainedOwned.length;
   const managedInstances = managed._tag === "ready" ? managed.instances : [];
   const managedBySourceAndId = new Map<string, CtoxManagedInstance>();
   for (const instance of managedInstances) {
     const key = `${instance.source}\0${instance.id}`;
-    if (!pairedBySourceAndId.has(key)) managedBySourceAndId.set(key, instance);
+    if (!ownedBySourceAndId.has(key)) managedBySourceAndId.set(key, instance);
   }
   const retainedManaged = [...managedBySourceAndId.values()]
     .sort(compareInstances)
@@ -613,7 +625,7 @@ export function mergeCtoxInstanceSources(
 
   return {
     _tag: "ready",
-    instances: [...retainedManaged, ...retainedPaired].sort(compareInstances),
+    instances: [...retainedManaged, ...retainedOwned].sort(compareInstances),
     managedState: managed._tag,
     ...(managed._tag === "failed" ? { managedFailureCode: managed.code } : {}),
   };
@@ -776,6 +788,19 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     options.nowEpochMs === undefined
       ? DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
       : Effect.sync(options.nowEpochMs);
+  // Health probing stays opt-in: no probe is injected yet, so discovery reads
+  // only the descriptor. The probe arrives with the local launch path.
+  const localDaemonOptions: CtoxLocalDaemonDiscoveryOptions = {
+    homeDirectory: environment.homeDirectory,
+    env: process.env,
+    ...(options.nowEpochMs === undefined ? {} : { nowEpochMs: options.nowEpochMs }),
+    ...options.localDaemon,
+  };
+  // Discovery runs with the services acquired here, never with the caller's.
+  const discoverLocalInstances = discoverCtoxLocalDaemonInstances(localDaemonOptions).pipe(
+    Effect.provideService(FileSystem.FileSystem, fileSystem),
+    Effect.provideService(Path.Path, path),
+  );
 
   const writePublic = Effect.fn("CtoxInstanceRegistry.writePublic")(function* (
     document: PublicRegistryDocument,
@@ -1104,11 +1129,19 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     stableIdentityKey: (instanceId) => registryLock.withPermit(stableIdentityKey(instanceId)),
     merge: (managed) =>
       registryLock.withPermit(
-        readPairedInstances().pipe(
-          Effect.map((paired) => mergeCtoxInstanceSources(managed, paired)),
-          Effect.orElseSucceed(() => managed),
-          Effect.withSpan("CtoxInstanceRegistry.merge"),
-        ),
+        Effect.gen(function* () {
+          // A failed or missing pairing store must not hide local daemons, and
+          // local discovery cannot fail, so both degrade to an empty source.
+          const paired = yield* readPairedInstances().pipe(
+            Effect.orElseSucceed((): readonly CtoxManagedInstance[] => []),
+          );
+          const local = yield* discoverLocalInstances;
+          return mergeCtoxInstanceSources(
+            managed,
+            paired,
+            local.map((entry) => entry.instance),
+          );
+        }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),
       ),
     importInvite: (invite) =>
       registryLock.withPermit(

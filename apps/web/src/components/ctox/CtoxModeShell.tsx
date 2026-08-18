@@ -711,6 +711,15 @@ export function CtoxAppRailList({
   );
 }
 
+/**
+ * Why a listed instance cannot be opened. Local daemons are discovered
+ * read-only; their launch path is not wired yet, so they stay listed but inert.
+ */
+export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
+  if (instance.source === "local_daemon") return "Local CTOX daemons cannot be opened yet.";
+  return isPairedCtoxInstance(instance) ? "This pairing is not available." : undefined;
+}
+
 /** Connection dot color, project-row style: state at a glance, detail in the tooltip. */
 function instanceDotClass(instance: CtoxManagedInstance, connected: boolean): string {
   if (connected) return "bg-emerald-500";
@@ -748,7 +757,7 @@ function CtoxInstanceCard({
     workspaceName === null ? undefined : instance.displayName,
     meta,
     statusLabel(instance),
-    paired && !launchable ? "This pairing is not available." : undefined,
+    launchable ? undefined : unavailableHint(instance),
   ]
     .filter(Boolean)
     .join("\n");

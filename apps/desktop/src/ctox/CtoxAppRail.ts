@@ -70,9 +70,10 @@ export interface CtoxRailInstanceState {
 }
 
 /**
- * Taskbar merge: docked apps are always listed (cache supplies title and
- * last-seen when the guest is away); undocked apps appear only while open.
- * The active module is the single open app of a Business OS guest.
+ * Session-list merge (T3 analogy): every installed app of the instance is
+ * listed like sessions under a project. Docked apps come first in pin order,
+ * then the remaining installed apps; open apps carry the open marker. While
+ * the guest is away the last cached app list renders instead.
  */
 export function mergeRailApps(input: {
   readonly docked: readonly string[];
@@ -91,34 +92,30 @@ export function mergeRailApps(input: {
   if (activeId !== null) openIds.add(activeId);
   const rows: CtoxInstanceApp[] = [];
   const seen = new Set<string>();
-  for (const id of input.docked) {
-    if (!CTOX_APP_MODULE_ID_PATTERN.test(id) || seen.has(id)) continue;
+  const pushRow = (id: string, docked: boolean) => {
+    if (!CTOX_APP_MODULE_ID_PATTERN.test(id) || seen.has(id)) return;
     seen.add(id);
     const live = liveById.get(id);
     const cached = cachedById.get(id);
     const title = live?.title ?? cached?.title;
-    const lastSeenAt = live !== undefined ? input.nowEpochMs : cached?.lastSeenAt;
+    const lastSeenAt = input.live !== undefined ? input.nowEpochMs : cached?.lastSeenAt;
     rows.push({
       id,
       ...(title === undefined ? {} : { title }),
-      docked: true,
+      docked,
       open: openIds.has(id),
       ...(lastSeenAt === undefined ? {} : { lastSeenAt }),
     });
-  }
-  for (const id of openIds) {
-    if (seen.has(id) || !CTOX_APP_MODULE_ID_PATTERN.test(id)) continue;
-    seen.add(id);
-    const live = liveById.get(id);
-    const title = live?.title ?? cachedById.get(id)?.title;
-    rows.push({
-      id,
-      ...(title === undefined ? {} : { title }),
-      docked: false,
-      open: true,
-      lastSeenAt: input.nowEpochMs,
-    });
-  }
+  };
+  const dockedSet = new Set(input.docked);
+  for (const id of input.docked) pushRow(id, true);
+  // Open apps that are not installed-listed (transient windows) still show.
+  for (const id of openIds) pushRow(id, dockedSet.has(id));
+  const remaining =
+    input.live !== undefined
+      ? input.live.apps.map((app) => app.id)
+      : input.cached.map((app) => app.id);
+  for (const id of remaining) pushRow(id, dockedSet.has(id));
   return rows;
 }
 

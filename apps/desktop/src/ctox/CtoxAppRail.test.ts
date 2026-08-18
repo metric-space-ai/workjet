@@ -19,54 +19,59 @@ type CtoxAppRailService = CtoxAppRail["Service"];
 const NOW = 1_800_000_000_000;
 
 describe("mergeRailApps", () => {
-  it("keeps docked apps listed while closed and marks the active module open", () => {
+  it("orders docked apps first and marks the active module open", () => {
     const apps = mergeRailApps({
       docked: ["crm", "ledger"],
       cached: [{ id: "crm", title: "CRM", lastSeenAt: NOW - 1_000 }],
       live: {
-        apps: [{ id: "ledger", title: "Ledger" }],
+        apps: [
+          { id: "notes", title: "Notes" },
+          { id: "ledger", title: "Ledger" },
+        ],
         activeModuleId: "ledger",
         openModuleIds: ["ledger"],
       },
       nowEpochMs: NOW,
     });
     assert.deepEqual(apps, [
-      { id: "crm", title: "CRM", docked: true, open: false, lastSeenAt: NOW - 1_000 },
+      { id: "crm", title: "CRM", docked: true, open: false, lastSeenAt: NOW },
       { id: "ledger", title: "Ledger", docked: true, open: true, lastSeenAt: NOW },
+      { id: "notes", title: "Notes", docked: false, open: false, lastSeenAt: NOW },
     ]);
   });
 
-  it("shows an undocked app only while it is open", () => {
-    const openRows = mergeRailApps({
+  it("lists every installed app and marks the open ones", () => {
+    const rows = mergeRailApps({
       docked: [],
       cached: [],
       live: {
-        apps: [{ id: "notes", title: "Notes" }],
+        apps: [
+          { id: "notes", title: "Notes" },
+          { id: "mail", title: "Mail" },
+        ],
         activeModuleId: null,
         openModuleIds: ["notes"],
       },
       nowEpochMs: NOW,
     });
-    assert.deepEqual(openRows, [
+    assert.deepEqual(rows, [
       { id: "notes", title: "Notes", docked: false, open: true, lastSeenAt: NOW },
+      { id: "mail", title: "Mail", docked: false, open: false, lastSeenAt: NOW },
     ]);
-    const closedRows = mergeRailApps({
-      docked: [],
-      cached: [{ id: "notes", title: "Notes", lastSeenAt: NOW - 5 }],
-      live: { apps: [{ id: "notes", title: "Notes" }], activeModuleId: null, openModuleIds: [] },
-      nowEpochMs: NOW,
-    });
-    assert.deepEqual(closedRows, []);
   });
 
-  it("renders docked apps from cache when the instance is disconnected", () => {
+  it("renders the full cached app list when the instance is disconnected", () => {
     const apps = mergeRailApps({
       docked: ["crm"],
-      cached: [{ id: "crm", title: "CRM", lastSeenAt: NOW - 60_000 }],
+      cached: [
+        { id: "crm", title: "CRM", lastSeenAt: NOW - 60_000 },
+        { id: "mail", title: "Mail", lastSeenAt: NOW - 90_000 },
+      ],
       nowEpochMs: NOW,
     });
     assert.deepEqual(apps, [
       { id: "crm", title: "CRM", docked: true, open: false, lastSeenAt: NOW - 60_000 },
+      { id: "mail", title: "Mail", docked: false, open: false, lastSeenAt: NOW - 90_000 },
     ]);
   });
 

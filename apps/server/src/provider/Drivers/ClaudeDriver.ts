@@ -43,6 +43,8 @@ import {
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { resolveGatewayRoutedEnvironment } from "../ProviderGatewayRouting.ts";
+import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makePackageManagedProviderMaintenanceResolver,
@@ -82,6 +84,7 @@ const UPDATE = makePackageManagedProviderMaintenanceResolver({
 });
 
 export type ClaudeDriverEnv =
+  | ProviderGatewayService
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
@@ -116,7 +119,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
   },
   configSchema: ClaudeSettings,
   defaultConfig: (): ClaudeSettings => decodeClaudeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    routeViaGateway,
+    config,
+  }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -143,9 +154,22 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         continuationGroupKey,
       });
 
+      // Captured eagerly so the resolver closure carries the gateway service
+      // rather than requiring it from the adapter's own R channel; the
+      // gateway STATUS itself is still read lazily, per session start.
+      const gateway = yield* ProviderGatewayService;
+      const resolveSessionEnvironment = () =>
+        resolveGatewayRoutedEnvironment({
+          driver: DRIVER_KIND,
+          instanceId,
+          routeViaGateway,
+          environment,
+        }).pipe(Effect.provideService(ProviderGatewayService, gateway));
+
       const adapterOptions = {
         instanceId,
         environment: processEnv,
+        resolveSessionEnvironment,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);

@@ -92,6 +92,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
   type ProviderAdapterError,
+  type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
@@ -275,6 +276,23 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
 export interface ClaudeAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  /**
+   * Lazily resolve the environment for one session start.
+   *
+   * Gateway-routed instances must consult the gateway's live status at the
+   * moment a session starts — the gateway starts, stops, and faults on its
+   * own schedule, so a value captured when the instance was built would go
+   * stale. When absent, the adapter-scoped environment is used, which is
+   * exactly the unrouted behavior.
+   *
+   * Only the child process env is recomputed; the resolved SDK executable
+   * path stays construction-time, because gateway routing changes where
+   * requests go, never which binary runs.
+   */
+  readonly resolveSessionEnvironment?: () => Effect.Effect<
+    NodeJS.ProcessEnv,
+    ProviderGatewayRoutingError
+  >;
   readonly createQuery?: (input: {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
@@ -4102,6 +4120,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
         ...(ultracode ? { ultracode: true } : {}),
       };
+      // Resolved per session start so gateway-routed instances observe the
+      // gateway's current status rather than a value frozen at construction.
+      // The resolver returns the per-instance merge only, so the Claude home
+      // isolation (CLAUDE_CONFIG_DIR) is re-applied on top of it exactly as
+      // it is for the construction-time environment.
+      const sessionEnvironment = options?.resolveSessionEnvironment
+        ? yield* makeClaudeEnvironment(
+            claudeSettings,
+            yield* options.resolveSessionEnvironment(),
+          ).pipe(Effect.provideService(Path.Path, path))
+        : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
@@ -4133,7 +4162,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: sessionEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

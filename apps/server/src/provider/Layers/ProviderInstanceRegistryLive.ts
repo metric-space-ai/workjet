@@ -172,6 +172,7 @@ const buildEntry = <R>(input: {
         accentColor: entry.accentColor,
         environment: entry.environment ?? [],
         enabled: entry.enabled ?? decodedConfigEnabled(typedConfig) ?? true,
+        routeViaGateway: entry.routeViaGateway ?? false,
         config: typedConfig,
       })
       .pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);

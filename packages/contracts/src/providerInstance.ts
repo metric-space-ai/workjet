@@ -127,6 +127,19 @@ export const ProviderInstanceConfig = Schema.Struct({
   accentColor: Schema.optional(TrimmedNonEmptyString),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Opt-in: route this instance's harness sessions through the Workjet
+   * provider gateway instead of the harness CLI's own provider credentials.
+   *
+   * Additive and optional — absent means `false`, so existing persisted
+   * envelopes decode unchanged and no migration step is required. When
+   * enabled, session start injects the harness-appropriate base-URL and
+   * API-key variables through `mergeProviderInstanceEnvironment`, and fails
+   * with a typed error if the gateway is not ready (an operator who opted in
+   * expects gateway accounting, never a silent fall back to direct
+   * credentials).
+   */
+  routeViaGateway: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),
 });
 export type ProviderInstanceConfig = typeof ProviderInstanceConfig.Type;

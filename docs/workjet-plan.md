@@ -1600,10 +1600,20 @@ CTOX Desktop App is complete only when all of the following are true:
         the authenticated coordination relay and mixed-harness cross-computer
         messaging, prompt delegation, result, follow-up, and review/revision
         flows specified in Wave 5.
-15. [ ] Add the configurable per-environment temporary worktree storage root,
+15. [x] Add the configurable per-environment temporary worktree storage root,
         prove new Code and orchestrated worker worktrees land on an operator-
         selected `/Volumes/tmp` root, and prove existing active worktrees plus
         durable state remain untouched when the setting changes.
+        CLOSED 2026-08-19: all three remaining gaps are shut. The real-stack
+        end-to-end proof is `WorkerDispatch.e2e.test.ts` (see below); commit
+        `066ba076a` adds the durable cleanup at the `thread.deleted` boundary
+        via `ThreadDeletionReactor` + `WorkerWorktreeCleanup` (role guard,
+        trusted-root containment, exact-ref guard, never fatal for the
+        deletion, idempotent) plus `GitVcsDriverCore.deleteBranch` and
+        worker-branch-ref deletion on the dispatch rollback path.
+        Interpretation note: cleanup binds to DELETION, deliberately not to
+        completion or archiving — a completed worker's worktree holds its
+        results until integration, and archiving is reversible.
         The server setting, ordinary Code worktree creation, A→B transition,
         explicit-path bypass, existing-worktree preservation, and real
         `/Volumes/tmp` validation are complete. Keep this queue item open until a

@@ -890,15 +890,30 @@ CTOX project.
       OS tokens and three-pane grammar, adds light/dark and responsive states,
       and deliberately excludes the outer desktop mode switch and instance
       sidebar (`metric-space-ai/ctox` commit `f5ee27eab`).
-- [ ] Load the theme stylesheet from the production Business OS shell while
+- [x] Load the theme stylesheet from the production Business OS shell while
       leaving it inert for standalone/browser use unless the trusted desktop
-      host marker is present.
-- [ ] Set and clear the desktop host marker from the isolated Electron guest
-      lifecycle, including reload/recovery, without allowing page content or a
-      renderer-supplied URL parameter to claim desktop-host authority.
+      host marker is present. Shipped in `business-os-shell-v0.1.0-rc.9`
+      (rc.8 lacked the `themes/` tree — builder fix in CTOX commit
+      `28b7294aa`); every theme rule is scoped to
+      `html[data-desktop-host="ctox"]` and the QA suite proves the scope guard.
+- [x] Set and clear the desktop host marker from the isolated Electron guest
+      lifecycle. The marker is set only by the isolated guest preload on the
+      main-process `instance:apply-host-theme` IPC (allowlisted token keys,
+      bounded color pattern); page content cannot claim it. The Workjet
+      renderer projects the current appearance theme (tokens resolved to
+      concrete colors via probe element, filtered through the shared
+      `CtoxHostThemeColor` schema) on mount, on `<html>` attribute mutations,
+      and on every guest ready transition; the guest manager replays the last
+      theme on `did-finish-load`. 2026-08-18: dark T3, chat-dock flattening,
+      flat desktop ground (rc.10), and live Ocean-theme projection verified
+      in the installed packaged app via CDP
+      (`--ctox-host-bg: oklch(0.242641 0.024125 250.573)` under Ocean).
 - [ ] Publish and pin the first Business OS shell release containing the theme,
       then prove dark/light plus three/two/one-pane layouts inside packaged
       CTOX Desktop App and prove the standalone shell remains unchanged.
+      `v0.1.0-rc.10` is published and pinned; dark plus theme projection are
+      proven in the installed app. Light-scheme and pane-collapse proof in the
+      packaged app remain open.
 
 ### Renderer
 
@@ -1107,9 +1122,14 @@ OS` control and the safe paired-instance row, verify DOM-relative
     - [ ] Pass the complete packaged healthy → revoke → unhealthy → unrevoke →
           healthy → remove/reimport sequence and verify guest detachment plus
           Electron partition deletion.
-    - [ ] Wire the trusted Electron guest-host marker to the host-scoped
+    - [x] Wire the trusted Electron guest-host marker to the host-scoped
           Business OS desktop theme, link the inert stylesheet in production,
           and prove standalone Business OS remains visually unchanged.
+          Done 2026-08-18 with shell `v0.1.0-rc.10` and the Workjet theme
+          projection pipeline (see the Wave 7 desktop-coherent-theme section);
+          the stylesheet is scope-guarded to the preload-set
+          `data-desktop-host="ctox"` marker, so the standalone shell is
+          untouched by construction and QA.
     - [x] Download RC6 through Workjet's normal network prepare path after
           publication; verify the canonical Node 24 archive and manifests, then
           pass a second full cache-hit inventory check under `/Volumes/tmp`.

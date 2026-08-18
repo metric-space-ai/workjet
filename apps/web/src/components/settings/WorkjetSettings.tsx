@@ -905,7 +905,7 @@ export function WorkjetSettingsView({
             <SettingsRow
               key={route.id}
               title={route.label}
-              description={`Provider instance: ${route.providerInstanceId}`}
+              description={`Provider-gateway account: ${route.gatewayAccountId}`}
               control={
                 <ItemActions
                   label={`LLM route ${route.label}`}

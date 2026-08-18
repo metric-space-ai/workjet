@@ -19,7 +19,9 @@ import {
   WorkjetGatewayOperationError,
   WorkjetGatewayStatus,
   WorkjetGreppyOperationError,
+  WorkjetLlmRouteId,
   WorkjetThreadConfig,
+  migrateWorkjetLlmRouteV1ToV2,
   WorktreeStorageInspection,
   WorktreeStorageInspectionInput,
 } from "./workjet.ts";
@@ -287,7 +289,7 @@ describe("WorkjetConfiguration", () => {
       DEFAULT_WORKJET_CONFIGURATION,
     );
     expect(DEFAULT_WORKJET_CONFIGURATION).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       computers: [],
       llmRoutes: [],
       workerProfiles: [],
@@ -307,11 +309,12 @@ describe("WorkjetConfiguration", () => {
 
   it("keeps reusable routes model-free and credential-free", () => {
     const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      schemaVersion: 2,
       llmRoutes: [
         {
           id: "route-main",
           label: "Main account",
-          providerInstanceId: "codex_personal",
+          gatewayAccountId: "account-codex-personal",
           modelId: "must-not-persist-here",
           apiKey: "must-not-persist-here",
         },
@@ -322,10 +325,95 @@ describe("WorkjetConfiguration", () => {
       {
         id: "route-main",
         label: "Main account",
-        providerInstanceId: "codex_personal",
+        gatewayAccountId: "account-codex-personal",
       },
     ]);
     expect(JSON.stringify(decoded.llmRoutes)).not.toContain("must-not-persist-here");
+  });
+
+  it("round trips a v2 configuration through decode and encode", () => {
+    const encodedInput = {
+      schemaVersion: 2,
+      computers: [],
+      llmRoutes: [
+        {
+          id: "route-main",
+          label: "Main account",
+          gatewayAccountId: "account-codex-personal",
+        },
+      ],
+      workerProfiles: [],
+      managedSystemPrompt: "",
+      telemetry: { claudeCodeEvents: true, sidecarEvents: true, retentionDays: 14 },
+      execution: { probeTimeoutSeconds: 120, turnTimeoutSeconds: 5_400, degradationAllowed: true },
+    };
+
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)(encodedInput);
+    expect(Schema.encodeUnknownSync(WorkjetConfiguration)(decoded)).toEqual(encodedInput);
+  });
+});
+
+describe("Workjet configuration migration step 2 (LLM route reference retype)", () => {
+  it("maps a v1 route providerInstanceId to a v2 gatewayAccountId verbatim", () => {
+    expect(
+      migrateWorkjetLlmRouteV1ToV2({
+        id: WorkjetLlmRouteId.make("route-main"),
+        label: "Main account",
+        providerInstanceId: "account-codex-personal",
+      }),
+    ).toEqual({
+      id: "route-main",
+      label: "Main account",
+      gatewayAccountId: "account-codex-personal",
+    });
+  });
+
+  it("upgrades a persisted v1 configuration to v2 while carrying route ids over", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      schemaVersion: 1,
+      llmRoutes: [
+        { id: "route-main", label: "Main account", providerInstanceId: "account-codex-personal" },
+        { id: "route-legacy", label: "Legacy driver", providerInstanceId: "codex_personal" },
+      ],
+    });
+
+    expect(decoded.schemaVersion).toBe(2);
+    expect(decoded.llmRoutes).toEqual([
+      { id: "route-main", label: "Main account", gatewayAccountId: "account-codex-personal" },
+      // A genuinely historical driver-instance id migrates as-is and simply
+      // will not resolve against the gateway catalog. That is accepted.
+      { id: "route-legacy", label: "Legacy driver", gatewayAccountId: "codex_personal" },
+    ]);
+  });
+
+  it("re-encodes a migrated configuration in the v2 shape only", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      schemaVersion: 1,
+      llmRoutes: [
+        { id: "route-main", label: "Main account", providerInstanceId: "account-codex-personal" },
+      ],
+    });
+    const encoded = Schema.encodeUnknownSync(WorkjetConfiguration)(decoded) as {
+      readonly schemaVersion: number;
+      readonly llmRoutes: ReadonlyArray<Record<string, unknown>>;
+    };
+
+    expect(encoded.schemaVersion).toBe(2);
+    expect(encoded.llmRoutes[0]).toEqual({
+      id: "route-main",
+      label: "Main account",
+      gatewayAccountId: "account-codex-personal",
+    });
+    expect(JSON.stringify(encoded)).not.toContain("providerInstanceId");
+  });
+
+  it("accepts an id that no gateway account resolves without failing the whole document", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      schemaVersion: 1,
+      llmRoutes: [{ id: "route-x", label: "Unresolvable", providerInstanceId: "1-not-a-slug" }],
+    });
+
+    expect(decoded.llmRoutes[0]?.gatewayAccountId).toBe("1-not-a-slug");
   });
 
   it("decodes missing per-computer harnesses and worker capabilities safely", () => {
@@ -342,7 +430,7 @@ describe("WorkjetConfiguration", () => {
         {
           id: "route-1",
           label: "Codex work",
-          providerInstanceId: "codex_work",
+          gatewayAccountId: "account-codex-work",
         },
       ],
       workerProfiles: [

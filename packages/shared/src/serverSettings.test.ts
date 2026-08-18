@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
+  WorkjetGatewayAccountId,
   type ServerProvider,
   WorkjetComputerId,
   WorkjetLlmRouteId,
@@ -323,7 +324,7 @@ describe("serverSettings helpers", () => {
           {
             id: oldRouteId,
             label: "Old route",
-            providerInstanceId: ProviderInstanceId.make("codex_old"),
+            gatewayAccountId: WorkjetGatewayAccountId.make("gateway_account_old"),
           },
         ],
         workerProfiles: [
@@ -343,7 +344,7 @@ describe("serverSettings helpers", () => {
 
     const next = applyServerSettingsPatch(current, {
       workjet: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         computers: [],
         llmRoutes: [],
         workerProfiles: [],

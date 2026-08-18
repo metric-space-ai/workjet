@@ -1,5 +1,4 @@
 import {
-  ProviderInstanceId,
   WorkjetGatewayAccountId,
   WorkjetLlmRouteId,
   type WorkjetGatewayAccountSummary,
@@ -33,14 +32,15 @@ describe("WorkjetLlmRouteEditor", () => {
     expect(saved).toEqual({
       id: WorkjetLlmRouteId.make("route-work"),
       label: "Codex production",
-      providerInstanceId: ProviderInstanceId.make("gateway_account_work"),
+      gatewayAccountId: WorkjetGatewayAccountId.make("gateway_account_work"),
     });
+    expect(saved).not.toHaveProperty("providerInstanceId");
     expect(saved).not.toHaveProperty("modelId");
   });
 
   it("requires a gateway account before saving", () => {
     expect(() =>
-      saveWorkjetLlmRouteDraft({ id: "route-1", label: "Route", providerInstanceId: "" }),
+      saveWorkjetLlmRouteDraft({ id: "route-1", label: "Route", gatewayAccountId: "" }),
     ).toThrowError("Choose a provider-gateway account.");
   });
 

@@ -133,7 +133,7 @@ describe("ClientSettings sidebar", () => {
 describe("ServerSettings Workjet catalog", () => {
   it("hydrates legacy server settings with the empty Workjet configuration", () => {
     expect(decodeServerSettings({}).workjet).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       computers: [],
       llmRoutes: [],
       workerProfiles: [],
@@ -151,10 +151,29 @@ describe("ServerSettings Workjet catalog", () => {
     });
   });
 
+  it("migrates a persisted v1 Workjet catalog instead of discarding settings.json", () => {
+    // Regression guard: the server falls back to DEFAULT_SERVER_SETTINGS when the
+    // whole settings document fails to decode, so a stale v1 route must migrate
+    // rather than fail. See migration step 2 in workjet.ts.
+    const workjet = decodeServerSettings({
+      workjet: {
+        schemaVersion: 1,
+        llmRoutes: [
+          { id: "route-main", label: "Main account", providerInstanceId: "gateway_account_work" },
+        ],
+      },
+    }).workjet;
+
+    expect(workjet.schemaVersion).toBe(2);
+    expect(workjet.llmRoutes).toEqual([
+      { id: "route-main", label: "Main account", gatewayAccountId: "gateway_account_work" },
+    ]);
+  });
+
   it("accepts a complete Workjet replacement in a settings patch", () => {
     const workjet = decodeServerSettingsPatch({
       workjet: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         computers: [],
         llmRoutes: [],
         workerProfiles: [],

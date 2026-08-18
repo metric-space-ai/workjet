@@ -1,7 +1,7 @@
 import {
   EnvironmentId,
-  ProviderInstanceId,
   WorkjetComputerId,
+  WorkjetGatewayAccountId,
   WorkjetLlmRouteId,
   WorkjetWorkerProfileId,
   type WorkjetComputer,
@@ -33,7 +33,7 @@ const computer: WorkjetComputer = {
 const route: WorkjetLlmRoute = {
   id: routeId,
   label: "Codex work",
-  providerInstanceId: ProviderInstanceId.make("codex_work"),
+  gatewayAccountId: WorkjetGatewayAccountId.make("gateway_account_codex_work"),
 };
 
 describe("WorkjetWorkerEditor", () => {

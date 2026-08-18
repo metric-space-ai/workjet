@@ -1,5 +1,5 @@
 import {
-  ProviderInstanceId,
+  WorkjetGatewayAccountId,
   WorkjetLlmRouteId,
   type WorkjetGatewayAccountSummary,
   type WorkjetLlmRoute,
@@ -15,7 +15,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 export interface WorkjetLlmRouteDraft {
   readonly id: string;
   readonly label: string;
-  readonly providerInstanceId: string;
+  readonly gatewayAccountId: string;
 }
 
 export function createWorkjetLlmRouteDraft(input: {
@@ -26,22 +26,18 @@ export function createWorkjetLlmRouteDraft(input: {
   return {
     id: input.route?.id ?? input.id ?? randomUUID(),
     label: input.route?.label ?? "",
-    providerInstanceId: input.route?.providerInstanceId ?? input.accounts[0]?.id ?? "",
+    gatewayAccountId: input.route?.gatewayAccountId ?? input.accounts[0]?.id ?? "",
   };
 }
 
 export function saveWorkjetLlmRouteDraft(draft: WorkjetLlmRouteDraft): WorkjetLlmRoute {
   const label = draft.label.trim();
   if (!label) throw new Error("Enter an LLM route label.");
-  if (!draft.providerInstanceId) throw new Error("Choose a provider-gateway account.");
+  if (!draft.gatewayAccountId) throw new Error("Choose a provider-gateway account.");
   return {
     id: WorkjetLlmRouteId.make(draft.id),
     label,
-    // The stored reference is a Workjet provider-gateway account id. The field
-    // still carries the `ProviderInstanceId` brand because the route contract
-    // predates the gateway account identity; changing the brand is a contracts
-    // migration, not a settings change.
-    providerInstanceId: ProviderInstanceId.make(draft.providerInstanceId),
+    gatewayAccountId: WorkjetGatewayAccountId.make(draft.gatewayAccountId),
   };
 }
 
@@ -62,7 +58,7 @@ export function WorkjetLlmRouteEditor({
     () => [...accounts].sort((left, right) => left.label.localeCompare(right.label)),
     [accounts],
   );
-  const selected = entries.find((account) => account.id === draft.providerInstanceId);
+  const selected = entries.find((account) => account.id === draft.gatewayAccountId);
 
   return (
     <form
@@ -94,9 +90,9 @@ export function WorkjetLlmRouteEditor({
         <div className="space-y-1.5">
           <Label htmlFor="workjet-route-provider">Provider-gateway account</Label>
           <Select
-            value={draft.providerInstanceId || null}
+            value={draft.gatewayAccountId || null}
             onValueChange={(value) => {
-              setDraft((current) => ({ ...current, providerInstanceId: value ?? "" }));
+              setDraft((current) => ({ ...current, gatewayAccountId: value ?? "" }));
               setError(null);
             }}
           >
@@ -105,7 +101,7 @@ export function WorkjetLlmRouteEditor({
               aria-label="LLM route provider-gateway account"
             >
               <SelectValue>
-                {selected?.label ?? draft.providerInstanceId ?? "Choose provider-gateway account"}
+                {selected?.label ?? draft.gatewayAccountId ?? "Choose provider-gateway account"}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>

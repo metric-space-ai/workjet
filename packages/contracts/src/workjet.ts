@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
   EnvironmentId,
   NonNegativeInt,
@@ -8,7 +9,6 @@ import {
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
-import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
@@ -65,13 +65,92 @@ export const WorkjetComputer = Schema.Struct({
 });
 export type WorkjetComputer = typeof WorkjetComputer.Type;
 
-/** A non-secret route to credentials protected by the provider-instance settings authority. */
+/**
+ * Identifier of a provider account owned by the environment-scoped Workjet
+ * provider gateway. Declared here because {@link WorkjetLlmRoute} references it;
+ * the rest of the gateway catalog contracts live further down this module.
+ */
+export const WorkjetGatewayAccountId = TrimmedNonEmptyString.pipe(
+  Schema.brand("WorkjetGatewayAccountId"),
+);
+export type WorkjetGatewayAccountId = typeof WorkjetGatewayAccountId.Type;
+
+/**
+ * A non-secret route to credentials protected by the provider-gateway account
+ * authority. The reference is a Workjet gateway account id — never a Code
+ * provider-driver instance id, and never a model or a credential.
+ */
 export const WorkjetLlmRoute = Schema.Struct({
   id: WorkjetLlmRouteId,
   label: TrimmedNonEmptyString,
-  providerInstanceId: ProviderInstanceId,
+  gatewayAccountId: WorkjetGatewayAccountId,
 });
 export type WorkjetLlmRoute = typeof WorkjetLlmRoute.Type;
+
+/**
+ * Configuration schema v1 route shape. The reference field was named
+ * `providerInstanceId` and branded as a Code provider-driver instance id
+ * because the route contract predated the provider-gateway account identity.
+ *
+ * The field is decoded as a plain non-empty string on purpose: the v1 editor
+ * wrote real gateway account ids through an unchecked brand cast, so persisted
+ * values are not guaranteed to satisfy the provider-instance slug pattern.
+ * Decoding must never fail here — a failure would discard the entire
+ * `settings.json` (the server falls back to `DEFAULT_SERVER_SETTINGS` when the
+ * settings document does not decode).
+ */
+const WorkjetLlmRouteV1 = Schema.Struct({
+  id: WorkjetLlmRouteId,
+  label: TrimmedNonEmptyString,
+  providerInstanceId: TrimmedNonEmptyString,
+});
+type WorkjetLlmRouteV1 = typeof WorkjetLlmRouteV1.Type;
+
+/**
+ * Workjet configuration migration step 2 — "LLM route reference retype".
+ *
+ * Maps a v1 route `{ providerInstanceId }` to a v2 route `{ gatewayAccountId }`,
+ * carrying the value over verbatim. It is a pure, exported, one-shot function so
+ * the migration is inspectable and independently testable.
+ *
+ * Values written by the post-gateway editor are already provider-gateway account
+ * ids and resolve against the gateway catalog unchanged. Genuinely historical
+ * provider-driver instance ids migrate as-is and simply will not resolve against
+ * the catalog; the editor then renders the raw id and the operator re-picks an
+ * account. That is accepted: `llmRoutes` had no server-side consumer at the time
+ * of this migration, so an unresolvable reference cannot affect a running route.
+ */
+export function migrateWorkjetLlmRouteV1ToV2(route: WorkjetLlmRouteV1): WorkjetLlmRoute {
+  return {
+    id: route.id,
+    label: route.label,
+    gatewayAccountId: WorkjetGatewayAccountId.make(route.providerInstanceId),
+  };
+}
+
+type WorkjetLlmRoutePersistedInput = WorkjetLlmRoute | WorkjetLlmRouteV1;
+
+/**
+ * Persisted route reader. Accepts either the v2 shape or the v1 shape and always
+ * yields the canonical v2 shape; encoding always writes v2.
+ */
+const WorkjetLlmRoutePersisted = Schema.Union([WorkjetLlmRoute, WorkjetLlmRouteV1]).pipe(
+  Schema.decodeTo(
+    WorkjetLlmRoute,
+    SchemaTransformation.transformOrFail({
+      decode: (route: WorkjetLlmRoutePersistedInput): Effect.Effect<WorkjetLlmRoute> =>
+        Effect.succeed("gatewayAccountId" in route ? route : migrateWorkjetLlmRouteV1ToV2(route)),
+      encode: (
+        route: typeof WorkjetLlmRoute.Encoded,
+      ): Effect.Effect<WorkjetLlmRoutePersistedInput> =>
+        Effect.succeed({
+          id: WorkjetLlmRouteId.make(route.id),
+          label: route.label,
+          gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
+        }),
+    }),
+  ),
+);
 
 export const WorkjetReasoningSelection = Schema.Literals([
   "automatic",
@@ -119,11 +198,32 @@ export type WorkjetTelemetryConfiguration = typeof WorkjetTelemetryConfiguration
  * Server-authoritative reusable Workjet catalog. Provider credentials, transport
  * connection details, and per-thread orchestration state intentionally live elsewhere.
  */
+/** Current Workjet configuration schema version. Bumped by migration step 2. */
+export const WORKJET_CONFIGURATION_SCHEMA_VERSION = 2;
+
+/**
+ * Accepts every published configuration version and normalizes to the current
+ * one. A stored `1` is upgraded in place by migration step 2, which rewrites the
+ * route reference field; there is no other v1/v2 difference.
+ */
+const WorkjetConfigurationSchemaVersion = Schema.Literals([1, 2]).pipe(
+  Schema.decodeTo(
+    Schema.Literal(2),
+    SchemaTransformation.transformOrFail({
+      decode: (_version: 1 | 2): Effect.Effect<2> => Effect.succeed(2 as const),
+      encode: (_version: 2): Effect.Effect<1 | 2> => Effect.succeed(2 as const),
+    }),
+  ),
+  Schema.withDecodingDefault(Effect.succeed(2 as const)),
+);
+
 /** Whole-object value schema without an outer default, used by patch contracts. */
 export const WorkjetConfigurationValue = Schema.Struct({
-  schemaVersion: Schema.Literal(1).pipe(Schema.withDecodingDefault(Effect.succeed(1 as const))),
+  schemaVersion: WorkjetConfigurationSchemaVersion,
   computers: Schema.Array(WorkjetComputer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  llmRoutes: Schema.Array(WorkjetLlmRoute).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  llmRoutes: Schema.Array(WorkjetLlmRoutePersisted).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   workerProfiles: Schema.Array(WorkjetWorkerProfile).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -317,11 +417,6 @@ export const DEFAULT_WORKJET_THREAD_CONFIG = {
 /** Provider accounts owned by the environment-scoped Workjet gateway, not harness drivers. */
 export const WorkjetGatewayProvider = Schema.Literals(["claude", "codex", "antigravity"]);
 export type WorkjetGatewayProvider = typeof WorkjetGatewayProvider.Type;
-
-export const WorkjetGatewayAccountId = TrimmedNonEmptyString.pipe(
-  Schema.brand("WorkjetGatewayAccountId"),
-);
-export type WorkjetGatewayAccountId = typeof WorkjetGatewayAccountId.Type;
 
 export const WorkjetGatewayPoolId = TrimmedNonEmptyString.pipe(
   Schema.brand("WorkjetGatewayPoolId"),

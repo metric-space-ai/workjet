@@ -10,14 +10,16 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
+use zeroize::Zeroize as _;
 
 use crate::internal::api::handlers::management::{
     api_key_usage_payload, management_support_plugin_header, oauth_callback_provider,
     parse_usage_queue_count, static_model_definitions_payload, usage_queue_payload,
     ManagementApiKeyUsageError, ManagementApiKeyUsageSource, ManagementAuthenticator,
-    ManagementProviderOAuthPoll, ManagementProviderOAuthStart, ManagementQuotaResetError,
-    ManagementQuotaResetSource, ManagementQuotaSwitchError, ManagementQuotaSwitchSource,
-    ManagementUsageQueue, ManagementUsageQueueError, StaticModelDefinitionsError,
+    ManagementCredentialRecord, ManagementProviderOAuthPoll, ManagementProviderOAuthStart,
+    ManagementQuotaResetError, ManagementQuotaResetSource, ManagementQuotaSwitchError,
+    ManagementQuotaSwitchSource, ManagementUsageQueue, ManagementUsageQueueError,
+    StaticModelDefinitionsError,
 };
 use crate::internal::config::CliproxyRuntimeConfig;
 
@@ -38,6 +40,7 @@ const CODEX_AUTH_URL_PATH: &str = "/v0/management/codex-auth-url";
 const ANTIGRAVITY_AUTH_URL_PATH: &str = "/v0/management/antigravity-auth-url";
 const OAUTH_STATUS_PATH: &str = "/v0/management/oauth/status";
 const OAUTH_SESSION_PREFIX: &str = "/v0/management/oauth/session/";
+const OAUTH_CLAIM_SUFFIX: &str = "/claim";
 const MAX_RESET_QUOTA_BODY_BYTES: usize = 16 * 1024;
 const MAX_RUNTIME_CONFIG_BODY_BYTES: usize = 256 * 1024;
 pub const MANAGEMENT_RUNTIME_CONFIG_SCHEMA: &str = "ctox.cliproxyapi.runtime-config.v1";
@@ -128,7 +131,50 @@ pub enum ManagementOAuthRouteError {
     InvalidState,
     SessionExists,
     UnknownSession,
+    NotClaimable,
     Unavailable,
+}
+
+/// A completed OAuth account together with the provider secret payload the
+/// embedding host itself expects to read back at startup. Handed out exactly
+/// once, so the owning control plane can persist it; the host keeps no copy.
+///
+/// `secrets` is keyed by the account-config secret-reference field the value
+/// belongs to (for example `access_token_secret`), and every value is the
+/// canonical byte-for-byte serialization for that reference.
+#[derive(Clone, Serialize)]
+pub struct ManagementClaimedCredential {
+    pub account: ManagementCredentialRecord,
+    pub secrets: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for ManagementClaimedCredential {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ManagementClaimedCredential")
+            .field("account", &self.account)
+            .field("secrets", &RedactedSecretKeys(&self.secrets))
+            .finish()
+    }
+}
+
+struct RedactedSecretKeys<'a>(&'a BTreeMap<String, String>);
+
+impl std::fmt::Debug for RedactedSecretKeys<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_map()
+            .entries(self.0.keys().map(|key| (key, "[REDACTED]")))
+            .finish()
+    }
+}
+
+impl Drop for ManagementClaimedCredential {
+    fn drop(&mut self) {
+        for value in self.secrets.values_mut() {
+            value.zeroize();
+        }
+    }
 }
 
 /// Optional management surface for the provider OAuth login flow. An embedder
@@ -146,6 +192,14 @@ pub trait ManagementOAuthSource: Send + Sync {
     fn poll(&self, state: &str) -> Result<ManagementProviderOAuthPoll, ManagementOAuthRouteError>;
 
     fn cancel(&self, state: &str) -> Result<bool, ManagementOAuthRouteError>;
+
+    /// Hands the completed session's provider secret payload over exactly
+    /// once. The source must drop the token material afterwards, so a second
+    /// claim reports [`ManagementOAuthRouteError::NotClaimable`].
+    fn claim(
+        &self,
+        state: &str,
+    ) -> Result<Vec<ManagementClaimedCredential>, ManagementOAuthRouteError>;
 
     /// Ingests the loopback OAuth redirect for `provider`. Called without a
     /// management key, exactly like the crate's canonical callback.
@@ -553,6 +607,27 @@ impl ManagementHandler {
                 Err(error) => oauth_route_error_response(error),
             };
         }
+        if let Some(state) = path
+            .strip_prefix(OAUTH_SESSION_PREFIX)
+            .and_then(|rest| rest.strip_suffix(OAUTH_CLAIM_SUFFIX))
+        {
+            let Some(source) = self.oauth.as_ref() else {
+                return ManagementHttpResponse::error(404, "route not found");
+            };
+            if method != "POST" {
+                return ManagementHttpResponse::error(405, "method not allowed");
+            }
+            let state = decode_path_segment(state);
+            return match source.claim(&state) {
+                Ok(credentials) => match serde_json::to_vec(&serde_json::json!({
+                    "credentials": credentials
+                })) {
+                    Ok(payload) => ManagementHttpResponse::json(200, payload),
+                    Err(_) => ManagementHttpResponse::error(500, "oauth claim unavailable"),
+                },
+                Err(error) => oauth_route_error_response(error),
+            };
+        }
         if let Some(state) = path.strip_prefix(OAUTH_SESSION_PREFIX) {
             let Some(source) = self.oauth.as_ref() else {
                 return ManagementHttpResponse::error(404, "route not found");
@@ -560,10 +635,7 @@ impl ManagementHandler {
             if method != "DELETE" {
                 return ManagementHttpResponse::error(405, "method not allowed");
             }
-            let state = percent_encoding::percent_decode_str(state)
-                .decode_utf8()
-                .map(|value| value.into_owned())
-                .unwrap_or_else(|_| state.to_owned());
+            let state = decode_path_segment(state);
             return match source.cancel(&state) {
                 Ok(true) => ManagementHttpResponse::json(
                     200,
@@ -709,6 +781,13 @@ fn runtime_config_error_response(error: ManagementRuntimeConfigError) -> Managem
     }
 }
 
+fn decode_path_segment(segment: &str) -> String {
+    percent_encoding::percent_decode_str(segment)
+        .decode_utf8()
+        .map(|value| value.into_owned())
+        .unwrap_or_else(|_| segment.to_owned())
+}
+
 fn builtin_oauth_provider_for_path(path: &str) -> Option<&'static str> {
     match path {
         ANTHROPIC_AUTH_URL_PATH => Some("anthropic"),
@@ -740,6 +819,9 @@ fn oauth_route_error_response(error: ManagementOAuthRouteError) -> ManagementHtt
         }
         ManagementOAuthRouteError::UnknownSession => {
             ManagementHttpResponse::error(404, "oauth session not found")
+        }
+        ManagementOAuthRouteError::NotClaimable => {
+            ManagementHttpResponse::error(409, "oauth session is not claimable")
         }
         ManagementOAuthRouteError::Unavailable => {
             ManagementHttpResponse::error(500, "oauth authority unavailable")

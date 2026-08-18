@@ -352,6 +352,21 @@ struct AntigravityState {
     project_id: String,
 }
 
+/// Renders the antigravity `state_secret` payload in exactly the form
+/// [`antigravity::AntigravitySecretStore::load_credentials`] parses back. The
+/// single definition above is the contract; a claiming control plane stores
+/// this string byte-for-byte.
+pub(crate) fn antigravity_state_secret(
+    expires_at_unix_ms: u64,
+    project_id: &str,
+) -> Result<String, SecretResolveError> {
+    serde_json::to_string(&AntigravityState {
+        expires_at_unix_ms,
+        project_id: project_id.to_owned(),
+    })
+    .map_err(|_| SecretResolveError::InvalidEncoding)
+}
+
 impl antigravity::AntigravitySecretStore for WorkjetSecretStore {
     fn load_credentials(
         &self,
@@ -455,6 +470,55 @@ mod tests {
             let error = store.resolve_text(&secret_ref).unwrap_err();
             assert!(!format!("{error:?} {error}").contains("provider-value"));
         }
+    }
+
+    #[test]
+    fn antigravity_state_secret_round_trips_through_the_credential_loader() {
+        use workjet_provider_gateway::internal::auth::antigravity::AntigravitySecretStore as _;
+
+        let (root, store) = store();
+        let handle = |name: &str, kind| {
+            antigravity::AntigravitySecretHandle::new(ALLOWED_SECRET_SCOPE, name, kind).unwrap()
+        };
+        let handles = antigravity::AntigravityCredentialHandles::new(
+            handle("ag.access", antigravity::AntigravitySecretKind::AccessToken),
+            handle(
+                "ag.refresh",
+                antigravity::AntigravitySecretKind::RefreshToken,
+            ),
+            handle("ag.state", antigravity::AntigravitySecretKind::State),
+        )
+        .unwrap();
+
+        let state = antigravity_state_secret(1_700_000_000_000, "projects/demo").unwrap();
+        assert_eq!(
+            state,
+            r#"{"expiresAtUnixMs":1700000000000,"projectId":"projects/demo"}"#
+        );
+        for (name, value) in [
+            ("ag.access", "ag-access-token"),
+            ("ag.refresh", "ag-refresh-token"),
+            ("ag.state", state.as_str()),
+        ] {
+            let path = root
+                .path()
+                .join(format!("{ALLOWED_SECRET_SCOPE}.{name}.bin"));
+            fs::write(&path, value).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+
+        let loaded = store.load_credentials(&handles).unwrap();
+        assert_eq!(loaded.project_id(), "projects/demo");
+        assert_eq!(
+            loaded
+                .expires_at()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+            1_700_000_000_000
+        );
+        assert_eq!(loaded.access_token().expose_secret(), "ag-access-token");
+        assert_eq!(loaded.refresh_token().expose_secret(), "ag-refresh-token");
     }
 
     #[test]

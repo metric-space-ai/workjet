@@ -8,9 +8,11 @@
 //! the redirect target that the host's own management listener serves.
 //!
 //! No token material is written to disk here. Exchanged tokens live only in
-//! this process' memory for the lifetime of the OAuth session; the loopback
-//! client receives the crate's secret-free [`ManagementCredentialRecord`]
-//! projection and owns persistence itself.
+//! this process' memory until the loopback client claims them exactly once;
+//! `status` returns only the crate's secret-free
+//! [`ManagementCredentialRecord`] projection, and the separate claim hands the
+//! provider payload over in the canonical serialization this host reads back
+//! at startup. The claiming control plane owns persistence.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -25,11 +27,10 @@ use workjet_provider_gateway::internal::api::handlers::management::{
     ManagementProviderOAuthPoll, ManagementProviderOAuthStart,
 };
 use workjet_provider_gateway::internal::api::server_management::{
-    ManagementOAuthRouteError, ManagementOAuthSource,
+    ManagementClaimedCredential, ManagementOAuthRouteError, ManagementOAuthSource,
 };
 use workjet_provider_gateway::internal::auth::antigravity::{
     AntigravityAuth, AntigravityHttpTransport, AntigravityOAuthClientCredentials,
-    SecretString as AntigravitySecret,
 };
 use workjet_provider_gateway::internal::auth::claude::{
     generate_pkce_codes as claude_pkce, AnthropicHttpTransport, ClaudeAuth,
@@ -40,6 +41,8 @@ use workjet_provider_gateway::internal::auth::codex::{
     CodexAuth, CodexHttpTransport, PkceCodes as CodexPkceCodes, SecretString as CodexSecret,
 };
 use workjet_provider_gateway::sdk::auth::LoginCancellation;
+
+use crate::secret_store::antigravity_state_secret;
 
 /// System clock for the crate's OAuth session bookkeeping.
 #[derive(Debug, Default)]
@@ -92,7 +95,7 @@ struct PendingLogin {
 
 enum LoginOutcome {
     Failed(String),
-    Completed(Vec<ManagementCredentialRecord>),
+    Completed(Vec<ManagementClaimedCredential>),
 }
 
 /// Concrete OAuth authority for the three providers the Workjet host exposes.
@@ -101,6 +104,7 @@ pub struct HostOAuthAuthority {
     antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
     pending: Mutex<BTreeMap<String, PendingLogin>>,
     outcomes: Mutex<BTreeMap<String, LoginOutcome>>,
+    claims: Mutex<BTreeMap<String, Vec<ManagementClaimedCredential>>>,
 }
 
 impl std::fmt::Debug for HostOAuthAuthority {
@@ -124,6 +128,26 @@ impl HostOAuthAuthority {
             antigravity,
             pending: Mutex::new(BTreeMap::new()),
             outcomes: Mutex::new(BTreeMap::new()),
+            claims: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    /// Hands the completed session's provider payload over exactly once.
+    fn take_claim(
+        &self,
+        state: &str,
+    ) -> Result<Vec<ManagementClaimedCredential>, ManagementOAuthRouteError> {
+        self.claims
+            .lock()
+            .map_err(|_| ManagementOAuthRouteError::Unavailable)?
+            .remove(state)
+            .ok_or(ManagementOAuthRouteError::NotClaimable)
+    }
+
+    /// Drops any retained token material for `state` without handing it out.
+    fn discard_claim(&self, state: &str) {
+        if let Ok(mut claims) = self.claims.lock() {
+            claims.remove(state);
         }
     }
 
@@ -282,11 +306,23 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
                 error: Some(message),
                 credentials: Vec::new(),
             }),
-            Some(LoginOutcome::Completed(credentials)) => Ok(ManagementProviderOAuthPoll {
-                pending: false,
-                error: None,
-                credentials,
-            }),
+            Some(LoginOutcome::Completed(claimed)) => {
+                let credentials = claimed
+                    .iter()
+                    .map(|entry| entry.account.clone())
+                    .collect::<Vec<_>>();
+                // The secret payload stays behind for a single later claim;
+                // only the secret-free projection travels with the poll.
+                self.claims
+                    .lock()
+                    .map_err(|_| ManagementProviderOAuthAuthorityError)?
+                    .insert(state.to_owned(), claimed);
+                Ok(ManagementProviderOAuthPoll {
+                    pending: false,
+                    error: None,
+                    credentials,
+                })
+            }
         }
     }
 
@@ -311,6 +347,7 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
             .lock()
             .map_err(|_| ManagementProviderOAuthAuthorityError)?
             .remove(state);
+        self.discard_claim(state);
         Ok(())
     }
 }
@@ -319,7 +356,7 @@ async fn exchange(
     pending: &PendingLogin,
     code: &str,
     antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
-) -> Result<Vec<ManagementCredentialRecord>, String> {
+) -> Result<Vec<ManagementClaimedCredential>, String> {
     match (pending.provider.as_str(), pending.pkce.as_ref()) {
         ("anthropic", ProviderPkce::Claude(pkce)) => {
             let transport = AnthropicHttpTransport::new(None)
@@ -334,7 +371,20 @@ async fn exchange(
             let storage = auth.create_token_storage(&bundle);
             let identity = first_nonempty(&[storage.account_uuid(), storage.email()])
                 .ok_or_else(|| "provider identity unavailable".to_owned())?;
-            Ok(vec![record("anthropic", &identity, storage.email())])
+            let credentials = storage.credentials();
+            Ok(vec![ManagementClaimedCredential {
+                account: record("anthropic", &identity, storage.email()),
+                secrets: BTreeMap::from([
+                    (
+                        "access_token_secret".to_owned(),
+                        credentials.access_token().expose_secret().to_owned(),
+                    ),
+                    (
+                        "refresh_token_secret".to_owned(),
+                        credentials.refresh_token().expose_secret().to_owned(),
+                    ),
+                ]),
+            }])
         }
         ("codex", ProviderPkce::Codex(pkce)) => {
             let transport =
@@ -348,7 +398,24 @@ async fn exchange(
             let storage = auth.create_token_storage(&bundle);
             let identity = first_nonempty(&[storage.account_id(), storage.email()])
                 .ok_or_else(|| "provider identity unavailable".to_owned())?;
-            Ok(vec![record("codex", &identity, storage.email())])
+            let credentials = storage.credentials();
+            Ok(vec![ManagementClaimedCredential {
+                account: record("codex", &identity, storage.email()),
+                secrets: BTreeMap::from([
+                    (
+                        "id_token_secret".to_owned(),
+                        credentials.id_token().expose_secret().to_owned(),
+                    ),
+                    (
+                        "access_token_secret".to_owned(),
+                        credentials.access_token().expose_secret().to_owned(),
+                    ),
+                    (
+                        "refresh_token_secret".to_owned(),
+                        credentials.refresh_token().expose_secret().to_owned(),
+                    ),
+                ]),
+            }])
         }
         ("antigravity", ProviderPkce::Antigravity) => {
             let credentials =
@@ -363,23 +430,51 @@ async fn exchange(
                 .exchange_code_for_tokens(&cancellation, code, &pending.redirect_uri)
                 .await
                 .map_err(|_| "Authentication exchange failed".to_owned())?;
-            let email = fetch_antigravity_email(&auth, &cancellation, tokens.access_token()).await;
-            let identity = first_nonempty(&[email.as_str()])
+            let refresh_token = tokens
+                .refresh_token()
+                .ok_or_else(|| "provider returned no refresh token".to_owned())?;
+            let email = auth
+                .fetch_user_info(&cancellation, tokens.access_token())
+                .await
+                .unwrap_or_default();
+            let project_id = auth
+                .fetch_project_id(&cancellation, tokens.access_token())
+                .await
+                .map_err(|_| "provider project is unavailable".to_owned())?;
+            let identity = first_nonempty(&[email.as_str(), project_id.as_str()])
                 .ok_or_else(|| "provider identity unavailable".to_owned())?;
-            Ok(vec![record("antigravity", &identity, &email)])
+            let state_secret =
+                antigravity_state_secret(expires_at_unix_ms(tokens.expires_in), &project_id)
+                    .map_err(|_| "provider state is invalid".to_owned())?;
+            Ok(vec![ManagementClaimedCredential {
+                account: record("antigravity", &identity, &email),
+                secrets: BTreeMap::from([
+                    (
+                        "access_token_secret".to_owned(),
+                        tokens.access_token().expose_secret().to_owned(),
+                    ),
+                    (
+                        "refresh_token_secret".to_owned(),
+                        refresh_token.expose_secret().to_owned(),
+                    ),
+                    ("state_secret".to_owned(), state_secret),
+                ]),
+            }])
         }
         _ => Err("provider session is inconsistent".to_owned()),
     }
 }
 
-async fn fetch_antigravity_email(
-    auth: &AntigravityAuth,
-    cancellation: &LoginCancellation,
-    access_token: &AntigravitySecret,
-) -> String {
-    auth.fetch_user_info(cancellation, access_token)
-        .await
-        .unwrap_or_default()
+/// Absolute expiry the antigravity state payload records, derived from the
+/// provider's relative `expires_in`.
+fn expires_at_unix_ms(expires_in: i64) -> u64 {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+        .unwrap_or_default();
+    let lifetime_ms = u64::try_from(expires_in.max(0)).unwrap_or_default() * 1_000;
+    now_ms.saturating_add(lifetime_ms)
 }
 
 fn first_nonempty(candidates: &[&str]) -> Option<String> {
@@ -487,6 +582,22 @@ impl ManagementOAuthSource for HostOAuthSource {
             .map_err(provider_error)
     }
 
+    fn claim(
+        &self,
+        state: &str,
+    ) -> Result<Vec<ManagementClaimedCredential>, ManagementOAuthRouteError> {
+        validate_oauth_state(state).map_err(|_| ManagementOAuthRouteError::InvalidState)?;
+        // Retained token material lives exactly as long as its session does.
+        let Some(session) = self.sessions.details(state).map_err(session_error)? else {
+            self.authority.discard_claim(state);
+            return Err(ManagementOAuthRouteError::UnknownSession);
+        };
+        if !session.completed {
+            return Err(ManagementOAuthRouteError::NotClaimable);
+        }
+        self.authority.take_claim(state)
+    }
+
     fn callback(
         &self,
         provider: &str,
@@ -531,5 +642,95 @@ fn provider_error(error: ManagementProviderOAuthError) -> ManagementOAuthRouteEr
         | ManagementProviderOAuthError::VirtualChildConflict => {
             ManagementOAuthRouteError::Unavailable
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ACCESS: &str = "codex-access-token-must-not-leak";
+
+    fn completed_codex_credential() -> ManagementClaimedCredential {
+        ManagementClaimedCredential {
+            account: record("codex", "account-1", "user@example.test"),
+            secrets: BTreeMap::from([
+                ("id_token_secret".to_owned(), "codex-id-token".to_owned()),
+                ("access_token_secret".to_owned(), ACCESS.to_owned()),
+                (
+                    "refresh_token_secret".to_owned(),
+                    "codex-refresh-token".to_owned(),
+                ),
+            ]),
+        }
+    }
+
+    fn source() -> HostOAuthSource {
+        HostOAuthSource::new("http://127.0.0.1:1/".to_owned(), None)
+    }
+
+    #[test]
+    fn claims_the_canonical_provider_payload_exactly_once() {
+        let source = source();
+        let start = source.begin("codex", Some("claim-state")).unwrap();
+        assert_eq!(start.provider, "codex");
+
+        // A session that has not completed yet holds nothing to claim.
+        assert_eq!(
+            source.claim("claim-state").unwrap_err(),
+            ManagementOAuthRouteError::NotClaimable
+        );
+
+        source
+            .authority
+            .set_outcome(
+                "claim-state",
+                LoginOutcome::Completed(vec![completed_codex_credential()]),
+            )
+            .unwrap();
+
+        // The poll response carries the identity projection only.
+        let polled = source.poll("claim-state").unwrap();
+        assert!(!polled.pending);
+        assert_eq!(polled.credentials.len(), 1);
+        assert_eq!(polled.credentials[0].provider, "codex");
+        let rendered = serde_json::to_string(&polled.credentials).unwrap();
+        assert!(!rendered.contains(ACCESS), "{rendered}");
+
+        let claimed = source.claim("claim-state").unwrap();
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].account.provider, "codex");
+        assert_eq!(claimed[0].secrets["access_token_secret"], ACCESS);
+        assert_eq!(claimed[0].secrets["id_token_secret"], "codex-id-token");
+        assert_eq!(
+            claimed[0].secrets["refresh_token_secret"],
+            "codex-refresh-token"
+        );
+        // Debug never renders token material.
+        assert!(!format!("{:?}", claimed[0]).contains(ACCESS));
+
+        // One time only.
+        assert_eq!(
+            source.claim("claim-state").unwrap_err(),
+            ManagementOAuthRouteError::NotClaimable
+        );
+    }
+
+    #[test]
+    fn cancelling_a_session_drops_any_retained_token_material() {
+        let source = source();
+        source.begin("codex", Some("cancel-state")).unwrap();
+        source
+            .authority
+            .set_outcome(
+                "cancel-state",
+                LoginOutcome::Completed(vec![completed_codex_credential()]),
+            )
+            .unwrap();
+        assert!(source.cancel("cancel-state").unwrap());
+        assert_eq!(
+            source.claim("cancel-state").unwrap_err(),
+            ManagementOAuthRouteError::UnknownSession
+        );
     }
 }

@@ -150,10 +150,15 @@ async fn management_request(
     let authorization = key
         .map(|key| format!("X-Management-Key: {key}\r\n"))
         .unwrap_or_default();
+    let length = if method == "POST" || method == "PUT" || method == "PATCH" {
+        "Content-Length: 0\r\n"
+    } else {
+        ""
+    };
     stream
         .write_all(
             format!(
-                "{method} {path} HTTP/1.1\r\nHost: localhost\r\n{authorization}Connection: close\r\n\r\n"
+                "{method} {path} HTTP/1.1\r\nHost: localhost\r\n{authorization}{length}Connection: close\r\n\r\n"
             )
             .as_bytes(),
         )
@@ -401,6 +406,85 @@ async fn serves_the_canonical_oauth_callback_unauthenticated_on_the_management_l
     let payload: serde_json::Value = serde_json::from_str(body_of(&polled)).unwrap();
     assert_eq!(payload["pending"], false);
     assert_eq!(payload["error"], "access_denied");
+
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn gates_the_one_time_credential_claim_on_the_key_and_on_session_completion() {
+    let root = tempfile::tempdir().unwrap();
+    let mut host = start_oauth_host(root.path()).await;
+    let key = "07".repeat(32);
+    let address = host.management_address();
+
+    // The claim needs the management key.
+    let unauthenticated = management_request(
+        address,
+        "POST",
+        "/v0/management/oauth/session/claim-state/claim",
+        None,
+    )
+    .await;
+    assert!(
+        unauthenticated.starts_with("HTTP/1.1 401"),
+        "{unauthenticated}"
+    );
+
+    // Claiming a session that was never started is a clean 404.
+    let unknown = management_request(
+        address,
+        "POST",
+        "/v0/management/oauth/session/never-started/claim",
+        Some(&key),
+    )
+    .await;
+    assert!(unknown.starts_with("HTTP/1.1 404"), "{unknown}");
+
+    // A started but uncompleted session has nothing to hand over.
+    let started = management_request(
+        address,
+        "GET",
+        "/v0/management/codex-auth-url?state=claim-state",
+        Some(&key),
+    )
+    .await;
+    assert!(started.starts_with("HTTP/1.1 200"), "{started}");
+    let premature = management_request(
+        address,
+        "POST",
+        "/v0/management/oauth/session/claim-state/claim",
+        Some(&key),
+    )
+    .await;
+    assert!(premature.starts_with("HTTP/1.1 409"), "{premature}");
+    assert!(body_of(&premature).contains("oauth session is not claimable"));
+
+    // A failed session is finished, not claimable.
+    let denied = management_request(
+        address,
+        "GET",
+        "/management/oauth/codex/callback?state=claim-state&error=access_denied",
+        None,
+    )
+    .await;
+    assert!(denied.starts_with("HTTP/1.1 200"), "{denied}");
+    let polled = management_request(
+        address,
+        "GET",
+        "/v0/management/oauth/status?state=claim-state",
+        Some(&key),
+    )
+    .await;
+    let payload: serde_json::Value = serde_json::from_str(body_of(&polled)).unwrap();
+    assert_eq!(payload["pending"], false);
+    let after_failure = management_request(
+        address,
+        "POST",
+        "/v0/management/oauth/session/claim-state/claim",
+        Some(&key),
+    )
+    .await;
+    assert!(after_failure.starts_with("HTTP/1.1 409"), "{after_failure}");
 
     host.shutdown().await.unwrap();
 }

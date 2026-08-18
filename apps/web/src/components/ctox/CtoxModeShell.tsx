@@ -434,11 +434,17 @@ export function CtoxModeProvider({
       return;
     }
     setAppRailVersion((current) => current + 1);
+    // Theme edits made while the guest was closed leave no <html> attribute
+    // mutation behind, so re-project the current appearance on every ready
+    // transition instead of trusting the observer alone.
+    pushHostThemeRef.current();
     const pending = pendingOpenRef.current;
     if (pending === null || pending.instanceId !== selectedIdRef.current) return;
     pendingOpenRef.current = null;
     dispatchOpenApp(pending.instanceId, pending.moduleId);
   }, [connection, dispatchOpenApp]);
+
+  const pushHostThemeRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     if (bridge === undefined || typeof window === "undefined") return;
@@ -483,6 +489,7 @@ export function CtoxModeProvider({
         })
         .catch(() => undefined);
     };
+    pushHostThemeRef.current = pushHostTheme;
     pushHostTheme();
     // Appearance changes rewrite class/data attributes on <html>.
     const observer = new MutationObserver(pushHostTheme);

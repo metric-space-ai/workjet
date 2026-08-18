@@ -39,14 +39,20 @@ pub struct ExchangeRequest {
     code: SecretString,
     state: SecretString,
     code_verifier: SecretString,
+    redirect_uri: String,
 }
 
 impl ExchangeRequest {
-    fn new(
+    fn with_redirect_uri(
         callback_code: &SecretString,
         state: &SecretString,
         pkce: &PkceCodes,
+        redirect_uri: &str,
     ) -> Result<Self, AuthFlowError> {
+        let redirect_uri = redirect_uri.trim();
+        if redirect_uri.is_empty() {
+            return Err(AuthFlowError::RequestEncoding);
+        }
         let mut code_parts = callback_code.expose_secret().split('#');
         let code = code_parts.next().unwrap_or_default();
         if code.is_empty() {
@@ -59,6 +65,7 @@ impl ExchangeRequest {
             code: SecretString::new(code)?,
             state: SecretString::new(effective_state)?,
             code_verifier: SecretString::new(pkce.code_verifier.clone())?,
+            redirect_uri: redirect_uri.to_owned(),
         })
     }
 
@@ -67,7 +74,7 @@ impl ExchangeRequest {
         struct WireRequest<'a> {
             grant_type: &'static str,
             code: &'a str,
-            redirect_uri: &'static str,
+            redirect_uri: &'a str,
             client_id: &'static str,
             code_verifier: &'a str,
             state: &'a str,
@@ -76,7 +83,7 @@ impl ExchangeRequest {
         serde_json::to_vec(&WireRequest {
             grant_type: "authorization_code",
             code: self.code.expose_secret(),
-            redirect_uri: REDIRECT_URI,
+            redirect_uri: &self.redirect_uri,
             client_id: CLIENT_ID,
             code_verifier: self.code_verifier.expose_secret(),
             state: self.state.expose_secret(),
@@ -94,7 +101,7 @@ impl fmt::Debug for ExchangeRequest {
             .field("state", &"[REDACTED]")
             .field("grant_type", &"authorization_code")
             .field("client_id", &CLIENT_ID)
-            .field("redirect_uri", &REDIRECT_URI)
+            .field("redirect_uri", &self.redirect_uri)
             .field("code_verifier", &"[REDACTED]")
             .finish()
     }
@@ -360,6 +367,21 @@ impl<T, C> ClaudeAuth<T, C> {
         state: &SecretString,
         pkce: &PkceCodes,
     ) -> Result<(String, SecretString), AuthFlowError> {
+        self.generate_auth_url_with_redirect(state, pkce, REDIRECT_URI)
+    }
+
+    /// Builds the same authorization URL as [`Self::generate_auth_url`] while
+    /// letting an embedder host the loopback redirect on its own listener.
+    pub fn generate_auth_url_with_redirect(
+        &self,
+        state: &SecretString,
+        pkce: &PkceCodes,
+        redirect_uri: &str,
+    ) -> Result<(String, SecretString), AuthFlowError> {
+        let redirect_uri = redirect_uri.trim();
+        if redirect_uri.is_empty() {
+            return Err(AuthFlowError::RequestEncoding);
+        }
         if state.expose_secret().is_empty() {
             return Err(AuthFlowError::EmptyState);
         }
@@ -372,7 +394,7 @@ impl<T, C> ClaudeAuth<T, C> {
         query.append_pair("code", "true");
         query.append_pair("code_challenge", &pkce.code_challenge);
         query.append_pair("code_challenge_method", "S256");
-        query.append_pair("redirect_uri", REDIRECT_URI);
+        query.append_pair("redirect_uri", redirect_uri);
         query.append_pair("response_type", "code");
         query.append_pair("scope", AUTH_SCOPE);
         query.append_pair("state", state.expose_secret());
@@ -436,7 +458,24 @@ impl<T, C> ClaudeAuth<T, C> {
         T: ClaudeCodeExchangeTransport,
         C: RefreshClock,
     {
-        let request = ExchangeRequest::new(code, state, pkce)?;
+        self.exchange_code_for_tokens_with_redirect(code, state, pkce, REDIRECT_URI)
+            .await
+    }
+
+    /// Same exchange as [`Self::exchange_code_for_tokens`] for embedders that
+    /// hosted the loopback redirect on their own listener.
+    pub async fn exchange_code_for_tokens_with_redirect(
+        &self,
+        code: &SecretString,
+        state: &SecretString,
+        pkce: &PkceCodes,
+        redirect_uri: &str,
+    ) -> Result<ClaudeAuthBundle, AuthFlowError>
+    where
+        T: ClaudeCodeExchangeTransport,
+        C: RefreshClock,
+    {
+        let request = ExchangeRequest::with_redirect_uri(code, state, pkce, redirect_uri)?;
         let response = self
             .transport
             .exchange(&request, EXCHANGE_TIMEOUT)
@@ -1272,10 +1311,11 @@ mod tests {
 
     #[test]
     fn exchange_request_uses_fragment_state_and_redacts_pkce_material() {
-        let request = ExchangeRequest::new(
+        let request = ExchangeRequest::with_redirect_uri(
             &SecretString::new("actual-code#fragment-state").unwrap(),
             &SecretString::new("original-state").unwrap(),
             &pkce(),
+            REDIRECT_URI,
         )
         .unwrap();
         let body: serde_json::Value =

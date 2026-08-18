@@ -12,9 +12,10 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use crate::internal::api::handlers::management::{
-    api_key_usage_payload, management_support_plugin_header, parse_usage_queue_count,
-    static_model_definitions_payload, usage_queue_payload, ManagementApiKeyUsageError,
-    ManagementApiKeyUsageSource, ManagementAuthenticator, ManagementQuotaResetError,
+    api_key_usage_payload, management_support_plugin_header, oauth_callback_provider,
+    parse_usage_queue_count, static_model_definitions_payload, usage_queue_payload,
+    ManagementApiKeyUsageError, ManagementApiKeyUsageSource, ManagementAuthenticator,
+    ManagementProviderOAuthPoll, ManagementProviderOAuthStart, ManagementQuotaResetError,
     ManagementQuotaResetSource, ManagementQuotaSwitchError, ManagementQuotaSwitchSource,
     ManagementUsageQueue, ManagementUsageQueueError, StaticModelDefinitionsError,
 };
@@ -32,6 +33,11 @@ const API_KEY_USAGE_PATH: &str = "/v0/management/api-key-usage";
 const RESET_QUOTA_PATH: &str = "/v0/management/reset-quota";
 const SWITCH_PROJECT_PATH: &str = "/v0/management/quota-exceeded/switch-project";
 const SWITCH_PREVIEW_MODEL_PATH: &str = "/v0/management/quota-exceeded/switch-preview-model";
+const ANTHROPIC_AUTH_URL_PATH: &str = "/v0/management/anthropic-auth-url";
+const CODEX_AUTH_URL_PATH: &str = "/v0/management/codex-auth-url";
+const ANTIGRAVITY_AUTH_URL_PATH: &str = "/v0/management/antigravity-auth-url";
+const OAUTH_STATUS_PATH: &str = "/v0/management/oauth/status";
+const OAUTH_SESSION_PREFIX: &str = "/v0/management/oauth/session/";
 const MAX_RESET_QUOTA_BODY_BYTES: usize = 16 * 1024;
 const MAX_RUNTIME_CONFIG_BODY_BYTES: usize = 256 * 1024;
 pub const MANAGEMENT_RUNTIME_CONFIG_SCHEMA: &str = "ctox.cliproxyapi.runtime-config.v1";
@@ -113,6 +119,45 @@ pub trait ManagementRuntimeConfigSource: Send + Sync {
     ) -> Result<ManagementRuntimeConfigSummary, ManagementRuntimeConfigError>;
 }
 
+/// Failure classes a management OAuth source may report to the loopback
+/// management surface. Deliberately coarse so that no provider-side detail or
+/// secret material leaks into an HTTP body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagementOAuthRouteError {
+    UnsupportedProvider,
+    InvalidState,
+    SessionExists,
+    UnknownSession,
+    Unavailable,
+}
+
+/// Optional management surface for the provider OAuth login flow. An embedder
+/// attaches one source; without it the OAuth routes stay absent (404), which
+/// keeps every existing management deployment byte-identical.
+pub trait ManagementOAuthSource: Send + Sync {
+    /// Begins a builtin provider OAuth session. `state` is the caller-supplied
+    /// state; `None` asks the source to mint one.
+    fn begin(
+        &self,
+        provider: &str,
+        state: Option<&str>,
+    ) -> Result<ManagementProviderOAuthStart, ManagementOAuthRouteError>;
+
+    fn poll(&self, state: &str) -> Result<ManagementProviderOAuthPoll, ManagementOAuthRouteError>;
+
+    fn cancel(&self, state: &str) -> Result<bool, ManagementOAuthRouteError>;
+
+    /// Ingests the loopback OAuth redirect for `provider`. Called without a
+    /// management key, exactly like the crate's canonical callback.
+    fn callback(
+        &self,
+        provider: &str,
+        state: &str,
+        code: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<(), ManagementOAuthRouteError>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagementHttpResponse {
     status: u16,
@@ -161,6 +206,7 @@ pub struct ManagementHandler {
     api_key_usage: Option<Arc<dyn ManagementApiKeyUsageSource>>,
     quota_reset: Option<Arc<dyn ManagementQuotaResetSource>>,
     quota_switches: Option<Arc<dyn ManagementQuotaSwitchSource>>,
+    oauth: Option<Arc<dyn ManagementOAuthSource>>,
 }
 
 impl ManagementHandler {
@@ -173,6 +219,7 @@ impl ManagementHandler {
             api_key_usage: None,
             quota_reset: None,
             quota_switches: None,
+            oauth: None,
         }
     }
 
@@ -188,6 +235,7 @@ impl ManagementHandler {
             api_key_usage: None,
             quota_reset: None,
             quota_switches: None,
+            oauth: None,
         }
     }
 
@@ -204,6 +252,7 @@ impl ManagementHandler {
             api_key_usage: None,
             quota_reset: None,
             quota_switches: None,
+            oauth: None,
         }
     }
 
@@ -219,6 +268,7 @@ impl ManagementHandler {
             api_key_usage: None,
             quota_reset: None,
             quota_switches: None,
+            oauth: None,
         }
     }
 
@@ -251,6 +301,11 @@ impl ManagementHandler {
         self
     }
 
+    pub fn attach_oauth_source(mut self, oauth: Arc<dyn ManagementOAuthSource>) -> Self {
+        self.oauth = Some(oauth);
+        self
+    }
+
     pub fn handle(
         &self,
         method: &str,
@@ -260,6 +315,36 @@ impl ManagementHandler {
         client_ip: IpAddr,
     ) -> ManagementHttpResponse {
         let path = target.split('?').next().unwrap_or(target);
+        if let Some(provider) = oauth_callback_provider(path) {
+            // Canonical loopback OAuth redirect. The browser that follows the
+            // authorization URL carries no management key, so this route stays
+            // unauthenticated - and therefore strictly loopback-only.
+            let Some(source) = self.oauth.as_ref() else {
+                return ManagementHttpResponse::error(404, "route not found");
+            };
+            if !client_ip.is_loopback() {
+                return ManagementHttpResponse::error(403, "loopback access is required");
+            }
+            if method != "GET" {
+                return ManagementHttpResponse::error(405, "method not allowed");
+            }
+            let state = query_parameter(target, "state").unwrap_or_default();
+            let code = query_parameter(target, "code").filter(|value| !value.trim().is_empty());
+            let error = query_parameter(target, "error")
+                .or_else(|| query_parameter(target, "error_description"))
+                .filter(|value| !value.trim().is_empty());
+            if code.is_none() && error.is_none() {
+                return ManagementHttpResponse::error(400, "authorization result is required");
+            }
+            return match source.callback(&provider, &state, code.as_deref(), error.as_deref()) {
+                Ok(()) => ManagementHttpResponse::json(
+                    200,
+                    serde_json::to_vec(&serde_json::json!({"status": "ok"}))
+                        .unwrap_or_else(|_| b"{}".to_vec()),
+                ),
+                Err(error) => oauth_route_error_response(error),
+            };
+        }
         if path != MANAGEMENT_PREFIX && !path.starts_with(&format!("{MANAGEMENT_PREFIX}/")) {
             return ManagementHttpResponse::error(404, "route not found");
         }
@@ -432,6 +517,63 @@ impl ManagementHandler {
                 }
             };
         }
+        if let Some(provider) = builtin_oauth_provider_for_path(path) {
+            let Some(source) = self.oauth.as_ref() else {
+                return ManagementHttpResponse::error(404, "route not found");
+            };
+            if method != "GET" {
+                return ManagementHttpResponse::error(405, "method not allowed");
+            }
+            let state = query_parameter(target, "state");
+            return match source.begin(provider, state.as_deref()) {
+                Ok(start) => ManagementHttpResponse::json(
+                    200,
+                    serde_json::to_vec(&serde_json::json!({
+                        "provider": start.provider,
+                        "state": start.state,
+                        "authorization_url": start.authorization_url
+                    }))
+                    .unwrap_or_else(|_| b"{}".to_vec()),
+                ),
+                Err(error) => oauth_route_error_response(error),
+            };
+        }
+        if path == OAUTH_STATUS_PATH {
+            let Some(source) = self.oauth.as_ref() else {
+                return ManagementHttpResponse::error(404, "route not found");
+            };
+            if method != "GET" {
+                return ManagementHttpResponse::error(405, "method not allowed");
+            }
+            let Some(state) = query_parameter(target, "state") else {
+                return ManagementHttpResponse::error(400, "state is required");
+            };
+            return match source.poll(&state) {
+                Ok(poll) => ManagementHttpResponse::json(200, oauth_poll_payload(&poll)),
+                Err(error) => oauth_route_error_response(error),
+            };
+        }
+        if let Some(state) = path.strip_prefix(OAUTH_SESSION_PREFIX) {
+            let Some(source) = self.oauth.as_ref() else {
+                return ManagementHttpResponse::error(404, "route not found");
+            };
+            if method != "DELETE" {
+                return ManagementHttpResponse::error(405, "method not allowed");
+            }
+            let state = percent_encoding::percent_decode_str(state)
+                .decode_utf8()
+                .map(|value| value.into_owned())
+                .unwrap_or_else(|_| state.to_owned());
+            return match source.cancel(&state) {
+                Ok(true) => ManagementHttpResponse::json(
+                    200,
+                    serde_json::to_vec(&serde_json::json!({"status": "ok"}))
+                        .unwrap_or_else(|_| b"{}".to_vec()),
+                ),
+                Ok(false) => ManagementHttpResponse::error(404, "oauth session not found"),
+                Err(error) => oauth_route_error_response(error),
+            };
+        }
         if path == USAGE_QUEUE_PATH {
             if method != "GET" {
                 return ManagementHttpResponse::error(405, "method not allowed");
@@ -516,6 +658,7 @@ impl std::fmt::Debug for ManagementHandler {
             .field("api_key_usage", &self.api_key_usage.is_some())
             .field("quota_reset", &self.quota_reset.is_some())
             .field("quota_switches", &self.quota_switches.is_some())
+            .field("oauth", &self.oauth.is_some())
             .finish()
     }
 }
@@ -562,6 +705,44 @@ fn runtime_config_error_response(error: ManagementRuntimeConfigError) -> Managem
         }
         ManagementRuntimeConfigError::StoreUnavailable => {
             ManagementHttpResponse::error(500, "runtime config unavailable")
+        }
+    }
+}
+
+fn builtin_oauth_provider_for_path(path: &str) -> Option<&'static str> {
+    match path {
+        ANTHROPIC_AUTH_URL_PATH => Some("anthropic"),
+        CODEX_AUTH_URL_PATH => Some("codex"),
+        ANTIGRAVITY_AUTH_URL_PATH => Some("antigravity"),
+        _ => None,
+    }
+}
+
+fn oauth_poll_payload(poll: &ManagementProviderOAuthPoll) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "pending": poll.pending,
+        "error": poll.error,
+        "credentials": poll.credentials
+    }))
+    .unwrap_or_else(|_| b"{}".to_vec())
+}
+
+fn oauth_route_error_response(error: ManagementOAuthRouteError) -> ManagementHttpResponse {
+    match error {
+        ManagementOAuthRouteError::UnsupportedProvider => {
+            ManagementHttpResponse::error(400, "oauth provider is unsupported")
+        }
+        ManagementOAuthRouteError::InvalidState => {
+            ManagementHttpResponse::error(400, "oauth state is invalid")
+        }
+        ManagementOAuthRouteError::SessionExists => {
+            ManagementHttpResponse::error(409, "oauth session already exists")
+        }
+        ManagementOAuthRouteError::UnknownSession => {
+            ManagementHttpResponse::error(404, "oauth session not found")
+        }
+        ManagementOAuthRouteError::Unavailable => {
+            ManagementHttpResponse::error(500, "oauth authority unavailable")
         }
     }
 }

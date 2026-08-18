@@ -30,9 +30,9 @@ pub use jwt_parser::{parse_jwt_token, CodexAuthInfo, JwtClaims, Organization};
 pub use oauth_server::{OAuthResult, OAuthServer, OAuthServerError};
 pub use openai::{CodexAuthBundle, CodexTokenData, PkceCodes};
 pub use openai_auth::{
-    generate_auth_url, CodexAuth, CodexCodeExchangeTransport, CodexExchangeError,
-    CodexExchangeHttpResponse, CodexExchangeRequest, CodexRefreshCoordinator, CodexRefreshError,
-    CodexRefreshHttpResponse, CodexRefreshRequest, CodexRefreshTransport,
+    generate_auth_url, generate_auth_url_with_redirect, CodexAuth, CodexCodeExchangeTransport,
+    CodexExchangeError, CodexExchangeHttpResponse, CodexExchangeRequest, CodexRefreshCoordinator,
+    CodexRefreshError, CodexRefreshHttpResponse, CodexRefreshRequest, CodexRefreshTransport,
     CodexRefreshTransportFailure, RefreshClock, SystemRefreshClock, AUTH_URL, CLIENT_ID,
     EXCHANGE_TIMEOUT, REDIRECT_URI, REFRESH_TIMEOUT, TOKEN_URL,
 };

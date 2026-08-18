@@ -204,7 +204,8 @@ where
             return write_response(stream, &response).await;
         }
     };
-    let mut response_writer = policy.and_then(|policy| response_writer_for_request(&request, policy));
+    let mut response_writer =
+        policy.and_then(|policy| response_writer_for_request(&request, policy));
     let route = resolve_server_route(&request.target);
     let write_result = if route == ServerRoute::Models {
         let mut response = ClaudeMessagesRouteResponse::Buffered(if request.method == "GET" {

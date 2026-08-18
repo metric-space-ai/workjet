@@ -27,10 +27,21 @@ pub const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 pub const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn generate_auth_url(state: &str, pkce: &PkceCodes) -> String {
+    generate_auth_url_with_redirect(state, pkce, REDIRECT_URI)
+}
+
+/// Builds the same authorization URL as [`generate_auth_url`] while letting an
+/// embedder host the loopback redirect on its own listener.
+#[must_use]
+pub fn generate_auth_url_with_redirect(
+    state: &str,
+    pkce: &PkceCodes,
+    redirect_uri: &str,
+) -> String {
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("client_id", CLIENT_ID)
         .append_pair("response_type", "code")
-        .append_pair("redirect_uri", REDIRECT_URI)
+        .append_pair("redirect_uri", redirect_uri)
         .append_pair("scope", "openid email profile offline_access")
         .append_pair("state", state)
         .append_pair("code_challenge", pkce.code_challenge())

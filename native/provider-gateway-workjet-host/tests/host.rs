@@ -139,3 +139,268 @@ async fn rejects_missing_provider_secrets_with_a_redacted_error() {
     assert!(!rendered.contains(SECRET));
     assert!(!rendered.contains("codex.access"));
 }
+
+async fn management_request(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    key: Option<&str>,
+) -> String {
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    let authorization = key
+        .map(|key| format!("X-Management-Key: {key}\r\n"))
+        .unwrap_or_default();
+    stream
+        .write_all(
+            format!(
+                "{method} {path} HTTP/1.1\r\nHost: localhost\r\n{authorization}Connection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    String::from_utf8(response).unwrap()
+}
+
+fn body_of(response: &str) -> &str {
+    response.split("\r\n\r\n").nth(1).unwrap_or_default()
+}
+
+fn oauth_config(root: &std::path::Path) -> HostConfig {
+    let mut config = config(root);
+    config.antigravity_oauth_client_id_secret = Some(secret("antigravity.client-id"));
+    config.antigravity_oauth_client_secret_secret = Some(secret("antigravity.client-secret"));
+    config
+}
+
+async fn start_oauth_host(root: &std::path::Path) -> workjet_provider_gateway_host::RunningHost {
+    fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root, "management", &[7_u8; 32]);
+    write_secret(root, "codex.id", SECRET.as_bytes());
+    write_secret(root, "codex.access", SECRET.as_bytes());
+    write_secret(root, "codex.refresh", SECRET.as_bytes());
+    write_secret(root, "antigravity.client-id", b"antigravity-client-id");
+    write_secret(
+        root,
+        "antigravity.client-secret",
+        b"antigravity-client-secret",
+    );
+    workjet_provider_gateway_host::start(oauth_config(root).validate().unwrap())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn begins_a_loopback_oauth_session_for_every_supported_provider() {
+    let root = tempfile::tempdir().unwrap();
+    let mut host = start_oauth_host(root.path()).await;
+    let key = "07".repeat(32);
+    let management_address = host.management_address();
+
+    for (path, provider, authorize_host) in [
+        (
+            "/v0/management/anthropic-auth-url?state=state-anthropic",
+            "anthropic",
+            "https://claude.ai/oauth/authorize",
+        ),
+        (
+            "/v0/management/codex-auth-url?state=state-codex",
+            "codex",
+            "https://auth.openai.com/oauth/authorize",
+        ),
+        (
+            "/v0/management/antigravity-auth-url?state=state-antigravity",
+            "antigravity",
+            "https://accounts.google.com",
+        ),
+    ] {
+        let response = management_request(management_address, "GET", path, Some(&key)).await;
+        assert!(
+            response.starts_with("HTTP/1.1 200"),
+            "{provider}: {response}"
+        );
+        let payload: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+        assert_eq!(payload["provider"], provider);
+        assert_eq!(payload["state"], format!("state-{provider}"));
+        let authorization_url = payload["authorization_url"].as_str().unwrap();
+        assert!(
+            authorization_url.starts_with(authorize_host),
+            "{provider}: {authorization_url}"
+        );
+        // The redirect target must resolve on this host's own management
+        // listener, on the crate's canonical callback path.
+        assert!(
+            authorization_url.contains(&url_encoded(&format!(
+                "http://{management_address}/management/oauth/{provider}/callback"
+            ))),
+            "{provider}: {authorization_url}"
+        );
+        assert!(authorization_url.contains(&format!("state-{provider}")));
+    }
+
+    // A session without a caller-supplied state gets one minted for it.
+    let minted = management_request(
+        management_address,
+        "GET",
+        "/v0/management/codex-auth-url",
+        Some(&key),
+    )
+    .await;
+    let payload: serde_json::Value = serde_json::from_str(body_of(&minted)).unwrap();
+    assert!(payload["state"]
+        .as_str()
+        .is_some_and(|state| !state.is_empty()));
+
+    host.shutdown().await.unwrap();
+}
+
+fn url_encoded(value: &str) -> String {
+    value.replace(':', "%3A").replace('/', "%2F")
+}
+
+#[tokio::test]
+async fn polls_cancels_and_gates_the_oauth_surface_on_the_management_key() {
+    let root = tempfile::tempdir().unwrap();
+    let mut host = start_oauth_host(root.path()).await;
+    let key = "07".repeat(32);
+    let address = host.management_address();
+
+    // Management key is required for begin, poll and cancel.
+    for (method, path) in [
+        ("GET", "/v0/management/codex-auth-url?state=unauthenticated"),
+        ("GET", "/v0/management/oauth/status?state=unauthenticated"),
+        ("DELETE", "/v0/management/oauth/session/unauthenticated"),
+    ] {
+        let response = management_request(address, method, path, None).await;
+        assert!(
+            response.starts_with("HTTP/1.1 401"),
+            "{method} {path}: {response}"
+        );
+    }
+
+    // Polling an unknown session is a clean 404, not a panic or a 500.
+    let unknown = management_request(
+        address,
+        "GET",
+        "/v0/management/oauth/status?state=never-started",
+        Some(&key),
+    )
+    .await;
+    assert!(unknown.starts_with("HTTP/1.1 404"), "{unknown}");
+    assert!(body_of(&unknown).contains("oauth session not found"));
+
+    // An invalid state is rejected before any session lookup.
+    let invalid = management_request(
+        address,
+        "GET",
+        "/v0/management/oauth/status?state=%2e%2e%2fescape",
+        Some(&key),
+    )
+    .await;
+    assert!(invalid.starts_with("HTTP/1.1 400"), "{invalid}");
+
+    // Begin, then poll it as pending, then cancel it.
+    let started = management_request(
+        address,
+        "GET",
+        "/v0/management/codex-auth-url?state=cancel-me",
+        Some(&key),
+    )
+    .await;
+    assert!(started.starts_with("HTTP/1.1 200"), "{started}");
+
+    let pending = management_request(
+        address,
+        "GET",
+        "/v0/management/oauth/status?state=cancel-me",
+        Some(&key),
+    )
+    .await;
+    assert!(pending.starts_with("HTTP/1.1 200"), "{pending}");
+    let payload: serde_json::Value = serde_json::from_str(body_of(&pending)).unwrap();
+    assert_eq!(payload["pending"], true);
+    assert_eq!(payload["credentials"].as_array().unwrap().len(), 0);
+
+    let cancelled = management_request(
+        address,
+        "DELETE",
+        "/v0/management/oauth/session/cancel-me",
+        Some(&key),
+    )
+    .await;
+    assert!(cancelled.starts_with("HTTP/1.1 200"), "{cancelled}");
+
+    let after_cancel = management_request(
+        address,
+        "GET",
+        "/v0/management/oauth/status?state=cancel-me",
+        Some(&key),
+    )
+    .await;
+    assert!(after_cancel.starts_with("HTTP/1.1 404"), "{after_cancel}");
+
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn serves_the_canonical_oauth_callback_unauthenticated_on_the_management_listener() {
+    let root = tempfile::tempdir().unwrap();
+    let mut host = start_oauth_host(root.path()).await;
+    let key = "07".repeat(32);
+    let address = host.management_address();
+
+    let started = management_request(
+        address,
+        "GET",
+        "/v0/management/anthropic-auth-url?state=callback-state",
+        Some(&key),
+    )
+    .await;
+    assert!(started.starts_with("HTTP/1.1 200"), "{started}");
+
+    // A callback without any authorization result is rejected.
+    let empty = management_request(
+        address,
+        "GET",
+        "/management/oauth/anthropic/callback?state=callback-state",
+        None,
+    )
+    .await;
+    assert!(empty.starts_with("HTTP/1.1 400"), "{empty}");
+
+    // A callback for an unknown session is a clean 404.
+    let unknown = management_request(
+        address,
+        "GET",
+        "/management/oauth/anthropic/callback?state=other-state&error=denied",
+        None,
+    )
+    .await;
+    assert!(unknown.starts_with("HTTP/1.1 404"), "{unknown}");
+
+    // The real redirect carries no management key and is still accepted.
+    let denied = management_request(
+        address,
+        "GET",
+        "/management/oauth/anthropic/callback?state=callback-state&error=access_denied",
+        None,
+    )
+    .await;
+    assert!(denied.starts_with("HTTP/1.1 200"), "{denied}");
+
+    let polled = management_request(
+        address,
+        "GET",
+        "/v0/management/oauth/status?state=callback-state",
+        Some(&key),
+    )
+    .await;
+    assert!(polled.starts_with("HTTP/1.1 200"), "{polled}");
+    let payload: serde_json::Value = serde_json::from_str(body_of(&polled)).unwrap();
+    assert_eq!(payload["pending"], false);
+    assert_eq!(payload["error"], "access_denied");
+
+    host.shutdown().await.unwrap();
+}

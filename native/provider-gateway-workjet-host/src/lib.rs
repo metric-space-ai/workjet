@@ -1,4 +1,5 @@
 pub mod config;
+pub mod oauth;
 pub mod runtime;
 pub mod secret_store;
 
@@ -17,9 +18,11 @@ use workjet_provider_gateway::internal::api::server::serve_provider_connection;
 use workjet_provider_gateway::internal::api::server_management::{
     serve_management_connection, ManagementHandler,
 };
+use workjet_provider_gateway::internal::auth::antigravity::AntigravityOAuthClientCredentials;
 use workjet_provider_gateway::internal::config::RuntimeSecretRef;
 
 use config::ValidatedHostConfig;
+use oauth::HostOAuthSource;
 use runtime::{build_provider_routes, HostManagementSource};
 use secret_store::WorkjetSecretStore;
 
@@ -120,6 +123,7 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
         WorkjetSecretStore::new(config.secret_root.clone()).map_err(|_| HostError::Secret)?,
     );
     validate_provider_secrets(&store, &config)?;
+    let antigravity_client = antigravity_oauth_client(&store, &config)?;
     let management_key = store
         .management_key(&config.management_secret)
         .map_err(|_| HostError::Secret)?;
@@ -164,11 +168,17 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
         .map_err(|_| HostError::Management)?,
     );
     drop(management_key);
-    let management_handler = Arc::new(ManagementHandler::with_runtime_sources(
-        authenticator,
-        management_source.clone(),
-        management_source,
-    ));
+    let management_handler = Arc::new(
+        ManagementHandler::with_runtime_sources(
+            authenticator,
+            management_source.clone(),
+            management_source,
+        )
+        .attach_oauth_source(Arc::new(HostOAuthSource::new(
+            management_endpoint.clone(),
+            antigravity_client,
+        ))),
+    );
 
     let provider_task = tokio::spawn(async move {
         let mut connections = tokio::task::JoinSet::new();
@@ -237,6 +247,25 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
         management_address,
         tasks: vec![provider_task, management_task],
     })
+}
+
+fn antigravity_oauth_client(
+    store: &WorkjetSecretStore,
+    config: &ValidatedHostConfig,
+) -> Result<Option<Arc<AntigravityOAuthClientCredentials>>, HostError> {
+    let Some((client_id, client_secret)) = config.antigravity_oauth.as_ref() else {
+        return Ok(None);
+    };
+    let client_id = store
+        .resolve_text(client_id)
+        .map_err(|_| HostError::Secret)?;
+    let client_secret = store
+        .resolve_text(client_secret)
+        .map_err(|_| HostError::Secret)?;
+    let credentials =
+        AntigravityOAuthClientCredentials::new(client_id.to_string(), client_secret.to_string())
+            .map_err(|_| HostError::Secret)?;
+    Ok(Some(Arc::new(credentials)))
 }
 
 fn validate_provider_secrets(

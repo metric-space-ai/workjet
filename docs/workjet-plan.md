@@ -677,27 +677,37 @@ cache only a redacted, read-only thread/worker projection for local-feeling
 navigation and must route every mutation to the thread's owning environment.
 
 The existing client-side remote-environment federation is not sufficient:
-delivery must continue while the Workjet Desktop is closed. Reuse T3 Connect's
-account, environment identity, public-key, DPoP, and environment-discovery
-foundations, but add a distinct, self-hostable coordination surface under
-`infra/relay`. The relay is a mailbox/router, never the authority for a thread,
-provider session, repository, Greppy store, capability grant, or execution
-result. Same-environment delivery may take a local fast path but must obey the
-same contracts and state machine as remote delivery.
+delivery must continue while the Workjet Desktop is closed. Membership and
+identity come from the CTOX sync engine, not from a new system: joining the
+Workjet mesh is joining a CTOX-style room (invite = room + room password +
+signaling URLs) with the engine's capability/session layer and device-scoped
+revocation on top. T3 Connect account/DPoP/environment-discovery identities
+are explicitly NOT reused for mesh membership. Any coordination fallback is a
+mailbox/router, never the authority for a thread, provider session,
+repository, Greppy store, capability grant, or execution result.
+Same-environment delivery may take a local fast path but must obey the same
+contracts and state machine as remote delivery.
 
 Decision (owner, 2026-08-18) — transport weighting and portability model:
 
 - The CTOX Sync WebRTC data plane (device identity, encrypted peer sessions,
-  revocation, checkpoints, signaling via the user's own instances) is the
-  PRIMARY transport between the user's machines: the durable per-machine
-  mailboxes replicate peer to peer whenever any two machines are online, with
-  no third-party server, SSH, or VPN requirement. The self-hostable relay is
-  demoted to an OPTIONAL fallback for machines that are never simultaneously
-  online or cannot reach each other's signaling (symmetric NAT without a
-  reachable peer); it is not a required component. Authority boundaries are
-  unchanged: T3 event stores, worktrees, terminals, provider sessions, and
-  credentials are never replicated; mailbox envelopes and the redacted
-  read-only activity projection are the only replicated payloads.
+  revocation, checkpoints) is the PRIMARY and ONLY planned transport between
+  the user's machines: the durable per-machine mailboxes replicate peer to
+  peer whenever any two machines are online, with no third-party server,
+  SSH, or VPN requirement. Onboarding a new machine is the existing CTOX
+  pairing flow — one invite carrying room, room password, and signaling
+  URLs; a publicly reachable signaling endpoint (ctox.dev managed instance
+  or any of the user's own instances) covers machines behind NAT. Membership
+  security rides on the engine's capability/session layer plus the
+  device-scoped active-session revocation landed in rc7 — the room password
+  alone is not the security boundary, so a single lost device can be revoked
+  without rotating the room. A separate self-hostable relay is NOT planned;
+  should never-overlapping-online machines ever matter, the store-and-forward
+  role falls to one of the user's own always-on CTOX instances, not to new
+  infrastructure. Authority boundaries are unchanged: T3 event stores,
+  worktrees, terminals, provider sessions, and credentials are never
+  replicated; mailbox envelopes and the redacted read-only activity
+  projection are the only replicated payloads.
 - Cross-machine visibility: the desktop shows a global multi-computer
   activity overview built on that replicated redacted projection, including
   the last known state of currently offline machines. Scheduled after M3.
@@ -735,12 +745,13 @@ failed | cancelled | expired`.
       message/delegation events transactionally on their authoritative servers.
 - [ ] Replicate the per-machine durable mailboxes and the redacted activity
       projection over the CTOX Sync WebRTC data plane between the user's own
-      machines (primary transport per the 2026-08-18 owner decision), with
-      the user's own instances providing signaling.
-- [ ] Add the self-hostable Workjet coordination relay beside T3 Connect as
-      the OPTIONAL store-and-forward fallback. It resolves authorized
-      environment identities, stores bounded offline envelopes, routes
-      receipts, and cannot execute turns or mutate threads.
+      machines (primary transport per the 2026-08-18 owner decision), joined
+      through the existing CTOX pairing invite flow (room + room password +
+      signaling URLs) with the engine's capability/session layer and
+      device-scoped revocation; signaling via ctox.dev or the user's own
+      instances. No new relay service and no T3 Connect identity reuse for
+      mesh membership; an always-on user-owned CTOX instance covers
+      store-and-forward if ever needed.
 - [ ] Add the typed thread-handoff contract and flow (immutable prompt/context
       snapshot, bounded artifact references, pushed or sync-bundled Git branch,
       durable source-thread link); the target machine continues in a new

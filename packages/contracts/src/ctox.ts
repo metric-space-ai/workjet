@@ -319,7 +319,7 @@ export const CtoxHostThemeTokenKey = Schema.Literals([
 export type CtoxHostThemeTokenKey = typeof CtoxHostThemeTokenKey.Type;
 
 /** A bounded CSS color value; never arbitrary CSS. */
-const CtoxHostThemeColor = Schema.String.check(
+export const CtoxHostThemeColor = Schema.String.check(
   Schema.isTrimmed(),
   Schema.isNonEmpty(),
   Schema.isMaxLength(72),

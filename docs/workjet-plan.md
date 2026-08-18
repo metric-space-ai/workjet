@@ -1541,3 +1541,37 @@ CTOX Desktop App is complete only when all of the following are true:
       completion/abandonment cleanup hook (no such lifecycle boundary exists in
       the server yet — rollback-path cleanup only), and deleting the worker
       branch ref after worktree removal.
+      Progress 2026-08-18 (real-stack proof): `apps/server/src/workjet/
+WorkerDispatch.e2e.test.ts` dispatches workers through the production
+      layer graph — real `GitVcsDriver`/`GitVcsDriverCore` subprocesses against
+      a real temporary repository, real `VcsDriverRegistry`, real
+      `GitWorkflowService`, real `WorktreeStorage` plus
+      `WorktreeRootValidation` over an operator-selected root under
+      `/Volumes/tmp/workjet/e2e-worktrees`, and the real
+      `OrchestrationEngineService` / projection pipeline /
+      `ProjectionSnapshotQuery` on an in-memory SQLite store. Only `GitManager`
+      (an unused construction-time dependency of `GitWorkflowService`),
+      `ServerSettingsService`, `ServerConfig` and the absent provider harness
+      are substituted; none of them sits on the dispatch → worktree path. The
+      proof reads each worker's `worktreePath` back out of the real projection
+      and asserts it exists on disk, is a genuine Git worktree of the parent
+      repository (`git worktree list --porcelain`, `rev-parse
+--show-toplevel`), lies beneath the configured root, checks out
+      `workjet/worker/<workerThreadId>`, differs from the parent checkout and
+      from a second dispatched worker's checkout, and that a write inside one
+      worker checkout is invisible to the other and to the parent, whose
+      HEAD/branch/porcelain status are byte-identical before and after both
+      dispatches. Rollback is proven in the real stack through the
+      `create-failed` branch (the real decider's `requireThreadAbsent`
+      invariant rejects the worker thread): the already-created worktree is
+      removed from disk and from Git's worktree registry. The
+      `turn-start-failed` branch cannot be forced through the real engine
+      without a fake — the decider only rejects a turn for a missing thread —
+      so it stays covered unit-level in `WorkerDispatch.test.ts` over the same
+      rollback code path. Verified: `vp test run
+apps/server/src/workjet/WorkerDispatch.e2e.test.ts
+apps/server/src/workjet/WorkerDispatch.test.ts` → 12 passed, exit 0; the
+      new file adds zero server typecheck diagnostics; the fixtures clean
+      themselves up through scoped temp directories. Still open before closing:
+      the durable completion/abandonment cleanup hook and deleting the worker
+      branch ref after worktree removal.

@@ -602,6 +602,29 @@ Goal: turn the stored role metadata into real local and remote orchestration.
         provider gateway, environment-scoped secure credentials, account
         pools, health/capacity, and model discovery. Do not reuse the existing
         Codex/Claude/Grok provider-driver list as the LLM provider catalog.
+        Progress 2026-08-18: the OAuth login pipeline is implemented end to
+        end below the UI. The workjet gateway host exposes canonical
+        management OAuth routes (begin `…/anthropic|codex|antigravity-auth-url`,
+        `oauth/status`, cancel, loopback callback on the same listener) plus a
+        one-time management-key-gated
+        `POST /v0/management/oauth/session/<state>/claim` whose per-provider
+        payloads match the host's own secret-store serialization
+        byte-for-byte; the host also boots in a zero-account bootstrap mode
+        (management/OAuth only, provider endpoint refuses with 503) so the
+        first login is possible (commits `72fb47a6f`, `683f4df8a`,
+        `553a59ef1`; host 5+8 tests, portable suite 2513 green, clippy/fmt
+        clean). The Node server drives begin/poll/claim, persists claimed
+        tokens into the ServerSecretStore, appends the account to
+        `provider-gateway.json` (decode-validated, token material never in
+        config), reloads the gateway, and exposes
+        `workjet.providerGateway.oauthStart|oauthPoll|oauthCancel` RPCs behind
+        the orchestration-operate scope; a missing configuration file now
+        yields the bootstrap state (commits `100a2f3b5`, `fb4effbb2`; 12
+        focused service tests). Open: settings UI + client-runtime wiring (in
+        flight), live provider round trip (dynamic loopback redirect port
+        unverified against real OAuth client registrations), pools/weights
+        editing, health/capacity, model discovery beyond configured models,
+        and harness routing through the gateway.
   - [ ] Replace declared harness availability with live environment-scoped
         inspect/install/update/remove actions and consume the resulting truth
         during worker validation and dispatch.
@@ -1517,61 +1540,58 @@ CTOX Desktop App is complete only when all of the following are true:
         worker. The current shared contract — `WorkerDispatch` creates an
         ordinary child thread inheriting the orchestrator's branch and
         `worktreePath` — is rejected as the target semantics because parallel
-        workers can mutate the same files. Redesign requirements:
-    - `WorkerDispatch` creates one isolated worktree per worker beneath the
-      configured per-environment worktree storage root.
-    - Merge-back is the acknowledged cost. The orchestrator must plan
-      parallelization explicitly: assign disjoint file scopes per worker
-      brief, and fall back to sequential dispatch when disjoint scopes are
-      impossible or when estimated conflict rework outweighs the parallel
-      gain. Conflict rework is pure overhead, not a worker defect.
-    - Worktree cleanup on worker completion/abandonment; existing active
-      worktrees and durable state remain untouched.
-      Close this item only after a dispatched orchestrated worker is proven
-      end to end in its own isolated worktree beneath the operator-selected
-      root. Do not count synthetic path inheritance as proof.
-      Progress 2026-08-18 (commit `fb3d9f407`): `WorkerDispatch.dispatch` now
-      creates one worktree per worker via `GitWorkflowService.createWorktree`
-      with `path: null` (routed through `WorktreeStorage.resolveAutomaticPath`),
-      branched from the parent ref under `workjet/worker/<workerThreadId>`;
-      rollback on create/turn-start failure also removes the new worktree, and
-      isolation is mandatory (`worktree-failed` instead of silent inheritance).
-      10 focused tests pass; zero new server diagnostics. Still open before
-      closing: the end-to-end proof with a real dispatched worker, a durable
-      completion/abandonment cleanup hook (no such lifecycle boundary exists in
-      the server yet — rollback-path cleanup only), and deleting the worker
-      branch ref after worktree removal.
-      Progress 2026-08-18 (real-stack proof): `apps/server/src/workjet/
+        workers can mutate the same files. Redesign requirements: - `WorkerDispatch` creates one isolated worktree per worker beneath the
+        configured per-environment worktree storage root. - Merge-back is the acknowledged cost. The orchestrator must plan
+        parallelization explicitly: assign disjoint file scopes per worker
+        brief, and fall back to sequential dispatch when disjoint scopes are
+        impossible or when estimated conflict rework outweighs the parallel
+        gain. Conflict rework is pure overhead, not a worker defect. - Worktree cleanup on worker completion/abandonment; existing active
+        worktrees and durable state remain untouched.
+        Close this item only after a dispatched orchestrated worker is proven
+        end to end in its own isolated worktree beneath the operator-selected
+        root. Do not count synthetic path inheritance as proof.
+        Progress 2026-08-18 (commit `fb3d9f407`): `WorkerDispatch.dispatch` now
+        creates one worktree per worker via `GitWorkflowService.createWorktree`
+        with `path: null` (routed through `WorktreeStorage.resolveAutomaticPath`),
+        branched from the parent ref under `workjet/worker/<workerThreadId>`;
+        rollback on create/turn-start failure also removes the new worktree, and
+        isolation is mandatory (`worktree-failed` instead of silent inheritance).
+        10 focused tests pass; zero new server diagnostics. Still open before
+        closing: the end-to-end proof with a real dispatched worker, a durable
+        completion/abandonment cleanup hook (no such lifecycle boundary exists in
+        the server yet — rollback-path cleanup only), and deleting the worker
+        branch ref after worktree removal.
+        Progress 2026-08-18 (real-stack proof): `apps/server/src/workjet/
 WorkerDispatch.e2e.test.ts` dispatches workers through the production
-      layer graph — real `GitVcsDriver`/`GitVcsDriverCore` subprocesses against
-      a real temporary repository, real `VcsDriverRegistry`, real
-      `GitWorkflowService`, real `WorktreeStorage` plus
-      `WorktreeRootValidation` over an operator-selected root under
-      `/Volumes/tmp/workjet/e2e-worktrees`, and the real
-      `OrchestrationEngineService` / projection pipeline /
-      `ProjectionSnapshotQuery` on an in-memory SQLite store. Only `GitManager`
-      (an unused construction-time dependency of `GitWorkflowService`),
-      `ServerSettingsService`, `ServerConfig` and the absent provider harness
-      are substituted; none of them sits on the dispatch → worktree path. The
-      proof reads each worker's `worktreePath` back out of the real projection
-      and asserts it exists on disk, is a genuine Git worktree of the parent
-      repository (`git worktree list --porcelain`, `rev-parse
+        layer graph — real `GitVcsDriver`/`GitVcsDriverCore` subprocesses against
+        a real temporary repository, real `VcsDriverRegistry`, real
+        `GitWorkflowService`, real `WorktreeStorage` plus
+        `WorktreeRootValidation` over an operator-selected root under
+        `/Volumes/tmp/workjet/e2e-worktrees`, and the real
+        `OrchestrationEngineService` / projection pipeline /
+        `ProjectionSnapshotQuery` on an in-memory SQLite store. Only `GitManager`
+        (an unused construction-time dependency of `GitWorkflowService`),
+        `ServerSettingsService`, `ServerConfig` and the absent provider harness
+        are substituted; none of them sits on the dispatch → worktree path. The
+        proof reads each worker's `worktreePath` back out of the real projection
+        and asserts it exists on disk, is a genuine Git worktree of the parent
+        repository (`git worktree list --porcelain`, `rev-parse
 --show-toplevel`), lies beneath the configured root, checks out
-      `workjet/worker/<workerThreadId>`, differs from the parent checkout and
-      from a second dispatched worker's checkout, and that a write inside one
-      worker checkout is invisible to the other and to the parent, whose
-      HEAD/branch/porcelain status are byte-identical before and after both
-      dispatches. Rollback is proven in the real stack through the
-      `create-failed` branch (the real decider's `requireThreadAbsent`
-      invariant rejects the worker thread): the already-created worktree is
-      removed from disk and from Git's worktree registry. The
-      `turn-start-failed` branch cannot be forced through the real engine
-      without a fake — the decider only rejects a turn for a missing thread —
-      so it stays covered unit-level in `WorkerDispatch.test.ts` over the same
-      rollback code path. Verified: `vp test run
+        `workjet/worker/<workerThreadId>`, differs from the parent checkout and
+        from a second dispatched worker's checkout, and that a write inside one
+        worker checkout is invisible to the other and to the parent, whose
+        HEAD/branch/porcelain status are byte-identical before and after both
+        dispatches. Rollback is proven in the real stack through the
+        `create-failed` branch (the real decider's `requireThreadAbsent`
+        invariant rejects the worker thread): the already-created worktree is
+        removed from disk and from Git's worktree registry. The
+        `turn-start-failed` branch cannot be forced through the real engine
+        without a fake — the decider only rejects a turn for a missing thread —
+        so it stays covered unit-level in `WorkerDispatch.test.ts` over the same
+        rollback code path. Verified: `vp test run
 apps/server/src/workjet/WorkerDispatch.e2e.test.ts
 apps/server/src/workjet/WorkerDispatch.test.ts` → 12 passed, exit 0; the
-      new file adds zero server typecheck diagnostics; the fixtures clean
-      themselves up through scoped temp directories. Still open before closing:
-      the durable completion/abandonment cleanup hook and deleting the worker
-      branch ref after worktree removal.
+        new file adds zero server typecheck diagnostics; the fixtures clean
+        themselves up through scoped temp directories. Still open before closing:
+        the durable completion/abandonment cleanup hook and deleting the worker
+        branch ref after worktree removal.

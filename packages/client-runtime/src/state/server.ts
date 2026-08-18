@@ -19,7 +19,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   createAtomCommandScheduler,
@@ -45,6 +45,14 @@ import { followStreamInEnvironment } from "./runtime.ts";
 export type ServerUpdateStage = "downloading" | "installing" | "resuming";
 
 export const GREPPY_RUNTIME_INSPECT_STALE_TIME_MS = 15_000;
+
+/**
+ * The gateway status and catalog are cheap local reads whose value changes
+ * whenever the operator starts, stops, or logs into the gateway, so keep the
+ * freshness window short enough that a settings visit re-reads the host.
+ */
+export const WORKJET_GATEWAY_STATUS_STALE_TIME_MS = 5_000;
+export const WORKJET_GATEWAY_CATALOG_STALE_TIME_MS = 5_000;
 
 export type ServerUpdateState =
   | { readonly status: "idle" }
@@ -699,9 +707,71 @@ export function createServerEnvironmentAtoms<R, E>(
       }),
   });
 
+  const workjetGatewayStatus = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:status",
+    tag: WS_METHODS.workjetGatewayStatus,
+    staleTimeMs: WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
+  });
+  const workjetGatewayCatalog = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:catalog",
+    tag: WS_METHODS.workjetGatewayCatalog,
+    staleTimeMs: WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
+  });
+  // Every lifecycle and login transition changes both the runtime phase and the
+  // configured accounts, so refresh the pair instead of a single read.
+  const refreshWorkjetGateway = (
+    { environmentId }: { readonly environmentId: EnvironmentId },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => {
+      registry.refresh(workjetGatewayStatus({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayCatalog({ environmentId, input: {} }));
+    });
+  const workjetGatewayConcurrency = {
+    mode: "singleFlight" as const,
+    key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
+  };
+  const startWorkjetGateway = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:start",
+    tag: WS_METHODS.workjetGatewayStart,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  const stopWorkjetGateway = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:stop",
+    tag: WS_METHODS.workjetGatewayStop,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  // The user completes the provider login in their own browser; the client only
+  // starts the session, polls its opaque handle, and cancels it.
+  const startWorkjetGatewayOauth = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:oauth-start",
+    tag: WS_METHODS.workjetGatewayOauthStart,
+    concurrency: workjetGatewayConcurrency,
+  });
+  const pollWorkjetGatewayOauth = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:oauth-poll",
+    tag: WS_METHODS.workjetGatewayOauthPoll,
+    concurrency: workjetGatewayConcurrency,
+  });
+  const cancelWorkjetGatewayOauth = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:oauth-cancel",
+    tag: WS_METHODS.workjetGatewayOauthCancel,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+
   return {
     configValueAtom,
     updateStateAtom,
+    workjetGatewayStatus,
+    workjetGatewayCatalog,
+    startWorkjetGateway,
+    stopWorkjetGateway,
+    startWorkjetGatewayOauth,
+    pollWorkjetGatewayOauth,
+    cancelWorkjetGatewayOauth,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {

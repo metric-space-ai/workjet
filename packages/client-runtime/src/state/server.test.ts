@@ -14,9 +14,11 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { Atom } from "effect/unstable/reactivity";
 import { RpcClientError } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -25,13 +27,18 @@ import {
   PrimaryConnectionTarget,
   type PreparedConnection,
 } from "../connection/model.ts";
+import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
+import type { EnvironmentCacheStore } from "../platform/persistence.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import {
   applyServerConfigProjection,
+  createServerEnvironmentAtoms,
   GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
+  WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
+  WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   matchesServerUpdateReadyEvent,
@@ -80,6 +87,55 @@ function session(client: WsRpcProtocolClient): RpcSession {
 describe("Greppy runtime client wiring", () => {
   it("uses a nonzero SWR freshness window", () => {
     expect(GREPPY_RUNTIME_INSPECT_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("Workjet provider gateway client wiring", () => {
+  const gatewayAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("uses nonzero SWR freshness windows for both gateway reads", () => {
+    expect(WORKJET_GATEWAY_STATUS_STALE_TIME_MS).toBeGreaterThan(0);
+    expect(WORKJET_GATEWAY_CATALOG_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+
+  it("exposes the gateway reads and every lifecycle and login command", () => {
+    const server = gatewayAtoms();
+
+    expect(server.startWorkjetGateway.label).toBe("environment-data:workjet:gateway:start");
+    expect(server.stopWorkjetGateway.label).toBe("environment-data:workjet:gateway:stop");
+    expect(server.startWorkjetGatewayOauth.label).toBe(
+      "environment-data:workjet:gateway:oauth-start",
+    );
+    expect(server.pollWorkjetGatewayOauth.label).toBe(
+      "environment-data:workjet:gateway:oauth-poll",
+    );
+    expect(server.cancelWorkjetGatewayOauth.label).toBe(
+      "environment-data:workjet:gateway:oauth-cancel",
+    );
+  });
+
+  it("keys the gateway status and catalog reads per environment", () => {
+    const server = gatewayAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetGatewayStatus({ environmentId: first, input: {} })).toBe(
+      server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetGatewayStatus({ environmentId: second, input: {} })).not.toBe(
+      server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
+    // The catalog is a separate read, so it must never collapse onto the status atom.
+    expect(server.workjetGatewayCatalog({ environmentId: first, input: {} })).not.toBe(
+      server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
   });
 });
 

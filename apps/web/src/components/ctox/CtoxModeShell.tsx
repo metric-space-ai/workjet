@@ -9,6 +9,8 @@ import type {
   CtoxManualPairingImportInput,
   DesktopCtoxBridge,
 } from "@t3tools/contracts";
+import { CtoxHostThemeColor } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import {
   createContext,
   useCallback,
@@ -443,10 +445,23 @@ export function CtoxModeProvider({
     const pushHostTheme = () => {
       const root = document.documentElement;
       const styles = getComputedStyle(root);
-      const pick = (name: string) => styles.getPropertyValue(name).trim();
+      // Theme tokens may be color-mix()/var() expressions; the bridge accepts
+      // only bounded concrete colors, so resolve each through a probe element
+      // and drop anything that still fails the shared schema.
+      const probe = document.createElement("span");
+      probe.style.display = "none";
+      document.body.appendChild(probe);
+      const pick = (name: string) => {
+        const raw = styles.getPropertyValue(name).trim();
+        if (raw === "") return "";
+        probe.style.color = "";
+        probe.style.color = raw;
+        if (probe.style.color === "") return "";
+        return getComputedStyle(probe).color.trim();
+      };
       const tokens: { [K in CtoxHostThemeTokenKey]?: string } = {};
       const assign = (key: CtoxHostThemeTokenKey, value: string) => {
-        if (value !== "") tokens[key] = value;
+        if (value !== "" && Schema.is(CtoxHostThemeColor)(value)) tokens[key] = value;
       };
       assign("bg", pick("--background"));
       assign("surface", pick("--card"));
@@ -460,6 +475,7 @@ export function CtoxModeProvider({
       assign("accent", pick("--primary"));
       assign("accent-foreground", pick("--primary-foreground"));
       assign("accent-soft", pick("--accent"));
+      probe.remove();
       void bridge
         .setHostTheme({
           scheme: root.classList.contains("dark") ? "dark" : "light",

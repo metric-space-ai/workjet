@@ -593,11 +593,18 @@ Goal: turn the stored role metadata into real local and remote orchestration.
         smoke also passed from the main checkout on 17 August 2026. This proves
         build/startup integrity; it does not replace the still-open packaged
         cross-mode and real-peer UI/E2E gates below.
-  - [ ] Replace the provisional LLM-route reference to Code provider-driver
+  - [x] Replace the provisional LLM-route reference to Code provider-driver
         instances with the real provider-gateway account/pool contract. Code
         provider drivers represent harness runtimes and must not be presented
         as OpenAI, Anthropic, Kimi, MiniMax, xAI, Z.ai, Antigravity, or custom
-        LLM accounts.
+        LLM accounts. Done 2026-08-19 (commit `593ec0cba`): `WorkjetLlmRoute`
+        now references `gatewayAccountId` (branded gateway account id);
+        configuration schemaVersion 2 with the inspectable one-shot migration
+        `migrateWorkjetLlmRouteV1ToV2` implemented as a versioned decode step
+        in the contracts schema (the settings document is the persistence
+        boundary; a decode failure would have discarded all of settings.json,
+        so the v1 field is read leniently). The editor consumes gateway
+        catalog accounts; pools remain future work.
   - [ ] Port the progress-board policy, verification state, provider capacity,
         and inspectable one-shot migration/version steps from the Swift model.
 - [ ] Replace the current Greppy-only `/settings/workjet` page with the native

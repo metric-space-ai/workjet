@@ -202,6 +202,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/workjet",
   },
   {
+    id: "workjet-provider-accounts",
+    title: "Provider accounts",
+    to: "/settings/workjet",
+  },
+  {
     id: "workjet-llm-routes",
     title: "LLM routes",
     to: "/settings/workjet",

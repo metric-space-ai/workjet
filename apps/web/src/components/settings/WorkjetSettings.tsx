@@ -8,6 +8,7 @@ import type {
   WorkjetComputer,
   WorkjetComputerPresentationKind,
   WorkjetConfiguration,
+  WorkjetGatewayProvider,
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
 } from "@t3tools/contracts";
@@ -31,6 +32,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
+import { ensureLocalApi } from "../../localApi";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import {
   type EnvironmentPresentation,
@@ -50,6 +52,15 @@ import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
 } from "./WorkjetComputerEditor";
+import {
+  WorkjetGatewayAccountsSectionView,
+  workjetGatewayFailureDescription,
+  workjetGatewayOauthSessionInvalidMessage,
+  WORKJET_GATEWAY_OAUTH_POLL_INTERVAL_MS,
+  WORKJET_GATEWAY_OAUTH_POLL_MAX_ATTEMPTS,
+  type WorkjetGatewayLoginState,
+  type WorkjetGatewaySectionState,
+} from "./WorkjetGatewayAccounts";
 import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -369,6 +380,7 @@ function replaceCatalogItem<T extends { readonly id: string }>(
 export type WorkjetSettingsSectionId =
   | "workers"
   | "computers"
+  | "provider-accounts"
   | "llm-routes"
   | "prompt"
   | "telemetry"
@@ -382,6 +394,11 @@ const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: "workers", targetId: "workjet-workers", label: "Workers" },
   { id: "computers", targetId: "workjet-computers", label: "Computers" },
+  {
+    id: "provider-accounts",
+    targetId: "workjet-provider-accounts",
+    label: "Provider accounts",
+  },
   { id: "llm-routes", targetId: "workjet-llm-routes", label: "LLM routes" },
   { id: "prompt", targetId: "workjet-prompt", label: "Prompt" },
   { id: "telemetry", targetId: "workjet-telemetry", label: "Telemetry" },
@@ -665,6 +682,7 @@ export function WorkjetSettingsView({
   environments,
   environmentsReady,
   greppy,
+  gateway,
   automaticWorktreeStorage,
   defaultSection = "workers",
   onChange,
@@ -674,6 +692,7 @@ export function WorkjetSettingsView({
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
   readonly environmentsReady: boolean;
   readonly greppy: GreppySectionState;
+  readonly gateway: WorkjetGatewaySectionState;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
@@ -868,6 +887,10 @@ export function WorkjetSettingsView({
             </div>
           ) : null}
         </SettingsSection>
+      ) : null}
+
+      {activeSection === "provider-accounts" ? (
+        <WorkjetGatewayAccountsSectionView {...gateway} />
       ) : null}
 
       {activeSection === "llm-routes" ? (
@@ -1162,6 +1185,158 @@ export function WorkjetSettings() {
   const [isApplyingStorage, setIsApplyingStorage] = useState(false);
   const action = greppyRuntimeAction(query.data);
 
+  const gatewayStatusQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetGatewayStatus({ environmentId, input: {} }),
+  );
+  const gatewayCatalogQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} }),
+  );
+  const startGateway = useAtomCommand(serverEnvironment.startWorkjetGateway, {
+    reportFailure: false,
+  });
+  const stopGateway = useAtomCommand(serverEnvironment.stopWorkjetGateway, {
+    reportFailure: false,
+  });
+  const startGatewayOauth = useAtomCommand(serverEnvironment.startWorkjetGatewayOauth, {
+    reportFailure: false,
+  });
+  const pollGatewayOauth = useAtomCommand(serverEnvironment.pollWorkjetGatewayOauth, {
+    reportFailure: false,
+  });
+  const cancelGatewayOauth = useAtomCommand(serverEnvironment.cancelWorkjetGatewayOauth, {
+    reportFailure: false,
+  });
+  const [gatewayLogin, setGatewayLogin] = useState<WorkjetGatewayLoginState>({ status: "idle" });
+  const [isGatewayOperating, setIsGatewayOperating] = useState(false);
+  const gatewayOperationRef = useRef(false);
+  // One live login at a time; the token lets an unmount or a cancel stop the
+  // bounded poll loop without leaving a detached timer running.
+  const gatewayLoginRef = useRef<{ aborted: boolean } | null>(null);
+
+  useEffect(
+    () => () => {
+      if (gatewayLoginRef.current) gatewayLoginRef.current.aborted = true;
+    },
+    [],
+  );
+
+  const refreshGateway = useCallback(() => {
+    gatewayStatusQuery.refresh();
+    gatewayCatalogQuery.refresh();
+  }, [gatewayCatalogQuery, gatewayStatusQuery]);
+
+  const runGatewayLifecycle = useCallback(
+    (command: typeof startGateway, title: string) => {
+      if (environmentId === null || gatewayOperationRef.current) return;
+      gatewayOperationRef.current = true;
+      setIsGatewayOperating(true);
+      void (async () => {
+        const result = await command({ environmentId, input: {} });
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          toastManager.add({
+            type: "error",
+            title,
+            description: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
+          });
+        }
+      })().finally(() => {
+        gatewayOperationRef.current = false;
+        setIsGatewayOperating(false);
+      });
+    },
+    [environmentId],
+  );
+
+  const handleAddGatewayAccount = useCallback(
+    (provider: WorkjetGatewayProvider) => {
+      if (environmentId === null || gatewayLoginRef.current !== null) return;
+      const token = { aborted: false };
+      gatewayLoginRef.current = token;
+      setGatewayLogin({ status: "starting", provider });
+      const fail = (message: string) => {
+        if (!token.aborted) setGatewayLogin({ status: "failed", provider, message });
+      };
+      void (async () => {
+        const started = await startGatewayOauth({ environmentId, input: { provider } });
+        if (started._tag === "Failure") {
+          if (!isAtomCommandInterrupted(started)) {
+            fail(workjetGatewayFailureDescription(squashAtomCommandFailure(started)));
+          }
+          return;
+        }
+        if (token.aborted) return;
+        const session = started.value;
+        setGatewayLogin({
+          status: "pending",
+          provider,
+          state: session.state,
+          authorizationUrl: session.authorizationUrl,
+        });
+        // The provider login belongs in the user's own browser: Workjet never
+        // renders it and never handles the credentials.
+        try {
+          await ensureLocalApi().shell.openExternal(session.authorizationUrl);
+        } catch {
+          toastManager.add({
+            type: "error",
+            title: "Could not open the provider login",
+            description: "Open the provider login in your browser to finish adding the account.",
+          });
+        }
+
+        for (let attempt = 0; attempt < WORKJET_GATEWAY_OAUTH_POLL_MAX_ATTEMPTS; attempt += 1) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, WORKJET_GATEWAY_OAUTH_POLL_INTERVAL_MS),
+          );
+          if (token.aborted) return;
+          const polled = await pollGatewayOauth({
+            environmentId,
+            input: { state: session.state },
+          });
+          if (token.aborted) return;
+          if (polled._tag === "Failure") {
+            if (!isAtomCommandInterrupted(polled)) {
+              fail(workjetGatewayFailureDescription(squashAtomCommandFailure(polled)));
+            }
+            return;
+          }
+          if (polled.value.failed) {
+            fail(workjetGatewayOauthSessionInvalidMessage());
+            return;
+          }
+          if (!polled.value.pending) {
+            setGatewayLogin({
+              status: "completed",
+              provider,
+              accountIds: polled.value.completedAccountIds,
+            });
+            // The server persisted the account and reloaded the gateway, so the
+            // new account only appears after a fresh catalog read.
+            refreshGateway();
+            return;
+          }
+        }
+        fail(workjetGatewayOauthSessionInvalidMessage());
+      })().finally(() => {
+        if (gatewayLoginRef.current === token) gatewayLoginRef.current = null;
+      });
+    },
+    [environmentId, pollGatewayOauth, refreshGateway, startGatewayOauth],
+  );
+
+  const handleCancelGatewayLogin = useCallback(() => {
+    if (gatewayLogin.status !== "pending") return;
+    if (gatewayLoginRef.current) gatewayLoginRef.current.aborted = true;
+    gatewayLoginRef.current = null;
+    setGatewayLogin({ status: "idle" });
+    if (environmentId === null) return;
+    void cancelGatewayOauth({ environmentId, input: { state: gatewayLogin.state } });
+  }, [cancelGatewayOauth, environmentId, gatewayLogin]);
+
   const handleInstall = useCallback(() => {
     if (environmentId === null || action === null || operatingRef.current) return;
     operatingRef.current = true;
@@ -1257,6 +1432,21 @@ export function WorkjetSettings() {
         isOperating,
         onRefresh: query.refresh,
         onInstall: handleInstall,
+      }}
+      gateway={{
+        status: gatewayStatusQuery.data,
+        catalog: gatewayCatalogQuery.data,
+        isInitialLoading: gatewayStatusQuery.isPending && gatewayStatusQuery.data === null,
+        isRefreshing: gatewayStatusQuery.isPending || gatewayCatalogQuery.isPending,
+        statusError: gatewayStatusQuery.error,
+        catalogError: gatewayCatalogQuery.error,
+        isOperating: isGatewayOperating,
+        login: gatewayLogin,
+        onRefresh: refreshGateway,
+        onStart: () => runGatewayLifecycle(startGateway, "Could not start the provider gateway"),
+        onStop: () => runGatewayLifecycle(stopGateway, "Could not stop the provider gateway"),
+        onAddAccount: handleAddGatewayAccount,
+        onCancelLogin: handleCancelGatewayLogin,
       }}
       automaticWorktreeStorage={{
         configuredRoot: settings.automaticWorktreeRoot,

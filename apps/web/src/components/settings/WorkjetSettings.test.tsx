@@ -66,6 +66,21 @@ describe("Workjet configuration settings", () => {
     onRefresh: () => undefined,
     onInstall: () => undefined,
   };
+  const gateway = {
+    status: null,
+    catalog: null,
+    isInitialLoading: false,
+    isRefreshing: false,
+    statusError: null,
+    catalogError: null,
+    isOperating: false,
+    login: { status: "idle" as const },
+    onRefresh: () => undefined,
+    onStart: () => undefined,
+    onStop: () => undefined,
+    onAddAccount: () => undefined,
+    onCancelLogin: () => undefined,
+  };
   const automaticWorktreeStorage = {
     configuredRoot: "",
     selectedServerLabel: "Code server",
@@ -100,6 +115,7 @@ describe("Workjet configuration settings", () => {
         environments={[]}
         environmentsReady={false}
         greppy={greppy}
+        gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
         onChange={() => undefined}
       />,
@@ -108,6 +124,7 @@ describe("Workjet configuration settings", () => {
     const tabs = [
       "Workers",
       "Computers",
+      "Provider accounts",
       "LLM routes",
       "Prompt",
       "Telemetry",
@@ -130,6 +147,7 @@ describe("Workjet configuration settings", () => {
         environments={[]}
         environmentsReady
         greppy={greppy}
+        gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
         defaultSection="telemetry"
         onChange={() => undefined}
@@ -147,6 +165,7 @@ describe("Workjet configuration settings", () => {
         environments={[]}
         environmentsReady
         greppy={greppy}
+        gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
         defaultSection="capabilities"
         onChange={() => undefined}
@@ -164,6 +183,7 @@ describe("Workjet configuration settings", () => {
         environments={[]}
         environmentsReady
         greppy={greppy}
+        gateway={gateway}
         automaticWorktreeStorage={{
           ...automaticWorktreeStorage,
           configuredRoot: "/Volumes/worktrees",

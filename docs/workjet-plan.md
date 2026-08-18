@@ -685,6 +685,32 @@ provider session, repository, Greppy store, capability grant, or execution
 result. Same-environment delivery may take a local fast path but must obey the
 same contracts and state machine as remote delivery.
 
+Decision (owner, 2026-08-18) — transport weighting and portability model:
+
+- The CTOX Sync WebRTC data plane (device identity, encrypted peer sessions,
+  revocation, checkpoints, signaling via the user's own instances) is the
+  PRIMARY transport between the user's machines: the durable per-machine
+  mailboxes replicate peer to peer whenever any two machines are online, with
+  no third-party server, SSH, or VPN requirement. The self-hostable relay is
+  demoted to an OPTIONAL fallback for machines that are never simultaneously
+  online or cannot reach each other's signaling (symmetric NAT without a
+  reachable peer); it is not a required component. Authority boundaries are
+  unchanged: T3 event stores, worktrees, terminals, provider sessions, and
+  credentials are never replicated; mailbox envelopes and the redacted
+  read-only activity projection are the only replicated payloads.
+- Cross-machine visibility: the desktop shows a global multi-computer
+  activity overview built on that replicated redacted projection, including
+  the last known state of currently offline machines. Scheduled after M3.
+- History/worktree portability uses the HANDOFF-SNAPSHOT model, not event
+  export and not event replication: a typed thread handoff carries an
+  immutable prompt/context snapshot, bounded artifact references, a pushed
+  (or bundled-over-sync) Git branch — the per-worker isolated worktree
+  branches make this natural — and a durable link to the source thread. The
+  target machine creates a NEW thread from the handoff and continues with any
+  harness/LLM; the source server keeps the original raw history readable.
+  Full event export/import and CTOX-Sync replication of thread history were
+  considered and rejected (authority conflicts, multi-writer risk).
+
 ```text
 source thread -> source server outbox -> Workjet coordination relay
                                       -> target server inbox -> target thread
@@ -707,9 +733,21 @@ running | needs-input | review-requested | changes-requested | completed |
 failed | cancelled | expired`.
 - [ ] Persist source outbox, target inbox, delegation state, and thread-visible
       message/delegation events transactionally on their authoritative servers.
-- [ ] Add the self-hostable Workjet coordination relay beside T3 Connect. It
-      resolves authorized environment identities, stores bounded offline
-      envelopes, routes receipts, and cannot execute turns or mutate threads.
+- [ ] Replicate the per-machine durable mailboxes and the redacted activity
+      projection over the CTOX Sync WebRTC data plane between the user's own
+      machines (primary transport per the 2026-08-18 owner decision), with
+      the user's own instances providing signaling.
+- [ ] Add the self-hostable Workjet coordination relay beside T3 Connect as
+      the OPTIONAL store-and-forward fallback. It resolves authorized
+      environment identities, stores bounded offline envelopes, routes
+      receipts, and cannot execute turns or mutate threads.
+- [ ] Add the typed thread-handoff contract and flow (immutable prompt/context
+      snapshot, bounded artifact references, pushed or sync-bundled Git branch,
+      durable source-thread link); the target machine continues in a new
+      thread with any harness/LLM. Prove a real machine-A → machine-B handoff
+      including a worker worktree branch.
+- [ ] Add the global multi-computer activity overview on the replicated
+      redacted projection, including last known state of offline machines.
 - [ ] Encrypt message/delegation payloads end to end to the target environment
       key and sign the immutable routing envelope with the source environment
       key; the relay may inspect only the minimum routing and expiry metadata.

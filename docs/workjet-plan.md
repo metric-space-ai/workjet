@@ -417,6 +417,24 @@ Tasks:
       against the real binaries before enabling. Composer model selection
       resolves to a gateway route/profile; sessions without a routed
       selection keep today's direct behavior until cutover.
+      Progress 2026-08-19 (commits `8a3ac7e60`, `3740700cd`): implemented for
+      Claude Code and Codex behind the per-instance `routeViaGateway` opt-in.
+      Injection happens at session start via a `resolveSessionEnvironment`
+      thunk (gateway state is read lazily, so restarts/faults are seen);
+      precedence is process env < gateway injection < instance-declared vars.
+      Claude: `ANTHROPIC_BASE_URL` + placeholder `ANTHROPIC_API_KEY`
+      (`ANTHROPIC_AUTH_TOKEN` asserted absent). Codex, verified empirically
+      against codex-cli 0.144.1 with a local probe: `OPENAI_BASE_URL` is
+      IGNORED by the binary; routing uses dotted
+      `-c model_providers.workjet_gateway.*` overrides through the existing
+      `T3CODE_CODEX_LAUNCH_ARGS` seam (30/30 probe hits on
+      `POST /v1/responses`; `wire_api` must be `responses`). Grok, OpenCode,
+      and Cursor stay unrouted with a typed `driver-unsupported` failure —
+      no guessed env vars. A not-ready gateway fails session start with the
+      typed `ProviderGatewayRoutingError` instead of silently falling back to
+      direct credentials. Still open: grok/opencode routing mechanisms,
+      composer model-selection → gateway route resolution, and a live routed
+      turn against a real gateway account.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
 - [ ] Preserve direct provider/model selection in the composer; selection

@@ -90,6 +90,11 @@ export interface GreppyModelAsset {
   readonly revision: string;
 }
 
+export class GreppyModelManifestMismatchError extends Schema.TaggedErrorClass<GreppyModelManifestMismatchError>()(
+  "GreppyModelManifestMismatchError",
+  { message: Schema.String },
+) {}
+
 export const decodePinnedGreppyModelManifest = (input: unknown) =>
   Effect.gen(function* () {
     const manifest = yield* decodeModelAssetsManifestSchema(input);
@@ -117,7 +122,11 @@ export const decodePinnedGreppyModelManifest = (input: unknown) =>
         );
       })
     ) {
-      return yield* Effect.fail(new Error("Greppy model manifest does not match the source pin."));
+      return yield* Effect.fail(
+        new GreppyModelManifestMismatchError({
+          message: "Greppy model manifest does not match the source pin.",
+        }),
+      );
     }
     return assets;
   });

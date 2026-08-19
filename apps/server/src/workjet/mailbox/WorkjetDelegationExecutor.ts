@@ -45,12 +45,14 @@ import {
   CommandId,
   EventId,
   MessageId,
+  TurnId,
   WorkjetEnvelopeId,
   WorkjetMailboxError,
   type EnvironmentId,
   type OrchestrationCommand,
   type OrchestrationThread,
   type ThreadId,
+  type WorkjetMailboxBudgetKind,
   type WorkjetDelegation,
   type WorkjetDelegationId,
   type WorkjetDelegationResult,
@@ -76,6 +78,7 @@ import {
   type WorkjetMailboxAuditSink,
 } from "./WorkjetMailboxAuditEmitter.ts";
 import {
+  isWorkjetMailboxError,
   WorkjetMailboxStore,
   type WorkjetDelegationRecord,
   type WorkjetDelegationRowResult,
@@ -167,7 +170,15 @@ export type WorkjetDelegationRefusalReason =
    * dead-lettered: the target environment was never reachable. Its source-side
    * delegation row is failed terminally rather than left `queued` forever.
    */
-  | "delivery-dead-lettered";
+  | "delivery-dead-lettered"
+  /**
+   * The delegation's turn consumed more tokens than its `maxTokens` ceiling
+   * allows. The store refused the charge BEFORE writing it, so the recorded
+   * total never crosses the ceiling; the delegation is failed instead.
+   */
+  | "token-budget-exceeded"
+  /** The same, for the `maxCostMicros` ceiling. */
+  | "cost-budget-exceeded";
 
 export interface WorkjetDelegationExecutorFailures {
   readonly targetThreadMissing: number;
@@ -176,6 +187,10 @@ export interface WorkjetDelegationExecutorFailures {
   readonly engineRejected: number;
   /** Delegations failed because their outbound delivery dead-lettered. */
   readonly deliveryDeadLettered: number;
+  /** Delegations failed because a token ceiling refused their usage charge. */
+  readonly tokenBudgetExceeded: number;
+  /** Delegations failed because a cost ceiling refused their usage charge. */
+  readonly costBudgetExceeded: number;
 }
 
 /**
@@ -225,6 +240,15 @@ export interface WorkjetDelegationExecutorStatus {
   readonly runningPending: number;
   /** `delivered` rows held back because their approval gate is still pending. */
   readonly awaitingApproval: number;
+  /** Accepted usage charges written against a delegation's running totals. */
+  readonly usageRecorded: number;
+  /** Tokens accepted by those charges. Counts only, never a delegation id. */
+  readonly usageTokensRecorded: number;
+  /**
+   * Delegations INTERRUPTED mid-turn because a ceiling was crossed while the
+   * turn was still running. A subset of the budget failures below.
+   */
+  readonly budgetInterrupts: number;
   /** Delegations moved to the terminal `failed` state, by reason. */
   readonly failures: WorkjetDelegationExecutorFailures;
   readonly lastCycleAt: string | null;
@@ -311,6 +335,94 @@ export const dispatchedTurnId = (
   return message?.turnId ?? null;
 };
 
+/**
+ * The interrupt-command id of a delegation whose budget ran out mid-turn.
+ * Derived like every other command this service issues, so a breach observed on
+ * several consecutive cycles asks the engine to interrupt ONCE.
+ */
+export const delegationTurnInterruptCommandId = (delegationId: WorkjetDelegationId): CommandId =>
+  CommandId.make(`server:workjet-delegation-interrupt:${delegationId}`);
+
+/**
+ * The thread-activity kind the provider-runtime ingestion appends for every
+ * `thread.token-usage.updated` runtime event
+ * ({@link ProviderRuntimeIngestion}). Its payload is a
+ * `ThreadTokenUsageSnapshot` and it carries the `turnId` it was observed
+ * during — which makes the thread-detail activity stream the ONLY per-turn
+ * token source reachable from this reconciler. `projection_turns` has no usage
+ * columns, and the `UsageSummary` pipeline reads provider transcripts off disk
+ * on a (day, provider, model) grain that cannot be attributed to one turn.
+ */
+export const WORKJET_CONTEXT_WINDOW_ACTIVITY_KIND = "context-window.updated";
+
+/** A non-negative integer field of a token-usage snapshot payload, or null. */
+const usageField = (payload: Record<string, unknown>, key: string): number | null => {
+  const value = payload[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : null;
+};
+
+/**
+ * The CUMULATIVE token count a usage snapshot reports, in the provider's own
+ * terms:
+ *
+ * - `totalProcessedTokens` is the honest running total of everything the
+ *   session pushed through the model, and is what both adapters set when the
+ *   figure exceeds the live context occupancy.
+ * - `inputTokens + outputTokens` is the fallback: the last iteration's request,
+ *   which for a single-iteration turn IS the turn.
+ * - `usedTokens` (context-window occupancy) is the last resort, present on
+ *   every snapshot by contract.
+ *
+ * One extractor is used for both the baseline and the latest snapshot so the
+ * subtraction below never mixes two different meanings of "tokens".
+ */
+const snapshotCumulativeTokens = (payload: unknown): number | null => {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const snapshot = payload as Record<string, unknown>;
+  const total = usageField(snapshot, "totalProcessedTokens");
+  if (total !== null) return total;
+  const input = usageField(snapshot, "inputTokens");
+  const output = usageField(snapshot, "outputTokens");
+  if (input !== null || output !== null) return (input ?? 0) + (output ?? 0);
+  return usageField(snapshot, "usedTokens");
+};
+
+/**
+ * Tokens attributable to ONE turn of a thread, read from the thread detail's
+ * activity stream.
+ *
+ * The snapshots are cumulative for the whole provider SESSION, not per turn, so
+ * a thread that already ran turns before the delegation's would otherwise
+ * charge the delegation for its neighbours' work. The value is therefore the
+ * DELTA between the last snapshot observed during our turn and the last
+ * snapshot observed before our turn's first one. Activities arrive in the
+ * projection's creation order (`idx_projection_thread_activities_thread_created`),
+ * which is the order this scan relies on.
+ *
+ * Returns 0 when the turn produced no usage snapshot at all — a turn that never
+ * reached the provider must not be charged, and must not be *blocked* either.
+ */
+export const turnTokenUsage = (thread: OrchestrationThread, turnId: string): number => {
+  let baseline: number | null = null;
+  let latest: number | null = null;
+  let enteredTurn = false;
+  for (const activity of thread.activities ?? []) {
+    if (activity.kind !== WORKJET_CONTEXT_WINDOW_ACTIVITY_KIND) continue;
+    const value = snapshotCumulativeTokens(activity.payload);
+    if (value === null) continue;
+    if (activity.turnId === turnId) {
+      enteredTurn = true;
+      latest = value;
+    } else if (!enteredTurn) {
+      baseline = value;
+    }
+  }
+  if (latest === null) return 0;
+  return Math.max(0, latest - (baseline ?? 0));
+};
+
 const delegationActivityCommandId = (
   delegationId: WorkjetDelegationId,
   suffix: string,
@@ -391,11 +503,16 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let resultsEnqueued = 0;
   let runningPending = 0;
   let awaitingApproval = 0;
+  let usageRecorded = 0;
+  let usageTokensRecorded = 0;
+  let budgetInterrupts = 0;
   let targetThreadMissing = 0;
   let targetThreadDeleted = 0;
   let targetRoleNotExecutable = 0;
   let engineRejected = 0;
   let deliveryDeadLettered = 0;
+  let tokenBudgetExceeded = 0;
+  let costBudgetExceeded = 0;
   let lastCycleAt: string | null = null;
 
   const snapshot = (): WorkjetDelegationExecutorStatus => ({
@@ -416,12 +533,17 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     resultsEnqueued,
     runningPending,
     awaitingApproval,
+    usageRecorded,
+    usageTokensRecorded,
+    budgetInterrupts,
     failures: {
       targetThreadMissing,
       targetThreadDeleted,
       targetRoleNotExecutable,
       engineRejected,
       deliveryDeadLettered,
+      tokenBudgetExceeded,
+      costBudgetExceeded,
     },
     lastCycleAt,
   });
@@ -747,6 +869,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     readonly now: string;
     /** A failed turn that ended specifically because it was interrupted. */
     readonly interrupted?: boolean;
+    /** A failure caused by a budget ceiling rather than by the turn itself. */
+    readonly budgetKind?: WorkjetMailboxBudgetKind;
   }): WorkjetDelegationResult => ({
     schemaVersion: 1,
     envelopeId: input.envelopeId,
@@ -763,9 +887,13 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     summary:
       input.outcome === "completed"
         ? "Delegation turn completed."
-        : input.interrupted === true
-          ? "Delegation turn was interrupted."
-          : "Delegation turn ended without success.",
+        : input.budgetKind === "tokens"
+          ? "Delegation stopped: token budget exhausted."
+          : input.budgetKind === "cost"
+            ? "Delegation stopped: cost budget exhausted."
+            : input.interrupted === true
+              ? "Delegation turn was interrupted."
+              : "Delegation turn ended without success.",
     artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
   });
 
@@ -879,6 +1007,190 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     });
 
   /**
+   * Outcome of charging a delegation for the tokens its turn consumed.
+   *
+   * `passed` covers BOTH "the charge landed" and "the charge could not be read
+   * or written this cycle": neither may gate the delegation, and the next cycle
+   * re-derives the same numbers.
+   */
+  type UsageChargeOutcome =
+    | { readonly _tag: "passed" }
+    | {
+        readonly _tag: "exceeded";
+        readonly kind: WorkjetMailboxBudgetKind;
+        readonly reason: "token-budget-exceeded" | "cost-budget-exceeded";
+      };
+
+  /**
+   * Charge a delegation for its turn's real token usage.
+   *
+   * IDEMPOTENCY, without a marker column: the amount charged is the DELTA
+   * between the turn's observed cumulative tokens and the total already
+   * recorded on the row. A delegation runs exactly one turn, so its recorded
+   * total converges on that turn's usage no matter how often the scan runs —
+   * a retried completion (or a mid-run cycle followed by the final one) tops
+   * the total up instead of adding a second full charge, and a repeat with no
+   * new usage writes nothing at all.
+   *
+   * COST is always zero. No per-turn cost figure exists anywhere the executor
+   * can reach: `projection_turns` carries none, the thread-detail usage
+   * snapshots are token counts only, and the `UsageSummary` pipeline prices
+   * provider transcripts on a (day, provider, model) grain that cannot be
+   * attributed to a single turn. Recording a fabricated number would be worse
+   * than recording none, so the cost ceiling is enforced by the store but never
+   * driven by this executor.
+   *
+   * A delegation with neither ceiling records its usage and is never gated:
+   * `recordDelegationUsage` only refuses against a ceiling that exists.
+   */
+  const chargeTurnUsage = (input: {
+    readonly record: WorkjetDelegationRecord;
+    readonly thread: OrchestrationThread;
+    readonly turnId: string;
+  }): Effect.Effect<UsageChargeOutcome> =>
+    Effect.gen(function* () {
+      const observed = turnTokenUsage(input.thread, input.turnId);
+      if (observed <= 0) return { _tag: "passed" } as const;
+
+      const accounting = yield* Effect.result(
+        store.getDelegationAccounting(input.record.delegationId),
+      );
+      if (accounting._tag === "Failure") {
+        // Charging without knowing what is already recorded would double-count.
+        yield* Effect.logWarning("Workjet delegation usage charge deferred");
+        return { _tag: "passed" } as const;
+      }
+      const already = Option.match(accounting.success, {
+        onNone: () => 0,
+        onSome: (totals) => totals.tokens,
+      });
+      const deltaTokens = Math.max(0, observed - already);
+      if (deltaTokens === 0) return { _tag: "passed" } as const;
+
+      const charged = yield* Effect.result(
+        store.recordDelegationUsage(input.record.delegationId, deltaTokens, 0),
+      );
+      if (charged._tag === "Success") {
+        usageRecorded += 1;
+        usageTokensRecorded += deltaTokens;
+        return { _tag: "passed" } as const;
+      }
+      const failure = charged.failure;
+      if (isWorkjetMailboxError(failure) && failure.reason === "token-budget-exceeded") {
+        return { _tag: "exceeded", kind: "tokens", reason: failure.reason } as const;
+      }
+      if (isWorkjetMailboxError(failure) && failure.reason === "cost-budget-exceeded") {
+        return { _tag: "exceeded", kind: "cost", reason: failure.reason } as const;
+      }
+      // A SQL failure is not a budget verdict. Leave the row running.
+      yield* Effect.logWarning("Workjet delegation usage charge deferred");
+      return { _tag: "passed" } as const;
+    });
+
+  /**
+   * Ask the engine to stop a turn whose delegation just ran out of budget.
+   * Best-effort and derived-id, exactly like the activity appends: the
+   * delegation is failed either way, and an engine that cannot interrupt must
+   * not keep the row alive.
+   */
+  const interruptTurn = (input: {
+    readonly delegationId: WorkjetDelegationId;
+    readonly threadId: ThreadId;
+    readonly turnId: string;
+    readonly now: string;
+  }) =>
+    Effect.suspend(() =>
+      engine.dispatch({
+        type: "thread.turn.interrupt",
+        commandId: delegationTurnInterruptCommandId(input.delegationId),
+        threadId: input.threadId,
+        turnId: TurnId.make(input.turnId),
+        createdAt: input.now,
+      } as const satisfies OrchestrationCommand),
+    ).pipe(Effect.ignore);
+
+  /**
+   * Terminate a delegation whose usage charge was refused by a ceiling.
+   *
+   * Unlike {@link refuse} this persists a bounded FAILED RESULT (the ceiling is
+   * a turn outcome the delegator must be told about, not a delivery refusal),
+   * reports it to the source through the normal result path, and emits the
+   * `budget-exceeded` audit event — the live emit site the audit contract has
+   * been carrying without one.
+   */
+  const failForBudget = (input: {
+    readonly record: WorkjetDelegationRecord;
+    readonly thread: OrchestrationThread;
+    readonly turnId: string;
+    readonly kind: WorkjetMailboxBudgetKind;
+    readonly reason: "token-budget-exceeded" | "cost-budget-exceeded";
+    /** The turn is still live and must be stopped before the row goes terminal. */
+    readonly turnStillRunning: boolean;
+    readonly environmentId: EnvironmentId;
+    readonly now: string;
+  }): Effect.Effect<ExecutionOutcome> =>
+    Effect.gen(function* () {
+      const delegation = input.record.delegation;
+      if (input.turnStillRunning) {
+        yield* interruptTurn({
+          delegationId: delegation.delegationId,
+          threadId: input.thread.id,
+          turnId: input.turnId,
+          now: input.now,
+        });
+        budgetInterrupts += 1;
+      }
+
+      const result = buildResult({
+        delegation,
+        outcome: "failed",
+        envelopeId: delegationResultEnvelopeId(delegation.delegationId),
+        now: input.now,
+        budgetKind: input.kind,
+      });
+      const finalized = yield* store
+        .finalizeDelegationResult({
+          delegationId: delegation.delegationId,
+          to: "failed",
+          result,
+          changedAt: input.now as WorkjetMailboxTimestamp,
+        })
+        .pipe(Effect.option);
+      if (Option.isNone(finalized)) {
+        // Cancelled or expired underneath us between the scan and here.
+        return { _tag: "transient" } as const;
+      }
+
+      yield* deliverResult({
+        delegation,
+        result: finalized.value.result,
+        environmentId: input.environmentId,
+        now: input.now,
+      });
+
+      yield* emit({
+        _tag: "budget-exceeded",
+        occurredAt: input.now as WorkjetMailboxTimestamp,
+        delegationId: delegation.delegationId,
+        kind: input.kind,
+      });
+      // The same terminal-outcome event every other finalized delegation emits,
+      // so a subscriber never has to special-case the budget path to learn that
+      // the delegation is over.
+      yield* emit({
+        _tag: "delegation-completed",
+        occurredAt: input.now as WorkjetMailboxTimestamp,
+        delegationId: delegation.delegationId,
+        envelopeId: delegation.envelopeId,
+        source: auditAddress(delegation.source),
+        target: auditAddress(delegation.target),
+        outcome: "failed",
+      });
+
+      return { _tag: "failed", reason: input.reason } as const;
+    });
+
+  /**
    * Advance a `running` delegation whose target thread is LOCAL. The delegation
    * is completed ONLY when the exact turn this executor dispatched has ended:
    * the correlated user message's turn is the latest turn, that turn is no
@@ -936,14 +1248,35 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         return { _tag: "running-pending" } as const;
       }
       const latest = thread.latestTurn;
-      if (latest === null || latest.turnId !== turnId || latest.state === "running") {
-        // Our turn is not the latest ended turn, or is still running. Never
-        // complete on the strength of a DIFFERENT turn ending.
-        return { _tag: "running-pending" } as const;
+      // The turn this executor dispatched has ENDED only when it is the latest
+      // turn, is no longer running, and the session is no longer driving it.
+      // Never complete on the strength of a DIFFERENT turn ending.
+      const turnEnded =
+        latest !== null &&
+        latest.turnId === turnId &&
+        latest.state !== "running" &&
+        (thread.session?.activeTurnId ?? null) !== turnId;
+
+      // Charged on EVERY cycle the turn is observable, not only at the end.
+      // That is what makes the ceiling a real gate: a runaway turn is stopped
+      // while it is still burning tokens rather than billed for afterwards.
+      // The charge is a delta against the recorded total, so the mid-run and
+      // the final charge together add up to the turn's usage exactly once.
+      const charge = yield* chargeTurnUsage({ record: input.record, thread, turnId });
+      if (charge._tag === "exceeded") {
+        return yield* failForBudget({
+          record: input.record,
+          thread,
+          turnId,
+          kind: charge.kind,
+          reason: charge.reason,
+          turnStillRunning: !turnEnded,
+          environmentId,
+          now: input.now,
+        });
       }
-      if ((thread.session?.activeTurnId ?? null) === turnId) {
-        // The session is still driving our turn even though the latest-turn
-        // projection reads terminal; wait for it to clear.
+
+      if (!turnEnded || latest === null) {
         return { _tag: "running-pending" } as const;
       }
 
@@ -1070,6 +1403,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
               break;
             case "delivery-dead-lettered":
               deliveryDeadLettered += 1;
+              break;
+            case "token-budget-exceeded":
+              tokenBudgetExceeded += 1;
+              break;
+            case "cost-budget-exceeded":
+              costBudgetExceeded += 1;
               break;
           }
           break;

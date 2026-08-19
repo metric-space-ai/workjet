@@ -8,6 +8,7 @@ import {
   WorkjetContentDigest,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
+  WorkjetMailboxError,
   WorkjetMeshWorkspaceId,
   WorkjetRepositoryPath,
   type OrchestrationCommand,
@@ -32,9 +33,11 @@ import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import {
   delegationResultEnvelopeId,
   delegationTurnCommandId,
+  delegationTurnInterruptCommandId,
   delegationTurnMessageId,
   makeWorkjetDelegationExecutorWithSources,
   threadHasActiveTurn,
+  turnTokenUsage,
   WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND,
   WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
   WORKJET_DELEGATION_STARTED_ACTIVITY_KIND,
@@ -83,6 +86,8 @@ const delegationFixture = (input: {
   readonly targetThreadId?: ThreadId;
   readonly stateChangedAt?: WorkjetMailboxTimestamp;
   readonly requiresApproval?: boolean;
+  readonly maxTokens?: number;
+  readonly maxCostMicros?: number;
 }): WorkjetDelegation => ({
   schemaVersion: 1,
   envelopeId: WorkjetEnvelopeId.make(`wjm-envelope-${input.id}-0000000000`),
@@ -116,6 +121,8 @@ const delegationFixture = (input: {
     maxReviewRounds: 2,
     expiresAt: EXPIRES,
     ...(input.requiresApproval === true ? { requiresApproval: true } : {}),
+    ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
+    ...(input.maxCostMicros !== undefined ? { maxCostMicros: input.maxCostMicros } : {}),
   },
   state: input.state,
   stateChangedAt: input.stateChangedAt ?? NOW,
@@ -141,6 +148,61 @@ const thread = (input?: {
   }) as unknown as OrchestrationThread;
 
 /**
+ * One `context-window.updated` thread activity, the shape the provider-runtime
+ * ingestion appends for a `thread.token-usage.updated` runtime event. This is
+ * the only per-turn token source the executor can reach, so the usage tests
+ * feed it exactly as the projection would.
+ */
+const usageActivity = (input: {
+  readonly index: number;
+  readonly turnId: string | null;
+  readonly tokens: number;
+}) => ({
+  id: `usage-${input.index}`,
+  tone: "info",
+  kind: "context-window.updated",
+  summary: "Context window updated",
+  payload: { usedTokens: input.tokens, totalProcessedTokens: input.tokens },
+  turnId: input.turnId,
+  createdAt: NOW,
+});
+
+/**
+ * A target thread whose dispatched delegation turn is STILL RUNNING, carrying
+ * the usage activities observed so far. Mid-run budget enforcement reads
+ * exactly this shape.
+ */
+const runningTurnThread = (input: {
+  readonly delegationId: WorkjetDelegationId;
+  readonly turnId: string;
+  readonly activities?: ReadonlyArray<unknown>;
+}): OrchestrationThread =>
+  ({
+    ...thread(),
+    messages: [
+      {
+        id: delegationTurnMessageId(input.delegationId),
+        role: "user",
+        text: "",
+        turnId: input.turnId,
+        streaming: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ],
+    latestTurn: {
+      turnId: input.turnId,
+      state: "running",
+      requestedAt: NOW,
+      startedAt: NOW,
+      completedAt: null,
+      assistantMessageId: null,
+    },
+    activities: input.activities ?? [],
+    session: { activeTurnId: input.turnId },
+  }) as unknown as OrchestrationThread;
+
+/**
  * A target thread whose dispatched delegation turn has ENDED. The user message
  * the executor wrote is present with its `turnId`, and `latestTurn` reflects a
  * terminal turn; `latestTurnId` overrides it to model a DIFFERENT turn ending.
@@ -151,9 +213,11 @@ const endedTurnThread = (input: {
   readonly turnState: "completed" | "error" | "interrupted";
   readonly latestTurnId?: string;
   readonly activeTurnId?: string | null;
+  readonly activities?: ReadonlyArray<unknown>;
 }): OrchestrationThread =>
   ({
     ...thread(),
+    activities: input.activities ?? [],
     messages: [
       {
         id: delegationTurnMessageId(input.delegationId),
@@ -221,6 +285,13 @@ const makeHarness = (options?: {
   readonly initialThread?: OrchestrationThread | undefined;
   readonly nowValues?: ReadonlyArray<string>;
   readonly failAudit?: boolean;
+  /**
+   * Force `recordDelegationUsage` to refuse with this reason. The executor
+   * never produces a non-zero cost delta (no per-turn cost figure is projected
+   * anywhere it can reach), so a `cost-budget-exceeded` refusal is the only way
+   * to exercise the cost branch of the ceiling handling.
+   */
+  readonly refuseUsageCharge?: "token-budget-exceeded" | "cost-budget-exceeded";
 }): Harness => {
   const commands: Array<OrchestrationCommand> = [];
   const events: Array<WorkjetMailboxAuditEventInput> = [];
@@ -274,11 +345,21 @@ const makeHarness = (options?: {
     failThreadReads: (fail) => {
       threadReadsFail = fail;
     },
-    executor: makeWorkjetDelegationExecutorWithSources(sources).pipe(
-      Effect.provideService(OrchestrationEngineService, engine),
-      Effect.provideService(ProjectionSnapshotQuery, query),
-      Effect.provideService(WorkjetMeshIdentity, identityDouble),
-    ),
+    executor: Effect.gen(function* () {
+      const base = makeWorkjetDelegationExecutorWithSources(sources).pipe(
+        Effect.provideService(OrchestrationEngineService, engine),
+        Effect.provideService(ProjectionSnapshotQuery, query),
+        Effect.provideService(WorkjetMeshIdentity, identityDouble),
+      );
+      const refusal = options?.refuseUsageCharge;
+      if (refusal === undefined) return yield* base;
+      const real = yield* WorkjetMailboxStore;
+      const refusing = {
+        ...real,
+        recordDelegationUsage: () => Effect.fail(new WorkjetMailboxError({ reason: refusal })),
+      } as unknown as WorkjetMailboxStore["Service"];
+      return yield* base.pipe(Effect.provideService(WorkjetMailboxStore, refusing));
+    }),
   };
 };
 
@@ -975,6 +1056,320 @@ it.effect("fails a running delegation whose target thread is deleted mid-run", (
     assert.equal(status.resultsReturned, 0);
     assert.equal(turnStarts(harness.commands).length, 0);
   }).pipe(Effect.provide(testLayer("delegation-executor-running-deleted"))),
+);
+
+// ===============================
+// Token/cost budget accounting (real per-turn usage from the projection)
+// ===============================
+
+/** Cumulative usage totals recorded on a delegation row. */
+const accountingOf = Effect.fn("test.accountingOf")(function* (delegation: WorkjetDelegation) {
+  const store = yield* WorkjetMailboxStore;
+  const accounting = yield* store.getDelegationAccounting(delegation.delegationId);
+  return Option.getOrThrow(accounting);
+});
+
+it("reads one turn's tokens as a delta against the snapshot preceding it", () => {
+  const base = thread();
+  const withActivities = (activities: ReadonlyArray<unknown>): OrchestrationThread =>
+    ({ ...base, activities }) as unknown as OrchestrationThread;
+
+  // A thread that already ran an earlier turn must not charge ours for it.
+  assert.equal(
+    turnTokenUsage(
+      withActivities([
+        usageActivity({ index: 0, turnId: "turn-earlier", tokens: 1_000 }),
+        usageActivity({ index: 1, turnId: "turn-ours", tokens: 4_000 }),
+        usageActivity({ index: 2, turnId: "turn-ours", tokens: 9_000 }),
+      ]),
+      "turn-ours",
+    ),
+    8_000,
+  );
+  // No snapshot for our turn at all: nothing to charge, and nothing to block.
+  assert.equal(
+    turnTokenUsage(
+      withActivities([usageActivity({ index: 0, turnId: "turn-earlier", tokens: 1_000 })]),
+      "turn-ours",
+    ),
+    0,
+  );
+  assert.equal(turnTokenUsage(base, "turn-ours"), 0);
+  // Fallback order: input+output when no cumulative total is reported, then
+  // the context-window occupancy.
+  assert.equal(
+    turnTokenUsage(
+      withActivities([
+        {
+          kind: "context-window.updated",
+          turnId: "turn-ours",
+          payload: { inputTokens: 30, outputTokens: 12 },
+        },
+      ]),
+      "turn-ours",
+    ),
+    42,
+  );
+  assert.equal(
+    turnTokenUsage(
+      withActivities([
+        { kind: "context-window.updated", turnId: "turn-ours", payload: { usedTokens: 7 } },
+        { kind: "tool.completed", turnId: "turn-ours", payload: { usedTokens: 999 } },
+      ]),
+      "turn-ours",
+    ),
+    7,
+  );
+});
+
+it.effect("records the dispatched turn's real token usage when the delegation completes", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "usage",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxTokens: 100_000,
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-usage",
+        turnState: "completed",
+        activities: [
+          usageActivity({ index: 0, turnId: "turn-earlier", tokens: 1_000 }),
+          usageActivity({ index: 1, turnId: "turn-usage", tokens: 4_000 }),
+          usageActivity({ index: 2, turnId: "turn-usage", tokens: 9_000 }),
+        ],
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.completed, 1);
+    assert.equal(status.usageRecorded, 1);
+    // Our turn's own consumption, not the thread's session total.
+    assert.equal(status.usageTokensRecorded, 8_000);
+    assert.equal(status.failures.tokenBudgetExceeded, 0);
+    assert.equal((yield* accountingOf(delegation)).tokens, 8_000);
+    // No per-turn cost figure is projected anywhere the executor can reach.
+    assert.equal((yield* accountingOf(delegation)).costMicros, 0);
+    assert.equal(yield* stateOf(delegation), "completed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-usage-recorded"))),
+);
+
+it.effect("records usage without gating when the delegation carries no ceilings", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "unlimited",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-unlimited",
+        turnState: "completed",
+        activities: [usageActivity({ index: 0, turnId: "turn-unlimited", tokens: 5_000_000 })],
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.isUndefined(delegation.budget.maxTokens);
+    assert.equal(status.completed, 1);
+    assert.equal(status.usageTokensRecorded, 5_000_000);
+    assert.equal(status.failures.tokenBudgetExceeded, 0);
+    assert.equal((yield* accountingOf(delegation)).tokens, 5_000_000);
+    assert.equal(yield* stateOf(delegation), "completed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-usage-unlimited"))),
+);
+
+it.effect("charges a still-running turn once and does not double-count at completion", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "nodouble",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxTokens: 100_000,
+    });
+    const activities = [usageActivity({ index: 0, turnId: "turn-nodouble", tokens: 8_000 })];
+    const harness = makeHarness({
+      initialThread: runningTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-nodouble",
+        activities,
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    // Cycle 1: the turn is still running, so the usage is charged mid-run and
+    // the delegation stays `running`.
+    const midRun = yield* executor.runCycle;
+    assert.equal(midRun.runningPending, 1);
+    assert.equal(midRun.usageRecorded, 1);
+    assert.equal(midRun.usageTokensRecorded, 8_000);
+    assert.equal((yield* accountingOf(delegation)).tokens, 8_000);
+    assert.equal(yield* stateOf(delegation), "running");
+
+    // Cycle 2: the SAME turn, now ended, with the SAME usage snapshots. The
+    // charge is a delta against what is already recorded, so nothing is added.
+    harness.setThread(
+      endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-nodouble",
+        turnState: "completed",
+        activities,
+      }),
+    );
+    const finished = yield* executor.runCycle;
+    assert.equal(finished.completed, 1);
+    assert.equal(finished.usageRecorded, 1);
+    assert.equal(finished.usageTokensRecorded, 8_000);
+    assert.equal((yield* accountingOf(delegation)).tokens, 8_000);
+    assert.equal(yield* stateOf(delegation), "completed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-usage-no-double"))),
+);
+
+it.effect("interrupts and fails a still-running turn that crosses its token ceiling", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "tokenceiling",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxTokens: 5_000,
+    });
+    const harness = makeHarness({
+      initialThread: runningTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-ceiling",
+        activities: [usageActivity({ index: 0, turnId: "turn-ceiling", tokens: 9_000 })],
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.failures.tokenBudgetExceeded, 1);
+    assert.equal(status.budgetInterrupts, 1);
+    assert.equal(status.completed, 0);
+    assert.equal(status.runningPending, 0);
+    assert.equal(yield* stateOf(delegation), "failed");
+    // The refusal happens BEFORE the durable write, so the recorded total never
+    // crosses the ceiling.
+    assert.equal((yield* accountingOf(delegation)).tokens, 0);
+
+    // The live turn is asked to stop, with the derived command id.
+    const interrupts = harness.commands.filter(
+      (command) => command.type === "thread.turn.interrupt",
+    );
+    assert.equal(interrupts.length, 1);
+    const interrupt = interrupts[0];
+    if (interrupt === undefined || interrupt.type !== "thread.turn.interrupt") return;
+    assert.equal(interrupt.commandId, delegationTurnInterruptCommandId(delegation.delegationId));
+    assert.equal(interrupt.turnId, "turn-ceiling");
+    assert.equal(interrupt.threadId, TARGET_THREAD);
+
+    // A bounded failed result is persisted and reported to the source.
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+    assert.equal(stored.value.outcome, "failed");
+    assert.equal(stored.value.summary, "Delegation stopped: token budget exhausted.");
+    assert.equal(status.resultsReturned, 1);
+
+    // The audit contract's `budget-exceeded` event finally has a live emit site.
+    const breach = harness.events.filter((event) => event._tag === "budget-exceeded");
+    assert.equal(breach.length, 1);
+    const event = breach[0];
+    if (event === undefined || event._tag !== "budget-exceeded") return;
+    assert.equal(event.kind, "tokens");
+    assert.equal(event.delegationId, delegation.delegationId);
+  }).pipe(Effect.provide(testLayer("delegation-executor-token-ceiling"))),
+);
+
+it.effect("fails a ceiling breach observed only at turn end without an interrupt", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "endceiling",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxTokens: 5_000,
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-endceiling",
+        turnState: "completed",
+        activities: [usageActivity({ index: 0, turnId: "turn-endceiling", tokens: 9_000 })],
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.failures.tokenBudgetExceeded, 1);
+    // Nothing to interrupt: the turn is already over.
+    assert.equal(status.budgetInterrupts, 0);
+    assert.equal(
+      harness.commands.filter((command) => command.type === "thread.turn.interrupt").length,
+      0,
+    );
+    // The ceiling wins over the turn's own successful outcome.
+    assert.equal(status.completed, 0);
+    assert.equal(yield* stateOf(delegation), "failed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-end-ceiling"))),
+);
+
+it.effect("fails a delegation whose charge is refused by the cost ceiling", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "costceiling",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxCostMicros: 1_000,
+    });
+    // The executor always charges zero cost (no per-turn cost figure is
+    // projected), so the store's cost refusal is injected to exercise the
+    // branch that handles it.
+    const harness = makeHarness({
+      refuseUsageCharge: "cost-budget-exceeded",
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-cost",
+        turnState: "completed",
+        activities: [usageActivity({ index: 0, turnId: "turn-cost", tokens: 9_000 })],
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.failures.costBudgetExceeded, 1);
+    assert.equal(status.failures.tokenBudgetExceeded, 0);
+    assert.equal(status.usageRecorded, 0);
+    assert.equal(yield* stateOf(delegation), "failed");
+
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+    assert.equal(stored.value.summary, "Delegation stopped: cost budget exhausted.");
+
+    const breach = harness.events.filter((event) => event._tag === "budget-exceeded");
+    assert.equal(breach.length, 1);
+    const event = breach[0];
+    if (event === undefined || event._tag !== "budget-exceeded") return;
+    assert.equal(event.kind, "cost");
+  }).pipe(Effect.provide(testLayer("delegation-executor-cost-ceiling"))),
 );
 
 // ===============================

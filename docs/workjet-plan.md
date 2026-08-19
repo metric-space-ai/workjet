@@ -989,19 +989,23 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       chat histories. All Code-mode threads on one server continue to share its
       single Greppy store; remote servers resolve references against their own
       authorized environment state.
-- [ ] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
-      selection across connected computers, delivery/state badges, linked
-      source/target navigation, reply, follow-up, review, cancel, and reassign.
-      Progress 2026-08-19 (commits `68e42c912`…`b5908195c`): send + render are
-      done — the four `workjet.*` activity kinds render as compact timeline
-      cards with delivery dispositions, delegation-state badges, and
-      same-environment thread links; orchestrator threads get the composer
-      “Send to worker” panel (Message / Message + Task tabs, bounded scope/
-      budget inputs) behind new `workjet.mailbox.sendMessage|delegateTask`
-      RPCs with operate-scope plus handler-side orchestrator validation that
-      collapses all refusals to one `unauthorized`. Still open: reply,
-      follow-up, review, cancel, reassign, a real cross-machine recipient
-      picker (mesh roster), and the compact-composer variant of the control.
+- [~] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
+  selection across connected computers, delivery/state badges, linked
+  source/target navigation, reply, follow-up, review, cancel, and reassign.
+  Send + render done (commits `68e42c912`…`b5908195c`): the four
+  `workjet.*` activity kinds render as compact timeline cards with delivery
+  dispositions, delegation-state badges, and same-environment thread links;
+  orchestrator threads get the composer “Send to worker” panel (Message /
+  Message + Task tabs) behind `workjet.mailbox.sendMessage|delegateTask`
+  RPCs (operate scope + handler-side orchestrator validation collapsing
+  refusals to `unauthorized`). Lifecycle actions done 2026-08-19 (commits
+  `bb3283c60`, `72475c418`, `754907a47`, and the ChatView wire): reply,
+  request-review, cancel, and reviewer approve / request-changes are
+  state-gated action affordances on the delegation cards behind
+  `workjet.mailbox.reply|requestReview|updateDelegation` RPCs, wired
+  through ChatView. Still open: follow-up/reassign controls, a real
+  cross-machine recipient picker (mesh roster), and the compact-composer
+  variant of the control.
 - [ ] Add redacted audit/observability events and user notifications without
       storing prompts, secrets, provider payloads, or artifact contents in
       relay logs, traces, push notifications, or crash reports.

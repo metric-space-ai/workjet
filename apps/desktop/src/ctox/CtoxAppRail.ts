@@ -37,9 +37,19 @@ const RailAppTitle = Schema.String.check(
   Schema.isNonEmpty(),
   Schema.isMaxLength(128),
 );
+const RailAppCategory = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(64),
+);
+/**
+ * `category` is additive on the v2 document: it decodes as an optional key, so
+ * records written before it existed stay valid and no version bump is needed.
+ */
 const RailCachedApp = Schema.Struct({
   id: RailModuleId,
   title: Schema.optionalKey(RailAppTitle),
+  category: Schema.optionalKey(RailAppCategory),
   lastSeenAt: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 type RailCachedApp = typeof RailCachedApp.Type;
@@ -102,6 +112,8 @@ const railError = (code: "persistence_failed") => new CtoxAppRailError({ code })
 export interface CtoxLiveGuestApp {
   readonly id: string;
   readonly title?: string;
+  /** The guest module's own launcher category, used to sub-group the rail. */
+  readonly category?: string;
 }
 
 /**
@@ -151,10 +163,14 @@ export function mergeRailApps(input: {
     const live = liveById.get(id);
     const cached = cachedById.get(id);
     const title = live?.title ?? cached?.title;
+    // A cached category survives a guest that no longer reports one, so the
+    // rail keeps its grouping while the instance is disconnected.
+    const category = live?.category ?? cached?.category;
     const lastSeenAt = input.live !== undefined ? input.nowEpochMs : cached?.lastSeenAt;
     rows.push({
       id,
       ...(title === undefined ? {} : { title }),
+      ...(category === undefined ? {} : { category }),
       docked,
       open: openIds.has(id),
       ...(lastSeenAt === undefined ? {} : { lastSeenAt }),
@@ -183,9 +199,11 @@ export function refreshRailCache(input: {
     if (!CTOX_APP_MODULE_ID_PATTERN.test(app.id)) continue;
     const previous = next.get(app.id);
     const title = app.title ?? previous?.title;
+    const category = app.category ?? previous?.category;
     next.set(app.id, {
       id: app.id,
       ...(title === undefined ? {} : { title }),
+      ...(category === undefined ? {} : { category }),
       lastSeenAt: input.nowEpochMs,
     });
   }

@@ -740,6 +740,53 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("lifts the module category out of the guest and keeps it bounded", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const control = String.fromCharCode(0);
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      harness.views[0]?.finishLoad();
+      // Evaluate the manager's real list expression against a stub guest app so
+      // the category extraction itself is covered, not just its decoding.
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: unknown) => {
+        const source = String(expression);
+        if (!source.includes("openModules")) return undefined;
+        const holder = globalThis as unknown as { CTOX_BUSINESS_OS_APP?: unknown };
+        holder.CTOX_BUSINESS_OS_APP = {
+          modules: [
+            { id: "tickets", title: "Tickets", category: "  Operations  " },
+            { id: "notes", title: "Notes", group: "Knowledge" },
+            { id: "plain", title: "Plain" },
+            { id: "loud", title: "Loud", category: `Ops${control}Center` },
+            { id: "long", title: "Long", category: "c".repeat(200) },
+          ],
+          activeModule: { id: "tickets" },
+        };
+        try {
+          return new Function(`return ${source}`)() as unknown;
+        } finally {
+          delete holder.CTOX_BUSINESS_OS_APP;
+        }
+      });
+
+      const observation = yield* manager.readGuestApps(descriptor.id);
+      assert.equal(observation._tag, "completed");
+      if (observation._tag !== "completed") return;
+      assert.deepEqual(observation.apps, [
+        { id: "tickets", title: "Tickets", category: "Operations" },
+        { id: "notes", title: "Notes", category: "Knowledge" },
+        { id: "plain", title: "Plain" },
+        { id: "loud", title: "Loud", category: "OpsCenter" },
+        { id: "long", title: "Long", category: "c".repeat(64) },
+      ]);
+      assert.equal(observation.activeModuleId, "tickets");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it("allows shell/control resources but blocks Business OS HTTP data routes", () => {
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(

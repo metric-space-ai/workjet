@@ -244,9 +244,21 @@ export type CtoxAppModuleId = typeof CtoxAppModuleId.Type;
 
 const CtoxAppTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(128), NoAsciiControlCharacters);
 
+/**
+ * The Business OS module's own `category` manifest field (e.g. "Workspace",
+ * "Development", "REM Capital"), used to sub-group the sidebar app rail.
+ * Absent when the guest module carries no category.
+ */
+export const CtoxAppCategory = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(64),
+  NoAsciiControlCharacters,
+);
+export type CtoxAppCategory = typeof CtoxAppCategory.Type;
+
 export const CtoxInstanceApp = Schema.Struct({
   id: CtoxAppModuleId,
   title: Schema.optional(CtoxAppTitle),
+  category: Schema.optional(CtoxAppCategory),
   docked: Schema.Boolean,
   open: Schema.Boolean,
   /** Epoch milliseconds of the last time this app was observed on the guest. */

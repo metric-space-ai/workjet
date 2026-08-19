@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import {
   CtoxDiscoveryResult,
   CtoxGuestBounds,
+  CtoxInstanceApp,
   CtoxManagedActivationInput,
   CtoxManagedDiscoveryResult,
   CtoxManagedGuestResult,
@@ -215,6 +216,36 @@ describe("CTOX renderer contracts", () => {
     });
     for (const invalid of [-1, 1.5, Number.POSITIVE_INFINITY, 2_147_483_648]) {
       expect(() => decodeBounds({ ...bounds, width: invalid })).toThrow();
+    }
+  });
+
+  it("carries an optional bounded app category and stays decodable without it", () => {
+    const decodeApp = Schema.decodeUnknownSync(CtoxInstanceApp);
+    expect(decodeApp({ id: "tickets", title: "Tickets", docked: true, open: false })).toEqual({
+      id: "tickets",
+      title: "Tickets",
+      docked: true,
+      open: false,
+    });
+    expect(
+      decodeApp({
+        id: "tickets",
+        title: "Tickets",
+        category: "Operations",
+        docked: true,
+        open: false,
+      }),
+    ).toEqual({
+      id: "tickets",
+      title: "Tickets",
+      category: "Operations",
+      docked: true,
+      open: false,
+    });
+    for (const invalid of ["", " ", "a".repeat(65), `bad${control}category`]) {
+      expect(() =>
+        decodeApp({ id: "tickets", category: invalid, docked: false, open: false }),
+      ).toThrow();
     }
   });
 

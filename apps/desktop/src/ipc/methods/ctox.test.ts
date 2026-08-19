@@ -513,6 +513,48 @@ describe("CTOX app rail IPC methods", () => {
     );
   });
 
+  it.effect("carries guest categories through and keeps cached ones for silent apps", () => {
+    const guests = guestsWithApps({
+      readGuestApps: () =>
+        Effect.succeed({
+          _tag: "completed",
+          apps: [
+            { id: "crm", title: "CRM" },
+            { id: "notes", title: "Notes", category: "Knowledge" },
+          ],
+          activeModuleId: null,
+          openModuleIds: [],
+        }),
+    });
+    return Effect.gen(function* () {
+      const result = yield* listApps.handler({ instanceId: "inst-a" });
+      const decoded = result as {
+        readonly apps?: readonly { readonly id: string; readonly category?: string }[];
+      };
+      assert.deepEqual(
+        decoded.apps?.map((app) => [app.id, app.category]),
+        [
+          ["crm", "Operations"],
+          ["notes", "Knowledge"],
+        ],
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests),
+          railLayer({
+            stateForInstance: () =>
+              Effect.succeed({
+                docked: ["crm"],
+                apps: [{ id: "crm", title: "CRM", category: "Operations", lastSeenAt: NOW_APPS }],
+              }),
+          }),
+          registryLayer(),
+        ),
+      ),
+    );
+  });
+
   it.effect("serves the cached rail when the guest is not active", () =>
     Effect.gen(function* () {
       const result = yield* listApps.handler({ instanceId: "inst-a" });

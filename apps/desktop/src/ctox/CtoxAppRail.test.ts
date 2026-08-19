@@ -78,6 +78,61 @@ describe("mergeRailApps", () => {
     ]);
   });
 
+  it("keeps the cached category when the live guest reports none", () => {
+    const apps = mergeRailApps({
+      docked: ["crm"],
+      cached: [
+        { id: "crm", title: "CRM", category: "Operations", lastSeenAt: NOW - 1_000 },
+        { id: "mail", title: "Mail", category: "Workspace", lastSeenAt: NOW - 2_000 },
+      ],
+      live: {
+        apps: [
+          { id: "crm", title: "CRM" },
+          { id: "mail", title: "Mail", category: "Knowledge" },
+        ],
+        activeModuleId: null,
+        openModuleIds: [],
+      },
+      nowEpochMs: NOW,
+    });
+    assert.deepEqual(apps, [
+      {
+        id: "crm",
+        title: "CRM",
+        category: "Operations",
+        docked: true,
+        open: false,
+        lastSeenAt: NOW,
+      },
+      {
+        id: "mail",
+        title: "Mail",
+        category: "Knowledge",
+        docked: false,
+        open: false,
+        lastSeenAt: NOW,
+      },
+    ]);
+  });
+
+  it("serves cached categories while the instance is disconnected", () => {
+    const apps = mergeRailApps({
+      docked: [],
+      cached: [{ id: "crm", title: "CRM", category: "Operations", lastSeenAt: NOW - 10 }],
+      nowEpochMs: NOW,
+    });
+    assert.deepEqual(apps, [
+      {
+        id: "crm",
+        title: "CRM",
+        category: "Operations",
+        docked: false,
+        open: false,
+        lastSeenAt: NOW - 10,
+      },
+    ]);
+  });
+
   it("drops invalid and duplicate module ids", () => {
     const apps = mergeRailApps({
       docked: ["crm", "crm", "../escape", "b".repeat(70)],
@@ -101,6 +156,18 @@ describe("refreshRailCache", () => {
     assert.deepEqual(next, [
       { id: "crm", title: "Customer Relations", lastSeenAt: NOW },
       { id: "ledger", title: "Ledger", lastSeenAt: NOW },
+    ]);
+  });
+
+  it("records live categories and keeps a prior one when the guest omits it", () => {
+    const next = refreshRailCache({
+      cached: [{ id: "crm", title: "CRM", category: "Operations", lastSeenAt: NOW - 10 }],
+      live: [{ id: "crm" }, { id: "ledger", title: "Ledger", category: "Workspace" }],
+      nowEpochMs: NOW,
+    });
+    assert.deepEqual(next, [
+      { id: "crm", title: "CRM", category: "Operations", lastSeenAt: NOW },
+      { id: "ledger", title: "Ledger", category: "Workspace", lastSeenAt: NOW },
     ]);
   });
 
@@ -239,6 +306,52 @@ describe("CtoxAppRail store", () => {
           // under a stable identity.
           const unresolved = yield* rail.stateForInstance({ identity: "ctox:unknown" });
           assert.deepEqual(unresolved, { docked: [], apps: [] });
+        }),
+      ),
+      Effect.orDie,
+    ),
+  );
+
+  it.effect("persists app categories additively on the unchanged v2 document", () =>
+    harness((rail) =>
+      Effect.gen(function* () {
+        yield* rail.recordLiveApps(
+          keyA,
+          [{ id: "crm", title: "CRM", category: "Operations" }],
+          NOW,
+        );
+        return rail;
+      }),
+    ).pipe(
+      Effect.flatMap(({ result: rail, stateDir, fs, path }) =>
+        Effect.gen(function* () {
+          const railPath = path.join(stateDir, "ctox", "app-rail.json");
+          const stored = decodeUnknownJson(yield* fs.readFileString(railPath)) as {
+            readonly version: number;
+          };
+          // The category is an optional key, so the document version is unchanged.
+          assert.equal(stored.version, 2);
+          const state = yield* rail.stateForInstance(keyA);
+          assert.deepEqual(state.apps, [
+            { id: "crm", title: "CRM", category: "Operations", lastSeenAt: NOW },
+          ]);
+
+          // A record written before the field existed still decodes.
+          yield* fs.writeFileString(
+            railPath,
+            `${encodeUnknownJson({
+              version: 2,
+              instances: [
+                {
+                  identity: keyA.identity,
+                  docked: ["crm"],
+                  apps: [{ id: "crm", title: "CRM", lastSeenAt: NOW }],
+                },
+              ],
+            })}\n`,
+          );
+          const legacy = yield* rail.stateForInstance(keyA);
+          assert.deepEqual(legacy.apps, [{ id: "crm", title: "CRM", lastSeenAt: NOW }]);
         }),
       ),
       Effect.orDie,

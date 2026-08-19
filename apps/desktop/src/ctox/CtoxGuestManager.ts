@@ -137,10 +137,13 @@ export const CTOX_APPLY_HOST_THEME_CHANNEL = "instance:apply-host-theme";
 export const CTOX_APP_MODULE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAX_GUEST_APPS = 128;
 const MAX_GUEST_APP_TITLE_LENGTH = 128;
+/** Business OS module manifests carry a short `category` label; bound it hard. */
+const MAX_GUEST_APP_CATEGORY_LENGTH = 64;
 
 export interface CtoxGuestAppObservation {
   readonly id: string;
   readonly title?: string;
+  readonly category?: string;
 }
 
 export type CtoxGuestAppsObservation =
@@ -167,7 +170,16 @@ const GUEST_LIST_APPS_EXPRESSION = `(() => {
       ? mod.title
       : typeof mod?.name === "string" ? mod.name : "";
     const title = rawTitle.trim().slice(0, ${MAX_GUEST_APP_TITLE_LENGTH});
-    apps.push(title.length > 0 ? { id, title } : { id });
+    // Business OS module manifests (modules/*, installed-modules/*/module.json)
+    // declare their launcher grouping as "category"; "group" is tolerated.
+    const rawCategory = typeof mod?.category === "string"
+      ? mod.category
+      : typeof mod?.group === "string" ? mod.group : "";
+    const category = rawCategory.trim().slice(0, ${MAX_GUEST_APP_CATEGORY_LENGTH});
+    const entry = { id };
+    if (title.length > 0) entry.title = title;
+    if (category.length > 0) entry.category = category;
+    apps.push(entry);
     if (apps.length >= ${MAX_GUEST_APPS}) break;
   }
   // Window-desktop shells keep activeModule at "desktop" and track open apps
@@ -238,7 +250,11 @@ function decodeGuestAppsObservation(raw: unknown):
   const apps: CtoxGuestAppObservation[] = [];
   for (const entry of record.apps.slice(0, MAX_GUEST_APPS)) {
     if (typeof entry !== "object" || entry === null) continue;
-    const candidate = entry as { readonly id?: unknown; readonly title?: unknown };
+    const candidate = entry as {
+      readonly id?: unknown;
+      readonly title?: unknown;
+      readonly category?: unknown;
+    };
     if (typeof candidate.id !== "string" || !CTOX_APP_MODULE_ID_PATTERN.test(candidate.id)) {
       continue;
     }
@@ -246,7 +262,15 @@ function decodeGuestAppsObservation(raw: unknown):
       typeof candidate.title === "string"
         ? stripControlCharacters(candidate.title).trim().slice(0, MAX_GUEST_APP_TITLE_LENGTH)
         : "";
-    apps.push(title.length > 0 ? { id: candidate.id, title } : { id: candidate.id });
+    const category =
+      typeof candidate.category === "string"
+        ? stripControlCharacters(candidate.category).trim().slice(0, MAX_GUEST_APP_CATEGORY_LENGTH)
+        : "";
+    apps.push({
+      id: candidate.id,
+      ...(title.length > 0 ? { title } : {}),
+      ...(category.length > 0 ? { category } : {}),
+    });
   }
   const activeModuleId =
     typeof record.activeModule === "string" && CTOX_APP_MODULE_ID_PATTERN.test(record.activeModule)

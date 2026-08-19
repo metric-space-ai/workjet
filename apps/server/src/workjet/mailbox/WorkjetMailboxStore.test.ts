@@ -840,6 +840,160 @@ it.effect("surfaces an undecodable delegation row as a typed corrupt-row error",
 );
 
 // ===============================
+// Version skew: resilient by-state row scan
+// ===============================
+
+it.effect(
+  "lists a version-skewed delegation row as a corrupt marker, never failing the batch",
+  () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const sql = yield* SqlClient.SqlClient;
+
+      // Two delivered delegations. The FIRST scans cleanly; the SECOND is rewritten
+      // to a shape the current schema cannot decode (the concrete face of target
+      // version skew). state_changed_at_ms orders them, so the readable row is not
+      // merely lucky to come first.
+      const good = delegationId("skew-ok");
+      const skewed = delegationId("skew-bad");
+      yield* store.upsertDelegation(
+        delegation({
+          id: good,
+          envelope: envelopeId("skew-ok"),
+          state: "delivered",
+          at: T0,
+          budgetExpiresAt: FAR_FUTURE,
+        }),
+      );
+      yield* store.upsertDelegation(
+        delegation({
+          id: skewed,
+          envelope: envelopeId("skew-bad"),
+          state: "delivered",
+          at: T1,
+          budgetExpiresAt: FAR_FUTURE,
+        }),
+      );
+      yield* sql`
+      UPDATE workjet_delegations
+      SET delegation_json = '{"schemaVersion":999}'
+      WHERE delegation_id = ${skewed}
+    `;
+
+      // The whole effect succeeds: one decoded record, one bounded corrupt marker.
+      const rows = yield* store.listDelegationRowsByState("delivered", 32);
+      assert.equal(rows.length, 2);
+      const records = rows.filter((row) => row._tag === "record");
+      const corrupt = rows.filter((row) => row._tag === "corrupt");
+      assert.equal(records.length, 1);
+      assert.equal(corrupt.length, 1);
+      if (records[0]?._tag === "record") {
+        assert.equal(records[0].record.delegationId, good);
+      }
+      // The corrupt marker names the row by its stable id and carries no payload.
+      if (corrupt[0]?._tag === "corrupt") {
+        assert.equal(corrupt[0].rowId, skewed);
+      }
+    }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Reassignment
+// ===============================
+
+it.effect("reassigns a delivered delegation to a different local target thread in place", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("reassign-ok");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("reassign-ok"),
+        state: "delivered",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+
+    const newTarget = address(TARGET_ENVIRONMENT, "thread-target-2");
+    const record = yield* store.reassignDelegation(id, newTarget, T1);
+
+    // The target moved; the lifecycle state did NOT.
+    assert.equal(record.state, "delivered");
+    assert.equal(record.terminal, false);
+    assert.equal(record.delegation.target.threadId, newTarget.threadId);
+
+    // The change is durable and the delegation body agrees with the column.
+    const stored = yield* store.getDelegation(id);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isSome(stored)) {
+      assert.equal(stored.value.state, "delivered");
+      assert.equal(stored.value.delegation.target.threadId, newTarget.threadId);
+      assert.equal(stored.value.delegation.stateChangedAt, T1);
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to reassign a running or terminal delegation", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const newTarget = address(TARGET_ENVIRONMENT, "thread-target-2");
+
+    // A running delegation: work already began; it must never be moved.
+    const running = delegationId("reassign-run");
+    yield* store.upsertDelegation(
+      delegation({
+        id: running,
+        envelope: envelopeId("reassign-run"),
+        state: "delivered",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(running, "delivered", "accepted", T1);
+    yield* store.transitionDelegationState(running, "accepted", "running", T1);
+    const runFail = yield* store.reassignDelegation(running, newTarget, T2).pipe(Effect.result);
+    assert.equal(runFail._tag, "Failure");
+    if (runFail._tag === "Failure") {
+      assertMailboxErrorReason(runFail.failure, "invalid-state-transition");
+    }
+    // Unmoved.
+    const runStored = yield* store.getDelegation(running);
+    if (Option.isSome(runStored)) {
+      assert.equal(runStored.value.delegation.target.threadId, TARGET_ADDRESS.threadId);
+      assert.equal(runStored.value.state, "running");
+    }
+
+    // A terminal delegation: cancel it, then the reassignment is refused.
+    const cancelled = delegationId("reassign-term");
+    yield* store.upsertDelegation(
+      delegation({
+        id: cancelled,
+        envelope: envelopeId("reassign-term"),
+        state: "delivered",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(cancelled, "delivered", "cancelled", T1);
+    const termFail = yield* store.reassignDelegation(cancelled, newTarget, T2).pipe(Effect.result);
+    assert.equal(termFail._tag, "Failure");
+    if (termFail._tag === "Failure") {
+      assertMailboxErrorReason(termFail.failure, "invalid-state-transition");
+    }
+
+    // An unknown delegation is an unknown target, not a corrupt-row crash.
+    const missing = yield* store
+      .reassignDelegation(delegationId("reassign-none"), newTarget, T2)
+      .pipe(Effect.result);
+    assert.equal(missing._tag, "Failure");
+    if (missing._tag === "Failure") {
+      assertMailboxErrorReason(missing.failure, "unknown-target");
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
 // Delegation graph edges
 // ===============================
 

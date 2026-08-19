@@ -14,13 +14,16 @@ import {
   type OrchestrationThread,
   type WorkjetDelegation,
   type WorkjetDelegationState,
+  type WorkjetMailboxPayload,
   type WorkjetMailboxTimestamp,
   type WorkjetPayloadByteLength,
+  type WorkjetRoutingEnvelope,
   type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
@@ -38,7 +41,12 @@ import {
   type WorkjetDelegationExecutorShape,
   type WorkjetDelegationExecutorSources,
 } from "./WorkjetDelegationExecutor.ts";
-import { WorkjetMailboxStore, WorkjetMailboxStoreLive } from "./WorkjetMailboxStore.ts";
+import {
+  isWorkjetMailboxError,
+  WorkjetMailboxStore,
+  WorkjetMailboxStoreLive,
+  WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS,
+} from "./WorkjetMailboxStore.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 import {
   snapshotRefForDigest,
@@ -885,4 +893,264 @@ it.effect("enqueues a result envelope outbound for a cross-environment source", 
     // No result activity is appended for a remote source.
     assert.notInclude(activityKinds(harness.commands), WORKJET_DELEGATION_RESULT_ACTIVITY_KIND);
   }).pipe(Effect.provide(testLayer("delegation-executor-crossenv"))),
+);
+
+// ===============================
+// Interruption (running → failed with turn-interrupted)
+// ===============================
+
+it.effect("fails a running delegation whose dispatched turn was interrupted", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "interrupted",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-int",
+        turnState: "interrupted",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    // An interruption is an explicit, bounded terminal outcome — counted on its
+    // own AND in the aggregate turn-failure total.
+    assert.equal(status.turnInterrupted, 1);
+    assert.equal(status.turnFailures, 1);
+    assert.equal(status.completed, 0);
+    assert.equal(status.resultsReturned, 1);
+    assert.equal(yield* stateOf(delegation), "failed");
+
+    // The persisted result names the interruption in its bounded summary.
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+    assert.equal(stored.value.outcome, "failed");
+    assert.equal(stored.value.summary, "Delegation turn was interrupted.");
+  }).pipe(Effect.provide(testLayer("delegation-executor-interrupted"))),
+);
+
+// ===============================
+// Deleted target thread mid-run (running → failed, not "reaped later")
+// ===============================
+
+it.effect("fails a running delegation whose target thread is deleted mid-run", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "runningdeleted",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    // The thread the turn is running on is soft-deleted before its turn ends.
+    const harness = makeHarness({ initialThread: thread({ deleted: true }) });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    // Terminal now, not held `running` for the expiry backstop.
+    assert.equal(status.failures.targetThreadDeleted, 1);
+    assert.equal(status.runningPending, 0);
+    assert.equal(status.completed, 0);
+    assert.equal(status.turnFailures, 0);
+    assert.equal(yield* stateOf(delegation), "failed");
+    // A refusal, not a turn result: no result is returned and no turn is started.
+    assert.equal(status.resultsReturned, 0);
+    assert.equal(turnStarts(harness.commands).length, 0);
+  }).pipe(Effect.provide(testLayer("delegation-executor-running-deleted"))),
+);
+
+// ===============================
+// Target version skew (undecodable row is a bounded skip, not a scan abort)
+// ===============================
+
+it.effect("skips a version-skewed delegation row while still running its readable neighbour", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const sql = yield* SqlClient.SqlClient;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+
+    // A readable delivered delegation that must still run, and a second delivered
+    // row rewritten to a shape this server cannot decode.
+    const readable = yield* seed(
+      delegationFixture({ id: "readable", digest, state: "delivered", stateChangedAt: NOW }),
+    );
+    const skewed = yield* seed(
+      delegationFixture({ id: "skewed", digest, state: "delivered", stateChangedAt: LATER }),
+    );
+    yield* sql`
+      UPDATE workjet_delegations
+      SET delegation_json = '{"schemaVersion":999}'
+      WHERE delegation_id = ${skewed.delegationId}
+    `;
+
+    const status = yield* executor.runCycle;
+
+    // The corrupt row is counted and skipped; the cycle does not abort, and the
+    // readable row runs.
+    assert.equal(status.versionUnsupported, 1);
+    assert.equal(status.executed, 1);
+    assert.equal(status.scanned, 2);
+    assert.equal(yield* stateOf(readable), "running");
+    // The undecodable row is NOT dropped: it stays exactly as it was.
+    const stillSkewed = yield* sql<{ readonly state: string }>`
+      SELECT state AS "state" FROM workjet_delegations WHERE delegation_id = ${skewed.delegationId}
+    `;
+    assert.equal(stillSkewed[0]?.state, "delivered");
+  }).pipe(Effect.provide(testLayer("delegation-executor-skew"))),
+);
+
+// ===============================
+// Delivery dead-letter reconciliation (queued source row → failed)
+// ===============================
+
+it.effect("fails a source delegation whose outbound envelope dead-lettered", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+
+    // A cross-environment delegation we could never deliver: it sits `queued`
+    // locally with its outbound envelope in the outbox.
+    const delegation = yield* seed(
+      delegationFixture({
+        id: "deadletter",
+        digest,
+        state: "queued",
+        targetEnvironmentId: REMOTE_ENVIRONMENT,
+      }),
+    );
+    const envelope: WorkjetRoutingEnvelope = {
+      schemaVersion: 1,
+      envelopeId: delegation.envelopeId,
+      kind: "delegation",
+      sourceWorkspaceId: WORKSPACE,
+      sourceEnvironmentId: LOCAL_ENVIRONMENT,
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      createdAt: NOW,
+      expiresAt: EXPIRES,
+      signature: "c2lnbmF0dXJlLXN0dWI",
+    };
+    const payload = { _tag: "delegation", delegation } as const satisfies WorkjetMailboxPayload;
+    yield* store.enqueueOutbound(envelope, payload);
+
+    // Exhaust the delivery budget so the outbound row dead-letters.
+    yield* Effect.forEach(
+      Array.from({ length: WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS }),
+      () => store.recordAttempt(delegation.envelopeId, NOW),
+      { discard: true },
+    );
+    const dead = yield* store.getOutbound(delegation.envelopeId);
+    assert.isTrue(Option.isSome(dead));
+    if (Option.isSome(dead)) assert.equal(dead.value.state, "dead");
+
+    const status = yield* executor.runCycle;
+
+    // The queued source row is failed explicitly, with a bounded trace on the
+    // delegator's own source thread — never left queued or silently dropped.
+    assert.equal(status.failures.deliveryDeadLettered, 1);
+    assert.equal(yield* stateOf(delegation), "failed");
+    const refused = harness.commands.find(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND,
+    );
+    assert.isDefined(refused);
+    if (refused === undefined || refused.type !== "thread.activity.append") return;
+    assert.equal(refused.threadId, SOURCE_THREAD);
+
+    // Idempotent: a second cycle does not re-fail the now-terminal delegation.
+    const second = yield* executor.runCycle;
+    assert.equal(second.failures.deliveryDeadLettered, 1);
+  }).pipe(Effect.provide(testLayer("delegation-executor-deadletter"))),
+);
+
+// ===============================
+// Reassignment (delivered → different local target; never both)
+// ===============================
+
+it.effect("reassigns a delivered delegation so only the new local target runs it", () =>
+  Effect.gen(function* () {
+    const NEW_THREAD = ThreadId.make("thread-target-2");
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "reassign", digest, state: "delivered" }),
+    );
+
+    // A target in another environment is refused: this server cannot host it.
+    const foreign = yield* executor
+      .reassign({
+        delegationId: delegation.delegationId,
+        newTarget: address(REMOTE_ENVIRONMENT, NEW_THREAD),
+      })
+      .pipe(Effect.result);
+    assert.equal(foreign._tag, "Failure");
+    if (foreign._tag === "Failure") {
+      assert.isTrue(isWorkjetMailboxError(foreign.failure));
+      if (isWorkjetMailboxError(foreign.failure)) {
+        assert.equal(foreign.failure.reason, "unknown-target");
+      }
+    }
+    // Unmoved by the refused reassignment.
+    const afterForeign = yield* store.getDelegation(delegation.delegationId);
+    if (Option.isSome(afterForeign)) {
+      assert.equal(afterForeign.value.delegation.target.threadId, TARGET_THREAD);
+    }
+
+    // Reassign to a different LOCAL thread, then run: the turn is dispatched to
+    // the NEW thread, exactly once — the old target never runs it.
+    const reassigned = yield* executor.reassign({
+      delegationId: delegation.delegationId,
+      newTarget: address(LOCAL_ENVIRONMENT, NEW_THREAD),
+    });
+    assert.equal(reassigned.state, "delivered");
+    assert.equal(reassigned.delegation.target.threadId, NEW_THREAD);
+
+    harness.setThread({ ...thread(), id: NEW_THREAD } as unknown as OrchestrationThread);
+    const status = yield* executor.runCycle;
+    assert.equal(status.executed, 1);
+    assert.equal(yield* stateOf(delegation), "running");
+    const starts = turnStarts(harness.commands);
+    assert.equal(starts.length, 1);
+    const start = starts[0];
+    if (start === undefined || start.type !== "thread.turn.start") return;
+    assert.equal(start.threadId, NEW_THREAD);
+  }).pipe(Effect.provide(testLayer("delegation-executor-reassign"))),
+);
+
+it.effect("refuses to reassign a running delegation", () =>
+  Effect.gen(function* () {
+    const NEW_THREAD = ThreadId.make("thread-target-2");
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "reassignrun", digest, state: "running" }),
+    );
+
+    const result = yield* executor
+      .reassign({
+        delegationId: delegation.delegationId,
+        newTarget: address(LOCAL_ENVIRONMENT, NEW_THREAD),
+      })
+      .pipe(Effect.result);
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure" && isWorkjetMailboxError(result.failure)) {
+      assert.equal(result.failure.reason, "invalid-state-transition");
+    }
+    // Still running, still on the original target.
+    assert.equal(yield* stateOf(delegation), "running");
+  }).pipe(Effect.provide(testLayer("delegation-executor-reassign-running"))),
 );

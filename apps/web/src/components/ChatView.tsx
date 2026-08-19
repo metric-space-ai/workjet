@@ -1646,6 +1646,17 @@ function ChatViewContent(props: ChatViewProps) {
     serverEnvironment.updateDelegationWorkjetMailbox,
     { reportFailure: false },
   );
+  // The mesh roster feeds the send-to-worker recipient picker; queried only
+  // while an orchestrator thread is active so ordinary threads pay nothing.
+  const workjetMeshRosterQuery = useEnvironmentQuery(
+    workjetIsOrchestratorThread && activeThreadEnvironmentId
+      ? serverEnvironment.workjetMeshRoster({
+          environmentId: activeThreadEnvironmentId,
+          input: {},
+        })
+      : null,
+  );
+  const workjetMeshRoster = workjetMeshRosterQuery.data ?? null;
   const allThreadShells = useThreadShells();
   // Recipients are the OTHER live threads on this machine; a thread cannot be
   // offered itself, and a deleted thread is not a destination.
@@ -6715,6 +6726,7 @@ function ChatViewContent(props: ChatViewProps) {
                                 <WorkjetSendToWorkerPanel
                                   draft={workjetSendDraft}
                                   threads={workjetRecipientThreads}
+                                  roster={workjetMeshRoster}
                                   busy={workjetSendBusy}
                                   disabled={threadDetailLoading || activeEnvironmentUnavailable}
                                   outcome={workjetSendOutcome}

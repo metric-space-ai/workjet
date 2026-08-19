@@ -123,6 +123,14 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     const text = await readBoundedResponse(response, maximumBytes);
     return text.trim() === "" ? null : (JSON.parse(text) as unknown);
   },
+  signalProcess: (pid, signal) => {
+    try {
+      return process.kill(pid, signal === "probe" ? 0 : signal);
+    } catch {
+      return false;
+    }
+  },
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   allocateLoopbackPort: () =>
     new Promise<number>((resolve, reject) => {
       const server = NodeNet.createServer();

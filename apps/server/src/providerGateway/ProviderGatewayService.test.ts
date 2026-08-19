@@ -242,14 +242,26 @@ describe("ProviderGatewayService", () => {
     expect(runtimeWrite).not.toContain('"providerAddress": "127.0.0.1:0"');
   });
 
-  it("refuses OAuth operations while the gateway is not running", async () => {
+  it("starts the gateway implicitly when OAuth begins while it is not running", async () => {
     const harness = readyHarness();
-    await expect(
-      runGateway(harness.platform, (gateway) => gateway.oauthStart({ provider: "codex" })),
-    ).rejects.toMatchObject({
-      _tag: "WorkjetGatewayOperationError",
-      reason: "gateway-not-ready",
-    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      managementGet: async (_endpoint, route, key) => {
+        expect(key).toBe("07".repeat(32));
+        if (route.endsWith("-auth-url")) {
+          return { state: "state-1", authorization_url: "https://auth.example/authorize" };
+        }
+        return route.endsWith("runtime-status")
+          ? { schema: "workjet.provider-gateway.runtime-status.v1" }
+          : { schema: "workjet.provider-gateway.runtime-summary.v1" };
+      },
+    };
+    const session = await runGateway(platform, (gateway) =>
+      gateway.oauthStart({ provider: "codex" }),
+    );
+    expect(session.provider).toBe("codex");
+    expect(session.authorizationUrl).toBe("https://auth.example/authorize");
+    expect(harness.spawnCount()).toBe(1);
   });
 
   it("runs begin, poll, claim, persist, and reload for a provider login", async () => {

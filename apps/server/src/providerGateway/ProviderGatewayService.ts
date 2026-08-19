@@ -91,6 +91,13 @@ export interface ProviderGatewayPlatform {
   ) => Promise<unknown>;
   /** Reserve a currently free loopback TCP port for the stable provider endpoint. */
   readonly allocateLoopbackPort: () => Promise<number>;
+  /**
+   * Signal an arbitrary pid; `"probe"` tests existence without a signal.
+   * Returns false when no such process exists (or it cannot be signalled).
+   */
+  readonly signalProcess: (pid: number, signal: "SIGTERM" | "SIGKILL" | "probe") => boolean;
+  /** Bounded sleep used while waiting for a stale host to exit. */
+  readonly sleep: (ms: number) => Promise<void>;
 }
 
 export interface ProviderGatewayServiceShape {
@@ -274,6 +281,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       serverConfig.stateDir,
       "provider-gateway-runtime.json",
     );
+    const hostPidPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-host.pid.json");
     const executable = options.executable ?? platform.defaultExecutable(serverConfig.stateDir);
     const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     const shutdownTimeoutMs = options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
@@ -382,6 +390,49 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return waitForExit(target, platform, shutdownTimeoutMs);
     };
 
+    /**
+     * A gateway host that outlived its parent server keeps the stable
+     * provider port bound, so the next spawn dies on bind and used to surface
+     * as "invalid readiness" with no path forward short of a manual kill. The
+     * pid file written on every spawn names that previous host; a live
+     * process there is signalled and awaited before a new host starts. The
+     * file is removed unconditionally — a stale entry for a dead pid is just
+     * noise, and the reap must never loop on it.
+     */
+    const reapStaleHost = async (): Promise<void> => {
+      let raw: string;
+      try {
+        raw = await platform.readText(hostPidPath, 4096);
+      } catch {
+        return;
+      }
+      await platform.remove(hostPidPath).catch(() => undefined);
+      let pid: number | undefined;
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (
+          isRecord(parsed) &&
+          typeof parsed.pid === "number" &&
+          Number.isInteger(parsed.pid) &&
+          parsed.pid > 1
+        ) {
+          pid = parsed.pid;
+        }
+      } catch {
+        return;
+      }
+      if (pid === undefined || pid === hostProcess?.pid) return;
+      if (!platform.signalProcess(pid, "SIGTERM")) return;
+      const polls = 20;
+      const pollMs = Math.max(50, Math.floor(shutdownTimeoutMs / polls));
+      for (let attempt = 0; attempt < polls; attempt += 1) {
+        if (!platform.signalProcess(pid, "probe")) return;
+        await platform.sleep(pollMs);
+      }
+      platform.signalProcess(pid, "SIGKILL");
+      await platform.sleep(pollMs);
+    };
+
     const runStart = async (): Promise<WorkjetGatewayStatus> => {
       if (currentStatus.phase === "ready") return currentStatus;
       if (stopFlight !== undefined) await stopFlight;
@@ -428,6 +479,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         throw safeError("secret-unavailable");
       }
       const key = platform.bytesToHex(keyBytes);
+      await reapStaleHost();
       try {
         await platform.writePrivateText(
           hostConfigurationPath,
@@ -447,6 +499,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       }
       hostProcess = child;
       currentStatus = { ...currentStatus, pid: child.pid };
+      // Written before readiness on purpose: a host that crashes mid-startup
+      // (or a server that dies here) still gets reaped on the next start.
+      await platform
+        .writePrivateText(hostPidPath, `${JSON.stringify({ schemaVersion: 1, pid: child.pid })}\n`)
+        .catch(() => undefined);
       void consumeStderr(child, platform);
       const linePromise = readinessLine(child, platform, () => {
         if (hostProcess === child) {
@@ -573,6 +630,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         failureReason: null,
       };
       await platform.remove(hostConfigurationPath).catch(() => undefined);
+      await platform.remove(hostPidPath).catch(() => undefined);
       return currentStatus;
     };
 
@@ -620,6 +678,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     const runOauthStart = async (
       input: WorkjetGatewayOauthStartInput,
     ): Promise<WorkjetGatewayOauthSession> => {
+      // Adding the first account must not require a manual "start gateway"
+      // step: an OAuth begin on a stopped/faulted gateway starts it.
+      if (currentStatus.phase !== "ready") {
+        await startSingleFlight();
+      }
       const { endpoint, key } = requireManagement();
       let response: unknown;
       try {

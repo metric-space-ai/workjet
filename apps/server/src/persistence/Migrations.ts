@@ -57,6 +57,7 @@ import Migration0041 from "./Migrations/041_ProjectionThreadsWorkjetConfig.ts";
 import Migration0042 from "./Migrations/042_WorkjetMailbox.ts";
 import Migration0043 from "./Migrations/043_WorkjetMailboxPeerKeys.ts";
 import Migration0044 from "./Migrations/044_WorkjetMailboxPeerEncryptionKeys.ts";
+import Migration0045 from "./Migrations/045_WorkjetDelegationEdges.ts";
 import Migration0047 from "./Migrations/047_WorkjetDelegationResult.ts";
 
 /**
@@ -114,7 +115,8 @@ export const migrationEntries = [
   [42, "WorkjetMailbox", Migration0042],
   [43, "WorkjetMailboxPeerKeys", Migration0043],
   [44, "WorkjetMailboxPeerEncryptionKeys", Migration0044],
-  // 45 and 46 are reserved for sibling Wave-5 agents; this slice owns 47.
+  [45, "WorkjetDelegationEdges", Migration0045],
+  // 46 remains reserved; 47 owns the delegation-result column.
   [47, "WorkjetDelegationResult", Migration0047],
 ] as const;
 

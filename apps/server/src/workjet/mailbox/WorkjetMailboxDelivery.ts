@@ -9,9 +9,12 @@ import {
   type ThreadId,
   type WorkjetCompletionContract,
   type WorkjetDelegation,
+  type WorkjetDelegationEdge,
+  type WorkjetDelegationEdgeKind,
   type WorkjetDelegationRef,
   type WorkjetDelegationScope,
   type WorkjetDelegationState,
+  type WorkjetReviewDecision,
   type WorkjetDeliveryDisposition,
   type WorkjetDeliveryReceipt,
   type WorkjetMailboxPayload,
@@ -112,6 +115,13 @@ export interface WorkjetMailboxSendMessageInput {
   readonly body: WorkjetMessageBody;
   readonly ttlSeconds?: number;
   readonly inReplyTo?: WorkjetEnvelopeId;
+  /**
+   * Set when this message belongs to a delegation thread (a `workjet_reply` or
+   * the `workjet_request_review` signal). It only decorates the redacted
+   * thread-activity payload — the wire message carries the delegation link via
+   * {@link WorkjetMailboxSendMessageInput.inReplyTo}, never a delegation id.
+   */
+  readonly delegationId?: WorkjetDelegationId;
 }
 
 export interface WorkjetMailboxDelegationBudgetInput {
@@ -156,6 +166,69 @@ export interface WorkjetMailboxDelegationOutcome {
   readonly state: WorkjetDelegationState;
 }
 
+/**
+ * A plain informational reply on an existing delegation thread. It carries no
+ * task; the target address is caller-supplied exactly like a message, plus the
+ * delegation whose envelope the reply references.
+ */
+export interface WorkjetMailboxReplyInput {
+  readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
+  readonly targetEnvironmentId: EnvironmentId;
+  readonly targetThreadId: ThreadId;
+  readonly delegationId: WorkjetDelegationId;
+  readonly body: WorkjetMessageBody;
+  readonly ttlSeconds?: number;
+}
+
+/**
+ * The delegating side requesting review: it names the reviewer address, the
+ * delegation under review, the review `round`, and the signal body delivered to
+ * the reviewer.
+ */
+export interface WorkjetMailboxRequestReviewInput {
+  readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
+  readonly targetEnvironmentId: EnvironmentId;
+  readonly targetThreadId: ThreadId;
+  readonly delegationId: WorkjetDelegationId;
+  readonly round: number;
+  readonly body: WorkjetMessageBody;
+  readonly ttlSeconds?: number;
+}
+
+/** The bounded state operation `workjet_update_delegation` performs. */
+export type WorkjetMailboxDelegationUpdate =
+  | { readonly _tag: "cancel" }
+  | {
+      readonly _tag: "review";
+      readonly decision: WorkjetReviewDecision;
+      readonly round: number;
+      readonly reasons?: ReadonlyArray<string>;
+    }
+  | { readonly _tag: "revise" }
+  | { readonly _tag: "follow-up" };
+
+export interface WorkjetMailboxUpdateDelegationInput {
+  readonly delegationId: WorkjetDelegationId;
+  readonly update: WorkjetMailboxDelegationUpdate;
+}
+
+/**
+ * `state` is the delegation's state AFTER the operation; `edgeKind` is present
+ * only when the operation recorded a graph edge (cancel records none).
+ */
+export interface WorkjetMailboxUpdateDelegationOutcome {
+  readonly delegationId: WorkjetDelegationId;
+  readonly state: WorkjetDelegationState;
+  readonly edgeKind?: WorkjetDelegationEdgeKind;
+}
+
+export interface WorkjetMailboxReviewRequestOutcome {
+  readonly delivery: WorkjetMailboxSendOutcome;
+  readonly delegation: WorkjetDelegationRef;
+  readonly state: WorkjetDelegationState;
+  readonly edgeKind: "reviews";
+}
+
 export interface WorkjetMailboxDeliveryShape {
   readonly sendMessage: (
     invocation: WorkjetMailboxSenderScope,
@@ -166,6 +239,21 @@ export interface WorkjetMailboxDeliveryShape {
     invocation: WorkjetMailboxSenderScope,
     input: WorkjetMailboxDelegateInput,
   ) => Effect.Effect<WorkjetMailboxDelegationOutcome, WorkjetMailboxError>;
+
+  readonly reply: (
+    invocation: WorkjetMailboxSenderScope,
+    input: WorkjetMailboxReplyInput,
+  ) => Effect.Effect<WorkjetMailboxSendOutcome, WorkjetMailboxError>;
+
+  readonly requestReview: (
+    invocation: WorkjetMailboxSenderScope,
+    input: WorkjetMailboxRequestReviewInput,
+  ) => Effect.Effect<WorkjetMailboxReviewRequestOutcome, WorkjetMailboxError>;
+
+  readonly updateDelegation: (
+    invocation: WorkjetMailboxSenderScope,
+    input: WorkjetMailboxUpdateDelegationInput,
+  ) => Effect.Effect<WorkjetMailboxUpdateDelegationOutcome, WorkjetMailboxError>;
 }
 
 export class WorkjetMailboxDelivery extends Context.Service<
@@ -516,6 +604,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         source,
         target,
         bodyKind: input.body._tag,
+        ...(input.delegationId !== undefined ? { delegationId: input.delegationId } : {}),
         createdAt: now,
         expiresAt,
       }),
@@ -548,6 +637,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
                 target,
                 bodyKind: input.body._tag,
                 disposition,
+                ...(input.delegationId !== undefined ? { delegationId: input.delegationId } : {}),
                 createdAt: now,
                 expiresAt,
               }),
@@ -712,7 +802,213 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     } as const satisfies WorkjetMailboxDelegationOutcome;
   });
 
-  return WorkjetMailboxDelivery.of({ sendMessage, delegateTask });
+  /** Loads a delegation record or fails with the exact bounded `unknown-target`. */
+  const loadDelegation = (delegationId: WorkjetDelegationId) =>
+    store.getDelegation(delegationId).pipe(
+      Effect.mapError(boundStoreError),
+      Effect.flatMap((option) =>
+        Option.match(option, {
+          onNone: () => Effect.fail(failure("unknown-target")),
+          onSome: (record) => Effect.succeed(record),
+        }),
+      ),
+    );
+
+  /**
+   * A `workjet_reply` reuses the message fast path verbatim; the only additions
+   * are that it references the delegation's envelope (`inReplyTo`) and tags the
+   * thread activity with the delegation id. No task, no lifecycle transition.
+   */
+  const reply: WorkjetMailboxDeliveryShape["reply"] = Effect.fn("WorkjetMailboxDelivery.reply")(
+    function* (invocation, input) {
+      const record = yield* loadDelegation(input.delegationId);
+      return yield* sendMessage(invocation, {
+        targetWorkspaceId: input.targetWorkspaceId,
+        targetEnvironmentId: input.targetEnvironmentId,
+        targetThreadId: input.targetThreadId,
+        body: input.body,
+        inReplyTo: record.delegation.envelopeId,
+        delegationId: input.delegationId,
+        ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+      });
+    },
+  );
+
+  /**
+   * The delegating side requesting review. It moves the delegation
+   * `running → review-requested` through the store's enforced transition table,
+   * records the `reviews` relationship as a graph edge, and emits the
+   * review-request signal to the reviewer address. The review-round budget is
+   * the loop gate: a round beyond `maxReviewRounds` is refused BEFORE any
+   * durable effect, so the review cycle terminates.
+   */
+  const requestReview: WorkjetMailboxDeliveryShape["requestReview"] = Effect.fn(
+    "WorkjetMailboxDelivery.requestReview",
+  )(function* (invocation, input) {
+    const record = yield* loadDelegation(input.delegationId);
+    const delegation = record.delegation;
+
+    if (input.round > delegation.budget.maxReviewRounds) {
+      return yield* failure("review-rounds-exceeded");
+    }
+
+    const now = yield* sources.nowIso;
+    const transitioned = yield* store
+      .transitionDelegationState(input.delegationId, "running", "review-requested", now)
+      .pipe(Effect.mapError(boundStoreError));
+
+    const { target: reviewer } = resolveAddresses(invocation, input);
+    const reviewedRef: WorkjetDelegationRef = {
+      schemaVersion: 1,
+      delegationId: input.delegationId,
+      owner: delegation.target,
+    };
+    const reviewerRef: WorkjetDelegationRef = {
+      schemaVersion: 1,
+      delegationId: input.delegationId,
+      owner: reviewer,
+    };
+    const edge: WorkjetDelegationEdge = {
+      schemaVersion: 1,
+      kind: "reviews",
+      from: reviewerRef,
+      to: reviewedRef,
+      createdAt: now,
+      depth: delegation.depth,
+    };
+    yield* store.insertDelegationEdge(edge).pipe(Effect.mapError(boundStoreError));
+
+    const delivery = yield* sendMessage(invocation, {
+      targetWorkspaceId: input.targetWorkspaceId,
+      targetEnvironmentId: input.targetEnvironmentId,
+      targetThreadId: input.targetThreadId,
+      body: input.body,
+      inReplyTo: delegation.envelopeId,
+      delegationId: input.delegationId,
+      ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+    });
+
+    return {
+      delivery,
+      delegation: reviewedRef,
+      state: transitioned.state,
+      edgeKind: "reviews",
+    } as const satisfies WorkjetMailboxReviewRequestOutcome;
+  });
+
+  /**
+   * The bounded state operations on an existing delegation. Every branch maps
+   * to ONE legal transition in the store's enforced table (never a new one) and,
+   * where it creates a relationship, writes ONE graph edge. `revise` and
+   * `follow-up` deepen the graph, so both are gated on the delegation's
+   * `maxDepth` budget: an edge one level below the ceiling is refused BEFORE the
+   * transition, so the graph cannot grow without bound.
+   */
+  const updateDelegation: WorkjetMailboxDeliveryShape["updateDelegation"] = Effect.fn(
+    "WorkjetMailboxDelivery.updateDelegation",
+  )(function* (invocation, input) {
+    const record = yield* loadDelegation(input.delegationId);
+    const delegation = record.delegation;
+    const now = yield* sources.nowIso;
+
+    const { source: actor } = resolveAddresses(invocation, {
+      targetWorkspaceId: delegation.target.workspaceId,
+      targetEnvironmentId: delegation.target.environmentId,
+      targetThreadId: delegation.target.threadId,
+    });
+
+    const reviewedRef: WorkjetDelegationRef = {
+      schemaVersion: 1,
+      delegationId: input.delegationId,
+      owner: delegation.target,
+    };
+    const originatingRef: WorkjetDelegationRef = {
+      schemaVersion: 1,
+      delegationId: input.delegationId,
+      owner: delegation.source,
+    };
+    const actorRef: WorkjetDelegationRef = {
+      schemaVersion: 1,
+      delegationId: input.delegationId,
+      owner: actor,
+    };
+
+    const writeEdge = (
+      kind: WorkjetDelegationEdgeKind,
+      from: WorkjetDelegationRef,
+      to: WorkjetDelegationRef,
+      depth: number,
+    ) =>
+      store
+        .insertDelegationEdge({ schemaVersion: 1, kind, from, to, createdAt: now, depth })
+        .pipe(Effect.mapError(boundStoreError));
+
+    const transition = (from: WorkjetDelegationState, to: WorkjetDelegationState) =>
+      store
+        .transitionDelegationState(input.delegationId, from, to, now)
+        .pipe(Effect.mapError(boundStoreError));
+
+    switch (input.update._tag) {
+      case "cancel": {
+        // Any non-terminal state may be cancelled; the store's transition table
+        // refuses a cancel of an already-terminal delegation as
+        // `invalid-state-transition`. No relationship, so no edge.
+        const result = yield* transition(record.state, "cancelled");
+        return {
+          delegationId: input.delegationId,
+          state: result.state,
+        } as const satisfies WorkjetMailboxUpdateDelegationOutcome;
+      }
+      case "review": {
+        if (input.update.round > delegation.budget.maxReviewRounds) {
+          return yield* failure("review-rounds-exceeded");
+        }
+        const to: WorkjetDelegationState =
+          input.update.decision === "approve" ? "completed" : "changes-requested";
+        const result = yield* transition("review-requested", to);
+        yield* writeEdge("reviews", actorRef, reviewedRef, delegation.depth);
+        return {
+          delegationId: input.delegationId,
+          state: result.state,
+          edgeKind: "reviews",
+        } as const satisfies WorkjetMailboxUpdateDelegationOutcome;
+      }
+      case "revise": {
+        const depth = delegation.depth + 1;
+        if (depth > delegation.budget.maxDepth) {
+          return yield* failure("depth-exceeded");
+        }
+        const result = yield* transition("changes-requested", "running");
+        yield* writeEdge("revises", actorRef, reviewedRef, depth);
+        return {
+          delegationId: input.delegationId,
+          state: result.state,
+          edgeKind: "revises",
+        } as const satisfies WorkjetMailboxUpdateDelegationOutcome;
+      }
+      case "follow-up": {
+        const depth = delegation.depth + 1;
+        if (depth > delegation.budget.maxDepth) {
+          return yield* failure("depth-exceeded");
+        }
+        const result = yield* transition("running", "needs-input");
+        yield* writeEdge("follows-up", actorRef, originatingRef, depth);
+        return {
+          delegationId: input.delegationId,
+          state: result.state,
+          edgeKind: "follows-up",
+        } as const satisfies WorkjetMailboxUpdateDelegationOutcome;
+      }
+    }
+  });
+
+  return WorkjetMailboxDelivery.of({
+    sendMessage,
+    delegateTask,
+    reply,
+    requestReview,
+    updateDelegation,
+  });
 });
 
 export const makeWorkjetMailboxDelivery = Effect.fn("WorkjetMailboxDelivery.make")(function* () {

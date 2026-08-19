@@ -86,6 +86,9 @@ const makeTestLayer = (
         WorkjetMailboxDelivery.WorkjetMailboxDelivery.of({
           sendMessage: () => Effect.die("sendMessage must not run"),
           delegateTask: () => Effect.die("delegateTask must not run"),
+          reply: () => Effect.die("reply must not run"),
+          requestReview: () => Effect.die("requestReview must not run"),
+          updateDelegation: () => Effect.die("updateDelegation must not run"),
           ...delivery,
         }),
       ),

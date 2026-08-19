@@ -7,9 +7,11 @@ import {
   WorkjetPayloadByteLength,
   WorkjetRepositoryPath,
   WorkjetSealedPayloadRef,
+  WorkjetDelegationEdgeKind,
   WorkjetDelegationState,
   WorkjetDeliveryDisposition,
   WorkjetMailboxTimestamp,
+  WorkjetReviewDecision,
   type WorkjetMessageBody,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -41,6 +43,19 @@ import * as WorkjetSnapshotStore from "../../../workjet/mailbox/WorkjetSnapshotS
 
 export const WORKJET_SEND_MESSAGE_TOOL_NAME = "workjet_send_message";
 export const WORKJET_DELEGATE_TASK_TOOL_NAME = "workjet_delegate_task";
+export const WORKJET_REPLY_TOOL_NAME = "workjet_reply";
+export const WORKJET_REQUEST_REVIEW_TOOL_NAME = "workjet_request_review";
+export const WORKJET_UPDATE_DELEGATION_TOOL_NAME = "workjet_update_delegation";
+
+/**
+ * Review rounds are 1-based on the wire: a delegation with `maxReviewRounds: N`
+ * admits rounds 1..N, and round `N + 1` is the loop-gate refusal. The bound
+ * mirrors {@link WorkjetDelegationBudget}'s `0..16` ceiling on `maxReviewRounds`.
+ */
+const ReviewRound = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(16),
+);
 
 // ===============================
 // Bounded input schemas
@@ -199,6 +214,103 @@ export const decodeDelegateTaskInput = (payload: unknown) =>
   );
 
 // ===============================
+// Reply / review / update input schemas
+// ===============================
+
+export const WorkjetReplyInputSchema = Schema.Struct({
+  ...TargetAddressFields,
+  delegationId: WorkjetDelegationId,
+  body: MessageBodyInput,
+  ttlSeconds: Schema.optional(TtlSeconds),
+});
+
+export const WorkjetRequestReviewInputSchema = Schema.Struct({
+  ...TargetAddressFields,
+  delegationId: WorkjetDelegationId,
+  round: ReviewRound,
+  body: MessageBodyInput,
+  ttlSeconds: Schema.optional(TtlSeconds),
+});
+
+/**
+ * The bounded state operations. `cancel`, `revise`, and `follow-up` carry no
+ * further fields; a `review` carries the verdict decision, its 1-based round,
+ * and bounded reasons, mirroring {@link WorkjetReviewVerdict}.
+ */
+const DelegationUpdateInput = Schema.Union([
+  Schema.TaggedStruct("cancel", {}),
+  Schema.TaggedStruct("review", {
+    decision: WorkjetReviewDecision,
+    round: ReviewRound,
+    reasons: Schema.optional(
+      Schema.Array(
+        Schema.String.check(
+          Schema.makeFilter((value) => value.trim().length > 0 || "reason must be nonblank"),
+          Schema.isMaxLength(1_024),
+        ),
+      ).check(Schema.isMaxLength(32)),
+    ),
+  }),
+  Schema.TaggedStruct("revise", {}),
+  Schema.TaggedStruct("follow-up", {}),
+]);
+
+export const WorkjetUpdateDelegationInputSchema = Schema.Struct({
+  delegationId: WorkjetDelegationId,
+  update: DelegationUpdateInput,
+});
+
+export const WorkjetReplyResultSchema = WorkjetSendMessageResultSchema;
+
+export const WorkjetRequestReviewResultSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  status: DeliveryStatus,
+  envelopeId: WorkjetEnvelopeId,
+  delegationId: WorkjetDelegationId,
+  state: WorkjetDelegationState,
+  edgeKind: Schema.Literal("reviews"),
+  disposition: Schema.optional(WorkjetDeliveryDisposition),
+  acknowledgedAt: Schema.optional(WorkjetMailboxTimestamp),
+});
+
+export const WorkjetUpdateDelegationResultSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  delegationId: WorkjetDelegationId,
+  state: WorkjetDelegationState,
+  edgeKind: Schema.optional(WorkjetDelegationEdgeKind),
+});
+
+const decodeReplyInputSchema = Schema.decodeUnknownEffect(WorkjetReplyInputSchema, {
+  onExcessProperty: "error",
+});
+const decodeRequestReviewInputSchema = Schema.decodeUnknownEffect(WorkjetRequestReviewInputSchema, {
+  onExcessProperty: "error",
+});
+const decodeUpdateDelegationInputSchema = Schema.decodeUnknownEffect(
+  WorkjetUpdateDelegationInputSchema,
+  { onExcessProperty: "error" },
+);
+
+export const decodeReplyInput = (payload: unknown) =>
+  decodeReplyInputSchema(payload).pipe(
+    Effect.mapError(() => new McpSchema.InvalidParams({ message: "Invalid Workjet reply input." })),
+  );
+
+export const decodeRequestReviewInput = (payload: unknown) =>
+  decodeRequestReviewInputSchema(payload).pipe(
+    Effect.mapError(
+      () => new McpSchema.InvalidParams({ message: "Invalid Workjet review-request input." }),
+    ),
+  );
+
+export const decodeUpdateDelegationInput = (payload: unknown) =>
+  decodeUpdateDelegationInputSchema(payload).pipe(
+    Effect.mapError(
+      () => new McpSchema.InvalidParams({ message: "Invalid Workjet delegation-update input." }),
+    ),
+  );
+
+// ===============================
 // Tools
 // ===============================
 
@@ -248,6 +360,57 @@ export const DelegateTaskMcpTool = Tool.make(WORKJET_DELEGATE_TASK_TOOL_NAME, {
   .annotate(Tool.OpenWorld, true)
   .annotate(McpSchema.EnabledWhen, enabledWhen);
 
+export const ReplyMcpTool = Tool.make(WORKJET_REPLY_TOOL_NAME, {
+  description:
+    "Send a plain informational reply on an existing Workjet delegation thread. It references the delegation's envelope and carries no task, so it never changes the delegation lifecycle; delivery obeys the same durable contract as any Workjet message.",
+  parameters: WorkjetReplyInputSchema,
+  success: WorkjetReplyResultSchema,
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+  ],
+})
+  .annotate(Tool.Title, "Reply on Workjet delegation")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, enabledWhen);
+
+export const RequestReviewMcpTool = Tool.make(WORKJET_REQUEST_REVIEW_TOOL_NAME, {
+  description:
+    "Request review of a running Workjet delegation: it moves the delegation to review-requested, records a typed `reviews` edge in the delegation graph, and delivers a review-request signal to the reviewer. A review round beyond the delegation's maxReviewRounds budget is refused.",
+  parameters: WorkjetRequestReviewInputSchema,
+  success: WorkjetRequestReviewResultSchema,
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+  ],
+})
+  .annotate(Tool.Title, "Request Workjet review")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, enabledWhen);
+
+export const UpdateDelegationMcpTool = Tool.make(WORKJET_UPDATE_DELEGATION_TOOL_NAME, {
+  description:
+    "Advance an existing Workjet delegation through a bounded state operation: cancel it, submit a review verdict (approve completes it, changes-requested sends it back), record a revise re-run, or record a follow-up. Each maps to one enforced lifecycle transition and, where it creates a relationship, one typed delegation-graph edge; a revise or follow-up beyond the maxDepth budget is refused.",
+  parameters: WorkjetUpdateDelegationInputSchema,
+  success: WorkjetUpdateDelegationResultSchema,
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+  ],
+})
+  .annotate(Tool.Title, "Update Workjet delegation")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, true)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, enabledWhen);
+
 const failureResult = (reason: string): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
     isError: true,
@@ -260,7 +423,14 @@ const failureResult = (reason: string): McpSchema.CallToolResult =>
     content: [{ type: "text", text: "Workjet mailbox operation failed." }],
   });
 
-const toolAnnotations = (tool: typeof SendMessageMcpTool | typeof DelegateTaskMcpTool) => ({
+const toolAnnotations = (
+  tool:
+    | typeof SendMessageMcpTool
+    | typeof DelegateTaskMcpTool
+    | typeof ReplyMcpTool
+    | typeof RequestReviewMcpTool
+    | typeof UpdateDelegationMcpTool,
+) => ({
   ...Context.getOption(tool.annotations, Tool.Title).pipe(
     Option.map((title) => ({ title })),
     Option.getOrUndefined,
@@ -442,7 +612,187 @@ const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTas
   });
 });
 
+const messageBodyFrom = (
+  body: (typeof WorkjetSendMessageInputSchema.Type)["body"],
+): WorkjetMessageBody =>
+  body._tag === "inline"
+    ? { _tag: "inline", text: body.text }
+    : { _tag: "sealed", payloadRef: body.payloadRef, byteLength: body.byteLength };
+
+const registerReply = Effect.fn("McpHttpServer.registerWorkjetReply")(function* () {
+  const server = yield* McpServer.McpServer;
+  const delivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+  const tool = ReplyMcpTool;
+  yield* server.addTool({
+    tool: new McpSchema.Tool({
+      name: tool.name,
+      description: Tool.getDescription(tool),
+      inputSchema: Tool.getJsonSchema(tool),
+      outputSchema: Tool.getJsonSchemaFromSchema(WorkjetReplyResultSchema),
+      annotations: toolAnnotations(tool),
+    }),
+    annotations: tool.annotations,
+    handle: (payload) =>
+      Effect.withFiber((fiber) => {
+        const invocation = Context.getUnsafe(
+          fiber.context,
+          McpInvocationContext.McpInvocationContext,
+        );
+        return Effect.gen(function* () {
+          yield* McpInvocationContext.requireWorkjetOrchestrator();
+          const input = yield* decodeReplyInput(payload);
+          const outcome = yield* delivery.reply(invocation, {
+            targetWorkspaceId: input.targetWorkspaceId,
+            targetEnvironmentId: input.targetEnvironmentId,
+            targetThreadId: input.targetThreadId,
+            delegationId: input.delegationId,
+            body: messageBodyFrom(input.body),
+            ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+          });
+          return successResult(
+            outcome._tag === "queued"
+              ? { schemaVersion: 1, status: "queued", envelopeId: outcome.envelopeId }
+              : {
+                  schemaVersion: 1,
+                  status: "acknowledged",
+                  envelopeId: outcome.envelopeId,
+                  disposition: outcome.receipt.disposition,
+                  acknowledgedAt: outcome.receipt.acknowledgedAt,
+                },
+          );
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.catchTags({
+            WorkjetOrchestratorUnavailableError: () =>
+              Effect.succeed(failureResult("unauthorized")),
+            WorkjetMailboxError: (error) => Effect.succeed(failureResult(error.reason)),
+          }),
+        );
+      }),
+  });
+});
+
+const registerRequestReview = Effect.fn("McpHttpServer.registerWorkjetRequestReview")(function* () {
+  const server = yield* McpServer.McpServer;
+  const delivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+  const tool = RequestReviewMcpTool;
+  yield* server.addTool({
+    tool: new McpSchema.Tool({
+      name: tool.name,
+      description: Tool.getDescription(tool),
+      inputSchema: Tool.getJsonSchema(tool),
+      outputSchema: Tool.getJsonSchemaFromSchema(WorkjetRequestReviewResultSchema),
+      annotations: toolAnnotations(tool),
+    }),
+    annotations: tool.annotations,
+    handle: (payload) =>
+      Effect.withFiber((fiber) => {
+        const invocation = Context.getUnsafe(
+          fiber.context,
+          McpInvocationContext.McpInvocationContext,
+        );
+        return Effect.gen(function* () {
+          yield* McpInvocationContext.requireWorkjetOrchestrator();
+          const input = yield* decodeRequestReviewInput(payload);
+          const outcome = yield* delivery.requestReview(invocation, {
+            targetWorkspaceId: input.targetWorkspaceId,
+            targetEnvironmentId: input.targetEnvironmentId,
+            targetThreadId: input.targetThreadId,
+            delegationId: input.delegationId,
+            round: input.round,
+            body: messageBodyFrom(input.body),
+            ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+          });
+          const base = {
+            schemaVersion: 1,
+            envelopeId: outcome.delivery.envelopeId,
+            delegationId: outcome.delegation.delegationId,
+            state: outcome.state,
+            edgeKind: outcome.edgeKind,
+          } as const;
+          return successResult(
+            outcome.delivery._tag === "queued"
+              ? { ...base, status: "queued" }
+              : {
+                  ...base,
+                  status: "acknowledged",
+                  disposition: outcome.delivery.receipt.disposition,
+                  acknowledgedAt: outcome.delivery.receipt.acknowledgedAt,
+                },
+          );
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.catchTags({
+            WorkjetOrchestratorUnavailableError: () =>
+              Effect.succeed(failureResult("unauthorized")),
+            WorkjetMailboxError: (error) => Effect.succeed(failureResult(error.reason)),
+          }),
+        );
+      }),
+  });
+});
+
+const registerUpdateDelegation = Effect.fn("McpHttpServer.registerWorkjetUpdateDelegation")(
+  function* () {
+    const server = yield* McpServer.McpServer;
+    const delivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+    const tool = UpdateDelegationMcpTool;
+    yield* server.addTool({
+      tool: new McpSchema.Tool({
+        name: tool.name,
+        description: Tool.getDescription(tool),
+        inputSchema: Tool.getJsonSchema(tool),
+        outputSchema: Tool.getJsonSchemaFromSchema(WorkjetUpdateDelegationResultSchema),
+        annotations: toolAnnotations(tool),
+      }),
+      annotations: tool.annotations,
+      handle: (payload) =>
+        Effect.withFiber((fiber) => {
+          const invocation = Context.getUnsafe(
+            fiber.context,
+            McpInvocationContext.McpInvocationContext,
+          );
+          return Effect.gen(function* () {
+            yield* McpInvocationContext.requireWorkjetOrchestrator();
+            const input = yield* decodeUpdateDelegationInput(payload);
+            const update: WorkjetMailboxDelivery.WorkjetMailboxDelegationUpdate =
+              input.update._tag === "review"
+                ? {
+                    _tag: "review",
+                    decision: input.update.decision,
+                    round: input.update.round,
+                    ...(input.update.reasons !== undefined
+                      ? { reasons: input.update.reasons }
+                      : {}),
+                  }
+                : { _tag: input.update._tag };
+            const outcome = yield* delivery.updateDelegation(invocation, {
+              delegationId: input.delegationId,
+              update,
+            });
+            return successResult({
+              schemaVersion: 1,
+              delegationId: outcome.delegationId,
+              state: outcome.state,
+              ...(outcome.edgeKind !== undefined ? { edgeKind: outcome.edgeKind } : {}),
+            });
+          }).pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.catchTags({
+              WorkjetOrchestratorUnavailableError: () =>
+                Effect.succeed(failureResult("unauthorized")),
+              WorkjetMailboxError: (error) => Effect.succeed(failureResult(error.reason)),
+            }),
+          );
+        }),
+    });
+  },
+);
+
 export const MailboxToolkitRegistrationLive = Layer.mergeAll(
   Layer.effectDiscard(registerSendMessage()),
   Layer.effectDiscard(registerDelegateTask()),
+  Layer.effectDiscard(registerReply()),
+  Layer.effectDiscard(registerRequestReview()),
+  Layer.effectDiscard(registerUpdateDelegation()),
 );

@@ -131,6 +131,9 @@ const doubles = (options: { readonly sameEnvironment?: boolean } = {}) => {
         state: acknowledged ? "delivered" : "queued",
       });
     },
+    reply: () => Effect.die("reply must not run in the RPC slice"),
+    requestReview: () => Effect.die("requestReview must not run in the RPC slice"),
+    updateDelegation: () => Effect.die("updateDelegation must not run in the RPC slice"),
   };
   const snapshots = {
     put: (text: string) => {

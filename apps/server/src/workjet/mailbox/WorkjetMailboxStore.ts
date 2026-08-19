@@ -1,5 +1,6 @@
 import {
   WorkjetDelegation,
+  WorkjetDelegationEdge,
   WorkjetDelegationId,
   WorkjetDelegationResult,
   WorkjetDelegationState,
@@ -9,6 +10,7 @@ import {
   WorkjetMailboxTimestamp,
   WorkjetRoutingEnvelope,
   WORKJET_TERMINAL_DELEGATION_STATES,
+  type WorkjetDelegationRef,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -141,6 +143,40 @@ export const isLegalDelegationTransition = (
 ): boolean => LEGAL_DELEGATION_TRANSITIONS.get(from)?.has(to) === true;
 
 // ===============================
+// Delegation graph edge identity
+// ===============================
+
+/**
+ * Stable, deterministic identity of a delegation-graph edge, derived from its
+ * `kind` and its two endpoint refs (`from`, `to`) — exactly the three fields the
+ * plan names. It is the edge table's primary key, so a re-inserted identical
+ * relationship collapses onto the same row and edge insertion is idempotent
+ * under at-least-once transport, mirroring the mailbox's stable envelope id.
+ *
+ * The endpoints are serialized through {@link JSON.stringify} of a fixed-order
+ * tuple rather than concatenated with a delimiter: `ThreadId`/`EnvironmentId`
+ * are only trimmed non-empty strings and `WorkjetMeshWorkspaceId` permits `:`,
+ * so any single-character separator could be forged into a collision. JSON
+ * escaping makes the encoding unambiguous regardless of endpoint content.
+ */
+export const workjetDelegationEdgeId = (edge: {
+  readonly kind: WorkjetDelegationEdge["kind"];
+  readonly from: WorkjetDelegationRef;
+  readonly to: WorkjetDelegationRef;
+}): string =>
+  JSON.stringify([
+    edge.kind,
+    edge.from.delegationId,
+    edge.from.owner.workspaceId,
+    edge.from.owner.environmentId,
+    edge.from.owner.threadId,
+    edge.to.delegationId,
+    edge.to.owner.workspaceId,
+    edge.to.owner.environmentId,
+    edge.to.owner.threadId,
+  ]);
+
+// ===============================
 // Errors
 // ===============================
 
@@ -157,6 +193,7 @@ export class WorkjetMailboxStoreCorruptRowError extends Schema.TaggedErrorClass<
       "workjet_mailbox_outbox",
       "workjet_mailbox_inbox",
       "workjet_delegations",
+      "workjet_delegation_edges",
     ]),
     rowId: Schema.String,
     issue: Schema.String,
@@ -266,6 +303,11 @@ export type WorkjetDelegationFinalizeOutcome =
       readonly result: WorkjetDelegationResult;
     };
 
+/** Idempotent-insertion outcome for a delegation-graph edge. */
+export type WorkjetDelegationEdgeInsertOutcome =
+  | { readonly _tag: "inserted"; readonly edgeId: string }
+  | { readonly _tag: "duplicate"; readonly edgeId: string };
+
 export interface WorkjetMailboxExpirySweep {
   readonly outboxDeadLettered: number;
   readonly inboxDropped: number;
@@ -306,9 +348,15 @@ const DelegationDbRow = Schema.Struct({
   terminal: Schema.Int,
 });
 
+const DelegationEdgeDbRow = Schema.Struct({
+  edgeId: Schema.String,
+  edge: Schema.fromJsonString(WorkjetDelegationEdge),
+});
+
 const decodeOutboxDbRow = Schema.decodeUnknownEffect(OutboxDbRow);
 const decodeInboxDbRow = Schema.decodeUnknownEffect(InboxDbRow);
 const decodeDelegationDbRow = Schema.decodeUnknownEffect(DelegationDbRow);
+const decodeDelegationEdgeDbRow = Schema.decodeUnknownEffect(DelegationEdgeDbRow);
 
 const encodeRoutingEnvelopeJson = Schema.encodeEffect(
   Schema.fromJsonString(WorkjetRoutingEnvelope),
@@ -321,6 +369,7 @@ const encodeDelegationResultJson = Schema.encodeEffect(
 const decodeDelegationResultJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(WorkjetDelegationResult),
 );
+const encodeDelegationEdgeJson = Schema.encodeEffect(Schema.fromJsonString(WorkjetDelegationEdge));
 
 const OUTBOX_COLUMNS = `
   envelope_id AS "envelopeId",
@@ -350,6 +399,11 @@ const DELEGATION_COLUMNS = `
   state AS "state",
   state_changed_at_ms AS "stateChangedAtMillis",
   terminal AS "terminal"
+`;
+
+const DELEGATION_EDGE_COLUMNS = `
+  edge_id AS "edgeId",
+  edge_json AS "edge"
 `;
 
 // ===============================
@@ -445,6 +499,25 @@ export interface WorkjetMailboxStoreShape {
   readonly expireOverdue: (
     now: WorkjetMailboxTimestamp,
   ) => Effect.Effect<WorkjetMailboxExpirySweep, WorkjetMailboxStoreError>;
+
+  /**
+   * Idempotently insert a typed delegation-graph edge. The edge id is derived
+   * from `kind`/`from`/`to` ({@link workjetDelegationEdgeId}), so re-inserting
+   * the identical relationship is reported as a `duplicate` and never writes a
+   * second row.
+   */
+  readonly insertDelegationEdge: (
+    edge: WorkjetDelegationEdge,
+  ) => Effect.Effect<WorkjetDelegationEdgeInsertOutcome, WorkjetMailboxStoreError>;
+
+  /**
+   * Every edge touching a delegation, whether the delegation is the `from` or
+   * the `to` endpoint, in deterministic creation order. Bounded by `limit`.
+   */
+  readonly listDelegationEdges: (
+    delegationId: WorkjetDelegationId,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetDelegationEdge>, WorkjetMailboxStoreError>;
 }
 
 export class WorkjetMailboxStore extends Context.Service<
@@ -520,15 +593,35 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const decodeDelegationEdge = (row: unknown, rowId: string) =>
+    decodeDelegationEdgeDbRow(row).pipe(
+      Effect.mapError(
+        (cause) =>
+          new WorkjetMailboxStoreCorruptRowError({
+            table: "workjet_delegation_edges",
+            rowId,
+            issue: cause.issue._tag,
+          }),
+      ),
+      Effect.map((decoded): WorkjetDelegationEdge => decoded.edge),
+    );
+
   const rowIdOf = (row: unknown): string => {
     if (typeof row !== "object" || row === null) {
       return "<unknown>";
     }
-    const candidate = row as { readonly envelopeId?: unknown; readonly delegationId?: unknown };
+    const candidate = row as {
+      readonly envelopeId?: unknown;
+      readonly delegationId?: unknown;
+      readonly edgeId?: unknown;
+    };
     if (typeof candidate.envelopeId === "string") {
       return candidate.envelopeId;
     }
-    return typeof candidate.delegationId === "string" ? candidate.delegationId : "<unknown>";
+    if (typeof candidate.delegationId === "string") {
+      return candidate.delegationId;
+    }
+    return typeof candidate.edgeId === "string" ? candidate.edgeId : "<unknown>";
   };
 
   const encodeEnvelopeAndPayload = (
@@ -1211,6 +1304,62 @@ export const make = Effect.gen(function* () {
         );
     });
 
+  const insertDelegationEdge: WorkjetMailboxStoreShape["insertDelegationEdge"] = (edge) =>
+    Effect.gen(function* () {
+      const edgeId = workjetDelegationEdgeId(edge);
+      const edgeJson = yield* encodeDelegationEdgeJson(edge).pipe(
+        Effect.mapError(() => new WorkjetMailboxError({ reason: "malformed-envelope" })),
+      );
+      const createdAtMillis = yield* toEpochMillis(edge.createdAt);
+
+      const inserted = yield* sql<{ readonly edgeId: string }>`
+        INSERT INTO workjet_delegation_edges (
+          edge_id,
+          kind,
+          from_delegation_id,
+          to_delegation_id,
+          edge_json,
+          depth,
+          created_at_ms
+        )
+        VALUES (
+          ${edgeId},
+          ${edge.kind},
+          ${edge.from.delegationId},
+          ${edge.to.delegationId},
+          ${edgeJson},
+          ${edge.depth},
+          ${createdAtMillis}
+        )
+        ON CONFLICT (edge_id) DO NOTHING
+        RETURNING edge_id AS "edgeId"
+      `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.insertDelegationEdge:insert")));
+
+      return inserted.length > 0
+        ? ({ _tag: "inserted", edgeId } as const)
+        : ({ _tag: "duplicate", edgeId } as const);
+    });
+
+  const listDelegationEdges: WorkjetMailboxStoreShape["listDelegationEdges"] = (
+    delegationId,
+    limit,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT ${DELEGATION_EDGE_COLUMNS}
+          FROM workjet_delegation_edges
+          WHERE from_delegation_id = ? OR to_delegation_id = ?
+          ORDER BY created_at_ms ASC, edge_id ASC
+          LIMIT ?
+        `,
+          [delegationId, delegationId, limit],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listDelegationEdges:select")));
+      return yield* Effect.forEach(rows, (row) => decodeDelegationEdge(row, rowIdOf(row)));
+    });
+
   return {
     enqueueOutbound,
     recordInboundEnvelope,
@@ -1229,6 +1378,8 @@ export const make = Effect.gen(function* () {
     getDelegationResult,
     listDelegationsByState,
     expireOverdue,
+    insertDelegationEdge,
+    listDelegationEdges,
   } satisfies WorkjetMailboxStoreShape;
 });
 

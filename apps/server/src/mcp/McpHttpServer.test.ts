@@ -58,6 +58,9 @@ const WorkjetMailboxDeliveryTestLayer = Layer.succeed(
   WorkjetMailboxDelivery.WorkjetMailboxDelivery.of({
     sendMessage: () => Effect.die("unused"),
     delegateTask: () => Effect.die("unused"),
+    reply: () => Effect.die("unused"),
+    requestReview: () => Effect.die("unused"),
+    updateDelegation: () => Effect.die("unused"),
   }),
 );
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(

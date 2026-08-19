@@ -403,27 +403,39 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     });
 
   /**
-   * The half that runs for a row already in `accepted`: resolve the prompt,
-   * dispatch the turn, and move `accepted → running`. Reached both by a fresh
-   * `delivered` row in the same cycle and by a row a previous process left
-   * behind, which is exactly why it is one routine.
+   * The verified prompt bytes, or `None` when this machine cannot read them.
+   *
+   * Resolved BEFORE a `delivered` row is accepted, so a delegation whose
+   * snapshot is not here stays exactly where it was rather than being moved
+   * into a state the transition table cannot walk back.
+   */
+  const resolvePrompt = (record: WorkjetDelegationRecord) =>
+    snapshots.get(record.delegation.prompt.digest).pipe(
+      Effect.option,
+      // Same-environment: a genuinely damaged or absent object. Remote inbound:
+      // the bytes live on the SOURCE machine and cross-machine snapshot
+      // transfer is a later slice. Both are counted and retried, never failed.
+      Effect.tap((prompt) =>
+        Option.isNone(prompt)
+          ? Effect.logDebug("Workjet delegation prompt snapshot unavailable")
+          : Effect.void,
+      ),
+    );
+
+  /**
+   * The half that runs for a row already in `accepted`: dispatch the turn and
+   * move `accepted → running`. Reached both by a fresh `delivered` row in the
+   * same cycle and by a row a previous process left behind, which is exactly
+   * why it is one routine.
    */
   const startTurn = (input: {
     readonly record: WorkjetDelegationRecord;
     readonly thread: OrchestrationThread;
+    readonly promptText: string;
     readonly now: string;
   }): Effect.Effect<ExecutionOutcome> =>
     Effect.gen(function* () {
       const delegation = input.record.delegation;
-      const promptText = yield* snapshots.get(delegation.prompt.digest).pipe(Effect.option);
-      if (Option.isNone(promptText)) {
-        // Same-environment: a genuinely damaged or absent object. Remote
-        // inbound: the bytes live on the source machine and cross-machine
-        // snapshot transfer is a later slice. Both stay put and are retried.
-        yield* Effect.logDebug("Workjet delegation prompt snapshot unavailable");
-        return { _tag: "missing-snapshot" } as const;
-      }
-
       const command = {
         type: "thread.turn.start",
         commandId: delegationTurnCommandId(delegation.delegationId),
@@ -431,7 +443,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         message: {
           messageId: delegationTurnMessageId(delegation.delegationId),
           role: "user",
-          text: promptText.value,
+          text: input.promptText,
           attachments: [],
         },
         runtimeMode: input.thread.runtimeMode,
@@ -617,8 +629,20 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         if (resolved._tag === "backpressure") busyThreads.add(resolved.threadId);
         continue;
       }
+      const prompt = yield* resolvePrompt(row);
+      if (Option.isNone(prompt)) {
+        record({ _tag: "missing-snapshot" });
+        continue;
+      }
       busyThreads.add(resolved.thread.id);
-      record(yield* startTurn({ record: row, thread: resolved.thread, now }));
+      record(
+        yield* startTurn({
+          record: row,
+          thread: resolved.thread,
+          promptText: prompt.value,
+          now,
+        }),
+      );
     }
 
     for (const row of yield* scan("delivered")) {
@@ -627,6 +651,15 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const resolved = yield* resolveTarget({ record: row, environmentId, busyThreads, now });
       if (resolved._tag !== "ready") {
         record(resolved);
+        continue;
+      }
+
+      // Resolved BEFORE the transition: a delegation this machine cannot read
+      // the prompt for must stay `delivered`, because the table has no way back
+      // out of `accepted`.
+      const prompt = yield* resolvePrompt(row);
+      if (Option.isNone(prompt)) {
+        record({ _tag: "missing-snapshot" });
         continue;
       }
 
@@ -639,7 +672,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         continue;
       }
       busyThreads.add(resolved.thread.id);
-      record(yield* startTurn({ record: accepted.value, thread: resolved.thread, now }));
+      record(
+        yield* startTurn({
+          record: accepted.value,
+          thread: resolved.thread,
+          promptText: prompt.value,
+          now,
+        }),
+      );
     }
 
     cycles += 1;

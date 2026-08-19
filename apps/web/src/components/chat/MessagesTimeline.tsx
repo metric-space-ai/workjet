@@ -3,6 +3,7 @@ import {
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
+  type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -14,6 +15,7 @@ import {
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
+const NOOP_OPEN_THREAD = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -113,6 +115,7 @@ import {
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
+import { WorkjetMailboxActivityCard } from "./WorkjetMailboxActivityCard";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
@@ -144,6 +147,7 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  onOpenThread: (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => void;
 }
 
 interface TimelineRowActivityState {
@@ -204,6 +208,11 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  /**
+   * Navigate to another thread in THIS environment. Used by the Workjet
+   * mailbox cards, whose peer address is a real thread the reader can open.
+   */
+  onOpenThread?: (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => void;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -254,6 +263,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  onOpenThread,
   listRef,
   timelineEntries,
   latestTurn,
@@ -517,6 +527,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenThread: onOpenThread ?? NOOP_OPEN_THREAD,
     }),
     [
       timestampFormat,
@@ -533,6 +544,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenThread,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2205,12 +2217,30 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
   );
 });
 
+const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
+  model: NonNullable<TimelineWorkEntry["workjetMailbox"]>;
+}) {
+  const { onOpenThread } = use(TimelineRowCtx);
+  // A cross-machine peer is named but never linked: this client has no route
+  // to another machine's thread, so offering a dead link would be a lie.
+  return (
+    <WorkjetMailboxActivityCard
+      model={props.model}
+      {...(props.model.peerIsLocal ? { onOpenPeerThread: onOpenThread } : {})}
+    />
+  );
+});
+
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
-  // Before any hooks: spawn CTA rows render their own component.
+  // Before any hooks: spawn CTA rows and Workjet mailbox rows render their own
+  // component.
+  if (workEntry.workjetMailbox) {
+    return <WorkjetMailboxRow model={workEntry.workjetMailbox} />;
+  }
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }

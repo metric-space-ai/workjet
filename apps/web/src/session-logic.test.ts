@@ -721,6 +721,73 @@ describe("workEntryIndicatesToolFailure", () => {
   });
 });
 
+describe("deriveWorkLogEntries — Workjet mailbox rows", () => {
+  const mailboxAddress = (environmentId: string, threadId: string) => ({
+    workspaceId: "ctox-business-os:mesh-alpha",
+    environmentId,
+    threadId,
+  });
+
+  it("attaches a mailbox card model to each of the four mailbox activities", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "mailbox-message-sent",
+        kind: "workjet.message.sent",
+        summary: "Workjet message sent",
+        tone: "info",
+        payload: {
+          schemaVersion: 1,
+          envelopeId: "wjm-0123456789abcdef",
+          direction: "outbound",
+          source: mailboxAddress("environment-a", "thread-orchestrator"),
+          target: mailboxAddress("environment-a", "thread-worker"),
+          bodyKind: "inline",
+          createdAt: "2026-02-23T00:00:00.000Z",
+          expiresAt: "2026-02-23T01:00:00.000Z",
+        },
+      }),
+      makeActivity({
+        id: "mailbox-delegation-received",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "workjet.delegation.received",
+        summary: "Workjet delegation received",
+        tone: "info",
+        payload: {
+          schemaVersion: 1,
+          envelopeId: "wjm-fedcba9876543210",
+          direction: "inbound",
+          source: mailboxAddress("environment-a", "thread-orchestrator"),
+          target: mailboxAddress("environment-a", "thread-worker"),
+          disposition: "accepted-new",
+          delegationId: "wjd-0123456789abcdef",
+          delegationState: "delivered",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          expiresAt: "2026-02-23T01:00:01.000Z",
+        },
+      }),
+    ]);
+
+    expect(entries.map((entry) => entry.workjetMailbox?.kind)).toEqual(["message", "task"]);
+    expect(entries[1]?.workjetMailbox).toEqual({
+      kind: "task",
+      direction: "inbound",
+      peerEnvironmentId: "environment-a",
+      peerThreadId: "thread-orchestrator",
+      peerIsLocal: true,
+      disposition: "accepted-new",
+      delegationState: "delivered",
+    });
+  });
+
+  it("leaves every other activity without a mailbox model", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({ id: "tool", kind: "tool.completed", summary: "Tool call complete" }),
+    ]);
+
+    expect(entries[0]?.workjetMailbox).toBeUndefined();
+  });
+});
+
 describe("deriveWorkLogEntries", () => {
   it("omits tool started entries and keeps completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [

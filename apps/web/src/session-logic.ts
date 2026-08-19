@@ -14,6 +14,10 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 
+import {
+  parseWorkjetMailboxActivity,
+  type WorkjetMailboxCardModel,
+} from "./components/chat/WorkjetMailboxActivityCard";
 import type {
   ChatMessage,
   ProposedPlan,
@@ -83,6 +87,13 @@ export interface WorkLogEntry {
   taskId?: string;
   /** Agent role (subagent_type) for labeled timeline rows. */
   agentRole?: string;
+  /**
+   * Present on the four Workjet mailbox rows (`workjet.message.sent|received`,
+   * `workjet.delegation.sent|received`). The row renders as a compact mailbox
+   * card instead of an ordinary work-log line; the model carries only the
+   * redacted address and lifecycle metadata the activity payload holds.
+   */
+  workjetMailbox?: WorkjetMailboxCardModel;
   /**
    * Present on agent-spawn CTA rows: one per workflow run or per-turn batch
    * of direct spawns. The row renders as a call-to-action ("Kicked off N
@@ -845,6 +856,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           : activity.tone,
     activityKind: activity.kind,
   };
+  const workjetMailbox = parseWorkjetMailboxActivity(activity.kind, activity.payload);
+  if (workjetMailbox) {
+    entry.workjetMailbox = workjetMailbox;
+  }
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   if (detail) {

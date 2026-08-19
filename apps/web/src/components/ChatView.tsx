@@ -3377,6 +3377,18 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  // A Workjet mailbox card links to the OTHER end of the envelope. The card
+  // only offers the link for a same-environment peer, so this is the ordinary
+  // thread route every other thread link uses.
+  const onOpenWorkjetPeerThread = useCallback(
+    (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: peer.environmentId, threadId: peer.threadId },
+      });
+    },
+    [navigate],
+  );
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -6328,6 +6340,7 @@ function ChatViewContent(props: ChatViewProps) {
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
+                onOpenThread={onOpenWorkjetPeerThread}
                 key={activeThread.id}
                 isWorking={isWorking}
                 workingStepLabel={workingStepLabel}

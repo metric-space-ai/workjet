@@ -26,6 +26,7 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import type { WorkjetMailboxAuditEventInput } from "./WorkjetMailboxAuditEmitter.ts";
 import { WorkjetMailboxStore, WorkjetMailboxStoreLive } from "./WorkjetMailboxStore.ts";
 import {
   WorkjetSnapshotStore,
@@ -689,6 +690,56 @@ group("WorkjetMailboxTransport push", (it) => {
       const outbound = Option.getOrThrow(yield* store.getOutbound(id));
       assert.strictEqual(outbound.state, "pending", "a refused push stays retryable");
       assert.strictEqual(outbound.attemptCount, 1, "the existing backoff budget advances");
+    }),
+  );
+
+  it.effect("emits a redacted mesh-replication-error when a push fails", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const daemon = makeFakeDaemon({ publishStatus: 500 });
+      const identity = yield* makeIdentity(WORKSPACE);
+      const events: Array<WorkjetMailboxAuditEventInput> = [];
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(identity),
+        sources: {
+          audit: {
+            emit: (event) => {
+              events.push(event);
+              return Effect.void;
+            },
+          },
+        },
+      });
+
+      const id = envelopeId("push-audit-001");
+      const envelope = yield* identity.signRoutingEnvelope({
+        schemaVersion: 1,
+        envelopeId: id,
+        kind: "message",
+        sourceWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: LOCAL_ENVIRONMENT,
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: REMOTE_ENVIRONMENT,
+        createdAt: NOW,
+        expiresAt: EXPIRES,
+      });
+      yield* store.enqueueOutbound(
+        envelope,
+        messagePayload({ envelopeId: id, source: localAddress, target: remoteAddress }),
+      );
+
+      yield* transport.runCycle;
+
+      const replicationErrors = events.filter((event) => event._tag === "mesh-replication-error");
+      assert.strictEqual(replicationErrors.length, 1);
+      const error = replicationErrors[0];
+      if (error?._tag !== "mesh-replication-error")
+        return assert.fail("expected a replication error");
+      assert.strictEqual(error.envelopeId, id);
+      assert.strictEqual(error.reasonCode, "publish-failed");
+      // A single failed attempt is not yet a dead-letter.
+      assert.isFalse(events.some((event) => event._tag === "envelope-dead-lettered"));
     }),
   );
 

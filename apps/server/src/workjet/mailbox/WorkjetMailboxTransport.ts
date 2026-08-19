@@ -23,6 +23,12 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProcessRunner from "../../processRunner.ts";
+import {
+  WorkjetMailboxAuditEmitter,
+  emitAudit,
+  type WorkjetMailboxAuditSink,
+  type WorkjetMailboxAuditEventInput,
+} from "./WorkjetMailboxAuditEmitter.ts";
 import { applyDeliveredDelegation } from "./WorkjetMailboxDelivery.ts";
 import {
   WorkjetMailboxStore,
@@ -520,6 +526,13 @@ export interface WorkjetMailboxTransportSources {
 
   /** The bearer token, or `None` when it is genuinely unreachable. */
   readonly resolveAuthToken: Effect.Effect<Option.Option<string>>;
+
+  /**
+   * Best-effort redacted audit sink. Optional so a unit test can omit it (a
+   * no-op) or inject a capturing double; the real layer wires the shared
+   * {@link WorkjetMailboxAuditEmitter}.
+   */
+  readonly audit?: WorkjetMailboxAuditSink;
 }
 
 // ===============================
@@ -659,6 +672,47 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
   const sql = yield* SqlClient.SqlClient;
 
   const localEnvironmentId = yield* environment.getEnvironmentId;
+
+  /**
+   * Best-effort redacted audit emission, mirroring the best-effort activity
+   * append. A failed emit never fails a transport cycle.
+   */
+  const emit = (event: WorkjetMailboxAuditEventInput) => emitAudit(sources.audit, event);
+
+  /**
+   * Record one failed push attempt against the outbox row AND emit the matching
+   * redacted audit events: always a `mesh-replication-error` with a bounded
+   * reason code, plus an `envelope-dead-lettered` when that attempt exhausted
+   * the delivery budget. Best-effort throughout — it never fails the cycle, and
+   * it emits AFTER the durable attempt record.
+   */
+  const failPush = (
+    envelopeId: WorkjetOutboxRecord["envelopeId"],
+    reasonCode:
+      | "recipient-key-unknown"
+      | "encode-failed"
+      | "payload-too-large"
+      | "publish-failed"
+      | "transport-unavailable",
+    now: WorkjetMailboxTimestamp,
+  ) =>
+    Effect.gen(function* () {
+      const outcome = yield* store.recordAttempt(envelopeId, now).pipe(Effect.option);
+      yield* emit({
+        _tag: "mesh-replication-error",
+        occurredAt: now,
+        envelopeId,
+        reasonCode,
+      });
+      if (Option.isSome(outcome) && outcome.value._tag === "dead-lettered") {
+        yield* emit({
+          _tag: "envelope-dead-lettered",
+          occurredAt: now,
+          envelopeId,
+          attemptCount: outcome.value.attemptCount,
+        });
+      }
+    });
 
   let counters = EMPTY_COUNTERS;
   let rejections = EMPTY_REJECTIONS;
@@ -883,7 +937,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       environmentId: envelope.targetEnvironmentId,
     });
     if (recipient._tag === "unreadable") {
-      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      yield* failPush(input.record.envelopeId, "recipient-key-unknown", input.now);
       bump("pushFailures");
       return;
     }
@@ -980,7 +1034,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     // attempt budget to its dead-letter state rather than being deleted behind
     // the operator's back.
     if (Option.isNone(envelopeJson) || Option.isNone(wire)) {
-      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      yield* failPush(input.record.envelopeId, "encode-failed", input.now);
       bump("pushFailures");
       return;
     }
@@ -993,7 +1047,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     // real wire bytes in hand, rather than a 400 the loop would keep retrying.
     const wireBytes = Buffer.byteLength(wire.value.json, "utf8");
     if (wireBytes > WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES) {
-      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      yield* failPush(input.record.envelopeId, "payload-too-large", input.now);
       yield* Effect.logDebug("Workjet mailbox transport refused an oversized payload").pipe(
         Effect.annotateLogs({
           reason: new WorkjetMailboxError({ reason: "payload-too-large" }).reason,
@@ -1021,7 +1075,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     });
 
     if (Option.isNone(result)) {
-      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      yield* failPush(input.record.envelopeId, "publish-failed", input.now);
       bump("pushFailures");
       return;
     }
@@ -1378,9 +1432,11 @@ export const makeWorkjetMailboxTransport = Effect.fn("WorkjetMailboxTransport.ma
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runner = yield* ProcessRunner.ProcessRunner;
+  const auditEmitter = yield* WorkjetMailboxAuditEmitter;
 
   return yield* makeWorkjetMailboxTransportWithSources({
     nowIso: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
+    audit: { emit: auditEmitter.publish },
     // Re-resolved every cycle on purpose: the daemon may be installed, started,
     // restarted on a new port, or stopped while this server keeps running.
     resolveEndpoint: Effect.suspend(() =>

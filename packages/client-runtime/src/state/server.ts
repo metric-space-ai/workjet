@@ -842,6 +842,13 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.subscribeResourceTelemetry,
       idleTtlMs: 0,
     }),
+    // The bounded, redacted Workjet mailbox audit/observability event stream.
+    // A later slice renders it (toasts / an activity surface); this wires the
+    // consumable subscription.
+    workjetMailboxAuditEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:workjet-mailbox-audit",
+      tag: WS_METHODS.subscribeWorkjetMailboxAudit,
+    }),
     resourceTelemetryHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:resource-telemetry-history",
       tag: WS_METHODS.serverGetResourceTelemetryHistory,

@@ -39,6 +39,7 @@ import {
   WorkjetMailboxStoreLive,
   type WorkjetMailboxStoreShape,
 } from "./WorkjetMailboxStore.ts";
+import type { WorkjetMailboxAuditEventInput } from "./WorkjetMailboxAuditEmitter.ts";
 import {
   canonicalRoutingEnvelopeBytes,
   makeWorkjetMeshIdentity,
@@ -149,13 +150,22 @@ const makeTestIdentity = () => {
 const makeHarness = (input?: {
   readonly target?: OrchestrationThread | undefined;
   readonly failCommands?: boolean;
+  readonly failAudit?: boolean;
   readonly identity?: Effect.Effect<WorkjetMeshIdentity["Service"]>;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
+  const events: Array<WorkjetMailboxAuditEventInput> = [];
   let idIndex = 0;
   const sources: WorkjetMailboxDeliverySources = {
     randomUUID: Effect.sync(() => nthId(idIndex++)),
     nowIso: Effect.succeed(NOW),
+    audit: {
+      emit: (event) => {
+        events.push(event);
+        // A throwing emitter must never fail the underlying delivery.
+        return input?.failAudit ? Effect.die("audit emitter exploded") : Effect.void;
+      },
+    },
   };
   const engine = {
     dispatch: (command: OrchestrationCommand) => {
@@ -185,7 +195,7 @@ const makeHarness = (input?: {
     Effect.provideService(OrchestrationEngineService, engine),
     Effect.provideService(ProjectionSnapshotQuery, query),
   );
-  return { commands, service };
+  return { commands, events, service };
 };
 
 const testLayer = Layer.mergeAll(
@@ -829,5 +839,112 @@ it.effect("fails an unknown delegation update with the bounded unknown-target re
       })
       .pipe(Effect.flip);
     assert.equal(missing.reason, "unknown-target");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Redacted audit events
+// ===============================
+
+const auditTags = (events: ReadonlyArray<WorkjetMailboxAuditEventInput>) =>
+  events.map((event) => event._tag);
+
+it.effect("emits enqueued + delivered audit events for a same-environment message", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness();
+    const delivery = yield* service;
+
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+
+    assert.deepEqual(auditTags(events), ["envelope-enqueued", "envelope-delivered"]);
+    const enqueued = events[0];
+    const delivered = events[1];
+    if (enqueued?._tag !== "envelope-enqueued" || delivered?._tag !== "envelope-delivered") {
+      return assert.fail("expected enqueued then delivered");
+    }
+    assert.equal(enqueued.envelopeId, outcome.envelopeId);
+    assert.deepEqual(enqueued.source, {
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      threadId: SOURCE_THREAD,
+    });
+    assert.deepEqual(enqueued.target, {
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      threadId: TARGET_THREAD,
+    });
+    assert.equal(delivered.disposition, "accepted-new");
+    assert.equal(delivered.occurredAt, NOW);
+
+    // Redaction canary: no message body text travels on any audit event.
+    assert.isFalse(JSON.stringify(events).includes(SECRET_TEXT));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("emits only enqueued (no delivered) for a queued cross-environment message", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness();
+    const delivery = yield* service;
+
+    yield* delivery.sendMessage(
+      invocation,
+      messageInput({ targetEnvironmentId: REMOTE_ENVIRONMENT, body: sealedBody }),
+    );
+
+    assert.deepEqual(auditTags(events), ["envelope-enqueued"]);
+    assert.isFalse(JSON.stringify(events).includes(SECRET_TEXT));
+    assert.isFalse(JSON.stringify(events).includes(SECRET_PAYLOAD_REF));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("emits envelope-rejected with a bounded reason when the signature does not verify", () =>
+  Effect.gen(function* () {
+    const real = yield* makeTestIdentity();
+    const forging = WorkjetMeshIdentity.of({
+      ...real,
+      sign: () => Effect.succeed("A".repeat(86)),
+      signRoutingEnvelope: (envelope) => Effect.succeed({ ...envelope, signature: "A".repeat(86) }),
+    });
+    const { events, service } = makeHarness({ identity: Effect.succeed(forging) });
+    const delivery = yield* service;
+
+    yield* delivery.sendMessage(invocation, messageInput()).pipe(Effect.flip);
+
+    assert.deepEqual(auditTags(events), ["envelope-enqueued", "envelope-rejected"]);
+    const rejected = events[1];
+    if (rejected?._tag !== "envelope-rejected") return assert.fail("expected rejected");
+    assert.equal(rejected.reasonCode, "invalid-signature");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("emits enqueued audit event carrying the delegation id for a delegation", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness();
+    const delivery = yield* service;
+
+    const outcome = yield* delivery.delegateTask(invocation, delegateInput());
+
+    const enqueued = events.find((event) => event._tag === "envelope-enqueued");
+    assert.isDefined(enqueued);
+    if (enqueued?._tag !== "envelope-enqueued") return;
+    assert.equal(enqueued.delegationId, outcome.delegation.delegationId);
+    assert.isFalse(JSON.stringify(events).includes(SECRET_TEXT));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps delivery authoritative when the audit emitter throws (best-effort)", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness({ failAudit: true });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    // A throwing emitter must not fail the send: the outcome and the durable
+    // rows are exactly what they are without any emitter.
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+    assert.equal(outcome._tag, "acknowledged");
+    const outbound = yield* store.getOutbound(outcome.envelopeId);
+    assert.equal(Option.getOrThrow(outbound).state, "delivered");
+    // The events were still handed to the (exploding) sink.
+    assert.isTrue(events.length >= 1);
   }).pipe(Effect.provide(testLayer)),
 );

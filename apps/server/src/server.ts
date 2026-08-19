@@ -49,6 +49,7 @@ import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
+import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import { WorkjetMailboxStoreLive } from "./workjet/mailbox/WorkjetMailboxStore.ts";
 import * as WorkjetMailboxTransport from "./workjet/mailbox/WorkjetMailboxTransport.ts";
@@ -544,6 +545,12 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
   ),
 ).pipe(
+  // One shared, server-lifetime redacted mailbox audit emitter. It is provided
+  // ONCE here so the delivery, transport, and executor services and the
+  // WebSocket subscription handler all publish to and read from the SAME
+  // bounded pub-sub instance (Effect memoizes a layer by reference across the
+  // whole build), rather than one disconnected emitter per subtree.
+  Layer.provide(WorkjetMailboxAuditEmitter.layer),
   // WebSocket management and MCP search resolve this one server-lifetime
   // runtime, preserving one shared store and one set of single-flight maps.
   Layer.provide(GreppyRuntime.layer),

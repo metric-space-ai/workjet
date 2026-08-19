@@ -47,6 +47,7 @@ import {
   WorkjetMailboxStoreLive,
   WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS,
 } from "./WorkjetMailboxStore.ts";
+import type { WorkjetMailboxAuditEventInput } from "./WorkjetMailboxAuditEmitter.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 import {
   snapshotRefForDigest,
@@ -199,6 +200,7 @@ const nonRetryableEngineError = {
 
 interface Harness {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
+  readonly events: ReadonlyArray<WorkjetMailboxAuditEventInput>;
   readonly setThread: (next: OrchestrationThread | undefined) => void;
   readonly failNextTurnStarts: (count: number, error: { readonly _tag: string }) => void;
   readonly failThreadReads: (fail: boolean) => void;
@@ -218,8 +220,10 @@ interface Harness {
 const makeHarness = (options?: {
   readonly initialThread?: OrchestrationThread | undefined;
   readonly nowValues?: ReadonlyArray<string>;
+  readonly failAudit?: boolean;
 }): Harness => {
   const commands: Array<OrchestrationCommand> = [];
+  const events: Array<WorkjetMailboxAuditEventInput> = [];
   let currentThread: OrchestrationThread | undefined =
     options && "initialThread" in options ? options.initialThread : thread();
   let turnStartFailures = 0;
@@ -231,6 +235,12 @@ const makeHarness = (options?: {
   const sources: WorkjetDelegationExecutorSources = {
     nowIso: Effect.sync(() => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? NOW),
     environmentId: Effect.succeed(LOCAL_ENVIRONMENT),
+    audit: {
+      emit: (event) => {
+        events.push(event);
+        return options?.failAudit ? Effect.die("audit emitter exploded") : Effect.void;
+      },
+    },
   };
 
   const engine = {
@@ -253,6 +263,7 @@ const makeHarness = (options?: {
 
   return {
     commands,
+    events,
     setThread: (next) => {
       currentThread = next;
     },
@@ -1153,4 +1164,125 @@ it.effect("refuses to reassign a running delegation", () =>
     // Still running, still on the original target.
     assert.equal(yield* stateOf(delegation), "running");
   }).pipe(Effect.provide(testLayer("delegation-executor-reassign-running"))),
+);
+
+// ===============================
+// Redacted audit events
+// ===============================
+
+const auditTags = (events: ReadonlyArray<WorkjetMailboxAuditEventInput>) =>
+  events.map((event) => event._tag);
+
+it.effect("emits delegation-state-changed for each transition on the happy path", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "audit-happy", digest, state: "delivered" }),
+    );
+
+    yield* executor.runCycle;
+
+    const changes = harness.events.filter((event) => event._tag === "delegation-state-changed");
+    // delivered → accepted, then accepted → running.
+    assert.deepEqual(
+      changes.map((event) =>
+        event._tag === "delegation-state-changed" ? [event.from, event.to] : [],
+      ),
+      [
+        ["delivered", "accepted"],
+        ["accepted", "running"],
+      ],
+    );
+    const first = changes[0];
+    if (first?._tag !== "delegation-state-changed") return assert.fail("expected a change");
+    assert.equal(first.delegationId, delegation.delegationId);
+    // Redaction: the prompt never appears on any audit event.
+    assert.notInclude(JSON.stringify(harness.events), PROMPT_TEXT);
+  }).pipe(Effect.provide(testLayer("delegation-executor-audit-happy"))),
+);
+
+it.effect("emits delegation-approval-required exactly once while a gate holds", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({
+        id: "audit-approval",
+        digest,
+        state: "delivered",
+        requiresApproval: true,
+      }),
+    );
+
+    // Three gated cycles must still announce the approval requirement only once.
+    yield* executor.runCycle;
+    yield* executor.runCycle;
+    yield* executor.runCycle;
+
+    const approvals = harness.events.filter(
+      (event) => event._tag === "delegation-approval-required",
+    );
+    assert.equal(approvals.length, 1);
+    const approval = approvals[0];
+    if (approval?._tag !== "delegation-approval-required") return;
+    assert.equal(approval.delegationId, delegation.delegationId);
+
+    // Once approved, it runs and emits state changes, but never a second approval.
+    yield* store.setDelegationApproval(delegation.delegationId, true, NOW);
+    yield* executor.runCycle;
+    assert.equal(
+      harness.events.filter((event) => event._tag === "delegation-approval-required").length,
+      1,
+    );
+    assert.include(auditTags(harness.events), "delegation-state-changed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-audit-approval"))),
+);
+
+it.effect("emits delegation-completed carrying only the terminal outcome", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "audit-done",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-audit-done",
+        turnState: "completed",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    yield* executor.runCycle;
+
+    const completed = harness.events.find((event) => event._tag === "delegation-completed");
+    assert.isDefined(completed);
+    if (completed?._tag !== "delegation-completed") return;
+    assert.equal(completed.delegationId, delegation.delegationId);
+    assert.equal(completed.outcome, "completed");
+    assert.notInclude(JSON.stringify(harness.events), PROMPT_TEXT);
+  }).pipe(Effect.provide(testLayer("delegation-executor-audit-completed"))),
+);
+
+it.effect("keeps a transition durable when the audit emitter throws (best-effort)", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ failAudit: true });
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "audit-boom", digest, state: "delivered" }),
+    );
+
+    // An exploding emitter must not fail the cycle: the delegation still runs.
+    const status = yield* executor.runCycle;
+    assert.equal(status.executed, 1);
+    assert.equal(yield* stateOf(delegation), "running");
+    assert.isTrue(harness.events.length >= 1);
+  }).pipe(Effect.provide(testLayer("delegation-executor-audit-besteffort"))),
 );

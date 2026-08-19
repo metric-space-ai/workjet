@@ -216,6 +216,7 @@ import {
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
 } from "./workjetMailbox.ts";
+import { WorkjetMailboxAuditEvent } from "./workjetMailboxAudit.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -357,6 +358,7 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeWorkjetMailboxAudit: "subscribeWorkjetMailboxAudit",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -1132,6 +1134,19 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+/**
+ * The bounded, redacted Workjet mailbox audit/observability event stream. Each
+ * emitted value is a {@link WorkjetMailboxAuditEvent} carrying only ids,
+ * addresses, states, dispositions, reason codes, counters, and timestamps —
+ * never prompt text, payloads, secrets, or artifact contents.
+ */
+export const WsSubscribeWorkjetMailboxAuditRpc = Rpc.make(WS_METHODS.subscribeWorkjetMailboxAudit, {
+  payload: Schema.Struct({}),
+  success: WorkjetMailboxAuditEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1238,6 +1253,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeWorkjetMailboxAuditRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,
   WsOrchestrationGetTurnDiffRpc,

@@ -42,6 +42,11 @@ import {
   type WorkjetMailboxStoreError,
   type WorkjetMailboxStoreShape,
 } from "./WorkjetMailboxStore.ts";
+import {
+  WorkjetMailboxAuditEmitter,
+  emitAudit,
+  type WorkjetMailboxAuditSink,
+} from "./WorkjetMailboxAuditEmitter.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 
 /**
@@ -264,6 +269,12 @@ export class WorkjetMailboxDelivery extends Context.Service<
 export interface WorkjetMailboxDeliverySources {
   readonly randomUUID: Effect.Effect<string>;
   readonly nowIso: Effect.Effect<string>;
+  /**
+   * Best-effort redacted audit sink. Optional so a unit test can omit it (a
+   * no-op) or inject a capturing double; the real layer wires the shared
+   * {@link WorkjetMailboxAuditEmitter}.
+   */
+  readonly audit?: WorkjetMailboxAuditSink;
 }
 
 // ===============================
@@ -427,6 +438,20 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       yield* engine.dispatch(command);
     }).pipe(Effect.ignore);
 
+  /** Bounded, opaque audit address from a worker address (ids only). */
+  const auditAddress = (address: WorkjetWorkerAddress) => ({
+    workspaceId: address.workspaceId,
+    environmentId: address.environmentId,
+    threadId: address.threadId,
+  });
+
+  /**
+   * Best-effort redacted audit emission, mirroring the best-effort activity
+   * append: a failed emit never turns a delivered envelope into a reported
+   * failure. It publishes AFTER the durable store write that produced the event.
+   */
+  const emit = (event: Parameters<typeof emitAudit>[1]) => emitAudit(sources.audit, event);
+
   /**
    * A same-environment target must exist and must not be deleted. Checking
    * BEFORE the durable write keeps `unknown-target` / `target-thread-deleted`
@@ -480,6 +505,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
   const deliverLocally = (input: {
     readonly envelope: WorkjetRoutingEnvelope;
     readonly payload: WorkjetMailboxPayload;
+    readonly source: WorkjetWorkerAddress;
     readonly target: WorkjetWorkerAddress;
     readonly now: WorkjetMailboxTimestamp;
     readonly onAcceptedNew: (
@@ -493,6 +519,12 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       // reach an inbox — not even one this process signed a moment ago.
       const verified = yield* identity.verifyRoutingEnvelope(input.envelope);
       if (!verified) {
+        yield* emit({
+          _tag: "envelope-rejected",
+          occurredAt: input.now,
+          envelopeId: input.envelope.envelopeId,
+          reasonCode: "invalid-signature",
+        });
         return yield* failure("invalid-signature");
       }
 
@@ -507,6 +539,23 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
           .markDelivered(input.envelope.envelopeId, input.now)
           .pipe(Effect.mapError(boundStoreError));
         yield* input.onAcceptedNew(disposition);
+        // Emitted AFTER the durable inbound insert + delivered mark, so the
+        // audit event never claims a delivery the store did not record.
+        yield* emit({
+          _tag: "envelope-delivered",
+          occurredAt: input.now,
+          envelopeId: input.envelope.envelopeId,
+          source: auditAddress(input.source),
+          target: auditAddress(input.target),
+          disposition,
+        });
+      } else if (inbound._tag === "expired") {
+        yield* emit({
+          _tag: "envelope-rejected",
+          occurredAt: input.now,
+          envelopeId: input.envelope.envelopeId,
+          reasonCode: "envelope-expired",
+        });
       }
 
       const receipt: WorkjetDeliveryReceipt = {
@@ -594,6 +643,16 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       .enqueueOutbound(envelope, payload)
       .pipe(Effect.mapError(boundStoreError));
 
+    if (enqueued._tag === "enqueued") {
+      yield* emit({
+        _tag: "envelope-enqueued",
+        occurredAt: now,
+        envelopeId: id,
+        source: auditAddress(source),
+        target: auditAddress(target),
+      });
+    }
+
     yield* appendActivity({
       threadId: source.threadId,
       kind: WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
@@ -618,6 +677,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     return yield* deliverLocally({
       envelope,
       payload,
+      source,
       target,
       now,
       // A duplicate replay reaches neither this callback nor the target
@@ -720,6 +780,14 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     // the store, so the replay simply skips both writes.
     if (enqueued._tag === "enqueued") {
       yield* store.upsertDelegation(delegation).pipe(Effect.mapError(boundStoreError));
+      yield* emit({
+        _tag: "envelope-enqueued",
+        occurredAt: now,
+        envelopeId: id,
+        source: auditAddress(source),
+        target: auditAddress(target),
+        delegationId,
+      });
     }
 
     yield* appendActivity({
@@ -750,6 +818,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     const delivery = yield* deliverLocally({
       envelope,
       payload,
+      source,
       target,
       now,
       onAcceptedNew: () => Effect.void,
@@ -1013,9 +1082,11 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
 
 export const makeWorkjetMailboxDelivery = Effect.fn("WorkjetMailboxDelivery.make")(function* () {
   const crypto = yield* Crypto.Crypto;
+  const auditEmitter = yield* WorkjetMailboxAuditEmitter;
   return yield* makeWorkjetMailboxDeliveryWithSources({
     randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
     nowIso: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
+    audit: { emit: auditEmitter.publish },
   });
 });
 

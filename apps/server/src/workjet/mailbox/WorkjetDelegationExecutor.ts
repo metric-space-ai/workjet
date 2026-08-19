@@ -64,11 +64,17 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import {
+  WorkjetMailboxAuditEmitter,
+  emitAudit,
+  type WorkjetMailboxAuditSink,
+} from "./WorkjetMailboxAuditEmitter.ts";
 import {
   WorkjetMailboxStore,
   type WorkjetDelegationRecord,
@@ -256,6 +262,12 @@ export class WorkjetDelegationExecutor extends Context.Service<
 export interface WorkjetDelegationExecutorSources {
   readonly nowIso: Effect.Effect<string>;
   readonly environmentId: Effect.Effect<EnvironmentId>;
+  /**
+   * Best-effort redacted audit sink. Optional so a unit test can omit it (a
+   * no-op) or inject a capturing double; the real layer wires the shared
+   * {@link WorkjetMailboxAuditEmitter}.
+   */
+  readonly audit?: WorkjetMailboxAuditSink;
 }
 
 // ===============================
@@ -475,6 +487,29 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     ...(input.reason !== undefined ? { reason: input.reason } : {}),
   });
 
+  /**
+   * Delegations for which an `delegation-approval-required` audit event was
+   * already announced. The approval gate holds a delegation in `delivered`
+   * across many cycles, so without this the scan would re-announce it every
+   * cycle and flood the bounded audit buffer. Capped so a long-lived server
+   * cannot grow it without bound; overflow simply allows a re-announce.
+   */
+  const approvalAnnounced = yield* Ref.make<ReadonlySet<string>>(new Set<string>());
+  const APPROVAL_ANNOUNCE_CAP = 4_096;
+
+  /** Bounded, opaque audit address from a delegation (ids only). */
+  const auditAddress = (address: WorkjetDelegation["source"]) => ({
+    workspaceId: address.workspaceId,
+    environmentId: address.environmentId,
+    threadId: address.threadId,
+  });
+
+  /**
+   * Best-effort redacted audit emission, mirroring the best-effort activity
+   * append. Published AFTER the durable store write that produced the event.
+   */
+  const emit = (event: Parameters<typeof emitAudit>[1]) => emitAudit(sources.audit, event);
+
   const transition = (
     record: WorkjetDelegationRecord,
     to: "accepted" | "running" | "failed",
@@ -487,7 +522,24 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         to,
         now as WorkjetMailboxTimestamp,
       )
-      .pipe(Effect.option);
+      .pipe(
+        Effect.option,
+        // Emitted only when the durable transition actually applied (Some).
+        Effect.tap((moved) =>
+          Option.isSome(moved)
+            ? emit({
+                _tag: "delegation-state-changed",
+                occurredAt: now as WorkjetMailboxTimestamp,
+                delegationId: record.delegationId,
+                envelopeId: record.delegation.envelopeId,
+                source: auditAddress(record.delegation.source),
+                target: auditAddress(record.delegation.target),
+                from: record.state,
+                to,
+              })
+            : Effect.void,
+        ),
+      );
 
   /**
    * Terminal refusal. A `delivered` or `accepted` row that can never run moves
@@ -931,6 +983,17 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         now: input.now,
       });
 
+      // Emitted AFTER the durable finalize, carrying only the terminal outcome.
+      yield* emit({
+        _tag: "delegation-completed",
+        occurredAt: input.now as WorkjetMailboxTimestamp,
+        delegationId: delegation.delegationId,
+        envelopeId: delegation.envelopeId,
+        source: auditAddress(delegation.source),
+        target: auditAddress(delegation.target),
+        outcome,
+      });
+
       return outcome === "completed"
         ? ({ _tag: "completed" } as const)
         : interrupted
@@ -1105,6 +1168,25 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         .isDelegationExecutable(row.delegationId)
         .pipe(Effect.option, Effect.map(Option.getOrElse(() => false)));
       if (!executable) {
+        // Announce the approval gate exactly once per delegation, not every
+        // cycle the row waits in `delivered`.
+        const announced = yield* Ref.get(approvalAnnounced);
+        if (!announced.has(row.delegationId)) {
+          yield* Ref.update(approvalAnnounced, (current) => {
+            const next = new Set(current);
+            if (next.size >= APPROVAL_ANNOUNCE_CAP) next.clear();
+            next.add(row.delegationId);
+            return next;
+          });
+          yield* emit({
+            _tag: "delegation-approval-required",
+            occurredAt: now as WorkjetMailboxTimestamp,
+            delegationId: row.delegationId,
+            envelopeId: row.delegation.envelopeId,
+            source: auditAddress(row.delegation.source),
+            target: auditAddress(row.delegation.target),
+          });
+        }
         record({ _tag: "awaiting-approval" });
         continue;
       }
@@ -1224,9 +1306,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 export const makeWorkjetDelegationExecutor = Effect.fn("WorkjetDelegationExecutor.make")(
   function* () {
     const environment = yield* ServerEnvironment;
+    const auditEmitter = yield* WorkjetMailboxAuditEmitter;
     return yield* makeWorkjetDelegationExecutorWithSources({
       nowIso: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
       environmentId: environment.getEnvironmentId,
+      audit: { emit: auditEmitter.publish },
     });
   },
 );

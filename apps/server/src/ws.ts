@@ -73,6 +73,7 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import * as WorkjetMailboxRpc from "./workjet/mailbox/WorkjetMailboxRpc.ts";
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
@@ -433,6 +434,7 @@ const makeWsRpcLayer = (
       // The client-facing half of the durable Workjet mailbox. It reuses the
       // delivery service and snapshot store the MCP tools use; only the caller
       // identity differs, so the handlers below add no second implementation.
+      const workjetMailboxAudit = yield* WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter;
       const workjetMailbox = WorkjetMailboxRpc.makeWorkjetMailboxRpcHandlers({
         delivery: yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery,
         snapshots: yield* WorkjetSnapshotStore.WorkjetSnapshotStore,
@@ -2384,6 +2386,16 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
+        [WS_METHODS.subscribeWorkjetMailboxAudit]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeWorkjetMailboxAudit,
+            Stream.unwrap(
+              Effect.map(workjetMailboxAudit.subscribe, ({ recent, changes }) =>
+                Stream.concat(Stream.fromIterable(recent), changes),
+              ),
+            ),
+            { "rpc.aggregate": "mailbox" },
+          ),
       });
     }),
   );
@@ -2395,6 +2407,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // below: one server-lifetime mailbox shared by every WebSocket client,
     // never one delivery service per connection.
     const workjetMailboxDelivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+    const workjetMailboxAuditEmitter = yield* WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter;
     const workjetSnapshotStore = yield* WorkjetSnapshotStore.WorkjetSnapshotStore;
     const workjetMeshIdentity = yield* WorkjetMeshIdentity.WorkjetMeshIdentity;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
@@ -2429,6 +2442,12 @@ export const websocketRpcRouteLayer = Layer.unwrap(
                 Layer.succeed(
                   WorkjetMailboxDelivery.WorkjetMailboxDelivery,
                   workjetMailboxDelivery,
+                ),
+              ),
+              Layer.provide(
+                Layer.succeed(
+                  WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter,
+                  workjetMailboxAuditEmitter,
                 ),
               ),
               Layer.provide(

@@ -135,7 +135,7 @@ describe("WorkjetCapabilityMenu", () => {
 
     expect(trigger?.props["aria-busy"]).toBe(true);
     expect(trigger?.props.disabled).toBe(true);
-    expect(triggerControl.props["aria-label"]).toBe("Workjet thread settings");
+    expect(triggerControl.props["aria-label"]).toBe("Thread tools");
     expect(busySwitch?.props.disabled).toBe(true);
     expect(busySwitch?.props["aria-busy"]).toBe(true);
   });

@@ -3,7 +3,7 @@ import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { SettingsIcon } from "lucide-react";
+import { WrenchIcon } from "lucide-react";
 
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import {
@@ -103,7 +103,7 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
 
   return (
     <MenuGroup>
-      <MenuGroupLabel>Workjet</MenuGroupLabel>
+      <MenuGroupLabel>Tools</MenuGroupLabel>
       <MenuCheckboxItem
         variant="switch"
         checked={props.greppyEnabled}
@@ -143,12 +143,12 @@ export function WorkjetCapabilityMenu(props: WorkjetCapabilityMenuProps) {
           <ComposerControl
             type="button"
             className="shrink-0 whitespace-nowrap"
-            aria-label="Workjet thread settings"
+            aria-label="Thread tools"
           />
         }
       >
-        <ComposerControlIcon icon={SettingsIcon} />
-        <span className="sr-only sm:not-sr-only">Workjet</span>
+        <ComposerControlIcon icon={WrenchIcon} />
+        <span className="sr-only sm:not-sr-only">Tools</span>
       </MenuTrigger>
       <MenuPopup align="start" className="w-80">
         <WorkjetCapabilityMenuContent {...props} />

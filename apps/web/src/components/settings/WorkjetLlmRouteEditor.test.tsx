@@ -21,6 +21,7 @@ const accounts: ReadonlyArray<WorkjetGatewayAccountSummary> = [
     priority: 1,
     weight: 1,
     modelIds: ["gpt-5.6"],
+    credentialSuffix: null,
   },
 ];
 

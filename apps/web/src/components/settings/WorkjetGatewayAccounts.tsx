@@ -2,11 +2,20 @@ import {
   WorkjetGatewayOperationError,
   type WorkjetGatewayAccountSummary,
   type WorkjetGatewayCatalog,
+  type WorkjetGatewayApiKeyProvider,
   type WorkjetGatewayFailureReason,
+  type WorkjetGatewayOauthProvider,
   type WorkjetGatewayProvider,
   type WorkjetGatewayStatus,
 } from "@t3tools/contracts";
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  KeyRoundIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
@@ -18,40 +27,86 @@ import { searchableSetting } from "./settingsSearch";
  * Workjet provider gateway, deliberately unrelated to the Code harness
  * provider drivers (Codex, Claude, Grok) shown in Providers settings.
  */
-export const WORKJET_GATEWAY_PROVIDERS: ReadonlyArray<WorkjetGatewayProvider> = [
+export const WORKJET_GATEWAY_OAUTH_PROVIDERS: ReadonlyArray<WorkjetGatewayOauthProvider> = [
   "claude",
   "codex",
   "antigravity",
+];
+
+/**
+ * Providers added by pasting a key rather than by a browser login. They sit in
+ * the same list as the OAuth providers because they are the same kind of thing
+ * to the user — an LLM account the gateway owns — and differ only in how the
+ * credential arrives.
+ */
+export const WORKJET_GATEWAY_API_KEY_PROVIDERS: ReadonlyArray<WorkjetGatewayApiKeyProvider> = [
+  "zai",
+  "minimax",
+  "xai",
+  "kimi",
+];
+
+export const WORKJET_GATEWAY_PROVIDERS: ReadonlyArray<WorkjetGatewayProvider> = [
+  ...WORKJET_GATEWAY_OAUTH_PROVIDERS,
+  ...WORKJET_GATEWAY_API_KEY_PROVIDERS,
 ];
 
 export const WORKJET_GATEWAY_PROVIDER_LABELS: Readonly<Record<WorkjetGatewayProvider, string>> = {
   claude: "Claude",
   codex: "Codex",
   antigravity: "Antigravity",
+  zai: "Z.ai (GLM)",
+  minimax: "MiniMax",
+  xai: "xAI (Grok)",
+  kimi: "Kimi (Moonshot)",
 };
+
+export function isWorkjetGatewayApiKeyProvider(
+  provider: WorkjetGatewayProvider,
+): provider is WorkjetGatewayApiKeyProvider {
+  return (WORKJET_GATEWAY_API_KEY_PROVIDERS as ReadonlyArray<string>).includes(provider);
+}
+
+/** Longest key the add-key field accepts, mirroring the contract's bound. */
+export const WORKJET_GATEWAY_API_KEY_MAX_INPUT_LENGTH = 512;
 
 /** Three seconds is short enough to feel immediate and slow enough not to hammer the host. */
 export const WORKJET_GATEWAY_OAUTH_POLL_INTERVAL_MS = 3_000;
 /** ~5 minutes of polling; a browser login that takes longer has effectively been abandoned. */
 export const WORKJET_GATEWAY_OAUTH_POLL_MAX_ATTEMPTS = 100;
 
+/**
+ * Progress of the one operation that carries a credential. The key value is
+ * never part of this state: it lives in the field until it is dispatched and
+ * is cleared immediately afterwards.
+ */
+export type WorkjetGatewayApiKeyState =
+  | { readonly status: "idle" }
+  | { readonly status: "saving"; readonly provider: WorkjetGatewayApiKeyProvider }
+  | {
+      readonly status: "failed";
+      readonly provider: WorkjetGatewayApiKeyProvider;
+      readonly message: string;
+    }
+  | { readonly status: "completed"; readonly provider: WorkjetGatewayApiKeyProvider };
+
 export type WorkjetGatewayLoginState =
   | { readonly status: "idle" }
-  | { readonly status: "starting"; readonly provider: WorkjetGatewayProvider }
+  | { readonly status: "starting"; readonly provider: WorkjetGatewayOauthProvider }
   | {
       readonly status: "pending";
-      readonly provider: WorkjetGatewayProvider;
+      readonly provider: WorkjetGatewayOauthProvider;
       readonly state: string;
       readonly authorizationUrl: string;
     }
   | {
       readonly status: "failed";
-      readonly provider: WorkjetGatewayProvider;
+      readonly provider: WorkjetGatewayOauthProvider;
       readonly message: string;
     }
   | {
       readonly status: "completed";
-      readonly provider: WorkjetGatewayProvider;
+      readonly provider: WorkjetGatewayOauthProvider;
       readonly accountIds: ReadonlyArray<string>;
     };
 
@@ -71,8 +126,14 @@ export interface WorkjetGatewaySectionState {
    * exclusively as a retry on a faulted gateway.
    */
   readonly onRetry: () => void;
-  readonly onAddAccount: (provider: WorkjetGatewayProvider) => void;
+  readonly onAddAccount: (provider: WorkjetGatewayOauthProvider) => void;
   readonly onCancelLogin: () => void;
+  readonly apiKey: WorkjetGatewayApiKeyState;
+  /**
+   * Submit one API key. The caller must not retain the value: it goes straight
+   * to the server over the existing gateway RPC and is never logged or echoed.
+   */
+  readonly onAddApiKey: (provider: WorkjetGatewayApiKeyProvider, apiKey: string) => void;
 }
 
 const GATEWAY_FAILURE_REASONS = new Set<WorkjetGatewayFailureReason>([
@@ -141,11 +202,19 @@ export function canAddWorkjetGatewayAccount(state: {
   readonly status: WorkjetGatewayStatus | null;
   readonly login: WorkjetGatewayLoginState;
   readonly isOperating: boolean;
+  readonly apiKey?: WorkjetGatewayApiKeyState;
 }): boolean {
   if (state.isOperating) return false;
   if (state.login.status === "starting" || state.login.status === "pending") return false;
+  if (state.apiKey?.status === "saving") return false;
   const phase = state.status?.phase;
   return phase === "ready" || phase === "stopped" || phase === "starting";
+}
+
+/** Renders the recognition suffix, or nothing when no suffix was recorded. */
+export function maskGatewayCredentialSuffix(suffix: string | null): string | null {
+  const trimmed = suffix?.trim() ?? "";
+  return trimmed === "" ? null : `Key ••••${trimmed}`;
 }
 
 export function workjetGatewayPhaseSummary(status: WorkjetGatewayStatus | null): string {
@@ -264,9 +333,125 @@ function AddAccountProgress({
   );
 }
 
+/**
+ * Bounded key entry. The value lives only in this component's state and is
+ * cleared the moment it is submitted or the form is dismissed; it is never put
+ * into a URL, a toast, or the account list.
+ */
+function AddApiKeyForm({
+  provider,
+  disabled,
+  apiKey,
+  onSubmit,
+  onDismiss,
+}: {
+  readonly provider: WorkjetGatewayApiKeyProvider;
+  readonly disabled: boolean;
+  readonly apiKey: WorkjetGatewayApiKeyState;
+  readonly onSubmit: (value: string) => void;
+  readonly onDismiss: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const fieldId = `workjet-gateway-api-key-${provider}`;
+  const providerLabel = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
+  const isSaving = apiKey.status === "saving" && apiKey.provider === provider;
+  const submit = () => {
+    const trimmed = value.trim();
+    if (trimmed === "" || disabled || isSaving) return;
+    setValue("");
+    onSubmit(trimmed);
+  };
+
+  return (
+    <form
+      className="mt-1 space-y-1.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <label htmlFor={fieldId} className="block text-xs text-muted-foreground">
+        {providerLabel} API key
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id={fieldId}
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          maxLength={WORKJET_GATEWAY_API_KEY_MAX_INPUT_LENGTH}
+          value={value}
+          disabled={disabled || isSaving}
+          placeholder="Paste the key"
+          onChange={(event) => setValue(event.target.value)}
+          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground"
+        />
+        <Button type="submit" size="sm" disabled={disabled || isSaving || value.trim() === ""}>
+          {isSaving ? <Spinner className="size-3.5" /> : null}
+          Save key
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={isSaving}
+          onClick={() => {
+            setValue("");
+            onDismiss();
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The key is stored on the server and never shown again. This list keeps only its last four
+        characters.
+      </p>
+    </form>
+  );
+}
+
+function AddApiKeyProgress({
+  provider,
+  apiKey,
+}: {
+  readonly provider: WorkjetGatewayApiKeyProvider;
+  readonly apiKey: WorkjetGatewayApiKeyState;
+}) {
+  if (apiKey.status === "idle" || apiKey.provider !== provider) return null;
+  const providerLabel = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
+  if (apiKey.status === "saving") {
+    return (
+      <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Spinner className="size-3.5" />
+        Storing the {providerLabel} key…
+      </p>
+    );
+  }
+  if (apiKey.status === "failed") {
+    return (
+      <p role="alert" className="flex items-start gap-1.5 text-xs text-destructive">
+        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+        {apiKey.message}
+      </p>
+    );
+  }
+  return (
+    <p role="status" className="flex items-start gap-1.5 text-xs text-muted-foreground">
+      <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-success" />
+      Added a {providerLabel} account.
+    </p>
+  );
+}
+
 export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionState) {
   const phase = state.status?.phase ?? null;
   const canAdd = canAddWorkjetGatewayAccount(state);
+  // Which provider's key field is open. Only one at a time, so a pasted key
+  // can never be left visible in a second collapsed row.
+  const [openApiKeyProvider, setOpenApiKeyProvider] = useState<WorkjetGatewayApiKeyProvider | null>(
+    null,
+  );
 
   return (
     <SettingsSection
@@ -325,26 +510,43 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
       {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
         const accounts = workjetGatewayAccountsByProvider(state.catalog, provider);
         const isActiveLogin = state.login.status !== "idle" && state.login.provider === provider;
+        const isApiKey = isWorkjetGatewayApiKeyProvider(provider);
+        const isKeyFormOpen = isApiKey && openApiKeyProvider === provider;
         return (
           <SettingsRow
             key={provider}
             title={WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
             description={
               accounts.length === 0
-                ? "No accounts are configured for this provider."
+                ? isApiKey
+                  ? "No accounts are configured. This provider is added with an API key."
+                  : "No accounts are configured for this provider."
                 : `${accounts.length} ${accounts.length === 1 ? "account" : "accounts"} configured.`
             }
             control={
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={!canAdd}
-                onClick={() => state.onAddAccount(provider)}
-              >
-                <PlusIcon className="size-3.5" />
-                Add account
-              </Button>
+              isApiKey ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!canAdd || isKeyFormOpen}
+                  onClick={() => setOpenApiKeyProvider(provider)}
+                >
+                  <KeyRoundIcon className="size-3.5" />
+                  Add API key
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!canAdd}
+                  onClick={() => state.onAddAccount(provider)}
+                >
+                  <PlusIcon className="size-3.5" />
+                  Add account
+                </Button>
+              )
             }
           >
             <div className="mt-1 space-y-2 pb-3.5">
@@ -357,9 +559,22 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
                   <span className="text-xs text-muted-foreground">
                     {account.enabled ? "Enabled" : "Disabled"} · {account.modelIds.length}{" "}
                     {account.modelIds.length === 1 ? "model" : "models"}
+                    {maskGatewayCredentialSuffix(account.credentialSuffix) === null
+                      ? null
+                      : ` · ${maskGatewayCredentialSuffix(account.credentialSuffix)}`}
                   </span>
                 </div>
               ))}
+              {isKeyFormOpen ? (
+                <AddApiKeyForm
+                  provider={provider}
+                  disabled={!canAdd}
+                  apiKey={state.apiKey}
+                  onSubmit={(value) => state.onAddApiKey(provider, value)}
+                  onDismiss={() => setOpenApiKeyProvider(null)}
+                />
+              ) : null}
+              {isApiKey ? <AddApiKeyProgress provider={provider} apiKey={state.apiKey} /> : null}
               {isActiveLogin ? (
                 <AddAccountProgress login={state.login} onCancel={state.onCancelLogin} />
               ) : null}

@@ -1,4 +1,5 @@
 import {
+  WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
   WorkjetGatewayAccountId,
   WorkjetGatewayOperationError,
   type WorkjetGatewayCatalog,
@@ -9,14 +10,18 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   canAddWorkjetGatewayAccount,
+  maskGatewayCredentialSuffix,
   maskGatewayOauthState,
   WorkjetGatewayAccountsSectionView,
   workjetGatewayAccountsByProvider,
   workjetGatewayFailureDescription,
   workjetGatewayOauthSessionInvalidMessage,
   workjetGatewayPhaseSummary,
+  WORKJET_GATEWAY_API_KEY_MAX_INPUT_LENGTH,
+  WORKJET_GATEWAY_API_KEY_PROVIDERS,
   WORKJET_GATEWAY_OAUTH_POLL_INTERVAL_MS,
   WORKJET_GATEWAY_OAUTH_POLL_MAX_ATTEMPTS,
+  WORKJET_GATEWAY_PROVIDERS,
   type WorkjetGatewayLoginState,
   type WorkjetGatewaySectionState,
 } from "./WorkjetGatewayAccounts";
@@ -43,6 +48,7 @@ const CATALOG: WorkjetGatewayCatalog = {
       priority: 1,
       weight: 1,
       modelIds: ["claude-opus", "claude-sonnet"],
+      credentialSuffix: null,
     },
     {
       id: WorkjetGatewayAccountId.make("account-codex-1"),
@@ -52,6 +58,17 @@ const CATALOG: WorkjetGatewayCatalog = {
       priority: 2,
       weight: 1,
       modelIds: ["gpt-5.6"],
+      credentialSuffix: null,
+    },
+    {
+      id: WorkjetGatewayAccountId.make("account-zai-1"),
+      label: "Z.ai key",
+      provider: "zai",
+      enabled: true,
+      priority: 0,
+      weight: 1,
+      modelIds: [],
+      credentialSuffix: "9xyz",
     },
   ],
   pools: [],
@@ -72,6 +89,8 @@ const BASE: WorkjetGatewaySectionState = {
   onRetry: () => undefined,
   onAddAccount: () => undefined,
   onCancelLogin: () => undefined,
+  apiKey: { status: "idle" },
+  onAddApiKey: () => undefined,
 };
 
 function render(overrides: Partial<WorkjetGatewaySectionState> = {}) {
@@ -272,5 +291,74 @@ describe("Workjet gateway account surface", () => {
       WORKJET_GATEWAY_OAUTH_POLL_INTERVAL_MS * WORKJET_GATEWAY_OAUTH_POLL_MAX_ATTEMPTS;
     expect(totalMs).toBeGreaterThanOrEqual(4 * 60_000);
     expect(totalMs).toBeLessThanOrEqual(6 * 60_000);
+  });
+});
+
+describe("WorkjetGatewayAccounts · API-key providers", () => {
+  it("lists every API-key provider beside the OAuth providers", () => {
+    const markup = render();
+    for (const label of [
+      "Claude",
+      "Codex",
+      "Antigravity",
+      "Z.ai (GLM)",
+      "MiniMax",
+      "xAI (Grok)",
+      "Kimi (Moonshot)",
+    ]) {
+      expect(markup, label).toContain(label);
+    }
+    expect(WORKJET_GATEWAY_API_KEY_PROVIDERS).toEqual(["zai", "minimax", "xai", "kimi"]);
+    expect(WORKJET_GATEWAY_PROVIDERS).toHaveLength(7);
+  });
+
+  it("offers 'Add API key' for key providers and 'Add account' for OAuth providers", () => {
+    const markup = render();
+    expect(markup).toContain("Add API key");
+    expect(markup).toContain("Add account");
+  });
+
+  it("shows only the masked suffix for an API-key account, never a key", () => {
+    const markup = render();
+    expect(markup).toContain("Z.ai key");
+    expect(markup).toContain("Key ••••9xyz");
+    expect(maskGatewayCredentialSuffix("9xyz")).toBe("Key ••••9xyz");
+    expect(maskGatewayCredentialSuffix(null)).toBeNull();
+    expect(maskGatewayCredentialSuffix("   ")).toBeNull();
+    // Nothing in the rendered list resembles a full credential.
+    expect(markup).not.toContain("sk-");
+    expect(markup).not.toContain('type="password"');
+  });
+
+  it("blocks adding while a key is in flight and reports a failure in place", () => {
+    expect(
+      canAddWorkjetGatewayAccount({
+        status: READY_STATUS,
+        login: BASE.login,
+        isOperating: false,
+        apiKey: { status: "saving", provider: "zai" },
+      }),
+    ).toBe(false);
+    expect(
+      canAddWorkjetGatewayAccount({
+        status: READY_STATUS,
+        login: BASE.login,
+        isOperating: false,
+        apiKey: { status: "idle" },
+      }),
+    ).toBe(true);
+
+    const failed = render({
+      apiKey: { status: "failed", provider: "xai", message: "The key could not be stored." },
+    });
+    expect(failed).toContain("The key could not be stored.");
+    const saving = render({ apiKey: { status: "saving", provider: "kimi" } });
+    expect(saving).toContain("Storing the Kimi (Moonshot) key…");
+    const done = render({ apiKey: { status: "completed", provider: "minimax" } });
+    expect(done).toContain("Added a MiniMax account.");
+  });
+
+  it("keeps the key input bounded exactly like the contract", () => {
+    expect(WORKJET_GATEWAY_API_KEY_MAX_INPUT_LENGTH).toBe(WORKJET_GATEWAY_API_KEY_MAX_LENGTH);
   });
 });

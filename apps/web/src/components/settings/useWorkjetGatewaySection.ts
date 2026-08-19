@@ -2,7 +2,11 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, WorkjetGatewayProvider } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  WorkjetGatewayApiKeyProvider,
+  WorkjetGatewayOauthProvider,
+} from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
@@ -14,7 +18,9 @@ import {
   workjetGatewayFailureDescription,
   workjetGatewayOauthSessionInvalidMessage,
   WORKJET_GATEWAY_OAUTH_POLL_INTERVAL_MS,
+  WORKJET_GATEWAY_PROVIDER_LABELS,
   WORKJET_GATEWAY_OAUTH_POLL_MAX_ATTEMPTS,
+  type WorkjetGatewayApiKeyState,
   type WorkjetGatewayLoginState,
   type WorkjetGatewaySectionState,
 } from "./WorkjetGatewayAccounts";
@@ -53,7 +59,14 @@ export function useWorkjetGatewaySection(
   const cancelGatewayOauth = useAtomCommand(serverEnvironment.cancelWorkjetGatewayOauth, {
     reportFailure: false,
   });
+  const addApiKeyAccount = useAtomCommand(serverEnvironment.addWorkjetGatewayApiKeyAccount, {
+    reportFailure: false,
+  });
   const [login, setLogin] = useState<WorkjetGatewayLoginState>({ status: "idle" });
+  const [apiKey, setApiKey] = useState<WorkjetGatewayApiKeyState>({ status: "idle" });
+  // Guards a second submit while one key is in flight; the value itself is
+  // never held here.
+  const apiKeyRef = useRef(false);
   const [isOperating, setIsOperating] = useState(false);
   const operationRef = useRef(false);
   // One live login at a time; the token lets an unmount or a cancel stop the
@@ -93,7 +106,7 @@ export function useWorkjetGatewaySection(
   }, [environmentId, refresh, startGateway]);
 
   const addAccount = useCallback(
-    (provider: WorkjetGatewayProvider) => {
+    (provider: WorkjetGatewayOauthProvider) => {
       if (environmentId === null || loginRef.current !== null) return;
       const token = { aborted: false };
       loginRef.current = token;
@@ -171,6 +184,44 @@ export function useWorkjetGatewaySection(
     [environmentId, pollGatewayOauth, refresh, startGatewayOauth],
   );
 
+  /**
+   * Send one API key to the server. The value is used exactly once, is never
+   * stored in component state beyond the field it came from, and never reaches
+   * a toast, a log, or the account list — a failure is reported with the
+   * contract's own bounded copy.
+   */
+  const addApiKey = useCallback(
+    (provider: WorkjetGatewayApiKeyProvider, value: string) => {
+      if (environmentId === null || apiKeyRef.current) return;
+      const label = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
+      apiKeyRef.current = true;
+      setApiKey({ status: "saving", provider });
+      void (async () => {
+        const result = await addApiKeyAccount({
+          environmentId,
+          input: { provider, label, apiKey: value },
+        });
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result)) {
+            setApiKey({
+              status: "failed",
+              provider,
+              message: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
+            });
+          }
+          return;
+        }
+        setApiKey({ status: "completed", provider });
+        // The server persisted the account and reloaded the gateway, so the new
+        // account only appears after a fresh catalog read.
+        refresh();
+      })().finally(() => {
+        apiKeyRef.current = false;
+      });
+    },
+    [addApiKeyAccount, environmentId, refresh],
+  );
+
   const cancelLogin = useCallback(() => {
     if (login.status !== "pending") return;
     if (loginRef.current) loginRef.current.aborted = true;
@@ -193,5 +244,7 @@ export function useWorkjetGatewaySection(
     onRetry: retry,
     onAddAccount: addAccount,
     onCancelLogin: cancelLogin,
+    apiKey,
+    onAddApiKey: addApiKey,
   };
 }

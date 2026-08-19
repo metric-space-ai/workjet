@@ -15,7 +15,11 @@ import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   GreppyRuntimeSnapshot,
   WorkjetConfiguration,
+  WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
+  WorkjetGatewayAddApiKeyAccountInput,
+  WorkjetGatewayAddApiKeyAccountResult,
   WorkjetGatewayCatalog,
+  WorkjetGatewayOauthStartInput,
   WorkjetGatewayOperationError,
   WorkjetGatewayStatus,
   WorkjetGreppyOperationError,
@@ -609,5 +613,94 @@ describe("Workjet configuration replace-all wire contracts", () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe("WorkjetGateway API-key providers", () => {
+  it("round-trips every API-key provider through the account summary", () => {
+    for (const provider of ["zai", "minimax", "xai", "kimi"] as const) {
+      const catalog = Schema.decodeUnknownSync(WorkjetGatewayCatalog)({
+        schemaVersion: 1,
+        accounts: [
+          {
+            id: `account-${provider}`,
+            label: `${provider} key`,
+            provider,
+            enabled: true,
+            priority: 0,
+            weight: 1,
+            modelIds: [],
+            credentialSuffix: "9xyz",
+          },
+        ],
+        pools: [],
+        routes: [],
+        models: [],
+      });
+      expect(catalog.accounts[0]?.provider).toBe(provider);
+      expect(catalog.accounts[0]?.credentialSuffix).toBe("9xyz");
+    }
+  });
+
+  it("defaults credentialSuffix to null so an OAuth account carries nothing", () => {
+    const catalog = Schema.decodeUnknownSync(WorkjetGatewayCatalog)({
+      schemaVersion: 1,
+      accounts: [
+        {
+          id: "account-1",
+          label: "Primary",
+          provider: "codex",
+          enabled: true,
+          priority: 0,
+          weight: 1,
+          modelIds: [],
+        },
+      ],
+      pools: [],
+      routes: [],
+      models: [],
+    });
+    expect(catalog.accounts[0]?.credentialSuffix).toBeNull();
+  });
+
+  it("accepts a bounded key on the add input and rejects anything outside the bound", () => {
+    const accepted = Schema.decodeUnknownSync(WorkjetGatewayAddApiKeyAccountInput)({
+      provider: "zai",
+      label: "Z.ai key",
+      // Obviously fake.
+      apiKey: "zk-test-not-a-real-key",
+    });
+    expect(accepted.provider).toBe("zai");
+    expect(WORKJET_GATEWAY_API_KEY_MAX_LENGTH).toBe(512);
+    for (const invalid of [
+      { provider: "openrouter", label: "x", apiKey: "k" },
+      { provider: "zai", label: "x", apiKey: "" },
+      { provider: "zai", label: "x", apiKey: "k".repeat(513) },
+      { provider: "zai", label: "", apiKey: "k" },
+      // An OAuth provider can never be added with a key.
+      { provider: "claude", label: "x", apiKey: "k" },
+    ]) {
+      expect(() =>
+        Schema.decodeUnknownSync(WorkjetGatewayAddApiKeyAccountInput)(invalid),
+      ).toThrow();
+    }
+  });
+
+  it("keeps the OAuth start input restricted to providers that have a login", () => {
+    expect(
+      Schema.decodeUnknownSync(WorkjetGatewayOauthStartInput)({ provider: "claude" }).provider,
+    ).toBe("claude");
+    for (const provider of ["zai", "minimax", "xai", "kimi"]) {
+      expect(() => Schema.decodeUnknownSync(WorkjetGatewayOauthStartInput)({ provider })).toThrow();
+    }
+  });
+
+  it("returns only the account identity from the add result", () => {
+    const result = Schema.decodeUnknownSync(WorkjetGatewayAddApiKeyAccountResult)({
+      schemaVersion: 1,
+      accountId: "zai-primary",
+      apiKey: "must-not-escape",
+    });
+    expect(JSON.stringify(result)).not.toContain("must-not-escape");
   });
 });

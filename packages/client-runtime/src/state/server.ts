@@ -768,6 +768,15 @@ export function createServerEnvironmentAtoms<R, E>(
     concurrency: workjetGatewayConcurrency,
     onSuccess: refreshWorkjetGateway,
   });
+  // The one command whose payload carries a credential. It travels over the
+  // same authenticated socket as every other gateway command and is never
+  // retained by the client: the caller drops the input after dispatching.
+  const addWorkjetGatewayApiKeyAccount = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:add-api-key-account",
+    tag: WS_METHODS.workjetGatewayAddApiKeyAccount,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
 
   // The recipient roster the composer picks from: a bounded, redacted read of
   // the peers this machine has already exchanged mail with. It is a read, not a
@@ -850,6 +859,7 @@ export function createServerEnvironmentAtoms<R, E>(
     startWorkjetGatewayOauth,
     pollWorkjetGatewayOauth,
     cancelWorkjetGatewayOauth,
+    addWorkjetGatewayApiKeyAccount,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {

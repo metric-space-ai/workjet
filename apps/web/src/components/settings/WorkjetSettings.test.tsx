@@ -78,6 +78,8 @@ describe("Workjet configuration settings", () => {
     onRetry: () => undefined,
     onAddAccount: () => undefined,
     onCancelLogin: () => undefined,
+    apiKey: { status: "idle" as const },
+    onAddApiKey: () => undefined,
   };
   const automaticWorktreeStorage = {
     configuredRoot: "",
@@ -268,6 +270,7 @@ describe("Workjet configuration settings", () => {
                 priority: 1,
                 weight: 1,
                 modelIds: ["claude-opus"],
+                credentialSuffix: null,
               },
             ],
             pools: [],

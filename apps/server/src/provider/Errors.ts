@@ -204,13 +204,23 @@ export class ProviderSessionDirectoryPersistenceError extends Schema.TaggedError
  *                            provider endpoint
  *   - `driver-unsupported`  no verified base-URL mechanism exists for this
  *                            harness driver
+ *   - `instance-unroutable` the driver is routable, but THIS instance's
+ *                            configuration defeats the route — e.g. an
+ *                            OpenCode instance pointed at an externally
+ *                            managed server, whose environment Workjet never
+ *                            gets to set
  */
 export class ProviderGatewayRoutingError extends Schema.TaggedErrorClass<ProviderGatewayRoutingError>()(
   "ProviderGatewayRoutingError",
   {
     provider: Schema.String,
     instanceId: Schema.String,
-    reason: Schema.Literals(["gateway-not-ready", "endpoint-unavailable", "driver-unsupported"]),
+    reason: Schema.Literals([
+      "gateway-not-ready",
+      "endpoint-unavailable",
+      "driver-unsupported",
+      "instance-unroutable",
+    ]),
     detail: Schema.String,
     cause: Schema.optional(Schema.Defect()),
   },

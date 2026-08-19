@@ -8,9 +8,13 @@ import {
   gatewayRoutingEnvironmentOverlay,
   GATEWAY_CODEX_API_KEY_ENV,
   GATEWAY_CODEX_LAUNCH_ARGS_ENV,
+  GATEWAY_GROK_API_KEY_ENV,
+  GATEWAY_GROK_BASE_URL_ENV,
   GATEWAY_PLACEHOLDER_API_KEY,
+  gatewayVersionedBaseUrl,
   isGatewayRoutableDriver,
   normalizeGatewayBaseUrl,
+  openCodeGatewayRoutingBlock,
   resolveGatewayRoutedEnvironment,
 } from "./ProviderGatewayRouting.ts";
 import {
@@ -68,7 +72,9 @@ describe("gateway routing env mapping", () => {
 
     const args = overlay[GATEWAY_CODEX_LAUNCH_ARGS_ENV] ?? "";
     expect(args).toContain("-c model_provider=workjet_gateway");
-    expect(args).toContain(`-c model_providers.workjet_gateway.base_url=${ENDPOINT}/v1`);
+    expect(args).toContain(
+      `-c model_providers.workjet_gateway.base_url=${gatewayVersionedBaseUrl(ENDPOINT)}`,
+    );
     expect(args).toContain("-c model_providers.workjet_gateway.wire_api=responses");
     expect(args).toContain(
       `-c model_providers.workjet_gateway.env_key=${GATEWAY_CODEX_API_KEY_ENV}`,
@@ -90,14 +96,104 @@ describe("gateway routing env mapping", () => {
     expect(args).toContain(codexGatewayLaunchArgs(ENDPOINT));
   });
 
+  // Verified against the installed grok CLI: with GROK_MODELS_BASE_URL
+  // pointed at a local probe the CLI fetched GET <base>/models and posted
+  // turns to <base>/responses and <base>/chat/completions — all three are
+  // routes the gateway serves.
+  it("maps the Grok harness to its models base URL, /v1-prefixed", () => {
+    const overlay = gatewayRoutingEnvironmentOverlay({
+      driver: "grok",
+      providerEndpoint: ENDPOINT,
+    });
+
+    // Grok joins bare route names onto the base URL, so the `/v1` prefix has
+    // to be part of the value — unlike Claude Code's bare root.
+    expect(overlay[GATEWAY_GROK_BASE_URL_ENV]).toBe(`${ENDPOINT}/v1`);
+    expect(overlay[GATEWAY_GROK_API_KEY_ENV]).toBe(GATEWAY_PLACEHOLDER_API_KEY);
+    // Grok derives the model list as `{base}/models`; pinning the list URL
+    // separately would only be a second place to get the endpoint wrong.
+    expect(overlay).not.toHaveProperty("GROK_MODELS_LIST_URL");
+  });
+
+  // Verified against the installed opencode CLI: `opencode run` against a
+  // local probe reached POST <base>/messages for an anthropic/* model and
+  // POST <base>/responses for an openai/* model, authenticating with the
+  // placeholder key in each case.
+  it("maps the OpenCode harness to both AI-SDK vendor base URLs", () => {
+    const overlay = gatewayRoutingEnvironmentOverlay({
+      driver: "opencode",
+      providerEndpoint: ENDPOINT,
+    });
+
+    expect(overlay["ANTHROPIC_BASE_URL"]).toBe(`${ENDPOINT}/v1`);
+    expect(overlay["ANTHROPIC_API_KEY"]).toBe(GATEWAY_PLACEHOLDER_API_KEY);
+    expect(overlay["OPENAI_BASE_URL"]).toBe(`${ENDPOINT}/v1`);
+    expect(overlay["OPENAI_API_KEY"]).toBe(GATEWAY_PLACEHOLDER_API_KEY);
+  });
+
+  it("derives every versioned base URL from one endpoint helper", () => {
+    // One statement of the gateway's route layout; a driver that re-spelled
+    // `${endpoint}/v1` by hand would drift the day the layout changes.
+    const versioned = gatewayVersionedBaseUrl("http://127.0.0.1:52100///");
+    expect(versioned).toBe(`${ENDPOINT}/v1`);
+
+    for (const driver of ["grok", "opencode"] as const) {
+      const overlay = gatewayRoutingEnvironmentOverlay({
+        driver,
+        providerEndpoint: "http://127.0.0.1:52100///",
+      });
+      expect(Object.values(overlay)).toContain(versioned);
+    }
+    expect(codexGatewayLaunchArgs("http://127.0.0.1:52100///")).toContain(`base_url=${versioned}`);
+  });
+
   it("treats only the drivers with a verified mechanism as routable", () => {
     expect(isGatewayRoutableDriver("claudeAgent")).toBe(true);
     expect(isGatewayRoutableDriver("codex")).toBe(true);
-    // No verified base-URL mechanism — routed with guessed variables these
+    expect(isGatewayRoutableDriver("grok")).toBe(true);
+    expect(isGatewayRoutableDriver("opencode")).toBe(true);
+    // No verified base-URL mechanism — routed with guessed variables this
     // would silently keep billing the direct provider account.
-    expect(isGatewayRoutableDriver("grok")).toBe(false);
-    expect(isGatewayRoutableDriver("opencode")).toBe(false);
     expect(isGatewayRoutableDriver("cursor")).toBe(false);
+  });
+});
+
+describe("openCodeGatewayRoutingBlock", () => {
+  it("blocks an opted-in instance that targets an external OpenCode server", () => {
+    const blocked = openCodeGatewayRoutingBlock({
+      instanceId: "opencode_main",
+      routeViaGateway: true,
+      serverUrl: " http://opencode.internal:4096 ",
+    });
+
+    // Workjet never spawns that process, so the overlay would be written and
+    // silently ignored while the external server billed its own credentials.
+    expect(blocked?.reason).toBe("instance-unroutable");
+    expect(blocked?.detail).toContain("http://opencode.internal:4096");
+  });
+
+  it("does not block a self-hosted instance or an instance that did not opt in", () => {
+    expect(
+      openCodeGatewayRoutingBlock({
+        instanceId: "opencode_main",
+        routeViaGateway: true,
+        serverUrl: "   ",
+      }),
+    ).toBeNull();
+    expect(
+      openCodeGatewayRoutingBlock({
+        instanceId: "opencode_main",
+        routeViaGateway: true,
+        serverUrl: null,
+      }),
+    ).toBeNull();
+    expect(
+      openCodeGatewayRoutingBlock({
+        instanceId: "opencode_main",
+        routeViaGateway: false,
+        serverUrl: "http://opencode.internal:4096",
+      }),
+    ).toBeNull();
   });
 });
 
@@ -205,11 +301,65 @@ describe("resolveGatewayRoutedEnvironment", () => {
     ),
   );
 
+  it.effect("injects Grok's base URL for an opted-in instance and nothing otherwise", () =>
+    Effect.gen(function* () {
+      const routed = yield* resolveGatewayRoutedEnvironment({
+        driver: "grok",
+        instanceId: "grok_main",
+        routeViaGateway: true,
+        environment: [],
+        baseEnv: { PATH: "/usr/bin" },
+      });
+      expect(routed[GATEWAY_GROK_BASE_URL_ENV]).toBe(`${ENDPOINT}/v1`);
+      expect(routed[GATEWAY_GROK_API_KEY_ENV]).toBe(GATEWAY_PLACEHOLDER_API_KEY);
+
+      const unrouted = yield* resolveGatewayRoutedEnvironment({
+        driver: "grok",
+        instanceId: "grok_main",
+        routeViaGateway: false,
+        environment: [],
+        baseEnv: { PATH: "/usr/bin", XAI_API_KEY: "direct-account-key" },
+      });
+      expect(unrouted).toStrictEqual({ PATH: "/usr/bin", XAI_API_KEY: "direct-account-key" });
+    }).pipe(Effect.provide(readyLayer)),
+  );
+
+  it.effect(
+    "injects OpenCode's vendor base URLs for an opted-in instance and nothing otherwise",
+    () =>
+      Effect.gen(function* () {
+        const routed = yield* resolveGatewayRoutedEnvironment({
+          driver: "opencode",
+          instanceId: "opencode_main",
+          routeViaGateway: true,
+          environment: declared({ name: "OPENAI_API_KEY", value: "operator-key" }),
+          baseEnv: { PATH: "/usr/bin" },
+        });
+        expect(routed["ANTHROPIC_BASE_URL"]).toBe(`${ENDPOINT}/v1`);
+        expect(routed["OPENAI_BASE_URL"]).toBe(`${ENDPOINT}/v1`);
+        // A key the operator declared on the instance still wins.
+        expect(routed["OPENAI_API_KEY"]).toBe("operator-key");
+        expect(routed["ANTHROPIC_API_KEY"]).toBe(GATEWAY_PLACEHOLDER_API_KEY);
+
+        const unrouted = yield* resolveGatewayRoutedEnvironment({
+          driver: "opencode",
+          instanceId: "opencode_main",
+          routeViaGateway: false,
+          environment: [],
+          baseEnv: { PATH: "/usr/bin", ANTHROPIC_BASE_URL: "https://api.anthropic.com" },
+        });
+        expect(unrouted).toStrictEqual({
+          PATH: "/usr/bin",
+          ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+        });
+      }).pipe(Effect.provide(readyLayer)),
+  );
+
   it.effect("fails for a driver with no verified routing mechanism", () =>
     Effect.gen(function* () {
       const failure = yield* resolveGatewayRoutedEnvironment({
-        driver: "grok",
-        instanceId: "grok_main",
+        driver: "cursor",
+        instanceId: "cursor_main",
         routeViaGateway: true,
         environment: [],
         baseEnv: {},

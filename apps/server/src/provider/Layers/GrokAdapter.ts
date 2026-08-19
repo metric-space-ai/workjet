@@ -41,6 +41,7 @@ import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
+  type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
@@ -82,6 +83,19 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
 
 export interface GrokAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
+  /**
+   * Resolve the environment for a session that is about to start.
+   *
+   * Gateway-routed instances must consult the gateway's live status at the
+   * moment a session starts — the gateway starts, stops, and faults on its
+   * own schedule, so a value captured when the instance was built would go
+   * stale. When absent, the static `environment` above is used, which is
+   * exactly the unrouted behavior.
+   */
+  readonly resolveSessionEnvironment?: () => Effect.Effect<
+    NodeJS.ProcessEnv,
+    ProviderGatewayRoutingError
+  >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
@@ -650,9 +664,14 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 ),
               )
             : undefined;
+          // Resolved per session start so gateway-routed instances observe the
+          // gateway's current status rather than a value frozen at construction.
+          const sessionEnvironment = options?.resolveSessionEnvironment
+            ? yield* options.resolveSessionEnvironment()
+            : options?.environment;
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
-            ...(options?.environment ? { environment: options.environment } : {}),
+            ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
             childProcessSpawner,
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),

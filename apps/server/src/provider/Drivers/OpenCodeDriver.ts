@@ -26,6 +26,11 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
+import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
+import {
+  openCodeGatewayRoutingBlock,
+  resolveGatewayRoutedEnvironment,
+} from "../ProviderGatewayRouting.ts";
 import { makeOpenCodeAdapter } from "../Layers/OpenCodeAdapter.ts";
 import {
   checkOpenCodeProviderStatus,
@@ -77,6 +82,7 @@ const UPDATE = makePackageManagedProviderMaintenanceResolver({
 });
 
 export type OpenCodeDriverEnv =
+  | ProviderGatewayService
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
@@ -112,7 +118,15 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
   },
   configSchema: OpenCodeSettings,
   defaultConfig: (): OpenCodeSettings => decodeOpenCodeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    routeViaGateway,
+    config,
+  }) =>
     Effect.gen(function* () {
       const openCodeRuntime = yield* OpenCodeRuntime;
       const serverConfig = yield* ServerConfig;
@@ -136,9 +150,31 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         env: processEnv,
       });
 
+      // Captured eagerly so the resolver closure carries the gateway service
+      // rather than requiring it from the adapter's own R channel; the
+      // gateway STATUS itself is still read lazily, per session start.
+      const gateway = yield* ProviderGatewayService;
+      // An instance pointed at an externally managed OpenCode server cannot
+      // be routed by environment at all; fail loudly rather than pretend.
+      const routingBlock = openCodeGatewayRoutingBlock({
+        instanceId,
+        routeViaGateway,
+        serverUrl: effectiveConfig.serverUrl,
+      });
+      const resolveSessionEnvironment = () =>
+        routingBlock
+          ? Effect.fail(routingBlock)
+          : resolveGatewayRoutedEnvironment({
+              driver: DRIVER_KIND,
+              instanceId,
+              routeViaGateway,
+              environment,
+            }).pipe(Effect.provideService(ProviderGatewayService, gateway));
+
       const adapter = yield* makeOpenCodeAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
+        resolveSessionEnvironment,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const textGeneration = yield* makeOpenCodeTextGeneration(effectiveConfig, processEnv);

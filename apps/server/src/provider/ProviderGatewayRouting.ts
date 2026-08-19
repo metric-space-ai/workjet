@@ -9,6 +9,15 @@
  * process, so a routed session is just a session whose env carries the
  * gateway's loopback base URL.
  *
+ * Four harnesses are routable, each through a mechanism verified against the
+ * installed CLI rather than assumed from its documentation:
+ *   - claudeAgent  `ANTHROPIC_BASE_URL` (bare root; the CLI appends `/v1/...`)
+ *   - codex        dotted `-c model_providers.*` launch args, because
+ *                  `OPENAI_BASE_URL` is empirically ignored
+ *   - grok         `GROK_MODELS_BASE_URL` (`/v1`-prefixed)
+ *   - opencode     `ANTHROPIC_BASE_URL` + `OPENAI_BASE_URL` (`/v1`-prefixed),
+ *                  read by the AI-SDK provider packages inside `opencode serve`
+ *
  * Precedence (lowest to highest):
  *   1. `process.env` of the server
  *   2. gateway routing variables injected here
@@ -50,6 +59,29 @@ export const GATEWAY_PLACEHOLDER_API_KEY = "workjet-gateway";
 export const GATEWAY_CODEX_PROVIDER_ID = "workjet_gateway";
 
 /**
+ * Env var the Grok CLI reads its OpenAI-compatible inference base URL from.
+ *
+ * Verified against the installed `grok` binary (see module tests): with
+ * `GROK_MODELS_BASE_URL=<base>/v1` the CLI fetched `GET <base>/v1/models` and
+ * posted turns to `<base>/v1/responses` and `<base>/v1/chat/completions` — all
+ * three are routes the gateway serves. `GROK_MODELS_LIST_URL` is deliberately
+ * NOT set: Grok derives the list URL as `{base}/models`, which is correct here.
+ */
+export const GATEWAY_GROK_BASE_URL_ENV = "GROK_MODELS_BASE_URL";
+
+/**
+ * Credential variable Grok pairs with a custom base URL.
+ *
+ * Caveat observed on the installed binary: when a `grok login` session token
+ * exists it outranks `XAI_API_KEY` in Grok's credential order, so inference
+ * requests reach the gateway carrying that session bearer instead of the
+ * placeholder. Routing itself is unaffected — every request still goes to the
+ * loopback gateway rather than to api.x.ai — but the gateway, not the CLI, is
+ * what decides which upstream credential is finally used.
+ */
+export const GATEWAY_GROK_API_KEY_ENV = "XAI_API_KEY";
+
+/**
  * Env var Codex reads the gateway key from. Codex resolves a provider's
  * credential indirectly through `model_providers.<id>.env_key`, so the
  * variable name is ours to choose and is deliberately Workjet-scoped rather
@@ -71,7 +103,7 @@ export const GATEWAY_CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";
  * CLI. Anything absent here is intentionally left unrouted rather than
  * routed with guessed variables.
  */
-export const GATEWAY_ROUTABLE_DRIVERS = ["claudeAgent", "codex"] as const;
+export const GATEWAY_ROUTABLE_DRIVERS = ["claudeAgent", "codex", "grok", "opencode"] as const;
 export type GatewayRoutableDriver = (typeof GATEWAY_ROUTABLE_DRIVERS)[number];
 
 export function isGatewayRoutableDriver(driver: string): driver is GatewayRoutableDriver {
@@ -89,6 +121,20 @@ export function normalizeGatewayBaseUrl(providerEndpoint: string): string {
 }
 
 /**
+ * The gateway's `/v1` prefix, as every client that joins bare route names
+ * onto a base URL needs it.
+ *
+ * Claude Code is the exception: it appends `/v1/messages` itself, so it gets
+ * {@link normalizeGatewayBaseUrl} instead. Codex, Grok, and OpenCode all join
+ * `/responses`, `/models`, or `/messages` directly and therefore need the
+ * prefix baked into the base URL. Kept as one function so the gateway's route
+ * layout is stated in a single place rather than re-spelled per driver.
+ */
+export function gatewayVersionedBaseUrl(providerEndpoint: string): string {
+  return `${normalizeGatewayBaseUrl(providerEndpoint)}/v1`;
+}
+
+/**
  * Build the Codex `-c` config overrides that point Codex at the gateway.
  *
  * Verified against codex-cli 0.144.1 (see module tests): Codex ignores
@@ -102,12 +148,12 @@ export function normalizeGatewayBaseUrl(providerEndpoint: string): string {
  * arrives as a literal string. Avoiding quotes also keeps the arguments
  * safe for the driver's plain whitespace tokenizer.
  */
-export function codexGatewayLaunchArgs(baseUrl: string): string {
+export function codexGatewayLaunchArgs(providerEndpoint: string): string {
   const providerKey = `model_providers.${GATEWAY_CODEX_PROVIDER_ID}`;
   return [
     `-c model_provider=${GATEWAY_CODEX_PROVIDER_ID}`,
     `-c ${providerKey}.name=Workjet`,
-    `-c ${providerKey}.base_url=${baseUrl}/v1`,
+    `-c ${providerKey}.base_url=${gatewayVersionedBaseUrl(providerEndpoint)}`,
     `-c ${providerKey}.wire_api=responses`,
     `-c ${providerKey}.env_key=${GATEWAY_CODEX_API_KEY_ENV}`,
   ].join(" ");
@@ -127,23 +173,54 @@ export function gatewayRoutingEnvironmentOverlay(input: {
   readonly existingLaunchArgs?: string | undefined;
 }): Record<string, string> {
   const baseUrl = normalizeGatewayBaseUrl(input.providerEndpoint);
-  if (input.driver === "claudeAgent") {
-    // ANTHROPIC_AUTH_TOKEN is deliberately NOT set. Claude Code treats it as
-    // an OAuth-style bearer and prefers it over ANTHROPIC_API_KEY; setting
-    // both makes which credential is sent depend on CLI version.
-    return {
-      ANTHROPIC_BASE_URL: baseUrl,
-      ANTHROPIC_API_KEY: GATEWAY_PLACEHOLDER_API_KEY,
-    };
-  }
+  const versionedBaseUrl = gatewayVersionedBaseUrl(input.providerEndpoint);
 
-  const configured = input.existingLaunchArgs?.trim() ?? "";
-  const gatewayArgs = codexGatewayLaunchArgs(baseUrl);
-  return {
-    [GATEWAY_CODEX_API_KEY_ENV]: GATEWAY_PLACEHOLDER_API_KEY,
-    [GATEWAY_CODEX_LAUNCH_ARGS_ENV]:
-      configured.length > 0 ? `${configured} ${gatewayArgs}` : gatewayArgs,
-  };
+  switch (input.driver) {
+    case "claudeAgent":
+      // ANTHROPIC_AUTH_TOKEN is deliberately NOT set. Claude Code treats it as
+      // an OAuth-style bearer and prefers it over ANTHROPIC_API_KEY; setting
+      // both makes which credential is sent depend on CLI version.
+      return {
+        ANTHROPIC_BASE_URL: baseUrl,
+        ANTHROPIC_API_KEY: GATEWAY_PLACEHOLDER_API_KEY,
+      };
+
+    case "grok":
+      return {
+        [GATEWAY_GROK_BASE_URL_ENV]: versionedBaseUrl,
+        [GATEWAY_GROK_API_KEY_ENV]: GATEWAY_PLACEHOLDER_API_KEY,
+      };
+
+    case "opencode":
+      // OpenCode drives models through the Vercel AI SDK provider packages,
+      // which read the standard per-vendor base-URL variables and join bare
+      // route names (`/messages`, `/responses`) onto them — hence the `/v1`
+      // form here, unlike Claude Code's bare root. Verified against the
+      // installed CLI (see module tests): the spawned `opencode serve`
+      // inherits these and reached the local probe at `/v1/messages` and
+      // `/v1/responses`.
+      //
+      // This covers the Anthropic- and OpenAI-shaped providers, which are the
+      // wire formats the gateway serves. A session pinned to some other
+      // OpenCode provider (Google, MiniMax, …) has no gateway route and keeps
+      // using its own credentials.
+      return {
+        ANTHROPIC_BASE_URL: versionedBaseUrl,
+        ANTHROPIC_API_KEY: GATEWAY_PLACEHOLDER_API_KEY,
+        OPENAI_BASE_URL: versionedBaseUrl,
+        OPENAI_API_KEY: GATEWAY_PLACEHOLDER_API_KEY,
+      };
+
+    case "codex": {
+      const configured = input.existingLaunchArgs?.trim() ?? "";
+      const gatewayArgs = codexGatewayLaunchArgs(input.providerEndpoint);
+      return {
+        [GATEWAY_CODEX_API_KEY_ENV]: GATEWAY_PLACEHOLDER_API_KEY,
+        [GATEWAY_CODEX_LAUNCH_ARGS_ENV]:
+          configured.length > 0 ? `${configured} ${gatewayArgs}` : gatewayArgs,
+      };
+    }
+  }
 }
 
 /**
@@ -163,6 +240,31 @@ export function applyGatewayRoutingOverlay(input: {
     next[name] = value;
   }
   return next;
+}
+
+/**
+ * OpenCode-specific pre-check: is this instance routable at all?
+ *
+ * Routing reaches OpenCode through the environment of the `opencode serve`
+ * child Workjet spawns. An instance configured with an external `serverUrl`
+ * has no such child, so the overlay would be written and then ignored — the
+ * operator would believe they were on the gateway pool while the external
+ * server kept billing its own credentials. Returns the error to raise, or
+ * `null` when the instance is routable.
+ */
+export function openCodeGatewayRoutingBlock(input: {
+  readonly instanceId: string;
+  readonly routeViaGateway: boolean;
+  readonly serverUrl: string | null | undefined;
+}): ProviderGatewayRoutingError | null {
+  const externalServerUrl = input.serverUrl?.trim() ?? "";
+  if (!input.routeViaGateway || externalServerUrl.length === 0) return null;
+  return new ProviderGatewayRoutingError({
+    provider: "opencode",
+    instanceId: input.instanceId,
+    reason: "instance-unroutable",
+    detail: `This OpenCode instance targets an external server (${externalServerUrl}); Workjet does not control that process's environment and cannot route it through the gateway. Clear the server URL so Workjet starts OpenCode itself, or disable "Route via Workjet gateway" for this instance.`,
+  });
 }
 
 export interface ResolveGatewayRoutedEnvironmentInput {

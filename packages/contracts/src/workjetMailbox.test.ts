@@ -616,6 +616,50 @@ describe("WorkjetMailboxPayload", () => {
   it("rejects an unknown payload tag", () => {
     expect(() => decodePayload({ _tag: "prompt", message })).toThrow();
   });
+
+  it("carries optional cross-machine snapshot bytes on a delegation payload", () => {
+    const withBytes = {
+      _tag: "delegation",
+      delegation,
+      snapshotBytes: "Implement the transfer.\nBounded, sealed, verified.",
+    } as const;
+    const decoded = decodePayload(withBytes);
+    expect(decoded._tag).toBe("delegation");
+    if (decoded._tag === "delegation") {
+      expect(decoded.snapshotBytes).toBe(withBytes.snapshotBytes);
+      expect(decoded.snapshotOversized).toBeUndefined();
+    }
+    roundTrip(WorkjetMailboxPayload, withBytes);
+
+    // A reference-only delegation (same-env fast path) omits both fields.
+    const refOnly = decodePayload({ _tag: "delegation", delegation });
+    if (refOnly._tag === "delegation") {
+      expect(refOnly.snapshotBytes).toBeUndefined();
+      expect(refOnly.snapshotOversized).toBeUndefined();
+    }
+
+    // The oversized marker travels reference-only.
+    const oversized = { _tag: "delegation", delegation, snapshotOversized: true } as const;
+    const decodedOversized = decodePayload(oversized);
+    if (decodedOversized._tag === "delegation") {
+      expect(decodedOversized.snapshotOversized).toBe(true);
+      expect(decodedOversized.snapshotBytes).toBeUndefined();
+    }
+    roundTrip(WorkjetMailboxPayload, oversized);
+  });
+
+  it("rejects snapshot bytes over the transfer ceiling and a non-true marker", () => {
+    expect(() =>
+      decodePayload({
+        _tag: "delegation",
+        delegation,
+        snapshotBytes: "x".repeat(262_145),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodePayload({ _tag: "delegation", delegation, snapshotOversized: false }),
+    ).toThrow();
+  });
 });
 
 describe("WorkjetMailboxError", () => {

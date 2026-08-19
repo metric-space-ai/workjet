@@ -234,6 +234,34 @@ export const WorkjetPromptSnapshotRef = Schema.Struct({
 });
 export type WorkjetPromptSnapshotRef = typeof WorkjetPromptSnapshotRef.Type;
 
+/**
+ * Ceiling on the prompt-snapshot bytes a delegation may CARRY inline for
+ * cross-machine transfer (256 KiB).
+ *
+ * A delegation crossing machines pins its prompt with a {@link
+ * WorkjetPromptSnapshotRef}, whose bytes live in the SOURCE machine's snapshot
+ * store. So the receiver can actually run the task, the outbound cross-machine
+ * delegation may additionally carry those bytes — a single prompt snapshot is a
+ * bounded transfer, well under the store's 8 MiB cap. The authoritative wire
+ * gate remains the transport's sealed 200 000-byte ceiling, checked against the
+ * fully encoded, sealed wrapper; this bound is only a schema sanity ceiling so a
+ * hostile document cannot pull unbounded data into memory before that check.
+ */
+export const WORKJET_DELEGATION_SNAPSHOT_TRANSFER_MAX_BYTES = 262_144;
+
+/**
+ * The verbatim prompt-snapshot text a cross-machine delegation carries. Only its
+ * length is bounded here: the snapshot is arbitrary UTF-8 prompt material whose
+ * integrity is re-established on the receiver by hashing the bytes and matching
+ * them against the delegation's declared {@link WorkjetContentDigest}, so no
+ * content-shape restriction belongs here (that would falsely reject a valid
+ * prompt). The digest, not this schema, is the integrity check.
+ */
+export const WorkjetDelegationSnapshotBytes = Schema.String.check(
+  Schema.isMaxLength(WORKJET_DELEGATION_SNAPSHOT_TRANSFER_MAX_BYTES),
+);
+export type WorkjetDelegationSnapshotBytes = typeof WorkjetDelegationSnapshotBytes.Type;
+
 /** Repository-relative path. Absolute paths and `..` traversal are rejected. */
 export const WorkjetRepositoryPath = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1_024),
@@ -565,7 +593,28 @@ export type WorkjetRoutingEnvelope = typeof WorkjetRoutingEnvelope.Type;
  */
 export const WorkjetMailboxPayload = Schema.Union([
   Schema.TaggedStruct("message", { message: WorkjetWorkerMessage }),
-  Schema.TaggedStruct("delegation", { delegation: WorkjetDelegation }),
+  Schema.TaggedStruct("delegation", {
+    delegation: WorkjetDelegation,
+    /**
+     * ADDITIVE, cross-machine only. The verbatim bytes of the delegation's
+     * immutable prompt snapshot, attached by the transport when a delegation is
+     * enqueued to a DIFFERENT environment and the sealed wrapper still fits the
+     * wire ceiling. The receiver `put`s them into its LOCAL snapshot store,
+     * re-verifying the digest, so the executor can read the prompt locally
+     * instead of skipping on `missingSnapshot`. Absent on every same-environment
+     * (local fast-path) payload and stripped before the row is persisted, so the
+     * durable delegation stays reference-only.
+     */
+    snapshotBytes: Schema.optionalKey(WorkjetDelegationSnapshotBytes),
+    /**
+     * ADDITIVE, cross-machine only. Set to `true` when the prompt snapshot was
+     * too large to seal within the wire ceiling: the delegation then travels
+     * reference-only and the receiver leaves it `delivered` with a bounded
+     * reason rather than silently dropping it. Mutually exclusive with
+     * {@link snapshotBytes}.
+     */
+    snapshotOversized: Schema.optionalKey(Schema.Literal(true)),
+  }),
   Schema.TaggedStruct("receipt", { receipt: WorkjetDeliveryReceipt }),
   Schema.TaggedStruct("result", { result: WorkjetDelegationResult }),
   Schema.TaggedStruct("review", { verdict: WorkjetReviewVerdict }),

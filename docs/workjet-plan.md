@@ -817,10 +817,21 @@ failed | cancelled | expired`. Done in the same commit
       activity kinds with payload-material canary tests. MCP tools
       `workjet_send_message` and `workjet_delegate_task` are registered
       orchestrator-scoped (least privilege until the reply/ACL items land).
-      Envelopes carry a documented unsigned-sentinel signature that the
-      transport slice MUST replace and reject inbound. Still open before
-      ticking: envelope signing, prompt-snapshot production, and the mesh
-      identity service (workspace id is caller-supplied today).
+      Progress 2026-08-19, slice 4 (commits `4f37e2202`, `d47dcbdf5`,
+      `69535cb0e`): routing envelopes are now Ed25519-signed against a durable
+      per-environment mesh identity (private key create-once in the
+      ServerSecretStore, never exported; domain-tagged canonical
+      serialization exported for the transport slice; local inbound verifies
+      before insertion and rejects `invalid-signature`); the source workspace
+      id comes from the identity service, not the caller (generated mesh id
+      documented as the pre-pairing fallback until the CTOX-room-derived
+      identity lands); and `workjet_delegate_task` takes bounded prompt TEXT,
+      stores it in the content-addressed immutable snapshot store beneath the
+      server state root (digest-sharded, atomic, reverified on read), and
+      pins the delegation to the digest the server itself wrote. Still open:
+      payload sealing (encryption) to the target environment key, peer-key
+      distribution, the CTOX-Sync transport itself, the reconciler, and the
+      thread UI.
 - [ ] Replicate the per-machine durable mailboxes and the redacted activity
       projection over the CTOX Sync WebRTC data plane between the user's own
       machines (primary transport per the 2026-08-18 owner decision), joined

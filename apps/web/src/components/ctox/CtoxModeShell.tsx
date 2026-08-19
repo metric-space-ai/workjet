@@ -642,6 +642,245 @@ function CtoxInstanceAppRail({
   );
 }
 
+/** Apps whose guest module declares no category still need one bucket. */
+export const CTOX_RAIL_FALLBACK_CATEGORY = "Apps";
+/** How many apps of an expanded category are shown before "Show more". */
+export const CTOX_RAIL_CATEGORY_PREVIEW_COUNT = 5;
+
+export interface CtoxRailCategoryGroup {
+  readonly category: string;
+  readonly apps: readonly CtoxInstanceApp[];
+}
+
+function appLabel(app: CtoxInstanceApp): string {
+  return app.title ?? app.id;
+}
+
+/** Open first, then alphabetically by visible label; the id breaks ties. */
+function compareRailApps(a: CtoxInstanceApp, b: CtoxInstanceApp): number {
+  if (a.open !== b.open) return a.open ? -1 : 1;
+  const byLabel = appLabel(a).localeCompare(appLabel(b), "en", { sensitivity: "base" });
+  return byLabel !== 0 ? byLabel : a.id.localeCompare(b.id);
+}
+
+/**
+ * Taskbar model: docked apps stay pinned at the top in their pin order and are
+ * never grouped or hidden. Everything else is bucketed by the guest module's
+ * own category, categories holding an open app first, then alphabetically.
+ */
+export function groupCtoxRailApps(apps: readonly CtoxInstanceApp[]): {
+  readonly docked: readonly CtoxInstanceApp[];
+  readonly categories: readonly CtoxRailCategoryGroup[];
+} {
+  const docked = apps.filter((app) => app.docked);
+  const buckets = new Map<string, CtoxInstanceApp[]>();
+  for (const app of apps) {
+    if (app.docked) continue;
+    const category = app.category ?? CTOX_RAIL_FALLBACK_CATEGORY;
+    const bucket = buckets.get(category);
+    if (bucket === undefined) buckets.set(category, [app]);
+    else bucket.push(app);
+  }
+  const categories = [...buckets.entries()]
+    .map(([category, bucket]) => ({ category, apps: [...bucket].sort(compareRailApps) }))
+    .sort((a, b) => {
+      const aOpen = a.apps.some((app) => app.open);
+      const bOpen = b.apps.some((app) => app.open);
+      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+      return a.category.localeCompare(b.category, "en", { sensitivity: "base" });
+    });
+  return { docked, categories };
+}
+
+/**
+ * The preview slice of an expanded category. Apps are already open-first, and
+ * the slice grows past the preview count when needed so that an open app can
+ * never end up hidden behind "Show more".
+ */
+export function visibleCtoxRailApps(
+  apps: readonly CtoxInstanceApp[],
+  expanded: boolean,
+): readonly CtoxInstanceApp[] {
+  if (expanded) return apps;
+  const openCount = apps.filter((app) => app.open).length;
+  return apps.slice(0, Math.max(CTOX_RAIL_CATEGORY_PREVIEW_COUNT, openCount));
+}
+
+/** Bounded, per-instance and per-category localStorage key for collapse state. */
+export function ctoxRailCollapseKey(instanceId: string, category: string): string {
+  return `ctox.rail.collapsed:${instanceId.slice(0, 128)}:${category.slice(0, 64)}`;
+}
+
+/**
+ * Reading `localStorage` can throw (blocked storage, SSR); collapse state is
+ * cosmetic, so every failure silently falls back to the expanded default.
+ */
+function railCollapseStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+export function readCtoxRailCollapsed(
+  instanceId: string,
+  category: string,
+  storage: Storage | undefined = railCollapseStorage(),
+): boolean {
+  try {
+    return storage?.getItem(ctoxRailCollapseKey(instanceId, category)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeCtoxRailCollapsed(
+  instanceId: string,
+  category: string,
+  collapsed: boolean,
+  storage: Storage | undefined = railCollapseStorage(),
+): void {
+  const key = ctoxRailCollapseKey(instanceId, category);
+  try {
+    if (collapsed) storage?.setItem(key, "1");
+    else storage?.removeItem(key);
+  } catch {
+    // A full or blocked store must never break the rail.
+  }
+}
+
+function CtoxAppRailRow({
+  app,
+  instanceReady,
+  stale,
+  launchable,
+  onOpen,
+  onToggleDock,
+}: {
+  readonly app: CtoxInstanceApp;
+  readonly instanceReady: boolean;
+  readonly stale: boolean;
+  readonly launchable: boolean;
+  readonly onOpen: (moduleId: string) => void;
+  readonly onToggleDock: (moduleId: string, docked: boolean) => void;
+}) {
+  const open = app.open && instanceReady;
+  return (
+    <li className="group/ctox-app flex items-center gap-1">
+      <button
+        type="button"
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+          open
+            ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+            : "text-sidebar-foreground hover:bg-sidebar-accent/40",
+          stale && !open && "text-sidebar-muted-foreground",
+          !launchable && "cursor-not-allowed opacity-60",
+        )}
+        disabled={!launchable}
+        aria-current={open ? "true" : undefined}
+        data-ctox-app-id={app.id}
+        data-ctox-app-open={open}
+        data-ctox-app-docked={app.docked}
+        title={launchable ? undefined : "This instance is not available."}
+        onClick={() => onOpen(app.id)}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            open ? "bg-sidebar-primary" : "bg-sidebar-muted-foreground/40",
+          )}
+        />
+        <span className="truncate">{appLabel(app)}</span>
+      </button>
+      <button
+        type="button"
+        className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-app:visible"
+        title={app.docked ? "Undock app" : "Dock app"}
+        aria-label={`${app.docked ? "Undock" : "Dock"} ${appLabel(app)}`}
+        onClick={() => onToggleDock(app.id, !app.docked)}
+      >
+        {app.docked ? "Unpin" : "Pin"}
+      </button>
+    </li>
+  );
+}
+
+function CtoxAppRailCategory({
+  instance,
+  group,
+  instanceReady,
+  stale,
+  launchable,
+  onOpen,
+  onToggleDock,
+}: {
+  readonly instance: CtoxManagedInstance;
+  readonly group: CtoxRailCategoryGroup;
+  readonly instanceReady: boolean;
+  readonly stale: boolean;
+  readonly launchable: boolean;
+  readonly onOpen: (moduleId: string) => void;
+  readonly onToggleDock: (moduleId: string, docked: boolean) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(() =>
+    readCtoxRailCollapsed(instance.id, group.category),
+  );
+  const [expanded, setExpanded] = useState(false);
+  const visible = visibleCtoxRailApps(group.apps, expanded);
+  const hidden = group.apps.length - visible.length;
+  return (
+    <li data-ctox-app-category={group.category}>
+      <button
+        type="button"
+        className="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[10px] font-medium uppercase tracking-wide text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
+        aria-expanded={!collapsed}
+        data-ctox-app-category-collapsed={collapsed}
+        onClick={() => {
+          const next = !collapsed;
+          setCollapsed(next);
+          writeCtoxRailCollapsed(instance.id, group.category, next);
+        }}
+      >
+        <span aria-hidden className={cn("shrink-0 text-[8px]", collapsed ? "" : "rotate-90")}>
+          ▶
+        </span>
+        <span className="truncate">{group.category}</span>
+        <span className="text-sidebar-muted-foreground/70">{group.apps.length}</span>
+      </button>
+      {collapsed ? null : (
+        <ul className="space-y-0.5">
+          {visible.map((app) => (
+            <CtoxAppRailRow
+              key={app.id}
+              app={app}
+              instanceReady={instanceReady}
+              stale={stale}
+              launchable={launchable}
+              onOpen={onOpen}
+              onToggleDock={onToggleDock}
+            />
+          ))}
+          {hidden > 0 || expanded ? (
+            <li>
+              <button
+                type="button"
+                className="w-full rounded px-2 py-1 text-left text-[11px] text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
+                data-ctox-app-category-more={group.category}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? "Show less" : `Show more (${hidden})`}
+              </button>
+            </li>
+          ) : null}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 /** Pure app-rail rows; exported for deterministic state rendering in tests. */
 export function CtoxAppRailList({
   instance,
@@ -662,51 +901,32 @@ export function CtoxAppRailList({
 }) {
   if (apps.length === 0) return null;
   const stale = !instanceReady || source === "cache";
+  const { docked, categories } = groupCtoxRailApps(apps);
   return (
     <ul className="space-y-0.5 py-0.5 pl-4" aria-label={`Apps of ${instance.displayName}`}>
-      {apps.map((app) => {
-        const open = app.open && instanceReady;
-        return (
-          <li key={app.id} className="group/ctox-app flex items-center gap-1">
-            <button
-              type="button"
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
-                open
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent/40",
-                stale && !open && "text-sidebar-muted-foreground",
-                !launchable && "cursor-not-allowed opacity-60",
-              )}
-              disabled={!launchable}
-              aria-current={open ? "true" : undefined}
-              data-ctox-app-id={app.id}
-              data-ctox-app-open={open}
-              data-ctox-app-docked={app.docked}
-              title={launchable ? undefined : "This instance is not available."}
-              onClick={() => onOpen(app.id)}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  open ? "bg-sidebar-primary" : "bg-sidebar-muted-foreground/40",
-                )}
-              />
-              <span className="truncate">{app.title ?? app.id}</span>
-            </button>
-            <button
-              type="button"
-              className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-app:visible"
-              title={app.docked ? "Undock app" : "Dock app"}
-              aria-label={`${app.docked ? "Undock" : "Dock"} ${app.title ?? app.id}`}
-              onClick={() => onToggleDock(app.id, !app.docked)}
-            >
-              {app.docked ? "Unpin" : "Pin"}
-            </button>
-          </li>
-        );
-      })}
+      {docked.map((app) => (
+        <CtoxAppRailRow
+          key={app.id}
+          app={app}
+          instanceReady={instanceReady}
+          stale={stale}
+          launchable={launchable}
+          onOpen={onOpen}
+          onToggleDock={onToggleDock}
+        />
+      ))}
+      {categories.map((group) => (
+        <CtoxAppRailCategory
+          key={group.category}
+          instance={instance}
+          group={group}
+          instanceReady={instanceReady}
+          stale={stale}
+          launchable={launchable}
+          onOpen={onOpen}
+          onToggleDock={onToggleDock}
+        />
+      ))}
     </ul>
   );
 }

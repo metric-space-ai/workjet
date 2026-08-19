@@ -21,6 +21,8 @@ import {
   CTOX_IMPORT_ERROR_MESSAGE,
   CTOX_IMPORT_SUCCESS_MESSAGE,
   CTOX_REMOVE_ERROR_MESSAGE,
+  CTOX_RAIL_FALLBACK_CATEGORY,
+  ctoxRailCollapseKey,
   CtoxAppRailList,
   CtoxMainShell,
   CtoxManagedInstanceList,
@@ -28,14 +30,18 @@ import {
   CtoxSidebarShell,
   getCtoxManagedState,
   groupCtoxInstances,
+  groupCtoxRailApps,
   isCurrentCtoxGuestActivation,
   releaseCtoxGuest,
   removeCtoxPairedInstance,
   resolveCtoxGuestBounds,
   retainCtoxGuestBounds,
   submitCtoxInvite,
+  readCtoxRailCollapsed,
   submitCtoxManualPairing,
   trackCtoxGuestActivation,
+  visibleCtoxRailApps,
+  writeCtoxRailCollapsed,
 } from "./CtoxModeShell";
 
 const healthy = {
@@ -668,5 +674,182 @@ describe("CTOX app rail presentation", () => {
       />,
     );
     expect(markup).toContain("warehouse");
+  });
+});
+
+describe("CTOX app rail categories", () => {
+  const railInstance = instance({
+    id: "paired:manual_pairing:rail",
+    source: "manual_pairing",
+    displayName: "Rail Office",
+    status: "paired",
+    healthSummary: unavailable,
+  });
+
+  function app(
+    id: string,
+    input: { title?: string; category?: string; docked?: boolean; open?: boolean } = {},
+  ) {
+    return {
+      id,
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.category === undefined ? {} : { category: input.category }),
+      docked: input.docked ?? false,
+      open: input.open ?? false,
+    };
+  }
+
+  function memoryStorage(seed: Record<string, string> = {}): Storage {
+    const map = new Map(Object.entries(seed));
+    return {
+      get length() {
+        return map.size;
+      },
+      clear: () => map.clear(),
+      getItem: (key: string) => map.get(key) ?? null,
+      key: (index: number) => [...map.keys()][index] ?? null,
+      removeItem: (key: string) => void map.delete(key),
+      setItem: (key: string, value: string) => void map.set(key, value),
+    } as Storage;
+  }
+
+  function withWindowStorage<A>(storage: Storage, body: () => A): A {
+    const holder = globalThis as unknown as { window?: unknown };
+    const previous = holder.window;
+    holder.window = { localStorage: storage };
+    try {
+      return body();
+    } finally {
+      if (previous === undefined) delete holder.window;
+      else holder.window = previous;
+    }
+  }
+
+  it("keeps docked apps ungrouped on top and orders categories by open state", () => {
+    const { docked, categories } = groupCtoxRailApps([
+      app("pinned-b", { title: "Pinned B", category: "Workspace", docked: true }),
+      app("pinned-a", { title: "Pinned A", category: "Zulu", docked: true }),
+      app("mail", { title: "Mail", category: "Workspace" }),
+      app("audit", { title: "Audit", category: "Zulu", open: true }),
+      app("alpha", { title: "Alpha", category: "Zulu" }),
+      app("loose", { title: "Loose" }),
+    ]);
+    // Docked apps keep their incoming pin order and are never bucketed.
+    expect(docked.map((entry) => entry.id)).toEqual(["pinned-b", "pinned-a"]);
+    expect(categories.map((group) => group.category)).toEqual([
+      "Zulu",
+      CTOX_RAIL_FALLBACK_CATEGORY,
+      "Workspace",
+    ]);
+    expect(categories[0]?.apps.map((entry) => entry.id)).toEqual(["audit", "alpha"]);
+    expect(categories[1]?.apps.map((entry) => entry.id)).toEqual(["loose"]);
+  });
+
+  it("never hides an open app behind the show-more row", () => {
+    const apps = [
+      ...Array.from({ length: 7 }, (_, index) => app(`open-${index}`, { open: true })),
+      ...Array.from({ length: 4 }, (_, index) => app(`idle-${index}`)),
+    ];
+    const [group] = groupCtoxRailApps(apps).categories;
+    const preview = visibleCtoxRailApps(group!.apps, false);
+    expect(preview).toHaveLength(7);
+    expect(preview.every((entry) => entry.open)).toBe(true);
+    expect(visibleCtoxRailApps(group!.apps, true)).toHaveLength(11);
+  });
+
+  it("caps a quiet category at five apps and offers the remainder", () => {
+    const apps = Array.from({ length: 8 }, (_, index) => app(`app-${index}`));
+    const [group] = groupCtoxRailApps(apps).categories;
+    expect(visibleCtoxRailApps(group!.apps, false)).toHaveLength(5);
+  });
+
+  it("renders category headers with a show-more row for the hidden remainder", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxAppRailList
+        instance={railInstance}
+        apps={[
+          app("pinned", { title: "Pinned", category: "Workspace", docked: true }),
+          ...Array.from({ length: 8 }, (_, index) =>
+            app(`ops-${index}`, { title: `Ops ${index}`, category: "Operations" }),
+          ),
+        ]}
+        instanceReady={true}
+        source="live"
+        launchable={true}
+        onOpen={() => undefined}
+        onToggleDock={() => undefined}
+      />,
+    );
+    expect(markup).toContain('data-ctox-app-category="Operations"');
+    expect(markup).toContain('data-ctox-app-category-collapsed="false"');
+    expect(markup).toContain("Show more (3)");
+    expect(markup).not.toContain("Show less");
+    // The docked app stays out of every category bucket.
+    expect(markup).not.toContain('data-ctox-app-category="Workspace"');
+    expect(markup).toContain('data-ctox-app-id="pinned"');
+    expect(markup).toContain('data-ctox-app-id="ops-4"');
+    expect(markup).not.toContain('data-ctox-app-id="ops-7"');
+  });
+
+  it("omits the show-more row when a category fits in the preview", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxAppRailList
+        instance={railInstance}
+        apps={[app("mail", { title: "Mail", category: "Workspace" })]}
+        instanceReady={true}
+        source="live"
+        launchable={true}
+        onOpen={() => undefined}
+        onToggleDock={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("Show more");
+  });
+
+  it("persists collapse state per instance and category", () => {
+    const storage = memoryStorage();
+    expect(ctoxRailCollapseKey(railInstance.id, "Operations")).toBe(
+      `ctox.rail.collapsed:${railInstance.id}:Operations`,
+    );
+    expect(readCtoxRailCollapsed(railInstance.id, "Operations", storage)).toBe(false);
+    writeCtoxRailCollapsed(railInstance.id, "Operations", true, storage);
+    expect(readCtoxRailCollapsed(railInstance.id, "Operations", storage)).toBe(true);
+    // A sibling category of the same instance is unaffected.
+    expect(readCtoxRailCollapsed(railInstance.id, "Workspace", storage)).toBe(false);
+    expect(readCtoxRailCollapsed("other-instance", "Operations", storage)).toBe(false);
+    writeCtoxRailCollapsed(railInstance.id, "Operations", false, storage);
+    expect(readCtoxRailCollapsed(railInstance.id, "Operations", storage)).toBe(false);
+    // Blocked or absent storage stays silently expanded.
+    expect(readCtoxRailCollapsed(railInstance.id, "Operations", undefined)).toBe(false);
+    expect(() =>
+      writeCtoxRailCollapsed(railInstance.id, "Operations", true, undefined),
+    ).not.toThrow();
+  });
+
+  it("renders a persisted collapsed category without its app rows", () => {
+    const storage = memoryStorage({
+      [ctoxRailCollapseKey(railInstance.id, "Operations")]: "1",
+    });
+    const markup = withWindowStorage(storage, () =>
+      renderToStaticMarkup(
+        <CtoxAppRailList
+          instance={railInstance}
+          apps={[
+            app("tickets", { title: "Tickets", category: "Operations" }),
+            app("mail", { title: "Mail", category: "Workspace" }),
+          ]}
+          instanceReady={true}
+          source="live"
+          launchable={true}
+          onOpen={() => undefined}
+          onToggleDock={() => undefined}
+        />,
+      ),
+    );
+    expect(markup).toContain('data-ctox-app-category="Operations"');
+    expect(markup).toContain('data-ctox-app-category-collapsed="true"');
+    expect(markup).not.toContain('data-ctox-app-id="tickets"');
+    // The sibling category has no stored state and stays expanded.
+    expect(markup).toContain('data-ctox-app-id="mail"');
   });
 });

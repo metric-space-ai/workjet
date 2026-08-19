@@ -762,9 +762,38 @@ export function createServerEnvironmentAtoms<R, E>(
     onSuccess: refreshWorkjetGateway,
   });
 
+  // Sending into another worker's mailbox is single-flighted per SOURCE THREAD,
+  // not per environment: two orchestrator threads on one server are two
+  // independent conversations, and a slow send from one must not swallow the
+  // other's. Nothing is refreshed on success — the durable trace arrives as a
+  // thread activity through the ordinary thread subscription, so an optimistic
+  // refresh here would only race it.
+  const workjetMailboxConcurrency = {
+    mode: "singleFlight" as const,
+    key: ({
+      environmentId,
+      input,
+    }: {
+      readonly environmentId: EnvironmentId;
+      readonly input: { readonly sourceThreadId: string };
+    }) => `${environmentId}:${input.sourceThreadId}`,
+  };
+  const sendWorkjetMailboxMessage = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:send-message",
+    tag: WS_METHODS.workjetMailboxSendMessage,
+    concurrency: workjetMailboxConcurrency,
+  });
+  const delegateWorkjetMailboxTask = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:delegate-task",
+    tag: WS_METHODS.workjetMailboxDelegateTask,
+    concurrency: workjetMailboxConcurrency,
+  });
+
   return {
     configValueAtom,
     updateStateAtom,
+    sendWorkjetMailboxMessage,
+    delegateWorkjetMailboxTask,
     workjetGatewayStatus,
     workjetGatewayCatalog,
     startWorkjetGateway,

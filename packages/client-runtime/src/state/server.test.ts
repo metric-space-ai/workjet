@@ -139,6 +139,34 @@ describe("Workjet provider gateway client wiring", () => {
   });
 });
 
+describe("Workjet mailbox client wiring", () => {
+  const mailboxAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("exposes both mailbox sends as labelled commands", () => {
+    const server = mailboxAtoms();
+
+    expect(server.sendWorkjetMailboxMessage.label).toBe(
+      "environment-data:workjet:mailbox:send-message",
+    );
+    expect(server.delegateWorkjetMailboxTask.label).toBe(
+      "environment-data:workjet:mailbox:delegate-task",
+    );
+  });
+
+  it("keeps the two sends distinct instead of collapsing onto one command", () => {
+    const server = mailboxAtoms();
+
+    expect(server.delegateWorkjetMailboxTask).not.toBe(server.sendWorkjetMailboxMessage);
+  });
+});
+
 describe("update restart reconnect nudges", () => {
   it.effect("retries once per backoff entry instead of only the first", () =>
     Effect.gen(function* () {

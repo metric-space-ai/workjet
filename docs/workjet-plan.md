@@ -862,7 +862,7 @@ failed | cancelled | expired`. Done in the same commit
       migration 043 (peer-key pinning) and `WorkjetMailboxTransport`: 10-s
       jittered poll loop that idles cleanly until descriptor+token resolve
       (token via CTOX's first-class `ctox secret get
-    business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
+  business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       pending outbound with the existing backoff-to-dead-letter, pulls and
       verifies inbound (signature against the sender key with TOFU key
       continuity as the DOCUMENTED interim until CTOX-room-derived identity
@@ -878,9 +878,19 @@ failed | cancelled | expired`. Done in the same commit
       including a worker worktree branch.
 - [ ] Add the global multi-computer activity overview on the replicated
       redacted projection, including last known state of offline machines.
-- [ ] Encrypt message/delegation payloads end to end to the target environment
+- [x] Encrypt message/delegation payloads end to end to the target environment
       key and sign the immutable routing envelope with the source environment
       key; the relay may inspect only the minimum routing and expiry metadata.
+      Done 2026-08-19 (commits `4f37e2202` signing, `7d1797d0f` sealing):
+      Ed25519 envelope signatures over a domain-tagged canonical
+      serialization, and X25519-ECDH + HKDF-SHA256 + AES-256-GCM sealing to
+      the target environment's encryption key (fresh ephemeral per envelope,
+      AAD-bound envelope id, signature verified before unsealing, one
+      collapsed failure reason). INTERIM until CTOX-room-derived identity
+      binding: encryption keys are exchanged in-band and TOFU-pinned
+      (migration 044); exactly one first-contact envelope per peer travels
+      plain inside the room trust boundary and is counted. Local fast path
+      stays plaintext by design.
 - [ ] Add narrowly scoped server credentials and ACL checks for send, receive,
       reply, cancel, reassign, and review operations; account co-membership
       alone must not grant cross-project or cross-environment execution rights.

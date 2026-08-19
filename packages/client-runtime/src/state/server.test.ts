@@ -39,6 +39,7 @@ import {
   GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
   WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
+  WORKJET_MESH_ROSTER_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   matchesServerUpdateReadyEvent,
@@ -183,6 +184,41 @@ describe("Workjet mailbox client wiring", () => {
       server.updateDelegationWorkjetMailbox,
     ];
     expect(new Set(commands).size).toBe(commands.length);
+  });
+});
+
+describe("Workjet mesh roster client wiring", () => {
+  const rosterAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("reuses a recently read roster instead of asking on every composer open", () => {
+    expect(WORKJET_MESH_ROSTER_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+
+  it("keys the roster read per environment", () => {
+    const server = rosterAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetMeshRoster({ environmentId: first, input: {} })).toBe(
+      server.workjetMeshRoster({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetMeshRoster({ environmentId: second, input: {} })).not.toBe(
+      server.workjetMeshRoster({ environmentId: first, input: {} }),
+    );
+  });
+
+  it("keeps the roster a read, never collapsing onto a mailbox send command", () => {
+    const server = rosterAtoms();
+    expect(server.workjetMeshRoster({ environmentId: TARGET.environmentId, input: {} })).not.toBe(
+      server.sendWorkjetMailboxMessage,
+    );
   });
 });
 

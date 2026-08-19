@@ -54,6 +54,13 @@ export const GREPPY_RUNTIME_INSPECT_STALE_TIME_MS = 15_000;
 export const WORKJET_GATEWAY_STATUS_STALE_TIME_MS = 5_000;
 export const WORKJET_GATEWAY_CATALOG_STALE_TIME_MS = 5_000;
 
+/**
+ * The mesh roster changes only when this machine exchanges mail with a peer it
+ * has never heard from — a rare, durable event — so the composer may reuse a
+ * recently read list instead of asking on every popover open.
+ */
+export const WORKJET_MESH_ROSTER_STALE_TIME_MS = 30_000;
+
 export type ServerUpdateState =
   | { readonly status: "idle" }
   | {
@@ -762,6 +769,16 @@ export function createServerEnvironmentAtoms<R, E>(
     onSuccess: refreshWorkjetGateway,
   });
 
+  // The recipient roster the composer picks from: a bounded, redacted read of
+  // the peers this machine has already exchanged mail with. It is a read, not a
+  // send, so it is a query atom family beside the gateway reads rather than one
+  // of the thread-scoped mailbox commands below.
+  const workjetMeshRoster = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:mesh:roster",
+    tag: WS_METHODS.workjetMeshRoster,
+    staleTimeMs: WORKJET_MESH_ROSTER_STALE_TIME_MS,
+  });
+
   // Sending into another worker's mailbox is single-flighted per SOURCE THREAD,
   // not per environment: two orchestrator threads on one server are two
   // independent conversations, and a slow send from one must not swallow the
@@ -816,6 +833,7 @@ export function createServerEnvironmentAtoms<R, E>(
     replyWorkjetMailbox,
     requestReviewWorkjetMailbox,
     updateDelegationWorkjetMailbox,
+    workjetMeshRoster,
     workjetGatewayStatus,
     workjetGatewayCatalog,
     startWorkjetGateway,

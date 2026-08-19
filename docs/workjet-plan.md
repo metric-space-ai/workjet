@@ -841,6 +841,17 @@ failed | cancelled | expired`. Done in the same commit
       instances. No new relay service and no T3 Connect identity reuse for
       mesh membership; an always-on user-owned CTOX instance covers
       store-and-forward if ever needed.
+      Transport architecture (2026-08-19, docking decision): the Workjet
+      server does NOT embed its own WebRTC peer. Each machine's LOCAL CTOX
+      daemon carries a dedicated `workjet_mailbox_envelopes` synced collection
+      and replicates it through its existing native peer, room membership,
+      capability/session layer, and device revocation — the sync engine is
+      reused as-is. The Workjet Code server exchanges envelopes with its local
+      daemon over a loopback intake/outtake surface only (bounded, no
+      Business-OS data access), and remains the sole authority over its own
+      outbox/inbox semantics: envelope signature verification, idempotent
+      insertion, and delegation effects all stay in the Workjet mailbox store.
+      The daemon treats envelope payloads as opaque bounded blobs.
 - [ ] Add the typed thread-handoff contract and flow (immutable prompt/context
       snapshot, bounded artifact references, pushed or sync-bundled Git branch,
       durable source-thread link); the target machine continues in a new

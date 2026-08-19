@@ -773,8 +773,10 @@ describe("deriveWorkLogEntries — Workjet mailbox rows", () => {
       direction: "inbound",
       peerEnvironmentId: "environment-a",
       peerThreadId: "thread-orchestrator",
+      peerWorkspaceId: "ctox-business-os:mesh-alpha",
       peerIsLocal: true,
       disposition: "accepted-new",
+      delegationId: "wjd-0123456789abcdef",
       delegationState: "delivered",
     });
   });

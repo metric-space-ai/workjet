@@ -60,7 +60,7 @@ const DescriptorEpochMs = Schema.Int.check(Schema.isGreaterThan(0));
  * `onExcessProperty: "error"`, so a descriptor that carries pairing material,
  * tokens, or any other unexpected key is rejected instead of being surfaced.
  */
-const LocalDaemonDescriptor = Schema.Struct({
+export const CtoxDaemonDescriptor = Schema.Struct({
   version: Schema.Literal(DESCRIPTOR_VERSION),
   instanceId: DescriptorInstanceId,
   displayName: Schema.optionalKey(DescriptorDisplayName),
@@ -68,10 +68,36 @@ const LocalDaemonDescriptor = Schema.Struct({
   lastSeenAt: Schema.optionalKey(DescriptorEpochMs),
   healthUrl: Schema.optionalKey(DescriptorHealthUrl),
 });
-type LocalDaemonDescriptor = typeof LocalDaemonDescriptor.Type;
+export type CtoxDaemonDescriptor = typeof CtoxDaemonDescriptor.Type;
+type LocalDaemonDescriptor = CtoxDaemonDescriptor;
 
-const LocalDaemonDescriptorJson = Schema.fromJsonString(LocalDaemonDescriptor);
+const LocalDaemonDescriptorJson = Schema.fromJsonString(CtoxDaemonDescriptor);
 const decodeDescriptor = Schema.decodeUnknownEffect(LocalDaemonDescriptorJson);
+
+/** The descriptor file name every CTOX daemon writes below its state root. */
+export const CTOX_DAEMON_DESCRIPTOR_FILE = DESCRIPTOR_FILE;
+/** The size beyond which a descriptor is refused rather than parsed. */
+export const MAX_CTOX_DAEMON_DESCRIPTOR_BYTES = MAX_DESCRIPTOR_BYTES;
+
+/**
+ * The one CTOX daemon descriptor decoder, shared by every source that reads
+ * `instance.json` — locally through the file system, or over SSH. Oversized,
+ * malformed, or excess-key input decodes to `undefined` rather than failing,
+ * so a broken daemon is simply "not discovered".
+ */
+export function decodeCtoxDaemonDescriptor(
+  raw: string,
+): Effect.Effect<CtoxDaemonDescriptor | undefined> {
+  return Effect.succeed(raw).pipe(
+    Effect.filterOrFail(
+      (value) => textEncoder.encode(value).length <= MAX_DESCRIPTOR_BYTES,
+      () => "oversized_descriptor" as const,
+    ),
+    Effect.flatMap((value) => decodeDescriptor(value, { onExcessProperty: "error" })),
+    Effect.map((descriptor): CtoxDaemonDescriptor | undefined => descriptor),
+    Effect.orElseSucceed(() => undefined),
+  );
+}
 
 export type CtoxLocalDaemonRuntimeStatus = "running" | "stopped" | "unknown";
 
@@ -205,13 +231,8 @@ function readDescriptor(
   descriptorPath: string,
 ): Effect.Effect<LocalDaemonDescriptor | undefined> {
   return fileSystem.readFileString(descriptorPath).pipe(
-    Effect.filterOrFail(
-      (raw) => textEncoder.encode(raw).length <= MAX_DESCRIPTOR_BYTES,
-      () => "oversized_descriptor" as const,
-    ),
-    Effect.flatMap((raw) => decodeDescriptor(raw, { onExcessProperty: "error" })),
-    Effect.map((descriptor): LocalDaemonDescriptor | undefined => descriptor),
-    Effect.orElseSucceed(() => undefined),
+    Effect.flatMap(decodeCtoxDaemonDescriptor),
+    Effect.orElseSucceed((): LocalDaemonDescriptor | undefined => undefined),
   );
 }
 
@@ -251,8 +272,12 @@ function probeHealth(
   );
 }
 
-function declaredStatus(
-  descriptor: LocalDaemonDescriptor,
+/**
+ * Runtime status a descriptor declares about itself. A "running" claim older
+ * than the staleness window degrades to "unknown" rather than being believed.
+ */
+export function ctoxDaemonDeclaredStatus(
+  descriptor: CtoxDaemonDescriptor,
   nowEpochMs: number,
 ): CtoxLocalDaemonRuntimeStatus {
   if (descriptor.status === undefined) return "unknown";
@@ -305,7 +330,7 @@ export const discoverCtoxLocalDaemonInstances = Effect.fn(
         : normalizeCtoxLocalDaemonHealthUrl(descriptor.healthUrl);
     const runtimeStatus =
       healthUrl === undefined || options.probe === undefined
-        ? declaredStatus(descriptor, nowEpochMs)
+        ? ctoxDaemonDeclaredStatus(descriptor, nowEpochMs)
         : yield* probeHealth(options.probe, healthUrl);
 
     discovered.push({

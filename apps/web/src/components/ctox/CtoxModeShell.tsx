@@ -7,6 +7,7 @@ import type {
   CtoxManagedInstance,
   CtoxManagedInstanceSource,
   CtoxManualPairingImportInput,
+  CtoxSshManagedInstanceAddInput,
   DesktopCtoxBridge,
 } from "@t3tools/contracts";
 import { CtoxHostThemeColor } from "@t3tools/contracts";
@@ -59,11 +60,26 @@ export interface CtoxManualPairingFormValues {
   readonly userId: string;
 }
 
+export interface CtoxSshManagedFormValues {
+  readonly host: string;
+  readonly displayName: string;
+  readonly stateRoot: string;
+}
+
 export const CTOX_IMPORT_SUCCESS_MESSAGE = "Instance added.";
 export const CTOX_IMPORT_ERROR_MESSAGE =
   "Instance could not be added. Check the entry and try again.";
 export const CTOX_REMOVE_SUCCESS_MESSAGE = "Paired instance removed.";
 export const CTOX_REMOVE_ERROR_MESSAGE = "Paired instance could not be removed. Try again.";
+export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH instance removed.";
+export const CTOX_SSH_REMOVE_ERROR_MESSAGE = "SSH instance could not be removed. Try again.";
+/**
+ * SSH-managed instances are discovered and listed, but not launchable: the
+ * remote daemon's signaling endpoints live on the remote loopback interface,
+ * which the desktop cannot reach without an SSH port forward.
+ */
+export const CTOX_SSH_LAUNCH_PENDING_HINT =
+  "SSH tunnel support pending: this instance cannot be launched yet.";
 
 const SOURCE_GROUP_DEFINITIONS: readonly {
   readonly key: CtoxSourceGroupKey;
@@ -109,6 +125,12 @@ interface CtoxModeContextValue {
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxMutationOutcome>;
   readonly removePairedInstance: (instance: CtoxManagedInstance) => Promise<CtoxMutationOutcome>;
+  readonly addSshManagedInstance: (
+    input: CtoxSshManagedInstanceAddInput,
+  ) => Promise<CtoxMutationOutcome>;
+  readonly removeSshManagedInstance: (
+    instance: CtoxManagedInstance,
+  ) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => void;
   readonly setConnection: (state: CtoxConnectionState) => void;
   /** Open a Business OS app: activates the instance guest if needed. */
@@ -127,11 +149,23 @@ export function isPairedCtoxInstance(instance: CtoxManagedInstance): boolean {
   return instance.source === "pairing_invite" || instance.source === "manual_pairing";
 }
 
+export function isSshManagedCtoxInstance(instance: CtoxManagedInstance): boolean {
+  return instance.source === "ssh_managed";
+}
+
+/** Instances the user configured themselves and may therefore remove again. */
+export function isRemovableCtoxInstance(instance: CtoxManagedInstance): boolean {
+  return isPairedCtoxInstance(instance) || isSshManagedCtoxInstance(instance);
+}
+
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
   if (instance.source === "ctox_dev") return instance.status === "available";
   // A local daemon is launchable exactly while it is answering: the main
   // process mints its pairing material from that daemon on every activation.
   if (instance.source === "local_daemon") return instance.status === "available";
+  // An SSH-managed instance is never launchable yet: see
+  // CTOX_SSH_LAUNCH_PENDING_HINT. Its row still reports reachability.
+  if (instance.source === "ssh_managed") return false;
   return isPairedCtoxInstance(instance) && instance.status === "paired";
 }
 
@@ -238,6 +272,48 @@ export async function removeCtoxPairedInstance(
       : { ok: false, message: CTOX_REMOVE_ERROR_MESSAGE };
   } catch {
     return { ok: false, message: CTOX_REMOVE_ERROR_MESSAGE };
+  }
+}
+
+export function buildCtoxSshManagedInput(
+  values: CtoxSshManagedFormValues,
+): CtoxSshManagedInstanceAddInput {
+  return {
+    host: values.host.trim(),
+    ...(values.displayName.trim() === "" ? {} : { displayName: values.displayName.trim() }),
+    ...(values.stateRoot.trim() === "" ? {} : { stateRoot: values.stateRoot.trim() }),
+  };
+}
+
+export async function submitCtoxSshManagedInstance(
+  bridge: DesktopCtoxBridge | undefined,
+  input: CtoxSshManagedInstanceAddInput,
+): Promise<CtoxMutationOutcome> {
+  if (bridge === undefined) return { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
+  try {
+    const result = await bridge.addSshManagedInstance(input);
+    return result._tag === "completed"
+      ? { ok: true, message: CTOX_IMPORT_SUCCESS_MESSAGE }
+      : { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
+  } catch {
+    return { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
+  }
+}
+
+export async function removeCtoxSshManagedInstance(
+  bridge: DesktopCtoxBridge | undefined,
+  instance: CtoxManagedInstance,
+): Promise<CtoxMutationOutcome> {
+  if (bridge === undefined || !isSshManagedCtoxInstance(instance)) {
+    return { ok: false, message: CTOX_SSH_REMOVE_ERROR_MESSAGE };
+  }
+  try {
+    const result = await bridge.removeSshManagedInstance(instance.id);
+    return result._tag === "completed"
+      ? { ok: true, message: CTOX_SSH_REMOVE_SUCCESS_MESSAGE }
+      : { ok: false, message: CTOX_SSH_REMOVE_ERROR_MESSAGE };
+  } catch {
+    return { ok: false, message: CTOX_SSH_REMOVE_ERROR_MESSAGE };
   }
 }
 
@@ -372,6 +448,26 @@ export function CtoxModeProvider({
   const removePairedInstance = useCallback(
     async (instance: CtoxManagedInstance) => {
       const outcome = await removeCtoxPairedInstance(bridge, instance);
+      if (!outcome.ok) return outcome;
+      if (selectedIdRef.current === instance.id) clearSelection("idle");
+      refresh();
+      return outcome;
+    },
+    [bridge, clearSelection, refresh],
+  );
+
+  const addSshManagedInstance = useCallback(
+    async (input: CtoxSshManagedInstanceAddInput) => {
+      const outcome = await submitCtoxSshManagedInstance(bridge, input);
+      if (outcome.ok) refresh();
+      return outcome;
+    },
+    [bridge, refresh],
+  );
+
+  const removeSshManagedInstance = useCallback(
+    async (instance: CtoxManagedInstance) => {
+      const outcome = await removeCtoxSshManagedInstance(bridge, instance);
       if (!outcome.ok) return outcome;
       if (selectedIdRef.current === instance.id) clearSelection("idle");
       refresh();
@@ -552,6 +648,8 @@ export function CtoxModeProvider({
       importInvite,
       importManualPairing,
       removePairedInstance,
+      addSshManagedInstance,
+      removeSshManagedInstance,
       select,
       setConnection,
       openApp,
@@ -561,6 +659,7 @@ export function CtoxModeProvider({
     }),
     [
       activationKey,
+      addSshManagedInstance,
       appRailVersion,
       bridge,
       connection,
@@ -574,6 +673,7 @@ export function CtoxModeProvider({
       refresh,
       refreshing,
       removePairedInstance,
+      removeSshManagedInstance,
       reportGuestBounds,
       select,
       selectedId,
@@ -941,6 +1041,11 @@ export function CtoxAppRailList({
  */
 export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
   if (instance.source === "local_daemon") return "This local daemon is not running.";
+  if (instance.source === "ssh_managed") {
+    return instance.status === "available"
+      ? CTOX_SSH_LAUNCH_PENDING_HINT
+      : `This host is not reachable. ${CTOX_SSH_LAUNCH_PENDING_HINT}`;
+  }
   return isPairedCtoxInstance(instance) ? "This pairing is not available." : undefined;
 }
 
@@ -972,7 +1077,7 @@ function CtoxInstanceCard({
   const busy = selected && connection === "connecting";
   const connected = selected && connection === "ready";
   const launchable = canActivateCtoxInstance(instance);
-  const paired = isPairedCtoxInstance(instance);
+  const removable = isRemovableCtoxInstance(instance);
   const title = workspaceName ?? instance.displayName;
   const meta = [SOURCE_LABELS[instance.source], instance.role, instance.domain]
     .filter(Boolean)
@@ -1011,7 +1116,7 @@ function CtoxInstanceCard({
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
-        {paired && onRemove !== undefined ? (
+        {removable && onRemove !== undefined ? (
           <button
             type="button"
             className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground group-hover/ctox-instance:visible hover:text-sidebar-foreground focus-visible:visible disabled:opacity-50"
@@ -1079,9 +1184,12 @@ function PairingAddSurface({
   readonly onClose: () => void;
   readonly onImported: (outcome: CtoxMutationOutcome) => void;
 }) {
-  const { importInvite, importManualPairing } = useCtoxMode();
-  const [choice, setChoice] = useState<"invite" | "manual">("invite");
+  const { importInvite, importManualPairing, addSshManagedInstance } = useCtoxMode();
+  const [choice, setChoice] = useState<"invite" | "manual" | "ssh">("invite");
   const [invite, setInvite] = useState("");
+  const [sshHost, setSshHost] = useState("");
+  const [sshDisplayName, setSshDisplayName] = useState("");
+  const [sshStateRoot, setSshStateRoot] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [instanceId, setInstanceId] = useState("");
   const [syncRoom, setSyncRoom] = useState("");
@@ -1105,6 +1213,9 @@ function PairingAddSurface({
     setCapabilityExpiresAtMs("");
     setRole("");
     setUserId("");
+    setSshHost("");
+    setSshDisplayName("");
+    setSshStateRoot("");
     setFeedback(null);
   }, []);
 
@@ -1150,7 +1261,22 @@ function PairingAddSurface({
       .finally(() => setSubmitting(false));
   };
 
-  const choose = (next: "invite" | "manual") => {
+  const submitSsh = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setFeedback(null);
+    void addSshManagedInstance(
+      buildCtoxSshManagedInput({
+        host: sshHost,
+        displayName: sshDisplayName,
+        stateRoot: sshStateRoot,
+      }),
+    )
+      .then(finish)
+      .finally(() => setSubmitting(false));
+  };
+
+  const choose = (next: "invite" | "manual" | "ssh") => {
     clearPairingState();
     setChoice(next);
   };
@@ -1167,7 +1293,7 @@ function PairingAddSurface({
           Cancel
         </button>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1 rounded-md bg-sidebar-accent/30 p-1">
+      <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-sidebar-accent/30 p-1">
         <button
           type="button"
           className={cn(
@@ -1194,9 +1320,72 @@ function PairingAddSurface({
         >
           Manual pairing
         </button>
+        <button
+          type="button"
+          className={cn(
+            "rounded px-2 py-1 text-xs",
+            choice === "ssh"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-muted-foreground",
+          )}
+          aria-pressed={choice === "ssh"}
+          onClick={() => choose("ssh")}
+        >
+          SSH
+        </button>
       </div>
 
-      {choice === "invite" ? (
+      {choice === "ssh" ? (
+        <form className="mt-3 space-y-2" onSubmit={submitSsh}>
+          <label className="block text-xs text-sidebar-muted-foreground">
+            SSH host or alias
+            <input
+              className={fieldClassName}
+              value={sshHost}
+              onChange={(event) => setSshHost(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="build-box"
+              required
+              maxLength={255}
+            />
+          </label>
+          <label className="block text-xs text-sidebar-muted-foreground">
+            Display name (optional)
+            <input
+              className={fieldClassName}
+              value={sshDisplayName}
+              onChange={(event) => setSshDisplayName(event.target.value)}
+              autoComplete="off"
+              maxLength={256}
+            />
+          </label>
+          <label className="block text-xs text-sidebar-muted-foreground">
+            CTOX state root on that host (optional)
+            <input
+              className={fieldClassName}
+              value={sshStateRoot}
+              onChange={(event) => setSshStateRoot(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="/home/you/.local/state/ctox"
+              maxLength={1_024}
+            />
+          </label>
+          <p className="text-[11px] leading-snug text-sidebar-muted-foreground">
+            Uses your existing SSH configuration and keys. No credential is stored here.{" "}
+            {CTOX_SSH_LAUNCH_PENDING_HINT}
+          </p>
+          <button
+            type="submit"
+            className="rounded-md bg-sidebar-primary px-3 py-1.5 text-xs font-medium text-sidebar-primary-foreground disabled:opacity-50"
+            disabled={submitting}
+            aria-busy={submitting}
+          >
+            Add SSH instance
+          </button>
+        </form>
+      ) : choice === "invite" ? (
         <form className="mt-3" onSubmit={submitInvite}>
           <label className="block text-xs text-sidebar-muted-foreground">
             Invite JSON or CTOX desktop invite link
@@ -1396,7 +1585,8 @@ function ManagedAccountState({
 }
 
 export function CtoxSidebarShell() {
-  const { discovery, refreshing, bridge, refresh, removePairedInstance } = useCtoxMode();
+  const { discovery, refreshing, bridge, refresh, removePairedInstance, removeSshManagedInstance } =
+    useCtoxMode();
   const [addOpen, setAddOpen] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [mutationFeedback, setMutationFeedback] = useState<CtoxMutationOutcome | null>(null);
@@ -1413,9 +1603,10 @@ export function CtoxSidebarShell() {
   const remove = (instance: CtoxManagedInstance) => {
     setRemovingId(instance.id);
     setMutationFeedback(null);
-    void removePairedInstance(instance)
-      .then(setMutationFeedback)
-      .finally(() => setRemovingId(null));
+    const removal = isSshManagedCtoxInstance(instance)
+      ? removeSshManagedInstance(instance)
+      : removePairedInstance(instance);
+    void removal.then(setMutationFeedback).finally(() => setRemovingId(null));
   };
 
   return (
@@ -1535,6 +1726,7 @@ export function CtoxSidebarShell() {
                   <CtoxInstanceList
                     instances={group.instances}
                     label={`${group.label} CTOX instances`}
+                    {...(group.key === "ssh" ? { removingId, onRemove: remove } : {})}
                   />
                 </section>
               ))}

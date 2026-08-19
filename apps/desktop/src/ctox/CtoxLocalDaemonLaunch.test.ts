@@ -117,6 +117,8 @@ function registryStub(
       importInvite: () => Effect.die("unused"),
       importManualPairing: () => Effect.die("unused"),
       removePairedInstance: () => Effect.die("unused"),
+      addSshManagedInstance: () => Effect.die("unused"),
+      removeSshManagedInstance: () => Effect.die("unused"),
       resolvePairedLaunch: () => Effect.die("unused"),
       stableIdentityKey: () => Effect.die("unused"),
       resolveLocalDaemonTarget: (instanceId) =>

@@ -16,6 +16,10 @@ import {
   CtoxPairedInstanceRemoveResult,
   CtoxPairingInviteImportInput,
   CtoxSetAppDockedInput,
+  CtoxSshManagedInstanceAddInput,
+  CtoxSshManagedInstanceAddResult,
+  CtoxSshManagedInstanceRemoveInput,
+  CtoxSshManagedInstanceRemoveResult,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -223,6 +227,70 @@ export const removePairedInstance: DesktopIpc.DesktopIpcMethod<
           ? { _tag: "completed" }
           : { _tag: "failed", code: "persistence_failed" },
       );
+    }),
+};
+
+export const addSshManagedInstance: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxInstanceRegistry.CtoxInstanceRegistry
+> = {
+  channel: IpcChannels.CTOX_ADD_SSH_MANAGED_INSTANCE_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+      const input = yield* Schema.decodeUnknownEffect(CtoxSshManagedInstanceAddInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxSshManagedInstanceAddResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const result = yield* registry.addSshManagedInstance(input.value).pipe(Effect.result);
+      return yield* encodeSafe(
+        CtoxSshManagedInstanceAddResult,
+        Result.isSuccess(result)
+          ? { _tag: "completed", instance: result.success }
+          : { _tag: "failed", code: result.failure.code },
+      );
+    }),
+};
+
+export const removeSshManagedInstance: DesktopIpc.DesktopIpcMethod<
+  never,
+  | CtoxElectronSessions.CtoxElectronSessions
+  | CtoxGuestManager.CtoxGuestManager
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
+> = {
+  channel: IpcChannels.CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+      const input = yield* Schema.decodeUnknownEffect(CtoxSshManagedInstanceRemoveInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxSshManagedInstanceRemoveResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const removal = yield* registry
+        .removeSshManagedInstance(input.value.instanceId)
+        .pipe(Effect.result);
+      if (Result.isFailure(removal)) {
+        return yield* encodeSafe(CtoxSshManagedInstanceRemoveResult, {
+          _tag: "failed",
+          code: removal.failure.code,
+        });
+      }
+      // An SSH-managed instance is not launchable yet, so no guest can be
+      // holding it; deactivation is still attempted for symmetry with the
+      // paired path and its failure is not fatal to the removal.
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* guests.deactivateInstance(removal.success.id).pipe(Effect.ignore);
+      return yield* encodeSafe(CtoxSshManagedInstanceRemoveResult, { _tag: "completed" });
     }),
 };
 
@@ -452,6 +520,8 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   importInvite,
   importManualPairing,
   removePairedInstance,
+  addSshManagedInstance,
+  removeSshManagedInstance,
   enterBusinessOsMode,
   exitBusinessOsMode,
   activate,

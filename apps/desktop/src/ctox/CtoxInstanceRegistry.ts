@@ -8,6 +8,7 @@ import {
   type CtoxManagedInstanceSource,
   type CtoxManualPairingImportInput,
   type CtoxPairedInstanceMutationFailureCode as CtoxPairedInstanceMutationFailureCodeType,
+  type CtoxSshManagedInstanceAddInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -23,6 +24,7 @@ import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
@@ -33,6 +35,19 @@ import {
   isLaunchableCtoxLocalDaemon,
   type CtoxLocalDaemonDiscoveryOptions,
 } from "./CtoxLocalDaemonSource.ts";
+import {
+  addCtoxSshManagedEntry,
+  ctoxSshManagedDescriptor,
+  CtoxSshManagedConfigDocument,
+  CtoxSshManagedConfigDocumentJson,
+  ctoxSshManagedInstanceId,
+  discoverCtoxSshManagedInstances,
+  isConsistentCtoxSshManagedEntry,
+  makeCtoxSshExec,
+  MAX_CTOX_SSH_MANAGED_INSTANCES,
+  removeCtoxSshManagedEntry,
+  type CtoxSshManagedDiscoveryOptions,
+} from "./CtoxSshManagedSource.ts";
 
 const REGISTRY_VERSION = 1;
 const MAX_INVITE_BYTES = 65_536;
@@ -43,6 +58,13 @@ const MAX_JSON_NODES = 4_096;
 const MAX_INVITE_ARRAY_LENGTH = 64;
 const PUBLIC_REGISTRY_FILE = "instances.json";
 const SECRET_REGISTRY_FILE = "secrets.json";
+/**
+ * SSH-managed instances live in their own public document. They carry no
+ * secret and no pairing record, so folding them into `instances.json` would
+ * only weaken that file's invariant — every entry there is a paired instance
+ * with a matching encrypted secret.
+ */
+const SSH_REGISTRY_FILE = "ssh-instances.json";
 const PAIRING_ROOM_PREFIX = "ctox-business-os:";
 const textEncoder = new TextEncoder();
 
@@ -195,6 +217,12 @@ export interface CtoxInstanceRegistryOptions {
   readonly nowEpochMs?: () => number;
   /** Overrides for read-only local-daemon discovery; the defaults are derived here. */
   readonly localDaemon?: CtoxLocalDaemonDiscoveryOptions;
+  /**
+   * Overrides for read-only SSH-managed discovery. When no `exec` is supplied
+   * the registry builds one from the ambient child-process spawner; where none
+   * exists, configured hosts simply read as offline.
+   */
+  readonly sshManaged?: CtoxSshManagedDiscoveryOptions;
 }
 
 export interface CtoxPairedLaunchDescriptor {
@@ -231,6 +259,16 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly removePairedInstance: (
       instanceId: string,
     ) => Effect.Effect<CtoxPairedInstanceRemoval, CtoxInstanceRegistryError>;
+    /**
+     * Configures one SSH-managed instance. The stored document is public and
+     * credential-free: authentication stays with the user's own SSH setup.
+     */
+    readonly addSshManagedInstance: (
+      input: CtoxSshManagedInstanceAddInput,
+    ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
+    readonly removeSshManagedInstance: (
+      instanceId: string,
+    ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
     /**
      * Main-process-only identity of the paired CTOX instance behind a registry
      * id. The result is an opaque digest of the instance identity, so it stays
@@ -617,19 +655,20 @@ function compareInstances(left: CtoxManagedInstance, right: CtoxManagedInstance)
 }
 
 /**
- * The one registry result. Locally discovered daemons join the same merge as
- * managed and paired entries: deduplicated by source and id, capacity-bounded
- * with the persisted local sources first, and sorted deterministically.
+ * The one registry result. Locally discovered daemons and configured
+ * SSH-managed instances join the same merge as managed and paired entries:
+ * deduplicated by source and id, capacity-bounded with the owned sources
+ * first, and sorted deterministically.
  */
 export function mergeCtoxInstanceSources(
   managed: CtoxManagedDiscoveryResult,
   paired: readonly CtoxManagedInstance[],
-  local: readonly CtoxManagedInstance[] = [],
+  discovered: readonly CtoxManagedInstance[] = [],
 ): CtoxDiscoveryResult {
-  if (paired.length === 0 && local.length === 0) return managed;
+  if (paired.length === 0 && discovered.length === 0) return managed;
 
   const ownedBySourceAndId = new Map<string, CtoxManagedInstance>();
-  for (const instance of [...paired, ...local]) {
+  for (const instance of [...paired, ...discovered]) {
     ownedBySourceAndId.set(`${instance.source}\0${instance.id}`, instance);
   }
   const retainedOwned = [...ownedBySourceAndId.values()].sort(compareInstances).slice(0, 1_000);
@@ -735,6 +774,57 @@ function readPublicDocument(
   );
 }
 
+function emptySshDocument(): CtoxSshManagedConfigDocument {
+  return { version: REGISTRY_VERSION, instances: [] };
+}
+
+/**
+ * The SSH configuration document is held to the same "nothing secret here"
+ * standard as the paired public document, and every entry's id must be the
+ * digest of its own destination, so a hand-edited file cannot introduce a row
+ * under an id that belongs to a different host.
+ */
+function readSshDocument(
+  fileSystem: FileSystem.FileSystem,
+  filePath: string,
+): Effect.Effect<CtoxSshManagedConfigDocument, CtoxInstanceRegistryError> {
+  return readFileOrEmpty(fileSystem, filePath, MAX_PUBLIC_DOCUMENT_BYTES).pipe(
+    Effect.flatMap((raw) => {
+      if (raw === undefined) return Effect.succeed(emptySshDocument());
+      return Schema.decodeUnknownEffect(UnknownJson)(raw).pipe(
+        Effect.filterOrFail(
+          (value) =>
+            inspectJson(value, {
+              maxArrayLength: MAX_CTOX_SSH_MANAGED_INSTANCES,
+              maxDepth: 8,
+              maxNodes: 4_096,
+              rejectHttpBridge: false,
+              rejectForbiddenPublicMetadata: true,
+            }),
+          () => registryError("persistence_failed"),
+        ),
+        Effect.flatMap((value) =>
+          Schema.decodeUnknownEffect(CtoxSshManagedConfigDocument)(value, {
+            onExcessProperty: "error",
+          }),
+        ),
+        Effect.filterOrFail(
+          (document) => {
+            const ids = new Set<string>();
+            return document.instances.every((entry) => {
+              const unique = !ids.has(entry.id);
+              ids.add(entry.id);
+              return unique && isConsistentCtoxSshManagedEntry(entry);
+            });
+          },
+          () => registryError("persistence_failed"),
+        ),
+        Effect.mapError(() => registryError("persistence_failed")),
+      );
+    }),
+  );
+}
+
 function readSecretDocument(
   fileSystem: FileSystem.FileSystem,
   filePath: string,
@@ -805,6 +895,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   const ctoxDirectory = path.join(environment.stateDir, "ctox");
   const publicRegistryPath = path.join(ctoxDirectory, PUBLIC_REGISTRY_FILE);
   const secretRegistryPath = path.join(ctoxDirectory, SECRET_REGISTRY_FILE);
+  const sshRegistryPath = path.join(ctoxDirectory, SSH_REGISTRY_FILE);
   const currentTimeMillis =
     options.nowEpochMs === undefined
       ? DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
@@ -823,6 +914,31 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     Effect.provideService(Path.Path, path),
   );
 
+  // The SSH execution path is the desktop's existing one. It is taken
+  // optionally so the registry gains no hard service requirement: without a
+  // spawner every configured host simply reads as offline.
+  const spawnerOption = yield* Effect.serviceOption(ChildProcessSpawner.ChildProcessSpawner);
+  const sshExec =
+    options.sshManaged?.exec ??
+    (Option.isNone(spawnerOption)
+      ? undefined
+      : makeCtoxSshExec({ spawner: spawnerOption.value, fileSystem, path }));
+  const sshManagedOptions: CtoxSshManagedDiscoveryOptions = {
+    ...(sshExec === undefined ? {} : { exec: sshExec }),
+    ...(options.nowEpochMs === undefined ? {} : { nowEpochMs: options.nowEpochMs }),
+    ...(options.sshManaged?.nowEpochMs === undefined
+      ? {}
+      : { nowEpochMs: options.sshManaged.nowEpochMs }),
+  };
+
+  /** A broken or absent SSH configuration must never hide the other sources. */
+  const discoverSshInstances = readSshDocument(fileSystem, sshRegistryPath).pipe(
+    Effect.orElseSucceed(emptySshDocument),
+    Effect.flatMap((document) =>
+      discoverCtoxSshManagedInstances(document.instances, sshManagedOptions),
+    ),
+  );
+
   const writePublic = Effect.fn("CtoxInstanceRegistry.writePublic")(function* (
     document: PublicRegistryDocument,
   ) {
@@ -839,6 +955,15 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       Effect.mapError(() => registryError("persistence_failed")),
     );
     yield* writeDocument({ fileSystem, path, crypto, filePath: secretRegistryPath, contents });
+  });
+
+  const writeSsh = Effect.fn("CtoxInstanceRegistry.writeSsh")(function* (
+    document: CtoxSshManagedConfigDocument,
+  ) {
+    const contents = yield* Schema.encodeEffect(CtoxSshManagedConfigDocumentJson)(document).pipe(
+      Effect.mapError(() => registryError("persistence_failed")),
+    );
+    yield* writeDocument({ fileSystem, path, crypto, filePath: sshRegistryPath, contents });
   });
 
   const assertSafeStorage = Effect.fn("CtoxInstanceRegistry.assertSafeStorage")(function* () {
@@ -1151,12 +1276,13 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           const paired = yield* readPairedInstances().pipe(
             Effect.orElseSucceed((): readonly CtoxManagedInstance[] => []),
           );
-          const local = yield* discoverLocalInstances;
-          return mergeCtoxInstanceSources(
-            managed,
-            paired,
-            local.map((entry) => entry.instance),
-          );
+          const [local, ssh] = yield* Effect.all([discoverLocalInstances, discoverSshInstances], {
+            concurrency: 2,
+          });
+          return mergeCtoxInstanceSources(managed, paired, [
+            ...local.map((entry) => entry.instance),
+            ...ssh.map((entry) => entry.instance),
+          ]);
         }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),
       ),
     importInvite: (invite) =>
@@ -1174,6 +1300,37 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             return yield* registryError("invalid_input");
           }
           return yield* importPairing(pairing);
+        }),
+      ),
+    addSshManagedInstance: (input) =>
+      registryLock.withPermit(
+        Effect.gen(function* () {
+          const document = yield* readSshDocument(fileSystem, sshRegistryPath);
+          const mutation = addCtoxSshManagedEntry(document, input);
+          if (mutation._tag !== "updated") {
+            return yield* registryError(
+              mutation._tag === "invalid" ? "invalid_input" : "persistence_failed",
+            );
+          }
+          yield* writeSsh(mutation.document);
+          const entry = mutation.document.instances.find(
+            (candidate) => candidate.id === ctoxSshManagedInstanceId(input.host, input.stateRoot),
+          );
+          if (entry === undefined) return yield* registryError("persistence_failed");
+          return ctoxSshManagedDescriptor(entry);
+        }),
+      ),
+    removeSshManagedInstance: (instanceId) =>
+      registryLock.withPermit(
+        Effect.gen(function* () {
+          const document = yield* readSshDocument(fileSystem, sshRegistryPath);
+          const removed = document.instances.find((entry) => entry.id === instanceId);
+          const mutation = removeCtoxSshManagedEntry(document, instanceId);
+          if (mutation._tag !== "updated" || removed === undefined) {
+            return yield* registryError("not_found");
+          }
+          yield* writeSsh(mutation.document);
+          return ctoxSshManagedDescriptor(removed);
         }),
       ),
     removePairedInstance: (instanceId) =>

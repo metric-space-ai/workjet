@@ -12,7 +12,7 @@ const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   }
   return true;
 });
-const CtoxManagedInstanceDisplayName = TrimmedNonEmptyString.check(
+export const CtoxManagedInstanceDisplayName = TrimmedNonEmptyString.check(
   Schema.isMaxLength(256),
   NoAsciiControlCharacters,
 );
@@ -191,6 +191,57 @@ export const CtoxPairedInstanceRemoveResult = Schema.Union([
   Schema.TaggedStruct("failed", { code: CtoxPairedInstanceMutationFailureCode }),
 ]);
 export type CtoxPairedInstanceRemoveResult = typeof CtoxPairedInstanceRemoveResult.Type;
+
+/**
+ * An SSH destination the user already trusts: an alias from their own SSH
+ * config or a hostname. The pattern deliberately excludes whitespace, quotes,
+ * and every shell metacharacter, so the value can never widen an argument
+ * vector or a remote command line.
+ */
+export const CtoxSshManagedHost = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(255),
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/),
+);
+export type CtoxSshManagedHost = typeof CtoxSshManagedHost.Type;
+
+/**
+ * An optional absolute CTOX state root on the remote host. Restricted to a
+ * conservative POSIX path alphabet for the same reason as the host.
+ */
+export const CtoxSshManagedStateRoot = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(1_024),
+  Schema.isPattern(/^\/[A-Za-z0-9._\-/]{0,1023}$/),
+);
+export type CtoxSshManagedStateRoot = typeof CtoxSshManagedStateRoot.Type;
+
+/**
+ * Configuration of one SSH-managed CTOX instance. It carries no credential:
+ * authentication stays with the user's existing SSH agent, keys, and
+ * `known_hosts`, exactly as the desktop's other SSH surfaces use them.
+ */
+export const CtoxSshManagedInstanceAddInput = Schema.Struct({
+  host: CtoxSshManagedHost,
+  displayName: Schema.optionalKey(CtoxManagedInstanceDisplayName),
+  stateRoot: Schema.optionalKey(CtoxSshManagedStateRoot),
+});
+export type CtoxSshManagedInstanceAddInput = typeof CtoxSshManagedInstanceAddInput.Type;
+
+export const CtoxSshManagedInstanceRemoveInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+});
+export type CtoxSshManagedInstanceRemoveInput = typeof CtoxSshManagedInstanceRemoveInput.Type;
+
+export const CtoxSshManagedInstanceAddResult = Schema.Union([
+  Schema.TaggedStruct("completed", { instance: CtoxManagedInstance }),
+  Schema.TaggedStruct("failed", { code: CtoxPairedInstanceMutationFailureCode }),
+]);
+export type CtoxSshManagedInstanceAddResult = typeof CtoxSshManagedInstanceAddResult.Type;
+
+export const CtoxSshManagedInstanceRemoveResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", { code: CtoxPairedInstanceMutationFailureCode }),
+]);
+export type CtoxSshManagedInstanceRemoveResult = typeof CtoxSshManagedInstanceRemoveResult.Type;
 
 const CtoxGuestBoundCoordinate = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),

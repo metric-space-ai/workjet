@@ -104,6 +104,9 @@ import type {
   CtoxManualPairingImportInput,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveResult,
+  CtoxSshManagedInstanceAddInput,
+  CtoxSshManagedInstanceAddResult,
+  CtoxSshManagedInstanceRemoveResult,
 } from "./ctox.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -1112,6 +1115,11 @@ export interface DesktopCtoxBridge {
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxPairedInstanceImportResult>;
   removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
+  /** Configure one SSH-managed CTOX instance; carries no credential. */
+  addSshManagedInstance: (
+    input: CtoxSshManagedInstanceAddInput,
+  ) => Promise<CtoxSshManagedInstanceAddResult>;
+  removeSshManagedInstance: (instanceId: string) => Promise<CtoxSshManagedInstanceRemoveResult>;
   enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;

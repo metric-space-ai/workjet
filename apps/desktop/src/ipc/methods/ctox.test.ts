@@ -49,6 +49,8 @@ function registryLayer(
     importManualPairing: () => Effect.succeed(pairedInstance),
     removePairedInstance: () =>
       Effect.succeed({ descriptor: pairedInstance, secretRecordRemoved: true }),
+    addSshManagedInstance: () => Effect.die("unused"),
+    removeSshManagedInstance: () => Effect.die("unused"),
     resolvePairedLaunch: () => Effect.die("unused"),
     resolveLocalDaemonTarget: () => Effect.die("unused"),
     stableIdentityKey: () => failedRegistry("not_found"),

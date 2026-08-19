@@ -218,6 +218,8 @@ function makeGuestHarness() {
     importInvite: () => Effect.die("unused"),
     importManualPairing: () => Effect.die("unused"),
     removePairedInstance: () => Effect.die("unused"),
+    addSshManagedInstance: () => Effect.die("unused"),
+    removeSshManagedInstance: () => Effect.die("unused"),
     resolvePairedLaunch,
     resolveLocalDaemonTarget: () => Effect.die("unused"),
     stableIdentityKey: () => Effect.die("unused"),

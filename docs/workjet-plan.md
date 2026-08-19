@@ -971,8 +971,16 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   (`reviews`/`revises`/`follows-up`, stable id, `listDelegationEdges`), and
   loop gates enforced BEFORE any durable effect — review round >
   `maxReviewRounds` → `review-rounds-exceeded`, depth+1 > `maxDepth` →
-  `depth-exceeded`. Still open: token/cost budgets (only depth/rounds/time
-  gated today) and human approval gates.
+  `depth-exceeded`. Token/cost budgets + approval gate done 2026-08-19
+  (commits `b66f7e4aa`, `13c0d23ab`, `dac16d7bc`, migration 048): optional
+  `maxTokens`/`maxCostMicros` (integer micro-currency) with transactional
+  `recordDelegationUsage` refusing `token-budget-exceeded`/
+  `cost-budget-exceeded` before the durable write, and `requiresApproval`
+  seeding a delegation `pending` — the executor's delivered→accepted path
+  consults `isDelegationExecutable` and holds until approved (reject →
+  terminal cancelled). Fully closes the anti-infinite-loop requirement;
+  wiring real per-turn token counts into `recordDelegationUsage` is a later
+  slice (the accounting surface takes an injected number today).
 - [ ] Add interruption, cancellation, reassignment, target-offline, deleted-
       thread, and target-version-skew handling with explicit terminal or
       recoverable states; never silently drop a message or start it elsewhere.

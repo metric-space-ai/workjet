@@ -22,7 +22,15 @@ use super::token::{CodexStoredCredentials, CodexTokenError, CodexTokenStorage, S
 pub const AUTH_URL: &str = "https://auth.openai.com/oauth/authorize";
 pub const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+/// Fixed loopback redirect the official codex client registers. Captured
+/// verbatim from `codex login` (`@openai/codex` native binary, 2026-08-19); any
+/// other redirect target is answered with `invalid_authorize_request`.
 pub const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
+/// Scope set the official client requests, same capture.
+pub const AUTH_SCOPE: &str =
+    "openid profile email offline_access api.connectors.read api.connectors.invoke";
+/// Client attribution parameter the official client sends, same capture.
+pub const ORIGINATOR: &str = "codex_cli_rs";
 pub const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 pub const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -39,16 +47,16 @@ pub fn generate_auth_url_with_redirect(
     redirect_uri: &str,
 ) -> String {
     let query = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("client_id", CLIENT_ID)
         .append_pair("response_type", "code")
+        .append_pair("client_id", CLIENT_ID)
         .append_pair("redirect_uri", redirect_uri)
-        .append_pair("scope", "openid email profile offline_access")
-        .append_pair("state", state)
+        .append_pair("scope", AUTH_SCOPE)
         .append_pair("code_challenge", pkce.code_challenge())
         .append_pair("code_challenge_method", "S256")
-        .append_pair("prompt", "login")
         .append_pair("id_token_add_organizations", "true")
         .append_pair("codex_cli_simplified_flow", "true")
+        .append_pair("state", state)
+        .append_pair("originator", ORIGINATOR)
         .finish();
     format!("{AUTH_URL}?{query}")
 }

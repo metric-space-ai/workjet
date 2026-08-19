@@ -36,6 +36,9 @@ fn config(root: &std::path::Path) -> HostConfig {
         antigravity_oauth_client_id_secret: None,
         antigravity_oauth_client_secret_secret: None,
         default_provider: Some("codex".to_owned()),
+        // Tests must never bind the officially registered codex callback port:
+        // it is fixed machine-wide and shared with the official CLI.
+        codex_callback_port: Some(0),
         runtime: CliproxyRuntimeConfig {
             request_timeout_ms: 1_000,
             routing_strategy: SchedulerStrategy::RoundRobin,
@@ -234,14 +237,32 @@ async fn begins_a_loopback_oauth_session_for_every_supported_provider() {
             authorization_url.starts_with(authorize_host),
             "{provider}: {authorization_url}"
         );
-        // The redirect target must resolve on this host's own management
-        // listener, on the crate's canonical callback path.
+        // The redirect target must be exactly what the provider's OAuth client
+        // registers: a loopback listener this host binds for the flow for
+        // anthropic and codex, and the management listener for antigravity,
+        // whose client is operator-supplied.
+        let expected_redirect = match provider {
+            "anthropic" => "http://localhost:".to_owned(),
+            "codex" => "http://localhost:".to_owned(),
+            _ => format!("http://{management_address}/management/oauth/{provider}/callback"),
+        };
         assert!(
-            authorization_url.contains(&url_encoded(&format!(
-                "http://{management_address}/management/oauth/{provider}/callback"
-            ))),
+            authorization_url.contains(&url_encoded(&expected_redirect)),
             "{provider}: {authorization_url}"
         );
+        match provider {
+            "anthropic" => assert!(
+                authorization_url.contains(&url_encoded("/callback"))
+                    && !authorization_url.contains("management"),
+                "{provider}: {authorization_url}"
+            ),
+            "codex" => assert!(
+                authorization_url.contains(&url_encoded("/auth/callback"))
+                    && !authorization_url.contains("management"),
+                "{provider}: {authorization_url}"
+            ),
+            _ => {}
+        }
         assert!(authorization_url.contains(&format!("state-{provider}")));
     }
 

@@ -1,11 +1,88 @@
 //! Loopback provider OAuth surface for the Workjet host.
 //!
-//! The host owns no OAuth policy of its own: sessions, credential projection,
-//! provider normalization and the canonical callback path all come from the
-//! portable gateway crate. This module only supplies the two pieces the
-//! portable crate deliberately leaves to an embedder - a concrete
-//! [`ManagementProviderOAuthAuthority`] that talks to the real providers, and
-//! the redirect target that the host's own management listener serves.
+//! The host owns no OAuth policy of its own: sessions, credential projection
+//! and provider normalization all come from the portable gateway crate. This
+//! module only supplies the two pieces the portable crate deliberately leaves
+//! to an embedder - a concrete [`ManagementProviderOAuthAuthority`] that talks
+//! to the real providers, and the loopback redirect target each provider's
+//! OAuth client actually accepts.
+//!
+//! # Redirect targets the identity providers accept (evidence, 2026-08-19)
+//!
+//! The host used to point every provider at its own management listener
+//! (`http://127.0.0.1:<ephemeral>/management/oauth/<provider>/callback`). No
+//! provider registers that target, so both real logins were rejected by the
+//! identity provider before any credential was ever entered:
+//!
+//! * Anthropic rendered `Redirect URI
+//!   http://127.0.0.1:49406/management/oauth/anthropic/callback is not
+//!   supported by client.`
+//! * OpenAI answered `{"error":{"message":"Invalid authorize request", …
+//!   "code":"invalid_authorize_request"}}`.
+//!
+//! The official CLIs on this machine define the accepted shapes:
+//!
+//! ## codex (`@openai/codex`, native binary)
+//!
+//! `codex login` printed, verbatim (scratch `CODEX_HOME`, no login performed):
+//!
+//! ```text
+//! Starting local login server on http://localhost:1455.
+//! https://auth.openai.com/oauth/authorize?response_type=code
+//!   &client_id=app_EMoamEEZ73f0CkXaXp7hrann
+//!   &redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback
+//!   &scope=openid%20profile%20email%20offline_access
+//!          %20api.connectors.read%20api.connectors.invoke
+//!   &code_challenge=…&code_challenge_method=S256
+//!   &id_token_add_organizations=true&codex_cli_simplified_flow=true
+//!   &state=…&originator=codex_cli_rs
+//! ```
+//!
+//! The port is **fixed**: the client registers `http://localhost:1455/auth/
+//! callback` (the binary also carries the string `default login callback port
+//! is unavailable; falling back to the registered fallback port`, so a second
+//! registered port exists, but its value is not recoverable from the binary and
+//! is therefore not guessed here). A live login confirmed this shape is
+//! accepted end to end: the IdP redirected to
+//! `http://localhost:1455/auth/callback?code=…&scope=openid+profile+email+
+//! offline_access+api.connectors.read+api.connectors.invoke&state=…`, which
+//! then failed only because nothing was listening on 1455. Hence the host binds
+//! that exact port for the duration of the flow.
+//!
+//! ## anthropic (`@anthropic-ai/claude-code`, `claude.exe`)
+//!
+//! The bundled authorize builder reads:
+//!
+//! ```text
+//! d.searchParams.append("code","true")
+//! d.searchParams.append("client_id", CLIENT_ID)          // 9d1c250a-e61b-44d9-88ed-5944d1962f5e
+//! d.searchParams.append("response_type","code")
+//! d.searchParams.append("redirect_uri",
+//!     n ? MANUAL_REDIRECT_URL : `http://localhost:${r}/callback`)
+//! … scope, code_challenge, code_challenge_method="S256", state
+//! ```
+//!
+//! with `MANUAL_REDIRECT_URL = https://platform.claude.com/oauth/code/callback`
+//! (the paste-the-code fallback) and `TOKEN_URL =
+//! https://platform.claude.com/v1/oauth/token`. The loopback variant therefore
+//! uses an **arbitrary** port with the fixed path `/callback` on the literal
+//! host `localhost` (RFC 8252 port-any matching). Both defects of the old host
+//! redirect are visible here: the wrong path, and the literal `127.0.0.1`
+//! instead of `localhost`.
+//!
+//! The scope set stays the gateway's own (`user:profile user:inference
+//! user:sessions:claude_code user:mcp_servers user:file_upload`); the official
+//! CLI additionally requests `org:create_api_key`, which this host has no use
+//! for and deliberately does not request.
+//!
+//! ## antigravity
+//!
+//! Unchanged: it keeps the management-listener redirect. Its client is
+//! operator-supplied (client id and secret come from the host's secret store),
+//! so no official fixed redirect can be derived from a shipped CLI. If that
+//! client does not register the management callback, it needs the same
+//! treatment - but guessing its registration would be exactly the defect fixed
+//! here.
 //!
 //! No token material is written to disk here. Exchanged tokens live only in
 //! this process' memory until the loopback client claims them exactly once;
@@ -42,7 +119,16 @@ use workjet_provider_gateway::internal::auth::codex::{
 };
 use workjet_provider_gateway::sdk::auth::LoginCancellation;
 
+use crate::loopback::{BoundCallback, CallbackBindError};
 use crate::secret_store::antigravity_state_secret;
+
+/// Fixed callback port the official codex client registers.
+pub const CODEX_CALLBACK_PORT: u16 = 1455;
+/// Path component of the codex client's registered redirect URI.
+const CODEX_CALLBACK_PATH: &str = "/auth/callback";
+/// Path component of the claude client's loopback redirect URI. The port is
+/// free (RFC 8252 port-any matching); the path is not.
+const ANTHROPIC_CALLBACK_PATH: &str = "/callback";
 
 /// System clock for the crate's OAuth session bookkeeping.
 #[derive(Debug, Default)]
@@ -100,11 +186,14 @@ enum LoginOutcome {
 
 /// Concrete OAuth authority for the three providers the Workjet host exposes.
 pub struct HostOAuthAuthority {
+    me: std::sync::Weak<Self>,
     management_endpoint: String,
+    codex_callback_port: u16,
     antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
     pending: Mutex<BTreeMap<String, PendingLogin>>,
     outcomes: Mutex<BTreeMap<String, LoginOutcome>>,
     claims: Mutex<BTreeMap<String, Vec<ManagementClaimedCredential>>>,
+    listeners: Mutex<BTreeMap<String, tokio::task::JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for HostOAuthAuthority {
@@ -122,13 +211,37 @@ impl HostOAuthAuthority {
     pub fn new(
         management_endpoint: String,
         antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
-    ) -> Self {
-        Self {
+    ) -> Arc<Self> {
+        Self::with_codex_callback_port(management_endpoint, antigravity, CODEX_CALLBACK_PORT)
+    }
+
+    /// Same, with the codex callback port overridden. Only a deployment that
+    /// cannot use the officially registered port - or a test - should do this:
+    /// OpenAI rejects any other redirect target.
+    #[must_use]
+    pub fn with_codex_callback_port(
+        management_endpoint: String,
+        antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
+        codex_callback_port: u16,
+    ) -> Arc<Self> {
+        Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             management_endpoint,
+            codex_callback_port,
             antigravity,
             pending: Mutex::new(BTreeMap::new()),
             outcomes: Mutex::new(BTreeMap::new()),
             claims: Mutex::new(BTreeMap::new()),
+            listeners: Mutex::new(BTreeMap::new()),
+        })
+    }
+
+    /// Stops and forgets the loopback redirect listener of `state`, if any.
+    fn stop_listener(&self, state: &str) {
+        if let Ok(mut listeners) = self.listeners.lock() {
+            if let Some(handle) = listeners.remove(state) {
+                handle.abort();
+            }
         }
     }
 
@@ -227,7 +340,30 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
         state: &str,
         callback_path: &str,
     ) -> Result<String, ManagementProviderOAuthAuthorityError> {
-        let redirect_uri = self.redirect_uri(callback_path);
+        // `callback_path` is the portable crate's management-listener path. It
+        // is only usable for a provider whose OAuth client registers it;
+        // anthropic and codex do not (see the module documentation), so each of
+        // them gets the loopback redirect its official client registers.
+        let bound = match provider {
+            "anthropic" => Some(BoundCallback::bind(0, ANTHROPIC_CALLBACK_PATH)),
+            "codex" => Some(BoundCallback::bind(
+                self.codex_callback_port,
+                CODEX_CALLBACK_PATH,
+            )),
+            _ => None,
+        }
+        .transpose()
+        .map_err(|error| match error {
+            // A bounded, typed failure: the officially registered port is held
+            // by something else (typically the official CLI's login server).
+            CallbackBindError::PortUnavailable(_) | CallbackBindError::Unavailable => {
+                ManagementProviderOAuthAuthorityError
+            }
+        })?;
+        let redirect_uri = match bound.as_ref() {
+            Some(bound) => bound.redirect_uri().to_owned(),
+            None => self.redirect_uri(callback_path),
+        };
         let (authorization_url, pkce) = match provider {
             "anthropic" => {
                 let pkce = claude_pkce().map_err(|_| ManagementProviderOAuthAuthorityError)?;
@@ -271,6 +407,18 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
                     pkce: Arc::new(pkce),
                 },
             );
+        if let Some(bound) = bound {
+            let authority = self
+                .me
+                .upgrade()
+                .ok_or(ManagementProviderOAuthAuthorityError)?;
+            let handle = bound.serve(authority, provider.to_owned(), state.to_owned());
+            if let Ok(mut listeners) = self.listeners.lock() {
+                if let Some(previous) = listeners.insert(state.to_owned(), handle) {
+                    previous.abort();
+                }
+            }
+        }
         Ok(authorization_url)
     }
 
@@ -301,12 +449,16 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
                 error: None,
                 credentials: Vec::new(),
             }),
-            Some(LoginOutcome::Failed(message)) => Ok(ManagementProviderOAuthPoll {
-                pending: false,
-                error: Some(message),
-                credentials: Vec::new(),
-            }),
+            Some(LoginOutcome::Failed(message)) => {
+                self.stop_listener(state);
+                Ok(ManagementProviderOAuthPoll {
+                    pending: false,
+                    error: Some(message),
+                    credentials: Vec::new(),
+                })
+            }
             Some(LoginOutcome::Completed(claimed)) => {
+                self.stop_listener(state);
                 let credentials = claimed
                     .iter()
                     .map(|entry| entry.account.clone())
@@ -348,6 +500,9 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
             .map_err(|_| ManagementProviderOAuthAuthorityError)?
             .remove(state);
         self.discard_claim(state);
+        // A cancelled login must release its loopback redirect port at once;
+        // the codex port is fixed and shared with the official CLI.
+        self.stop_listener(state);
         Ok(())
     }
 }
@@ -522,11 +677,26 @@ impl HostOAuthSource {
         management_endpoint: String,
         antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
     ) -> Self {
+        Self::with_codex_callback_port(management_endpoint, antigravity, CODEX_CALLBACK_PORT)
+    }
+
+    /// Same, with the codex loopback callback port overridden. See
+    /// [`HostOAuthAuthority::with_codex_callback_port`].
+    #[must_use]
+    pub fn with_codex_callback_port(
+        management_endpoint: String,
+        antigravity: Option<Arc<AntigravityOAuthClientCredentials>>,
+        codex_callback_port: u16,
+    ) -> Self {
         let sessions = Arc::new(ManagementOAuthSessions::new(Arc::new(SystemOAuthClock)));
         let credentials = Arc::new(ManagementCredentialService::new(Arc::new(
             MemoryCredentialStore::default(),
         )));
-        let authority = Arc::new(HostOAuthAuthority::new(management_endpoint, antigravity));
+        let authority = HostOAuthAuthority::with_codex_callback_port(
+            management_endpoint,
+            antigravity,
+            codex_callback_port,
+        );
         let provider_oauth = Arc::new(ManagementProviderOAuth::new(
             sessions.clone(),
             credentials,
@@ -665,12 +835,137 @@ mod tests {
         }
     }
 
+    /// Tests never bind the officially registered codex port: it is a fixed,
+    /// machine-wide port shared with the official CLI.
     fn source() -> HostOAuthSource {
-        HostOAuthSource::new("http://127.0.0.1:1/".to_owned(), None)
+        HostOAuthSource::with_codex_callback_port("http://127.0.0.1:1/".to_owned(), None, 0)
     }
 
-    #[test]
-    fn claims_the_canonical_provider_payload_exactly_once() {
+    fn query(url: &str) -> BTreeMap<String, String> {
+        url.split_once('?')
+            .map(|(_, query)| query)
+            .unwrap_or_default()
+            .split('&')
+            .filter(|pair| !pair.is_empty())
+            .map(|pair| {
+                let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+                (
+                    key.to_owned(),
+                    crate::loopback::decode_component_for_test(value),
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn anthropic_authorizes_against_the_official_loopback_redirect() {
+        let source = source();
+        let start = source.begin("anthropic", Some("anthropic-shape")).unwrap();
+        let url = start.authorization_url;
+        assert!(
+            url.starts_with("https://claude.ai/oauth/authorize?"),
+            "{url}"
+        );
+        let params = query(&url);
+        assert_eq!(
+            params["client_id"], "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "{url}"
+        );
+        assert_eq!(params["response_type"], "code");
+        assert_eq!(params["code"], "true");
+        assert_eq!(params["code_challenge_method"], "S256");
+        assert_eq!(params["state"], "anthropic-shape");
+        let redirect = &params["redirect_uri"];
+        // Official shape: literal `localhost`, free port, fixed `/callback`.
+        assert!(redirect.starts_with("http://localhost:"), "{redirect}");
+        assert!(redirect.ends_with("/callback"), "{redirect}");
+        assert!(!redirect.contains("management"), "{redirect}");
+        assert!(!redirect.contains("127.0.0.1"), "{redirect}");
+    }
+
+    #[tokio::test]
+    async fn codex_authorizes_against_the_official_loopback_redirect() {
+        let source = source();
+        let start = source.begin("codex", Some("codex-shape")).unwrap();
+        let url = start.authorization_url;
+        assert!(
+            url.starts_with("https://auth.openai.com/oauth/authorize?"),
+            "{url}"
+        );
+        let params = query(&url);
+        assert_eq!(params["client_id"], "app_EMoamEEZ73f0CkXaXp7hrann", "{url}");
+        assert_eq!(params["response_type"], "code");
+        assert_eq!(
+            params["scope"],
+            "openid profile email offline_access api.connectors.read api.connectors.invoke"
+        );
+        assert_eq!(params["code_challenge_method"], "S256");
+        assert_eq!(params["id_token_add_organizations"], "true");
+        assert_eq!(params["codex_cli_simplified_flow"], "true");
+        assert_eq!(params["originator"], "codex_cli_rs");
+        assert!(!params.contains_key("prompt"), "{url}");
+        assert_eq!(params["state"], "codex-shape");
+        let redirect = &params["redirect_uri"];
+        assert!(redirect.starts_with("http://localhost:"), "{redirect}");
+        assert!(redirect.ends_with("/auth/callback"), "{redirect}");
+        assert!(!redirect.contains("management"), "{redirect}");
+    }
+
+    #[tokio::test]
+    async fn the_default_codex_callback_port_is_the_registered_one() {
+        assert_eq!(CODEX_CALLBACK_PORT, 1455);
+        assert_eq!(CODEX_CALLBACK_PATH, "/auth/callback");
+        assert_eq!(ANTHROPIC_CALLBACK_PATH, "/callback");
+    }
+
+    #[tokio::test]
+    async fn the_loopback_redirect_completes_the_pending_session() {
+        let source = source();
+        let start = source.begin("codex", Some("redirect-state")).unwrap();
+        let redirect = query(&start.authorization_url)
+            .remove("redirect_uri")
+            .unwrap();
+        let port = redirect
+            .trim_start_matches("http://localhost:")
+            .split('/')
+            .next()
+            .unwrap()
+            .to_owned();
+        let authority = format!("127.0.0.1:{port}");
+
+        // A redirect for a different session is rejected and does not complete
+        // this one.
+        let foreign = get(&authority, "/auth/callback?code=abc&state=someone-else").await;
+        assert!(foreign.starts_with("HTTP/1.1 400"), "{foreign}");
+        assert!(source.poll("redirect-state").unwrap().pending);
+
+        // The provider's own error redirect completes the session as failed
+        // without any token exchange.
+        let response = get(
+            &authority,
+            "/auth/callback?error=access_denied&state=redirect-state",
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let polled = source.poll("redirect-state").unwrap();
+        assert!(!polled.pending);
+        assert_eq!(polled.error.as_deref(), Some("access_denied"));
+    }
+
+    async fn get(authority: &str, target: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = tokio::net::TcpStream::connect(authority).await.unwrap();
+        stream
+            .write_all(format!("GET {target} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+        String::from_utf8_lossy(&response).into_owned()
+    }
+
+    #[tokio::test]
+    async fn claims_the_canonical_provider_payload_exactly_once() {
         let source = source();
         let start = source.begin("codex", Some("claim-state")).unwrap();
         assert_eq!(start.provider, "codex");
@@ -716,8 +1011,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn cancelling_a_session_drops_any_retained_token_material() {
+    #[tokio::test]
+    async fn cancelling_a_session_drops_any_retained_token_material() {
         let source = source();
         source.begin("codex", Some("cancel-state")).unwrap();
         source

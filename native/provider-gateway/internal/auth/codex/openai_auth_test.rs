@@ -112,12 +112,14 @@ fn auth_url_contains_the_complete_upstream_parameter_set() {
     );
     assert_eq!(
         params.get("scope").unwrap(),
-        "openid email profile offline_access"
+        "openid profile email offline_access api.connectors.read api.connectors.invoke"
     );
     assert_eq!(params.get("state").unwrap(), "state with space");
     assert_eq!(params.get("code_challenge").unwrap(), "fixed-challenge");
     assert_eq!(params.get("code_challenge_method").unwrap(), "S256");
-    assert_eq!(params.get("prompt").unwrap(), "login");
+    // The official client sends no `prompt`; it does send `originator`.
+    assert!(params.get("prompt").is_none());
+    assert_eq!(params.get("originator").unwrap(), "codex_cli_rs");
     assert_eq!(params.get("id_token_add_organizations").unwrap(), "true");
     assert_eq!(params.get("codex_cli_simplified_flow").unwrap(), "true");
     assert!(!url.as_str().contains("verifier-do-not-log"));

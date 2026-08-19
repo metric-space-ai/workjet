@@ -1,4 +1,5 @@
 pub mod config;
+pub mod loopback;
 pub mod oauth;
 pub mod runtime;
 pub mod secret_store;
@@ -173,9 +174,10 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
             management_source.clone(),
             management_source,
         )
-        .attach_oauth_source(Arc::new(HostOAuthSource::new(
+        .attach_oauth_source(Arc::new(HostOAuthSource::with_codex_callback_port(
             management_endpoint.clone(),
             antigravity_client,
+            config.codex_callback_port,
         ))),
     );
 

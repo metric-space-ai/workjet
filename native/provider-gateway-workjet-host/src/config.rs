@@ -26,6 +26,11 @@ pub struct HostConfig {
     /// provider must still have an enabled account, exactly as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_provider: Option<String>,
+    /// Loopback port the codex OAuth redirect is served on. Absent means the
+    /// port OpenAI's official client registers (1455); any other value is only
+    /// usable if that client registers it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_callback_port: Option<u16>,
     pub runtime: CliproxyRuntimeConfig,
 }
 
@@ -65,6 +70,7 @@ pub struct ValidatedHostConfig {
     pub management_secret: RuntimeSecretRef,
     pub antigravity_oauth: Option<(RuntimeSecretRef, RuntimeSecretRef)>,
     pub default_provider: Option<String>,
+    pub codex_callback_port: u16,
     pub runtime: ValidatedRuntimeConfig,
 }
 
@@ -192,6 +198,9 @@ impl HostConfig {
             management_secret: self.management_secret,
             antigravity_oauth,
             default_provider,
+            codex_callback_port: self
+                .codex_callback_port
+                .unwrap_or(crate::oauth::CODEX_CALLBACK_PORT),
             runtime,
         })
     }

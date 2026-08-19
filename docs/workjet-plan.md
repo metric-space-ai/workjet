@@ -978,9 +978,18 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   `cost-budget-exceeded` before the durable write, and `requiresApproval`
   seeding a delegation `pending` — the executor's delivered→accepted path
   consults `isDelegationExecutable` and holds until approved (reject →
-  terminal cancelled). Fully closes the anti-infinite-loop requirement;
-  wiring real per-turn token counts into `recordDelegationUsage` is a later
-  slice (the accounting surface takes an injected number today).
+  terminal cancelled). Fully closes the anti-infinite-loop requirement.
+  Real usage wiring done 2026-08-19 (commit `c05ab1266`): the executor
+  charges each delegation the DELTA of its turn's cumulative
+  `context-window.updated` snapshots (ProviderRuntimeIngestion is the only
+  per-turn token source; idempotent delta-vs-recorded-total, no double
+  count), gates on completion AND mid-run (breach on a running turn
+  dispatches `thread.turn.interrupt` with a derived command id), fails with
+  the bounded budget reason, persists a bounded failed result, and emits the
+  previously dead `budget-exceeded{kind}` audit event. Cost stays 0 — no
+  per-turn cost figure exists anywhere reachable; the cost ceiling remains
+  enforced at the store. Granularity caveats: provider-driven snapshot
+  cadence and the 10 s cycle allow bounded overshoot between reports.
 - [x] Add interruption, cancellation, reassignment, target-offline, deleted-
       thread, and target-version-skew handling with explicit terminal or
       recoverable states; never silently drop a message or start it elsewhere.

@@ -1,0 +1,404 @@
+import type { ReactElement, ReactNode } from "react";
+import { Children, isValidElement } from "react";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import {
+  buildWorkjetDelegateTaskInput,
+  buildWorkjetSendMessageInput,
+  EMPTY_WORKJET_SEND_DRAFT,
+  parseWorkjetScopeFiles,
+  resolveWorkjetSendTarget,
+  validateWorkjetSendDraft,
+  WORKJET_MAX_TTL_SECONDS,
+  WORKJET_MESSAGE_MAX_LENGTH,
+  WORKJET_MIN_TTL_SECONDS,
+  WORKJET_SEND_FIELD_ERROR_MESSAGES,
+  workjetMailboxFailureMessage,
+  WorkjetSendToWorkerPanelContent,
+  type WorkjetSendDraft,
+  type WorkjetSendToWorkerPanelProps,
+} from "./WorkjetSendToWorkerPanel";
+
+type InspectableElement = ReactElement<
+  Readonly<Record<string, unknown>> & { readonly children?: ReactNode }
+>;
+
+function descendants(node: ReactNode): InspectableElement[] {
+  const found: InspectableElement[] = [];
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement(child)) continue;
+    const element = child as InspectableElement;
+    found.push(element, ...descendants(element.props.children));
+  }
+  return found;
+}
+
+function textContent(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textContent).join(" ");
+  if (isValidElement(node)) return textContent((node as InspectableElement).props.children);
+  return "";
+}
+
+const ENVIRONMENT_ID = EnvironmentId.make("environment-local");
+const SOURCE_THREAD_ID = ThreadId.make("thread-orchestrator");
+
+const validMessageDraft: WorkjetSendDraft = {
+  ...EMPTY_WORKJET_SEND_DRAFT,
+  targetThreadId: "thread-worker",
+  message: "Please look at the failing test.",
+};
+
+const validTaskDraft: WorkjetSendDraft = {
+  ...validMessageDraft,
+  tab: "task",
+  prompt: "Fix the flaky mailbox store test.",
+  scopeFiles: "apps/server/src/workjet/mailbox/WorkjetMailboxStore.ts\n",
+  nonGoals: "No contract changes.",
+  acceptance: "The focused test run is green.",
+};
+
+const panelProps = (
+  overrides: Partial<WorkjetSendToWorkerPanelProps> = {},
+): WorkjetSendToWorkerPanelProps => ({
+  draft: validMessageDraft,
+  threads: [{ threadId: "thread-worker", title: "Worker thread" }],
+  busy: false,
+  outcome: null,
+  onDraftChange: () => undefined,
+  onSubmit: () => undefined,
+  ...overrides,
+});
+
+describe("parseWorkjetScopeFiles", () => {
+  it("keeps repository-relative paths, drops blanks, and deduplicates", () => {
+    const parsed = parseWorkjetScopeFiles("  a/b.ts \n\n a/b.ts \n c/d.ts \n");
+
+    expect(parsed.files).toEqual(["a/b.ts", "c/d.ts"]);
+    expect(parsed.invalid).toEqual([]);
+  });
+
+  it("reports absolute, traversing, and backslashed paths as invalid", () => {
+    const parsed = parseWorkjetScopeFiles("/etc/passwd\n../outside.ts\na\\b.ts\nok/file.ts");
+
+    expect(parsed.files).toEqual(["ok/file.ts"]);
+    expect(parsed.invalid).toEqual(["/etc/passwd", "../outside.ts", "a\\b.ts"]);
+  });
+});
+
+describe("validateWorkjetSendDraft", () => {
+  it("accepts a complete message draft and a complete task draft", () => {
+    expect(validateWorkjetSendDraft(validMessageDraft)).toEqual([]);
+    expect(validateWorkjetSendDraft(validTaskDraft)).toEqual([]);
+  });
+
+  it("requires a recipient in whichever mode the draft is in", () => {
+    expect(validateWorkjetSendDraft({ ...validMessageDraft, targetThreadId: " " })).toContain(
+      "recipient-thread-required",
+    );
+    expect(
+      validateWorkjetSendDraft({
+        ...validMessageDraft,
+        recipientMode: "environment",
+        targetEnvironmentId: "",
+      }),
+    ).toContain("recipient-environment-required");
+    expect(
+      validateWorkjetSendDraft({
+        ...validMessageDraft,
+        recipientMode: "environment",
+        targetEnvironmentId: "environment-remote",
+      }),
+    ).toEqual([]);
+  });
+
+  it("requires a nonblank message inside the wire bound", () => {
+    expect(validateWorkjetSendDraft({ ...validMessageDraft, message: "   " })).toContain(
+      "message-required",
+    );
+    expect(
+      validateWorkjetSendDraft({
+        ...validMessageDraft,
+        message: "x".repeat(WORKJET_MESSAGE_MAX_LENGTH + 1),
+      }),
+    ).toContain("message-too-long");
+  });
+
+  it("ignores every task field while the draft is a plain message", () => {
+    expect(
+      validateWorkjetSendDraft({
+        ...validMessageDraft,
+        prompt: "",
+        scopeFiles: "/absolute",
+        acceptance: "",
+        nonGoals: "",
+        maxDepth: 99,
+      }),
+    ).toEqual([]);
+  });
+
+  it("requires prompt, scope, non-goals and acceptance on the task tab", () => {
+    const errors = validateWorkjetSendDraft({
+      ...validTaskDraft,
+      prompt: " ",
+      scopeFiles: "",
+      nonGoals: "",
+      acceptance: "",
+    });
+
+    expect(errors).toEqual([
+      "prompt-required",
+      "scope-required",
+      "non-goals-required",
+      "acceptance-required",
+    ]);
+  });
+
+  it("flags a scope line the repository-path contract refuses", () => {
+    expect(
+      validateWorkjetSendDraft({ ...validTaskDraft, scopeFiles: "ok/file.ts\n../escape.ts" }),
+    ).toEqual(["scope-invalid-path"]);
+  });
+
+  it("holds the budget inside the contract bounds", () => {
+    expect(validateWorkjetSendDraft({ ...validTaskDraft, maxDepth: 0 })).toContain(
+      "budget-depth-out-of-range",
+    );
+    expect(validateWorkjetSendDraft({ ...validTaskDraft, maxDepth: 17 })).toContain(
+      "budget-depth-out-of-range",
+    );
+    expect(validateWorkjetSendDraft({ ...validTaskDraft, maxReviewRounds: -1 })).toContain(
+      "budget-review-rounds-out-of-range",
+    );
+    expect(validateWorkjetSendDraft({ ...validTaskDraft, maxReviewRounds: 0 })).toEqual([]);
+    expect(
+      validateWorkjetSendDraft({ ...validTaskDraft, ttlSeconds: WORKJET_MIN_TTL_SECONDS - 1 }),
+    ).toContain("budget-ttl-out-of-range");
+    expect(
+      validateWorkjetSendDraft({ ...validTaskDraft, ttlSeconds: WORKJET_MAX_TTL_SECONDS + 1 }),
+    ).toContain("budget-ttl-out-of-range");
+  });
+
+  it("has a message for every error it can raise", () => {
+    for (const error of validateWorkjetSendDraft({
+      ...EMPTY_WORKJET_SEND_DRAFT,
+      tab: "task",
+      scopeFiles: "/absolute",
+      maxDepth: 0,
+      maxReviewRounds: -1,
+      ttlSeconds: 0,
+    })) {
+      expect(WORKJET_SEND_FIELD_ERROR_MESSAGES[error].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("workjet send payloads", () => {
+  it("addresses a same-machine recipient with the active environment", () => {
+    expect(resolveWorkjetSendTarget(validMessageDraft, ENVIRONMENT_ID)).toEqual({
+      environmentId: ENVIRONMENT_ID,
+      threadId: "thread-worker",
+    });
+  });
+
+  it("addresses another machine with the typed environment id", () => {
+    expect(
+      resolveWorkjetSendTarget(
+        {
+          ...validMessageDraft,
+          recipientMode: "environment",
+          targetEnvironmentId: " environment-remote ",
+          targetThreadId: "",
+        },
+        ENVIRONMENT_ID,
+      ),
+    ).toEqual({ environmentId: "environment-remote", threadId: "environment-remote" });
+  });
+
+  it("builds a trimmed inline message payload naming the source thread", () => {
+    expect(
+      buildWorkjetSendMessageInput({
+        draft: { ...validMessageDraft, message: "  hello worker  " },
+        sourceThreadId: SOURCE_THREAD_ID,
+        activeEnvironmentId: ENVIRONMENT_ID,
+      }),
+    ).toEqual({
+      sourceThreadId: SOURCE_THREAD_ID,
+      targetEnvironmentId: ENVIRONMENT_ID,
+      targetThreadId: "thread-worker",
+      body: { _tag: "inline", text: "hello worker" },
+    });
+  });
+
+  it("builds the delegation payload from the parsed scope and budget", () => {
+    expect(
+      buildWorkjetDelegateTaskInput({
+        draft: validTaskDraft,
+        sourceThreadId: SOURCE_THREAD_ID,
+        activeEnvironmentId: ENVIRONMENT_ID,
+      }),
+    ).toEqual({
+      sourceThreadId: SOURCE_THREAD_ID,
+      targetEnvironmentId: ENVIRONMENT_ID,
+      targetThreadId: "thread-worker",
+      prompt: "Fix the flaky mailbox store test.",
+      scope: {
+        files: ["apps/server/src/workjet/mailbox/WorkjetMailboxStore.ts"],
+        nonGoals: "No contract changes.",
+      },
+      acceptance: "The focused test run is green.",
+      budget: { maxDepth: 2, maxReviewRounds: 1, ttlSeconds: 3_600 },
+      ttlSeconds: 3_600,
+    });
+  });
+});
+
+describe("workjetMailboxFailureMessage", () => {
+  it("renders the contract's own sentence for a typed mailbox failure", () => {
+    expect(
+      workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "unknown-target" }),
+    ).toBe("The mailbox target address is unknown.");
+    expect(
+      workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "unauthorized" }),
+    ).toBe("The mailbox operation is not authorized for this environment.");
+  });
+
+  it("stays generic for anything that is not a bounded mailbox failure", () => {
+    for (const value of [
+      null,
+      "boom",
+      new Error("boom"),
+      { _tag: "WorkjetMailboxError", reason: "kaboom" },
+      { _tag: "SomethingElse", reason: "unknown-target" },
+    ]) {
+      expect(workjetMailboxFailureMessage(value)).toBe("The Workjet mailbox send failed.");
+    }
+  });
+});
+
+describe("WorkjetSendToWorkerPanelContent", () => {
+  const render = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
+    WorkjetSendToWorkerPanelContent(panelProps(overrides)) as InspectableElement;
+
+  it("shows both tabs and marks the active one", () => {
+    const tabs = descendants(render().props.children).filter(
+      (element) => element.props.role === "tab",
+    );
+
+    expect(tabs.map((tab) => textContent(tab.props.children))).toEqual([
+      "Message",
+      "Message + Task",
+    ]);
+    expect(tabs.map((tab) => tab.props["aria-selected"])).toEqual([true, false]);
+  });
+
+  it("hides every task field until the task tab is chosen", () => {
+    const messageLabels = descendants(render().props.children).map(
+      (element) => element.props["aria-label"],
+    );
+    expect(messageLabels).not.toContain("Task prompt");
+    expect(messageLabels).not.toContain("Scope files, one per line");
+
+    const taskLabels = descendants(render({ draft: validTaskDraft }).props.children).map(
+      (element) => element.props["aria-label"],
+    );
+    expect(taskLabels).toContain("Task prompt");
+    expect(taskLabels).toContain("Scope files, one per line");
+    expect(taskLabels).toContain("Acceptance");
+    expect(taskLabels).toContain("Maximum delegation depth");
+    expect(taskLabels).toContain("Maximum review rounds");
+    expect(taskLabels).toContain("Time to live in seconds");
+  });
+
+  it("constrains the budget inputs to the contract bounds", () => {
+    const inputs = new Map(
+      descendants(render({ draft: validTaskDraft }).props.children)
+        .filter((element) => typeof element.props["aria-label"] === "string")
+        .map((element) => [element.props["aria-label"] as string, element.props]),
+    );
+
+    expect(inputs.get("Maximum delegation depth")).toMatchObject({ min: 1, max: 16 });
+    expect(inputs.get("Maximum review rounds")).toMatchObject({ min: 0, max: 16 });
+    expect(inputs.get("Time to live in seconds")).toMatchObject({
+      min: WORKJET_MIN_TTL_SECONDS,
+      max: WORKJET_MAX_TTL_SECONDS,
+    });
+  });
+
+  it("lists the known threads for a same-machine recipient", () => {
+    const select = descendants(render().props.children).find(
+      (element) => element.props["aria-label"] === "Recipient thread",
+    );
+
+    expect(select?.type).toBe("select");
+    expect(textContent(select?.props.children)).toContain("Worker thread");
+  });
+
+  it("offers a free-text environment id and says the send is queued", () => {
+    const panel = render({
+      draft: { ...validMessageDraft, recipientMode: "environment", targetEnvironmentId: "env-b" },
+    });
+    const children = descendants(panel.props.children);
+
+    expect(
+      children.some((element) => element.props["aria-label"] === "Recipient environment id"),
+    ).toBe(true);
+    expect(textContent(panel.props.children)).toContain("Queued until the mesh delivers.");
+  });
+
+  it("disables submit while the draft is invalid and enables it once complete", () => {
+    const submitOf = (props: Partial<WorkjetSendToWorkerPanelProps>) =>
+      descendants(render(props).props.children).find(
+        (element) => typeof element.props.onClick === "function" && element.props.onClick !== null,
+      );
+
+    const invalid = descendants(
+      render({ draft: { ...validMessageDraft, message: "" } }).props.children,
+    ).filter((element) => textContent(element.props.children) === "Send message");
+    expect(invalid[0]?.props.disabled).toBe(true);
+
+    const valid = descendants(render().props.children).filter(
+      (element) => textContent(element.props.children) === "Send message",
+    );
+    expect(valid[0]?.props.disabled).toBe(false);
+    expect(submitOf({})).toBeDefined();
+  });
+
+  it("labels the submit for the task tab and while busy", () => {
+    expect(textContent(render({ draft: validTaskDraft }).props.children)).toContain("Send task");
+    expect(textContent(render({ busy: true }).props.children)).toContain("Sending…");
+  });
+
+  it("calls back with the patched draft when a tab is switched", () => {
+    const onDraftChange = vi.fn();
+    const taskTab = descendants(render({ onDraftChange }).props.children).find(
+      (element) => textContent(element.props.children) === "Message + Task",
+    );
+
+    (taskTab?.props.onClick as () => void)();
+    expect(onDraftChange).toHaveBeenCalledWith({ ...validMessageDraft, tab: "task" });
+  });
+
+  it("renders each send outcome inline", () => {
+    expect(
+      textContent(render({ outcome: { _tag: "queued", envelopeId: "wjm-1" } }).props.children),
+    ).toContain("Queued as wjm-1.");
+    expect(
+      textContent(
+        render({
+          outcome: { _tag: "acknowledged", envelopeId: "wjm-2", disposition: "accepted-new" },
+        }).props.children,
+      ),
+    ).toContain("Delivered as wjm-2 (accepted-new).");
+    const failed = render({
+      outcome: { _tag: "error", message: "The mailbox target address is unknown." },
+    });
+    expect(textContent(failed.props.children)).toContain("The mailbox target address is unknown.");
+    expect(
+      descendants(failed.props.children).some(
+        (element) => element.props["data-workjet-send-outcome"] === "error",
+      ),
+    ).toBe(true);
+  });
+});

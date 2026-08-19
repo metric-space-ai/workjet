@@ -1,0 +1,579 @@
+import {
+  WorkjetMailboxError,
+  WorkjetMailboxFailureReason,
+  WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS,
+  WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS,
+  WORKJET_MAILBOX_RPC_PROMPT_MAX_LENGTH,
+  WorkjetRepositoryPath,
+  type EnvironmentId,
+  type ThreadId,
+  type WorkjetMailboxDelegateTaskRpcInput,
+  type WorkjetMailboxSendMessageRpcInput,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+import { SendHorizonalIcon } from "lucide-react";
+
+import { cn } from "../../lib/utils";
+import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+
+/**
+ * "Nachricht" versus "Nachricht + Auftrag" for an ORCHESTRATOR thread
+ * (docs/workjet-plan.md → Wave 5 thread UI).
+ *
+ * The panel is the composer's send half of the durable Workjet mailbox. Every
+ * bound below is the WIRE bound restated as an input constraint, so the field
+ * refuses what the contract would refuse rather than letting the user discover
+ * it from a rejected RPC. Reply, review, cancel and reassign are later slices;
+ * nothing here pretends to offer them.
+ */
+
+export const WORKJET_MESSAGE_MAX_LENGTH = 4_096;
+export const WORKJET_NON_GOALS_MAX_LENGTH = 4_096;
+export const WORKJET_ACCEPTANCE_MAX_LENGTH = 8_192;
+export const WORKJET_PROMPT_MAX_LENGTH = WORKJET_MAILBOX_RPC_PROMPT_MAX_LENGTH;
+export const WORKJET_SCOPE_MAX_FILES = 256;
+export const WORKJET_MIN_TTL_SECONDS = WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS;
+export const WORKJET_MAX_TTL_SECONDS = WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS;
+
+export type WorkjetSendTab = "message" | "task";
+/**
+ * A recipient is either a thread on THIS server, picked from the threads the
+ * client already knows, or a bare environment id for a machine the mesh has
+ * not delivered to yet. The second case is deliberately free text: this client
+ * has no directory of another machine's threads.
+ */
+export type WorkjetRecipientMode = "thread" | "environment";
+
+export interface WorkjetSendDraft {
+  readonly tab: WorkjetSendTab;
+  readonly recipientMode: WorkjetRecipientMode;
+  readonly targetThreadId: string;
+  readonly targetEnvironmentId: string;
+  readonly message: string;
+  readonly prompt: string;
+  readonly scopeFiles: string;
+  readonly nonGoals: string;
+  readonly acceptance: string;
+  readonly maxDepth: number;
+  readonly maxReviewRounds: number;
+  readonly ttlSeconds: number;
+}
+
+export const EMPTY_WORKJET_SEND_DRAFT: WorkjetSendDraft = {
+  tab: "message",
+  recipientMode: "thread",
+  targetThreadId: "",
+  targetEnvironmentId: "",
+  message: "",
+  prompt: "",
+  scopeFiles: "",
+  nonGoals: "",
+  acceptance: "",
+  maxDepth: 2,
+  maxReviewRounds: 1,
+  ttlSeconds: 3_600,
+};
+
+const isRepositoryPath = Schema.is(WorkjetRepositoryPath);
+
+export interface WorkjetScopeParseResult {
+  readonly files: ReadonlyArray<string>;
+  /** Lines the repository-path contract refuses: absolute, traversing, or backslashed. */
+  readonly invalid: ReadonlyArray<string>;
+}
+
+/**
+ * One path per line. Blank lines are ignored rather than reported: a trailing
+ * newline is how a textarea normally ends, not a mistake worth an error.
+ */
+export function parseWorkjetScopeFiles(input: string): WorkjetScopeParseResult {
+  const files: string[] = [];
+  const invalid: string[] = [];
+  for (const rawLine of input.split("\n")) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    if (isRepositoryPath(line)) {
+      if (!files.includes(line)) files.push(line);
+    } else {
+      invalid.push(line);
+    }
+  }
+  return { files, invalid };
+}
+
+export type WorkjetSendFieldError =
+  | "recipient-thread-required"
+  | "recipient-environment-required"
+  | "message-required"
+  | "message-too-long"
+  | "prompt-required"
+  | "prompt-too-long"
+  | "scope-required"
+  | "scope-invalid-path"
+  | "scope-too-many"
+  | "acceptance-required"
+  | "acceptance-too-long"
+  | "non-goals-required"
+  | "non-goals-too-long"
+  | "budget-depth-out-of-range"
+  | "budget-review-rounds-out-of-range"
+  | "budget-ttl-out-of-range";
+
+export const WORKJET_SEND_FIELD_ERROR_MESSAGES: Record<WorkjetSendFieldError, string> = {
+  "recipient-thread-required": "Pick a thread on this machine.",
+  "recipient-environment-required": "Enter the target environment id.",
+  "message-required": "Write a message.",
+  "message-too-long": `A message is at most ${WORKJET_MESSAGE_MAX_LENGTH} characters.`,
+  "prompt-required": "Write the task prompt.",
+  "prompt-too-long": `A prompt is at most ${WORKJET_PROMPT_MAX_LENGTH} characters.`,
+  "scope-required": "List at least one repository-relative file.",
+  "scope-invalid-path": "Scope paths are repository-relative: no leading / and no ..",
+  "scope-too-many": `A scope holds at most ${WORKJET_SCOPE_MAX_FILES} files.`,
+  "acceptance-required": "Write what finished means.",
+  "acceptance-too-long": `Acceptance is at most ${WORKJET_ACCEPTANCE_MAX_LENGTH} characters.`,
+  "non-goals-required": "Write the non-goals.",
+  "non-goals-too-long": `Non-goals are at most ${WORKJET_NON_GOALS_MAX_LENGTH} characters.`,
+  "budget-depth-out-of-range": "Depth is between 1 and 16.",
+  "budget-review-rounds-out-of-range": "Review rounds are between 0 and 16.",
+  "budget-ttl-out-of-range": `A time-to-live is between ${WORKJET_MIN_TTL_SECONDS} and ${WORKJET_MAX_TTL_SECONDS} seconds.`,
+};
+
+const boundedProse = (value: string, maximum: number) => {
+  const trimmed = value.trim();
+  return { trimmed, empty: trimmed.length === 0, tooLong: trimmed.length > maximum };
+};
+
+/**
+ * Every error the panel can raise, in field order. Returning the whole list —
+ * rather than the first failure — is what lets the panel mark each field and
+ * still keep the submit button honest.
+ */
+export function validateWorkjetSendDraft(
+  draft: WorkjetSendDraft,
+): ReadonlyArray<WorkjetSendFieldError> {
+  const errors: WorkjetSendFieldError[] = [];
+  if (draft.recipientMode === "thread") {
+    if (draft.targetThreadId.trim().length === 0) errors.push("recipient-thread-required");
+  } else if (draft.targetEnvironmentId.trim().length === 0) {
+    errors.push("recipient-environment-required");
+  }
+
+  const message = boundedProse(draft.message, WORKJET_MESSAGE_MAX_LENGTH);
+  if (message.empty) errors.push("message-required");
+  else if (message.tooLong) errors.push("message-too-long");
+
+  if (draft.tab === "task") {
+    const prompt = boundedProse(draft.prompt, WORKJET_PROMPT_MAX_LENGTH);
+    if (prompt.empty) errors.push("prompt-required");
+    else if (prompt.tooLong) errors.push("prompt-too-long");
+
+    const scope = parseWorkjetScopeFiles(draft.scopeFiles);
+    if (scope.invalid.length > 0) errors.push("scope-invalid-path");
+    if (scope.files.length === 0) errors.push("scope-required");
+    else if (scope.files.length > WORKJET_SCOPE_MAX_FILES) errors.push("scope-too-many");
+
+    const nonGoals = boundedProse(draft.nonGoals, WORKJET_NON_GOALS_MAX_LENGTH);
+    if (nonGoals.empty) errors.push("non-goals-required");
+    else if (nonGoals.tooLong) errors.push("non-goals-too-long");
+
+    const acceptance = boundedProse(draft.acceptance, WORKJET_ACCEPTANCE_MAX_LENGTH);
+    if (acceptance.empty) errors.push("acceptance-required");
+    else if (acceptance.tooLong) errors.push("acceptance-too-long");
+
+    if (!Number.isInteger(draft.maxDepth) || draft.maxDepth < 1 || draft.maxDepth > 16) {
+      errors.push("budget-depth-out-of-range");
+    }
+    if (
+      !Number.isInteger(draft.maxReviewRounds) ||
+      draft.maxReviewRounds < 0 ||
+      draft.maxReviewRounds > 16
+    ) {
+      errors.push("budget-review-rounds-out-of-range");
+    }
+    if (
+      !Number.isInteger(draft.ttlSeconds) ||
+      draft.ttlSeconds < WORKJET_MIN_TTL_SECONDS ||
+      draft.ttlSeconds > WORKJET_MAX_TTL_SECONDS
+    ) {
+      errors.push("budget-ttl-out-of-range");
+    }
+  }
+  return errors;
+}
+
+export interface WorkjetSendTarget {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}
+
+/**
+ * Resolve the recipient a draft names. A thread recipient lives on the active
+ * environment; an environment recipient is a machine the mesh has not reached,
+ * so the thread part is the id the user typed after the environment (or the
+ * environment itself when they typed only that) — the envelope is stored and
+ * reported as queued either way.
+ */
+export function resolveWorkjetSendTarget(
+  draft: WorkjetSendDraft,
+  activeEnvironmentId: EnvironmentId,
+): WorkjetSendTarget {
+  return draft.recipientMode === "thread"
+    ? {
+        environmentId: activeEnvironmentId,
+        threadId: draft.targetThreadId.trim() as ThreadId,
+      }
+    : {
+        environmentId: draft.targetEnvironmentId.trim() as EnvironmentId,
+        threadId: (draft.targetThreadId.trim() || draft.targetEnvironmentId.trim()) as ThreadId,
+      };
+}
+
+export function buildWorkjetSendMessageInput(input: {
+  readonly draft: WorkjetSendDraft;
+  readonly sourceThreadId: ThreadId;
+  readonly activeEnvironmentId: EnvironmentId;
+}): WorkjetMailboxSendMessageRpcInput {
+  const target = resolveWorkjetSendTarget(input.draft, input.activeEnvironmentId);
+  return {
+    sourceThreadId: input.sourceThreadId,
+    targetEnvironmentId: target.environmentId,
+    targetThreadId: target.threadId,
+    // The contract reserves `inline` for the same-environment fast path; the
+    // server refuses an inline body bound for another machine, which is the
+    // honest answer until a sealed cross-machine payload exists to carry it.
+    body: { _tag: "inline", text: input.draft.message.trim() },
+  };
+}
+
+export function buildWorkjetDelegateTaskInput(input: {
+  readonly draft: WorkjetSendDraft;
+  readonly sourceThreadId: ThreadId;
+  readonly activeEnvironmentId: EnvironmentId;
+}): WorkjetMailboxDelegateTaskRpcInput {
+  const target = resolveWorkjetSendTarget(input.draft, input.activeEnvironmentId);
+  const scope = parseWorkjetScopeFiles(input.draft.scopeFiles);
+  return {
+    sourceThreadId: input.sourceThreadId,
+    targetEnvironmentId: target.environmentId,
+    targetThreadId: target.threadId,
+    prompt: input.draft.prompt.trim(),
+    scope: {
+      files: scope.files.map((file) => WorkjetRepositoryPath.make(file)),
+      nonGoals: input.draft.nonGoals.trim(),
+    },
+    acceptance: input.draft.acceptance.trim(),
+    budget: {
+      maxDepth: input.draft.maxDepth,
+      maxReviewRounds: input.draft.maxReviewRounds,
+      ttlSeconds: input.draft.ttlSeconds,
+    },
+    ttlSeconds: input.draft.ttlSeconds,
+  };
+}
+
+const MAILBOX_FAILURE_REASONS: ReadonlySet<string> = new Set(WorkjetMailboxFailureReason.literals);
+
+/**
+ * The typed operation error, rendered as the contract's own bounded sentence.
+ *
+ * A mailbox failure is a bounded reason and nothing else — no prompt, no path,
+ * no transport detail — so the panel reconstructs the error to read its
+ * message rather than showing whatever a squashed cause happens to stringify
+ * to. Anything that is not a mailbox error stays generic.
+ */
+export function workjetMailboxFailureMessage(error: unknown): string {
+  const reason =
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "WorkjetMailboxError" &&
+    "reason" in error &&
+    typeof error.reason === "string" &&
+    MAILBOX_FAILURE_REASONS.has(error.reason)
+      ? (error.reason as WorkjetMailboxFailureReason)
+      : null;
+  if (reason === null) return "The Workjet mailbox send failed.";
+  return new WorkjetMailboxError({ reason }).message;
+}
+
+/** What the last submit produced, rendered inline under the form. */
+export type WorkjetSendOutcome =
+  | { readonly _tag: "acknowledged"; readonly envelopeId: string; readonly disposition: string }
+  | { readonly _tag: "queued"; readonly envelopeId: string }
+  | { readonly _tag: "error"; readonly message: string };
+
+export interface WorkjetSendToWorkerPanelProps {
+  readonly draft: WorkjetSendDraft;
+  readonly threads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+  readonly busy: boolean;
+  readonly disabled?: boolean;
+  readonly outcome: WorkjetSendOutcome | null;
+  readonly onDraftChange: (draft: WorkjetSendDraft) => void;
+  readonly onSubmit: () => void;
+}
+
+const fieldClass =
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/70";
+
+function ErrorNote({ error }: { readonly error: WorkjetSendFieldError | undefined }) {
+  if (!error) return null;
+  return (
+    <p className="pt-0.5 text-[11px] text-destructive">
+      {WORKJET_SEND_FIELD_ERROR_MESSAGES[error]}
+    </p>
+  );
+}
+
+export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelProps) {
+  const { draft, threads, busy, outcome, onDraftChange, onSubmit } = props;
+  const disabled = props.disabled === true || busy;
+  const errors = validateWorkjetSendDraft(draft);
+  const errorOf = (error: WorkjetSendFieldError) => (errors.includes(error) ? error : undefined);
+  const patch = (next: Partial<WorkjetSendDraft>) => onDraftChange({ ...draft, ...next });
+  const remoteRecipient = draft.recipientMode === "environment";
+
+  return (
+    <div className="flex w-full flex-col gap-2" data-workjet-send-panel={draft.tab}>
+      <div className="flex items-center gap-1" role="tablist" aria-label="Workjet send mode">
+        {(["message", "task"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={draft.tab === tab}
+            disabled={disabled}
+            onClick={() => patch({ tab })}
+            className={cn(
+              "rounded-md px-2 py-1 text-[12px]",
+              draft.tab === tab
+                ? "bg-accent/60 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent/30",
+            )}
+          >
+            {tab === "message" ? "Message" : "Message + Task"}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1">
+          {(["thread", "environment"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={draft.recipientMode === mode}
+              disabled={disabled}
+              onClick={() => patch({ recipientMode: mode })}
+              className={cn(
+                "rounded-md px-2 py-0.5 text-[11px]",
+                draft.recipientMode === mode
+                  ? "bg-accent/60 text-foreground"
+                  : "text-muted-foreground hover:bg-accent/30",
+              )}
+            >
+              {mode === "thread" ? "This machine" : "Another machine"}
+            </button>
+          ))}
+        </div>
+        {draft.recipientMode === "thread" ? (
+          <select
+            aria-label="Recipient thread"
+            disabled={disabled}
+            className={fieldClass}
+            value={draft.targetThreadId}
+            onChange={(event) => patch({ targetThreadId: event.target.value })}
+          >
+            <option value="">Select a thread…</option>
+            {threads.map((thread) => (
+              <option key={thread.threadId} value={thread.threadId}>
+                {thread.title}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            aria-label="Recipient environment id"
+            placeholder="environment id"
+            disabled={disabled}
+            className={fieldClass}
+            value={draft.targetEnvironmentId}
+            onChange={(event) => patch({ targetEnvironmentId: event.target.value })}
+          />
+        )}
+        <ErrorNote error={errorOf("recipient-thread-required")} />
+        <ErrorNote error={errorOf("recipient-environment-required")} />
+        {remoteRecipient ? (
+          <p className="text-[11px] text-muted-foreground">Queued until the mesh delivers.</p>
+        ) : null}
+      </div>
+
+      <div className="flex flex-col gap-0.5">
+        <textarea
+          aria-label="Message"
+          rows={3}
+          maxLength={WORKJET_MESSAGE_MAX_LENGTH}
+          disabled={disabled}
+          className={fieldClass}
+          value={draft.message}
+          onChange={(event) => patch({ message: event.target.value })}
+        />
+        <ErrorNote error={errorOf("message-required")} />
+        <ErrorNote error={errorOf("message-too-long")} />
+      </div>
+
+      {draft.tab === "task" ? (
+        <>
+          <div className="flex flex-col gap-0.5">
+            <textarea
+              aria-label="Task prompt"
+              rows={4}
+              maxLength={WORKJET_PROMPT_MAX_LENGTH}
+              disabled={disabled}
+              className={fieldClass}
+              value={draft.prompt}
+              onChange={(event) => patch({ prompt: event.target.value })}
+            />
+            <ErrorNote error={errorOf("prompt-required")} />
+            <ErrorNote error={errorOf("prompt-too-long")} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <textarea
+              aria-label="Scope files, one per line"
+              rows={3}
+              placeholder={"packages/contracts/src/rpc.ts\napps/server/src/ws.ts"}
+              disabled={disabled}
+              className={cn(fieldClass, "font-mono text-[11px]")}
+              value={draft.scopeFiles}
+              onChange={(event) => patch({ scopeFiles: event.target.value })}
+            />
+            <ErrorNote error={errorOf("scope-required")} />
+            <ErrorNote error={errorOf("scope-invalid-path")} />
+            <ErrorNote error={errorOf("scope-too-many")} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <textarea
+              aria-label="Non-goals"
+              rows={2}
+              maxLength={WORKJET_NON_GOALS_MAX_LENGTH}
+              disabled={disabled}
+              className={fieldClass}
+              value={draft.nonGoals}
+              onChange={(event) => patch({ nonGoals: event.target.value })}
+            />
+            <ErrorNote error={errorOf("non-goals-required")} />
+            <ErrorNote error={errorOf("non-goals-too-long")} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <textarea
+              aria-label="Acceptance"
+              rows={2}
+              maxLength={WORKJET_ACCEPTANCE_MAX_LENGTH}
+              disabled={disabled}
+              className={fieldClass}
+              value={draft.acceptance}
+              onChange={(event) => patch({ acceptance: event.target.value })}
+            />
+            <ErrorNote error={errorOf("acceptance-required")} />
+            <ErrorNote error={errorOf("acceptance-too-long")} />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+              Depth
+              <input
+                aria-label="Maximum delegation depth"
+                type="number"
+                min={1}
+                max={16}
+                step={1}
+                disabled={disabled}
+                className={fieldClass}
+                value={draft.maxDepth}
+                onChange={(event) => patch({ maxDepth: Number(event.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+              Reviews
+              <input
+                aria-label="Maximum review rounds"
+                type="number"
+                min={0}
+                max={16}
+                step={1}
+                disabled={disabled}
+                className={fieldClass}
+                value={draft.maxReviewRounds}
+                onChange={(event) => patch({ maxReviewRounds: Number(event.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+              TTL (s)
+              <input
+                aria-label="Time to live in seconds"
+                type="number"
+                min={WORKJET_MIN_TTL_SECONDS}
+                max={WORKJET_MAX_TTL_SECONDS}
+                step={1}
+                disabled={disabled}
+                className={fieldClass}
+                value={draft.ttlSeconds}
+                onChange={(event) => patch({ ttlSeconds: Number(event.target.value) })}
+              />
+            </label>
+          </div>
+          <ErrorNote error={errorOf("budget-depth-out-of-range")} />
+          <ErrorNote error={errorOf("budget-review-rounds-out-of-range")} />
+          <ErrorNote error={errorOf("budget-ttl-out-of-range")} />
+        </>
+      ) : null}
+
+      <button
+        type="button"
+        disabled={disabled || errors.length > 0}
+        onClick={onSubmit}
+        className="self-end rounded-md border border-border/60 bg-card px-2.5 py-1 text-[12px] font-medium text-foreground hover:bg-accent/50 disabled:opacity-50"
+      >
+        {busy ? "Sending…" : draft.tab === "task" ? "Send task" : "Send message"}
+      </button>
+
+      {outcome ? (
+        <p
+          data-workjet-send-outcome={outcome._tag}
+          className={cn(
+            "text-[11px]",
+            outcome._tag === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {outcome._tag === "error"
+            ? outcome.message
+            : outcome._tag === "queued"
+              ? `Queued as ${outcome.envelopeId}.`
+              : `Delivered as ${outcome.envelopeId} (${outcome.disposition}).`}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function WorkjetSendToWorkerPanel(props: WorkjetSendToWorkerPanelProps) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        disabled={props.disabled === true}
+        render={
+          <ComposerControl
+            type="button"
+            className="shrink-0 whitespace-nowrap"
+            aria-label="Send to worker"
+          />
+        }
+      >
+        <ComposerControlIcon icon={SendHorizonalIcon} />
+        <span className="sr-only sm:not-sr-only">Send to worker</span>
+      </PopoverTrigger>
+      <PopoverPopup align="start" className="w-96">
+        <WorkjetSendToWorkerPanelContent {...props} />
+      </PopoverPopup>
+    </Popover>
+  );
+}

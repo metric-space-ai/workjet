@@ -246,6 +246,7 @@ import {
   useThread,
   useThreadRefs,
   useThreadShell,
+  useThreadShells,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -254,6 +255,15 @@ import {
   GREPPY_CAPABILITY_ID,
   WORKJET_GREPPY_FAILURE_TOAST,
 } from "./chat/WorkjetCapabilityMenu";
+import {
+  buildWorkjetDelegateTaskInput,
+  buildWorkjetSendMessageInput,
+  EMPTY_WORKJET_SEND_DRAFT,
+  workjetMailboxFailureMessage,
+  WorkjetSendToWorkerPanel,
+  type WorkjetSendDraft,
+  type WorkjetSendOutcome,
+} from "./chat/WorkjetSendToWorkerPanel";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1604,6 +1614,101 @@ function ChatViewContent(props: ChatViewProps) {
       ? (activeWorkjetConfigOverride?.config ?? activeServerThread.workjetConfig)
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
+  // "Send to worker" exists only on an ORCHESTRATOR thread. That is the same
+  // boundary the server enforces on the RPC, restated in the UI so a worker or
+  // standard thread is never offered an action it would be refused.
+  const workjetIsOrchestratorThread = visibleWorkjetConfig?.role === "orchestrator";
+  const [workjetSendDraft, setWorkjetSendDraft] =
+    useState<WorkjetSendDraft>(EMPTY_WORKJET_SEND_DRAFT);
+  const [workjetSendOutcome, setWorkjetSendOutcome] = useState<WorkjetSendOutcome | null>(null);
+  const [workjetSendBusy, setWorkjetSendBusy] = useState(false);
+  const sendWorkjetMailboxMessage = useAtomCommand(serverEnvironment.sendWorkjetMailboxMessage, {
+    reportFailure: false,
+  });
+  const delegateWorkjetMailboxTask = useAtomCommand(serverEnvironment.delegateWorkjetMailboxTask, {
+    reportFailure: false,
+  });
+  const allThreadShells = useThreadShells();
+  // Recipients are the OTHER live threads on this machine; a thread cannot be
+  // offered itself, and a deleted thread is not a destination.
+  const workjetRecipientThreads = useMemo(
+    () =>
+      activeThreadEnvironmentId && activeThreadId
+        ? allThreadShells
+            .filter(
+              (shell) =>
+                shell.environmentId === activeThreadEnvironmentId && shell.id !== activeThreadId,
+            )
+            .map((shell) => ({ threadId: String(shell.id), title: shell.title }))
+        : [],
+    [activeThreadEnvironmentId, activeThreadId, allThreadShells],
+  );
+  const onSubmitWorkjetSend = useCallback(() => {
+    if (!activeThreadEnvironmentId || !activeThreadId || workjetSendBusy) return;
+    setWorkjetSendBusy(true);
+    setWorkjetSendOutcome(null);
+    void (async () => {
+      const payloadArguments = {
+        draft: workjetSendDraft,
+        sourceThreadId: activeThreadId,
+        activeEnvironmentId: activeThreadEnvironmentId,
+      };
+      // The two sends answer with different result schemas, so each branch
+      // narrows its own receipt; both collapse onto the one inline outcome the
+      // panel renders.
+      const receipt =
+        workjetSendDraft.tab === "task"
+          ? await delegateWorkjetMailboxTask({
+              environmentId: activeThreadEnvironmentId,
+              input: buildWorkjetDelegateTaskInput(payloadArguments),
+            }).then((result) =>
+              result._tag === "Failure"
+                ? result
+                : ({
+                    status: result.value.status,
+                    envelopeId: String(result.value.envelopeId),
+                    disposition: result.value.disposition,
+                  } as const),
+            )
+          : await sendWorkjetMailboxMessage({
+              environmentId: activeThreadEnvironmentId,
+              input: buildWorkjetSendMessageInput(payloadArguments),
+            }).then((result) =>
+              result._tag === "Failure"
+                ? result
+                : ({
+                    status: result.value.status,
+                    envelopeId: String(result.value.envelopeId),
+                    disposition: result.value.disposition,
+                  } as const),
+            );
+      setWorkjetSendBusy(false);
+      if ("_tag" in receipt) {
+        if (isAtomCommandInterrupted(receipt)) return;
+        setWorkjetSendOutcome({
+          _tag: "error",
+          message: workjetMailboxFailureMessage(squashAtomCommandFailure(receipt)),
+        });
+        return;
+      }
+      setWorkjetSendOutcome(
+        receipt.status === "queued"
+          ? { _tag: "queued", envelopeId: receipt.envelopeId }
+          : {
+              _tag: "acknowledged",
+              envelopeId: receipt.envelopeId,
+              disposition: receipt.disposition ?? "accepted-new",
+            },
+      );
+    })();
+  }, [
+    activeThreadEnvironmentId,
+    activeThreadId,
+    delegateWorkjetMailboxTask,
+    sendWorkjetMailboxMessage,
+    workjetSendBusy,
+    workjetSendDraft,
+  ]);
   useEffect(() => {
     if (!activeServerThread || !activeThreadKey) return;
     setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
@@ -6493,6 +6598,19 @@ function ChatViewContent(props: ChatViewProps) {
                                     GREPPY_CAPABILITY_ID,
                                   )
                                 : null
+                            }
+                            workjetSendToWorkerControl={
+                              workjetIsOrchestratorThread ? (
+                                <WorkjetSendToWorkerPanel
+                                  draft={workjetSendDraft}
+                                  threads={workjetRecipientThreads}
+                                  busy={workjetSendBusy}
+                                  disabled={threadDetailLoading || activeEnvironmentUnavailable}
+                                  outcome={workjetSendOutcome}
+                                  onDraftChange={setWorkjetSendDraft}
+                                  onSubmit={onSubmitWorkjetSend}
+                                />
+                              ) : null
                             }
                             workjetCapabilityBusy={workjetCapabilityBusy}
                             workjetCapabilityDisabled={

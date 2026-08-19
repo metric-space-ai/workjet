@@ -543,6 +543,12 @@ export interface ChatComposerProps {
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
   workjetGreppyEnabled: boolean | null;
+  /**
+   * The "Send to worker" affordance, supplied only for an ORCHESTRATOR thread.
+   * The composer owns the slot, not the decision: role, recipients and the
+   * mailbox RPCs all live with the caller.
+   */
+  workjetSendToWorkerControl?: ReactNode;
   workjetCapabilityBusy: boolean;
   workjetCapabilityDisabled: boolean;
 
@@ -639,6 +645,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     runtimeMode,
     interactionMode,
     workjetGreppyEnabled,
+    workjetSendToWorkerControl,
     workjetCapabilityBusy,
     workjetCapabilityDisabled,
     lockedProvider,
@@ -3201,6 +3208,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       </>
                     )}
+                    {workjetSendToWorkerControl ?? null}
                   </>
                 )}
               </div>

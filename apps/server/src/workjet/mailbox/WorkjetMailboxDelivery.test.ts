@@ -8,8 +8,10 @@ import {
   WorkjetMeshWorkspaceId,
   WorkjetRepositoryPath,
   WorkjetSealedPayloadRef,
+  WorkjetDelegationId,
   type OrchestrationCommand,
   type OrchestrationThread,
+  type WorkjetDelegationState,
   type WorkjetMessageBody,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -28,10 +30,15 @@ import {
   WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
   WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
   type WorkjetMailboxDelegateInput,
+  type WorkjetMailboxDeliveryShape,
   type WorkjetMailboxDeliverySources,
   type WorkjetMailboxSendMessageInput,
 } from "./WorkjetMailboxDelivery.ts";
-import { WorkjetMailboxStore, WorkjetMailboxStoreLive } from "./WorkjetMailboxStore.ts";
+import {
+  WorkjetMailboxStore,
+  WorkjetMailboxStoreLive,
+  type WorkjetMailboxStoreShape,
+} from "./WorkjetMailboxStore.ts";
 import {
   canonicalRoutingEnvelopeBytes,
   makeWorkjetMeshIdentity,
@@ -563,5 +570,264 @@ it.effect("stores an independent delegation row per send", () =>
     assert.notEqual(first.delegation.delegationId, second.delegation.delegationId);
     assert.equal((yield* store.listDelegationsByState("delivered", 10)).length, 2);
     assert.equal((yield* store.listDelegationsByState("queued", 10)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Reply, review request, delegation updates, and loop gates
+// ===============================
+
+/**
+ * Creates a same-environment delegation and advances it through the enforced
+ * transition table to the requested state, so each review/update test starts
+ * from a real, legally reached lifecycle position.
+ */
+const DELEGATION_ID_MISSING = WorkjetDelegationId.make("wjd-00000000-0000-4000-8000-999999999999");
+
+const seedDelegation = (
+  delivery: WorkjetMailboxDeliveryShape,
+  store: WorkjetMailboxStoreShape,
+  path: ReadonlyArray<readonly [WorkjetDelegationState, WorkjetDelegationState]>,
+  overrides?: Partial<WorkjetMailboxDelegateInput>,
+) =>
+  Effect.gen(function* () {
+    const created = yield* delivery.delegateTask(invocation, delegateInput(overrides));
+    const id = created.delegation.delegationId;
+    for (const [from, to] of path) {
+      yield* store.transitionDelegationState(id, from, to, NOW);
+    }
+    return id;
+  });
+
+const RUNNING_PATH = [
+  ["delivered", "accepted"],
+  ["accepted", "running"],
+] as const;
+
+it.effect("replies on a delegation thread, linking the delegation and its envelope", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, []);
+    const delegationEnvelope = (yield* store.getDelegation(id)).pipe(Option.getOrThrow).delegation
+      .envelopeId;
+
+    const outcome = yield* delivery.reply(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      body: inlineBody,
+    });
+
+    assert.equal(outcome._tag, "acknowledged");
+    if (outcome._tag !== "acknowledged") return;
+
+    // The wire message references the delegation's envelope; the delegation id
+    // travels only on the redacted activity, never on the message body.
+    const stored = (yield* store.getOutbound(outcome.envelopeId)).pipe(Option.getOrThrow);
+    assert.equal(stored.payload._tag, "message");
+    if (stored.payload._tag === "message") {
+      assert.equal(stored.payload.message.inReplyTo, delegationEnvelope);
+    }
+
+    const sent = activityFor(commands, WORKJET_MESSAGE_SENT_ACTIVITY_KIND);
+    assert.isDefined(sent);
+    if (sent && sent.type === "thread.activity.append") {
+      const payload = sent.activity.payload as { readonly delegationId?: string };
+      assert.equal(payload.delegationId, id);
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect(
+  "requests review: transitions running→review-requested, writes a reviews edge, signals",
+  () =>
+    Effect.gen(function* () {
+      const { service } = makeHarness();
+      const delivery = yield* service;
+      const store = yield* WorkjetMailboxStore;
+      const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+      const outcome = yield* delivery.requestReview(invocation, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: id,
+        round: 1,
+        body: inlineBody,
+      });
+
+      assert.equal(outcome.state, "review-requested");
+      assert.equal(outcome.edgeKind, "reviews");
+      assert.equal(outcome.delivery._tag, "acknowledged");
+
+      const record = (yield* store.getDelegation(id)).pipe(Option.getOrThrow);
+      assert.equal(record.state, "review-requested");
+
+      const edges = yield* store.listDelegationEdges(id, 32);
+      assert.deepEqual(
+        edges.map((edge) => edge.kind),
+        ["reviews"],
+      );
+    }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("cancels a delegation with no graph edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "cancel" },
+    });
+    assert.equal(outcome.state, "cancelled");
+    assert.isUndefined(outcome.edgeKind);
+    assert.equal((yield* store.listDelegationEdges(id, 32)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("submits an approve verdict: review-requested→completed with a reviews edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, [
+      ...RUNNING_PATH,
+      ["running", "review-requested"],
+    ]);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "review", decision: "approve", round: 1, reasons: ["looks correct"] },
+    });
+    assert.equal(outcome.state, "completed");
+    assert.equal(outcome.edgeKind, "reviews");
+    assert.deepEqual(
+      (yield* store.listDelegationEdges(id, 32)).map((edge) => edge.kind),
+      ["reviews"],
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("records a revise: changes-requested→running with a depth+1 revises edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, [
+      ...RUNNING_PATH,
+      ["running", "review-requested"],
+      ["review-requested", "changes-requested"],
+    ]);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "revise" },
+    });
+    assert.equal(outcome.state, "running");
+    assert.equal(outcome.edgeKind, "revises");
+    const edges = yield* store.listDelegationEdges(id, 32);
+    assert.equal(edges[0]?.kind, "revises");
+    assert.equal(edges[0]?.depth, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("records a follow-up: running→needs-input with a depth+1 follows-up edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "follow-up" },
+    });
+    assert.equal(outcome.state, "needs-input");
+    assert.equal(outcome.edgeKind, "follows-up");
+    const edges = yield* store.listDelegationEdges(id, 32);
+    assert.equal(edges[0]?.kind, "follows-up");
+    assert.equal(edges[0]?.depth, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("REFUSES a review round beyond maxReviewRounds without moving state (loop gate)", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    // maxReviewRounds: 1 admits round 1 only; round 2 is the ceiling.
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH, {
+      budget: { maxDepth: 4, maxReviewRounds: 1, ttlSeconds: 7_200 },
+    });
+
+    // Round 1 is inside the budget and moves the delegation to review.
+    yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      round: 1,
+      body: inlineBody,
+    });
+    // Simulate the rework cycle back to running for a second review attempt.
+    yield* store.transitionDelegationState(id, "review-requested", "changes-requested", NOW);
+    yield* store.transitionDelegationState(id, "changes-requested", "running", NOW);
+
+    // Round 2 exceeds the ceiling: the review cycle cannot recur without bound.
+    const refused = yield* delivery
+      .requestReview(invocation, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: id,
+        round: 2,
+        body: inlineBody,
+      })
+      .pipe(Effect.flip);
+    assert.equal(refused.reason, "review-rounds-exceeded");
+
+    // The refusal is BEFORE any durable effect: state stays running, only the
+    // single round-1 reviews edge exists.
+    assert.equal((yield* store.getDelegation(id)).pipe(Option.getOrThrow).state, "running");
+    assert.equal((yield* store.listDelegationEdges(id, 32)).length, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("REFUSES a revise beyond maxDepth (depth gate) with no transition and no edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    // depth already at the maxDepth ceiling: any deeper edge is refused.
+    const id = yield* seedDelegation(delivery, store, [], {
+      budget: { maxDepth: 1, maxReviewRounds: 2, ttlSeconds: 7_200 },
+      depth: 1,
+    });
+
+    const refused = yield* delivery
+      .updateDelegation(invocation, { delegationId: id, update: { _tag: "revise" } })
+      .pipe(Effect.flip);
+    assert.equal(refused.reason, "depth-exceeded");
+    assert.equal((yield* store.listDelegationEdges(id, 32)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("fails an unknown delegation update with the bounded unknown-target reason", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const missing = yield* delivery
+      .updateDelegation(invocation, {
+        delegationId: DELEGATION_ID_MISSING,
+        update: { _tag: "cancel" },
+      })
+      .pipe(Effect.flip);
+    assert.equal(missing.reason, "unknown-target");
   }).pipe(Effect.provide(testLayer)),
 );

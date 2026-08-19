@@ -28,6 +28,7 @@ import {
   isLegalDelegationTransition,
   isWorkjetMailboxError,
   isWorkjetMailboxStoreCorruptRowError,
+  workjetDelegationEdgeId,
   workjetMailboxBackoffMillis,
 } from "./WorkjetMailboxStore.ts";
 
@@ -835,5 +836,98 @@ it.effect("surfaces an undecodable delegation row as a typed corrupt-row error",
       SELECT state AS "state" FROM workjet_delegations WHERE delegation_id = ${id}
     `;
     assert.equal(rows[0]?.state, "queued");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Delegation graph edges
+// ===============================
+
+const ref = (delegationSuffix: string, owner: WorkjetWorkerAddress) => ({
+  schemaVersion: 1 as const,
+  delegationId: delegationId(delegationSuffix),
+  owner,
+});
+
+const edge = (options: {
+  readonly kind: "reviews" | "revises" | "follows-up";
+  readonly from: string;
+  readonly to: string;
+  readonly at?: string;
+  readonly depth?: number;
+}) => ({
+  schemaVersion: 1 as const,
+  kind: options.kind,
+  from: ref(options.from, SOURCE_ADDRESS),
+  to: ref(options.to, TARGET_ADDRESS),
+  createdAt: options.at ?? T0,
+  depth: options.depth ?? 0,
+});
+
+it.effect("inserts a delegation-graph edge idempotently on its stable id", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const reviewEdge = edge({ kind: "reviews", from: "rev", to: "work" });
+
+    const first = yield* store.insertDelegationEdge(reviewEdge);
+    assert.equal(first._tag, "inserted");
+    // The id is DERIVED from kind/from/to, so the store and callers agree.
+    assert.equal(first.edgeId, workjetDelegationEdgeId(reviewEdge));
+
+    // Re-inserting the identical relationship is a no-op, never a second row.
+    const second = yield* store.insertDelegationEdge(reviewEdge);
+    assert.equal(second._tag, "duplicate");
+    assert.equal(second.edgeId, first.edgeId);
+
+    const edges = yield* store.listDelegationEdges(delegationId("work"), 32);
+    assert.equal(edges.length, 1);
+    assert.equal(edges[0]?.kind, "reviews");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("lists every edge touching a delegation as from or to, in creation order", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+
+    // "work" is the `to` of a review and the `from` of a follow-up: both must
+    // be returned by listDelegationEdges(work).
+    yield* store.insertDelegationEdge(edge({ kind: "reviews", from: "rev", to: "work", at: T0 }));
+    yield* store.insertDelegationEdge(
+      edge({ kind: "follows-up", from: "work", to: "next", at: T1, depth: 1 }),
+    );
+    // An unrelated edge that must NOT appear for "work".
+    yield* store.insertDelegationEdge(edge({ kind: "revises", from: "other", to: "elsewhere" }));
+
+    const edges = yield* store.listDelegationEdges(delegationId("work"), 32);
+    assert.deepEqual(
+      edges.map((value) => value.kind),
+      ["reviews", "follows-up"],
+    );
+
+    // Distinct kinds/endpoints yield distinct ids, so both rows survive.
+    const other = yield* store.listDelegationEdges(delegationId("elsewhere"), 32);
+    assert.deepEqual(
+      other.map((value) => value.kind),
+      ["revises"],
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("surfaces a corrupt edge row as a typed failure, never a crash", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    yield* store.insertDelegationEdge(edge({ kind: "reviews", from: "rev", to: "work" }));
+
+    yield* sql`
+      UPDATE workjet_delegation_edges
+      SET edge_json = '{"schemaVersion":1}'
+    `;
+
+    const read = yield* store.listDelegationEdges(delegationId("work"), 32).pipe(Effect.result);
+    assert.equal(read._tag, "Failure");
+    if (read._tag === "Failure") {
+      assertCorruptRow(read.failure, "workjet_delegation_edges");
+    }
   }).pipe(Effect.provide(testLayer)),
 );

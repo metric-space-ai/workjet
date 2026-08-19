@@ -23,6 +23,8 @@ import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
+import * as CtoxSshManagedLaunch from "./CtoxSshManagedLaunch.ts";
+import { isLaunchableCtoxSshManagedInstance } from "./CtoxSshManagedSource.ts";
 
 const SENSITIVE_QUERY_PARAMETERS = new Set([
   "ctox_config",
@@ -84,6 +86,13 @@ interface ActiveGuest {
   readonly view: WebContentsView;
   readonly bounds: CtoxGuestBounds;
   readonly browserSession: Session;
+  /**
+   * Releases resources this activation opened outside the view — today the SSH
+   * local forwards behind an `ssh_managed` instance. It is the guest session's
+   * teardown hook: every path that destroys a guest runs it, so an abandoned
+   * activation can never leave an `ssh` child behind.
+   */
+  readonly release?: () => void;
 }
 
 interface GuestState {
@@ -419,6 +428,11 @@ function destroyGuest(active: ActiveGuest | undefined): void {
   } catch {
     // Release is best-effort after the view has been detached.
   }
+  try {
+    active.release?.();
+  } catch {
+    // Teardown of out-of-view resources may not block guest destruction.
+  }
 }
 
 function installRequestGuard(session: Session, launchOrigin: string): boolean {
@@ -584,6 +598,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
     const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
     const localLaunch = yield* CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch;
+    const sshLaunch = yield* CtoxSshManagedLaunch.CtoxSshManagedLaunch;
     const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const electronShell = yield* ElectronShell.ElectronShell;
@@ -663,6 +678,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
       let authoritativeDescriptor: CtoxManagedInstance;
       let launch: Option.Option<CtoxBusinessOsShell.CtoxBusinessOsLaunch>;
+      // Set only by launch paths that opened resources outside the view. Until
+      // the guest exists to own it, every early return has to run it, or a
+      // failed activation would strand an SSH forward.
+      let releaseLaunch: (() => void) | undefined;
+      const abandonLaunch = (
+        result: CtoxManagedGuestResult,
+      ): readonly [CtoxManagedGuestResult, undefined] => {
+        try {
+          releaseLaunch?.();
+        } catch {
+          // Teardown is best-effort; the activation fails either way.
+        }
+        return [result, undefined] as const;
+      };
       if (
         descriptor.source === "ctox_dev" &&
         descriptor.status === "available" &&
@@ -698,22 +727,45 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }
         authoritativeDescriptor = resolved.value.descriptor;
         launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
+      } else if (isLaunchableCtoxSshManagedInstance(descriptor)) {
+        // Remote pairing material is minted per activation, and its signaling
+        // URLs only mean anything through the forwards opened alongside it —
+        // so a host that stopped answering, an invite that will not parse, or
+        // a forward that never comes up all fail the launch. The forwards are
+        // handed to the guest as its release hook; nothing else may own them.
+        const resolved = yield* sshLaunch.resolveLaunch(descriptor.id).pipe(Effect.option);
+        if (
+          Option.isNone(resolved) ||
+          resolved.value.descriptor.id !== descriptor.id ||
+          resolved.value.descriptor.source !== "ssh_managed"
+        ) {
+          if (Option.isSome(resolved)) {
+            void runPromise(resolved.value.closeForwards).catch(() => undefined);
+          }
+          return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+        }
+        const closeForwards = resolved.value.closeForwards;
+        releaseLaunch = () => {
+          void runPromise(closeForwards).catch(() => undefined);
+        };
+        authoritativeDescriptor = resolved.value.descriptor;
+        launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
       } else {
         return [{ _tag: "revoked" }, undefined] as const;
       }
       if (Option.isNone(launch)) {
-        return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+        return abandonLaunch({ _tag: "failed", code: "launch_failed" });
       }
       const resolvedSession =
         existingSession === undefined
           ? yield* sessions.instance(authoritativeDescriptor).pipe(Effect.option)
           : Option.some(existingSession);
       if (Option.isNone(resolvedSession)) {
-        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+        return abandonLaunch({ _tag: "failed", code: "guest_failed" });
       }
       const mainWindow = yield* electronWindow.main;
       if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
-        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+        return abandonLaunch({ _tag: "failed", code: "guest_failed" });
       }
 
       const view = (options.createView ?? createGuestView)({
@@ -724,7 +776,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         nodeIntegration: false,
       });
       if (view === undefined) {
-        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+        return abandonLaunch({ _tag: "failed", code: "guest_failed" });
       }
       const failView = (): readonly [CtoxManagedGuestResult, undefined] => {
         destroyGuest({
@@ -733,6 +785,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           view,
           bounds,
           browserSession: resolvedSession.value,
+          ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
         });
         return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
       };
@@ -783,6 +836,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         view,
         bounds,
         browserSession: resolvedSession.value,
+        ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
       };
       const committed = yield* waitForGuestNavigationCommit(
         webContents,

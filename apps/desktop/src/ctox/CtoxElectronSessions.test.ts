@@ -144,6 +144,33 @@ describe("CtoxElectronSessions", () => {
     }).pipe(Effect.provide(CtoxElectronSessions.layer)),
   );
 
+  it.effect("gives a launchable SSH-managed instance its own isolated partition", () =>
+    Effect.gen(function* () {
+      const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+      // Launching one means driving a guest at forwarded loopback signaling
+      // ports; that guest may not share storage with any other instance.
+      const sshManaged: CtoxManagedInstance = {
+        id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+        source: "ssh_managed" as const,
+        displayName: "Build Box",
+        status: "available" as const,
+        healthSummary: {
+          dataPlane: "rxdb-webrtc" as const,
+          dataPlaneReady: false,
+          httpDataProxy: false,
+          nativePeerObserved: false,
+        },
+      };
+
+      const first = yield* sessions.instance(sshManaged);
+      const second = yield* sessions.instance(sshManaged);
+
+      assert.strictEqual(first, second);
+      assert.deepEqual(fromPartition.mock.calls, [[partitionOf(sshManaged)]]);
+      assert.notEqual(partitionOf(sshManaged), CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION);
+    }).pipe(Effect.provide(CtoxElectronSessions.layer)),
+  );
+
   it.effect("rejects mismatched paired, local, SSH, and arbitrary descriptors", () =>
     Effect.gen(function* () {
       const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
@@ -154,6 +181,19 @@ describe("CtoxElectronSessions", () => {
         },
         { ...descriptor(), id: "forged-instance", source: "local_daemon" as const },
         { ...descriptor(), id: "ssh:tenant-a", source: "ssh_managed" as const },
+        {
+          id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+          source: "ssh_managed",
+          displayName: "Build Box",
+          // Offline: the daemon is not answering, so nothing may be launched.
+          status: "offline",
+          healthSummary: {
+            dataPlane: "rxdb-webrtc",
+            dataPlaneReady: false,
+            httpDataProxy: false,
+            nativePeerObserved: false,
+          },
+        } satisfies CtoxManagedInstance,
         { ...pairedDescriptor(), status: "pairing_expired" as const },
       ];
       for (const candidate of invalid) {

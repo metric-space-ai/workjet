@@ -43,6 +43,7 @@ import {
   ctoxSshManagedInstanceId,
   discoverCtoxSshManagedInstances,
   isConsistentCtoxSshManagedEntry,
+  isLaunchableCtoxSshManagedInstance,
   makeCtoxSshExec,
   MAX_CTOX_SSH_MANAGED_INSTANCES,
   removeCtoxSshManagedEntry,
@@ -241,6 +242,17 @@ export interface CtoxLocalDaemonTarget {
   readonly discoveredCount: number;
 }
 
+/**
+ * An SSH-managed daemon the main process may launch, together with the
+ * destination facts the renderer never sees. The launch path needs both to run
+ * the invite CLI in the right state root over the right SSH destination.
+ */
+export interface CtoxSshManagedTarget {
+  readonly descriptor: CtoxManagedInstance;
+  readonly host: string;
+  readonly stateRoot?: string;
+}
+
 export interface CtoxPairedInstanceRemoval {
   readonly descriptor: CtoxManagedInstance;
   readonly secretRecordRemoved: boolean;
@@ -289,6 +301,14 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly resolveLocalDaemonTarget: (
       instanceId: string,
     ) => Effect.Effect<CtoxLocalDaemonTarget, CtoxInstanceRegistryError>;
+    /**
+     * Main-process-only re-discovery of one SSH-managed daemon. It carries the
+     * destination but no secret: remote pairing material is minted per
+     * activation by the SSH launch service, exactly as the local one is.
+     */
+    readonly resolveSshManagedTarget: (
+      instanceId: string,
+    ) => Effect.Effect<CtoxSshManagedTarget, CtoxInstanceRegistryError>;
   }
 >()("@t3tools/desktop/ctox/CtoxInstanceRegistry") {}
 
@@ -1155,6 +1175,24 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     },
   );
 
+  const resolveSshManagedTarget = Effect.fn("CtoxInstanceRegistry.resolveSshManagedTarget")(
+    function* (instanceId: string) {
+      // Discovery is re-run rather than cached: an SSH-managed row may only be
+      // launched while its daemon is answering right now, the same rule the
+      // local-daemon path applies.
+      const discovered = yield* discoverSshInstances;
+      const target = discovered.find((entry) => entry.instance.id === instanceId);
+      if (target === undefined || !isLaunchableCtoxSshManagedInstance(target.instance)) {
+        return yield* registryError("not_found");
+      }
+      return {
+        descriptor: target.instance,
+        host: target.host,
+        ...(target.stateRoot === undefined ? {} : { stateRoot: target.stateRoot }),
+      } satisfies CtoxSshManagedTarget;
+    },
+  );
+
   const stableIdentityKey = Effect.fn("CtoxInstanceRegistry.stableIdentityKey")(function* (
     instanceId: string,
   ) {
@@ -1273,6 +1311,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     resolvePairedLaunch: (instanceId) => registryLock.withPermit(resolvePairedLaunch(instanceId)),
     resolveLocalDaemonTarget: (instanceId) =>
       registryLock.withPermit(resolveLocalDaemonTarget(instanceId)),
+    resolveSshManagedTarget: (instanceId) =>
+      registryLock.withPermit(resolveSshManagedTarget(instanceId)),
     stableIdentityKey: (instanceId) => registryLock.withPermit(stableIdentityKey(instanceId)),
     merge: (managed) =>
       registryLock.withPermit(

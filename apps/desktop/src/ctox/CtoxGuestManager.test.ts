@@ -20,6 +20,7 @@ import * as CtoxGuestManager from "./CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
+import * as CtoxSshManagedLaunch from "./CtoxSshManagedLaunch.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -61,6 +62,34 @@ const localDescriptor: CtoxManagedInstance = {
     dataPlaneReady: false,
     httpDataProxy: false,
     nativePeerObserved: false,
+  },
+};
+
+const sshDescriptor: CtoxManagedInstance = {
+  id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+  source: "ssh_managed",
+  displayName: "Build Box",
+  status: "available",
+  healthSummary: {
+    dataPlane: "rxdb-webrtc",
+    dataPlaneReady: false,
+    httpDataProxy: false,
+    nativePeerObserved: false,
+  },
+};
+
+/** Already rewritten onto the forwarded local port by the launch service. */
+const sshConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
+  transport: "webrtc",
+  sync_room: "ctox-business-os:buildbox",
+  signaling_urls: ["ws://127.0.0.1:52001/signal"],
+  signaling_room_password: "ssh-room-secret",
+  http_bridge_available: false,
+  desktop_instance: {
+    id: sshDescriptor.id,
+    source: "ssh_managed",
+    display_name: sshDescriptor.displayName,
+    domain: "",
   },
 };
 
@@ -213,7 +242,10 @@ function makeGuestHarness() {
   const registry = CtoxInstanceRegistry.CtoxInstanceRegistry.of({
     merge: (managed) =>
       Effect.succeed(
-        CtoxInstanceRegistry.mergeCtoxInstanceSources(managed, pairedInstances, localInstances),
+        CtoxInstanceRegistry.mergeCtoxInstanceSources(managed, pairedInstances, [
+          ...localInstances,
+          ...sshInstances,
+        ]),
       ),
     importInvite: () => Effect.die("unused"),
     importManualPairing: () => Effect.die("unused"),
@@ -222,6 +254,7 @@ function makeGuestHarness() {
     removeSshManagedInstance: () => Effect.die("unused"),
     resolvePairedLaunch,
     resolveLocalDaemonTarget: () => Effect.die("unused"),
+    resolveSshManagedTarget: () => Effect.die("unused"),
     stableIdentityKey: () => Effect.die("unused"),
   });
   let localInstances: readonly CtoxManagedInstance[] = [];
@@ -236,6 +269,26 @@ function makeGuestHarness() {
   const localDaemonLaunch = CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch.of({
     resolveLaunch: resolveLocalLaunch,
   });
+  let sshInstances: readonly CtoxManagedInstance[] = [];
+  // Counts the forward teardowns the guest lifecycle triggers.
+  const closeForwards = vi.fn(() => Effect.void);
+  const resolveSshLaunch = vi.fn((instanceId: string) => {
+    const found = sshInstances.find(
+      (candidate) => candidate.id === instanceId && candidate.id === sshDescriptor.id,
+    );
+    return found === undefined
+      ? Effect.fail(
+          new CtoxSshManagedLaunch.CtoxSshManagedLaunchError({ reason: "invite_unreachable" }),
+        )
+      : Effect.succeed({
+          descriptor: found,
+          config: sshConfig,
+          closeForwards: Effect.suspend(closeForwards),
+        });
+  });
+  const sshManagedLaunch = CtoxSshManagedLaunch.CtoxSshManagedLaunch.of({
+    resolveLaunch: resolveSshLaunch,
+  });
   const instance = vi.fn(() => Effect.succeed(browserSession));
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.succeed(browserSession),
@@ -249,11 +302,15 @@ function makeGuestHarness() {
     }),
   );
   const launches = CtoxManagedLaunch.CtoxManagedLaunch.of({ launch });
-  const shellLaunch = vi.fn(() =>
-    Effect.succeed({
-      launchUrl: "http://127.0.0.1:41700/?ctox_config=paired-packed-secret",
-      launchOrigin: "http://127.0.0.1:41700",
-    }),
+  const shellLaunch = vi.fn(
+    (): Effect.Effect<
+      CtoxBusinessOsShell.CtoxBusinessOsLaunch,
+      CtoxBusinessOsShell.CtoxBusinessOsShellError
+    > =>
+      Effect.succeed({
+        launchUrl: "http://127.0.0.1:41700/?ctox_config=paired-packed-secret",
+        launchOrigin: "http://127.0.0.1:41700",
+      }),
   );
   const businessOsShell = CtoxBusinessOsShell.CtoxBusinessOsShell.of({ launch: shellLaunch });
   const electronWindow = ElectronWindow.ElectronWindow.of({
@@ -278,6 +335,7 @@ function makeGuestHarness() {
     Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
     Layer.succeed(CtoxInstanceRegistry.CtoxInstanceRegistry, registry),
     Layer.succeed(CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch, localDaemonLaunch),
+    Layer.succeed(CtoxSshManagedLaunch.CtoxSshManagedLaunch, sshManagedLaunch),
     Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, launches),
     Layer.succeed(ElectronWindow.ElectronWindow, electronWindow),
     Layer.succeed(ElectronShell.ElectronShell, electronShell),
@@ -292,8 +350,10 @@ function makeGuestHarness() {
     launch,
     layer,
     removeChildView,
+    closeForwards,
     resolveLocalLaunch,
     resolvePairedLaunch,
+    resolveSshLaunch,
     shellLaunch,
     setDiscovery: (value: CtoxManagedDiscoveryResult) => {
       discovery = value;
@@ -308,6 +368,9 @@ function makeGuestHarness() {
     },
     setLocalInstances: (value: readonly CtoxManagedInstance[]) => {
       localInstances = value;
+    },
+    setSshInstances: (value: readonly CtoxManagedInstance[]) => {
+      sshInstances = value;
     },
     setPairedInstances: (value: readonly CtoxManagedInstance[]) => {
       pairedInstances = value;
@@ -709,34 +772,114 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
-  it.effect("refuses to activate an SSH-managed instance", () => {
+  it.effect("launches a running SSH-managed daemon through forwarded signaling", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
-    // A fully well-formed, reachable SSH-managed row is still not launchable:
-    // its signaling endpoints live on the remote loopback interface, so the
-    // guest path refuses it instead of opening an unreachable room.
-    const sshDescriptor: CtoxManagedInstance = {
-      id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
-      source: "ssh_managed",
-      displayName: "Build Box",
-      status: "available",
-      healthSummary: {
-        dataPlane: "rxdb-webrtc",
-        dataPlaneReady: false,
-        httpDataProxy: false,
-        nativePeerObserved: false,
-      },
-    };
-    harness.setLocalInstances([sshDescriptor]);
+    harness.setSshInstances([sshDescriptor]);
     harness.setDiscovery({ _tag: "signed_out" });
 
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;
-      assert.deepEqual(yield* manager.activate(sshDescriptor.id, bounds), { _tag: "revoked" });
+      const activation = yield* manager.activate(sshDescriptor.id, bounds);
+      assert.deepEqual(activation, { _tag: "ready", instanceId: sshDescriptor.id });
+      expect(harness.resolveSshLaunch).toHaveBeenCalledExactlyOnceWith(sshDescriptor.id);
+      // The guest receives the rewritten, locally forwarded signaling URLs.
+      expect(harness.shellLaunch).toHaveBeenCalledExactlyOnceWith(sshConfig);
       expect(harness.resolveLocalLaunch).not.toHaveBeenCalled();
       expect(harness.resolvePairedLaunch).not.toHaveBeenCalled();
+      // The isolated partition is derived from the SSH descriptor itself.
+      expect(harness.instance).toHaveBeenCalledWith(sshDescriptor);
+      assert.notInclude(encodeUnknownJson(activation), "ssh-room-secret");
+      // A live guest keeps its forwards.
+      expect(harness.closeForwards).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("closes the SSH forwards when the guest is torn down", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setSshInstances([sshDescriptor]);
+    harness.setDiscovery({ _tag: "signed_out" });
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(sshDescriptor.id, bounds);
+      expect(harness.closeForwards).not.toHaveBeenCalled();
+
+      yield* manager.deactivate;
+      expect(harness.closeForwards).toHaveBeenCalledTimes(1);
+
+      // Re-activating opens fresh forwards, and leaving Business OS mode closes
+      // them again: no activation may outlive its guest.
+      yield* manager.activate(sshDescriptor.id, bounds);
+      expect(harness.closeForwards).toHaveBeenCalledTimes(1);
+      yield* manager.exitBusinessOsMode;
+      expect(harness.closeForwards).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("fails the activation and closes forwards when the SSH launch cannot resolve", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setSshInstances([sshDescriptor]);
+    harness.resolveSshLaunch.mockImplementation(() =>
+      Effect.fail(new CtoxSshManagedLaunch.CtoxSshManagedLaunchError({ reason: "forward_failed" })),
+    );
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(sshDescriptor.id, bounds), {
+        _tag: "failed",
+        code: "launch_failed",
+      });
       expect(harness.shellLaunch).not.toHaveBeenCalled();
+      expect(harness.createView).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("closes the forwards when the guest shell refuses the SSH launch config", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setSshInstances([sshDescriptor]);
+    harness.shellLaunch.mockImplementation(() =>
+      Effect.fail(new CtoxBusinessOsShell.CtoxBusinessOsShellError()),
+    );
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(sshDescriptor.id, bounds), {
+        _tag: "failed",
+        code: "launch_failed",
+      });
+      // No half-open state: the tunnels opened for this attempt are gone.
+      expect(harness.closeForwards).toHaveBeenCalledTimes(1);
+      expect(harness.createView).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("rejects offline and forged SSH descriptors before any SSH call", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const offline = { ...sshDescriptor, status: "offline" as const };
+    const forged = { ...sshDescriptor, id: "ssh:forged" };
+    const proxied: CtoxManagedInstance = {
+      ...sshDescriptor,
+      id: "ssh:BBBBBBBBBBBBBBBBBBBBBB",
+      healthSummary: { ...sshDescriptor.healthSummary, dataPlaneReady: true },
+    };
+    harness.setSshInstances([offline, forged, proxied]);
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      for (const instanceId of [offline.id, forged.id, proxied.id]) {
+        assert.deepEqual(yield* manager.activate(instanceId, bounds), { _tag: "revoked" });
+      }
+      expect(harness.resolveSshLaunch).not.toHaveBeenCalled();
       expect(harness.createView).not.toHaveBeenCalled();
     }).pipe(Effect.provide(harness.layer));
   });

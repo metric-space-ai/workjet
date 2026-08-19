@@ -28,6 +28,7 @@ import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
+import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
@@ -197,6 +198,7 @@ const desktopCtoxControlLayer = Layer.mergeAll(
   CtoxAppRail.layer(),
   CtoxManagedLaunch.layer(),
   CtoxLocalDaemonLaunch.layer(),
+  CtoxSshManagedLaunch.layer(),
 ).pipe(
   Layer.provideMerge(CtoxInstanceRegistry.layer()),
   Layer.provideMerge(CtoxElectronSessions.layer),

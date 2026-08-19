@@ -9,6 +9,7 @@ import type { Session } from "electron";
 import { session } from "electron";
 
 import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
+import { isLaunchableCtoxSshManagedInstance } from "./CtoxSshManagedSource.ts";
 import { ctoxManagedSessionPartition } from "./CtoxManagedDiscovery.ts";
 
 export const CTOX_CONTROL_PLANE_PARTITION = "persist:workjet-ctox-control-plane";
@@ -122,7 +123,10 @@ export const make = Effect.gen(function* () {
     // A local daemon gets its own isolated partition, derived from the same
     // stable id the sidebar row carries — exactly like a paired instance.
     const local = isLaunchableCtoxLocalDaemon(descriptor);
-    if (!managed && !paired && !local) {
+    // An SSH-managed daemon is launched through forwarded loopback signaling
+    // ports, so it needs the same isolated partition as any other instance.
+    const sshManaged = isLaunchableCtoxSshManagedInstance(descriptor);
+    if (!managed && !paired && !local && !sshManaged) {
       return Effect.fail(new CtoxElectronSessionDescriptorError());
     }
     const expectedPartition = ctoxManagedSessionPartition({

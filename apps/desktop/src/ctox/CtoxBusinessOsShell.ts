@@ -68,11 +68,16 @@ const MIME_TYPES = new Map([
 ]);
 
 /**
- * The instance sources that reach the packed WebRTC launch. `local_daemon`
- * joins the paired sources because a daemon on this machine hands out the same
- * desktop invite document; every other source has no pairing material at all.
+ * The instance sources that reach the packed WebRTC launch. `local_daemon` and
+ * `ssh_managed` join the paired sources because a CTOX daemon hands out the
+ * same desktop invite document whether it runs here or on an SSH host; every
+ * other source has no pairing material at all.
  */
-export type CtoxBusinessOsLaunchSource = "pairing_invite" | "manual_pairing" | "local_daemon";
+export type CtoxBusinessOsLaunchSource =
+  | "pairing_invite"
+  | "manual_pairing"
+  | "local_daemon"
+  | "ssh_managed";
 
 export interface CtoxBusinessOsLaunchConfig {
   readonly transport: "webrtc";

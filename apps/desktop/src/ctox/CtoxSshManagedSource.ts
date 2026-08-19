@@ -118,12 +118,7 @@ export function ctoxSshManagedInstanceId(host: string, stateRoot?: string): stri
   return `ssh:${digest.slice(0, 22)}`;
 }
 
-/**
- * SSH-managed instances are configured, discovered, and rendered — but they are
- * not launchable in this slice. Activation would have to reach the remote
- * daemon's signaling endpoint, which is bound to the remote loopback interface;
- * see `CTOX_SSH_MANAGED_LAUNCH_BLOCKED_REASON`.
- */
+/** Shape check for any SSH-managed row, launchable or not. */
 export function isCtoxSshManagedInstance(instance: CtoxManagedInstance): boolean {
   return (
     instance.source === "ssh_managed" &&
@@ -135,20 +130,25 @@ export function isCtoxSshManagedInstance(instance: CtoxManagedInstance): boolean
 }
 
 /**
- * Why no SSH-managed instance is launchable yet. A CTOX daemon's invite names
- * signaling endpoints on *its own* loopback interface (`ws://127.0.0.1:PORT`),
- * which the desktop cannot reach without a local port forward. The SSH package
- * does own such a forward — `startSshTunnel` in `packages/ssh/src/tunnel.ts`
- * spawns `ssh -N -L <local>:127.0.0.1:<remote>` — but it is module-private and
- * bound to the T3 server lifecycle: it takes a T3 HTTP base URL, gates
- * readiness on `waitForHttpReady`, and is reachable only through
- * `SshEnvironmentManager.ensureEnvironment`, which first installs and launches
- * the remote T3 CLI. Nothing generic is exported. Faking launchability would
- * mean handing the guest signaling URLs that resolve to the *desktop's* own
- * loopback, so activation stays closed until a reusable forward primitive
- * exists.
+ * An SSH-managed instance the main process may launch.
+ *
+ * A CTOX daemon's invite names signaling endpoints on *its own* loopback
+ * interface (`ws://127.0.0.1:PORT`), which the desktop cannot reach directly.
+ * `openSshLocalForward` in `@t3tools/ssh/localForward` now supplies the missing
+ * piece — a scoped `ssh -L` forward with a TCP readiness gate — so the launch
+ * path mints the invite over SSH, forwards each signaling port, and rewrites
+ * the invite onto the local ends. Everything else mirrors the local daemon:
+ * the row must be discovered as running right now, and the material is minted
+ * per activation rather than persisted.
  */
-export const CTOX_SSH_MANAGED_LAUNCH_BLOCKED_REASON = "ssh_tunnel_unavailable" as const;
+export function isLaunchableCtoxSshManagedInstance(instance: CtoxManagedInstance): boolean {
+  return (
+    isCtoxSshManagedInstance(instance) &&
+    instance.status === "available" &&
+    instance.healthSummary.dataPlaneReady === false &&
+    instance.healthSummary.nativePeerObserved === false
+  );
+}
 
 /** POSIX single-quoting: the value can never escape its own argument. */
 function singleQuote(value: string): string {
@@ -172,6 +172,50 @@ export function buildCtoxSshDescriptorCommand(stateRoot?: string): readonly stri
   ];
 }
 
+/**
+ * The invite decoder rejects anything above 64 KiB; refuse to carry more than a
+ * small multiple of that off a chatty remote binary.
+ */
+export const MAX_CTOX_SSH_INVITE_BYTES = 262_144;
+/** A desktop session should outlive a working day without re-minting. */
+const SSH_INVITE_TTL_HOURS = "24";
+/** A wedged remote must not stall an activation. */
+export const CTOX_SSH_INVITE_TIMEOUT_MS = 25_000;
+
+/**
+ * Printed to remote stderr when the CLI itself fails.
+ *
+ * `head -c` bounds the invite at the source, but a pipeline's exit status is
+ * `head`'s, so a failed `ctox` would otherwise be indistinguishable from an
+ * empty one. POSIX `sh` has no `PIPESTATUS`, and a temp file would put pairing
+ * material on the remote disk, so the CLI's own failure is announced on stderr
+ * and matched here. Only this exact marker is ever read out of stderr; the rest
+ * is never logged, kept, or surfaced.
+ */
+export const CTOX_SSH_INVITE_FAILURE_MARKER = "__t3_ctox_invite_failed__";
+
+/**
+ * The remote command that mints one desktop invite. Like the descriptor
+ * command it is a fixed script except for the POSIX-single-quoted state root,
+ * and it bounds its own output at the source.
+ *
+ * `CTOX_BIN` is honoured exactly as the local launch path honours it, so a
+ * remote with the binary outside `PATH` behaves the same way.
+ */
+export function buildCtoxSshInviteCommand(stateRoot?: string): readonly string[] {
+  const assignment =
+    stateRoot === undefined
+      ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
+      : `CTOX_ROOT=${singleQuote(stateRoot)}`;
+  const invite = `"\${CTOX_BIN:-ctox}" business-os desktop invite --format json --ttl-hours ${SSH_INVITE_TTL_HOURS}`;
+  return [
+    "sh",
+    "-c",
+    `${assignment}; export CTOX_STATE_ROOT="$CTOX_ROOT"; ` +
+      `{ ${invite} || echo ${singleQuote(CTOX_SSH_INVITE_FAILURE_MARKER)} >&2; } | head -c ${MAX_CTOX_SSH_INVITE_BYTES}`,
+  ];
+}
+
 export interface CtoxSshExecInput {
   readonly host: string;
   readonly argv: readonly string[];
@@ -180,6 +224,11 @@ export interface CtoxSshExecInput {
 
 export interface CtoxSshExecResult {
   readonly stdout: string;
+  /**
+   * Remote stderr. Discovery ignores it; the launch path tests it for one exact
+   * marker and for nothing else. It is never logged or surfaced.
+   */
+  readonly stderr?: string;
 }
 
 /**
@@ -213,6 +262,8 @@ export interface CtoxSshManagedInstance {
   readonly instance: CtoxManagedInstance;
   /** The configured destination. It stays in the main process. */
   readonly host: string;
+  /** The configured state root, when one was configured. It stays in the main process. */
+  readonly stateRoot?: string;
   readonly runtimeStatus: CtoxLocalDaemonRuntimeStatus;
 }
 
@@ -241,7 +292,12 @@ export function makeCtoxSshExec(services: {
       timeoutMs: input.timeoutMs,
       batchMode: "yes",
     }).pipe(
-      Effect.map((result): CtoxSshExecResult => ({ stdout: result.stdout })),
+      Effect.map(
+        (result): CtoxSshExecResult => ({
+          stdout: result.stdout,
+          stderr: result.stderr,
+        }),
+      ),
       Effect.mapError(() => new CtoxSshExecError({ reason: "unreachable" })),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, services.spawner),
       Effect.provideService(FileSystem.FileSystem, services.fileSystem),
@@ -294,6 +350,7 @@ const discoverOne = Effect.fn("CtoxSshManagedSource.discoverOne")(function* (
       },
     },
     host: entry.host,
+    ...(entry.stateRoot === undefined ? {} : { stateRoot: entry.stateRoot }),
     runtimeStatus,
   } satisfies CtoxSshManagedInstance;
 });

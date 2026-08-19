@@ -1,6 +1,11 @@
 import type { ReactElement, ReactNode } from "react";
 import { Children, isValidElement } from "react";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ThreadId,
+  WorkjetMeshWorkspaceId,
+  type WorkjetMeshRoster,
+} from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -14,6 +19,10 @@ import {
   WORKJET_MESSAGE_MAX_LENGTH,
   WORKJET_MIN_TTL_SECONDS,
   WORKJET_SEND_FIELD_ERROR_MESSAGES,
+  formatWorkjetFirstContact,
+  orderWorkjetRosterPeers,
+  rememberWorkjetRemoteThreadId,
+  selectWorkjetRosterPeer,
   workjetMailboxFailureMessage,
   WorkjetSendToWorkerPanelContent,
   type WorkjetSendDraft,
@@ -202,18 +211,18 @@ describe("workjet send payloads", () => {
     });
   });
 
-  it("addresses another machine with the typed environment id", () => {
+  it("addresses another machine with the typed environment and thread id", () => {
     expect(
       resolveWorkjetSendTarget(
         {
           ...validMessageDraft,
           recipientMode: "environment",
           targetEnvironmentId: " environment-remote ",
-          targetThreadId: "",
+          targetThreadId: " thread-remote ",
         },
         ENVIRONMENT_ID,
       ),
-    ).toEqual({ environmentId: "environment-remote", threadId: "environment-remote" });
+    ).toEqual({ environmentId: "environment-remote", threadId: "thread-remote" });
   });
 
   it("builds a trimmed inline message payload naming the source thread", () => {
@@ -400,5 +409,229 @@ describe("WorkjetSendToWorkerPanelContent", () => {
         (element) => element.props["data-workjet-send-outcome"] === "error",
       ),
     ).toBe(true);
+  });
+});
+
+// ===============================
+// Cross-machine recipient roster
+// ===============================
+
+const rosterPeer = (environmentId: string, firstSeenAt: string, sealed = true) => ({
+  schemaVersion: 1 as const,
+  workspaceId: WorkjetMeshWorkspaceId.make("workjet-mesh-peer"),
+  environmentId: EnvironmentId.make(environmentId),
+  firstSeenAt,
+  sealedDeliveryReady: sealed,
+});
+
+const ROSTER: WorkjetMeshRoster = {
+  schemaVersion: 1 as const,
+  local: {
+    schemaVersion: 1 as const,
+    workspaceId: WorkjetMeshWorkspaceId.make("workjet-mesh-local"),
+    environmentId: ENVIRONMENT_ID,
+  },
+  peers: [
+    rosterPeer("environment-older", "2026-08-01T09:00:00.000Z"),
+    rosterPeer("environment-newer", "2026-08-18T10:00:00.000Z", false),
+  ],
+  truncated: false,
+};
+
+describe("roster helpers", () => {
+  it("orders peers by most recent first contact and tolerates a missing roster", () => {
+    expect(orderWorkjetRosterPeers(ROSTER).map((peer) => peer.environmentId)).toEqual([
+      "environment-newer",
+      "environment-older",
+    ]);
+    expect(orderWorkjetRosterPeers(null)).toEqual([]);
+  });
+
+  it("renders a first-contact pin as a date, never as a liveness claim", () => {
+    expect(formatWorkjetFirstContact("2026-08-18T10:00:00.000Z")).toBe("2026-08-18");
+  });
+
+  it("fills the address from a peer and prefills its last used thread id", () => {
+    const fresh = selectWorkjetRosterPeer({
+      draft: EMPTY_WORKJET_SEND_DRAFT,
+      environmentId: "environment-newer",
+      rememberedThreadIds: undefined,
+    });
+    expect(fresh).toMatchObject({
+      recipientMode: "environment",
+      targetEnvironmentId: "environment-newer",
+      targetThreadId: "",
+    });
+
+    const remembered = selectWorkjetRosterPeer({
+      draft: EMPTY_WORKJET_SEND_DRAFT,
+      environmentId: "environment-newer",
+      rememberedThreadIds: { "environment-newer": "thread-remote" },
+    });
+    expect(remembered.targetThreadId).toBe("thread-remote");
+  });
+
+  it("remembers a remote thread id per peer and ignores blanks and local drafts", () => {
+    const remote: WorkjetSendDraft = {
+      ...EMPTY_WORKJET_SEND_DRAFT,
+      recipientMode: "environment",
+      targetEnvironmentId: "environment-newer",
+      targetThreadId: "thread-remote",
+    };
+    expect(rememberWorkjetRemoteThreadId({}, remote)).toEqual({
+      "environment-newer": "thread-remote",
+    });
+    // A blank id must not erase a usable memory.
+    expect(
+      rememberWorkjetRemoteThreadId(
+        { "environment-newer": "thread-remote" },
+        { ...remote, targetThreadId: "" },
+      ),
+    ).toEqual({ "environment-newer": "thread-remote" });
+    // A same-machine draft is not a remote address.
+    expect(rememberWorkjetRemoteThreadId({}, { ...remote, recipientMode: "thread" })).toEqual({});
+  });
+});
+
+describe("WorkjetSendToWorkerPanelContent remote recipients", () => {
+  const remoteDraft: WorkjetSendDraft = {
+    ...validMessageDraft,
+    recipientMode: "environment",
+    targetEnvironmentId: "",
+    targetThreadId: "",
+  };
+  const render = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
+    WorkjetSendToWorkerPanelContent(
+      panelProps({ draft: remoteDraft, roster: ROSTER, ...overrides }),
+    ) as InspectableElement;
+
+  it("groups the roster peers under a remote environments group, newest first", () => {
+    const select = descendants(render().props.children).find(
+      (element) => element.props["aria-label"] === "Remote environment",
+    );
+    const group = descendants(select?.props.children).find(
+      (element) => element.type === "optgroup",
+    );
+
+    expect(group?.props.label).toBe("Remote environments");
+    const options = descendants(group?.props.children).filter(
+      (element) => element.type === "option",
+    );
+    expect(options.map((option) => option.props.value)).toEqual([
+      "environment-newer",
+      "environment-older",
+    ]);
+    // The pin date is shown as first contact, never as "last seen" or "online".
+    expect(textContent(group?.props.children)).toContain("first contact 2026-08-18");
+    expect(textContent(render().props.children)).not.toContain("online");
+  });
+
+  it("fills the address from a selected peer and drops the free-text field", () => {
+    const changes: WorkjetSendDraft[] = [];
+    const panel = render({ onDraftChange: (draft) => changes.push(draft) });
+    const select = descendants(panel.props.children).find(
+      (element) => element.props["aria-label"] === "Remote environment",
+    );
+
+    (select?.props.onChange as (event: { target: { value: string } }) => void)({
+      target: { value: "environment-newer" },
+    });
+    expect(changes[0]).toMatchObject({
+      recipientMode: "environment",
+      targetEnvironmentId: "environment-newer",
+    });
+
+    const selected = render({
+      draft: { ...remoteDraft, targetEnvironmentId: "environment-newer" },
+    });
+    const labels = descendants(selected.props.children).map(
+      (element) => element.props["aria-label"],
+    );
+    expect(labels).not.toContain("Recipient environment id");
+    expect(labels).toContain("Recipient thread id on the other machine");
+  });
+
+  it("keeps the free-text environment id for a machine the roster does not know", () => {
+    const labels = descendants(
+      render({ draft: { ...remoteDraft, targetEnvironmentId: "environment-unknown" } }).props
+        .children,
+    ).map((element) => element.props["aria-label"]);
+    expect(labels).toContain("Recipient environment id");
+  });
+
+  it("requires the remote thread id and says why it cannot be picked", () => {
+    const panel = render({
+      draft: { ...remoteDraft, targetEnvironmentId: "environment-newer" },
+    });
+    expect(
+      validateWorkjetSendDraft({ ...remoteDraft, targetEnvironmentId: "environment-newer" }),
+    ).toContain("recipient-remote-thread-required");
+    // The error is rendered through `ErrorNote`, so assert on the note the
+    // panel actually raises rather than on flattened text.
+    expect(
+      descendants(panel.props.children).some(
+        (element) => element.props.error === "recipient-remote-thread-required",
+      ),
+    ).toBe(true);
+    expect(WORKJET_SEND_FIELD_ERROR_MESSAGES["recipient-remote-thread-required"]).toBe(
+      "Enter the thread id on the other machine.",
+    );
+    expect(textContent(panel.props.children)).toContain("cannot list another machine");
+  });
+
+  it("says the machine has no peers yet instead of inventing one", () => {
+    const empty = render({ roster: { ...ROSTER, peers: [] } });
+    expect(textContent(empty.props.children)).toContain(
+      "This machine has not exchanged mail with any peer yet.",
+    );
+    expect(
+      descendants(empty.props.children).some(
+        (element) => element.props["aria-label"] === "Remote environment",
+      ),
+    ).toBe(false);
+  });
+
+  it("distinguishes an unread roster from an empty one", () => {
+    const unavailable = render({ roster: null });
+    expect(textContent(unavailable.props.children)).toContain(
+      "The mesh roster is not available yet.",
+    );
+    expect(
+      descendants(unavailable.props.children).some(
+        (element) => element.props["aria-label"] === "Recipient environment id",
+      ),
+    ).toBe(true);
+  });
+
+  it("reports the sealing state of the selected peer and roster truncation", () => {
+    const unsealed = render({
+      draft: { ...remoteDraft, targetEnvironmentId: "environment-newer" },
+      roster: { ...ROSTER, truncated: true },
+    });
+    const text = textContent(unsealed.props.children);
+    expect(text).toContain("No encryption key pinned yet");
+    expect(text).toContain("More peers are pinned than this list shows.");
+
+    expect(
+      textContent(
+        render({ draft: { ...remoteDraft, targetEnvironmentId: "environment-older" } }).props
+          .children,
+      ),
+    ).toContain("encryption key is pinned");
+  });
+
+  it("leaves the same-machine thread list untouched", () => {
+    const local = WorkjetSendToWorkerPanelContent(
+      panelProps({ roster: ROSTER }),
+    ) as InspectableElement;
+    const select = descendants(local.props.children).find(
+      (element) => element.props["aria-label"] === "Recipient thread",
+    );
+    expect(textContent(select?.props.children)).toContain("Worker thread");
+    expect(
+      descendants(local.props.children).some(
+        (element) => element.props["aria-label"] === "Remote environment",
+      ),
+    ).toBe(false);
   });
 });

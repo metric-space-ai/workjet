@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import {
   WorkjetMailboxError,
   WorkjetMailboxFailureReason,
@@ -9,6 +10,8 @@ import {
   type ThreadId,
   type WorkjetMailboxDelegateTaskRpcInput,
   type WorkjetMailboxSendMessageRpcInput,
+  type WorkjetMeshRoster,
+  type WorkjetMeshRosterPeer,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { SendHorizonalIcon } from "lucide-react";
@@ -105,6 +108,7 @@ export function parseWorkjetScopeFiles(input: string): WorkjetScopeParseResult {
 export type WorkjetSendFieldError =
   | "recipient-thread-required"
   | "recipient-environment-required"
+  | "recipient-remote-thread-required"
   | "message-required"
   | "message-too-long"
   | "prompt-required"
@@ -123,6 +127,7 @@ export type WorkjetSendFieldError =
 export const WORKJET_SEND_FIELD_ERROR_MESSAGES: Record<WorkjetSendFieldError, string> = {
   "recipient-thread-required": "Pick a thread on this machine.",
   "recipient-environment-required": "Enter the target environment id.",
+  "recipient-remote-thread-required": "Enter the thread id on the other machine.",
   "message-required": "Write a message.",
   "message-too-long": `A message is at most ${WORKJET_MESSAGE_MAX_LENGTH} characters.`,
   "prompt-required": "Write the task prompt.",
@@ -155,8 +160,16 @@ export function validateWorkjetSendDraft(
   const errors: WorkjetSendFieldError[] = [];
   if (draft.recipientMode === "thread") {
     if (draft.targetThreadId.trim().length === 0) errors.push("recipient-thread-required");
-  } else if (draft.targetEnvironmentId.trim().length === 0) {
-    errors.push("recipient-environment-required");
+  } else {
+    if (draft.targetEnvironmentId.trim().length === 0) {
+      errors.push("recipient-environment-required");
+    }
+    // A remote thread id cannot be picked from a list, so it must be typed —
+    // and it must be typed EXPLICITLY. The old fallback (address the
+    // environment id as the thread id) was a guess dressed as a default.
+    if (draft.targetThreadId.trim().length === 0) {
+      errors.push("recipient-remote-thread-required");
+    }
   }
 
   const message = boundedProse(draft.message, WORKJET_MESSAGE_MAX_LENGTH);
@@ -209,10 +222,11 @@ export interface WorkjetSendTarget {
 
 /**
  * Resolve the recipient a draft names. A thread recipient lives on the active
- * environment; an environment recipient is a machine the mesh has not reached,
- * so the thread part is the id the user typed after the environment (or the
- * environment itself when they typed only that) — the envelope is stored and
- * reported as queued either way.
+ * environment; a remote recipient names another machine's environment and a
+ * thread id typed by hand, because no cross-machine thread listing exists. The
+ * thread id is used exactly as typed — the earlier fallback of addressing the
+ * environment id as the thread id was a guess, and validation now requires the
+ * real id instead. The envelope is stored and reported as queued either way.
  */
 export function resolveWorkjetSendTarget(
   draft: WorkjetSendDraft,
@@ -225,8 +239,67 @@ export function resolveWorkjetSendTarget(
       }
     : {
         environmentId: draft.targetEnvironmentId.trim() as EnvironmentId,
-        threadId: (draft.targetThreadId.trim() || draft.targetEnvironmentId.trim()) as ThreadId,
+        threadId: draft.targetThreadId.trim() as ThreadId,
       };
+}
+
+/**
+ * The roster peers, as the picker orders them: most recently pinned FIRST.
+ *
+ * The server returns oldest-first (its pin table order); a picker wants the
+ * machine you most recently started talking to at the top. This is the only
+ * ordering claim the panel makes — `firstSeenAt` is first CONTACT, never a
+ * liveness or "last active" signal, and the panel never renders it as one.
+ */
+export function orderWorkjetRosterPeers(
+  roster: WorkjetMeshRoster | null | undefined,
+): ReadonlyArray<WorkjetMeshRosterPeer> {
+  if (!roster) return [];
+  return [...roster.peers].sort((left, right) => right.firstSeenAt.localeCompare(left.firstSeenAt));
+}
+
+/** `2026-08-18T10:00:00.000Z` → `2026-08-18`, the honest resolution for a pin date. */
+export function formatWorkjetFirstContact(timestamp: string): string {
+  return timestamp.slice(0, 10);
+}
+
+/**
+ * Address a roster peer. The remote THREAD id cannot be enumerated — no
+ * cross-machine thread listing exists — so it is prefilled from the last id
+ * used for that peer and otherwise left empty for the user to type.
+ */
+export function selectWorkjetRosterPeer(input: {
+  readonly draft: WorkjetSendDraft;
+  readonly environmentId: string;
+  readonly rememberedThreadIds: Readonly<Record<string, string>> | undefined;
+}): WorkjetSendDraft {
+  return {
+    ...input.draft,
+    recipientMode: "environment",
+    targetEnvironmentId: input.environmentId,
+    targetThreadId: input.rememberedThreadIds?.[input.environmentId] ?? "",
+  };
+}
+
+/**
+ * Remember the thread id a draft names for its remote environment. Blank ids
+ * are not recorded, so clearing the field does not erase a usable memory.
+ */
+export function rememberWorkjetRemoteThreadId(
+  remembered: Readonly<Record<string, string>>,
+  draft: WorkjetSendDraft,
+): Readonly<Record<string, string>> {
+  const environmentId = draft.targetEnvironmentId.trim();
+  const threadId = draft.targetThreadId.trim();
+  if (
+    draft.recipientMode !== "environment" ||
+    environmentId.length === 0 ||
+    threadId.length === 0
+  ) {
+    return remembered;
+  }
+  if (remembered[environmentId] === threadId) return remembered;
+  return { ...remembered, [environmentId]: threadId };
 }
 
 export function buildWorkjetSendMessageInput(input: {
@@ -306,6 +379,14 @@ export type WorkjetSendOutcome =
 export interface WorkjetSendToWorkerPanelProps {
   readonly draft: WorkjetSendDraft;
   readonly threads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+  /**
+   * The mesh roster read (`workjet.mesh.roster`). `null` means the read has not
+   * answered yet or is unavailable — the panel then falls back to the typed
+   * environment id rather than pretending the mesh is empty.
+   */
+  readonly roster?: WorkjetMeshRoster | null;
+  /** Last thread id used per remote environment. Panel-local memory only. */
+  readonly rememberedThreadIds?: Readonly<Record<string, string>>;
   readonly busy: boolean;
   readonly disabled?: boolean;
   readonly outcome: WorkjetSendOutcome | null;
@@ -332,6 +413,13 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
   const errorOf = (error: WorkjetSendFieldError) => (errors.includes(error) ? error : undefined);
   const patch = (next: Partial<WorkjetSendDraft>) => onDraftChange({ ...draft, ...next });
   const remoteRecipient = draft.recipientMode === "environment";
+  const peers = orderWorkjetRosterPeers(props.roster);
+  // `undefined` means "not a roster peer", which is what reveals the free-text
+  // environment field: a hand-typed id stays possible, because the roster only
+  // knows machines this one has ALREADY exchanged mail with.
+  const selectedPeer = peers.find(
+    (peer) => peer.environmentId === draft.targetEnvironmentId.trim(),
+  );
 
   return (
     <div className="flex w-full flex-col gap-2" data-workjet-send-panel={draft.tab}>
@@ -392,17 +480,81 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
             ))}
           </select>
         ) : (
-          <input
-            aria-label="Recipient environment id"
-            placeholder="environment id"
-            disabled={disabled}
-            className={fieldClass}
-            value={draft.targetEnvironmentId}
-            onChange={(event) => patch({ targetEnvironmentId: event.target.value })}
-          />
+          <>
+            {peers.length > 0 ? (
+              <select
+                aria-label="Remote environment"
+                disabled={disabled}
+                className={fieldClass}
+                value={selectedPeer ? selectedPeer.environmentId : ""}
+                onChange={(event) =>
+                  onDraftChange(
+                    event.target.value === ""
+                      ? { ...draft, targetEnvironmentId: "", targetThreadId: "" }
+                      : selectWorkjetRosterPeer({
+                          draft,
+                          environmentId: event.target.value,
+                          rememberedThreadIds: props.rememberedThreadIds,
+                        }),
+                  )
+                }
+              >
+                <option value="">Another environment id…</option>
+                <optgroup label="Remote environments">
+                  {peers.map((peer) => (
+                    <option key={peer.environmentId} value={peer.environmentId}>
+                      {`${peer.environmentId} · ${peer.workspaceId} · first contact ${formatWorkjetFirstContact(peer.firstSeenAt)}`}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            ) : null}
+            {selectedPeer === undefined ? (
+              <input
+                aria-label="Recipient environment id"
+                placeholder="environment id"
+                disabled={disabled}
+                className={fieldClass}
+                value={draft.targetEnvironmentId}
+                onChange={(event) => patch({ targetEnvironmentId: event.target.value })}
+              />
+            ) : null}
+            <input
+              aria-label="Recipient thread id on the other machine"
+              placeholder="thread id"
+              disabled={disabled}
+              className={fieldClass}
+              value={draft.targetThreadId}
+              onChange={(event) => patch({ targetThreadId: event.target.value })}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              This machine cannot list another machine&rsquo;s threads, so the thread id has to be
+              typed.
+            </p>
+          </>
         )}
         <ErrorNote error={errorOf("recipient-thread-required")} />
         <ErrorNote error={errorOf("recipient-environment-required")} />
+        <ErrorNote error={errorOf("recipient-remote-thread-required")} />
+        {remoteRecipient && peers.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            {props.roster
+              ? "This machine has not exchanged mail with any peer yet."
+              : "The mesh roster is not available yet."}
+          </p>
+        ) : null}
+        {remoteRecipient && props.roster?.truncated === true ? (
+          <p className="text-[11px] text-muted-foreground">
+            More peers are pinned than this list shows.
+          </p>
+        ) : null}
+        {selectedPeer ? (
+          <p className="text-[11px] text-muted-foreground">
+            {selectedPeer.sealedDeliveryReady
+              ? "This peer's encryption key is pinned, so the payload is sealed."
+              : "No encryption key pinned yet, so the first envelope travels unsealed inside the CTOX room."}
+          </p>
+        ) : null}
         {remoteRecipient ? (
           <p className="text-[11px] text-muted-foreground">Queued until the mesh delivers.</p>
         ) : null}
@@ -556,6 +708,27 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
 }
 
 export function WorkjetSendToWorkerPanel(props: WorkjetSendToWorkerPanelProps) {
+  // Panel-local memory of the last thread id used per remote environment. It is
+  // deliberately NOT persisted: a thread id on another machine is a guess this
+  // client cannot verify, so remembering it beyond the session would dress a
+  // stale guess up as a known address.
+  const [rememberedThreadIds, setRememberedThreadIds] = useState<Readonly<Record<string, string>>>(
+    {},
+  );
+  const { onDraftChange } = props;
+  const handleDraftChange = useCallback(
+    (next: WorkjetSendDraft) => {
+      setRememberedThreadIds((remembered) => rememberWorkjetRemoteThreadId(remembered, next));
+      onDraftChange(next);
+    },
+    [onDraftChange],
+  );
+  const content = {
+    ...props,
+    rememberedThreadIds: props.rememberedThreadIds ?? rememberedThreadIds,
+    onDraftChange: handleDraftChange,
+  } satisfies WorkjetSendToWorkerPanelProps;
+
   return (
     <Popover>
       <PopoverTrigger
@@ -572,7 +745,7 @@ export function WorkjetSendToWorkerPanel(props: WorkjetSendToWorkerPanelProps) {
         <span className="sr-only sm:not-sr-only">Send to worker</span>
       </PopoverTrigger>
       <PopoverPopup align="start" className="w-96">
-        <WorkjetSendToWorkerPanelContent {...props} />
+        <WorkjetSendToWorkerPanelContent {...content} />
       </PopoverPopup>
     </Popover>
   );

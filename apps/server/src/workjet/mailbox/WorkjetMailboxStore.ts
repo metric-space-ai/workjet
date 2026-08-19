@@ -1,5 +1,6 @@
 import {
   WorkjetDelegation,
+  WorkjetDelegationApprovalState,
   WorkjetDelegationEdge,
   WorkjetDelegationId,
   WorkjetDelegationResult,
@@ -250,6 +251,26 @@ export interface WorkjetDelegationRecord {
   readonly terminal: boolean;
 }
 
+/**
+ * The orthogonal per-delegation accounting surface (migration 048): cumulative
+ * usage and the approval-gate lifecycle. Independent of the state transition
+ * table — a delegation's `state` says where it is in its lifecycle; this says
+ * how much budget it has burned and whether a human has cleared it to run.
+ */
+export interface WorkjetDelegationAccounting {
+  /** Cumulative tokens charged to the delegation. */
+  readonly tokens: number;
+  /** Cumulative cost in micro-currency (1e-6 of a unit). */
+  readonly costMicros: number;
+  readonly approvalState: WorkjetDelegationApprovalState;
+}
+
+/** New cumulative totals after a successful {@link WorkjetDelegationAccounting} charge. */
+export interface WorkjetDelegationUsageTotals {
+  readonly tokens: number;
+  readonly costMicros: number;
+}
+
 export type WorkjetOutboundEnqueueOutcome =
   | { readonly _tag: "enqueued"; readonly envelopeId: WorkjetEnvelopeId }
   | { readonly _tag: "duplicate"; readonly envelopeId: WorkjetEnvelopeId };
@@ -357,6 +378,20 @@ const decodeOutboxDbRow = Schema.decodeUnknownEffect(OutboxDbRow);
 const decodeInboxDbRow = Schema.decodeUnknownEffect(InboxDbRow);
 const decodeDelegationDbRow = Schema.decodeUnknownEffect(DelegationDbRow);
 const decodeDelegationEdgeDbRow = Schema.decodeUnknownEffect(DelegationEdgeDbRow);
+
+/** The accounting columns added by migration 048. */
+const DelegationAccountingDbRow = Schema.Struct({
+  tokens: Schema.Int,
+  costMicros: Schema.Int,
+  approvalState: WorkjetDelegationApprovalState,
+});
+const decodeDelegationAccountingDbRow = Schema.decodeUnknownEffect(DelegationAccountingDbRow);
+
+const DELEGATION_ACCOUNTING_COLUMNS = `
+  usage_tokens AS "tokens",
+  usage_cost_micros AS "costMicros",
+  approval_state AS "approvalState"
+`;
 
 const encodeRoutingEnvelopeJson = Schema.encodeEffect(
   Schema.fromJsonString(WorkjetRoutingEnvelope),
@@ -495,6 +530,51 @@ export interface WorkjetMailboxStoreShape {
     state: WorkjetDelegationState,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetDelegationRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * Transactionally accumulate token/cost usage onto a delegation, gating on its
+   * budget BEFORE the durable write — exactly like the depth/round gates refuse
+   * before the effect that would exceed them. Both deltas must be non-negative;
+   * if either would push a cumulative total past its budget ceiling the whole
+   * charge is refused with `token-budget-exceeded` / `cost-budget-exceeded` and
+   * NOTHING is written. Otherwise the new cumulative totals are returned.
+   */
+  readonly recordDelegationUsage: (
+    delegationId: WorkjetDelegationId,
+    deltaTokens: number,
+    deltaCostMicros: number,
+  ) => Effect.Effect<WorkjetDelegationUsageTotals, WorkjetMailboxStoreError>;
+
+  /**
+   * The full accounting surface of a delegation (usage totals + approval state),
+   * or `None` when the delegation does not exist.
+   */
+  readonly getDelegationAccounting: (
+    delegationId: WorkjetDelegationId,
+  ) => Effect.Effect<Option.Option<WorkjetDelegationAccounting>, WorkjetMailboxStoreError>;
+
+  /**
+   * Resolve a `pending` approval gate. `approved: true` moves it to `approved`
+   * (the executor may then run the delegation); `approved: false` moves it to
+   * `rejected` AND cancels the delegation (terminal `cancelled`) in ONE
+   * transaction — a rejected escalation must never run. Refuses with
+   * `invalid-state-transition` when the delegation is not `pending`.
+   */
+  readonly setDelegationApproval: (
+    delegationId: WorkjetDelegationId,
+    approved: boolean,
+    changedAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<WorkjetDelegationAccounting, WorkjetMailboxStoreError>;
+
+  /**
+   * Whether the executor may transition a delegation into `running`. False while
+   * an approval gate is `pending` or `rejected` (and for a missing delegation);
+   * true for `not-required` and `approved`. The token/cost ceilings are enforced
+   * at charge time, not here.
+   */
+  readonly isDelegationExecutable: (
+    delegationId: WorkjetDelegationId,
+  ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
 
   readonly expireOverdue: (
     now: WorkjetMailboxTimestamp,
@@ -906,6 +986,12 @@ export const make = Effect.gen(function* () {
       const stateChangedAtMillis = yield* toEpochMillis(delegation.stateChangedAt);
       const expiresAtMillis = yield* toEpochMillis(delegation.budget.expiresAt);
       const terminal = isTerminalDelegationState(delegation.state) ? 1 : 0;
+      // A delegation whose budget carries `requiresApproval` is born behind a
+      // `pending` gate; the executor may not run it until a human approves. Any
+      // other delegation needs no gate. This is set only at INSERT — the upsert
+      // refreshes the BODY, never the orthogonal approval lifecycle.
+      const initialApprovalState: WorkjetDelegationApprovalState =
+        delegation.budget.requiresApproval === true ? "pending" : "not-required";
 
       return yield* sql
         .withTransaction(
@@ -927,7 +1013,8 @@ export const make = Effect.gen(function* () {
                   state,
                   state_changed_at_ms,
                   terminal,
-                  expires_at_ms
+                  expires_at_ms,
+                  approval_state
                 )
                 VALUES (
                   ${delegation.delegationId},
@@ -935,7 +1022,8 @@ export const make = Effect.gen(function* () {
                   ${delegation.state},
                   ${stateChangedAtMillis},
                   ${terminal},
-                  ${expiresAtMillis}
+                  ${expiresAtMillis},
+                  ${initialApprovalState}
                 )
               `;
               return { _tag: "inserted", delegationId: delegation.delegationId } as const;
@@ -1220,6 +1308,222 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(rows, (row) => decodeDelegation(row, rowIdOf(row)));
     });
 
+  const decodeAccounting = (row: unknown, rowId: string) =>
+    decodeDelegationAccountingDbRow(row).pipe(
+      Effect.mapError(
+        (cause) =>
+          new WorkjetMailboxStoreCorruptRowError({
+            table: "workjet_delegations",
+            rowId,
+            issue: cause.issue._tag,
+          }),
+      ),
+      Effect.map(
+        (decoded): WorkjetDelegationAccounting => ({
+          tokens: decoded.tokens,
+          costMicros: decoded.costMicros,
+          approvalState: decoded.approvalState,
+        }),
+      ),
+    );
+
+  const recordDelegationUsage: WorkjetMailboxStoreShape["recordDelegationUsage"] = (
+    delegationId,
+    deltaTokens,
+    deltaCostMicros,
+  ) =>
+    Effect.gen(function* () {
+      // A negative delta could silently walk a total back under a ceiling that
+      // was already crossed — never a legitimate "charge". Reject it as a
+      // malformed request rather than corrupting the accounting.
+      if (
+        !Number.isSafeInteger(deltaTokens) ||
+        !Number.isSafeInteger(deltaCostMicros) ||
+        deltaTokens < 0 ||
+        deltaCostMicros < 0
+      ) {
+        return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+      }
+
+      return yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            // The budget lives in the delegation body; the running totals live in
+            // the orthogonal columns. Reading both under one transaction closes
+            // the TOCTOU window a concurrent charge would otherwise open.
+            const rows = yield* sql.unsafe(
+              `
+              SELECT ${DELEGATION_COLUMNS}, ${DELEGATION_ACCOUNTING_COLUMNS}
+              FROM workjet_delegations
+              WHERE delegation_id = ?
+            `,
+              [delegationId],
+            );
+            const row = rows[0];
+            if (row === undefined) {
+              return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+            }
+            const record = yield* decodeDelegation(row, rowIdOf(row));
+            const accounting = yield* decodeAccounting(row, rowIdOf(row));
+
+            const budget = record.delegation.budget;
+            const nextTokens = accounting.tokens + deltaTokens;
+            const nextCostMicros = accounting.costMicros + deltaCostMicros;
+
+            // Gate BEFORE the durable write: an accumulation that would cross a
+            // ceiling is refused and nothing is persisted, exactly like the
+            // depth/round gates refuse before their effect.
+            if (budget.maxTokens !== undefined && nextTokens > budget.maxTokens) {
+              return yield* new WorkjetMailboxError({ reason: "token-budget-exceeded" });
+            }
+            if (budget.maxCostMicros !== undefined && nextCostMicros > budget.maxCostMicros) {
+              return yield* new WorkjetMailboxError({ reason: "cost-budget-exceeded" });
+            }
+
+            yield* sql`
+              UPDATE workjet_delegations
+              SET usage_tokens = ${nextTokens},
+                  usage_cost_micros = ${nextCostMicros}
+              WHERE delegation_id = ${delegationId}
+            `;
+
+            return {
+              tokens: nextTokens,
+              costMicros: nextCostMicros,
+            } satisfies WorkjetDelegationUsageTotals;
+          }),
+        )
+        .pipe(
+          Effect.mapError(
+            (cause): WorkjetMailboxStoreError =>
+              isWorkjetMailboxError(cause) || isWorkjetMailboxStoreCorruptRowError(cause)
+                ? cause
+                : new PersistenceSqlError({
+                    operation: "WorkjetMailboxStore.recordDelegationUsage:transaction",
+                    cause,
+                  }),
+          ),
+        );
+    });
+
+  const getDelegationAccounting: WorkjetMailboxStoreShape["getDelegationAccounting"] = (
+    delegationId,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT ${DELEGATION_ACCOUNTING_COLUMNS}
+          FROM workjet_delegations
+          WHERE delegation_id = ?
+        `,
+          [delegationId],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.getDelegationAccounting:select")));
+      const row = rows[0];
+      return row === undefined
+        ? Option.none<WorkjetDelegationAccounting>()
+        : Option.some(yield* decodeAccounting(row, delegationId));
+    });
+
+  const setDelegationApproval: WorkjetMailboxStoreShape["setDelegationApproval"] = (
+    delegationId,
+    approved,
+    changedAt,
+  ) =>
+    Effect.gen(function* () {
+      const changedAtMillis = yield* toEpochMillis(changedAt);
+
+      return yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const rows = yield* sql.unsafe(
+              `
+              SELECT ${DELEGATION_COLUMNS}, ${DELEGATION_ACCOUNTING_COLUMNS}
+              FROM workjet_delegations
+              WHERE delegation_id = ?
+            `,
+              [delegationId],
+            );
+            const row = rows[0];
+            if (row === undefined) {
+              return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+            }
+            const record = yield* decodeDelegation(row, rowIdOf(row));
+            const accounting = yield* decodeAccounting(row, rowIdOf(row));
+
+            // Only a `pending` gate can be resolved. Approving a `not-required`
+            // delegation or re-deciding a settled one is an illegal transition,
+            // not a silent no-op.
+            if (accounting.approvalState !== "pending") {
+              return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+            }
+
+            const nextApproval: WorkjetDelegationApprovalState = approved ? "approved" : "rejected";
+
+            if (approved) {
+              yield* sql`
+                UPDATE workjet_delegations
+                SET approval_state = ${nextApproval}
+                WHERE delegation_id = ${delegationId}
+              `;
+              return { ...accounting, approvalState: nextApproval };
+            }
+
+            // Rejection is terminal: the gate becomes `rejected` AND the
+            // delegation is cancelled in the SAME transaction, so a rejected
+            // escalation can never be picked up and run. The transition must be
+            // legal from the delegation's current (non-terminal) state.
+            if (record.terminal || !isLegalDelegationTransition(record.state, "cancelled")) {
+              return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+            }
+            const cancelledDelegation: WorkjetDelegation = {
+              ...record.delegation,
+              state: "cancelled",
+              stateChangedAt: changedAt,
+            };
+            const delegationJson = yield* encodeDelegationJson(cancelledDelegation).pipe(
+              Effect.mapError(() => new WorkjetMailboxError({ reason: "malformed-envelope" })),
+            );
+            yield* sql`
+              UPDATE workjet_delegations
+              SET approval_state = ${nextApproval},
+                  delegation_json = ${delegationJson},
+                  state = 'cancelled',
+                  state_changed_at_ms = ${changedAtMillis},
+                  terminal = 1
+              WHERE delegation_id = ${delegationId}
+            `;
+            return { ...accounting, approvalState: nextApproval };
+          }),
+        )
+        .pipe(
+          Effect.mapError(
+            (cause): WorkjetMailboxStoreError =>
+              isWorkjetMailboxError(cause) || isWorkjetMailboxStoreCorruptRowError(cause)
+                ? cause
+                : new PersistenceSqlError({
+                    operation: "WorkjetMailboxStore.setDelegationApproval:transaction",
+                    cause,
+                  }),
+          ),
+        );
+    });
+
+  const isDelegationExecutable: WorkjetMailboxStoreShape["isDelegationExecutable"] = (
+    delegationId,
+  ) =>
+    getDelegationAccounting(delegationId).pipe(
+      Effect.map(
+        Option.match({
+          // A delegation that is not here cannot be run here.
+          onNone: () => false,
+          onSome: (accounting) =>
+            accounting.approvalState === "not-required" || accounting.approvalState === "approved",
+        }),
+      ),
+    );
+
   const expireOverdue: WorkjetMailboxStoreShape["expireOverdue"] = (now) =>
     Effect.gen(function* () {
       const nowMillis = yield* toEpochMillis(now);
@@ -1377,6 +1681,10 @@ export const make = Effect.gen(function* () {
     finalizeDelegationResult,
     getDelegationResult,
     listDelegationsByState,
+    recordDelegationUsage,
+    getDelegationAccounting,
+    setDelegationApproval,
+    isDelegationExecutable,
     expireOverdue,
     insertDelegationEdge,
     listDelegationEdges,

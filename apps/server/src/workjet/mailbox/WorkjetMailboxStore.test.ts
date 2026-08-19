@@ -931,3 +931,228 @@ it.effect("surfaces a corrupt edge row as a typed failure, never a crash", () =>
     }
   }).pipe(Effect.provide(testLayer)),
 );
+
+// ===============================
+// Usage accounting and approval gate (migration 048)
+// ===============================
+
+/** A delegation with the additive token/cost/approval budget fields applied. */
+const budgetedDelegation = (options: {
+  readonly id: WorkjetDelegationId;
+  readonly envelope: WorkjetEnvelopeId;
+  readonly state: WorkjetDelegationState;
+  readonly at: string;
+  readonly maxTokens?: number;
+  readonly maxCostMicros?: number;
+  readonly requiresApproval?: boolean;
+}): WorkjetDelegation => {
+  const base = delegation({
+    id: options.id,
+    envelope: options.envelope,
+    state: options.state,
+    at: options.at,
+    budgetExpiresAt: FAR_FUTURE,
+  });
+  return {
+    ...base,
+    budget: {
+      ...base.budget,
+      ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+      ...(options.maxCostMicros !== undefined ? { maxCostMicros: options.maxCostMicros } : {}),
+      ...(options.requiresApproval !== undefined
+        ? { requiresApproval: options.requiresApproval }
+        : {}),
+    },
+  };
+};
+
+it.effect("accumulates usage and starts a non-gated delegation at zero, not-required", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("usage001");
+    yield* store.upsertDelegation(
+      budgetedDelegation({ id, envelope: envelopeId("del-usage1"), state: "queued", at: T0 }),
+    );
+
+    const initial = Option.getOrThrow(yield* store.getDelegationAccounting(id));
+    assert.deepEqual(initial, { tokens: 0, costMicros: 0, approvalState: "not-required" });
+
+    const first = yield* store.recordDelegationUsage(id, 100, 2_000);
+    assert.deepEqual(first, { tokens: 100, costMicros: 2_000 });
+    const second = yield* store.recordDelegationUsage(id, 50, 500);
+    assert.deepEqual(second, { tokens: 150, costMicros: 2_500 });
+
+    const after = Option.getOrThrow(yield* store.getDelegationAccounting(id));
+    assert.deepEqual(after, { tokens: 150, costMicros: 2_500, approvalState: "not-required" });
+    // With no gate, the delegation is executable throughout.
+    assert.isTrue(yield* store.isDelegationExecutable(id));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses a token charge that would cross the ceiling and writes nothing", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("usage002");
+    yield* store.upsertDelegation(
+      budgetedDelegation({
+        id,
+        envelope: envelopeId("del-usage2"),
+        state: "queued",
+        at: T0,
+        maxTokens: 1_000,
+      }),
+    );
+
+    yield* store.recordDelegationUsage(id, 900, 0);
+    // 900 + 200 = 1_100 > 1_000: refused BEFORE the durable write.
+    const refused = yield* store.recordDelegationUsage(id, 200, 0).pipe(Effect.result);
+    assert.equal(refused._tag, "Failure");
+    if (refused._tag === "Failure") {
+      assertMailboxErrorReason(refused.failure, "token-budget-exceeded");
+    }
+
+    // The refused charge left the total exactly where the last success did.
+    const after = Option.getOrThrow(yield* store.getDelegationAccounting(id));
+    assert.equal(after.tokens, 900);
+
+    // Reaching the ceiling exactly is allowed; exceeding it by one is not.
+    const exact = yield* store.recordDelegationUsage(id, 100, 0);
+    assert.equal(exact.tokens, 1_000);
+    const overByOne = yield* store.recordDelegationUsage(id, 1, 0).pipe(Effect.result);
+    assert.equal(overByOne._tag, "Failure");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses a cost charge that would cross the ceiling and writes nothing", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("usage003");
+    yield* store.upsertDelegation(
+      budgetedDelegation({
+        id,
+        envelope: envelopeId("del-usage3"),
+        state: "queued",
+        at: T0,
+        maxCostMicros: 5_000,
+      }),
+    );
+
+    yield* store.recordDelegationUsage(id, 0, 4_000);
+    const refused = yield* store.recordDelegationUsage(id, 0, 2_000).pipe(Effect.result);
+    assert.equal(refused._tag, "Failure");
+    if (refused._tag === "Failure") {
+      assertMailboxErrorReason(refused.failure, "cost-budget-exceeded");
+    }
+    const after = Option.getOrThrow(yield* store.getDelegationAccounting(id));
+    assert.equal(after.costMicros, 4_000);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rejects a negative usage delta as malformed", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("usage004");
+    yield* store.upsertDelegation(
+      budgetedDelegation({ id, envelope: envelopeId("del-usage4"), state: "queued", at: T0 }),
+    );
+    const bad = yield* store.recordDelegationUsage(id, -1, 0).pipe(Effect.result);
+    assert.equal(bad._tag, "Failure");
+    if (bad._tag === "Failure") {
+      assertMailboxErrorReason(bad.failure, "malformed-envelope");
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("fails usage accounting for an unknown delegation", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const missing = yield* store
+      .recordDelegationUsage(delegationId("nope0000"), 1, 1)
+      .pipe(Effect.result);
+    assert.equal(missing._tag, "Failure");
+    if (missing._tag === "Failure") {
+      assertMailboxErrorReason(missing.failure, "unknown-target");
+    }
+    assert.isTrue(Option.isNone(yield* store.getDelegationAccounting(delegationId("nope0000"))));
+    // A missing delegation is never executable.
+    assert.isFalse(yield* store.isDelegationExecutable(delegationId("nope0000")));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("gates a requiresApproval delegation as pending until approved", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("approve1");
+    yield* store.upsertDelegation(
+      budgetedDelegation({
+        id,
+        envelope: envelopeId("del-approve1"),
+        state: "delivered",
+        at: T0,
+        requiresApproval: true,
+      }),
+    );
+
+    const gated = Option.getOrThrow(yield* store.getDelegationAccounting(id));
+    assert.equal(gated.approvalState, "pending");
+    // Pending approval blocks execution.
+    assert.isFalse(yield* store.isDelegationExecutable(id));
+
+    const approved = yield* store.setDelegationApproval(id, true, T1);
+    assert.equal(approved.approvalState, "approved");
+    assert.isTrue(yield* store.isDelegationExecutable(id));
+    // The delegation state itself is untouched by approval.
+    const record = Option.getOrThrow(yield* store.getDelegation(id));
+    assert.equal(record.state, "delivered");
+    assert.isFalse(record.terminal);
+
+    // Re-deciding a settled gate is an illegal transition.
+    const again = yield* store.setDelegationApproval(id, true, T2).pipe(Effect.result);
+    assert.equal(again._tag, "Failure");
+    if (again._tag === "Failure") {
+      assertMailboxErrorReason(again.failure, "invalid-state-transition");
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rejection cancels the delegation terminally and keeps it non-executable", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("reject01");
+    yield* store.upsertDelegation(
+      budgetedDelegation({
+        id,
+        envelope: envelopeId("del-reject1"),
+        state: "delivered",
+        at: T0,
+        requiresApproval: true,
+      }),
+    );
+
+    const rejected = yield* store.setDelegationApproval(id, false, T1);
+    assert.equal(rejected.approvalState, "rejected");
+    assert.isFalse(yield* store.isDelegationExecutable(id));
+
+    // Rejection is terminal: the delegation is cancelled in the same transaction.
+    const record = Option.getOrThrow(yield* store.getDelegation(id));
+    assert.equal(record.state, "cancelled");
+    assert.isTrue(record.terminal);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to approve a delegation that has no pending gate", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("nogate01");
+    yield* store.upsertDelegation(
+      budgetedDelegation({ id, envelope: envelopeId("del-nogate1"), state: "delivered", at: T0 }),
+    );
+    // not-required cannot be approved.
+    const nope = yield* store.setDelegationApproval(id, true, T1).pipe(Effect.result);
+    assert.equal(nope._tag, "Failure");
+    if (nope._tag === "Failure") {
+      assertMailboxErrorReason(nope.failure, "invalid-state-transition");
+    }
+    assert.isTrue(yield* store.isDelegationExecutable(id));
+  }).pipe(Effect.provide(testLayer)),
+);

@@ -444,6 +444,23 @@ Tasks:
       substitute its own upstream credential, never forward that header.
       Still open: composer model-selection → gateway route resolution, and a
       live routed turn against a real gateway account.
+      LIVE FINDINGS 2026-08-19 (user attempted the first real logins):
+      (1) BOTH provider OAuth flows are rejected by the real IdPs — Anthropic:
+      "Redirect URI http://127.0.0.1:<port>/management/oauth/anthropic/callback
+      is not supported by client"; OpenAI: `invalid_authorize_request`. The
+      Rust host's authorize construction never matched the official CLI
+      clients; fix in flight (evidence-first from the installed claude/codex
+      binaries, verified unauthenticated via login-page-vs-rejection probes).
+      (2) An orphaned gateway host from a dead server squatted the stable
+      port; "Start gateway" then failed as "invalid readiness record" — fixed
+      (commit `db483f608`: pid-file reap, stop cleanup, OAuth autostart).
+      (3) Provider coverage gap vs Swift Workjet: the host knows only
+      claude/codex/antigravity — xAI, Kimi, Z.ai, MiniMax and an API-KEY
+      account type (Z.ai/MiniMax are key-based, not OAuth) are missing;
+      queued after the OAuth fix (same Rust surface).
+      (4) UX: gateway accounts move INTO Settings → Providers (one surface,
+      no manual Start button, honest auth-state age + refresh-on-open) — in
+      flight.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
 - [ ] Preserve direct provider/model selection in the composer; selection

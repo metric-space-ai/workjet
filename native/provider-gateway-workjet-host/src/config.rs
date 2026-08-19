@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use workjet_provider_gateway::internal::config::{
-    CliproxyRuntimeConfig, RuntimeSecretRef, ValidatedRuntimeConfig,
+    CliproxyRuntimeConfig, RuntimeSecretRef, ValidatedRuntimeConfig, API_KEY_PROVIDERS,
 };
 
 pub const HOST_CONFIG_SCHEMA: &str = "workjet.provider-gateway-host.v1";
@@ -89,10 +89,10 @@ impl HostConfig {
             .map(str::trim)
             .filter(|provider| !provider.is_empty())
             .map(str::to_owned);
-        if default_provider
-            .as_deref()
-            .is_some_and(|provider| !matches!(provider, "claude" | "codex" | "antigravity"))
-        {
+        if default_provider.as_deref().is_some_and(|provider| {
+            !matches!(provider, "claude" | "codex" | "antigravity")
+                && !API_KEY_PROVIDERS.contains(&provider)
+        }) {
             return Err(HostConfigError::InvalidDefaultProvider);
         }
         let reference_allowed = |reference: &RuntimeSecretRef| {
@@ -116,7 +116,8 @@ impl HostConfig {
         // fails exactly as before.
         let bootstrap = self.runtime.claude_accounts.is_empty()
             && self.runtime.codex_accounts.is_empty()
-            && self.runtime.antigravity_accounts.is_empty();
+            && self.runtime.antigravity_accounts.is_empty()
+            && self.runtime.api_key_accounts.is_empty();
         if bootstrap && default_provider.is_some() {
             return Err(HostConfigError::InvalidDefaultProvider);
         }
@@ -149,6 +150,12 @@ impl HostConfig {
                     .proxy_url_secret
                     .as_ref()
                     .is_none_or(reference_allowed)
+        }) && runtime.api_key_accounts().iter().all(|account| {
+            reference_allowed(&account.api_key_secret)
+                && account
+                    .proxy_url_secret
+                    .as_ref()
+                    .is_none_or(reference_allowed)
         });
         if !runtime_refs_allowed {
             return Err(HostConfigError::InvalidSecretReference);
@@ -171,7 +178,8 @@ impl HostConfig {
         // enabled default provider, so established deployments are unchanged.
         let configured_accounts = runtime.claude_accounts().len()
             + runtime.codex_accounts().len()
-            + runtime.antigravity_accounts().len();
+            + runtime.antigravity_accounts().len()
+            + runtime.api_key_accounts().len();
         let default_is_enabled = match default_provider.as_deref() {
             Some("claude") => runtime
                 .claude_accounts()
@@ -185,6 +193,10 @@ impl HostConfig {
                 .antigravity_accounts()
                 .iter()
                 .any(|account| !account.disabled),
+            Some(provider) if API_KEY_PROVIDERS.contains(&provider) => runtime
+                .api_key_accounts()
+                .iter()
+                .any(|account| !account.disabled && account.provider.trim() == provider),
             Some(_) => false,
             None => configured_accounts == 0,
         };

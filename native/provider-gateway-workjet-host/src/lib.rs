@@ -334,6 +334,10 @@ fn validate_provider_secrets(
         ]);
         references.extend(account.proxy_url_secret.iter());
     }
+    for account in config.runtime.api_key_accounts() {
+        references.push(&account.api_key_secret);
+        references.extend(account.proxy_url_secret.iter());
+    }
     if let Some((client_id, client_secret)) = &config.antigravity_oauth {
         references.extend([client_id, client_secret]);
     }

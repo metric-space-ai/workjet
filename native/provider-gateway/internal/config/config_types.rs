@@ -353,6 +353,144 @@ impl AntigravitySubscriptionAccountConfig {
     }
 }
 
+/// Providers reached with a user-supplied API key instead of an OAuth
+/// subscription. Every entry here MUST speak the OpenAI Chat Completions wire
+/// shape, because the gateway proxies them through the ported
+/// `OpenAiCompatExecutor` (`openai-response` -> `openai` translation, upstream
+/// `POST {base_url}/chat/completions`, credential in `Authorization: Bearer`).
+/// A provider whose upstream speaks a different shape must NOT be added here;
+/// the proxy would mangle it.
+pub const API_KEY_PROVIDERS: [&str; 4] = ["zai", "minimax", "xai", "kimi"];
+
+/// Maximum accepted upstream base URL length. Bounded so a configuration can
+/// never smuggle an unbounded string into an outgoing request line.
+const MAX_API_KEY_BASE_URL_LEN: usize = 512;
+
+/// Default upstream base URL per API-key provider.
+///
+/// Each entry records its EVIDENCE LEVEL, because these endpoints are the one
+/// part of an API-key account that cannot be verified from a login flow:
+///
+/// - `zai`   — evidence: user gateway configuration (Z.ai direct API,
+///   `https://api.z.ai/api/paas/v4`), OpenAI-shaped. Z.ai also publishes an
+///   Anthropic-shaped endpoint (`https://api.z.ai/api/anthropic`); it is
+///   deliberately NOT reachable through this account type, because the API-key
+///   path only speaks OpenAI Chat Completions upstream.
+/// - `minimax` — evidence: public-docs only. No adapter, fixture, or vendored
+///   document on this machine names a MiniMax endpoint, so this default is the
+///   documented public OpenAI-compatible host and nothing stronger.
+/// - `xai`   — evidence: verified-from-repo-adapter. The ported upstream
+///   configuration test `internal/config/xai_api_key_test.rs` carries
+///   `base-url: https://api.x.ai/v1` for `xai-api-key` entries.
+/// - `kimi`  — evidence: public-docs only. This is the Moonshot *platform* API
+///   key host, deliberately NOT `KIMI_API_BASE_URL`
+///   (`https://api.kimi.com/coding`, `internal/auth/kimi`), which is the OAuth
+///   coding endpoint and does not accept a platform API key.
+///
+/// A user may always override the default with an explicit `upstream_base_url`.
+pub fn default_api_key_base_url(provider: &str) -> Option<&'static str> {
+    match provider {
+        "zai" => Some("https://api.z.ai/api/paas/v4"),
+        "minimax" => Some("https://api.minimax.io/v1"),
+        "xai" => Some("https://api.x.ai/v1"),
+        "kimi" => Some("https://api.moonshot.ai/v1"),
+        _ => None,
+    }
+}
+
+/// One API-key provider account. The key itself never appears here: only a
+/// reference into the host secret store, exactly like every OAuth token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApiKeyAccountConfig {
+    pub id: String,
+    /// One of [`API_KEY_PROVIDERS`].
+    pub provider: String,
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(default = "default_account_weight")]
+    pub weight: i64,
+    #[serde(default)]
+    pub models: Vec<String>,
+    pub api_key_secret: RuntimeSecretRef,
+    /// Empty means [`default_api_key_base_url`] for the provider.
+    #[serde(default)]
+    pub upstream_base_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url_secret: Option<RuntimeSecretRef>,
+}
+
+impl ApiKeyAccountConfig {
+    pub fn provider(&self) -> Result<&str, RuntimeConfigError> {
+        let provider = self.provider.trim();
+        API_KEY_PROVIDERS
+            .into_iter()
+            .find(|candidate| *candidate == provider)
+            .ok_or(RuntimeConfigError::InvalidApiKeyProvider)
+    }
+
+    /// Resolved upstream base URL, defaulted per provider and validated as an
+    /// https origin without credentials, query, or fragment.
+    pub fn base_url(&self) -> Result<String, RuntimeConfigError> {
+        let provider = self.provider()?;
+        let configured = self.upstream_base_url.trim();
+        let base = if configured.is_empty() {
+            default_api_key_base_url(provider).ok_or(RuntimeConfigError::InvalidApiKeyProvider)?
+        } else {
+            configured
+        };
+        if base.len() > MAX_API_KEY_BASE_URL_LEN
+            || base.chars().any(char::is_control)
+            || base.chars().any(char::is_whitespace)
+        {
+            return Err(RuntimeConfigError::InvalidApiKeyBaseUrl);
+        }
+        let parsed = url::Url::parse(base).map_err(|_| RuntimeConfigError::InvalidApiKeyBaseUrl)?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none_or(str::is_empty)
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
+            return Err(RuntimeConfigError::InvalidApiKeyBaseUrl);
+        }
+        Ok(base.trim_end_matches('/').to_owned())
+    }
+
+    pub fn candidate(&self) -> AccountCandidate {
+        AccountCandidate {
+            auth_id: self.id.trim().to_owned(),
+            provider: self.provider.trim().to_owned(),
+            priority: self.priority,
+            weight: self.weight,
+            websocket_enabled: false,
+            supported_models: self.models.clone(),
+            disabled: self.disabled,
+        }
+    }
+
+    fn validate(&self) -> Result<(), RuntimeConfigError> {
+        if self.id.trim().is_empty() {
+            return Err(RuntimeConfigError::InvalidAccountId);
+        }
+        validate_credential_weight(Some(self.weight))
+            .map_err(|_| RuntimeConfigError::InvalidCredentialWeight)?;
+        self.provider()?;
+        self.api_key_secret.validate()?;
+        if let Some(proxy) = &self.proxy_url_secret {
+            proxy.validate()?;
+            if proxy == &self.api_key_secret {
+                return Err(RuntimeConfigError::DuplicateSecretReference);
+            }
+        }
+        self.base_url()?;
+        Ok(())
+    }
+}
+
 fn default_codex_base_url() -> String {
     DEFAULT_CODEX_BASE_URL.to_owned()
 }
@@ -382,6 +520,10 @@ pub struct CliproxyRuntimeConfig {
     pub codex_accounts: Vec<CodexSubscriptionAccountConfig>,
     #[serde(default)]
     pub antigravity_accounts: Vec<AntigravitySubscriptionAccountConfig>,
+    /// API-key provider accounts (see [`API_KEY_PROVIDERS`]). Additive: an
+    /// existing configuration without this field decodes unchanged.
+    #[serde(default)]
+    pub api_key_accounts: Vec<ApiKeyAccountConfig>,
 }
 
 fn default_request_timeout_ms() -> u64 {
@@ -431,6 +573,12 @@ impl CliproxyRuntimeConfig {
                 return Err(RuntimeConfigError::DuplicateAccountId);
             }
         }
+        for account in &self.api_key_accounts {
+            account.validate()?;
+            if !ids.insert(account.id.trim().to_owned()) {
+                return Err(RuntimeConfigError::DuplicateAccountId);
+            }
+        }
         if require_enabled_portable_account
             && !self.claude_accounts.iter().any(|account| !account.disabled)
             && !self.codex_accounts.iter().any(|account| !account.disabled)
@@ -438,6 +586,7 @@ impl CliproxyRuntimeConfig {
                 .antigravity_accounts
                 .iter()
                 .any(|account| !account.disabled)
+            && !self.api_key_accounts.iter().any(|account| !account.disabled)
         {
             return Err(RuntimeConfigError::NoEnabledAccounts);
         }
@@ -500,6 +649,40 @@ impl ValidatedRuntimeConfig {
             .map(AntigravitySubscriptionAccountConfig::candidate)
             .collect()
     }
+
+    pub fn api_key_accounts(&self) -> &[ApiKeyAccountConfig] {
+        &self.0.api_key_accounts
+    }
+
+    /// API-key accounts of one provider, in configuration order.
+    pub fn api_key_accounts_for(&self, provider: &str) -> Vec<&ApiKeyAccountConfig> {
+        self.0
+            .api_key_accounts
+            .iter()
+            .filter(|account| account.provider.trim() == provider)
+            .collect()
+    }
+
+    /// Every API-key provider that has at least one configured account.
+    pub fn api_key_providers(&self) -> Vec<&'static str> {
+        API_KEY_PROVIDERS
+            .into_iter()
+            .filter(|provider| {
+                self.0
+                    .api_key_accounts
+                    .iter()
+                    .any(|account| account.provider.trim() == *provider)
+            })
+            .collect()
+    }
+
+    pub fn api_key_candidates(&self) -> Vec<AccountCandidate> {
+        self.0
+            .api_key_accounts
+            .iter()
+            .map(ApiKeyAccountConfig::candidate)
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -513,6 +696,8 @@ pub enum RuntimeConfigError {
     InvalidPlanType,
     InvalidCredentialWeight,
     InvalidTimezone,
+    InvalidApiKeyProvider,
+    InvalidApiKeyBaseUrl,
     Target(ClaudeTargetError),
     CodexTarget(CodexTargetError),
     AntigravityTarget(AntigravityTargetError),
@@ -530,6 +715,8 @@ impl fmt::Display for RuntimeConfigError {
             Self::InvalidPlanType => "proxy subscription plan type is invalid",
             Self::InvalidCredentialWeight => "proxy credential weight is invalid",
             Self::InvalidTimezone => "proxy credential timezone is invalid",
+            Self::InvalidApiKeyProvider => "proxy api-key provider is not supported",
+            Self::InvalidApiKeyBaseUrl => "proxy api-key upstream base URL is invalid",
             Self::Target(_) | Self::CodexTarget(_) | Self::AntigravityTarget(_) => {
                 "proxy upstream target is invalid"
             }
@@ -618,6 +805,113 @@ mod tests {
         }
     }
 
+    fn api_key_account(id: &str, provider: &str) -> ApiKeyAccountConfig {
+        ApiKeyAccountConfig {
+            id: id.to_owned(),
+            provider: provider.to_owned(),
+            disabled: false,
+            priority: 2,
+            weight: 1,
+            models: Vec::new(),
+            api_key_secret: RuntimeSecretRef {
+                scope: "subscriptions".to_owned(),
+                name: format!("{id}-api-key"),
+            },
+            upstream_base_url: String::new(),
+            proxy_url_secret: None,
+        }
+    }
+
+    #[test]
+    fn api_key_accounts_default_one_base_url_per_supported_provider() {
+        for (provider, expected) in [
+            ("zai", "https://api.z.ai/api/paas/v4"),
+            ("minimax", "https://api.minimax.io/v1"),
+            ("xai", "https://api.x.ai/v1"),
+            ("kimi", "https://api.moonshot.ai/v1"),
+        ] {
+            let account = api_key_account(&format!("{provider}-a"), provider);
+            assert_eq!(account.validate(), Ok(()));
+            assert_eq!(account.base_url().unwrap(), expected);
+            assert_eq!(account.candidate().provider, provider);
+        }
+        assert_eq!(API_KEY_PROVIDERS.len(), 4);
+    }
+
+    #[test]
+    fn api_key_accounts_reject_unknown_providers_and_unsafe_base_urls() {
+        assert_eq!(
+            api_key_account("nope-a", "openrouter").validate(),
+            Err(RuntimeConfigError::InvalidApiKeyProvider)
+        );
+        for base in [
+            "http://api.z.ai/api/paas/v4",
+            "https://user:pw@api.z.ai/v4",
+            "https://api.z.ai/v4?key=leak",
+            "https://api.z.ai/v4#frag",
+            "not-a-url",
+            "https://api.z.ai/v4\r\nX-Evil: yes",
+        ] {
+            let mut account = api_key_account("zai-a", "zai");
+            account.upstream_base_url = base.to_owned();
+            assert_eq!(
+                account.validate(),
+                Err(RuntimeConfigError::InvalidApiKeyBaseUrl),
+                "expected {base} to be rejected"
+            );
+        }
+        let mut trailing = api_key_account("zai-a", "zai");
+        trailing.upstream_base_url = "https://api.z.ai/api/paas/v4/".to_owned();
+        assert_eq!(
+            trailing.base_url().unwrap(),
+            "https://api.z.ai/api/paas/v4"
+        );
+    }
+
+    #[test]
+    fn api_key_accounts_join_the_shared_id_space_and_enable_a_runtime() {
+        let mut config = CliproxyRuntimeConfig {
+            request_timeout_ms: 30_000,
+            routing_strategy: SchedulerStrategy::RoundRobin,
+            claude_accounts: Vec::new(),
+            codex_accounts: Vec::new(),
+            antigravity_accounts: Vec::new(),
+            api_key_accounts: vec![api_key_account("zai-a", "zai"), api_key_account("xai-a", "xai")],
+        };
+        let validated = config.clone().validate().unwrap();
+        assert_eq!(validated.api_key_accounts().len(), 2);
+        assert_eq!(validated.api_key_providers(), vec!["zai", "xai"]);
+        assert_eq!(validated.api_key_accounts_for("zai").len(), 1);
+        assert_eq!(validated.api_key_candidates()[0].auth_id, "zai-a");
+
+        config.api_key_accounts.push(api_key_account("zai-a", "zai"));
+        assert_eq!(
+            config.clone().validate(),
+            Err(RuntimeConfigError::DuplicateAccountId)
+        );
+
+        config.api_key_accounts.clear();
+        config
+            .api_key_accounts
+            .push(ApiKeyAccountConfig { disabled: true, ..api_key_account("zai-a", "zai") });
+        assert_eq!(
+            config.validate(),
+            Err(RuntimeConfigError::NoEnabledAccounts)
+        );
+    }
+
+    #[test]
+    fn serialized_api_key_account_carries_only_the_secret_reference() {
+        let encoded = serde_json::to_string(&api_key_account("zai-a", "zai")).unwrap();
+        assert!(encoded.contains("zai-a-api-key"));
+        assert!(!encoded.to_ascii_lowercase().contains("bearer"));
+        // Additive decode: a configuration written before api-key support still
+        // decodes, and produces an empty api-key account list.
+        let legacy: CliproxyRuntimeConfig =
+            serde_json::from_str(r#"{"request_timeout_ms":30000,"claude_accounts":[]}"#).unwrap();
+        assert!(legacy.api_key_accounts.is_empty());
+    }
+
     #[test]
     fn valid_config_builds_handles_targets_candidates_and_timeout() {
         let config = CliproxyRuntimeConfig {
@@ -626,6 +920,7 @@ mod tests {
             claude_accounts: vec![account("account-a")],
             codex_accounts: vec![codex_account("codex-a")],
             antigravity_accounts: vec![antigravity_account("antigravity-a")],
+            api_key_accounts: Vec::new(),
         }
         .validate()
         .unwrap();
@@ -653,6 +948,7 @@ mod tests {
             claude_accounts: Vec::new(),
             codex_accounts: Vec::new(),
             antigravity_accounts: Vec::new(),
+            api_key_accounts: Vec::new(),
         };
         assert_eq!(
             empty.clone().validate(),
@@ -672,6 +968,7 @@ mod tests {
             claude_accounts: vec![account("account-a")],
             codex_accounts: vec![codex_account("codex-a")],
             antigravity_accounts: vec![antigravity_account("antigravity-a")],
+            api_key_accounts: Vec::new(),
         })
         .unwrap();
         assert!(encoded.contains("account-a-access"));
@@ -690,6 +987,7 @@ mod tests {
                 claude_accounts: vec![account("same"), account("same")],
                 codex_accounts: Vec::new(),
                 antigravity_accounts: Vec::new(),
+                api_key_accounts: Vec::new(),
             }
             .validate(),
             Err(RuntimeConfigError::DuplicateAccountId)
@@ -703,6 +1001,7 @@ mod tests {
                 claude_accounts: vec![invalid],
                 codex_accounts: Vec::new(),
                 antigravity_accounts: Vec::new(),
+                api_key_accounts: Vec::new(),
             }
             .validate(),
             Err(RuntimeConfigError::DuplicateSecretReference)
@@ -728,6 +1027,7 @@ mod tests {
                 claude_accounts: vec![invalid],
                 codex_accounts: Vec::new(),
                 antigravity_accounts: Vec::new(),
+                api_key_accounts: Vec::new(),
             }
             .validate(),
             Err(RuntimeConfigError::Target(

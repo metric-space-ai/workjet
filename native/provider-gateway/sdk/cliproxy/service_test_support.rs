@@ -261,6 +261,7 @@ pub fn validated_config() -> ValidatedRuntimeConfig {
         }],
         codex_accounts: Vec::new(),
         antigravity_accounts: Vec::new(),
+        api_key_accounts: Vec::new(),
     }
     .validate()
     .expect("valid test config")

@@ -32,10 +32,18 @@ use workjet_provider_gateway::internal::runtime::executor::{
 use workjet_provider_gateway::sdk::api::handlers::claude::code_handlers::{
     claude_models_response, ClaudeMessagesAntigravityHandler, ClaudeMessagesHttpResponse,
 };
+use zeroize::Zeroizing;
+
+use workjet_provider_gateway::internal::runtime::executor::ApiKeyHttpClient;
+use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_api_key_handlers::{
+    ApiKeyAccount, ApiKeyAccountPool, OpenAiResponsesApiKeyHandler,
+};
 use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_handlers::{
     OpenAiResponsesAntigravityHandler, OpenAiResponsesClaudeHandler, OpenAiResponsesCodexHandler,
     OpenAiResponsesProviderRouter,
 };
+use workjet_provider_gateway::sdk::pluginapi::HostHttpClient;
+use workjet_provider_gateway::sdk::translator::builtin::registry as builtin_registry;
 use workjet_provider_gateway::sdk::cliproxy::auth::{
     AccountRouter, CooldownConductor, CooldownStateRecord, CooldownStateStore, CooldownStoreError,
 };
@@ -331,9 +339,58 @@ pub fn build_provider_routes(
         Some(Arc::new(OpenAiResponsesAntigravityHandler::new(pool)))
     };
 
+    // API-key providers. Each provider gets its own pool, so a request routed
+    // to `zai` can only ever be signed with a zai account's key.
+    let mut api_key_handlers: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>> = BTreeMap::new();
+    if !config.api_key_accounts().is_empty() {
+        let registry = builtin_registry();
+        for provider in config.api_key_providers() {
+            let mut accounts = Vec::new();
+            for account in config.api_key_accounts_for(provider) {
+                let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
+                let http_client: Arc<dyn HostHttpClient> = Arc::new(
+                    ApiKeyHttpClient::new(
+                        configured_proxy.as_deref().map(String::as_str),
+                        config.request_timeout(),
+                    )
+                    .map_err(|_| RuntimeBuildError::Transport)?,
+                );
+                let api_key = store
+                    .resolve_text(&account.api_key_secret)
+                    .map_err(|_| RuntimeBuildError::Secret)?;
+                accounts.push(
+                    ApiKeyAccount::new(
+                        account.id.clone(),
+                        account
+                            .base_url()
+                            .map_err(|_| RuntimeBuildError::Configuration)?,
+                        Zeroizing::new(api_key.to_string()),
+                        account.models.clone(),
+                        account.priority,
+                        account.disabled,
+                        http_client,
+                    )
+                    .map_err(|_| RuntimeBuildError::Configuration)?,
+                );
+            }
+            let pool = ApiKeyAccountPool::new(provider, accounts, registry.clone())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            api_key_handlers.insert(
+                provider.to_owned(),
+                Arc::new(OpenAiResponsesApiKeyHandler::new(Arc::new(pool))),
+            );
+        }
+    }
+
     let responses = Arc::new(
-        OpenAiResponsesProviderRouter::new(default_provider, claude, codex, antigravity)
-            .map_err(|_| RuntimeBuildError::Configuration)?,
+        OpenAiResponsesProviderRouter::with_api_key_handlers(
+            default_provider,
+            claude,
+            codex,
+            antigravity,
+            api_key_handlers,
+        )
+        .map_err(|_| RuntimeBuildError::Configuration)?,
     );
     let auxiliary = (!auxiliary_handlers.is_empty()).then(|| {
         Arc::new(AuxiliaryRouteChain::new(auxiliary_handlers)) as Arc<dyn AuxiliaryRouteHandler>
@@ -380,6 +437,18 @@ fn model_catalog(config: &ValidatedRuntimeConfig) -> Vec<ClaudeModel> {
                 .entry(model.clone())
                 .or_default()
                 .insert("antigravity".to_owned());
+        }
+    }
+    for account in config
+        .api_key_accounts()
+        .iter()
+        .filter(|account| !account.disabled)
+    {
+        for model in &account.models {
+            models
+                .entry(model.clone())
+                .or_default()
+                .insert(account.provider.trim().to_owned());
         }
     }
     models
@@ -459,10 +528,31 @@ impl HostManagementSource {
             ),
         ]
         .into_iter()
+        .map(|(provider, account_count, enabled, models)| {
+            (provider.to_owned(), account_count, enabled, models)
+        })
+        // One summary entry per API-key provider that has accounts, so the
+        // management surface lists zai/minimax/xai/kimi exactly like the OAuth
+        // providers.
+        .chain(config.api_key_providers().into_iter().map(|provider| {
+            let accounts = config.api_key_accounts_for(provider);
+            (
+                provider.to_owned(),
+                accounts.len(),
+                accounts
+                    .iter()
+                    .filter(|account| !account.disabled)
+                    .count(),
+                accounts
+                    .iter()
+                    .flat_map(|account| account.models.iter().cloned())
+                    .collect::<BTreeSet<_>>(),
+            )
+        }))
         .filter(|(_, count, _, _)| *count > 0)
         .map(|(provider, account_count, enabled_account_count, models)| {
             ManagementProviderConfigSummary {
-                provider: provider.to_owned(),
+                provider,
                 account_count,
                 enabled_account_count,
                 models: models.into_iter().take(256).collect(),

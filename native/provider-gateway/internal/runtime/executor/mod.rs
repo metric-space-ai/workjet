@@ -3,6 +3,7 @@
 
 pub mod aistudio_executor;
 pub mod antigravity_executor;
+pub mod api_key_transport;
 pub mod antigravity_executor_auth;
 pub mod antigravity_executor_credits;
 pub mod antigravity_executor_execute;
@@ -313,6 +314,11 @@ pub use gemini_executor::{GeminiExecutor, GeminiExecutorConfig, GeminiExecutorEr
 pub use gemini_vertex_executor::{
     GeminiVertexExecutor, VertexAccessTokenProvider, VertexExecutorError,
 };
+pub use api_key_transport::{
+    ApiKeyTransportBuildError, ApiKeyTransportFailure, API_KEY_MAX_RESPONSE_BYTES,
+};
+#[cfg(feature = "api-key-http-transport")]
+pub use api_key_transport::ApiKeyHttpClient;
 pub use openai_compat_executor::{
     normalize_openai_tool_results_text_only, openai_compat_image_endpoint_path,
     prepare_openai_compat_images_payload, rewrite_openai_compat_images_multipart_payload,

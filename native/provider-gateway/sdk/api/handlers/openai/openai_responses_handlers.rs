@@ -2,7 +2,7 @@
 // Port-Status: adapted_to_ctox
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -21,6 +21,8 @@ use crate::internal::translator::claude::openai::responses::{
     convert_openai_responses_request_to_claude, ClaudeResponsesStreamDecoder,
 };
 use crate::sdk::translator::TranslationContext;
+
+use super::openai_responses_api_key_handlers::OpenAiResponsesApiKeyHandler;
 
 /// First executable `/v1/responses` vertical slice.
 ///
@@ -341,6 +343,9 @@ pub struct OpenAiResponsesProviderRouter {
     claude: Option<Arc<OpenAiResponsesClaudeHandler>>,
     codex: Option<Arc<OpenAiResponsesCodexHandler>>,
     antigravity: Option<Arc<OpenAiResponsesAntigravityHandler>>,
+    /// API-key provider handlers, keyed by the lowercase provider name. Still
+    /// an allow-list: a provider only routes when it has a handler here.
+    api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>>,
 }
 
 impl OpenAiResponsesProviderRouter {
@@ -350,12 +355,41 @@ impl OpenAiResponsesProviderRouter {
         codex: Option<Arc<OpenAiResponsesCodexHandler>>,
         antigravity: Option<Arc<OpenAiResponsesAntigravityHandler>>,
     ) -> Result<Self, ProviderRouterError> {
+        Self::with_api_key_handlers(
+            default_provider,
+            claude,
+            codex,
+            antigravity,
+            BTreeMap::new(),
+        )
+    }
+
+    /// Same allow-list router, additionally serving API-key provider pools.
+    pub fn with_api_key_handlers(
+        default_provider: impl Into<String>,
+        claude: Option<Arc<OpenAiResponsesClaudeHandler>>,
+        codex: Option<Arc<OpenAiResponsesCodexHandler>>,
+        antigravity: Option<Arc<OpenAiResponsesAntigravityHandler>>,
+        api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>>,
+    ) -> Result<Self, ProviderRouterError> {
         let default_provider = default_provider.into().trim().to_ascii_lowercase();
+        let api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>> = api_key
+            .into_iter()
+            .map(|(provider, handler)| (provider.trim().to_ascii_lowercase(), handler))
+            .collect();
+        // A handler filed under a name other than its own pool's provider
+        // would silently route one provider's traffic to another's credential.
+        if api_key
+            .iter()
+            .any(|(provider, handler)| handler.provider() != provider)
+        {
+            return Err(ProviderRouterError::Configuration);
+        }
         let configured = match default_provider.as_str() {
             "claude" => claude.is_some(),
             "codex" => codex.is_some(),
             "antigravity" => antigravity.is_some(),
-            _ => false,
+            other => api_key.contains_key(other),
         };
         if !configured {
             return Err(ProviderRouterError::Configuration);
@@ -365,6 +399,7 @@ impl OpenAiResponsesProviderRouter {
             claude,
             codex,
             antigravity,
+            api_key,
         })
     }
 }
@@ -389,6 +424,8 @@ impl OpenAiResponsesRouteHandler for OpenAiResponsesProviderRouter {
                 if let Some(handler) = self.antigravity.as_ref() {
                     return handler.handle_route(body).await;
                 }
+            } else if let Some(handler) = self.api_key.get(&provider.to_ascii_lowercase()) {
+                return handler.handle_route(body).await;
             }
             OpenAiResponsesRouteResponse::Buffered(OpenAiResponsesHttpResponse::error(
                 400,
@@ -409,6 +446,7 @@ impl std::fmt::Debug for OpenAiResponsesProviderRouter {
                 "antigravity",
                 &self.antigravity.as_ref().map(|_| "configured"),
             )
+            .field("api_key", &self.api_key.keys().collect::<Vec<_>>())
             .finish()
     }
 }
@@ -439,6 +477,9 @@ pub enum OpenAiResponsesRouteResponse {
     Stream(Box<OpenAiResponsesStreamBootstrap>),
     CodexStream(Box<OpenAiResponsesCodexStream>),
     AntigravityStream(Box<OpenAiResponsesAntigravityStream>),
+    /// Stream from an API-key provider pool (see
+    /// `openai_responses_api_key_handlers`).
+    ApiKeyStream(Box<super::openai_responses_api_key_handlers::OpenAiResponsesApiKeyStream>),
 }
 
 pub struct OpenAiResponsesAntigravityStream {

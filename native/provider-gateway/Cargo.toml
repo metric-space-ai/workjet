@@ -10,10 +10,16 @@ autoexamples = false
 path = "lib.rs"
 
 [features]
-default = ["anthropic-fingerprint-transport", "codex-http-transport", "antigravity-http-transport"]
+default = [
+  "anthropic-fingerprint-transport",
+  "codex-http-transport",
+  "antigravity-http-transport",
+  "api-key-http-transport",
+]
 anthropic-fingerprint-transport = ["dep:wreq", "dep:wreq-util", "wreq/stream"]
 codex-http-transport = ["dep:wreq", "dep:wreq-util", "wreq/stream"]
 antigravity-http-transport = ["dep:wreq", "dep:wreq-util", "wreq/stream"]
+api-key-http-transport = ["dep:wreq", "wreq/stream"]
 
 [[bin]]
 name = "cliproxy-differential"
@@ -73,14 +79,29 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rsa = { version = "0.9", features = ["pem"] }
 sha2 = "0.10"
 subtle = "2"
-tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "sync", "test-util", "time"] }
+tokio = { version = "1", features = [
+  "io-util",
+  "macros",
+  "net",
+  "process",
+  "rt",
+  "sync",
+  "test-util",
+  "time",
+] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 tokio-tungstenite = "0.28"
 tiktoken-rs = "0.12"
 url = "2"
 uuid = { version = "1", features = ["v4", "v5"] }
-wreq = { version = "6.0.0-rc.29", default-features = false, features = ["tokio-rt", "webpki-roots"], optional = true }
-wreq-util = { version = "3.0.0-rc.14", default-features = false, features = ["emulation", "tokio-rt"], optional = true }
+wreq = { version = "6.0.0-rc.29", default-features = false, features = [
+  "tokio-rt",
+  "webpki-roots",
+], optional = true }
+wreq-util = { version = "3.0.0-rc.14", default-features = false, features = [
+  "emulation",
+  "tokio-rt",
+], optional = true }
 webpki-roots = "1"
 weezl = "0.1"
 zeroize = "1.8"

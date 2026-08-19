@@ -4,6 +4,7 @@
 mod codex_client_models;
 mod openai_handlers;
 mod openai_images_handlers;
+pub mod openai_responses_api_key_handlers;
 pub mod openai_responses_handlers;
 mod openai_responses_websocket;
 mod openai_responses_websocket_forward;

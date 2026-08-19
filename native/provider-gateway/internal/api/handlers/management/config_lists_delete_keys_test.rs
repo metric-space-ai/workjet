@@ -63,6 +63,7 @@ fn service() -> (Arc<Store>, ManagementConfigService) {
         claude_accounts: vec![account("claude-a"), account("claude-b")],
         codex_accounts: Vec::new(),
         antigravity_accounts: Vec::new(),
+        api_key_accounts: Vec::new(),
     })));
     let service = ManagementConfigService::new(store.clone());
     (store, service)

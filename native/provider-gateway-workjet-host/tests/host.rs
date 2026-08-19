@@ -58,6 +58,7 @@ fn config(root: &std::path::Path) -> HostConfig {
                 proxy_url_secret: None,
             }],
             antigravity_accounts: Vec::new(),
+            api_key_accounts: Vec::new(),
         },
     }
 }
@@ -605,4 +606,193 @@ fn rejects_a_named_default_provider_that_has_no_enabled_account() {
         config.validate().err().unwrap(),
         workjet_provider_gateway_host::config::HostConfigError::InvalidDefaultProvider
     );
+}
+
+// --- API-key provider accounts ---------------------------------------------
+//
+// An API-key account is an account whose only credential is a user-pasted key
+// held in the host secret store. These tests pin the three properties that
+// matter at host level: the configuration decodes and validates, the key never
+// leaves the secret store through any serialized surface, and the host boots
+// and routes with an API-key provider as the default provider.
+
+const API_KEY_VALUE: &str = "test-not-a-real-api-key-0000";
+
+/// A provider-endpoint POST with a real JSON body. Provider selection is the
+/// `X-CTOX-Provider` header, not the model name. The request deliberately
+/// carries a client `Authorization` header: the gateway must never forward it.
+async fn provider_post(address: SocketAddr, provider: &str, body: &[u8]) -> String {
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    let head = format!(
+        "POST /v1/responses HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nX-CTOX-Provider: {provider}\r\nAuthorization: Bearer client-token-not-real\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream.write_all(body).await.unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    String::from_utf8_lossy(&response).into_owned()
+}
+
+fn api_key_account(
+    id: &str,
+    provider: &str,
+) -> workjet_provider_gateway::internal::config::ApiKeyAccountConfig {
+    workjet_provider_gateway::internal::config::ApiKeyAccountConfig {
+        id: id.to_owned(),
+        provider: provider.to_owned(),
+        disabled: false,
+        priority: 5,
+        weight: 1,
+        models: vec![format!("{provider}-test-model")],
+        api_key_secret: secret(&format!("{id}.api-key")),
+        upstream_base_url: String::new(),
+        proxy_url_secret: None,
+    }
+}
+
+fn api_key_config(root: &std::path::Path, provider: &str) -> HostConfig {
+    let mut config = config(root);
+    config.default_provider = Some(provider.to_owned());
+    config.runtime.codex_accounts = Vec::new();
+    config.runtime.api_key_accounts = vec![api_key_account(&format!("{provider}-1"), provider)];
+    config
+}
+
+#[test]
+fn every_api_key_provider_is_an_acceptable_default_provider() {
+    let root = tempfile::tempdir().unwrap();
+    for provider in workjet_provider_gateway::internal::config::API_KEY_PROVIDERS {
+        assert!(
+            api_key_config(root.path(), provider).validate().is_ok(),
+            "{provider} must validate as a default provider"
+        );
+    }
+    // A provider outside the allow-list is still refused.
+    let mut unsupported = api_key_config(root.path(), "zai");
+    unsupported.default_provider = Some("openrouter".to_owned());
+    assert_eq!(
+        unsupported.validate().err().unwrap(),
+        workjet_provider_gateway_host::config::HostConfigError::InvalidDefaultProvider
+    );
+    // Naming an API-key provider that has no enabled account still fails.
+    // A configuration whose only account is disabled fails in the portable
+    // runtime validation (`NoEnabledAccounts`), exactly as for an OAuth
+    // provider, so the host reports it as an invalid runtime.
+    let mut disabled = api_key_config(root.path(), "xai");
+    disabled.runtime.api_key_accounts[0].disabled = true;
+    assert_eq!(
+        disabled.validate().err().unwrap(),
+        workjet_provider_gateway_host::config::HostConfigError::InvalidRuntime
+    );
+}
+
+#[test]
+fn an_api_key_account_only_ever_carries_a_secret_reference_in_its_configuration() {
+    let root = tempfile::tempdir().unwrap();
+    let serialized = serde_json::to_string(&api_key_config(root.path(), "zai")).unwrap();
+    assert!(serialized.contains("zai-1.api-key"));
+    assert!(!serialized.contains(API_KEY_VALUE));
+    assert!(!serialized.to_ascii_lowercase().contains("bearer"));
+}
+
+#[test]
+fn an_api_key_secret_reference_outside_the_gateway_scope_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let mut config = api_key_config(root.path(), "kimi");
+    config.runtime.api_key_accounts[0].api_key_secret =
+        workjet_provider_gateway::internal::config::RuntimeSecretRef {
+            scope: "some-other-scope".to_owned(),
+            name: "kimi.api-key".to_owned(),
+        };
+    assert_eq!(
+        config.validate().err().unwrap(),
+        workjet_provider_gateway_host::config::HostConfigError::InvalidSecretReference
+    );
+}
+
+#[tokio::test]
+async fn a_missing_api_key_secret_fails_startup_before_anything_binds() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+    // The api-key secret is deliberately not written.
+    let error = workjet_provider_gateway_host::start(
+        api_key_config(root.path(), "minimax").validate().unwrap(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert_eq!(error, workjet_provider_gateway_host::HostError::Secret);
+}
+
+#[tokio::test]
+async fn boots_with_an_api_key_provider_as_default_and_never_serves_the_key() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+    write_secret(root.path(), "zai-1.api-key", API_KEY_VALUE.as_bytes());
+
+    let mut host =
+        workjet_provider_gateway_host::start(api_key_config(root.path(), "zai").validate().unwrap())
+            .await
+            .unwrap();
+    let key = "07".repeat(32);
+    let address = host.management_address();
+    assert_eq!(host.readiness().phase, "ready");
+
+    let status =
+        management_request(address, "GET", "/v0/management/runtime-status", Some(&key)).await;
+    let payload: serde_json::Value = serde_json::from_str(body_of(&status)).unwrap();
+    assert_eq!(payload["main_responses_gateway"]["phase"], "ready");
+    assert_eq!(payload["active_provider"], "zai");
+
+    // The runtime summary lists the API-key provider exactly like an OAuth one.
+    let summary =
+        management_request(address, "GET", "/v0/management/runtime-config", Some(&key)).await;
+    let payload: serde_json::Value = serde_json::from_str(body_of(&summary)).unwrap();
+    let providers = payload["providers"].as_array().unwrap();
+    assert_eq!(providers.len(), 1);
+    assert_eq!(providers[0]["provider"], "zai");
+    assert_eq!(providers[0]["account_count"], 1);
+    assert_eq!(providers[0]["enabled_account_count"], 1);
+    assert_eq!(providers[0]["models"][0], "zai-test-model");
+
+    // No management surface renders the key.
+    assert!(!format!("{status}{summary}").contains(API_KEY_VALUE));
+
+    // The provider endpoint is routing (it no longer refuses as a bootstrap
+    // host), and the model catalog carries the api-key provider's model.
+    let models = management_request(host.provider_address(), "GET", "/v1/models", None).await;
+    assert!(models.starts_with("HTTP/1.1 200"), "{models}");
+    assert!(models.contains("zai-test-model"), "{models}");
+    assert!(!models.contains(API_KEY_VALUE));
+
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn routes_only_the_configured_api_key_providers() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+    write_secret(root.path(), "xai-1.api-key", API_KEY_VALUE.as_bytes());
+
+    let mut host =
+        workjet_provider_gateway_host::start(api_key_config(root.path(), "xai").validate().unwrap())
+            .await
+            .unwrap();
+    // A provider with no account configured is refused by the allow-list
+    // router rather than falling through to another provider's credential.
+    let refused = provider_post(
+        host.provider_address(),
+        "minimax",
+        br#"{"model":"minimax-test-model","input":"hi"}"#,
+    )
+    .await;
+    assert!(refused.starts_with("HTTP/1.1 400"), "{refused}");
+    assert!(body_of(&refused).contains("requested provider is not configured"));
+    assert!(!refused.contains(API_KEY_VALUE));
+
+    host.shutdown().await.unwrap();
 }

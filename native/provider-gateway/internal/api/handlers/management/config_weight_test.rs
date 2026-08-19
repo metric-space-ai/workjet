@@ -66,6 +66,7 @@ fn config() -> CliproxyRuntimeConfig {
         claude_accounts: vec![account(1)],
         codex_accounts: Vec::new(),
         antigravity_accounts: Vec::new(),
+        api_key_accounts: Vec::new(),
     }
 }
 

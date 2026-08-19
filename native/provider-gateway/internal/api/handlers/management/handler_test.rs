@@ -102,6 +102,7 @@ fn runtime_config() -> CliproxyRuntimeConfig {
         }],
         codex_accounts: Vec::new(),
         antigravity_accounts: Vec::new(),
+        api_key_accounts: Vec::new(),
     }
 }
 

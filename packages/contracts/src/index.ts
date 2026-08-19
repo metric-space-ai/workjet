@@ -21,6 +21,7 @@ export * from "./sourceControl.ts";
 export * from "./pullRequest.ts";
 export * from "./orchestration.ts";
 export * from "./workjet.ts";
+export * from "./workjetMailbox.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
 export * from "./t3ProjectFile.ts";

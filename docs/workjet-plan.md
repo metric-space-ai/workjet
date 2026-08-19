@@ -806,9 +806,21 @@ failed | cancelled | expired`. Done in the same commit
       checked before dedup), the enforced delegation state machine (single
       transaction, no TOCTOU; `running → completed` legal for zero-review-round
       budgets), a one-transaction expiry sweep, and corrupt-row surfacing as
-      typed errors (19 focused tests). Still open before ticking: wiring the
-      store into the server layer graph and emitting the thread-visible
-      message/delegation events through the orchestration event store.
+      typed errors (19 focused tests). Progress 2026-08-19, slice 3
+      (commit `837331d58`): the store is wired into the server routes layer,
+      `WorkjetMailboxDelivery` implements the same-environment local fast path
+      (enqueue → idempotent inbound → delivered receipt; cross-environment
+      sends stay pending outbound; duplicate envelopes skip delegation
+      effects — exactly-once effects under at-least-once delivery), and
+      thread-visible durable traces ride the existing
+      `thread.activity-appended` event as four `workjet.message/delegation.*`
+      activity kinds with payload-material canary tests. MCP tools
+      `workjet_send_message` and `workjet_delegate_task` are registered
+      orchestrator-scoped (least privilege until the reply/ACL items land).
+      Envelopes carry a documented unsigned-sentinel signature that the
+      transport slice MUST replace and reject inbound. Still open before
+      ticking: envelope signing, prompt-snapshot production, and the mesh
+      identity service (workspace id is caller-supplied today).
 - [ ] Replicate the per-machine durable mailboxes and the redacted activity
       projection over the CTOX Sync WebRTC data plane between the user's own
       machines (primary transport per the 2026-08-18 owner decision), joined

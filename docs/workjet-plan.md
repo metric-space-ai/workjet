@@ -852,6 +852,25 @@ failed | cancelled | expired`. Done in the same commit
       outbox/inbox semantics: envelope signature verification, idempotent
       insertion, and delegation effects all stay in the Workjet mailbox store.
       The daemon treats envelope payloads as opaque bounded blobs.
+      Progress 2026-08-19: both sides are implemented. CTOX rc-branch commit
+      `9518d2ae0` adds the replicated `workjet_mailbox_envelopes` collection
+      (bounds/charset validation only, payload ceiling 200 000 B derived from
+      the real 262 144-B replication chunk budget, tombstoning expiry sweep)
+      plus the authenticated loopback publish/pending/consumed routes on the
+      MCP-channel listener, landed line-count-neutrally against the exact
+      module-size ratchets. Workjet commits `062922610` + `c6f0e0f3d` add
+      migration 043 (peer-key pinning) and `WorkjetMailboxTransport`: 10-s
+      jittered poll loop that idles cleanly until descriptor+token resolve
+      (token via CTOX's first-class `ctox secret get
+    business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
+      pending outbound with the existing backoff-to-dead-letter, pulls and
+      verifies inbound (signature against the sender key with TOFU key
+      continuity as the DOCUMENTED interim until CTOX-room-derived identity
+      binding; poison envelopes consumed, never looped), and reuses the local
+      fast path's delegation semantics via a shared helper. Still open: the
+      real two-instance replication proof, inbound thread-activity traces,
+      in-cycle cursor following for >50 backlogs, payload sealing, and the
+      key-rotation path.
 - [ ] Add the typed thread-handoff contract and flow (immutable prompt/context
       snapshot, bounded artifact references, pushed or sync-bundled Git branch,
       durable source-thread link); the target machine continues in a new

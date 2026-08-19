@@ -11,9 +11,9 @@ import pinnedManifestJson from "../../apps/desktop/resources/ctox/business-os-sh
 
 export const CTOX_BUSINESS_OS_SHELL_SCHEMA = "ctox.business-os-shell.v1";
 export const CTOX_BUSINESS_OS_SHELL_MANIFEST_URL =
-  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.11/ctox-business-os-shell-0.1.0-rc.11.manifest.json";
+  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.12/ctox-business-os-shell-0.1.0-rc.12.manifest.json";
 export const CTOX_BUSINESS_OS_SHELL_ARCHIVE_URL =
-  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.11/ctox-business-os-shell-0.1.0-rc.11.tar.gz";
+  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.12/ctox-business-os-shell-0.1.0-rc.12.tar.gz";
 export const CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT_ENV =
   "T3CODE_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT";
 export const CTOX_BUSINESS_OS_SHELL_EMBEDDED_MANIFEST = "ctox-shell-manifest.json";

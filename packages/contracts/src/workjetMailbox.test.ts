@@ -23,6 +23,8 @@ import {
   WorkjetMailboxPayload,
   WorkjetMailboxReplyRpcInput,
   WorkjetMailboxReplyRpcResult,
+  WorkjetMailboxReassignDelegationRpcInput,
+  WorkjetMailboxReassignDelegationRpcResult,
   WorkjetMailboxRequestReviewRpcInput,
   WorkjetMailboxRequestReviewRpcResult,
   WorkjetMailboxSendMessageRpcInput,
@@ -937,6 +939,9 @@ describe("Workjet mailbox RPC contracts", () => {
   const decodeUpdateInput = Schema.decodeUnknownSync(WorkjetMailboxUpdateDelegationRpcInput);
   const encodeUpdateInput = Schema.encodeSync(WorkjetMailboxUpdateDelegationRpcInput);
   const decodeUpdateResult = Schema.decodeUnknownSync(WorkjetMailboxUpdateDelegationRpcResult);
+  const decodeReassignInput = Schema.decodeUnknownSync(WorkjetMailboxReassignDelegationRpcInput);
+  const encodeReassignInput = Schema.encodeSync(WorkjetMailboxReassignDelegationRpcInput);
+  const decodeReassignResult = Schema.decodeUnknownSync(WorkjetMailboxReassignDelegationRpcResult);
 
   const replyInput = {
     sourceThreadId: "thread-orchestrator",
@@ -1017,6 +1022,33 @@ describe("Workjet mailbox RPC contracts", () => {
     expect(decodeUpdateResult(update)).toEqual(update);
     const cancel = { schemaVersion: V, delegationId, state: "cancelled" } as const;
     expect(decodeUpdateResult(cancel)).toEqual(cancel);
+  });
+
+  it("round-trips a reassignment input, with and without an explicit workspace", () => {
+    const reassign = {
+      sourceThreadId: "thread-orchestrator",
+      targetEnvironmentId: "environment-a",
+      targetThreadId: "thread-second-worker",
+      delegationId,
+    } as const;
+    expect(encodeReassignInput(decodeReassignInput(reassign))).toEqual(reassign);
+    const qualified = { ...reassign, targetWorkspaceId: "ctox-business-os:mesh-alpha" } as const;
+    expect(encodeReassignInput(decodeReassignInput(qualified))).toEqual(qualified);
+    // The target address is required: a reassignment without one is not a move.
+    expect(() =>
+      decodeReassignInput({ sourceThreadId: "thread-orchestrator", delegationId }),
+    ).toThrow();
+  });
+
+  it("round-trips the reassignment result with its unchanged state", () => {
+    const result = {
+      schemaVersion: V,
+      delegationId,
+      state: "needs-input",
+      targetEnvironmentId: "environment-a",
+      targetThreadId: "thread-second-worker",
+    } as const;
+    expect(decodeReassignResult(result)).toEqual(result);
   });
 });
 

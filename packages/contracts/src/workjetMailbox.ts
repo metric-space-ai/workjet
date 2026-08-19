@@ -1003,6 +1003,41 @@ export type WorkjetMailboxUpdateDelegationRpcResult =
   typeof WorkjetMailboxUpdateDelegationRpcResult.Type;
 
 /**
+ * ADDITIVE Wave-5 write: move a still-pending delegation to a DIFFERENT local
+ * target thread.
+ *
+ * It is deliberately NOT a variant of {@link WorkjetMailboxDelegationUpdateRpcInput}:
+ * an update carries no address and changes only lifecycle state, whereas a
+ * reassignment carries a full target address and changes no state at all. The
+ * server refuses a target in another environment (`unknown-target` — this
+ * machine cannot host that thread) and, through the store's transition table,
+ * refuses anything that is not `delivered`/`needs-input`
+ * (`invalid-state-transition`), so a running or finished task can never be
+ * restarted on a second thread.
+ */
+export const WorkjetMailboxReassignDelegationRpcInput = Schema.Struct({
+  ...WorkjetMailboxRpcAddressFields,
+  delegationId: WorkjetDelegationId,
+});
+export type WorkjetMailboxReassignDelegationRpcInput =
+  typeof WorkjetMailboxReassignDelegationRpcInput.Type;
+
+/**
+ * The durable outcome: the unchanged lifecycle state plus the address the
+ * delegation now points at, so a client can confirm the move landed without a
+ * second read. Ids only — never prompt, scope, or artifact material.
+ */
+export const WorkjetMailboxReassignDelegationRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  delegationId: WorkjetDelegationId,
+  state: WorkjetDelegationState,
+  targetEnvironmentId: EnvironmentId,
+  targetThreadId: ThreadId,
+});
+export type WorkjetMailboxReassignDelegationRpcResult =
+  typeof WorkjetMailboxReassignDelegationRpcResult.Type;
+
+/**
  * Redacted, bounded thread-activity payload written for every mailbox event
  * (`workjet.message.sent|received`, `workjet.delegation.sent|received`).
  *

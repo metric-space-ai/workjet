@@ -1646,6 +1646,10 @@ function ChatViewContent(props: ChatViewProps) {
     serverEnvironment.updateDelegationWorkjetMailbox,
     { reportFailure: false },
   );
+  const reassignDelegationWorkjetMailbox = useAtomCommand(
+    serverEnvironment.reassignDelegationWorkjetMailbox,
+    { reportFailure: false },
+  );
   // The mesh roster feeds the send-to-worker recipient picker; queried only
   // while an orchestrator thread is active so ordinary threads pay nothing.
   const workjetMeshRosterQuery = useEnvironmentQuery(
@@ -1743,8 +1747,11 @@ function ChatViewContent(props: ChatViewProps) {
   // re-render carries the resulting state back through the normal
   // subscription, so nothing here holds optimistic state.
   const onWorkjetDelegationAction = useCallback(
-    (action: WorkjetDelegationAction, model: WorkjetMailboxCardModel): void => {
-      if (!activeThreadEnvironmentId || !activeThreadId || model.delegationId === null) return;
+    async (
+      action: WorkjetDelegationAction,
+      model: WorkjetMailboxCardModel,
+    ): Promise<string | null> => {
+      if (!activeThreadEnvironmentId || !activeThreadId || model.delegationId === null) return null;
       const environmentId = activeThreadEnvironmentId;
       const sourceThreadId = activeThreadId;
       const delegationId = model.delegationId;
@@ -1754,15 +1761,28 @@ function ChatViewContent(props: ChatViewProps) {
         targetEnvironmentId: model.peerEnvironmentId,
         targetThreadId: model.peerThreadId,
       } as const;
-      void (async () => {
-        switch (action.kind) {
-          case "reply":
+      // Only a REFUSAL needs reporting: a success re-renders the card through
+      // the ordinary thread subscription, and an interrupted command is not a
+      // refusal at all.
+      const refusal = (result: unknown): string | null =>
+        typeof result === "object" &&
+        result !== null &&
+        "_tag" in result &&
+        (result as { readonly _tag: string })._tag === "Failure"
+          ? isAtomCommandInterrupted(result as never)
+            ? null
+            : workjetMailboxFailureMessage(squashAtomCommandFailure(result as never))
+          : null;
+      switch (action.kind) {
+        case "reply":
+          return refusal(
             await replyWorkjetMailbox({
               environmentId,
               input: { ...address, delegationId, body: { _tag: "inline", text: action.text } },
-            });
-            return;
-          case "request-review":
+            }),
+          );
+        case "request-review":
+          return refusal(
             await requestReviewWorkjetMailbox({
               environmentId,
               input: {
@@ -1771,15 +1791,61 @@ function ChatViewContent(props: ChatViewProps) {
                 round: action.round,
                 body: { _tag: "inline", text: action.text },
               },
-            });
-            return;
-          case "cancel":
+            }),
+          );
+        case "follow-up": {
+          // The update RPC's `follow-up` variant carries no message, so an
+          // optional note travels as an ordinary reply on the same delegation
+          // FIRST — a note that could not be delivered must not be followed by
+          // a state change that silently drops it.
+          const note = action.note.trim();
+          if (note.length > 0) {
+            const noteRefusal = refusal(
+              await replyWorkjetMailbox({
+                environmentId,
+                input: { ...address, delegationId, body: { _tag: "inline", text: note } },
+              }),
+            );
+            if (noteRefusal !== null) return noteRefusal;
+          }
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: { sourceThreadId, delegationId, update: { _tag: "follow-up" } },
+            }),
+          );
+        }
+        case "revise":
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: { sourceThreadId, delegationId, update: { _tag: "revise" } },
+            }),
+          );
+        case "reassign":
+          return refusal(
+            await reassignDelegationWorkjetMailbox({
+              environmentId,
+              input: {
+                sourceThreadId,
+                delegationId,
+                // Reassignment is LOCAL only, so the target is this thread's own
+                // environment and workspace, never the card's peer address.
+                targetWorkspaceId: model.peerWorkspaceId,
+                targetEnvironmentId: environmentId,
+                targetThreadId: action.targetThreadId as ThreadId,
+              },
+            }),
+          );
+        case "cancel":
+          return refusal(
             await updateDelegationWorkjetMailbox({
               environmentId,
               input: { sourceThreadId, delegationId, update: { _tag: "cancel" } },
-            });
-            return;
-          case "approve":
+            }),
+          );
+        case "approve":
+          return refusal(
             await updateDelegationWorkjetMailbox({
               environmentId,
               input: {
@@ -1787,9 +1853,10 @@ function ChatViewContent(props: ChatViewProps) {
                 delegationId,
                 update: { _tag: "review", decision: "approve", round: action.round },
               },
-            });
-            return;
-          case "request-changes":
+            }),
+          );
+        case "request-changes":
+          return refusal(
             await updateDelegationWorkjetMailbox({
               environmentId,
               input: {
@@ -1802,14 +1869,14 @@ function ChatViewContent(props: ChatViewProps) {
                   reasons: action.reasons,
                 },
               },
-            });
-            return;
-        }
-      })();
+            }),
+          );
+      }
     },
     [
       activeThreadEnvironmentId,
       activeThreadId,
+      reassignDelegationWorkjetMailbox,
       replyWorkjetMailbox,
       requestReviewWorkjetMailbox,
       updateDelegationWorkjetMailbox,
@@ -3515,6 +3582,36 @@ function ChatViewContent(props: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
+  // The composer decides whether its footer has collapsed, so it asks for the
+  // control rather than receiving a node: the full footer gets the labelled
+  // variant, the compact footer the icon-only one.
+  const renderWorkjetSendToWorkerControl = useCallback(
+    ({ compact }: { readonly compact: boolean }) =>
+      workjetIsOrchestratorThread ? (
+        <WorkjetSendToWorkerPanel
+          compact={compact}
+          draft={workjetSendDraft}
+          threads={workjetRecipientThreads}
+          roster={workjetMeshRoster}
+          busy={workjetSendBusy}
+          disabled={threadDetailLoading || activeEnvironmentUnavailable}
+          outcome={workjetSendOutcome}
+          onDraftChange={setWorkjetSendDraft}
+          onSubmit={onSubmitWorkjetSend}
+        />
+      ) : null,
+    [
+      activeEnvironmentUnavailable,
+      onSubmitWorkjetSend,
+      threadDetailLoading,
+      workjetIsOrchestratorThread,
+      workjetMeshRoster,
+      workjetRecipientThreads,
+      workjetSendBusy,
+      workjetSendDraft,
+      workjetSendOutcome,
+    ],
+  );
   const handleWorkjetGreppyEnabledChange = useCallback(
     (enabled: boolean) => {
       if (!activeServerThread || !activeThreadKey || !visibleWorkjetConfig) return;
@@ -6568,6 +6665,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenAgents={addAgentsSurface}
                 onOpenThread={onOpenWorkjetPeerThread}
                 onWorkjetDelegationAction={onWorkjetDelegationAction}
+                workjetReassignThreads={workjetRecipientThreads}
                 key={activeThread.id}
                 isWorking={isWorking}
                 workingStepLabel={workingStepLabel}
@@ -6721,20 +6819,7 @@ function ChatViewContent(props: ChatViewProps) {
                                   )
                                 : null
                             }
-                            workjetSendToWorkerControl={
-                              workjetIsOrchestratorThread ? (
-                                <WorkjetSendToWorkerPanel
-                                  draft={workjetSendDraft}
-                                  threads={workjetRecipientThreads}
-                                  roster={workjetMeshRoster}
-                                  busy={workjetSendBusy}
-                                  disabled={threadDetailLoading || activeEnvironmentUnavailable}
-                                  outcome={workjetSendOutcome}
-                                  onDraftChange={setWorkjetSendDraft}
-                                  onSubmit={onSubmitWorkjetSend}
-                                />
-                              ) : null
-                            }
+                            workjetSendToWorkerControl={renderWorkjetSendToWorkerControl}
                             workjetCapabilityBusy={workjetCapabilityBusy}
                             workjetCapabilityDisabled={
                               threadDetailLoading || activeEnvironmentUnavailable

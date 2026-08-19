@@ -99,6 +99,10 @@ const actionCard = (
     readonly actionState?: WorkjetDelegationActionState;
     readonly onDelegationAction?: (action: WorkjetDelegationAction) => void;
     readonly onActionStateChange?: (next: WorkjetDelegationActionState) => void;
+    readonly reassignThreads?: ReadonlyArray<{
+      readonly threadId: string;
+      readonly title: string;
+    }>;
   } = {},
 ) =>
   WorkjetMailboxActivityCard({
@@ -107,7 +111,13 @@ const actionCard = (
     onActionStateChange: extra.onActionStateChange ?? vi.fn(),
     ...(extra.viewerIsReviewer !== undefined ? { viewerIsReviewer: extra.viewerIsReviewer } : {}),
     ...(extra.actionState !== undefined ? { actionState: extra.actionState } : {}),
+    ...(extra.reassignThreads !== undefined ? { reassignThreads: extra.reassignThreads } : {}),
   }) as InspectableElement;
+
+const REASSIGN_THREADS = [
+  { threadId: "thread-second-worker", title: "Second worker" },
+  { threadId: "thread-third-worker", title: "Third worker" },
+] as const;
 
 describe("parseWorkjetMailboxActivity", () => {
   it("covers exactly the four mailbox activity kinds", () => {
@@ -336,18 +346,56 @@ describe("availableDelegationActions", () => {
     );
   });
 
-  it("offers reply, request-review, and cancel while running", () => {
+  it("offers reply, request-review, follow-up, and cancel while running", () => {
     expect(availableDelegationActions(taskModel({ delegationState: "running" }), false)).toEqual([
       "reply",
       "request-review",
+      "follow-up",
       "cancel",
     ]);
   });
 
-  it("drops request-review once the delegation is no longer running", () => {
+  it("drops request-review and follow-up once the delegation is no longer running", () => {
     expect(
       availableDelegationActions(taskModel({ delegationState: "review-requested" }), false),
     ).toEqual(["reply", "cancel"]);
+  });
+
+  it("offers revise only on changes-requested", () => {
+    expect(
+      availableDelegationActions(taskModel({ delegationState: "changes-requested" }), false),
+    ).toEqual(["reply", "revise", "cancel"]);
+    for (const state of ["running", "delivered", "needs-input", "review-requested"] as const) {
+      expect(
+        availableDelegationActions(taskModel({ delegationState: state }), false),
+      ).not.toContain("revise");
+    }
+  });
+
+  it("offers reassign only on the two pending states, and only with local targets", () => {
+    for (const state of ["delivered", "needs-input"] as const) {
+      expect(
+        availableDelegationActions(taskModel({ delegationState: state }), false, {
+          reassignTargetsAvailable: true,
+        }),
+      ).toEqual(["reply", "reassign", "cancel"]);
+      // Without a recipient list there is nowhere to move it to.
+      expect(
+        availableDelegationActions(taskModel({ delegationState: state }), false),
+      ).not.toContain("reassign");
+    }
+    for (const state of [
+      "running",
+      "review-requested",
+      "changes-requested",
+      "completed",
+    ] as const) {
+      expect(
+        availableDelegationActions(taskModel({ delegationState: state }), false, {
+          reassignTargetsAvailable: true,
+        }),
+      ).not.toContain("reassign");
+    }
   });
 
   it("adds the reviewer verdict only on a review-requested card shown to a reviewer", () => {
@@ -488,6 +536,115 @@ describe("WorkjetMailboxActivityCard delegation actions", () => {
       round: 1,
       reasons: ["Add a test", "Fix the typo"],
     });
+  });
+
+  it("dispatches revise immediately without a popover", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard({ delegationState: "changes-requested" }, { onDelegationAction });
+    (findButton(card.props.children, "revise")?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({ kind: "revise" });
+  });
+
+  it("dispatches a follow-up with an empty note when none was typed", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard(
+      { delegationState: "running" },
+      {
+        onDelegationAction,
+        actionState: { ...EMPTY_DELEGATION_ACTION_STATE, open: "follow-up" },
+      },
+    );
+    const submit = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "follow-up",
+    );
+    // The note is optional, so an empty one must not disable the submit.
+    expect(submit?.props.disabled).toBe(false);
+    (submit?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({ kind: "follow-up", note: "" });
+  });
+
+  it("carries the typed follow-up note through to the dispatcher", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard(
+      { delegationState: "running" },
+      {
+        onDelegationAction,
+        actionState: {
+          ...EMPTY_DELEGATION_ACTION_STATE,
+          open: "follow-up",
+          text: "Also check the migration.",
+        },
+      },
+    );
+    const submit = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "follow-up",
+    );
+    (submit?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({
+      kind: "follow-up",
+      note: "Also check the migration.",
+    });
+  });
+
+  it("offers the host's local threads in the reassign popover and dispatches the choice", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard(
+      { delegationState: "needs-input" },
+      {
+        onDelegationAction,
+        reassignThreads: REASSIGN_THREADS,
+        actionState: {
+          ...EMPTY_DELEGATION_ACTION_STATE,
+          open: "reassign",
+          reassignTargetThreadId: "thread-third-worker",
+        },
+      },
+    );
+    const select = descendants(card.props.children).find(
+      (element) => element.props["aria-label"] === "Reassign to thread",
+    );
+    // The same recipient list the send panel uses, one option each plus the
+    // empty placeholder.
+    expect(Children.toArray(select?.props.children).length).toBe(3);
+    const submit = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "reassign",
+    );
+    (submit?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({
+      kind: "reassign",
+      targetThreadId: "thread-third-worker",
+    });
+  });
+
+  it("cannot submit a reassignment before a target thread is chosen", () => {
+    const card = actionCard(
+      { delegationState: "delivered" },
+      {
+        reassignThreads: REASSIGN_THREADS,
+        actionState: { ...EMPTY_DELEGATION_ACTION_STATE, open: "reassign" },
+      },
+    );
+    const submit = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "reassign",
+    );
+    expect(submit?.props.disabled).toBe(true);
+  });
+
+  it("surfaces a bounded refusal reason on the card itself", () => {
+    const card = actionCard(
+      { delegationState: "needs-input" },
+      {
+        reassignThreads: REASSIGN_THREADS,
+        actionState: {
+          ...EMPTY_DELEGATION_ACTION_STATE,
+          error: "That delegation can no longer be moved.",
+        },
+      },
+    );
+    const note = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-action-error"] === true,
+    );
+    expect(textContent(note)).toContain("no longer be moved");
   });
 
   it("hides the reviewer verdict from a non-reviewer on the same card", () => {

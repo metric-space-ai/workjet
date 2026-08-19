@@ -387,6 +387,12 @@ export interface WorkjetSendToWorkerPanelProps {
   readonly roster?: WorkjetMeshRoster | null;
   /** Last thread id used per remote environment. Panel-local memory only. */
   readonly rememberedThreadIds?: Readonly<Record<string, string>>;
+  /**
+   * Narrow-composer rendering. The control keeps its popover and every field
+   * inside it; only the trigger collapses to an icon, exactly as the other
+   * composer controls do once the footer runs out of width.
+   */
+  readonly compact?: boolean;
   readonly busy: boolean;
   readonly disabled?: boolean;
   readonly outcome: WorkjetSendOutcome | null;
@@ -723,28 +729,43 @@ export function WorkjetSendToWorkerPanel(props: WorkjetSendToWorkerPanelProps) {
     },
     [onDraftChange],
   );
-  const content = {
+  return WorkjetSendToWorkerPanelControl({
     ...props,
     rememberedThreadIds: props.rememberedThreadIds ?? rememberedThreadIds,
     onDraftChange: handleDraftChange,
-  } satisfies WorkjetSendToWorkerPanelProps;
+  });
+}
+
+/**
+ * The composer control itself: a trigger plus the popover that holds the whole
+ * panel. It is hook-free and deliberately separate from the stateful wrapper
+ * above, so the two variants can be inspected as plain values.
+ */
+export function WorkjetSendToWorkerPanelControl(props: WorkjetSendToWorkerPanelProps) {
+  const content = props;
+  const compact = props.compact === true;
 
   return (
     <Popover>
       <PopoverTrigger
         disabled={props.disabled === true}
+        data-workjet-send-control-compact={compact ? "true" : "false"}
         render={
           <ComposerControl
             type="button"
-            className="shrink-0 whitespace-nowrap"
+            className={compact ? "shrink-0 px-2" : "shrink-0 whitespace-nowrap"}
             aria-label="Send to worker"
           />
         }
       >
         <ComposerControlIcon icon={SendHorizonalIcon} />
-        <span className="sr-only sm:not-sr-only">Send to worker</span>
+        {/*
+         * Compact keeps the accessible name and drops only the visible one, so
+         * the control never becomes an unlabelled icon for a screen reader.
+         */}
+        <span className={compact ? "sr-only" : "sr-only sm:not-sr-only"}>Send to worker</span>
       </PopoverTrigger>
-      <PopoverPopup align="start" className="w-96">
+      <PopoverPopup align="start" className={compact ? "w-80" : "w-96"}>
         <WorkjetSendToWorkerPanelContent {...content} />
       </PopoverPopup>
     </Popover>

@@ -12,10 +12,13 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
   ArrowDownLeftIcon,
+  ArrowRightLeftIcon,
   ArrowUpRightIcon,
   CheckIcon,
+  CornerDownRightIcon,
   MessageSquareIcon,
   RotateCcwIcon,
+  RotateCwIcon,
   XIcon,
 } from "lucide-react";
 
@@ -169,12 +172,16 @@ export function shortEnvironmentId(environmentId: string): string {
 
 /**
  * The bounded lifecycle operations a delegation card can offer. `reply`,
- * `request-review`, and `cancel` are the delegating side's; `approve` and
- * `request-changes` are a reviewer's verdict on a review-requested delegation.
+ * `request-review`, `follow-up`, `revise`, `reassign`, and `cancel` are the
+ * delegating side's; `approve` and `request-changes` are a reviewer's verdict
+ * on a review-requested delegation.
  */
 export type WorkjetDelegationActionKind =
   | "reply"
   | "request-review"
+  | "follow-up"
+  | "revise"
+  | "reassign"
   | "cancel"
   | "approve"
   | "request-changes";
@@ -183,6 +190,16 @@ export type WorkjetDelegationActionKind =
 export type WorkjetDelegationAction =
   | { readonly kind: "reply"; readonly text: string }
   | { readonly kind: "request-review"; readonly round: number; readonly text: string }
+  /**
+   * `follow-up` is a pure STATE operation server-side (`running → needs-input`
+   * plus a `follows-up` edge) — the update RPC carries no message. The optional
+   * note is therefore the card's own addition, dispatched as an ordinary reply
+   * on the same delegation BEFORE the state operation; an empty note sends the
+   * plain state operation alone.
+   */
+  | { readonly kind: "follow-up"; readonly note: string }
+  | { readonly kind: "revise" }
+  | { readonly kind: "reassign"; readonly targetThreadId: string }
   | { readonly kind: "cancel" }
   | { readonly kind: "approve"; readonly round: number }
   | {
@@ -195,11 +212,28 @@ const TERMINAL_DELEGATION_STATE_SET: ReadonlySet<WorkjetDelegationState> = new S
   WORKJET_TERMINAL_DELEGATION_STATES,
 );
 
+/** Extra availability facts the state alone cannot decide. */
+export interface WorkjetDelegationActionAvailability {
+  /**
+   * Whether the host wired a local recipient list for "Reassign…". Without one
+   * there is nowhere to move the delegation to, so the action is not offered —
+   * a display-only host stays display-only.
+   */
+  readonly reassignTargetsAvailable?: boolean;
+}
+
 /**
  * Which lifecycle actions a delegation card offers for its current state.
  *
  * - Reply is always available on a delegation card.
- * - Request review is offered only while the delegation is `running`.
+ * - Request review and Follow up are offered only while the delegation is
+ *   `running` — follow-up is the `running → needs-input` transition, so no
+ *   other state admits it.
+ * - Revise is offered only on `changes-requested`, the one state its
+ *   `changes-requested → running` transition starts from.
+ * - Reassign is offered only on the two still-pending states the store lets
+ *   move (`delivered`, `needs-input`) and only when the host supplied local
+ *   recipients.
  * - Cancel is offered while the delegation is non-terminal.
  * - Approve / Request changes are a reviewer's verdict, offered only on a
  *   `review-requested` delegation shown to a reviewer.
@@ -209,11 +243,19 @@ const TERMINAL_DELEGATION_STATE_SET: ReadonlySet<WorkjetDelegationState> = new S
 export function availableDelegationActions(
   model: Pick<WorkjetMailboxCardModel, "kind" | "delegationId" | "delegationState">,
   viewerIsReviewer: boolean,
+  availability: WorkjetDelegationActionAvailability = {},
 ): ReadonlyArray<WorkjetDelegationActionKind> {
   if (model.kind !== "task" || model.delegationId === null) return [];
   const state = model.delegationState;
   const actions: WorkjetDelegationActionKind[] = ["reply"];
-  if (state === "running") actions.push("request-review");
+  if (state === "running") actions.push("request-review", "follow-up");
+  if (state === "changes-requested") actions.push("revise");
+  if (
+    availability.reassignTargetsAvailable === true &&
+    (state === "delivered" || state === "needs-input")
+  ) {
+    actions.push("reassign");
+  }
   if (state !== null && !TERMINAL_DELEGATION_STATE_SET.has(state)) actions.push("cancel");
   if (state === "review-requested" && viewerIsReviewer) {
     actions.push("approve", "request-changes");
@@ -235,6 +277,14 @@ export interface WorkjetDelegationActionState {
   readonly round: number;
   /** Newline-separated reasons for a request-changes verdict. */
   readonly reasons: string;
+  /** The local thread id chosen in the "Reassign…" popover. */
+  readonly reassignTargetThreadId: string;
+  /**
+   * The bounded refusal reason from the last dispatch, or `null`. Refusals are
+   * shown ON the card because that is where the action was taken; a success
+   * needs no note, since the durable re-render already carries the new state.
+   */
+  readonly error: string | null;
 }
 
 export const EMPTY_DELEGATION_ACTION_STATE: WorkjetDelegationActionState = {
@@ -242,6 +292,8 @@ export const EMPTY_DELEGATION_ACTION_STATE: WorkjetDelegationActionState = {
   text: "",
   round: 1,
   reasons: "",
+  reassignTargetThreadId: "",
+  error: null,
 };
 
 /** Split a reasons textarea into bounded, non-blank lines. */
@@ -255,6 +307,9 @@ export function parseDelegationReasons(reasons: string): ReadonlyArray<string> {
 const ACTION_LABEL: Record<WorkjetDelegationActionKind, string> = {
   reply: "Reply",
   "request-review": "Request review",
+  "follow-up": "Follow up",
+  revise: "Revise",
+  reassign: "Reassign…",
   cancel: "Cancel",
   approve: "Approve",
   "request-changes": "Request changes",
@@ -263,13 +318,24 @@ const ACTION_LABEL: Record<WorkjetDelegationActionKind, string> = {
 const ACTION_ICON: Record<WorkjetDelegationActionKind, typeof MessageSquareIcon> = {
   reply: MessageSquareIcon,
   "request-review": RotateCcwIcon,
+  "follow-up": CornerDownRightIcon,
+  revise: RotateCwIcon,
+  reassign: ArrowRightLeftIcon,
   cancel: XIcon,
   approve: CheckIcon,
   "request-changes": RotateCcwIcon,
 };
 
-/** Actions that dispatch straight away; the rest open an inline popover first. */
-const IMMEDIATE_ACTIONS: ReadonlySet<WorkjetDelegationActionKind> = new Set(["cancel", "approve"]);
+/**
+ * Actions that dispatch straight away; the rest open an inline popover first.
+ * `revise` joins them because its RPC variant carries no fields at all — a
+ * popover would ask for nothing.
+ */
+const IMMEDIATE_ACTIONS: ReadonlySet<WorkjetDelegationActionKind> = new Set([
+  "cancel",
+  "approve",
+  "revise",
+]);
 
 export interface WorkjetMailboxActivityCardProps {
   readonly model: WorkjetMailboxCardModel;
@@ -296,6 +362,15 @@ export interface WorkjetMailboxActivityCardProps {
   readonly onDelegationAction?: (action: WorkjetDelegationAction) => void;
   /** Disables the action controls while a dispatch is in flight. */
   readonly actionsBusy?: boolean;
+  /**
+   * The local threads a delegation may be reassigned to — the SAME list the
+   * send-to-worker panel offers as recipients. Optional: a host that does not
+   * pass one simply never offers "Reassign…", so other hosts stay display-only.
+   */
+  readonly reassignThreads?: ReadonlyArray<{
+    readonly threadId: string;
+    readonly title: string;
+  }>;
 }
 
 const actionFieldClass =
@@ -306,17 +381,21 @@ function WorkjetDelegationActionRow(props: {
   readonly viewerIsReviewer: boolean;
   readonly state: WorkjetDelegationActionState;
   readonly busy: boolean;
+  readonly reassignThreads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
   readonly onStateChange: (next: WorkjetDelegationActionState) => void;
   readonly onAction: (action: WorkjetDelegationAction) => void;
 }) {
-  const { model, viewerIsReviewer, state, busy, onStateChange, onAction } = props;
-  const actions = availableDelegationActions(model, viewerIsReviewer);
+  const { model, viewerIsReviewer, state, busy, reassignThreads, onStateChange, onAction } = props;
+  const actions = availableDelegationActions(model, viewerIsReviewer, {
+    reassignTargetsAvailable: reassignThreads.length > 0,
+  });
   if (actions.length === 0) return null;
 
   const close = () => onStateChange(EMPTY_DELEGATION_ACTION_STATE);
   const toggle = (kind: WorkjetDelegationActionKind) => {
     if (IMMEDIATE_ACTIONS.has(kind)) {
       if (kind === "cancel") onAction({ kind: "cancel" });
+      else if (kind === "revise") onAction({ kind: "revise" });
       else onAction({ kind: "approve", round: state.round });
       close();
       return;
@@ -332,6 +411,9 @@ function WorkjetDelegationActionRow(props: {
     if (state.open === "reply") onAction({ kind: "reply", text: state.text });
     else if (state.open === "request-review")
       onAction({ kind: "request-review", round: state.round, text: state.text });
+    else if (state.open === "follow-up") onAction({ kind: "follow-up", note: state.text });
+    else if (state.open === "reassign")
+      onAction({ kind: "reassign", targetThreadId: state.reassignTargetThreadId });
     else if (state.open === "request-changes")
       onAction({
         kind: "request-changes",
@@ -342,7 +424,13 @@ function WorkjetDelegationActionRow(props: {
   };
 
   const needsText = state.open === "reply" || state.open === "request-review";
-  const submitDisabled = busy || (needsText && state.text.trim().length === 0);
+  // The follow-up note is OPTIONAL: the state operation is meaningful on its
+  // own, so an empty note must not block the submit.
+  const optionalText = state.open === "follow-up";
+  const submitDisabled =
+    busy ||
+    (needsText && state.text.trim().length === 0) ||
+    (state.open === "reassign" && state.reassignTargetThreadId === "");
 
   return (
     <div className="flex w-full flex-col gap-1" data-workjet-delegation-actions>
@@ -390,9 +478,33 @@ function WorkjetDelegationActionRow(props: {
               />
             </label>
           ) : null}
-          {needsText ? (
+          {state.open === "reassign" ? (
+            <select
+              aria-label="Reassign to thread"
+              disabled={busy}
+              className={actionFieldClass}
+              value={state.reassignTargetThreadId}
+              onChange={(event) =>
+                onStateChange({ ...state, reassignTargetThreadId: event.target.value })
+              }
+            >
+              <option value="">Select a thread…</option>
+              {reassignThreads.map((thread) => (
+                <option key={thread.threadId} value={thread.threadId}>
+                  {thread.title}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {needsText || optionalText ? (
             <textarea
-              aria-label={state.open === "reply" ? "Reply message" : "Review request message"}
+              aria-label={
+                state.open === "reply"
+                  ? "Reply message"
+                  : state.open === "follow-up"
+                    ? "Follow-up note (optional)"
+                    : "Review request message"
+              }
               rows={2}
               disabled={busy}
               className={actionFieldClass}
@@ -432,6 +544,11 @@ function WorkjetDelegationActionRow(props: {
           </div>
         </div>
       ) : null}
+      {state.error === null ? null : (
+        <p data-workjet-delegation-action-error className="text-[11px] text-destructive">
+          {state.error}
+        </p>
+      )}
     </div>
   );
 }
@@ -493,6 +610,7 @@ export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProp
             viewerIsReviewer: props.viewerIsReviewer ?? true,
             state: props.actionState ?? EMPTY_DELEGATION_ACTION_STATE,
             busy: props.actionsBusy ?? false,
+            reassignThreads: props.reassignThreads ?? [],
             onStateChange: onActionStateChange,
             onAction: onDelegationAction,
           })

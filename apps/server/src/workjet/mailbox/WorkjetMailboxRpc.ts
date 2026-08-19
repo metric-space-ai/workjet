@@ -4,6 +4,8 @@ import {
   type ThreadId,
   type WorkjetMailboxDelegateTaskRpcInput,
   type WorkjetMailboxDelegateTaskRpcResult,
+  type WorkjetMailboxReassignDelegationRpcInput,
+  type WorkjetMailboxReassignDelegationRpcResult,
   type WorkjetMailboxReplyRpcInput,
   type WorkjetMailboxReplyRpcResult,
   type WorkjetMailboxRequestReviewRpcInput,
@@ -20,6 +22,8 @@ import * as Option from "effect/Option";
 
 import type { OrchestrationThread } from "@t3tools/contracts";
 import type { ProjectionRepositoryError } from "../../persistence/Errors.ts";
+import type { WorkjetDelegationExecutorShape } from "./WorkjetDelegationExecutor.ts";
+import { boundMailboxStoreError } from "./WorkjetMailboxDelivery.ts";
 import type { WorkjetMailboxDeliveryShape } from "./WorkjetMailboxDelivery.ts";
 import type { WorkjetSnapshotStoreShape } from "./WorkjetSnapshotStore.ts";
 
@@ -64,6 +68,14 @@ export interface WorkjetMailboxRpcDependencies {
   readonly workspaceId: WorkjetMeshWorkspaceId;
   /** This server's own environment id — the source environment, never caller-supplied. */
   readonly environmentId: EnvironmentId;
+  /**
+   * The delegation reconciler's reassignment port, in the executor's own shape
+   * ({@link WorkjetDelegationExecutorShape.reassign}). It is injected rather
+   * than resolved here because the reconciler is a background service that the
+   * WebSocket route layer does not (yet) depend on; the caller supplies either
+   * the live executor or the same store write it performs.
+   */
+  readonly reassign: WorkjetDelegationExecutorShape["reassign"];
 }
 
 export interface WorkjetMailboxRpcHandlers {
@@ -82,6 +94,9 @@ export interface WorkjetMailboxRpcHandlers {
   readonly updateDelegation: (
     input: WorkjetMailboxUpdateDelegationRpcInput,
   ) => Effect.Effect<WorkjetMailboxUpdateDelegationRpcResult, WorkjetMailboxError>;
+  readonly reassignDelegation: (
+    input: WorkjetMailboxReassignDelegationRpcInput,
+  ) => Effect.Effect<WorkjetMailboxReassignDelegationRpcResult, WorkjetMailboxError>;
 }
 
 const failure = (reason: WorkjetMailboxError["reason"]) => new WorkjetMailboxError({ reason });
@@ -275,5 +290,37 @@ export const makeWorkjetMailboxRpcHandlers = (
     } as const;
   });
 
-  return { sendMessage, delegateTask, reply, requestReview, updateDelegation };
+  const reassignDelegation: WorkjetMailboxRpcHandlers["reassignDelegation"] = Effect.fn(
+    "WorkjetMailboxRpc.reassignDelegation",
+  )(function* (input) {
+    // Same two-step authorization as an update: transport scope first, then the
+    // caller-named SOURCE thread must still be a live orchestrator thread.
+    yield* requireOrchestratorSource(input.sourceThreadId);
+    // A thread on another machine is not a destination this server can run, and
+    // saying so costs nothing a caller could not already infer from its own
+    // environment id.
+    if (input.targetEnvironmentId !== dependencies.environmentId) {
+      return yield* failure("unknown-target");
+    }
+    const record = yield* dependencies
+      .reassign({
+        delegationId: input.delegationId,
+        newTarget: {
+          schemaVersion: 1,
+          workspaceId: input.targetWorkspaceId ?? dependencies.workspaceId,
+          environmentId: input.targetEnvironmentId,
+          threadId: input.targetThreadId,
+        },
+      })
+      .pipe(Effect.mapError(boundMailboxStoreError));
+    return {
+      schemaVersion: 1,
+      delegationId: record.delegationId,
+      state: record.state,
+      targetEnvironmentId: record.delegation.target.environmentId,
+      targetThreadId: record.delegation.target.threadId,
+    } as const;
+  });
+
+  return { sendMessage, delegateTask, reply, requestReview, updateDelegation, reassignDelegation };
 };

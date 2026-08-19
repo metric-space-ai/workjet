@@ -824,6 +824,14 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetMailboxUpdateDelegation,
     concurrency: workjetMailboxConcurrency,
   });
+  // Reassignment is the same class of thread-scoped write, so it shares the
+  // per-source-thread single flight: the durable re-render carries the new
+  // target back through the ordinary thread subscription.
+  const reassignDelegationWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:reassign-delegation",
+    tag: WS_METHODS.workjetMailboxReassignDelegation,
+    concurrency: workjetMailboxConcurrency,
+  });
 
   return {
     configValueAtom,
@@ -833,6 +841,7 @@ export function createServerEnvironmentAtoms<R, E>(
     replyWorkjetMailbox,
     requestReviewWorkjetMailbox,
     updateDelegationWorkjetMailbox,
+    reassignDelegationWorkjetMailbox,
     workjetMeshRoster,
     workjetGatewayStatus,
     workjetGatewayCatalog,

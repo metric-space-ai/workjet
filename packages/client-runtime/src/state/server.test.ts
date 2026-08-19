@@ -161,7 +161,7 @@ describe("Workjet mailbox client wiring", () => {
     );
   });
 
-  it("exposes the three thread-action commands as labelled commands", () => {
+  it("exposes the four thread-action commands as labelled commands", () => {
     const server = mailboxAtoms();
 
     expect(server.replyWorkjetMailbox.label).toBe("environment-data:workjet:mailbox:reply");
@@ -170,6 +170,9 @@ describe("Workjet mailbox client wiring", () => {
     );
     expect(server.updateDelegationWorkjetMailbox.label).toBe(
       "environment-data:workjet:mailbox:update-delegation",
+    );
+    expect(server.reassignDelegationWorkjetMailbox.label).toBe(
+      "environment-data:workjet:mailbox:reassign-delegation",
     );
   });
 
@@ -182,6 +185,7 @@ describe("Workjet mailbox client wiring", () => {
       server.replyWorkjetMailbox,
       server.requestReviewWorkjetMailbox,
       server.updateDelegationWorkjetMailbox,
+      server.reassignDelegationWorkjetMailbox,
     ];
     expect(new Set(commands).size).toBe(commands.length);
   });

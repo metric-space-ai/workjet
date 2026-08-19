@@ -13,7 +13,9 @@ import {
   type OrchestrationThread,
   type WorkjetMailboxDelegateTaskRpcInput,
   type WorkjetMailboxSendMessageRpcInput,
+  type WorkjetDelegation,
   type WorkjetThreadRole,
+  type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -28,6 +30,7 @@ import type {
   WorkjetMailboxSenderScope,
   WorkjetMailboxUpdateDelegationInput,
 } from "./WorkjetMailboxDelivery.ts";
+import type { WorkjetDelegationExecutorShape } from "./WorkjetDelegationExecutor.ts";
 import { makeWorkjetMailboxRpcHandlers } from "./WorkjetMailboxRpc.ts";
 import type { WorkjetSnapshotStoreShape } from "./WorkjetSnapshotStore.ts";
 
@@ -57,6 +60,38 @@ const thread = (
     },
   }) as unknown as OrchestrationThread;
 
+/** The durable delegation body the reassignment port re-points at a new thread. */
+const delegation: WorkjetDelegation = {
+  schemaVersion: 1,
+  envelopeId: ENVELOPE_ID,
+  delegationId: DELEGATION_ID,
+  source: {
+    schemaVersion: 1,
+    workspaceId: WORKSPACE_ID,
+    environmentId: ENVIRONMENT_ID,
+    threadId: SOURCE_THREAD_ID,
+  },
+  target: {
+    schemaVersion: 1,
+    workspaceId: WORKSPACE_ID,
+    environmentId: ENVIRONMENT_ID,
+    threadId: TARGET_THREAD_ID,
+  },
+  createdAt: NOW,
+  expiresAt: "2026-08-18T11:00:00.000Z",
+  prompt: { schemaVersion: 1, snapshotRef: SNAPSHOT_REF, digest: DIGEST, byteLength: 32 },
+  scope: {
+    schemaVersion: 1,
+    files: [WorkjetRepositoryPath.make("apps/server/src/workjet/mailbox/WorkjetMailboxStore.ts")],
+    nonGoals: "No contract changes.",
+  },
+  completion: { schemaVersion: 1, acceptance: "The focused test run is green." },
+  budget: { maxDepth: 2, maxReviewRounds: 1, ttlSeconds: 3_600 },
+  state: "delivered",
+  stateChangedAt: NOW,
+  depth: 0,
+};
+
 const query = (result: Option.Option<OrchestrationThread>) => ({
   getThreadDetailById: () => Effect.succeed(result),
 });
@@ -83,9 +118,18 @@ interface Recorded {
     readonly input: WorkjetMailboxUpdateDelegationInput;
   }>;
   readonly prompts: Array<string>;
+  readonly reassignments: Array<{
+    readonly delegationId: WorkjetDelegationId;
+    readonly newTarget: WorkjetWorkerAddress;
+  }>;
 }
 
-const doubles = (options: { readonly sameEnvironment?: boolean } = {}) => {
+const doubles = (
+  options: {
+    readonly sameEnvironment?: boolean;
+    readonly reassignRefusal?: WorkjetMailboxError["reason"];
+  } = {},
+) => {
   const recorded: Recorded = {
     sends: [],
     delegations: [],
@@ -93,6 +137,7 @@ const doubles = (options: { readonly sameEnvironment?: boolean } = {}) => {
     reviews: [],
     updates: [],
     prompts: [],
+    reassignments: [],
   };
   const acknowledged = options.sameEnvironment !== false;
   const sendOutcome = (targetEnvironmentId: EnvironmentId, targetThreadId: ThreadId) =>
@@ -231,7 +276,23 @@ const doubles = (options: { readonly sameEnvironment?: boolean } = {}) => {
       });
     },
   } as unknown as WorkjetSnapshotStoreShape;
-  return { recorded, delivery, snapshots };
+  // The reconciler's reassignment port. It records the call and answers with
+  // the record the real store returns: the delegation re-pointed at the new
+  // target, with its lifecycle state deliberately UNCHANGED.
+  const reassign: WorkjetDelegationExecutorShape["reassign"] = (input) => {
+    recorded.reassignments.push(input);
+    if (options.reassignRefusal !== undefined) {
+      return Effect.fail(new WorkjetMailboxError({ reason: options.reassignRefusal }));
+    }
+    return Effect.succeed({
+      delegationId: input.delegationId,
+      delegation: { ...delegation, target: input.newTarget },
+      state: "delivered",
+      stateChangedAtMillis: Date.parse(NOW),
+      terminal: false,
+    });
+  };
+  return { recorded, delivery, snapshots, reassign };
 };
 
 const sendInput: WorkjetMailboxSendMessageRpcInput = {
@@ -279,9 +340,13 @@ const updateInput = {
 
 const handlers = (
   role: WorkjetThreadRole | "missing",
-  options: { readonly deletedAt?: string | null; readonly sameEnvironment?: boolean } = {},
+  options: {
+    readonly deletedAt?: string | null;
+    readonly sameEnvironment?: boolean;
+    readonly reassignRefusal?: WorkjetMailboxError["reason"];
+  } = {},
 ) => {
-  const { recorded, delivery, snapshots } = doubles(options);
+  const { recorded, delivery, snapshots, reassign } = doubles(options);
   return {
     recorded,
     handlers: makeWorkjetMailboxRpcHandlers({
@@ -294,6 +359,7 @@ const handlers = (
       ),
       workspaceId: WORKSPACE_ID,
       environmentId: ENVIRONMENT_ID,
+      reassign,
     }),
   };
 };
@@ -423,6 +489,7 @@ it.effect("maps an oversized prompt onto payload-too-large and never delegates",
   Effect.gen(function* () {
     const { recorded, delivery } = doubles();
     const rpc = makeWorkjetMailboxRpcHandlers({
+      reassign: () => Effect.fail(new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
       delivery,
       snapshots: {
         put: () => Effect.fail({ _tag: "WorkjetSnapshotTooLargeError" }),
@@ -574,5 +641,109 @@ it.effect("answers an unauthorized update with the bounded mailbox reason only",
 
     expect(error).toBeInstanceOf(WorkjetMailboxError);
     expect(error.reason).toBe("unauthorized");
+  }),
+);
+
+// ===============================
+// Reassignment
+// ===============================
+
+const REASSIGN_THREAD_ID = ThreadId.make("thread-second-worker");
+
+const reassignInput = {
+  sourceThreadId: SOURCE_THREAD_ID,
+  delegationId: DELEGATION_ID,
+  targetEnvironmentId: ENVIRONMENT_ID,
+  targetThreadId: REASSIGN_THREAD_ID,
+} as const;
+
+it.effect("reassigns a delegation to another local thread and returns the new target", () =>
+  Effect.gen(function* () {
+    const { recorded, handlers: rpc } = handlers("orchestrator");
+
+    const result = yield* rpc.reassignDelegation(reassignInput);
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      delegationId: DELEGATION_ID,
+      state: "delivered",
+      targetEnvironmentId: ENVIRONMENT_ID,
+      targetThreadId: REASSIGN_THREAD_ID,
+    });
+    // The server substitutes its OWN mesh workspace id when the client omits one.
+    expect(recorded.reassignments).toEqual([
+      {
+        delegationId: DELEGATION_ID,
+        newTarget: {
+          schemaVersion: 1,
+          workspaceId: WORKSPACE_ID,
+          environmentId: ENVIRONMENT_ID,
+          threadId: REASSIGN_THREAD_ID,
+        },
+      },
+    ]);
+  }),
+);
+
+it.effect("keeps a caller-supplied target mesh workspace id on a reassignment", () =>
+  Effect.gen(function* () {
+    const workspaceId = WorkjetMeshWorkspaceId.make("ctox-business-os:mesh-beta");
+    const { recorded, handlers: rpc } = handlers("orchestrator");
+
+    yield* rpc.reassignDelegation({ ...reassignInput, targetWorkspaceId: workspaceId });
+
+    expect(recorded.reassignments[0]?.newTarget.workspaceId).toBe(workspaceId);
+  }),
+);
+
+it.effect("refuses a cross-environment reassignment before touching the store", () =>
+  Effect.gen(function* () {
+    const { recorded, handlers: rpc } = handlers("orchestrator");
+
+    const error = yield* Effect.flip(
+      rpc.reassignDelegation({
+        ...reassignInput,
+        targetEnvironmentId: EnvironmentId.make("environment-b"),
+      }),
+    );
+
+    expect(error).toBeInstanceOf(WorkjetMailboxError);
+    expect(error.reason).toBe("unknown-target");
+    expect(recorded.reassignments).toHaveLength(0);
+  }),
+);
+
+for (const scenario of [
+  { label: "a standard thread", role: "standard" as const, deletedAt: null },
+  { label: "a worker thread", role: "worker" as const, deletedAt: null },
+  { label: "a deleted orchestrator thread", role: "orchestrator" as const, deletedAt: NOW },
+  { label: "a thread that does not exist", role: "missing" as const, deletedAt: null },
+]) {
+  it.effect(`refuses a reassignment from ${scenario.label}`, () =>
+    Effect.gen(function* () {
+      const { recorded, handlers: rpc } = handlers(scenario.role, {
+        deletedAt: scenario.deletedAt,
+      });
+
+      const error = yield* Effect.flip(rpc.reassignDelegation(reassignInput));
+
+      expect(error).toBeInstanceOf(WorkjetMailboxError);
+      expect(error.reason).toBe("unauthorized");
+      // The refusal happens BEFORE any durable store effect.
+      expect(recorded.reassignments).toHaveLength(0);
+    }),
+  );
+}
+
+it.effect("surfaces the store's invalid-state-transition refusal unchanged", () =>
+  Effect.gen(function* () {
+    const { handlers: rpc } = handlers("orchestrator", {
+      reassignRefusal: "invalid-state-transition",
+    });
+
+    const error = yield* Effect.flip(rpc.reassignDelegation(reassignInput));
+
+    expect(error).toBeInstanceOf(WorkjetMailboxError);
+    expect(error.reason).toBe("invalid-state-transition");
   }),
 );

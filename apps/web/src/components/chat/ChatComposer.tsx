@@ -547,8 +547,12 @@ export interface ChatComposerProps {
    * The "Send to worker" affordance, supplied only for an ORCHESTRATOR thread.
    * The composer owns the slot, not the decision: role, recipients and the
    * mailbox RPCs all live with the caller.
+   *
+   * It is a RENDER function rather than a node because only the composer knows
+   * whether the footer has collapsed: the full footer gets the labelled
+   * control, the compact footer the icon-only one.
    */
-  workjetSendToWorkerControl?: ReactNode;
+  workjetSendToWorkerControl?: (options: { readonly compact: boolean }) => ReactNode;
   workjetCapabilityBusy: boolean;
   workjetCapabilityDisabled: boolean;
 
@@ -3163,25 +3167,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
 
                 {isComposerFooterCompact ? (
-                  <CompactComposerControlsMenu
-                    interactionMode={interactionMode}
-                    runtimeMode={runtimeMode}
-                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                    traitsMenuContent={providerTraitsMenuContent}
-                    workjetMenuContent={
-                      workjetGreppyEnabled === null ? undefined : (
-                        <WorkjetCapabilityMenu
-                          compact
-                          greppyEnabled={workjetGreppyEnabled}
-                          busy={workjetCapabilityBusy}
-                          disabled={workjetCapabilityDisabled}
-                          onGreppyEnabledChange={onWorkjetGreppyEnabledChange}
-                        />
-                      )
-                    }
-                    onToggleInteractionMode={toggleInteractionMode}
-                    onRuntimeModeChange={handleRuntimeModeChange}
-                  />
+                  <>
+                    <CompactComposerControlsMenu
+                      interactionMode={interactionMode}
+                      runtimeMode={runtimeMode}
+                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                      traitsMenuContent={providerTraitsMenuContent}
+                      workjetMenuContent={
+                        workjetGreppyEnabled === null ? undefined : (
+                          <WorkjetCapabilityMenu
+                            compact
+                            greppyEnabled={workjetGreppyEnabled}
+                            busy={workjetCapabilityBusy}
+                            disabled={workjetCapabilityDisabled}
+                            onGreppyEnabledChange={onWorkjetGreppyEnabledChange}
+                          />
+                        )
+                      }
+                      onToggleInteractionMode={toggleInteractionMode}
+                      onRuntimeModeChange={handleRuntimeModeChange}
+                    />
+                    {workjetSendToWorkerControl?.({ compact: true }) ?? null}
+                  </>
                 ) : (
                   <>
                     {providerTraitsPicker ? (
@@ -3208,7 +3215,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       </>
                     )}
-                    {workjetSendToWorkerControl ?? null}
+                    {workjetSendToWorkerControl?.({ compact: false }) ?? null}
                   </>
                 )}
               </div>

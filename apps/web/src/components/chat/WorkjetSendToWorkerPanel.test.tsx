@@ -24,6 +24,7 @@ import {
   rememberWorkjetRemoteThreadId,
   selectWorkjetRosterPeer,
   workjetMailboxFailureMessage,
+  WorkjetSendToWorkerPanelControl,
   WorkjetSendToWorkerPanelContent,
   type WorkjetSendDraft,
   type WorkjetSendToWorkerPanelProps,
@@ -633,5 +634,47 @@ describe("WorkjetSendToWorkerPanelContent remote recipients", () => {
         (element) => element.props["aria-label"] === "Remote environment",
       ),
     ).toBe(false);
+  });
+});
+
+describe("WorkjetSendToWorkerPanel compact variant", () => {
+  const trigger = (props: Partial<WorkjetSendToWorkerPanelProps>) => {
+    const control = WorkjetSendToWorkerPanelControl(panelProps(props)) as InspectableElement;
+    const [popoverTrigger, popup] = Children.toArray(control.props.children).filter(isValidElement);
+    return {
+      trigger: popoverTrigger as InspectableElement,
+      popup: popup as InspectableElement,
+    };
+  };
+
+  it("renders the labelled control by default", () => {
+    const { trigger: control } = trigger({});
+
+    expect(control.props["data-workjet-send-control-compact"]).toBe("false");
+    const rendered = control.props.render as InspectableElement;
+    expect(rendered.props["aria-label"]).toBe("Send to worker");
+    expect(textContent(control.props.children)).toContain("Send to worker");
+  });
+
+  it("collapses to an icon button that still names itself, keeping the same popover", () => {
+    const { trigger: control, popup } = trigger({ compact: true });
+
+    expect(control.props["data-workjet-send-control-compact"]).toBe("true");
+    const rendered = control.props.render as InspectableElement;
+    // The visible label goes; the ACCESSIBLE name does not.
+    expect(rendered.props["aria-label"]).toBe("Send to worker");
+    const label = descendants(control.props.children).find(
+      (element) => textContent(element) === "Send to worker",
+    );
+    expect(label?.props.className).toBe("sr-only");
+    // The popover still holds the complete panel, not a reduced one.
+    const [content] = Children.toArray(popup.props.children).filter(isValidElement);
+    expect((content as InspectableElement).type).toBe(WorkjetSendToWorkerPanelContent);
+  });
+
+  it("gates identically in both variants: a disabled host disables the trigger", () => {
+    expect(trigger({ disabled: true }).trigger.props.disabled).toBe(true);
+    expect(trigger({ disabled: true, compact: true }).trigger.props.disabled).toBe(true);
+    expect(trigger({ compact: true }).trigger.props.disabled).toBe(false);
   });
 });

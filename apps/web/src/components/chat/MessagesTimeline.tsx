@@ -16,6 +16,11 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_OPEN_THREAD = () => {};
+/** Stable empty default so the row context is not rebuilt on every render. */
+const EMPTY_WORKJET_REASSIGN_THREADS: ReadonlyArray<{
+  readonly threadId: string;
+  readonly title: string;
+}> = [];
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -160,8 +165,17 @@ interface TimelineRowSharedState {
    * does not wire mailbox actions, in which case the cards stay display-only.
    */
   onWorkjetDelegationAction:
-    | ((action: WorkjetDelegationAction, model: WorkjetMailboxCardModel) => void)
+    | ((
+        action: WorkjetDelegationAction,
+        model: WorkjetMailboxCardModel,
+      ) => void | Promise<string | null>)
     | null;
+  /**
+   * Local threads a delegation may be reassigned to — the SAME list the
+   * send-to-worker panel offers. Empty when the host wires none, which is what
+   * keeps "Reassign…" off the card.
+   */
+  workjetReassignThreads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
 }
 
 interface TimelineRowActivityState {
@@ -234,7 +248,13 @@ interface MessagesTimelineProps {
   onWorkjetDelegationAction?: (
     action: WorkjetDelegationAction,
     model: WorkjetMailboxCardModel,
-  ) => void;
+  ) => void | Promise<string | null>;
+  /**
+   * The local recipient threads the send-to-worker panel offers, threaded down
+   * so a mailbox card can offer "Reassign…" against the same list. Optional, so
+   * hosts that do not wire it keep display-only cards.
+   */
+  workjetReassignThreads?: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -287,6 +307,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenAgents = NOOP_OPEN_AGENTS,
   onOpenThread,
   onWorkjetDelegationAction,
+  workjetReassignThreads = EMPTY_WORKJET_REASSIGN_THREADS,
   listRef,
   timelineEntries,
   latestTurn,
@@ -552,6 +573,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenAgents,
       onOpenThread: onOpenThread ?? NOOP_OPEN_THREAD,
       onWorkjetDelegationAction: onWorkjetDelegationAction ?? null,
+      workjetReassignThreads,
     }),
     [
       timestampFormat,
@@ -570,6 +592,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenAgents,
       onOpenThread,
       onWorkjetDelegationAction,
+      workjetReassignThreads,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2245,7 +2268,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
 const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
   model: NonNullable<TimelineWorkEntry["workjetMailbox"]>;
 }) {
-  const { onOpenThread, onWorkjetDelegationAction } = use(TimelineRowCtx);
+  const { onOpenThread, onWorkjetDelegationAction, workjetReassignThreads } = use(TimelineRowCtx);
   // The inline-action draft is owned here so the card stays a pure, controlled
   // presentational component. The durable state/receipt re-renders the card
   // through the ordinary thread subscription, so nothing optimistic lives here.
@@ -2255,8 +2278,16 @@ const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
   const model = props.model;
   const dispatch = useCallback(
     (action: WorkjetDelegationAction) => {
-      onWorkjetDelegationAction?.(action, model);
+      const dispatched = onWorkjetDelegationAction?.(action, model);
       setActionState(EMPTY_DELEGATION_ACTION_STATE);
+      // A refusal is the ONE thing the durable re-render cannot deliver: the
+      // card looks unchanged because nothing changed. The dispatcher answers
+      // with a bounded reason (or `null` on success) and it is shown in place.
+      if (!(dispatched instanceof Promise)) return;
+      void dispatched.then((error) => {
+        if (error === null) return;
+        setActionState((current) => ({ ...current, error }));
+      });
     },
     [onWorkjetDelegationAction, model],
   );
@@ -2269,6 +2300,7 @@ const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
           actionState,
           onActionStateChange: setActionState,
           onDelegationAction: dispatch,
+          reassignThreads: workjetReassignThreads,
         }
       : {};
   return (

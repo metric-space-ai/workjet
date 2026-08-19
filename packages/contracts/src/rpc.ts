@@ -209,6 +209,8 @@ import {
   WorkjetMailboxError,
   WorkjetMailboxReplyRpcInput,
   WorkjetMailboxReplyRpcResult,
+  WorkjetMailboxReassignDelegationRpcInput,
+  WorkjetMailboxReassignDelegationRpcResult,
   WorkjetMailboxRequestReviewRpcInput,
   WorkjetMailboxRequestReviewRpcResult,
   WorkjetMailboxSendMessageRpcInput,
@@ -320,6 +322,8 @@ export const WS_METHODS = {
   workjetMailboxReply: "workjet.mailbox.reply",
   workjetMailboxRequestReview: "workjet.mailbox.requestReview",
   workjetMailboxUpdateDelegation: "workjet.mailbox.updateDelegation",
+  // ADDITIVE Wave-5 write: move a pending delegation to another LOCAL thread.
+  workjetMailboxReassignDelegation: "workjet.mailbox.reassignDelegation",
 
   // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
   workjetMeshRoster: "workjet.mesh.roster",
@@ -628,6 +632,23 @@ export const WsWorkjetMailboxUpdateDelegationRpc = Rpc.make(
   {
     payload: WorkjetMailboxUpdateDelegationRpcInput,
     success: WorkjetMailboxUpdateDelegationRpcResult,
+    error: WorkjetMailboxRpcError,
+  },
+);
+
+/**
+ * ADDITIVE Wave-5 write. Reassign a still-pending delegation to a different
+ * LOCAL target thread. It mirrors the update RPC exactly — same bounded error
+ * union, same `orchestration:operate` scope, same orchestrator-source
+ * validation — and adds no new failure vocabulary: a cross-environment target
+ * is `unknown-target`, anything not `delivered`/`needs-input` is
+ * `invalid-state-transition`.
+ */
+export const WsWorkjetMailboxReassignDelegationRpc = Rpc.make(
+  WS_METHODS.workjetMailboxReassignDelegation,
+  {
+    payload: WorkjetMailboxReassignDelegationRpcInput,
+    success: WorkjetMailboxReassignDelegationRpcResult,
     error: WorkjetMailboxRpcError,
   },
 );
@@ -1200,6 +1221,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxReplyRpc,
   WsWorkjetMailboxRequestReviewRpc,
   WsWorkjetMailboxUpdateDelegationRpc,
+  WsWorkjetMailboxReassignDelegationRpc,
   WsWorkjetMeshRosterRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,

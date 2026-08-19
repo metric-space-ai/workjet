@@ -56,6 +56,7 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
+  type WorkjetMailboxTimestamp,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
   WsRpcGroup,
@@ -445,6 +446,23 @@ const makeWsRpcLayer = (
         query: projectionSnapshotQuery,
         workspaceId: workjetMailboxIdentity.workspaceId,
         environmentId: yield* serverEnvironment.getEnvironmentId,
+        // The reconciler's reassignment write, in the executor's own shape. The
+        // executor SERVICE is a background loop the WebSocket route layer does
+        // not depend on, so the port is satisfied here by the one store call
+        // `WorkjetDelegationExecutor.reassign` makes; the store keeps the
+        // `delivered`/`needs-input` invariant either way, and the reconciler
+        // picks the moved delegation up on its next cycle.
+        reassign: ({ delegationId, newTarget }) =>
+          DateTime.now.pipe(
+            Effect.map(DateTime.formatIso),
+            Effect.flatMap((now) =>
+              workjetMailboxStore.reassignDelegation(
+                delegationId,
+                newTarget,
+                now as WorkjetMailboxTimestamp,
+              ),
+            ),
+          ),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1712,6 +1730,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.workjetMailboxUpdateDelegation,
             workjetMailbox.updateDelegation(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxReassignDelegation]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxReassignDelegation,
+            workjetMailbox.reassignDelegation(input),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
         // The recipient roster: this environment's own mesh address plus every

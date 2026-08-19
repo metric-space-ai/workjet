@@ -1147,8 +1147,19 @@ CTOX project.
     `ws://127.0.0.1:PORT` on the remote host and the SSH package exposes no
     reusable server-agnostic local-forward primitive, so SSH rows stay
     non-launchable with an honest "SSH tunnel support pending" hint.
-    Still open: an exported scoped `-L` forward + remote-signaling-port
-    discovery to enable launch, and attach/install/rotate/revoke.
+    Launch enabled 2026-08-19 (commits `212ce172a`, `577c5467c`): exported
+    scoped `openSshLocalForward` (argv `ssh -n -N -L`,
+    `ExitOnForwardFailure=yes`, host-key semantics untouched, TCP-connect
+    readiness, idempotent scope-owned teardown — `startSshTunnel` refactored
+    onto the shared internals); the launch mints the invite over SSH (stderr
+    failure marker instead of a remote temp file), extracts remote-loopback
+    ws ports from `signaling_urls` (any non-loopback URL rejects the whole
+    invite as `unsupported_signaling`), rewrites them to the forwarded local
+    ports, and reuses the pairing import/activate path; forwards close on
+    guest teardown via `destroyGuest`. Real bug found: the spawner does NOT
+    kill children on scope close — the primitive owns that finalizer now.
+    Still open: attach/install/rotate/revoke, and a live end-to-end run
+    against a real remote host.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
   - [x] Store pairing room/capability secrets separately from public instance

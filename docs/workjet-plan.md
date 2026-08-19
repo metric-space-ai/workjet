@@ -458,9 +458,15 @@ Tasks:
       claude/codex/antigravity — xAI, Kimi, Z.ai, MiniMax and an API-KEY
       account type (Z.ai/MiniMax are key-based, not OAuth) are missing;
       queued after the OAuth fix (same Rust surface).
-      (4) UX: gateway accounts move INTO Settings → Providers (one surface,
-      no manual Start button, honest auth-state age + refresh-on-open) — in
-      flight.
+      (4) UX consolidation done 2026-08-19 (commit `b23da973b`): ONE provider
+      surface — Settings → Providers carries "Harness runtimes" and "Workjet
+      gateway accounts" as two sections; the Workjet tab is a pointer; no
+      Start/Stop buttons (autostart; only a faulted gateway offers Retry —
+      add-account now also allowed on a stopped gateway so the flow has no
+      dead end); every auth claim shows its probe age ("Authenticated ·
+      checked 1h ago") and the page dispatches a fresh provider probe on open
+      (30 s cooldown, never for read-only sessions). Behavior change worth
+      knowing: the gateway section follows the page's device switcher.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
 - [ ] Preserve direct provider/model selection in the composer; selection

@@ -50,6 +50,7 @@ function registryLayer(
     removePairedInstance: () =>
       Effect.succeed({ descriptor: pairedInstance, secretRecordRemoved: true }),
     resolvePairedLaunch: () => Effect.die("unused"),
+    resolveLocalDaemonTarget: () => Effect.die("unused"),
     stableIdentityKey: () => failedRegistry("not_found"),
     ...overrides,
   });

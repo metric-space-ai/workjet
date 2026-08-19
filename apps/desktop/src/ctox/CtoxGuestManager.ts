@@ -20,6 +20,8 @@ import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
+import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
+import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
 
 const SENSITIVE_QUERY_PARAMETERS = new Set([
@@ -581,6 +583,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const businessOsShell = yield* CtoxBusinessOsShell.CtoxBusinessOsShell;
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
     const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+    const localLaunch = yield* CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch;
     const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const electronShell = yield* ElectronShell.ElectronShell;
@@ -678,6 +681,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           resolved.value.descriptor.source !== descriptor.source
         ) {
           return [{ _tag: "revoked" }, undefined] as const;
+        }
+        authoritativeDescriptor = resolved.value.descriptor;
+        launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
+      } else if (isLaunchableCtoxLocalDaemon(descriptor)) {
+        // Local pairing material is minted per activation and never persisted,
+        // so a daemon that stopped answering fails the launch instead of
+        // resurrecting a stale room.
+        const resolved = yield* localLaunch.resolveLaunch(descriptor.id).pipe(Effect.option);
+        if (
+          Option.isNone(resolved) ||
+          resolved.value.descriptor.id !== descriptor.id ||
+          resolved.value.descriptor.source !== "local_daemon"
+        ) {
+          return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
         }
         authoritativeDescriptor = resolved.value.descriptor;
         launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);

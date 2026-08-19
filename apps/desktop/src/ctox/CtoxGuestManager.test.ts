@@ -18,6 +18,7 @@ import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
+import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -47,6 +48,33 @@ const pairedDescriptor: CtoxManagedInstance = {
     dataPlaneReady: false,
     httpDataProxy: false,
     nativePeerObserved: false,
+  },
+};
+
+const localDescriptor: CtoxManagedInstance = {
+  id: "local:AAAAAAAAAAAAAAAAAAAAAA",
+  source: "local_daemon",
+  displayName: "workstation (local)",
+  status: "available",
+  healthSummary: {
+    dataPlane: "rxdb-webrtc",
+    dataPlaneReady: false,
+    httpDataProxy: false,
+    nativePeerObserved: false,
+  },
+};
+
+const localConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
+  transport: "webrtc",
+  sync_room: "ctox-business-os:workstation",
+  signaling_urls: ["ws://127.0.0.1:4444/signal"],
+  signaling_room_password: "local-room-secret",
+  http_bridge_available: false,
+  desktop_instance: {
+    id: localDescriptor.id,
+    source: "local_daemon",
+    display_name: localDescriptor.displayName,
+    domain: "",
   },
 };
 
@@ -184,12 +212,27 @@ function makeGuestHarness() {
   });
   const registry = CtoxInstanceRegistry.CtoxInstanceRegistry.of({
     merge: (managed) =>
-      Effect.succeed(CtoxInstanceRegistry.mergeCtoxInstanceSources(managed, pairedInstances)),
+      Effect.succeed(
+        CtoxInstanceRegistry.mergeCtoxInstanceSources(managed, pairedInstances, localInstances),
+      ),
     importInvite: () => Effect.die("unused"),
     importManualPairing: () => Effect.die("unused"),
     removePairedInstance: () => Effect.die("unused"),
     resolvePairedLaunch,
+    resolveLocalDaemonTarget: () => Effect.die("unused"),
     stableIdentityKey: () => Effect.die("unused"),
+  });
+  let localInstances: readonly CtoxManagedInstance[] = [];
+  const resolveLocalLaunch = vi.fn((instanceId: string) => {
+    const local = localInstances.find(
+      (candidate) => candidate.id === instanceId && candidate.id === localDescriptor.id,
+    );
+    return local === undefined
+      ? Effect.fail(new CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunchError({ reason: "cli_failed" }))
+      : Effect.succeed({ descriptor: local, config: localConfig });
+  });
+  const localDaemonLaunch = CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch.of({
+    resolveLaunch: resolveLocalLaunch,
   });
   const instance = vi.fn(() => Effect.succeed(browserSession));
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
@@ -232,6 +275,7 @@ function makeGuestHarness() {
     Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
     Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
     Layer.succeed(CtoxInstanceRegistry.CtoxInstanceRegistry, registry),
+    Layer.succeed(CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch, localDaemonLaunch),
     Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, launches),
     Layer.succeed(ElectronWindow.ElectronWindow, electronWindow),
     Layer.succeed(ElectronShell.ElectronShell, electronShell),
@@ -246,6 +290,7 @@ function makeGuestHarness() {
     launch,
     layer,
     removeChildView,
+    resolveLocalLaunch,
     resolvePairedLaunch,
     shellLaunch,
     setDiscovery: (value: CtoxManagedDiscoveryResult) => {
@@ -258,6 +303,9 @@ function makeGuestHarness() {
       ) => Promise<void>,
     ) => {
       loadURLImplementation = implementation;
+    },
+    setLocalInstances: (value: readonly CtoxManagedInstance[]) => {
+      localInstances = value;
     },
     setPairedInstances: (value: readonly CtoxManagedInstance[]) => {
       pairedInstances = value;
@@ -631,6 +679,76 @@ describe("CtoxGuestManager", () => {
       });
       expect(harness.shellLaunch).toHaveBeenCalledTimes(2);
       expect(harness.beforeRequest).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("launches a running local daemon through freshly minted material", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLocalInstances([localDescriptor]);
+    harness.setDiscovery({ _tag: "signed_out" });
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      const activation = yield* manager.activate(localDescriptor.id, bounds);
+      assert.deepEqual(activation, { _tag: "ready", instanceId: localDescriptor.id });
+      expect(harness.resolveLocalLaunch).toHaveBeenCalledExactlyOnceWith(localDescriptor.id);
+      expect(harness.shellLaunch).toHaveBeenCalledExactlyOnceWith(localConfig);
+      expect(harness.resolvePairedLaunch).not.toHaveBeenCalled();
+      expect(harness.launch).not.toHaveBeenCalled();
+      // The isolated partition is derived from the local descriptor itself.
+      expect(harness.instance).toHaveBeenCalledWith(localDescriptor);
+      assert.notInclude(encodeUnknownJson(activation), "local-room-secret");
+
+      // A second activation re-derives the material instead of reusing it.
+      yield* manager.activate(localDescriptor.id, bounds);
+      expect(harness.resolveLocalLaunch).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("fails the activation when the local daemon cannot mint an invite", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLocalInstances([localDescriptor]);
+    harness.resolveLocalLaunch.mockImplementation(() =>
+      Effect.fail(
+        new CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunchError({ reason: "cli_unavailable" }),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(localDescriptor.id, bounds), {
+        _tag: "failed",
+        code: "launch_failed",
+      });
+      expect(harness.shellLaunch).not.toHaveBeenCalled();
+      expect(harness.createView).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("rejects offline and forged local descriptors before any CLI call", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const offline = { ...localDescriptor, status: "offline" as const };
+    const forged = { ...localDescriptor, id: "local:forged" };
+    const proxied = {
+      ...localDescriptor,
+      id: "local:BBBBBBBBBBBBBBBBBBBBBB",
+      healthSummary: { ...localDescriptor.healthSummary, dataPlaneReady: true },
+    };
+    harness.setLocalInstances([offline, forged, proxied]);
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      for (const instanceId of [offline.id, forged.id, proxied.id]) {
+        assert.deepEqual(yield* manager.activate(instanceId, bounds), { _tag: "revoked" });
+      }
+      expect(harness.resolveLocalLaunch).not.toHaveBeenCalled();
+      expect(harness.createView).not.toHaveBeenCalled();
     }).pipe(Effect.provide(harness.layer));
   });
 

@@ -78,6 +78,12 @@ export type CtoxLocalDaemonRuntimeStatus = "running" | "stopped" | "unknown";
 /** A discovered local daemon plus the runtime facts the registry does not carry. */
 export interface CtoxLocalDaemonInstance {
   readonly instance: CtoxManagedInstance;
+  /**
+   * The daemon's own declared instance id. It stays in the main process: the
+   * launch path uses it to check that the invite it just minted really came
+   * from the daemon the user picked, and `instance.id` deliberately hides it.
+   */
+  readonly daemonInstanceId: string;
   readonly runtimeStatus: CtoxLocalDaemonRuntimeStatus;
   readonly lastSeenAt?: number;
 }
@@ -147,6 +153,27 @@ export function ctoxLocalDaemonInstanceId(descriptorPath: string): string {
     .update(descriptorPath, "utf8")
     .digest("base64url");
   return `local:${digest.slice(0, 22)}`;
+}
+
+/** Shape of every id this module mints; nothing else may be treated as local. */
+export const CTOX_LOCAL_DAEMON_ID_PATTERN = /^local:[A-Za-z0-9_-]{22}$/;
+
+/**
+ * The single launchability predicate for local daemons. Discovery, the session
+ * partition guard, and the guest manager all ask it, so a descriptor that was
+ * never produced by `discoverCtoxLocalDaemonInstances` cannot reach a launch.
+ */
+export function isLaunchableCtoxLocalDaemon(instance: CtoxManagedInstance): boolean {
+  return (
+    instance.source === "local_daemon" &&
+    instance.status === "available" &&
+    CTOX_LOCAL_DAEMON_ID_PATTERN.test(instance.id) &&
+    instance.domain === undefined &&
+    instance.healthSummary.dataPlane === "rxdb-webrtc" &&
+    instance.healthSummary.dataPlaneReady === false &&
+    instance.healthSummary.httpDataProxy === false &&
+    instance.healthSummary.nativePeerObserved === false
+  );
 }
 
 export function resolveCtoxLocalDaemonStateRoot(
@@ -235,8 +262,9 @@ function declaredStatus(
 }
 
 /**
- * Local entries are never launchable yet: the WebRTC data plane is not wired,
- * so an unverified daemon is reported as offline rather than as available.
+ * Only a daemon that is observably running is offered as launchable: the
+ * launch path mints its pairing material from that daemon's own CLI, so a
+ * stale or stopped descriptor must read as offline rather than as available.
  */
 function instanceStatus(
   runtimeStatus: CtoxLocalDaemonRuntimeStatus,
@@ -293,6 +321,7 @@ export const discoverCtoxLocalDaemonInstances = Effect.fn(
           nativePeerObserved: false,
         },
       },
+      daemonInstanceId: descriptor.instanceId,
       runtimeStatus,
       ...(descriptor.lastSeenAt === undefined ? {} : { lastSeenAt: descriptor.lastSeenAt }),
     });

@@ -27,8 +27,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
+import { buildCtoxBusinessOsLaunchConfig } from "./CtoxLaunchConfig.ts";
 import {
   discoverCtoxLocalDaemonInstances,
+  isLaunchableCtoxLocalDaemon,
   type CtoxLocalDaemonDiscoveryOptions,
 } from "./CtoxLocalDaemonSource.ts";
 
@@ -173,7 +175,8 @@ export class CtoxInstanceRegistryError extends Schema.TaggedErrorClass<CtoxInsta
   }
 }
 
-interface ValidatedPairing {
+/** Pairing material validated by the one invite/manual decoder in this module. */
+export interface ValidatedPairing {
   readonly source: PairedSource;
   readonly displayName: string;
   readonly instanceIdentity: string;
@@ -197,6 +200,17 @@ export interface CtoxInstanceRegistryOptions {
 export interface CtoxPairedLaunchDescriptor {
   readonly descriptor: CtoxManagedInstance;
   readonly config: CtoxBusinessOsLaunchConfig;
+}
+
+/**
+ * A local daemon the main process may launch, together with the identity facts
+ * the renderer never sees. `discoveredCount` lets the launch path decide
+ * whether a freshly minted invite can be attributed to this daemon at all.
+ */
+export interface CtoxLocalDaemonTarget {
+  readonly descriptor: CtoxManagedInstance;
+  readonly daemonInstanceId: string;
+  readonly discoveredCount: number;
 }
 
 export interface CtoxPairedInstanceRemoval {
@@ -230,6 +244,13 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly resolvePairedLaunch: (
       instanceId: string,
     ) => Effect.Effect<CtoxPairedLaunchDescriptor, CtoxInstanceRegistryError>;
+    /**
+     * Main-process-only re-discovery of one local daemon. It carries no secret:
+     * local pairing material is minted per activation by the launch service.
+     */
+    readonly resolveLocalDaemonTarget: (
+      instanceId: string,
+    ) => Effect.Effect<CtoxLocalDaemonTarget, CtoxInstanceRegistryError>;
   }
 >()("@t3tools/desktop/ctox/CtoxInstanceRegistry") {}
 
@@ -968,47 +989,40 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     if (pairing === undefined) return yield* registryError("not_found");
 
     const user = secret.user;
-    const role = user?.role;
-    const config: CtoxBusinessOsLaunchConfig = {
-      transport: "webrtc",
-      sync_room: pairing.syncRoom,
-      signaling_urls: pairing.signalingUrls,
-      signaling_room_password: pairing.roomSecret,
-      http_bridge_available: false,
-      desktop_instance: {
-        id: descriptor.id,
-        source: pairing.source,
-        display_name: descriptor.displayName,
-        domain: "",
+    const config: CtoxBusinessOsLaunchConfig = buildCtoxBusinessOsLaunchConfig({
+      instanceId: descriptor.id,
+      displayName: descriptor.displayName,
+      source: pairing.source,
+      material: {
+        syncRoom: pairing.syncRoom,
+        signalingUrls: pairing.signalingUrls,
+        roomSecret: pairing.roomSecret,
+        ...(pairing.capabilityToken === undefined
+          ? {}
+          : { capabilityToken: pairing.capabilityToken }),
+        ...(pairing.capabilityExpiresAtMs === undefined
+          ? {}
+          : { capabilityExpiresAtMs: pairing.capabilityExpiresAtMs }),
+        ...(user === undefined ? {} : { user }),
       },
-      ...(pairing.capabilityToken === undefined
-        ? {}
-        : {
-            session: {
-              authenticated: true as const,
-              source:
-                pairing.source === "pairing_invite"
-                  ? ("desktop_invite" as const)
-                  : ("desktop_manual_pairing" as const),
-              capability_token: pairing.capabilityToken,
-              ...(pairing.capabilityExpiresAtMs === undefined
-                ? {}
-                : { capability_expires_at_ms: pairing.capabilityExpiresAtMs }),
-              ...(user === undefined
-                ? {}
-                : {
-                    user: {
-                      ...(user.id === undefined ? {} : { id: user.id }),
-                      ...(user.displayName === undefined ? {} : { display_name: user.displayName }),
-                      ...(role === undefined ? {} : { role }),
-                      is_admin: role !== undefined && ["chef", "admin", "founder"].includes(role),
-                    },
-                  }),
-            },
-          }),
-    };
+    });
     return { descriptor, config };
   });
+
+  const resolveLocalDaemonTarget = Effect.fn("CtoxInstanceRegistry.resolveLocalDaemonTarget")(
+    function* (instanceId: string) {
+      const discovered = yield* discoverLocalInstances;
+      const target = discovered.find((entry) => entry.instance.id === instanceId);
+      if (target === undefined || !isLaunchableCtoxLocalDaemon(target.instance)) {
+        return yield* registryError("not_found");
+      }
+      return {
+        descriptor: target.instance,
+        daemonInstanceId: target.daemonInstanceId,
+        discoveredCount: discovered.length,
+      };
+    },
+  );
 
   const stableIdentityKey = Effect.fn("CtoxInstanceRegistry.stableIdentityKey")(function* (
     instanceId: string,
@@ -1126,6 +1140,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   return CtoxInstanceRegistry.of({
     resolvePairedLaunch: (instanceId) => registryLock.withPermit(resolvePairedLaunch(instanceId)),
+    resolveLocalDaemonTarget: (instanceId) =>
+      registryLock.withPermit(resolveLocalDaemonTarget(instanceId)),
     stableIdentityKey: (instanceId) => registryLock.withPermit(stableIdentityKey(instanceId)),
     merge: (managed) =>
       registryLock.withPermit(

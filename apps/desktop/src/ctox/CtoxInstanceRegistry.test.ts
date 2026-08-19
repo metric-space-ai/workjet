@@ -9,6 +9,9 @@ import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import { expect, vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({}));
@@ -17,11 +20,13 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type * as CtoxLocalDaemonSource from "./CtoxLocalDaemonSource.ts";
 import {
+  CtoxInstanceRegistry,
   CtoxInstanceRegistryError,
   make,
   mergeCtoxInstanceSources,
   parseCtoxPairingInvite,
 } from "./CtoxInstanceRegistry.ts";
+import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 
 const NOW = 1_800_000_000_000;
 const textDecoder = new TextDecoder();
@@ -787,6 +792,97 @@ describe("CtoxInstanceRegistry", () => {
     return Effect.gen(function* () {
       const service = yield* registry;
       assert.deepEqual(yield* service.merge({ _tag: "signed_out" }), { _tag: "signed_out" });
+    });
+  });
+
+  it.effect("launches a discovered local daemon without persisting its material", () => {
+    const memory = makeMemoryFileSystem();
+    memory.files.set(
+      "/local-state/instance.json",
+      JSON.stringify({
+        version: 1,
+        instanceId: "workshop-1",
+        displayName: "Workshop Business OS",
+        status: "running",
+        lastSeenAt: NOW - 1_000,
+      }),
+    );
+    const { registry } = registryHarness({
+      fileSystem: memory,
+      localDaemon: { env: { CTOX_STATE_ROOT: "/local-state" }, nowEpochMs: () => NOW },
+    });
+    const localInvite = JSON.stringify({
+      type: "ctox-business-os-invite",
+      version: 1,
+      display_name: "Workshop Business OS",
+      instance_id: "workshop-1",
+      sync_room: "ctox-business-os:workshop-room",
+      signaling_urls: ["ws://127.0.0.1:4444/signal"],
+      signaling_room_password: "raw-local-secret",
+      capability_token: "raw-local-capability",
+      expires_at_ms: NOW + 86_400_000,
+    });
+
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const paired = yield* service.importManualPairing(manualPairing);
+      const merged = yield* service.merge({ _tag: "signed_out" });
+      assert.equal(merged._tag, "ready");
+      if (merged._tag !== "ready") return;
+      const local = merged.instances.find((entry) => entry.source === "local_daemon");
+      assert.isDefined(local);
+
+      const target = yield* service.resolveLocalDaemonTarget(local.id);
+      assert.equal(target.daemonInstanceId, "workshop-1");
+      assert.equal(target.discoveredCount, 1);
+      assert.deepEqual(
+        failureCode(yield* Effect.result(service.resolveLocalDaemonTarget(paired.id))),
+        "not_found",
+      );
+
+      const launcher = yield* CtoxLocalDaemonLaunch.make({
+        env: {},
+        nowEpochMs: () => NOW,
+      }).pipe(
+        Effect.provideService(CtoxInstanceRegistry, service),
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.succeed(
+              ChildProcessSpawner.makeHandle({
+                pid: ChildProcessSpawner.ProcessId(1),
+                exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+                isRunning: Effect.succeed(false),
+                kill: () => Effect.void,
+                unref: Effect.succeed(Effect.void),
+                stdin: Sink.drain,
+                stdout: Stream.make(textEncoder.encode(localInvite)),
+                stderr: Stream.empty,
+                all: Stream.empty,
+                getInputFd: () => Sink.drain,
+                getOutputFd: () => Stream.empty,
+              }),
+            ),
+          ),
+        ),
+      );
+      const launch = yield* launcher.resolveLaunch(local.id);
+      assert.equal(launch.config.signaling_room_password, "raw-local-secret");
+      assert.equal(launch.config.desktop_instance.source, "local_daemon");
+
+      // The canary: an activation of a local daemon leaves nothing behind. The
+      // registry documents still describe only the paired instance, and no
+      // persisted byte carries the freshly minted room, secret, or token.
+      for (const [path, contents] of memory.files) {
+        if (!path.startsWith("/state/")) continue;
+        assert.notInclude(contents, "raw-local-secret");
+        assert.notInclude(contents, "raw-local-capability");
+        assert.notInclude(contents, "workshop-room");
+        assert.notInclude(contents, "workshop-1");
+        assert.notInclude(contents, local.id);
+      }
+      const persisted = decodeUnknownJson(memory.files.get("/state/ctox/instances.json") ?? "");
+      assert.deepEqual(persisted, { version: 1, instances: [paired] });
     });
   });
 

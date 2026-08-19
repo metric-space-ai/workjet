@@ -27,6 +27,7 @@ import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
+import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
@@ -187,13 +188,19 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
+// The local-daemon launch service resolves its target through the one
+// registry instance, so the registry is provided to (and re-exported by) the
+// merged control layer rather than merged beside it.
 const desktopCtoxControlLayer = Layer.mergeAll(
   CtoxBusinessOsShell.layer,
   CtoxDevAuth.layer(),
-  CtoxInstanceRegistry.layer(),
   CtoxAppRail.layer(),
   CtoxManagedLaunch.layer(),
-).pipe(Layer.provideMerge(CtoxElectronSessions.layer));
+  CtoxLocalDaemonLaunch.layer(),
+).pipe(
+  Layer.provideMerge(CtoxInstanceRegistry.layer()),
+  Layer.provideMerge(CtoxElectronSessions.layer),
+);
 
 const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
 

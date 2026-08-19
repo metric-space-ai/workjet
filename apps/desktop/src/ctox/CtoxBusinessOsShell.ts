@@ -67,6 +67,13 @@ const MIME_TYPES = new Map([
   [".woff2", "font/woff2"],
 ]);
 
+/**
+ * The instance sources that reach the packed WebRTC launch. `local_daemon`
+ * joins the paired sources because a daemon on this machine hands out the same
+ * desktop invite document; every other source has no pairing material at all.
+ */
+export type CtoxBusinessOsLaunchSource = "pairing_invite" | "manual_pairing" | "local_daemon";
+
 export interface CtoxBusinessOsLaunchConfig {
   readonly transport: "webrtc";
   readonly sync_room: string;
@@ -75,7 +82,7 @@ export interface CtoxBusinessOsLaunchConfig {
   readonly http_bridge_available: false;
   readonly desktop_instance: {
     readonly id: string;
-    readonly source: "pairing_invite" | "manual_pairing";
+    readonly source: CtoxBusinessOsLaunchSource;
     readonly display_name: string;
     readonly domain: string;
   };

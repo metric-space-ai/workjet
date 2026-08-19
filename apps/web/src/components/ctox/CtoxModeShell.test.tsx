@@ -172,7 +172,7 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("httpDataProxy");
   });
 
-  it("renders discovered local daemons as a non-launchable Local group", () => {
+  it("renders running local daemons as launchable and stopped ones as inert", () => {
     const local = instance({
       id: "local:AAAAAAAAAAAAAAAAAAAAAA",
       source: "local_daemon",
@@ -203,21 +203,23 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(canActivateCtoxInstance(local)).toBe(false);
+    expect(canActivateCtoxInstance(local)).toBe(true);
     expect(markup).toContain('id="ctox-local-heading"');
     expect(markup).toContain("Local CTOX instances");
     expect(markup).toContain("Workshop Business OS");
     expect(markup).toContain("Stopped Daemon");
-    expect(markup).toContain(
-      "Local daemon\nAvailable · WebRTC unavailable\nLocal CTOX daemons cannot be opened yet.",
+    // A running daemon carries no unavailability hint; a stopped one does.
+    expect(markup).toContain("Local daemon\nAvailable · WebRTC unavailable");
+    expect(markup).not.toContain(
+      "Local daemon\nAvailable · WebRTC unavailable\nThis local daemon is not running.",
     );
     expect(markup).toContain(
-      "Local daemon\nOffline · WebRTC unavailable\nLocal CTOX daemons cannot be opened yet.",
+      "Local daemon\nOffline · WebRTC unavailable\nThis local daemon is not running.",
     );
-    // Same flat row style as Managed and Paired, but inert and muted.
+    // Same flat row style as Managed and Paired; only the stopped row is inert.
     expect(markup).toContain('data-ctox-instance-source="local_daemon"');
     expect(markup).toContain("bg-sidebar-muted-foreground/50");
-    expect(markup.match(/data-ctox-instance-source="local_daemon"[^>]*disabled/g)).toHaveLength(2);
+    expect(markup.match(/data-ctox-instance-source="local_daemon"[^>]*disabled/g)).toHaveLength(1);
     // A local row offers no Remove control; only paired entries are removable.
     expect(markup).not.toContain("Remove Workshop Business OS");
   });
@@ -319,6 +321,12 @@ describe("CTOX instance presentation", () => {
       source: "local_daemon",
       displayName: "Local Alpha",
     });
+    const stoppedLocal = instance({
+      id: "local:stopped",
+      source: "local_daemon",
+      displayName: "Stopped Alpha",
+      status: "offline",
+    });
     const ssh = instance({
       id: "ssh:alpha",
       source: "ssh_managed",
@@ -329,12 +337,17 @@ describe("CTOX instance presentation", () => {
     expect(canActivateCtoxInstance(paired)).toBe(true);
     expect(canActivateCtoxInstance(invited)).toBe(true);
     expect(canActivateCtoxInstance(expired)).toBe(false);
-    expect(canActivateCtoxInstance(local)).toBe(false);
+    // A running local daemon launches; a stopped one stays inert.
+    expect(canActivateCtoxInstance(local)).toBe(true);
+    expect(canActivateCtoxInstance(stoppedLocal)).toBe(false);
+    expect(canActivateCtoxInstance({ ...local, status: "error" })).toBe(false);
     expect(canActivateCtoxInstance(ssh)).toBe(false);
 
     const markup = renderToStaticMarkup(
       <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "ready", instances: [] }}>
-        <CtoxManagedInstanceList instances={[managed, paired, invited, expired, local, ssh]} />
+        <CtoxManagedInstanceList
+          instances={[managed, paired, invited, expired, local, stoppedLocal, ssh]}
+        />
       </CtoxModeProvider>,
     );
 
@@ -350,7 +363,12 @@ describe("CTOX instance presentation", () => {
     expect(markup).toMatch(
       /<button[^>]*disabled=""[^>]*title="[^"]*This pairing is not available\."[^>]*>[^]*Expired Alpha/,
     );
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*Local Alpha/);
+    expect(markup).toMatch(
+      /<button(?![^>]*disabled)[^>]*data-ctox-instance-source="local_daemon"[^>]*data-ctox-instance-status="available"[^>]*>[^]*Local Alpha/,
+    );
+    expect(markup).toMatch(
+      /<button[^>]*disabled=""[^>]*title="[^"]*This local daemon is not running\."[^>]*>[^]*Stopped Alpha/,
+    );
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*SSH Alpha/);
   });
 });

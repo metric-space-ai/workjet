@@ -129,6 +129,9 @@ export function isPairedCtoxInstance(instance: CtoxManagedInstance): boolean {
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
   if (instance.source === "ctox_dev") return instance.status === "available";
+  // A local daemon is launchable exactly while it is answering: the main
+  // process mints its pairing material from that daemon on every activation.
+  if (instance.source === "local_daemon") return instance.status === "available";
   return isPairedCtoxInstance(instance) && instance.status === "paired";
 }
 
@@ -932,11 +935,12 @@ export function CtoxAppRailList({
 }
 
 /**
- * Why a listed instance cannot be opened. Local daemons are discovered
- * read-only; their launch path is not wired yet, so they stay listed but inert.
+ * Why a listed instance cannot be opened. A local daemon is only listed as
+ * unavailable while it is not answering on this machine; once it runs it opens
+ * like any other instance.
  */
 export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
-  if (instance.source === "local_daemon") return "Local CTOX daemons cannot be opened yet.";
+  if (instance.source === "local_daemon") return "This local daemon is not running.";
   return isPairedCtoxInstance(instance) ? "This pairing is not available." : undefined;
 }
 

@@ -8,6 +8,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import type { Session } from "electron";
 import { session } from "electron";
 
+import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import { ctoxManagedSessionPartition } from "./CtoxManagedDiscovery.ts";
 
 export const CTOX_CONTROL_PLANE_PARTITION = "persist:workjet-ctox-control-plane";
@@ -118,7 +119,10 @@ export const make = Effect.gen(function* () {
       descriptor.healthSummary.nativePeerObserved === false &&
       descriptor.id.startsWith(`paired:${descriptor.source}:`) &&
       /^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(descriptor.id);
-    if (!managed && !paired) {
+    // A local daemon gets its own isolated partition, derived from the same
+    // stable id the sidebar row carries — exactly like a paired instance.
+    const local = isLaunchableCtoxLocalDaemon(descriptor);
+    if (!managed && !paired && !local) {
       return Effect.fail(new CtoxElectronSessionDescriptorError());
     }
     const expectedPartition = ctoxManagedSessionPartition({

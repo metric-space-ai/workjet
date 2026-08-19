@@ -428,13 +428,22 @@ Tasks:
       IGNORED by the binary; routing uses dotted
       `-c model_providers.workjet_gateway.*` overrides through the existing
       `T3CODE_CODEX_LAUNCH_ARGS` seam (30/30 probe hits on
-      `POST /v1/responses`; `wire_api` must be `responses`). Grok, OpenCode,
-      and Cursor stay unrouted with a typed `driver-unsupported` failure —
-      no guessed env vars. A not-ready gateway fails session start with the
-      typed `ProviderGatewayRoutingError` instead of silently falling back to
-      direct credentials. Still open: grok/opencode routing mechanisms,
-      composer model-selection → gateway route resolution, and a live routed
-      turn against a real gateway account.
+      `POST /v1/responses`; `wire_api` must be `responses`). Grok and
+      OpenCode routed 2026-08-19 (commit `c8da109cd`), both verified against
+      the real binaries with loopback probes: grok via
+      `GROK_MODELS_BASE_URL` (+`XAI_API_KEY`, `/v1`-prefixed — real GETs/POSTs
+      observed on gateway routes); opencode via
+      `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` inherited by its `serve` child
+      (Anthropic- and OpenAI-shaped providers only — other vendors keep
+      direct credentials, stated in the overlay). One shared
+      `gatewayVersionedBaseUrl()` for all `/v1` consumers; an OpenCode
+      instance with an external `serverUrl` is rejected `instance-unroutable`
+      instead of silently not routing. Cursor stays unrouted
+      (`driver-unsupported`). KNOWN FOLLOW-UP: a grok login session sends the
+      user's real xAI JWT to the loopback gateway — the Rust host must
+      substitute its own upstream credential, never forward that header.
+      Still open: composer model-selection → gateway route resolution, and a
+      live routed turn against a real gateway account.
 - [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
 - [ ] Preserve direct provider/model selection in the composer; selection

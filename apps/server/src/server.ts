@@ -48,6 +48,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
+import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import { WorkjetMailboxStoreLive } from "./workjet/mailbox/WorkjetMailboxStore.ts";
 import * as WorkjetMailboxTransport from "./workjet/mailbox/WorkjetMailboxTransport.ts";
@@ -515,6 +516,15 @@ export const makeRoutesLayer = Layer.mergeAll(
   WorkjetMailboxTransport.layer.pipe(
     Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
     Layer.provide(ProcessRunner.layer),
+  ),
+  // The step that makes a DELIVERED delegation actually run: a bounded
+  // reconciler loop that starts a normal `thread.turn.start` on the target
+  // thread, applies backpressure while that thread has an active turn, and
+  // resumes whatever a previous process left behind. It sits beside the
+  // transport for the same reason — it is a background loop, not a
+  // request-scoped dependency.
+  WorkjetDelegationExecutor.layer.pipe(
+    Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetSnapshotStoreLive)),
   ),
 ).pipe(
   // WebSocket management and MCP search resolve this one server-lifetime

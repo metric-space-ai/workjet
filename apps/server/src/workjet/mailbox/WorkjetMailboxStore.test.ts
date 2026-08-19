@@ -1310,3 +1310,115 @@ it.effect("refuses to approve a delegation that has no pending gate", () =>
     assert.isTrue(yield* store.isDelegationExecutable(id));
   }).pipe(Effect.provide(testLayer)),
 );
+
+// ===============================
+// Mesh roster read (peer pins)
+// ===============================
+
+const pinPeer = (input: {
+  readonly environmentId: string;
+  readonly firstSeenAtMillis: number;
+  readonly encryptionPublicKey?: string | null;
+}) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      INSERT INTO workjet_mailbox_peer_keys
+        (source_workspace_id, source_environment_id, public_key, encryption_public_key,
+         first_seen_at_ms)
+      VALUES (${WORKSPACE}, ${input.environmentId}, ${"signing-key-for-tests"},
+              ${input.encryptionPublicKey ?? null}, ${input.firstSeenAtMillis})
+    `;
+  });
+
+it.effect("lists pinned peers oldest first without ever returning key material", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    yield* pinPeer({ environmentId: "environment-late", firstSeenAtMillis: 3_000 });
+    yield* pinPeer({
+      environmentId: "environment-early",
+      firstSeenAtMillis: 1_000,
+      encryptionPublicKey: "encryption-key-for-tests",
+    });
+
+    const page = yield* store.listMeshPeers(10);
+
+    assert.isFalse(page.truncated);
+    assert.deepEqual(
+      page.peers.map((peer) => peer.environmentId),
+      ["environment-early", "environment-late"],
+    );
+    // The encryption key is reported as a capability flag only.
+    assert.deepEqual(
+      page.peers.map((peer) => peer.sealedDeliveryReady),
+      [true, false],
+    );
+    assert.deepEqual(
+      page.peers.map((peer) => peer.firstSeenAtMillis),
+      [1_000, 3_000],
+    );
+    for (const peer of page.peers) {
+      assert.deepEqual(Object.keys(peer).toSorted(), [
+        "environmentId",
+        "firstSeenAtMillis",
+        "sealedDeliveryReady",
+        "workspaceId",
+      ]);
+      assert.equal(peer.workspaceId, WORKSPACE);
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("returns an empty, untruncated page when nothing has been pinned yet", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const page = yield* store.listMeshPeers(10);
+    assert.deepEqual(page.peers, []);
+    assert.isFalse(page.truncated);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("bounds the page and reports truncation instead of dumping the table", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    for (let index = 0; index < 5; index += 1) {
+      yield* pinPeer({
+        environmentId: `environment-${index}`,
+        firstSeenAtMillis: 1_000 + index,
+      });
+    }
+
+    const bounded = yield* store.listMeshPeers(2);
+    assert.equal(bounded.peers.length, 2);
+    assert.isTrue(bounded.truncated);
+
+    // A nonsensical limit is clamped rather than trusted: never zero rows, and
+    // never more than the contract bound.
+    const clampedLow = yield* store.listMeshPeers(0);
+    assert.equal(clampedLow.peers.length, 1);
+    assert.isTrue(clampedLow.truncated);
+
+    const clampedHigh = yield* store.listMeshPeers(Number.MAX_SAFE_INTEGER);
+    assert.equal(clampedHigh.peers.length, 5);
+    assert.isFalse(clampedHigh.truncated);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("surfaces an undecodable peer pin row as a typed corrupt-row error", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const store = yield* WorkjetMailboxStore;
+    yield* pinPeer({ environmentId: "environment-broken", firstSeenAtMillis: 1_000 });
+    yield* sql`
+      UPDATE workjet_mailbox_peer_keys
+      SET source_environment_id = ''
+      WHERE source_environment_id = 'environment-broken'
+    `;
+
+    const corrupt = yield* store.listMeshPeers(10).pipe(Effect.result);
+    assert.equal(corrupt._tag, "Failure");
+    if (corrupt._tag === "Failure") {
+      assert.isTrue(isWorkjetMailboxStoreCorruptRowError(corrupt.failure));
+    }
+  }).pipe(Effect.provide(testLayer)),
+);

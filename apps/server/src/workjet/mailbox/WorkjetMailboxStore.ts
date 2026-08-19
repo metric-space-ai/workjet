@@ -9,8 +9,11 @@ import {
   WorkjetMailboxError,
   WorkjetMailboxPayload,
   WorkjetMailboxTimestamp,
+  WorkjetMeshWorkspaceId,
   WorkjetRoutingEnvelope,
   WORKJET_TERMINAL_DELEGATION_STATES,
+  EnvironmentId,
+  WORKJET_MESH_ROSTER_MAX_PEERS,
   type WorkjetDelegationRef,
   type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
@@ -196,6 +199,7 @@ export class WorkjetMailboxStoreCorruptRowError extends Schema.TaggedErrorClass<
       "workjet_mailbox_inbox",
       "workjet_delegations",
       "workjet_delegation_edges",
+      "workjet_mailbox_peer_keys",
     ]),
     rowId: Schema.String,
     issue: Schema.String,
@@ -258,6 +262,23 @@ export interface WorkjetDelegationRecord {
  * table — a delegation's `state` says where it is in its lifecycle; this says
  * how much budget it has burned and whether a human has cleared it to run.
  */
+/**
+ * A mesh peer this machine has pinned. Ids and timestamps only — see
+ * {@link MeshPeerDbRow}.
+ */
+export interface WorkjetMeshPeerRecord {
+  readonly workspaceId: WorkjetMeshWorkspaceId;
+  readonly environmentId: EnvironmentId;
+  readonly firstSeenAtMillis: number;
+  readonly sealedDeliveryReady: boolean;
+}
+
+/** A bounded page of peers plus whether the pin table holds more than the bound. */
+export interface WorkjetMeshPeerPage {
+  readonly peers: ReadonlyArray<WorkjetMeshPeerRecord>;
+  readonly truncated: boolean;
+}
+
 export interface WorkjetDelegationAccounting {
   /** Cumulative tokens charged to the delegation. */
   readonly tokens: number;
@@ -389,6 +410,29 @@ const DelegationEdgeDbRow = Schema.Struct({
   edgeId: Schema.String,
   edge: Schema.fromJsonString(WorkjetDelegationEdge),
 });
+
+/**
+ * One trust-on-first-use peer pin (migrations 043/044) as the ROSTER sees it.
+ *
+ * The two key columns are absent on purpose: the roster read exists to answer
+ * "which machines has this one exchanged mail with", and no caller of it ever
+ * needs key material. `sealedDeliveryReady` is SQL's derived answer to "is an
+ * encryption key pinned", which is the only key fact a recipient picker needs.
+ */
+const MeshPeerDbRow = Schema.Struct({
+  workspaceId: WorkjetMeshWorkspaceId,
+  environmentId: EnvironmentId,
+  firstSeenAtMillis: Schema.Int,
+  sealedDeliveryReady: Schema.Int,
+});
+const decodeMeshPeerDbRow = Schema.decodeUnknownEffect(MeshPeerDbRow);
+
+const MESH_PEER_COLUMNS = `
+  source_workspace_id AS "workspaceId",
+  source_environment_id AS "environmentId",
+  first_seen_at_ms AS "firstSeenAtMillis",
+  CASE WHEN encryption_public_key IS NULL THEN 0 ELSE 1 END AS "sealedDeliveryReady"
+`;
 
 const decodeOutboxDbRow = Schema.decodeUnknownEffect(OutboxDbRow);
 const decodeInboxDbRow = Schema.decodeUnknownEffect(InboxDbRow);
@@ -645,6 +689,20 @@ export interface WorkjetMailboxStoreShape {
     delegationId: WorkjetDelegationId,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetDelegationEdge>, WorkjetMailboxStoreError>;
+
+  /**
+   * Every mesh peer whose key this machine has pinned, oldest first, bounded by
+   * `limit` (clamped into `[1, WORKJET_MESH_ROSTER_MAX_PEERS]` so no caller can
+   * turn a picker list into an unbounded table scan). `truncated` reports that
+   * the table holds more rows than were returned.
+   *
+   * This is a pure READ of the pin table. It never writes, never pins, and
+   * never returns key material — a peer's signing and encryption keys stay
+   * inside the transport that pinned them.
+   */
+  readonly listMeshPeers: (
+    limit: number,
+  ) => Effect.Effect<WorkjetMeshPeerPage, WorkjetMailboxStoreError>;
 }
 
 export class WorkjetMailboxStore extends Context.Service<
@@ -741,6 +799,8 @@ export const make = Effect.gen(function* () {
       readonly envelopeId?: unknown;
       readonly delegationId?: unknown;
       readonly edgeId?: unknown;
+      // A peer pin row is keyed by its source pair, not by an envelope id.
+      readonly environmentId?: unknown;
     };
     if (typeof candidate.envelopeId === "string") {
       return candidate.envelopeId;
@@ -748,7 +808,10 @@ export const make = Effect.gen(function* () {
     if (typeof candidate.delegationId === "string") {
       return candidate.delegationId;
     }
-    return typeof candidate.edgeId === "string" ? candidate.edgeId : "<unknown>";
+    if (typeof candidate.edgeId === "string") {
+      return candidate.edgeId;
+    }
+    return typeof candidate.environmentId === "string" ? candidate.environmentId : "<unknown>";
   };
 
   const encodeEnvelopeAndPayload = (
@@ -1816,6 +1879,50 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(rows, (row) => decodeDelegationEdge(row, rowIdOf(row)));
     });
 
+  const listMeshPeers: WorkjetMailboxStoreShape["listMeshPeers"] = (limit) =>
+    Effect.gen(function* () {
+      const bounded = Math.min(
+        WORKJET_MESH_ROSTER_MAX_PEERS,
+        Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 1),
+      );
+      // One row beyond the bound is fetched purely to answer `truncated`
+      // without a second COUNT query, and is never returned.
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT ${MESH_PEER_COLUMNS}
+          FROM workjet_mailbox_peer_keys
+          ORDER BY first_seen_at_ms ASC, source_environment_id ASC
+          LIMIT ?
+        `,
+          [bounded + 1],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listMeshPeers:select")));
+
+      const page = rows.slice(0, bounded);
+      const peers = yield* Effect.forEach(page, (row) =>
+        decodeMeshPeerDbRow(row).pipe(
+          Effect.mapError(
+            (cause) =>
+              new WorkjetMailboxStoreCorruptRowError({
+                table: "workjet_mailbox_peer_keys",
+                rowId: rowIdOf(row),
+                issue: cause.issue._tag,
+              }),
+          ),
+          Effect.map(
+            (decoded): WorkjetMeshPeerRecord => ({
+              workspaceId: decoded.workspaceId,
+              environmentId: decoded.environmentId,
+              firstSeenAtMillis: decoded.firstSeenAtMillis,
+              sealedDeliveryReady: decoded.sealedDeliveryReady === 1,
+            }),
+          ),
+        ),
+      );
+      return { peers, truncated: rows.length > bounded } satisfies WorkjetMeshPeerPage;
+    });
+
   return {
     enqueueOutbound,
     recordInboundEnvelope,
@@ -1842,6 +1949,7 @@ export const make = Effect.gen(function* () {
     expireOverdue,
     insertDelegationEdge,
     listDelegationEdges,
+    listMeshPeers,
   } satisfies WorkjetMailboxStoreShape;
 });
 

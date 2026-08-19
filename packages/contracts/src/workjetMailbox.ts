@@ -1041,3 +1041,63 @@ export const WORKJET_MAILBOX_ACTIVITY_KINDS = [
   "workjet.delegation.received",
 ] as const;
 export type WorkjetMailboxActivityKind = (typeof WORKJET_MAILBOX_ACTIVITY_KINDS)[number];
+
+// ===============================
+// Mesh roster (recipient picker)
+// ===============================
+// ADDITIVE Wave-5 read (docs/workjet-plan.md → Wave 5 thread UI, "recipient
+// selection across connected computers"). Nothing below changes an existing
+// schema; the composer needs a bounded answer to "which machines can this one
+// address at all", and until now it had to be typed by hand.
+
+/**
+ * Upper bound on the peers one roster read returns. The roster is a picker
+ * list, not a directory dump: a machine that has exchanged mail with more peers
+ * than this gets the oldest-pinned ones and an explicit `truncated` flag rather
+ * than an unbounded response.
+ */
+export const WORKJET_MESH_ROSTER_MAX_PEERS = 200;
+
+/**
+ * One mesh peer this machine has ALREADY exchanged envelopes with, as recorded
+ * by trust-on-first-use peer-key pinning (migrations 043/044).
+ *
+ * Redaction discipline, identical to every other client-facing mailbox schema:
+ * ids and timestamps only. The pinned Ed25519 signing key and X25519 encryption
+ * key are NEVER carried here; `sealedDeliveryReady` reports only the derived
+ * FACT that an encryption key is pinned, which is what a composer needs to know
+ * and reveals no key material.
+ *
+ * There is deliberately no "last seen" and no online/offline field. The pin
+ * table stores first contact only, and this server has no liveness signal for
+ * another machine — inventing one would be a claim the mesh cannot support.
+ */
+export const WorkjetMeshRosterPeer = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  workspaceId: WorkjetMeshWorkspaceId,
+  environmentId: EnvironmentId,
+  /** When this machine pinned the peer's key, i.e. first contact. */
+  firstSeenAt: WorkjetMailboxTimestamp,
+  /** True once the peer's encryption key is pinned, so a send can be sealed. */
+  sealedDeliveryReady: Schema.Boolean,
+});
+export type WorkjetMeshRosterPeer = typeof WorkjetMeshRosterPeer.Type;
+
+/** This machine's own mesh address, always present and always labeled local. */
+export const WorkjetMeshRosterLocalEntry = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  workspaceId: WorkjetMeshWorkspaceId,
+  environmentId: EnvironmentId,
+});
+export type WorkjetMeshRosterLocalEntry = typeof WorkjetMeshRosterLocalEntry.Type;
+
+export const WorkjetMeshRoster = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  local: WorkjetMeshRosterLocalEntry,
+  peers: Schema.Array(WorkjetMeshRosterPeer).check(
+    Schema.isMaxLength(WORKJET_MESH_ROSTER_MAX_PEERS),
+  ),
+  /** True when the pin table holds more peers than the bound returns. */
+  truncated: Schema.Boolean,
+});
+export type WorkjetMeshRoster = typeof WorkjetMeshRoster.Type;

@@ -215,6 +215,7 @@ import {
   WorkjetMailboxSendMessageRpcResult,
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
+  WorkjetMeshRoster,
 } from "./workjetMailbox.ts";
 import { WorkjetMailboxAuditEvent } from "./workjetMailboxAudit.ts";
 
@@ -319,6 +320,9 @@ export const WS_METHODS = {
   workjetMailboxReply: "workjet.mailbox.reply",
   workjetMailboxRequestReview: "workjet.mailbox.requestReview",
   workjetMailboxUpdateDelegation: "workjet.mailbox.updateDelegation",
+
+  // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
+  workjetMeshRoster: "workjet.mesh.roster",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -627,6 +631,18 @@ export const WsWorkjetMailboxUpdateDelegationRpc = Rpc.make(
     error: WorkjetMailboxRpcError,
   },
 );
+
+/**
+ * ADDITIVE Wave-5 read. The bounded, redacted list of mesh peers this machine
+ * has exchanged envelopes with, plus its own address, so the composer can offer
+ * cross-machine recipients instead of demanding a hand-typed environment id.
+ * Ids and timestamps only — never pinned key material.
+ */
+export const WsWorkjetMeshRosterRpc = Rpc.make(WS_METHODS.workjetMeshRoster, {
+  payload: Schema.Struct({}),
+  success: WorkjetMeshRoster,
+  error: WorkjetMailboxRpcError,
+});
 
 const PullRequestRpcError = Schema.Union([
   PullRequestUnavailableError,
@@ -1184,6 +1200,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxReplyRpc,
   WsWorkjetMailboxRequestReviewRpc,
   WsWorkjetMailboxUpdateDelegationRpc,
+  WsWorkjetMeshRosterRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

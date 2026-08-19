@@ -68,6 +68,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetMailboxReply]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetMailboxRequestReview]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetMailboxUpdateDelegation]: AuthOrchestrationOperateScope,
+  // The recipient roster is a redacted READ of peers this machine already
+  // exchanged mail with: the same orchestration-read scope the audit stream and
+  // the gateway status use. It writes nothing and carries no key material.
+  [WS_METHODS.workjetMeshRoster]: AuthOrchestrationReadScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

@@ -55,6 +55,9 @@ import {
   type TerminalError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
+  WorkjetMailboxError,
+  WORKJET_MESH_ROSTER_MAX_PEERS,
+  type WorkjetMeshRoster,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -76,6 +79,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import * as WorkjetMailboxRpc from "./workjet/mailbox/WorkjetMailboxRpc.ts";
+import * as WorkjetMailboxStore from "./workjet/mailbox/WorkjetMailboxStore.ts";
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
 import * as WorkjetSnapshotStore from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import {
@@ -362,6 +366,7 @@ const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   workjetMailboxIdentity: WorkjetMeshIdentity.WorkjetMeshIdentity["Service"],
+  workjetMailboxStore: WorkjetMailboxStore.WorkjetMailboxStore["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1710,6 +1715,41 @@ const makeWsRpcLayer = (
             workjetMailbox.updateDelegation(input),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
+        // The recipient roster: this environment's own mesh address plus every
+        // peer whose key it has pinned. Ids, a first-contact timestamp, and the
+        // derived "can this be sealed" flag only — never key material, and
+        // deliberately no online/offline field, because no liveness signal for
+        // another machine exists to back one.
+        [WS_METHODS.workjetMeshRoster]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMeshRoster,
+            Effect.gen(function* () {
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              const page = yield* workjetMailboxStore.listMeshPeers(WORKJET_MESH_ROSTER_MAX_PEERS);
+              return {
+                schemaVersion: 1,
+                local: {
+                  schemaVersion: 1,
+                  workspaceId: workjetMailboxIdentity.workspaceId,
+                  environmentId,
+                },
+                peers: page.peers.map((peer) => ({
+                  schemaVersion: 1 as const,
+                  workspaceId: peer.workspaceId,
+                  environmentId: peer.environmentId,
+                  firstSeenAt: DateTime.formatIso(DateTime.makeUnsafe(peer.firstSeenAtMillis)),
+                  sealedDeliveryReady: peer.sealedDeliveryReady,
+                })),
+                truncated: page.truncated,
+              } satisfies WorkjetMeshRoster;
+            }).pipe(
+              // A store outage or an undecodable pin row is the bounded
+              // "mailbox-unavailable" the other mailbox RPCs already use; the
+              // cause never reaches the client.
+              Effect.mapError(() => new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
+            ),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",
@@ -2410,6 +2450,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const workjetMailboxAuditEmitter = yield* WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter;
     const workjetSnapshotStore = yield* WorkjetSnapshotStore.WorkjetSnapshotStore;
     const workjetMeshIdentity = yield* WorkjetMeshIdentity.WorkjetMeshIdentity;
+    // The recipient roster reads the trust-on-first-use peer pin table
+    // directly. It is the same server-lifetime store the delivery service
+    // writes through, resolved here once rather than per connection.
+    const workjetMailboxStore = yield* WorkjetMailboxStore.WorkjetMailboxStore;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -2433,7 +2477,12 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, previewAutomationBroker, workjetMeshIdentity).pipe(
+            makeWsRpcLayer(
+              session,
+              previewAutomationBroker,
+              workjetMeshIdentity,
+              workjetMailboxStore,
+            ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
@@ -2494,4 +2543,9 @@ export const websocketRpcRouteLayer = Layer.unwrap(
       ),
     );
   }),
+).pipe(
+  // The mailbox store is a stateless SQL facade over the ambient `SqlClient`,
+  // so building it here keeps the new roster read self-contained instead of
+  // widening what the server's route graph has to hand this layer.
+  Layer.provide(WorkjetMailboxStore.WorkjetMailboxStoreLive),
 );

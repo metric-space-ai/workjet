@@ -981,9 +981,21 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   terminal cancelled). Fully closes the anti-infinite-loop requirement;
   wiring real per-turn token counts into `recordDelegationUsage` is a later
   slice (the accounting surface takes an injected number today).
-- [ ] Add interruption, cancellation, reassignment, target-offline, deleted-
+- [x] Add interruption, cancellation, reassignment, target-offline, deleted-
       thread, and target-version-skew handling with explicit terminal or
       recoverable states; never silently drop a message or start it elsewhere.
+      Done 2026-08-19 (commits `31aa98de9`, `c05e8cdb7`): deleted target thread
+      → terminal `failed` `target-thread-deleted` (delivered AND mid-run, with
+      expiry as backstop); cross-env offline = transport backoff→dead-letter,
+      and a dead-lettered delegation envelope reconciles its source row to
+      `failed` `delivery-dead-lettered` (idempotent, with a source-thread
+      trace); `reassignDelegation` moves a delivered/needs-input delegation to
+      a different local thread in place (refuses running/terminal/foreign — a
+      task can never start on two threads); an undecodable row is a counted
+      `version-unsupported` skip via a resilient per-row scan instead of
+      aborting the cycle; an interrupted turn fails with explicit
+      `turn-interrupted`. Cancellation existed already. No contract changes
+      were needed.
 - [ ] Transfer context by immutable prompt snapshots and bounded references to
       artifacts, diffs, files, and Greppy results instead of copying complete
       chat histories. All Code-mode threads on one server continue to share its
@@ -1006,9 +1018,21 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   through ChatView. Still open: follow-up/reassign controls, a real
   cross-machine recipient picker (mesh roster), and the compact-composer
   variant of the control.
-- [ ] Add redacted audit/observability events and user notifications without
+- [x] Add redacted audit/observability events and user notifications without
       storing prompts, secrets, provider payloads, or artifact contents in
-      relay logs, traces, push notifications, or crash reports.
+      relay logs, traces, push notifications, or crash reports. Done 2026-08-19
+      (commit `b06c3d837` + merge): `WorkjetMailboxAuditEvent` tagged union
+      (enqueued/delivered/dead-lettered/rejected/state-changed/
+      approval-required/completed/budget-exceeded/mesh-replication-error) with
+      only ids, closed literals, integers, and timestamps — a redaction canary
+      asserts no payload field exists; `WorkjetMailboxNotification` subset
+      builds user-safe titles from ids+codes; emitted best-effort AFTER the
+      durable write from delivery/executor/transport via a bounded
+      `WorkjetMailboxAuditEmitter` pub-sub (ResourceTelemetry pattern);
+      consumable over the new streamed `subscribeWorkjetMailboxAudit` RPC
+      (read scope) with client-runtime atom plumbing. Honest gap: nothing
+      emits `budget-exceeded` at runtime until real usage accumulation is
+      wired into `recordDelegationUsage`; no toast/UI rendering yet.
 - [ ] Prove the protocol with same-server and cross-computer mixed-harness E2E:
       Codex -> Claude Code, Claude Code -> Grok, and Grok -> Codex, including
       offline delivery, duplicate envelopes, restart recovery, busy targets,

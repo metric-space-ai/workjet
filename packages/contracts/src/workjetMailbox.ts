@@ -333,9 +333,35 @@ export const WorkjetCompletionContract = Schema.Struct({
 export type WorkjetCompletionContract = typeof WorkjetCompletionContract.Type;
 
 /**
+ * Hard ceiling on a delegation's cumulative token budget. Tokens are a plain
+ * non-negative count, so a bound of one hundred million is far above any
+ * realistic single-delegation turn total while still refusing an unbounded
+ * runaway.
+ */
+export const WORKJET_DELEGATION_MAX_TOKENS_CEILING = 100_000_000;
+
+/**
+ * Hard ceiling on a delegation's cumulative cost budget, expressed in
+ * MICRO-CURRENCY: one integer unit is 1e-6 of the accounting currency (e.g.
+ * 1_000_000 `maxCostMicros` = 1.00 currency unit). Integer micro-units avoid
+ * floating-point drift in accumulation; the currency itself is not fixed by the
+ * contract, only the scale. The ceiling of 1e15 micros (one billion currency
+ * units) keeps the value inside a safe JS integer while bounding a runaway.
+ */
+export const WORKJET_DELEGATION_MAX_COST_MICROS_CEILING = 1_000_000_000_000_000;
+
+/**
  * Budget and limits. The plan requires "configurable maximum depth, review
- * rounds […] to prevent autonomous infinite loops"; the hard ceilings here make
- * a runaway graph unrepresentable rather than merely discouraged.
+ * rounds, token/cost/time budgets, and approval gates to prevent autonomous
+ * infinite loops"; the hard ceilings here make a runaway graph unrepresentable
+ * rather than merely discouraged.
+ *
+ * `maxTokens`, `maxCostMicros`, and `requiresApproval` are ADDITIVE (Wave-5
+ * token/cost budgets and the approval gate). All three are optional: an absent
+ * `maxTokens`/`maxCostMicros` means that dimension is unlimited, and an absent
+ * or `false` `requiresApproval` means the delegation may run without a human
+ * gate. Every delegation pinned before these fields existed therefore keeps its
+ * exact prior meaning (unlimited tokens/cost, no approval gate).
  */
 export const WorkjetDelegationBudget = Schema.Struct({
   schemaVersion: MailboxSchemaVersion,
@@ -348,8 +374,49 @@ export const WorkjetDelegationBudget = Schema.Struct({
   ),
   /** Wall-clock expiry of the delegation itself, independent of envelope expiry. */
   expiresAt: WorkjetMailboxTimestamp,
+  /**
+   * Optional cumulative TOKEN ceiling for the whole delegation. Absent =
+   * unlimited. A bounded positive integer: the store refuses any usage
+   * accumulation that would cross it, before the durable effect.
+   */
+  maxTokens: Schema.optionalKey(
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(1),
+      Schema.isLessThanOrEqualTo(WORKJET_DELEGATION_MAX_TOKENS_CEILING),
+    ),
+  ),
+  /**
+   * Optional cumulative COST ceiling for the whole delegation, in micro-currency
+   * (see {@link WORKJET_DELEGATION_MAX_COST_MICROS_CEILING}). Absent = unlimited.
+   */
+  maxCostMicros: Schema.optionalKey(
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(1),
+      Schema.isLessThanOrEqualTo(WORKJET_DELEGATION_MAX_COST_MICROS_CEILING),
+    ),
+  ),
+  /**
+   * Optional human-approval gate. Absent or `false` = no gate. When `true`, the
+   * delegation is created in `approvalState: "pending"` and the executor MUST
+   * NOT transition it to `running` until it is explicitly approved.
+   */
+  requiresApproval: Schema.optionalKey(Schema.Boolean),
 });
 export type WorkjetDelegationBudget = typeof WorkjetDelegationBudget.Type;
+
+/**
+ * The approval-gate lifecycle of a delegation, orthogonal to its
+ * {@link WorkjetDelegationState}. `not-required` is the default for a budget
+ * without `requiresApproval`; a gated delegation starts `pending` and a human
+ * moves it to `approved` (it may then run) or `rejected` (it is cancelled).
+ */
+export const WorkjetDelegationApprovalState = Schema.Literals([
+  "not-required",
+  "pending",
+  "approved",
+  "rejected",
+]);
+export type WorkjetDelegationApprovalState = typeof WorkjetDelegationApprovalState.Type;
 
 /**
  * The durable delegation lifecycle, exactly the literals fixed by the plan.
@@ -642,6 +709,13 @@ export const WorkjetMailboxFailureReason = Schema.Literals([
   "delegation-expired",
   "depth-exceeded",
   "review-rounds-exceeded",
+  /**
+   * Additive Wave-5 token/cost budget gates. Refused BEFORE the durable effect
+   * that would cross the ceiling, exactly like `depth-exceeded` /
+   * `review-rounds-exceeded`.
+   */
+  "token-budget-exceeded",
+  "cost-budget-exceeded",
   "invalid-state-transition",
   "version-skew",
   "transport-unavailable",
@@ -687,6 +761,10 @@ export class WorkjetMailboxError extends Schema.TaggedErrorClass<WorkjetMailboxE
         return "The delegation graph depth budget is exhausted.";
       case "review-rounds-exceeded":
         return "The delegation review-round budget is exhausted.";
+      case "token-budget-exceeded":
+        return "The delegation token budget is exhausted.";
+      case "cost-budget-exceeded":
+        return "The delegation cost budget is exhausted.";
       case "invalid-state-transition":
         return "The requested delegation state transition is not allowed.";
       case "version-skew":

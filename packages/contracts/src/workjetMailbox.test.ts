@@ -411,6 +411,52 @@ describe("WorkjetDelegation", () => {
     expect(() => decodeDelegation({ ...delegation, depth: -1 })).toThrow();
   });
 
+  it("round-trips a budget with the additive token/cost/approval fields absent", () => {
+    // Absent optional fields are the existing-delegation shape: they must
+    // survive a decode/encode round trip unchanged (no injected defaults).
+    const keys = Object.keys(decodeDelegation(delegation).budget).sort();
+    expect(keys).toEqual(["expiresAt", "maxDepth", "maxReviewRounds", "schemaVersion"]);
+    roundTrip(WorkjetDelegation, delegation);
+  });
+
+  it("round-trips a budget carrying token/cost ceilings and an approval gate", () => {
+    const gated = {
+      ...delegation,
+      budget: {
+        ...delegation.budget,
+        maxTokens: 250_000,
+        maxCostMicros: 5_000_000,
+        requiresApproval: true,
+      },
+    } as const;
+    const decoded = decodeDelegation(gated);
+    expect(decoded.budget.maxTokens).toBe(250_000);
+    expect(decoded.budget.maxCostMicros).toBe(5_000_000);
+    expect(decoded.budget.requiresApproval).toBe(true);
+    roundTrip(WorkjetDelegation, gated);
+  });
+
+  it("bounds the additive token and cost ceilings", () => {
+    expect(() =>
+      decodeDelegation({ ...delegation, budget: { ...delegation.budget, maxTokens: 0 } }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegation({
+        ...delegation,
+        budget: { ...delegation.budget, maxTokens: 100_000_001 },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegation({ ...delegation, budget: { ...delegation.budget, maxCostMicros: 0 } }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegation({
+        ...delegation,
+        budget: { ...delegation.budget, maxCostMicros: 1_000_000_000_000_001 },
+      }),
+    ).toThrow();
+  });
+
   it("requires an immutable, digest-pinned prompt snapshot reference", () => {
     expect(() =>
       decodeDelegation({ ...delegation, prompt: { ...delegation.prompt, digest: "abc" } }),
@@ -688,6 +734,8 @@ describe("WorkjetMailboxError", () => {
       "delegation-expired",
       "depth-exceeded",
       "review-rounds-exceeded",
+      "token-budget-exceeded",
+      "cost-budget-exceeded",
       "invalid-state-transition",
       "version-skew",
       "transport-unavailable",

@@ -454,10 +454,18 @@ Tasks:
       (2) An orphaned gateway host from a dead server squatted the stable
       port; "Start gateway" then failed as "invalid readiness record" — fixed
       (commit `db483f608`: pid-file reap, stop cleanup, OAuth autostart).
-      (3) Provider coverage gap vs Swift Workjet: the host knows only
-      claude/codex/antigravity — xAI, Kimi, Z.ai, MiniMax and an API-KEY
-      account type (Z.ai/MiniMax are key-based, not OAuth) are missing;
-      queued after the OAuth fix (same Rust surface).
+      (3) Provider coverage done 2026-08-20 (commits `d53904e38`…`7f41c7120`):
+      an API-key account type (key → ServerSecretStore, config carries only a
+      secret reference + 4-char suffix, a literal assertion proves the key
+      never serializes) with zai/minimax/xai/kimi — all proxied as OpenAI
+      Chat Completions upstream with structural credential substitution (the
+      route handler HAS no inbound-header path, settling the grok-JWT
+      follow-up); provider selection via `X-CTOX-Provider`. Evidence levels
+      recorded per endpoint (xai verified-from-repo; minimax/kimi
+      public-docs — confirm with one real key); Z.ai's Anthropic-shaped
+      endpoint deliberately excluded (proxy speaks OpenAI upstream only).
+      OAuth for xai/kimi not invented; API-key pool round-robins by priority
+      without the OAuth cooldown machine (documented).
       (4) UX consolidation done 2026-08-19 (commit `b23da973b`): ONE provider
       surface — Settings → Providers carries "Harness runtimes" and "Workjet
       gateway accounts" as two sections; the Workjet tab is a pointer; no

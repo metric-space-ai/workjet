@@ -1,4 +1,5 @@
 import {
+  WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
   WorkjetGatewayAccountId,
   WorkjetGatewayPoolId,
   WorkjetGatewayRouteId,
@@ -6,6 +7,7 @@ import {
   type WorkjetGatewayCatalog,
   type WorkjetGatewayModelSummary,
   type WorkjetGatewayPoolSummary,
+  type WorkjetGatewayApiKeyProvider,
   type WorkjetGatewayProvider,
   type WorkjetGatewayRouteSummary,
 } from "@t3tools/contracts";
@@ -58,7 +60,60 @@ export interface AntigravityGatewayAccount extends GatewayAccountBase {
   readonly upstreamBaseUrl?: string;
 }
 
-export type GatewayAccount = ClaudeGatewayAccount | CodexGatewayAccount | AntigravityGatewayAccount;
+/**
+ * An account whose only credential is a user-pasted API key. The key itself is
+ * never part of this record: `apiKeySecret` is a reference into the server
+ * secret store, exactly like every OAuth token reference above.
+ *
+ * `credentialSuffix` is the last few characters of the key, kept so the
+ * settings list can show which key an account carries without the gateway ever
+ * reading the secret back for display.
+ */
+export interface ApiKeyGatewayAccount extends GatewayAccountBase {
+  readonly provider: WorkjetGatewayApiKeyProvider;
+  readonly apiKeySecret: GatewaySecretReference;
+  readonly upstreamBaseUrl?: string;
+  readonly credentialSuffix?: string;
+}
+
+export type GatewayAccount =
+  | ClaudeGatewayAccount
+  | CodexGatewayAccount
+  | AntigravityGatewayAccount
+  | ApiKeyGatewayAccount;
+
+/** Kept in lockstep with the Rust host's `API_KEY_PROVIDERS`. */
+export const API_KEY_PROVIDERS = ["zai", "minimax", "xai", "kimi"] as const;
+
+export const isApiKeyProvider = (
+  value: WorkjetGatewayProvider,
+): value is WorkjetGatewayApiKeyProvider =>
+  (API_KEY_PROVIDERS as ReadonlyArray<string>).includes(value);
+
+export const isApiKeyAccount = (account: GatewayAccount): account is ApiKeyGatewayAccount =>
+  isApiKeyProvider(account.provider);
+
+/**
+ * Longest suffix kept for recognition. Four characters identify a key for a
+ * human without narrowing the secret in any useful way.
+ */
+export const CREDENTIAL_SUFFIX_LENGTH = 4;
+
+export const credentialSuffix = (apiKey: string): string | undefined => {
+  const trimmed = apiKey.trim();
+  return trimmed.length > CREDENTIAL_SUFFIX_LENGTH
+    ? trimmed.slice(-CREDENTIAL_SUFFIX_LENGTH)
+    : undefined;
+};
+
+/** Bounded exactly like the contract, so the server never trusts the client. */
+export const isAcceptableApiKey = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.trim().length <= WORKJET_GATEWAY_API_KEY_MAX_LENGTH &&
+  // A control character could split an outgoing header on the Rust side.
+  // eslint-disable-next-line no-control-regex
+  !/[\u0000-\u001f\u007f]/.test(value);
 
 export interface ProviderGatewayConfiguration {
   readonly schemaVersion: 1;
@@ -90,8 +145,16 @@ const text = (value: unknown): string | undefined => {
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= MAX_TEXT ? trimmed : undefined;
 };
+const PROVIDERS: ReadonlyArray<WorkjetGatewayProvider> = [
+  "claude",
+  "codex",
+  "antigravity",
+  ...API_KEY_PROVIDERS,
+];
 const provider = (value: unknown): WorkjetGatewayProvider | undefined =>
-  value === "claude" || value === "codex" || value === "antigravity" ? value : undefined;
+  typeof value === "string" && (PROVIDERS as ReadonlyArray<string>).includes(value)
+    ? (value as WorkjetGatewayProvider)
+    : undefined;
 const secretReference = (value: unknown): GatewaySecretReference | undefined => {
   if (!isRecord(value) || value.scope !== GATEWAY_SECRET_SCOPE) return undefined;
   const name = text(value.name);
@@ -116,32 +179,36 @@ const ACCOUNT_COMMON_KEYS = [
   "weight",
   "models",
   "proxyUrlSecret",
-  "accessTokenSecret",
-  "refreshTokenSecret",
 ] as const;
 
-const parseAccount = (value: unknown): GatewayAccount | undefined => {
-  if (!isRecord(value)) return undefined;
-  const accountProvider = provider(value.provider);
-  const providerKeys =
-    accountProvider === "claude"
-      ? ["upstreamScheme", "upstreamAuthority", "timezone"]
-      : accountProvider === "codex"
-        ? ["idTokenSecret", "upstreamBaseUrl", "planType"]
-        : accountProvider === "antigravity"
-          ? ["stateSecret", "upstreamBaseUrl"]
-          : [];
-  if (
-    accountProvider === undefined ||
-    !hasOnlyKeys(value, [...ACCOUNT_COMMON_KEYS, ...providerKeys])
-  ) {
-    return undefined;
-  }
+/**
+ * An OAuth account is identified by its token references; an API-key account
+ * carries `apiKeySecret` instead and must NOT carry token references, so a
+ * malformed hybrid record can never decode.
+ */
+const OAUTH_ACCOUNT_KEYS = ["accessTokenSecret", "refreshTokenSecret"] as const;
+
+interface CommonAccountFields {
+  readonly id: string;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly priority: number;
+  readonly weight: number;
+  readonly models: ReadonlyArray<string>;
+  readonly proxyUrlSecret?: GatewaySecretReference;
+}
+
+/** The fields every account kind shares, validated once. */
+const parseCommonAccountFields = (
+  value: Record<string, unknown>,
+): CommonAccountFields | undefined => {
   const id = text(value.id);
   const label = text(value.label);
   const models = modelIds(value.models);
   const priority = value.priority === undefined ? 0 : value.priority;
   const weight = value.weight === undefined ? 1 : value.weight;
+  const proxyUrlSecret =
+    value.proxyUrlSecret === undefined ? undefined : secretReference(value.proxyUrlSecret);
   if (
     id === undefined ||
     label === undefined ||
@@ -153,22 +220,12 @@ const parseAccount = (value: unknown): GatewayAccount | undefined => {
     typeof weight !== "number" ||
     !Number.isSafeInteger(weight) ||
     weight <= 0 ||
-    weight > 10_000
+    weight > 10_000 ||
+    (value.proxyUrlSecret !== undefined && proxyUrlSecret === undefined)
   ) {
     return undefined;
   }
-  const proxyUrlSecret =
-    value.proxyUrlSecret === undefined ? undefined : secretReference(value.proxyUrlSecret);
-  const accessTokenSecret = secretReference(value.accessTokenSecret);
-  const refreshTokenSecret = secretReference(value.refreshTokenSecret);
-  if (
-    (value.proxyUrlSecret !== undefined && proxyUrlSecret === undefined) ||
-    accessTokenSecret === undefined ||
-    refreshTokenSecret === undefined
-  ) {
-    return undefined;
-  }
-  const common = {
+  return {
     id,
     label,
     enabled: value.enabled !== false,
@@ -177,6 +234,69 @@ const parseAccount = (value: unknown): GatewayAccount | undefined => {
     models,
     ...(proxyUrlSecret ? { proxyUrlSecret } : {}),
   };
+};
+
+const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "credentialSuffix"] as const;
+
+/**
+ * An API-key account decodes only when it carries a secret REFERENCE and no
+ * OAuth token reference at all. A record with a literal key field, or with a
+ * suffix longer than the recognition length, is refused: a configuration file
+ * must never be able to hold credential material.
+ */
+const parseApiKeyAccount = (
+  value: Record<string, unknown>,
+  accountProvider: WorkjetGatewayApiKeyProvider,
+): ApiKeyGatewayAccount | undefined => {
+  if (!hasOnlyKeys(value, [...ACCOUNT_COMMON_KEYS, ...API_KEY_ACCOUNT_KEYS])) return undefined;
+  const common = parseCommonAccountFields(value);
+  const apiKeySecret = secretReference(value.apiKeySecret);
+  const upstreamBaseUrl =
+    value.upstreamBaseUrl === undefined ? undefined : text(value.upstreamBaseUrl);
+  const suffix = value.credentialSuffix;
+  if (
+    common === undefined ||
+    apiKeySecret === undefined ||
+    (value.upstreamBaseUrl !== undefined &&
+      (upstreamBaseUrl === undefined || !upstreamBaseUrl.startsWith("https://"))) ||
+    (suffix !== undefined &&
+      (typeof suffix !== "string" ||
+        suffix.length === 0 ||
+        suffix.length > CREDENTIAL_SUFFIX_LENGTH))
+  ) {
+    return undefined;
+  }
+  return {
+    ...common,
+    provider: accountProvider,
+    apiKeySecret,
+    ...(upstreamBaseUrl ? { upstreamBaseUrl } : {}),
+    ...(typeof suffix === "string" ? { credentialSuffix: suffix } : {}),
+  };
+};
+
+const parseAccount = (value: unknown): GatewayAccount | undefined => {
+  if (!isRecord(value)) return undefined;
+  const accountProvider = provider(value.provider);
+  if (accountProvider === undefined) return undefined;
+  if (isApiKeyProvider(accountProvider)) {
+    return parseApiKeyAccount(value, accountProvider);
+  }
+  const providerKeys =
+    accountProvider === "claude"
+      ? ["upstreamScheme", "upstreamAuthority", "timezone"]
+      : accountProvider === "codex"
+        ? ["idTokenSecret", "upstreamBaseUrl", "planType"]
+        : ["stateSecret", "upstreamBaseUrl"];
+  if (!hasOnlyKeys(value, [...ACCOUNT_COMMON_KEYS, ...OAUTH_ACCOUNT_KEYS, ...providerKeys])) {
+    return undefined;
+  }
+  const common = parseCommonAccountFields(value);
+  const accessTokenSecret = secretReference(value.accessTokenSecret);
+  const refreshTokenSecret = secretReference(value.refreshTokenSecret);
+  if (common === undefined || accessTokenSecret === undefined || refreshTokenSecret === undefined) {
+    return undefined;
+  }
   if (accountProvider === "claude") {
     const upstreamScheme =
       value.upstreamScheme === undefined ? undefined : text(value.upstreamScheme);
@@ -413,7 +533,9 @@ export const secretStoreName = (reference: GatewaySecretReference): string =>
 export const accountSecretReferences = (
   account: GatewayAccount,
 ): ReadonlyArray<GatewaySecretReference> => {
-  const references = [account.accessTokenSecret, account.refreshTokenSecret];
+  const references: Array<GatewaySecretReference> = isApiKeyAccount(account)
+    ? [account.apiKeySecret]
+    : [account.accessTokenSecret, account.refreshTokenSecret];
   if (account.provider === "codex") references.unshift(account.idTokenSecret);
   if (account.provider === "antigravity") references.push(account.stateSecret);
   if (account.proxyUrlSecret) references.push(account.proxyUrlSecret);
@@ -431,6 +553,8 @@ export const gatewayCatalog = (
     priority: account.priority,
     weight: account.weight,
     modelIds: account.models,
+    // The only credential-derived value any read route carries.
+    credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
   }));
   const modelMap = new Map<
     string,
@@ -530,5 +654,19 @@ export const rustHostConfiguration = (
         upstream_base_url: account.upstreamBaseUrl ?? "https://cloudcode-pa.googleapis.com",
         ...(account.proxyUrlSecret ? { proxy_url_secret: account.proxyUrlSecret } : {}),
       })),
+    // API-key accounts. The base URL is left empty when the user did not
+    // override it, so the Rust host applies its own per-provider default (the
+    // single place where each endpoint and its evidence level are recorded).
+    api_key_accounts: configuration.accounts.filter(isApiKeyAccount).map((account) => ({
+      id: account.id,
+      provider: account.provider,
+      disabled: !account.enabled,
+      priority: account.priority,
+      weight: account.weight,
+      models: account.models,
+      api_key_secret: account.apiKeySecret,
+      upstream_base_url: account.upstreamBaseUrl ?? "",
+      ...(account.proxyUrlSecret ? { proxy_url_secret: account.proxyUrlSecret } : {}),
+    })),
   },
 });

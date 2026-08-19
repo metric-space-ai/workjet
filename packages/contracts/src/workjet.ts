@@ -414,8 +414,35 @@ export const DEFAULT_WORKJET_THREAD_CONFIG = {
   enabledCapabilityIds: [],
 } as const satisfies WorkjetThreadConfig;
 
+/**
+ * Gateway providers whose account is created by an OAuth login in the user's
+ * own browser. Workjet never sees the credential.
+ */
+export const WorkjetGatewayOauthProvider = Schema.Literals(["claude", "codex", "antigravity"]);
+export type WorkjetGatewayOauthProvider = typeof WorkjetGatewayOauthProvider.Type;
+
+/**
+ * Gateway providers whose account is created by pasting an API key. The key is
+ * stored in the server secret store exactly like an OAuth token and is never
+ * written to a configuration file or returned on any read route.
+ *
+ * Every provider here speaks the OpenAI Chat Completions wire shape upstream,
+ * because that is the only shape the gateway's API-key proxy path translates
+ * to. A provider with a different shape must not be added.
+ */
+export const WorkjetGatewayApiKeyProvider = Schema.Literals(["zai", "minimax", "xai", "kimi"]);
+export type WorkjetGatewayApiKeyProvider = typeof WorkjetGatewayApiKeyProvider.Type;
+
 /** Provider accounts owned by the environment-scoped Workjet gateway, not harness drivers. */
-export const WorkjetGatewayProvider = Schema.Literals(["claude", "codex", "antigravity"]);
+export const WorkjetGatewayProvider = Schema.Literals([
+  "claude",
+  "codex",
+  "antigravity",
+  "zai",
+  "minimax",
+  "xai",
+  "kimi",
+]);
 export type WorkjetGatewayProvider = typeof WorkjetGatewayProvider.Type;
 
 export const WorkjetGatewayPoolId = TrimmedNonEmptyString.pipe(
@@ -436,6 +463,14 @@ export const WorkjetGatewayAccountSummary = Schema.Struct({
   priority: Schema.Number,
   weight: PositiveInt,
   modelIds: Schema.Array(TrimmedNonEmptyString),
+  /**
+   * Last few characters of an API-key account's credential, for recognition
+   * only; `null` for OAuth accounts and whenever no suffix was recorded. This
+   * is the ONLY part of a credential any read route ever carries.
+   */
+  credentialSuffix: Schema.NullOr(
+    TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(8))),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type WorkjetGatewayAccountSummary = typeof WorkjetGatewayAccountSummary.Type;
 
@@ -482,16 +517,45 @@ export type WorkjetGatewayCatalog = typeof WorkjetGatewayCatalog.Type;
  */
 export const WorkjetGatewayOauthSession = Schema.Struct({
   schemaVersion: Schema.Literal(1),
-  provider: WorkjetGatewayProvider,
+  provider: WorkjetGatewayOauthProvider,
   state: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128))),
   authorizationUrl: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(2048))),
 });
 export type WorkjetGatewayOauthSession = typeof WorkjetGatewayOauthSession.Type;
 
 export const WorkjetGatewayOauthStartInput = Schema.Struct({
-  provider: WorkjetGatewayProvider,
+  provider: WorkjetGatewayOauthProvider,
 });
 export type WorkjetGatewayOauthStartInput = typeof WorkjetGatewayOauthStartInput.Type;
+
+/**
+ * Longest accepted API key. Generous enough for every provider's format and
+ * short enough that the RPC can never be used to push bulk data at the secret
+ * store.
+ */
+export const WORKJET_GATEWAY_API_KEY_MAX_LENGTH = 512;
+
+/**
+ * Adds one API-key gateway account. `apiKey` is write-only: the server stores
+ * it in the secret store, writes only a secret REFERENCE into the gateway
+ * configuration, and never logs, echoes, or returns it. Read routes show the
+ * account's label and masked suffix only.
+ */
+export const WorkjetGatewayAddApiKeyAccountInput = Schema.Struct({
+  provider: WorkjetGatewayApiKeyProvider,
+  label: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160))),
+  apiKey: TrimmedNonEmptyString.pipe(
+    Schema.check(Schema.isMaxLength(WORKJET_GATEWAY_API_KEY_MAX_LENGTH)),
+  ),
+});
+export type WorkjetGatewayAddApiKeyAccountInput = typeof WorkjetGatewayAddApiKeyAccountInput.Type;
+
+/** Redacted result: the created account identity, never the credential. */
+export const WorkjetGatewayAddApiKeyAccountResult = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  accountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayAddApiKeyAccountResult = typeof WorkjetGatewayAddApiKeyAccountResult.Type;
 
 export const WorkjetGatewayOauthPollInput = Schema.Struct({
   state: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128))),

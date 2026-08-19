@@ -6,6 +6,9 @@ import {
   type WorkjetGatewayOauthPollInput,
   type WorkjetGatewayOauthPollResult,
   type WorkjetGatewayOauthSession,
+  type WorkjetGatewayAddApiKeyAccountInput,
+  type WorkjetGatewayAddApiKeyAccountResult,
+  type WorkjetGatewayOauthProvider,
   type WorkjetGatewayOauthStartInput,
   type WorkjetGatewayProvider,
   type WorkjetGatewayStatus,
@@ -20,9 +23,11 @@ import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import {
   accountSecretReferences,
+  credentialSuffix,
   decodeProviderGatewayConfiguration,
   GATEWAY_SECRET_SCOPE,
   gatewayCatalog,
+  isAcceptableApiKey,
   MANAGEMENT_SECRET_NAME,
   rustHostConfiguration,
   secretStoreName,
@@ -121,6 +126,14 @@ export interface ProviderGatewayServiceShape {
   readonly oauthCancel: (
     input: WorkjetGatewayOauthPollInput,
   ) => Effect.Effect<void, WorkjetGatewayOperationError>;
+  /**
+   * Add an API-key provider account. The key is written to the server secret
+   * store and only a secret REFERENCE is persisted in the gateway
+   * configuration; the key is never logged and never returned.
+   */
+  readonly addApiKeyAccount: (
+    input: WorkjetGatewayAddApiKeyAccountInput,
+  ) => Effect.Effect<WorkjetGatewayAddApiKeyAccountResult, WorkjetGatewayOperationError>;
 }
 
 export class ProviderGatewayService extends Context.Service<
@@ -646,12 +659,13 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return flight;
     };
 
-    const OAUTH_BEGIN_ROUTES: Record<WorkjetGatewayProvider, string> = {
+    // OAuth-only: an API-key provider has no browser login route at all.
+    const OAUTH_BEGIN_ROUTES: Record<WorkjetGatewayOauthProvider, string> = {
       claude: "/v0/management/anthropic-auth-url",
       codex: "/v0/management/codex-auth-url",
       antigravity: "/v0/management/antigravity-auth-url",
     };
-    const HOST_PROVIDERS: Record<string, WorkjetGatewayProvider> = {
+    const HOST_PROVIDERS: Record<string, WorkjetGatewayOauthProvider> = {
       anthropic: "claude",
       codex: "codex",
       antigravity: "antigravity",
@@ -718,13 +732,13 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     };
 
     interface ClaimedCredential {
-      readonly provider: WorkjetGatewayProvider;
+      readonly provider: WorkjetGatewayOauthProvider;
       readonly label: string;
       readonly models: ReadonlyArray<string>;
       readonly secrets: Readonly<Record<string, string>>;
     }
 
-    const REQUIRED_SECRET_KEYS: Record<WorkjetGatewayProvider, ReadonlyArray<string>> = {
+    const REQUIRED_SECRET_KEYS: Record<WorkjetGatewayOauthProvider, ReadonlyArray<string>> = {
       claude: ["access_token_secret", "refresh_token_secret"],
       codex: ["id_token_secret", "access_token_secret", "refresh_token_secret"],
       antigravity: ["access_token_secret", "refresh_token_secret", "state_secret"],
@@ -914,6 +928,79 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
     };
 
+    /**
+     * Persists one API-key account. The credential path is deliberately the
+     * same as the OAuth claim path: secret store first, then a configuration
+     * that carries only the reference, then a gateway reload. The key is bound
+     * again here rather than trusted from the decoded payload, so a caller
+     * bypassing the schema still cannot push an oversized or control-character
+     * credential into the Rust host's header construction.
+     */
+    const runAddApiKeyAccount = async (
+      input: WorkjetGatewayAddApiKeyAccountInput,
+    ): Promise<WorkjetGatewayAddApiKeyAccountResult> => {
+      if (!isAcceptableApiKey(input.apiKey)) throw safeError("invalid-configuration");
+      const apiKey = input.apiKey.trim();
+      const existing = await loadConfiguration().catch(() => undefined);
+      const accounts: Array<GatewayAccount> = [...(existing?.accounts ?? [])];
+      const usedIds = new Set(accounts.map((account) => account.id));
+      const base = `${input.provider}-${secretSlug(input.label)}`;
+      let id = base;
+      for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${base}-${suffix}`;
+      const apiKeySecret: GatewaySecretReference = {
+        scope: GATEWAY_SECRET_SCOPE,
+        name: `account-${id}-api-key`,
+      };
+      await runPromise(
+        secrets.set(secretStoreName(apiKeySecret), textEncoder.encode(apiKey)),
+      ).catch(() => {
+        throw safeError("secret-unavailable");
+      });
+      const suffix = credentialSuffix(apiKey);
+      accounts.push({
+        id,
+        label: input.label,
+        provider: input.provider,
+        enabled: true,
+        priority: 0,
+        weight: 1,
+        models: [],
+        apiKeySecret,
+        ...(suffix ? { credentialSuffix: suffix } : {}),
+      });
+      const candidate = {
+        schemaVersion: 1,
+        // The first account of any kind also becomes the default provider, so
+        // a gateway whose only account is an API-key account still routes.
+        defaultProvider: existing?.accounts.length ? existing.defaultProvider : input.provider,
+        accounts,
+        pools: existing?.pools ?? [],
+        routes: existing?.routes ?? [],
+        ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+        ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+      };
+      const serialized = `${JSON.stringify(candidate, null, 2)}\n`;
+      // Belt and braces: the configuration document must never contain the key.
+      if (
+        decodeProviderGatewayConfiguration(JSON.parse(serialized)) === undefined ||
+        serialized.includes(apiKey)
+      ) {
+        throw safeError("invalid-configuration");
+      }
+      await platform.writePrivateText(configurationPath, serialized).catch(() => {
+        throw safeError("invalid-configuration");
+      });
+      // Reload so the new account is served. A failed restart is visible
+      // through status() and must not undo the successful key write.
+      try {
+        await stopSingleFlight();
+        await startSingleFlight();
+      } catch {
+        // status() carries the failure reason.
+      }
+      return { schemaVersion: 1, accountId: WorkjetGatewayAccountId.make(id) };
+    };
+
     const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
       const { endpoint, key } = requireManagement();
       try {
@@ -1002,6 +1089,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           try: () => runOauthCancel(input),
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("oauth-session-invalid"),
+        }),
+      addApiKeyAccount: (input) =>
+        Effect.tryPromise({
+          try: () => runAddApiKeyAccount(input),
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),
     });
   });

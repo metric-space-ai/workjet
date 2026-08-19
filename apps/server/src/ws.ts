@@ -1702,6 +1702,15 @@ const makeWsRpcLayer = (
             providerGateway.oauthCancel(input).pipe(Effect.as({})),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        // The payload carries an API key exactly once. Only the method name and
+        // the aggregate label are observable; the input is never attached to a
+        // span attribute or a log line.
+        [WS_METHODS.workjetGatewayAddApiKeyAccount]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayAddApiKeyAccount,
+            providerGateway.addApiKeyAccount(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
         [WS_METHODS.workjetMailboxSendMessage]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetMailboxSendMessage,

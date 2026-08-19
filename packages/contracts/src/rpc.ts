@@ -192,6 +192,8 @@ import {
 import { VcsError } from "./vcs.ts";
 import {
   GreppyRuntimeSnapshot,
+  WorkjetGatewayAddApiKeyAccountInput,
+  WorkjetGatewayAddApiKeyAccountResult,
   WorkjetGatewayCatalog,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
@@ -315,6 +317,7 @@ export const WS_METHODS = {
   workjetGatewayOauthStart: "workjet.providerGateway.oauthStart",
   workjetGatewayOauthPoll: "workjet.providerGateway.oauthPoll",
   workjetGatewayOauthCancel: "workjet.providerGateway.oauthCancel",
+  workjetGatewayAddApiKeyAccount: "workjet.providerGateway.addApiKeyAccount",
 
   // Thread-scoped Workjet mailbox sends (orchestrator threads only)
   workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
@@ -593,6 +596,21 @@ export const WsWorkjetGatewayOauthCancelRpc = Rpc.make(WS_METHODS.workjetGateway
   success: Schema.Struct({}),
   error: WorkjetGatewayRpcError,
 });
+
+/**
+ * Adds an API-key gateway account. The payload carries the key exactly once,
+ * over the same authenticated WebSocket every other gateway operation uses;
+ * the success value is the account identity only. The key is never part of any
+ * response, log line, or configuration file.
+ */
+export const WsWorkjetGatewayAddApiKeyAccountRpc = Rpc.make(
+  WS_METHODS.workjetGatewayAddApiKeyAccount,
+  {
+    payload: WorkjetGatewayAddApiKeyAccountInput,
+    success: WorkjetGatewayAddApiKeyAccountResult,
+    error: WorkjetGatewayRpcError,
+  },
+);
 
 /**
  * The client-facing half of the durable Workjet mailbox. Same delivery service,
@@ -1216,6 +1234,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayOauthStartRpc,
   WsWorkjetGatewayOauthPollRpc,
   WsWorkjetGatewayOauthCancelRpc,
+  WsWorkjetGatewayAddApiKeyAccountRpc,
   WsWorkjetMailboxSendMessageRpc,
   WsWorkjetMailboxDelegateTaskRpc,
   WsWorkjetMailboxReplyRpc,

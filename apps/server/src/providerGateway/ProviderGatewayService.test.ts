@@ -448,3 +448,102 @@ describe("ProviderGatewayService", () => {
     });
   });
 });
+
+describe("ProviderGatewayService · API-key accounts", () => {
+  // Obviously fake, and deliberately distinctive so an assertion that it never
+  // appears anywhere is meaningful.
+  const API_KEY = "zk-test-not-a-real-key-abcd";
+
+  /**
+   * Records every secret write and every configuration write, so one test can
+   * prove the whole flow: route -> secret store -> configuration reference.
+   */
+  const apiKeyHarness = () => {
+    const base = readyHarness();
+    const storedSecrets = new Map<string, string>();
+    const secrets = ServerSecretStore.ServerSecretStore.of({
+      get: () => Effect.succeed(Option.some(new TextEncoder().encode("provider-secret"))),
+      set: (name: string, value: Uint8Array) =>
+        Effect.sync(() => {
+          storedSecrets.set(name, new TextDecoder().decode(value));
+        }),
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
+      remove: () => Effect.void,
+    });
+    return { ...base, storedSecrets, secrets };
+  };
+
+  const runWithSecrets = <A, E>(
+    harness: ReturnType<typeof apiKeyHarness>,
+    use: (gateway: ProviderGatewayServiceShape) => Effect.Effect<A, E>,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gateway = yield* make({ platform: harness.platform, executable: "/gateway-host" });
+        return yield* use(gateway);
+      }),
+    ).pipe(
+      Effect.provideService(ServerConfig.ServerConfig, testConfig),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, harness.secrets),
+      Effect.runPromise,
+    );
+
+  it("stores the key as a secret and writes only a reference into the configuration", async () => {
+    const harness = apiKeyHarness();
+    const result = await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "zai", label: "Z.ai key", apiKey: API_KEY }),
+    );
+    expect(result.accountId).toBe("zai-z.ai-key");
+
+    // The key reached the secret store, under the account's own reference.
+    const secretName = "workjet-provider-gateway.account-zai-z.ai-key-api-key";
+    expect(harness.storedSecrets.get(secretName)).toBe(API_KEY);
+
+    // ... and the configuration document carries the reference, never the key.
+    const written = harness.writes.join("\n");
+    expect(written).toContain("account-zai-z.ai-key-api-key");
+    expect(written).not.toContain(API_KEY);
+    // The gateway reloads after the write, so `writes` also holds the rendered
+    // Rust host document; pick the gateway configuration itself.
+    const configurationWrite = harness.writes.find((entry) => entry.includes("apiKeySecret"))!;
+    const document = JSON.parse(configurationWrite) as {
+      defaultProvider: string;
+      accounts: ReadonlyArray<Record<string, unknown>>;
+    };
+    const account = document.accounts.find((entry) => entry.provider === "zai");
+    expect(account?.apiKeySecret).toEqual({
+      scope: "workjet-provider-gateway",
+      name: "account-zai-z.ai-key-api-key",
+    });
+    expect(account).not.toHaveProperty("apiKey");
+    // The existing codex account keeps the default provider.
+    expect(document.defaultProvider).toBe("codex");
+    // Only the masked suffix is retained for display.
+    expect(account?.credentialSuffix).toBe("abcd");
+  });
+
+  it("adds an account for every supported API-key provider", async () => {
+    for (const provider of ["zai", "minimax", "xai", "kimi"] as const) {
+      const harness = apiKeyHarness();
+      const result = await runWithSecrets(harness, (gateway) =>
+        gateway.addApiKeyAccount({ provider, label: "key", apiKey: API_KEY }),
+      );
+      expect(result.accountId).toBe(`${provider}-key`);
+      expect(harness.writes.join("\n")).not.toContain(API_KEY);
+    }
+  });
+
+  it("refuses an out-of-bounds or control-character key without writing anything", async () => {
+    for (const apiKey of ["x".repeat(513), `bad${String.fromCharCode(13)}injected`]) {
+      const harness = apiKeyHarness();
+      const failure = await runWithSecrets(harness, (gateway) =>
+        gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey }).pipe(Effect.flip),
+      );
+      expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
+      expect(failure.reason).toBe("invalid-configuration");
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(harness.writes).toEqual([]);
+    }
+  });
+});

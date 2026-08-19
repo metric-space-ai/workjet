@@ -58,6 +58,7 @@ describe("ProviderGatewayConfig", () => {
         priority: 10,
         weight: 2,
         modelIds: ["gpt-test"],
+        credentialSuffix: null,
       },
     ]);
   });
@@ -90,5 +91,81 @@ describe("ProviderGatewayConfig", () => {
     expect(rendered).toContain("codex.access");
     expect(rendered).not.toContain("plaintext-must-not-be-accepted");
     expect(rendered).not.toContain("providerInstanceId");
+  });
+
+  describe("API-key accounts", () => {
+    const apiKeyConfiguration = (patch: Record<string, unknown> = {}) => ({
+      schemaVersion: 1,
+      defaultProvider: "zai",
+      accounts: [
+        {
+          id: "zai-primary",
+          label: "Z.ai key",
+          provider: "zai",
+          enabled: true,
+          priority: 0,
+          weight: 1,
+          models: [],
+          apiKeySecret: secret("account-zai-primary-api-key"),
+          credentialSuffix: "9xyz",
+          ...patch,
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+
+    it("decodes every supported API-key provider and exposes only the masked suffix", () => {
+      for (const provider of ["zai", "minimax", "xai", "kimi"]) {
+        const decoded = decodeProviderGatewayConfiguration({
+          ...apiKeyConfiguration({ provider }),
+          defaultProvider: provider,
+        });
+        expect(decoded, provider).toBeDefined();
+        const [account] = gatewayCatalog(decoded!).accounts;
+        expect(account?.provider).toBe(provider);
+        expect(account?.credentialSuffix).toBe("9xyz");
+      }
+    });
+
+    it("refuses a literal key, an OAuth token reference, a plaintext suffix, and a non-https override", () => {
+      for (const patch of [
+        { apiKey: "sk-plaintext-must-not-be-accepted" },
+        { accessTokenSecret: secret("zai.access") },
+        { apiKeySecret: { scope: "provider-settings", name: "zai.key" } },
+        { credentialSuffix: "far-too-long-to-be-a-suffix" },
+        { upstreamBaseUrl: "http://api.z.ai/api/paas/v4" },
+      ]) {
+        expect(
+          decodeProviderGatewayConfiguration(apiKeyConfiguration(patch)),
+          JSON.stringify(patch),
+        ).toBeUndefined();
+      }
+    });
+
+    it("renders an api_key_accounts entry that carries a reference and no key", () => {
+      const decoded = decodeProviderGatewayConfiguration(apiKeyConfiguration())!;
+      const host = rustHostConfiguration(decoded, "/private/secrets") as {
+        defaultProvider?: string;
+        runtime: { api_key_accounts: ReadonlyArray<Record<string, unknown>> };
+      };
+      expect(host.defaultProvider).toBe("zai");
+      expect(host.runtime.api_key_accounts).toEqual([
+        {
+          id: "zai-primary",
+          provider: "zai",
+          disabled: false,
+          priority: 0,
+          weight: 1,
+          models: [],
+          api_key_secret: secret("account-zai-primary-api-key"),
+          // Empty: the Rust host owns the per-provider default endpoint.
+          upstream_base_url: "",
+        },
+      ]);
+      const rendered = JSON.stringify(host);
+      expect(rendered).toContain("account-zai-primary-api-key");
+      expect(rendered).not.toContain("sk-");
+    });
   });
 });

@@ -50,6 +50,7 @@ export const providerGatewayTestLayer = (status: WorkjetGatewayStatus) =>
       oauthStart: () => unsupported(),
       oauthPoll: () => unsupported(),
       oauthCancel: () => unsupported(),
+      addApiKeyAccount: () => unsupported(),
     }),
   );
 

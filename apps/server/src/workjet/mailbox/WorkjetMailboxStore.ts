@@ -12,6 +12,7 @@ import {
   WorkjetRoutingEnvelope,
   WORKJET_TERMINAL_DELEGATION_STATES,
   type WorkjetDelegationRef,
+  type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -324,6 +325,21 @@ export type WorkjetDelegationFinalizeOutcome =
       readonly result: WorkjetDelegationResult;
     };
 
+/**
+ * One row of a resilient by-state delegation scan.
+ *
+ * `record` is a row that decoded cleanly. `corrupt` is a row whose
+ * `delegation_json` no longer decodes through the current contract schema —
+ * the concrete face of "target version skew": a delegation whose stored shape
+ * (schemaVersion, budget shape, …) this server can no longer read. It is
+ * surfaced PER ROW rather than failing the whole batch, so one undecodable row
+ * cannot abort a scan and silently strand every readable delegation behind it.
+ * The offending payload is never carried, only its stable row id.
+ */
+export type WorkjetDelegationRowResult =
+  | { readonly _tag: "record"; readonly record: WorkjetDelegationRecord }
+  | { readonly _tag: "corrupt"; readonly rowId: string };
+
 /** Idempotent-insertion outcome for a delegation-graph edge. */
 export type WorkjetDelegationEdgeInsertOutcome =
   | { readonly _tag: "inserted"; readonly edgeId: string }
@@ -530,6 +546,37 @@ export interface WorkjetMailboxStoreShape {
     state: WorkjetDelegationState,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetDelegationRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * The same by-state scan as {@link listDelegationsByState}, but resilient to an
+   * individual undecodable row: a row whose `delegation_json` no longer decodes
+   * is returned as a `corrupt` marker instead of failing the whole `Effect`. The
+   * reconciler relies on this so one version-skewed delegation cannot abort a
+   * cycle or hide every readable row behind it. A genuine SQL failure (not a
+   * decode failure) still fails the effect — that is a transient store outage,
+   * not a corrupt row.
+   */
+  readonly listDelegationRowsByState: (
+    state: WorkjetDelegationState,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetDelegationRowResult>, WorkjetMailboxStoreError>;
+
+  /**
+   * Re-point a still-pending delegation at a DIFFERENT target thread WITHOUT
+   * changing its lifecycle state. Only a delegation in `delivered` or
+   * `needs-input` may be reassigned; a terminal, `running`, or otherwise
+   * in-flight delegation is refused with `invalid-state-transition`, so a task
+   * that already began (or finished) can never be silently restarted on a second
+   * thread. Because the target lives ONLY in the delegation body (there is no
+   * separate target column and the delegation id is unchanged), the executor
+   * subsequently dispatches to the new thread and only the new thread — the old
+   * one is no longer addressed.
+   */
+  readonly reassignDelegation: (
+    delegationId: WorkjetDelegationId,
+    newTarget: WorkjetWorkerAddress,
+    changedAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxStoreError>;
 
   /**
    * Transactionally accumulate token/cost usage onto a delegation, gating on its
@@ -1308,6 +1355,111 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(rows, (row) => decodeDelegation(row, rowIdOf(row)));
     });
 
+  const listDelegationRowsByState: WorkjetMailboxStoreShape["listDelegationRowsByState"] = (
+    state,
+    limit,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT ${DELEGATION_COLUMNS}
+          FROM workjet_delegations
+          WHERE state = ?
+          ORDER BY state_changed_at_ms ASC, delegation_id ASC
+          LIMIT ?
+        `,
+          [state, limit],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listDelegationRowsByState:select")));
+      return yield* Effect.forEach(rows, (row) => {
+        const rowId = rowIdOf(row);
+        // A decode failure is the corrupt/version-skewed row we tolerate per-row;
+        // decodeDelegation only ever fails with WorkjetMailboxStoreCorruptRowError,
+        // so catching it narrows to exactly that and never swallows a defect.
+        return decodeDelegation(row, rowId).pipe(
+          Effect.map((record) => ({ _tag: "record", record }) as const),
+          Effect.catch(() => Effect.succeed({ _tag: "corrupt", rowId } as const)),
+        );
+      });
+    });
+
+  const reassignDelegation: WorkjetMailboxStoreShape["reassignDelegation"] = (
+    delegationId,
+    newTarget,
+    changedAt,
+  ) =>
+    Effect.gen(function* () {
+      const changedAtMillis = yield* toEpochMillis(changedAt);
+
+      // The read, the state gate, and the write share ONE transaction, exactly
+      // like transitionDelegationState: a concurrent transition cannot slip
+      // between observing `delivered`/`needs-input` and rewriting the target.
+      return yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const rows = yield* sql.unsafe(
+              `
+              SELECT ${DELEGATION_COLUMNS}
+              FROM workjet_delegations
+              WHERE delegation_id = ?
+            `,
+              [delegationId],
+            );
+            const row = rows[0];
+            if (row === undefined) {
+              return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+            }
+            const record = yield* decodeDelegation(row, rowIdOf(row));
+
+            // Reassignment is only meaningful while the task has not begun. A
+            // terminal, running, queued, accepted, or in-review delegation is
+            // refused so work in flight is never silently moved or restarted.
+            if (record.state !== "delivered" && record.state !== "needs-input") {
+              return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+            }
+
+            const reassignedDelegation: WorkjetDelegation = {
+              ...record.delegation,
+              target: newTarget,
+              stateChangedAt: changedAt,
+            };
+            const delegationJson = yield* encodeDelegationJson(reassignedDelegation).pipe(
+              Effect.mapError(() => new WorkjetMailboxError({ reason: "malformed-envelope" })),
+            );
+
+            // State and terminal flag are deliberately unchanged: reassignment
+            // moves the target, never the lifecycle position.
+            yield* sql`
+              UPDATE workjet_delegations
+              SET delegation_json = ${delegationJson},
+                  state_changed_at_ms = ${changedAtMillis}
+              WHERE delegation_id = ${delegationId}
+                AND state = ${record.state}
+            `;
+
+            return {
+              delegationId,
+              delegation: reassignedDelegation,
+              state: record.state,
+              stateChangedAtMillis: changedAtMillis,
+              terminal: false,
+            } satisfies WorkjetDelegationRecord;
+          }),
+        )
+        .pipe(
+          Effect.mapError(
+            (cause): WorkjetMailboxStoreError =>
+              isWorkjetMailboxError(cause) || isWorkjetMailboxStoreCorruptRowError(cause)
+                ? cause
+                : new PersistenceSqlError({
+                    operation: "WorkjetMailboxStore.reassignDelegation:transaction",
+                    cause,
+                  }),
+          ),
+        );
+    });
+
   const decodeAccounting = (row: unknown, rowId: string) =>
     decodeDelegationAccountingDbRow(row).pipe(
       Effect.mapError(
@@ -1681,6 +1833,8 @@ export const make = Effect.gen(function* () {
     finalizeDelegationResult,
     getDelegationResult,
     listDelegationsByState,
+    listDelegationRowsByState,
+    reassignDelegation,
     recordDelegationUsage,
     getDelegationAccounting,
     setDelegationApproval,

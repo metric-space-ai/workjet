@@ -46,6 +46,7 @@ import {
   EventId,
   MessageId,
   WorkjetEnvelopeId,
+  WorkjetMailboxError,
   type EnvironmentId,
   type OrchestrationCommand,
   type OrchestrationThread,
@@ -55,6 +56,7 @@ import {
   type WorkjetDelegationResult,
   type WorkjetMailboxPayload,
   type WorkjetMailboxTimestamp,
+  type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -67,7 +69,13 @@ import * as Schedule from "effect/Schedule";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { WorkjetMailboxStore, type WorkjetDelegationRecord } from "./WorkjetMailboxStore.ts";
+import {
+  WorkjetMailboxStore,
+  type WorkjetDelegationRecord,
+  type WorkjetDelegationRowResult,
+  type WorkjetMailboxStoreError,
+  type WorkjetOutboxRecord,
+} from "./WorkjetMailboxStore.ts";
 import { WorkjetMeshIdentity, type WorkjetUnsignedRoutingEnvelope } from "./WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStore } from "./WorkjetSnapshotStore.ts";
 
@@ -147,13 +155,21 @@ export type WorkjetDelegationRefusalReason =
   | "target-thread-missing"
   | "target-thread-deleted"
   | "target-role-not-executable"
-  | "engine-rejected";
+  | "engine-rejected"
+  /**
+   * The delegation's outbound envelope exhausted every delivery attempt and
+   * dead-lettered: the target environment was never reachable. Its source-side
+   * delegation row is failed terminally rather than left `queued` forever.
+   */
+  | "delivery-dead-lettered";
 
 export interface WorkjetDelegationExecutorFailures {
   readonly targetThreadMissing: number;
   readonly targetThreadDeleted: number;
   readonly targetRoleNotExecutable: number;
   readonly engineRejected: number;
+  /** Delegations failed because their outbound delivery dead-lettered. */
+  readonly deliveryDeadLettered: number;
 }
 
 /**
@@ -176,12 +192,25 @@ export interface WorkjetDelegationExecutorStatus {
   readonly foreignEnvironment: number;
   /** Skips because a projection or store read failed transiently. */
   readonly transientSkips: number;
+  /**
+   * Rows skipped because their stored delegation no longer decodes through the
+   * current contract schema (target version skew). Counted, never dropped, and
+   * never fatal to the cycle — the readable rows in the same batch still run.
+   */
+  readonly versionUnsupported: number;
   /** `accepted` rows whose turn start will be retried with the same command id. */
   readonly dispatchRetries: number;
   /** `running` delegations whose dispatched turn ended successfully → `completed`. */
   readonly completed: number;
   /** `running` delegations whose dispatched turn ended in failure → `failed`. */
   readonly turnFailures: number;
+  /**
+   * `running` delegations whose dispatched turn was INTERRUPTED → `failed`. A
+   * subset of a turn failure, counted separately because an interruption is a
+   * distinct, explicit terminal outcome (`turn-interrupted`) rather than an
+   * error the target produced.
+   */
+  readonly turnInterrupted: number;
   /** Results delivered to a SAME-environment source as a thread activity. */
   readonly resultsReturned: number;
   /** Results enqueued as pending outbound for a CROSS-environment source. */
@@ -204,6 +233,19 @@ export interface WorkjetDelegationExecutorShape {
    * a test drives the real cycle rather than a parallel test-only path.
    */
   readonly runCycle: Effect.Effect<WorkjetDelegationExecutorStatus>;
+
+  /**
+   * Reassign a still-pending delegation (`delivered`/`needs-input`) to a
+   * DIFFERENT local target thread. Refuses a target in another environment
+   * (`unknown-target` — this server cannot host it) and, through the store,
+   * refuses any terminal or already-running delegation (`invalid-state-transition`).
+   * After a successful reassignment the reconciler dispatches to the new thread
+   * and only the new thread; the task is never started on both.
+   */
+  readonly reassign: (input: {
+    readonly delegationId: WorkjetDelegationId;
+    readonly newTarget: WorkjetWorkerAddress;
+  }) => Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxStoreError>;
 }
 
 export class WorkjetDelegationExecutor extends Context.Service<
@@ -303,9 +345,11 @@ type ExecutionOutcome =
   | { readonly _tag: "missing-snapshot" }
   | { readonly _tag: "foreign-environment" }
   | { readonly _tag: "transient" }
+  | { readonly _tag: "version-unsupported" }
   | { readonly _tag: "retry-dispatch" }
   | { readonly _tag: "completed" }
   | { readonly _tag: "turn-failed" }
+  | { readonly _tag: "turn-interrupted" }
   | { readonly _tag: "running-pending" }
   | { readonly _tag: "awaiting-approval" }
   | { readonly _tag: "failed"; readonly reason: WorkjetDelegationRefusalReason };
@@ -326,9 +370,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let missingSnapshot = 0;
   let foreignEnvironment = 0;
   let transientSkips = 0;
+  let versionUnsupported = 0;
   let dispatchRetries = 0;
   let completed = 0;
   let turnFailures = 0;
+  let turnInterrupted = 0;
   let resultsReturned = 0;
   let resultsEnqueued = 0;
   let runningPending = 0;
@@ -337,6 +383,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let targetThreadDeleted = 0;
   let targetRoleNotExecutable = 0;
   let engineRejected = 0;
+  let deliveryDeadLettered = 0;
   let lastCycleAt: string | null = null;
 
   const snapshot = (): WorkjetDelegationExecutorStatus => ({
@@ -348,9 +395,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     missingSnapshot,
     foreignEnvironment,
     transientSkips,
+    versionUnsupported,
     dispatchRetries,
     completed,
     turnFailures,
+    turnInterrupted,
     resultsReturned,
     resultsEnqueued,
     runningPending,
@@ -360,6 +409,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       targetThreadDeleted,
       targetRoleNotExecutable,
       engineRejected,
+      deliveryDeadLettered,
     },
     lastCycleAt,
   });
@@ -643,6 +693,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     readonly outcome: "completed" | "failed";
     readonly envelopeId: WorkjetEnvelopeId;
     readonly now: string;
+    /** A failed turn that ended specifically because it was interrupted. */
+    readonly interrupted?: boolean;
   }): WorkjetDelegationResult => ({
     schemaVersion: 1,
     envelopeId: input.envelopeId,
@@ -659,7 +711,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     summary:
       input.outcome === "completed"
         ? "Delegation turn completed."
-        : "Delegation turn ended without success.",
+        : input.interrupted === true
+          ? "Delegation turn was interrupted."
+          : "Delegation turn ended without success.",
     artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
   });
 
@@ -801,10 +855,26 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         return { _tag: "transient" } as const;
       }
       const thread = Option.getOrUndefined(threadOption.value);
-      if (thread === undefined || thread.deletedAt !== null) {
-        // A vanished target thread cannot be correlated. Leaving the delegation
-        // `running` lets the budget-expiry sweep reap it rather than guessing a
-        // terminal outcome from an absence.
+      if (thread !== undefined && thread.deletedAt !== null) {
+        // The target thread was DELETED mid-run. Its turn can never end, so
+        // waiting for the budget-expiry backstop would strand the delegation for
+        // the whole TTL. Fail it now with the explicit `target-thread-deleted`
+        // reason (expiry remains the backstop for anything this misses). No
+        // result is delivered: this is a refusal, not a turn outcome, and the
+        // deleted thread is no place to append a trace.
+        return yield* refuse({
+          record: input.record,
+          reason: "target-thread-deleted",
+          threadId: null,
+          now: input.now,
+        });
+      }
+      if (thread === undefined) {
+        // The read SUCCEEDED but the thread is absent entirely. Unlike a soft
+        // delete this cannot be told apart from an eventually-consistent
+        // projection gap for a thread we know we dispatched into, so it is held
+        // `running` for the next cycle (and, ultimately, the expiry backstop)
+        // rather than guessed terminal.
         return { _tag: "running-pending" } as const;
       }
 
@@ -826,11 +896,16 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
 
       const outcome: "completed" | "failed" = latest.state === "completed" ? "completed" : "failed";
+      // An interrupted turn is a failed outcome with an EXPLICIT bounded reason,
+      // distinct from a turn the target ended in error. The contract outcome is
+      // still `failed`; the reason rides the result summary and the counters.
+      const interrupted = latest.state === "interrupted";
       const result = buildResult({
         delegation,
         outcome,
         envelopeId: delegationResultEnvelopeId(delegation.delegationId),
         now: input.now,
+        interrupted,
       });
 
       const finalized = yield* store
@@ -858,7 +933,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 
       return outcome === "completed"
         ? ({ _tag: "completed" } as const)
-        : ({ _tag: "turn-failed" } as const);
+        : interrupted
+          ? ({ _tag: "turn-interrupted" } as const)
+          : ({ _tag: "turn-failed" } as const);
     });
 
   const runCycle = Effect.fn("WorkjetDelegationExecutor.runCycle")(function* () {
@@ -890,6 +967,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         case "transient":
           transientSkips += 1;
           break;
+        case "version-unsupported":
+          versionUnsupported += 1;
+          break;
         case "retry-dispatch":
           dispatchRetries += 1;
           break;
@@ -898,6 +978,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           break;
         case "turn-failed":
           turnFailures += 1;
+          break;
+        case "turn-interrupted":
+          // An interruption is still a terminal turn failure; count it in both
+          // the specific and the aggregate so existing failure totals hold.
+          turnFailures += 1;
+          turnInterrupted += 1;
           break;
         case "running-pending":
           runningPending += 1;
@@ -919,17 +1005,27 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
             case "engine-rejected":
               engineRejected += 1;
               break;
+            case "delivery-dead-lettered":
+              deliveryDeadLettered += 1;
+              break;
           }
           break;
       }
     };
 
+    /**
+     * A by-state scan that tolerates an undecodable (version-skewed) row: the
+     * store returns each row as either a decoded `record` or a bounded `corrupt`
+     * marker, so one row the current schema cannot read is COUNTED and skipped
+     * instead of aborting the whole batch. A transient store outage still fails
+     * the read, which `Effect.option` folds into an empty batch for this cycle.
+     */
     const scan = (state: "accepted" | "delivered" | "running") =>
       store
-        .listDelegationsByState(state, WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
+        .listDelegationRowsByState(state, WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
         .pipe(
           Effect.option,
-          Effect.map(Option.getOrElse(() => [] as ReadonlyArray<WorkjetDelegationRecord>)),
+          Effect.map(Option.getOrElse(() => [] as ReadonlyArray<WorkjetDelegationRowResult>)),
         );
 
     /**
@@ -939,8 +1035,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * for one that has ended. It dispatches no turn and marks no thread busy, so
      * it is otherwise independent of the accept/deliver loops.
      */
-    for (const row of yield* scan("running")) {
+    for (const entry of yield* scan("running")) {
       scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet delegation row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const row = entry.record;
       if (row.terminal) continue;
       record(yield* advanceRunning({ record: row, environmentId, now }));
     }
@@ -952,8 +1054,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * new work on top of half-started work, and marks their threads busy for the
      * rest of the cycle.
      */
-    for (const row of yield* scan("accepted")) {
+    for (const entry of yield* scan("accepted")) {
       scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet delegation row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const row = entry.record;
       if (row.terminal) continue;
       const resolved = yield* resolveTarget({ record: row, environmentId, busyThreads, now });
       if (resolved._tag !== "ready") {
@@ -979,8 +1087,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       );
     }
 
-    for (const row of yield* scan("delivered")) {
+    for (const entry of yield* scan("delivered")) {
       scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet delegation row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const row = entry.record;
       if (row.terminal) continue;
       // Approval gate: a delegation whose human-approval gate is still `pending`
       // MUST NOT be accepted or run. It stays exactly where it is (`delivered`)
@@ -1029,10 +1143,70 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       );
     }
 
+    /**
+     * Dead-letter reconciliation. A cross-environment delegation whose outbound
+     * envelope exhausted its delivery budget (or expired) sits `dead` in the
+     * outbox while its SOURCE-side delegation row is still `queued` — a state the
+     * dispatch loops above never scan. Rather than leave it queued until the
+     * budget-expiry backstop, fail it explicitly with `delivery-dead-lettered`,
+     * leaving a bounded trace on the delegator's own (local) source thread, so a
+     * task that could never leave this machine is a visible terminal outcome
+     * instead of a silent drop. Only `delegation` envelopes reconcile: a dead
+     * `result` envelope means a completed delegation's report could not be
+     * delivered, which must not reopen or re-fail the finished delegation.
+     * Idempotent: a delegation already terminal is skipped.
+     */
+    for (const outbox of yield* store
+      .listOutboundByState("dead", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
+      .pipe(
+        Effect.option,
+        Effect.map(Option.getOrElse(() => [] as ReadonlyArray<WorkjetOutboxRecord>)),
+      )) {
+      if (outbox.payload._tag !== "delegation") continue;
+      const delegation = outbox.payload.delegation;
+      const existing = yield* store
+        .getDelegation(delegation.delegationId)
+        .pipe(Effect.option, Effect.map(Option.flatten));
+      if (Option.isNone(existing) || existing.value.terminal) continue;
+      record(
+        yield* refuse({
+          record: existing.value,
+          reason: "delivery-dead-lettered",
+          threadId: delegation.source.threadId,
+          now,
+        }),
+      );
+    }
+
     cycles += 1;
     lastCycleAt = now;
     return snapshot();
   });
+
+  /**
+   * Reassign a pending delegation to a different LOCAL target thread. A target
+   * in another environment is refused (`unknown-target`): this server does not
+   * host that thread and cannot run the task there. The store enforces the rest
+   * of the invariant — only `delivered`/`needs-input` may move, everything
+   * terminal or in-flight is `invalid-state-transition` — so a running or
+   * finished task is never restarted on a second thread.
+   */
+  const reassign = (input: {
+    readonly delegationId: WorkjetDelegationId;
+    readonly newTarget: WorkjetWorkerAddress;
+  }): Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxStoreError> =>
+    Effect.gen(function* () {
+      const environmentId = yield* sources.environmentId;
+      if (input.newTarget.environmentId !== environmentId) {
+        return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+      }
+      const now = yield* sources.nowIso;
+      return yield* store.reassignDelegation(
+        input.delegationId,
+        input.newTarget,
+        now as WorkjetMailboxTimestamp,
+      );
+    });
 
   return WorkjetDelegationExecutor.of({
     status: Effect.sync(snapshot),
@@ -1043,6 +1217,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }),
       Effect.catchCause(() => Effect.sync(snapshot)),
     ),
+    reassign,
   });
 });
 

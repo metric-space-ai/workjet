@@ -1,13 +1,23 @@
 import {
+  WORKJET_TERMINAL_DELEGATION_STATES,
   WorkjetMailboxActivityPayload,
   type EnvironmentId,
   type ThreadId,
+  type WorkjetDelegationId,
   type WorkjetDelegationState,
   type WorkjetDeliveryDisposition,
+  type WorkjetMeshWorkspaceId,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { ArrowDownLeftIcon, ArrowUpRightIcon } from "lucide-react";
+import {
+  ArrowDownLeftIcon,
+  ArrowUpRightIcon,
+  CheckIcon,
+  MessageSquareIcon,
+  RotateCcwIcon,
+  XIcon,
+} from "lucide-react";
 
 import { cn } from "../../lib/utils";
 
@@ -45,6 +55,17 @@ export interface WorkjetMailboxCardModel {
   readonly peerIsLocal: boolean;
   readonly disposition: WorkjetDeliveryDisposition | null;
   readonly delegationState: WorkjetDelegationState | null;
+  /**
+   * The delegation this card refers to, when the envelope carried one. Only a
+   * task card with a delegation id can offer lifecycle actions; a plain message
+   * card has none.
+   */
+  readonly delegationId: WorkjetDelegationId | null;
+  /**
+   * The mesh workspace of the peer end. Actions that address the peer (reply,
+   * request review) carry it so the target address is fully qualified.
+   */
+  readonly peerWorkspaceId: WorkjetMeshWorkspaceId;
 }
 
 const decodePayload = Schema.decodeUnknownOption(WorkjetMailboxActivityPayload);
@@ -76,6 +97,8 @@ export function parseWorkjetMailboxActivity(
     peerIsLocal: local,
     disposition: value.disposition ?? null,
     delegationState: value.delegationState ?? null,
+    delegationId: value.delegationId ?? null,
+    peerWorkspaceId: peer.workspaceId,
   };
 }
 
@@ -140,6 +163,114 @@ export function shortEnvironmentId(environmentId: string): string {
   return environmentId.length <= 12 ? environmentId : `${environmentId.slice(0, 12)}…`;
 }
 
+// ===============================
+// Delegation lifecycle actions
+// ===============================
+
+/**
+ * The bounded lifecycle operations a delegation card can offer. `reply`,
+ * `request-review`, and `cancel` are the delegating side's; `approve` and
+ * `request-changes` are a reviewer's verdict on a review-requested delegation.
+ */
+export type WorkjetDelegationActionKind =
+  | "reply"
+  | "request-review"
+  | "cancel"
+  | "approve"
+  | "request-changes";
+
+/** The typed intent a card action emits, resolved against the card model. */
+export type WorkjetDelegationAction =
+  | { readonly kind: "reply"; readonly text: string }
+  | { readonly kind: "request-review"; readonly round: number; readonly text: string }
+  | { readonly kind: "cancel" }
+  | { readonly kind: "approve"; readonly round: number }
+  | {
+      readonly kind: "request-changes";
+      readonly round: number;
+      readonly reasons: ReadonlyArray<string>;
+    };
+
+const TERMINAL_DELEGATION_STATE_SET: ReadonlySet<WorkjetDelegationState> = new Set(
+  WORKJET_TERMINAL_DELEGATION_STATES,
+);
+
+/**
+ * Which lifecycle actions a delegation card offers for its current state.
+ *
+ * - Reply is always available on a delegation card.
+ * - Request review is offered only while the delegation is `running`.
+ * - Cancel is offered while the delegation is non-terminal.
+ * - Approve / Request changes are a reviewer's verdict, offered only on a
+ *   `review-requested` delegation shown to a reviewer.
+ *
+ * A card without a delegation id (a plain message) offers nothing.
+ */
+export function availableDelegationActions(
+  model: Pick<WorkjetMailboxCardModel, "kind" | "delegationId" | "delegationState">,
+  viewerIsReviewer: boolean,
+): ReadonlyArray<WorkjetDelegationActionKind> {
+  if (model.kind !== "task" || model.delegationId === null) return [];
+  const state = model.delegationState;
+  const actions: WorkjetDelegationActionKind[] = ["reply"];
+  if (state === "running") actions.push("request-review");
+  if (state !== null && !TERMINAL_DELEGATION_STATE_SET.has(state)) actions.push("cancel");
+  if (state === "review-requested" && viewerIsReviewer) {
+    actions.push("approve", "request-changes");
+  }
+  return actions;
+}
+
+/**
+ * The inline draft a card holds while composing an action. It is CONTROLLED —
+ * owned by the caller and passed back on change — so the card itself stays a
+ * pure, hook-free presentational function like the composer panel content.
+ */
+export interface WorkjetDelegationActionState {
+  /** The action whose inline popover is open, or `null` when none is. */
+  readonly open: WorkjetDelegationActionKind | null;
+  /** Reply / request-review body text. */
+  readonly text: string;
+  /** 1-based review round for request-review, approve, and request-changes. */
+  readonly round: number;
+  /** Newline-separated reasons for a request-changes verdict. */
+  readonly reasons: string;
+}
+
+export const EMPTY_DELEGATION_ACTION_STATE: WorkjetDelegationActionState = {
+  open: null,
+  text: "",
+  round: 1,
+  reasons: "",
+};
+
+/** Split a reasons textarea into bounded, non-blank lines. */
+export function parseDelegationReasons(reasons: string): ReadonlyArray<string> {
+  return reasons
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+const ACTION_LABEL: Record<WorkjetDelegationActionKind, string> = {
+  reply: "Reply",
+  "request-review": "Request review",
+  cancel: "Cancel",
+  approve: "Approve",
+  "request-changes": "Request changes",
+};
+
+const ACTION_ICON: Record<WorkjetDelegationActionKind, typeof MessageSquareIcon> = {
+  reply: MessageSquareIcon,
+  "request-review": RotateCcwIcon,
+  cancel: XIcon,
+  approve: CheckIcon,
+  "request-changes": RotateCcwIcon,
+};
+
+/** Actions that dispatch straight away; the rest open an inline popover first. */
+const IMMEDIATE_ACTIONS: ReadonlySet<WorkjetDelegationActionKind> = new Set(["cancel", "approve"]);
+
 export interface WorkjetMailboxActivityCardProps {
   readonly model: WorkjetMailboxCardModel;
   /**
@@ -150,10 +281,163 @@ export interface WorkjetMailboxActivityCardProps {
     readonly environmentId: EnvironmentId;
     readonly threadId: ThreadId;
   }) => void;
+  /**
+   * Whether the current viewer may act as the delegation's reviewer, which
+   * gates the Approve / Request changes verdict on a review-requested card.
+   */
+  readonly viewerIsReviewer?: boolean;
+  /**
+   * The controlled inline-action draft, its change handler, and the dispatcher
+   * that runs a resolved action. All three must be present for actions to
+   * render; when any is absent the card is display-only, exactly as before.
+   */
+  readonly actionState?: WorkjetDelegationActionState;
+  readonly onActionStateChange?: (next: WorkjetDelegationActionState) => void;
+  readonly onDelegationAction?: (action: WorkjetDelegationAction) => void;
+  /** Disables the action controls while a dispatch is in flight. */
+  readonly actionsBusy?: boolean;
+}
+
+const actionFieldClass =
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/70";
+
+function WorkjetDelegationActionRow(props: {
+  readonly model: WorkjetMailboxCardModel;
+  readonly viewerIsReviewer: boolean;
+  readonly state: WorkjetDelegationActionState;
+  readonly busy: boolean;
+  readonly onStateChange: (next: WorkjetDelegationActionState) => void;
+  readonly onAction: (action: WorkjetDelegationAction) => void;
+}) {
+  const { model, viewerIsReviewer, state, busy, onStateChange, onAction } = props;
+  const actions = availableDelegationActions(model, viewerIsReviewer);
+  if (actions.length === 0) return null;
+
+  const close = () => onStateChange(EMPTY_DELEGATION_ACTION_STATE);
+  const toggle = (kind: WorkjetDelegationActionKind) => {
+    if (IMMEDIATE_ACTIONS.has(kind)) {
+      if (kind === "cancel") onAction({ kind: "cancel" });
+      else onAction({ kind: "approve", round: state.round });
+      close();
+      return;
+    }
+    onStateChange(
+      state.open === kind
+        ? EMPTY_DELEGATION_ACTION_STATE
+        : { ...EMPTY_DELEGATION_ACTION_STATE, open: kind },
+    );
+  };
+
+  const submit = () => {
+    if (state.open === "reply") onAction({ kind: "reply", text: state.text });
+    else if (state.open === "request-review")
+      onAction({ kind: "request-review", round: state.round, text: state.text });
+    else if (state.open === "request-changes")
+      onAction({
+        kind: "request-changes",
+        round: state.round,
+        reasons: parseDelegationReasons(state.reasons),
+      });
+    close();
+  };
+
+  const needsText = state.open === "reply" || state.open === "request-review";
+  const submitDisabled = busy || (needsText && state.text.trim().length === 0);
+
+  return (
+    <div className="flex w-full flex-col gap-1" data-workjet-delegation-actions>
+      <div className="flex flex-wrap items-center gap-1">
+        {actions.map((kind) => {
+          const Icon = ACTION_ICON[kind];
+          return (
+            <button
+              key={kind}
+              type="button"
+              data-workjet-delegation-action={kind}
+              aria-pressed={state.open === kind}
+              disabled={busy}
+              onClick={() => toggle(kind)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]",
+                state.open === kind
+                  ? "bg-accent/60 text-foreground"
+                  : "text-muted-foreground hover:bg-accent/30",
+                kind === "cancel" ? "hover:text-destructive" : "",
+              )}
+            >
+              <Icon aria-hidden className="size-3" />
+              {ACTION_LABEL[kind]}
+            </button>
+          );
+        })}
+      </div>
+      {state.open !== null && !IMMEDIATE_ACTIONS.has(state.open) ? (
+        <div className="flex flex-col gap-1 rounded-md border border-border/60 bg-background/60 p-1.5">
+          {state.open === "request-review" || state.open === "request-changes" ? (
+            <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              Round
+              <input
+                aria-label="Review round"
+                type="number"
+                min={1}
+                max={16}
+                disabled={busy}
+                className="w-14 rounded-md border border-border/60 bg-background px-1 py-0.5 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                value={state.round}
+                onChange={(event) =>
+                  onStateChange({ ...state, round: Number(event.target.value) || 1 })
+                }
+              />
+            </label>
+          ) : null}
+          {needsText ? (
+            <textarea
+              aria-label={state.open === "reply" ? "Reply message" : "Review request message"}
+              rows={2}
+              disabled={busy}
+              className={actionFieldClass}
+              value={state.text}
+              onChange={(event) => onStateChange({ ...state, text: event.target.value })}
+            />
+          ) : null}
+          {state.open === "request-changes" ? (
+            <textarea
+              aria-label="Change reasons, one per line"
+              placeholder="One reason per line"
+              rows={2}
+              disabled={busy}
+              className={actionFieldClass}
+              value={state.reasons}
+              onChange={(event) => onStateChange({ ...state, reasons: event.target.value })}
+            />
+          ) : null}
+          <div className="flex items-center justify-end gap-1">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={close}
+              className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/30"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-workjet-delegation-submit={state.open}
+              disabled={submitDisabled}
+              onClick={submit}
+              className="rounded-md bg-accent/60 px-1.5 py-0.5 text-[11px] font-medium text-foreground hover:bg-accent/80 disabled:opacity-50"
+            >
+              {ACTION_LABEL[state.open]}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProps) {
-  const { model, onOpenPeerThread } = props;
+  const { model, onOpenPeerThread, onDelegationAction, onActionStateChange } = props;
   const outbound = model.direction === "outbound";
   const DirectionIcon = outbound ? ArrowUpRightIcon : ArrowDownLeftIcon;
   const label = model.kind === "task" ? "Task" : "Message";
@@ -161,42 +445,58 @@ export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProp
   const disposition = dispositionBadgeLabel(model.disposition);
   const linkable = model.peerIsLocal && onOpenPeerThread !== undefined;
   const peerLabel = `${shortEnvironmentId(model.peerEnvironmentId)} · ${model.peerThreadId}`;
+  const actionsEnabled = onDelegationAction !== undefined && onActionStateChange !== undefined;
 
   return (
     <div
       data-workjet-mailbox-card={model.kind}
-      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[12px]"
+      className="-mx-1 flex w-full flex-col gap-1.5 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[12px]"
     >
-      <DirectionIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 font-medium text-foreground">{lead}</span>
-      {linkable ? (
-        <button
-          type="button"
-          className="min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline"
-          onClick={() =>
-            onOpenPeerThread({
-              environmentId: model.peerEnvironmentId,
-              threadId: model.peerThreadId,
-            })
-          }
-        >
-          {peerLabel}
-        </button>
-      ) : (
-        <span className="min-w-0 truncate font-mono text-[11px] text-secondary-label">
-          {peerLabel}
-        </span>
-      )}
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem]">
-        <span className={cn(DISPOSITION_TONE[disposition] ?? "text-muted-foreground")}>
-          {disposition}
-        </span>
-        {model.delegationState ? (
-          <span className={delegationStateToneClass(model.delegationState)}>
-            {model.delegationState}
+      <div className="flex w-full items-center gap-2">
+        <DirectionIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 font-medium text-foreground">{lead}</span>
+        {linkable ? (
+          <button
+            type="button"
+            className="min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline"
+            onClick={() =>
+              onOpenPeerThread({
+                environmentId: model.peerEnvironmentId,
+                threadId: model.peerThreadId,
+              })
+            }
+          >
+            {peerLabel}
+          </button>
+        ) : (
+          <span className="min-w-0 truncate font-mono text-[11px] text-secondary-label">
+            {peerLabel}
           </span>
-        ) : null}
-      </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem]">
+          <span className={cn(DISPOSITION_TONE[disposition] ?? "text-muted-foreground")}>
+            {disposition}
+          </span>
+          {model.delegationState ? (
+            <span className={delegationStateToneClass(model.delegationState)}>
+              {model.delegationState}
+            </span>
+          ) : null}
+        </span>
+      </div>
+      {actionsEnabled
+        ? // Invoked as a plain function (it holds no state) so the buttons are
+          // host elements in this card's own tree rather than an unexpanded
+          // child component.
+          WorkjetDelegationActionRow({
+            model,
+            viewerIsReviewer: props.viewerIsReviewer ?? true,
+            state: props.actionState ?? EMPTY_DELEGATION_ACTION_STATE,
+            busy: props.actionsBusy ?? false,
+            onStateChange: onActionStateChange,
+            onAction: onDelegationAction,
+          })
+        : null}
     </div>
   );
 }

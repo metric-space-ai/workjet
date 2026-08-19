@@ -115,7 +115,13 @@ import {
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
-import { WorkjetMailboxActivityCard } from "./WorkjetMailboxActivityCard";
+import {
+  EMPTY_DELEGATION_ACTION_STATE,
+  WorkjetMailboxActivityCard,
+  type WorkjetDelegationAction,
+  type WorkjetDelegationActionState,
+  type WorkjetMailboxCardModel,
+} from "./WorkjetMailboxActivityCard";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
@@ -148,6 +154,14 @@ interface TimelineRowSharedState {
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
   onOpenThread: (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => void;
+  /**
+   * Dispatch a Workjet delegation lifecycle action (reply / request review /
+   * cancel / review verdict) resolved from a mailbox card. Absent when the host
+   * does not wire mailbox actions, in which case the cards stay display-only.
+   */
+  onWorkjetDelegationAction:
+    | ((action: WorkjetDelegationAction, model: WorkjetMailboxCardModel) => void)
+    | null;
 }
 
 interface TimelineRowActivityState {
@@ -213,6 +227,14 @@ interface MessagesTimelineProps {
    * mailbox cards, whose peer address is a real thread the reader can open.
    */
   onOpenThread?: (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => void;
+  /**
+   * Dispatch a Workjet mailbox delegation action from a timeline card. Optional:
+   * when omitted the mailbox cards render without lifecycle actions.
+   */
+  onWorkjetDelegationAction?: (
+    action: WorkjetDelegationAction,
+    model: WorkjetMailboxCardModel,
+  ) => void;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -264,6 +286,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
   onOpenThread,
+  onWorkjetDelegationAction,
   listRef,
   timelineEntries,
   latestTurn,
@@ -528,6 +551,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       agentPanelModel,
       onOpenAgents,
       onOpenThread: onOpenThread ?? NOOP_OPEN_THREAD,
+      onWorkjetDelegationAction: onWorkjetDelegationAction ?? null,
     }),
     [
       timestampFormat,
@@ -545,6 +569,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       agentPanelModel,
       onOpenAgents,
       onOpenThread,
+      onWorkjetDelegationAction,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2220,13 +2245,37 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
 const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
   model: NonNullable<TimelineWorkEntry["workjetMailbox"]>;
 }) {
-  const { onOpenThread } = use(TimelineRowCtx);
-  // A cross-machine peer is named but never linked: this client has no route
-  // to another machine's thread, so offering a dead link would be a lie.
+  const { onOpenThread, onWorkjetDelegationAction } = use(TimelineRowCtx);
+  // The inline-action draft is owned here so the card stays a pure, controlled
+  // presentational component. The durable state/receipt re-renders the card
+  // through the ordinary thread subscription, so nothing optimistic lives here.
+  const [actionState, setActionState] = useState<WorkjetDelegationActionState>(
+    EMPTY_DELEGATION_ACTION_STATE,
+  );
+  const model = props.model;
+  const dispatch = useCallback(
+    (action: WorkjetDelegationAction) => {
+      onWorkjetDelegationAction?.(action, model);
+      setActionState(EMPTY_DELEGATION_ACTION_STATE);
+    },
+    [onWorkjetDelegationAction, model],
+  );
+  // Actions are offered only when the host wired a dispatcher AND the card is a
+  // delegation card. A cross-machine peer is named but never linked: this
+  // client has no route to another machine's thread.
+  const actionProps =
+    onWorkjetDelegationAction !== null && model.kind === "task" && model.delegationId !== null
+      ? {
+          actionState,
+          onActionStateChange: setActionState,
+          onDelegationAction: dispatch,
+        }
+      : {};
   return (
     <WorkjetMailboxActivityCard
-      model={props.model}
-      {...(props.model.peerIsLocal ? { onOpenPeerThread: onOpenThread } : {})}
+      model={model}
+      {...(model.peerIsLocal ? { onOpenPeerThread: onOpenThread } : {})}
+      {...actionProps}
     />
   );
 });

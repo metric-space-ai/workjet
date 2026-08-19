@@ -557,9 +557,9 @@ for (const scenario of [
       const review = yield* Effect.exit(rpc.requestReview(requestReviewInput));
       const update = yield* Effect.exit(rpc.updateDelegation(updateInput));
 
-      for (const exit of [reply, review, update]) {
-        expect(Exit.isFailure(exit)).toBe(true);
-      }
+      expect(Exit.isFailure(reply)).toBe(true);
+      expect(Exit.isFailure(review)).toBe(true);
+      expect(Exit.isFailure(update)).toBe(true);
       // The refusal happens BEFORE any durable delivery-service effect.
       expect(recorded.replies).toHaveLength(0);
       expect(recorded.reviews).toHaveLength(0);

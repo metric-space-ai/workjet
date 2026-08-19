@@ -9,12 +9,17 @@ import {
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  availableDelegationActions,
   delegationStateToneClass,
   dispositionBadgeLabel,
+  EMPTY_DELEGATION_ACTION_STATE,
+  parseDelegationReasons,
   parseWorkjetMailboxActivity,
   shortEnvironmentId,
   WORKJET_MAILBOX_ACTIVITY_KIND_SET,
   WorkjetMailboxActivityCard,
+  type WorkjetDelegationAction,
+  type WorkjetDelegationActionState,
   type WorkjetMailboxCardModel,
 } from "./WorkjetMailboxActivityCard";
 
@@ -69,8 +74,40 @@ const model = (overrides: Partial<WorkjetMailboxCardModel> = {}): WorkjetMailbox
   peerIsLocal: true,
   disposition: "accepted-new",
   delegationState: null,
+  delegationId: null,
+  peerWorkspaceId: "ctox-business-os:mesh-alpha" as WorkjetMailboxCardModel["peerWorkspaceId"],
   ...overrides,
 });
+
+const taskModel = (overrides: Partial<WorkjetMailboxCardModel> = {}): WorkjetMailboxCardModel =>
+  model({
+    kind: "task",
+    delegationId: "wjd-0123456789abcdef" as WorkjetMailboxCardModel["delegationId"],
+    delegationState: "running",
+    ...overrides,
+  });
+
+const findButton = (children: ReactNode, action: string) =>
+  descendants(children).find(
+    (element) => element.props["data-workjet-delegation-action"] === action,
+  );
+
+const actionCard = (
+  overrides: Partial<WorkjetMailboxCardModel>,
+  extra: {
+    readonly viewerIsReviewer?: boolean;
+    readonly actionState?: WorkjetDelegationActionState;
+    readonly onDelegationAction?: (action: WorkjetDelegationAction) => void;
+    readonly onActionStateChange?: (next: WorkjetDelegationActionState) => void;
+  } = {},
+) =>
+  WorkjetMailboxActivityCard({
+    model: taskModel(overrides),
+    onDelegationAction: extra.onDelegationAction ?? vi.fn(),
+    onActionStateChange: extra.onActionStateChange ?? vi.fn(),
+    ...(extra.viewerIsReviewer !== undefined ? { viewerIsReviewer: extra.viewerIsReviewer } : {}),
+    ...(extra.actionState !== undefined ? { actionState: extra.actionState } : {}),
+  }) as InspectableElement;
 
 describe("parseWorkjetMailboxActivity", () => {
   it("covers exactly the four mailbox activity kinds", () => {
@@ -98,6 +135,8 @@ describe("parseWorkjetMailboxActivity", () => {
       peerIsLocal: true,
       disposition: null,
       delegationState: null,
+      delegationId: null,
+      peerWorkspaceId: "ctox-business-os:mesh-alpha",
     });
   });
 
@@ -120,6 +159,8 @@ describe("parseWorkjetMailboxActivity", () => {
       peerIsLocal: true,
       disposition: "accepted-new",
       delegationState: "delivered",
+      delegationId: "wjd-0123456789abcdef",
+      peerWorkspaceId: "ctox-business-os:mesh-alpha",
     });
   });
 
@@ -284,5 +325,175 @@ describe("WorkjetMailboxActivityCard", () => {
     expect(children.some((element) => element.type === "button")).toBe(false);
     expect(textContent(card.props.children)).toContain("thread-worker");
     expect(textContent(card.props.children)).toContain("queued");
+  });
+});
+
+describe("availableDelegationActions", () => {
+  it("offers nothing for a plain message or a delegation-less card", () => {
+    expect(availableDelegationActions(model(), true)).toEqual([]);
+    expect(availableDelegationActions(model({ kind: "task", delegationId: null }), true)).toEqual(
+      [],
+    );
+  });
+
+  it("offers reply, request-review, and cancel while running", () => {
+    expect(availableDelegationActions(taskModel({ delegationState: "running" }), false)).toEqual([
+      "reply",
+      "request-review",
+      "cancel",
+    ]);
+  });
+
+  it("drops request-review once the delegation is no longer running", () => {
+    expect(
+      availableDelegationActions(taskModel({ delegationState: "review-requested" }), false),
+    ).toEqual(["reply", "cancel"]);
+  });
+
+  it("adds the reviewer verdict only on a review-requested card shown to a reviewer", () => {
+    expect(
+      availableDelegationActions(taskModel({ delegationState: "review-requested" }), true),
+    ).toEqual(["reply", "cancel", "approve", "request-changes"]);
+    // The same state hides the verdict from a non-reviewer.
+    expect(
+      availableDelegationActions(taskModel({ delegationState: "review-requested" }), false),
+    ).not.toContain("approve");
+  });
+
+  it("drops cancel once the delegation reaches a terminal state", () => {
+    for (const state of ["completed", "failed", "cancelled", "expired"] as const) {
+      expect(availableDelegationActions(taskModel({ delegationState: state }), true)).toEqual([
+        "reply",
+      ]);
+    }
+  });
+});
+
+describe("parseDelegationReasons", () => {
+  it("splits into trimmed, non-blank lines", () => {
+    expect(parseDelegationReasons("first\n  second  \n\n third")).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+    expect(parseDelegationReasons("   \n  ")).toEqual([]);
+  });
+});
+
+describe("WorkjetMailboxActivityCard delegation actions", () => {
+  it("renders no action row without the dispatch callbacks", () => {
+    const card = WorkjetMailboxActivityCard({ model: taskModel() }) as InspectableElement;
+    expect(findButton(card.props.children, "reply")).toBeUndefined();
+  });
+
+  it("renders the state-appropriate action buttons", () => {
+    const card = actionCard({ delegationState: "running" });
+    expect(findButton(card.props.children, "reply")).toBeDefined();
+    expect(findButton(card.props.children, "request-review")).toBeDefined();
+    expect(findButton(card.props.children, "cancel")).toBeDefined();
+    expect(findButton(card.props.children, "approve")).toBeUndefined();
+  });
+
+  it("dispatches cancel immediately without a popover", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard({ delegationState: "running" }, { onDelegationAction });
+    (findButton(card.props.children, "cancel")?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({ kind: "cancel" });
+  });
+
+  it("opens the reply popover then dispatches the typed reply body", () => {
+    const onActionStateChange = vi.fn();
+    const opened = actionCard({ delegationState: "running" }, { onActionStateChange });
+    (findButton(opened.props.children, "reply")?.props.onClick as () => void)();
+    expect(onActionStateChange).toHaveBeenCalledWith({
+      ...EMPTY_DELEGATION_ACTION_STATE,
+      open: "reply",
+    });
+
+    const onDelegationAction = vi.fn();
+    const composing = actionCard(
+      { delegationState: "running" },
+      {
+        onDelegationAction,
+        actionState: { ...EMPTY_DELEGATION_ACTION_STATE, open: "reply", text: "Almost there." },
+      },
+    );
+    const submit = descendants(composing.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "reply",
+    );
+    (submit?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({ kind: "reply", text: "Almost there." });
+  });
+
+  it("dispatches request-review with the drafted round and body", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard(
+      { delegationState: "running" },
+      {
+        onDelegationAction,
+        actionState: {
+          ...EMPTY_DELEGATION_ACTION_STATE,
+          open: "request-review",
+          text: "Please review.",
+          round: 2,
+        },
+      },
+    );
+    const submit = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "request-review",
+    );
+    (submit?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({
+      kind: "request-review",
+      round: 2,
+      text: "Please review.",
+    });
+  });
+
+  it("dispatches an approve verdict immediately for a reviewer", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard(
+      { delegationState: "review-requested" },
+      {
+        onDelegationAction,
+        viewerIsReviewer: true,
+        actionState: { ...EMPTY_DELEGATION_ACTION_STATE, round: 3 },
+      },
+    );
+    (findButton(card.props.children, "approve")?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({ kind: "approve", round: 3 });
+  });
+
+  it("dispatches a request-changes verdict with parsed reasons", () => {
+    const onDelegationAction = vi.fn();
+    const card = actionCard(
+      { delegationState: "review-requested" },
+      {
+        onDelegationAction,
+        viewerIsReviewer: true,
+        actionState: {
+          ...EMPTY_DELEGATION_ACTION_STATE,
+          open: "request-changes",
+          round: 1,
+          reasons: "Add a test\nFix the typo",
+        },
+      },
+    );
+    const submit = descendants(card.props.children).find(
+      (element) => element.props["data-workjet-delegation-submit"] === "request-changes",
+    );
+    (submit?.props.onClick as () => void)();
+    expect(onDelegationAction).toHaveBeenCalledWith({
+      kind: "request-changes",
+      round: 1,
+      reasons: ["Add a test", "Fix the typo"],
+    });
+  });
+
+  it("hides the reviewer verdict from a non-reviewer on the same card", () => {
+    const card = actionCard({ delegationState: "review-requested" }, { viewerIsReviewer: false });
+    expect(findButton(card.props.children, "approve")).toBeUndefined();
+    expect(findButton(card.props.children, "request-changes")).toBeUndefined();
+    expect(findButton(card.props.children, "reply")).toBeDefined();
   });
 });

@@ -268,6 +268,10 @@ import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import type {
+  WorkjetDelegationAction,
+  WorkjetMailboxCardModel,
+} from "./chat/WorkjetMailboxActivityCard";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
@@ -1629,6 +1633,19 @@ function ChatViewContent(props: ChatViewProps) {
   const delegateWorkjetMailboxTask = useAtomCommand(serverEnvironment.delegateWorkjetMailboxTask, {
     reportFailure: false,
   });
+  const replyWorkjetMailbox = useAtomCommand(serverEnvironment.replyWorkjetMailbox, {
+    reportFailure: false,
+  });
+  const requestReviewWorkjetMailbox = useAtomCommand(
+    serverEnvironment.requestReviewWorkjetMailbox,
+    {
+      reportFailure: false,
+    },
+  );
+  const updateDelegationWorkjetMailbox = useAtomCommand(
+    serverEnvironment.updateDelegationWorkjetMailbox,
+    { reportFailure: false },
+  );
   const allThreadShells = useThreadShells();
   // Recipients are the OTHER live threads on this machine; a thread cannot be
   // offered itself, and a deleted thread is not a destination.
@@ -1710,6 +1727,83 @@ function ChatViewContent(props: ChatViewProps) {
     workjetSendBusy,
     workjetSendDraft,
   ]);
+  // Dispatch a delegation lifecycle action (reply / request review / cancel /
+  // review verdict) from a mailbox timeline card. The durable activity
+  // re-render carries the resulting state back through the normal
+  // subscription, so nothing here holds optimistic state.
+  const onWorkjetDelegationAction = useCallback(
+    (action: WorkjetDelegationAction, model: WorkjetMailboxCardModel): void => {
+      if (!activeThreadEnvironmentId || !activeThreadId || model.delegationId === null) return;
+      const environmentId = activeThreadEnvironmentId;
+      const sourceThreadId = activeThreadId;
+      const delegationId = model.delegationId;
+      const address = {
+        sourceThreadId,
+        targetWorkspaceId: model.peerWorkspaceId,
+        targetEnvironmentId: model.peerEnvironmentId,
+        targetThreadId: model.peerThreadId,
+      } as const;
+      void (async () => {
+        switch (action.kind) {
+          case "reply":
+            await replyWorkjetMailbox({
+              environmentId,
+              input: { ...address, delegationId, body: { _tag: "inline", text: action.text } },
+            });
+            return;
+          case "request-review":
+            await requestReviewWorkjetMailbox({
+              environmentId,
+              input: {
+                ...address,
+                delegationId,
+                round: action.round,
+                body: { _tag: "inline", text: action.text },
+              },
+            });
+            return;
+          case "cancel":
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: { sourceThreadId, delegationId, update: { _tag: "cancel" } },
+            });
+            return;
+          case "approve":
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: {
+                sourceThreadId,
+                delegationId,
+                update: { _tag: "review", decision: "approve", round: action.round },
+              },
+            });
+            return;
+          case "request-changes":
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: {
+                sourceThreadId,
+                delegationId,
+                update: {
+                  _tag: "review",
+                  decision: "changes-requested",
+                  round: action.round,
+                  reasons: action.reasons,
+                },
+              },
+            });
+            return;
+        }
+      })();
+    },
+    [
+      activeThreadEnvironmentId,
+      activeThreadId,
+      replyWorkjetMailbox,
+      requestReviewWorkjetMailbox,
+      updateDelegationWorkjetMailbox,
+    ],
+  );
   useEffect(() => {
     if (!activeServerThread || !activeThreadKey) return;
     setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
@@ -6462,6 +6556,7 @@ function ChatViewContent(props: ChatViewProps) {
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
                 onOpenThread={onOpenWorkjetPeerThread}
+                onWorkjetDelegationAction={onWorkjetDelegationAction}
                 key={activeThread.id}
                 isWorking={isWorking}
                 workingStepLabel={workingStepLabel}

@@ -292,6 +292,7 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
+import { WorkjetWorkerOverview } from "./WorkjetWorkerOverview";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
@@ -6428,6 +6429,21 @@ function ChatViewContent(props: ChatViewProps) {
             setThreadErrorBannerDismissTick((tick) => tick + 1);
           }}
         />
+        {/*
+          Orchestrator-scoped worker overview: an additive "Workers (N)" section
+          listing the child worker threads dispatched from this orchestrator.
+          It never replaces the normal thread list — every worker also remains
+          an ordinary thread in the sidebar. Hidden for non-orchestrator threads
+          and when the orchestrator owns no workers (the component returns null).
+        */}
+        {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
+          <WorkjetWorkerOverview
+            environmentId={activeThreadEnvironmentId}
+            orchestratorThreadId={activeThreadId}
+            threads={allThreadShells}
+            onOpenWorker={onOpenWorkjetPeerThread}
+          />
+        ) : null}
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Chat column */}

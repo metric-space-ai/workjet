@@ -918,10 +918,14 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
 - [ ] Add a server-side mailbox reconciler that resumes after restart, applies
       backpressure, orders events per delegation, and queues target prompts
       while a thread already has an active turn.
-- [ ] Expose harness-neutral MCP tools `workjet_send_message`,
+- [x] Expose harness-neutral MCP tools `workjet_send_message`,
       `workjet_delegate_task`, `workjet_reply`, `workjet_request_review`, and
       `workjet_update_delegation`; all harnesses receive the same schemas and
-      authorization boundary from the per-session T3 MCP server.
+      authorization boundary from the per-session T3 MCP server. All five done
+      2026-08-19 (send/delegate earlier; reply/request-review/update in commits
+      `0354175b7`, `575bfbf61`): orchestrator-scoped visibility +
+      `requireWorkjetOrchestrator`, bounded tool-local schemas, mapped onto the
+      store's enforced transition table (no invented edges).
 - [x] Deliver accepted tasks through normal T3 `thread.turn.start` semantics
       and the existing Codex, Claude Code, and Grok session adapters. Do not
       implement direct harness-to-harness sockets or provider-specific remote
@@ -950,10 +954,16 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   receiver's snapshot store before the delegation row so the executor can
   run it; oversized → ref-only marker, never silent. Follow-up/review
   linkage lands with the reply/review/update MCP tools (in flight).
-- [ ] Represent review and revision as typed edges (`reviews`, `revises`,
-      `follows-up`) in one delegation graph, with configurable maximum depth,
-      review rounds, token/cost/time budgets, and approval gates to prevent
-      autonomous infinite loops.
+- [~] Represent review and revision as typed edges (`reviews`, `revises`,
+  `follows-up`) in one delegation graph, with configurable maximum depth,
+  review rounds, token/cost/time budgets, and approval gates to prevent
+  autonomous infinite loops. Done 2026-08-19 (commit `0354175b7`,
+  migration 045 `workjet_delegation_edges`): idempotent typed edges
+  (`reviews`/`revises`/`follows-up`, stable id, `listDelegationEdges`), and
+  loop gates enforced BEFORE any durable effect — review round >
+  `maxReviewRounds` → `review-rounds-exceeded`, depth+1 > `maxDepth` →
+  `depth-exceeded`. Still open: token/cost budgets (only depth/rounds/time
+  gated today) and human approval gates.
 - [ ] Add interruption, cancellation, reassignment, target-offline, deleted-
       thread, and target-version-skew handling with explicit terminal or
       recoverable states; never silently drop a message or start it elsewhere.

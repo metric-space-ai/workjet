@@ -86,7 +86,12 @@ const delegation: WorkjetDelegation = {
     nonGoals: "No contract changes.",
   },
   completion: { schemaVersion: 1, acceptance: "The focused test run is green." },
-  budget: { maxDepth: 2, maxReviewRounds: 1, ttlSeconds: 3_600 },
+  budget: {
+    schemaVersion: 1,
+    maxDepth: 2,
+    maxReviewRounds: 1,
+    expiresAt: "2026-08-18T11:00:00.000Z",
+  },
   state: "delivered",
   stateChangedAt: NOW,
   depth: 0,

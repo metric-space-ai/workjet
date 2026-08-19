@@ -514,6 +514,8 @@ it.effect("encodes the transition table exactly as documented", () => {
   assert.isTrue(isLegalDelegationTransition("review-requested", "changes-requested"));
   assert.isTrue(isLegalDelegationTransition("changes-requested", "running"));
   assert.isTrue(isLegalDelegationTransition("review-requested", "completed"));
+  // A zero-review-round budget must be able to finish without a review gate.
+  assert.isTrue(isLegalDelegationTransition("running", "completed"));
 
   for (const from of [
     "queued",
@@ -553,7 +555,7 @@ it.effect("encodes the transition table exactly as documented", () => {
   }
 
   assert.isFalse(isLegalDelegationTransition("queued", "running"));
-  assert.isFalse(isLegalDelegationTransition("running", "completed"));
+  assert.isFalse(isLegalDelegationTransition("needs-input", "completed"));
   return Effect.void;
 });
 

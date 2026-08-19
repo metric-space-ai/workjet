@@ -86,21 +86,23 @@ export const isTerminalDelegationState = (state: WorkjetDelegationState): boolea
  *   queued → delivered → accepted → running
  *   running ↔ needs-input
  *   running → review-requested
+ *   running → completed
  *   review-requested → changes-requested → running
  *   review-requested → completed
  *   any non-terminal → cancelled | expired | failed
  *   completed | failed | cancelled | expired are TERMINAL and immutable
  *
  * The terminal escapes are appended programmatically below, so the literal map
- * only carries the forward progress edges. Note that `completed` is reachable
- * exclusively through `review-requested`: a delegation is finished when its
- * review says so, never by the worker declaring itself done.
+ * only carries the forward progress edges. `running → completed` exists for
+ * delegations whose budget carries `maxReviewRounds: 0` — a review is a
+ * configurable gate, not a mandatory one; delegations that request review
+ * still complete through `review-requested`.
  */
 const DELEGATION_PROGRESS_TRANSITIONS = {
   queued: ["delivered"],
   delivered: ["accepted"],
   accepted: ["running"],
-  running: ["needs-input", "review-requested"],
+  running: ["needs-input", "review-requested", "completed"],
   "needs-input": ["running"],
   "review-requested": ["changes-requested", "completed"],
   "changes-requested": ["running"],

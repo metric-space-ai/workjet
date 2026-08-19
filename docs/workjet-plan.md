@@ -1050,7 +1050,21 @@ CTOX project.
         native WebRTC launch context; registry presence alone is not a launch
         or data-plane claim.
   - [ ] Port local-daemon discovery, ownership, lifecycle, and launch.
-  - [ ] Port SSH-managed discovery, attach/install/rotate/revoke, and launch.
+  - [~] Port SSH-managed discovery, attach/install/rotate/revoke, and launch.
+    Progress 2026-08-19 (commits `45e1129b9` and parent): discovery,
+    credential-free configuration (`ssh-instances.json`), add/remove IPC,
+    and the sidebar SSH add-surface tab are done over the EXISTING
+    `runSshCommand`/`discoverSshHosts` infra (no second SSH stack; OpenSSH
+    host-key pinning via `known_hosts` with `BatchMode=yes` aborting on
+    unknown/changed keys; argv-not-shell exec with schema+single-quote
+    guarding of host/state-root; remote output capped at 64 KiB). The
+    descriptor decoder is shared with the local-daemon source. LAUNCH is
+    deliberately fail-closed: the remote invite's signaling URLs are
+    `ws://127.0.0.1:PORT` on the remote host and the SSH package exposes no
+    reusable server-agnostic local-forward primitive, so SSH rows stay
+    non-launchable with an honest "SSH tunnel support pending" hint.
+    Still open: an exported scoped `-L` forward + remote-signaling-port
+    discovery to enable launch, and attach/install/rotate/revoke.
 - [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
       keychain guarantees for room, capability, sudo, and SSH secrets.
   - [x] Store pairing room/capability secrets separately from public instance

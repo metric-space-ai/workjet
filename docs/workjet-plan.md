@@ -670,13 +670,22 @@ Goal: turn the stored role metadata into real local and remote orchestration.
   - [ ] Replace declared harness availability with live environment-scoped
         inspect/install/update/remove actions and consume the resulting truth
         during worker validation and dispatch.
-- [ ] Add an orchestrator-scoped worker overview showing child threads grouped
+- [x] Add an orchestrator-scoped worker overview showing child threads grouped
       under their parent with task, harness/model, environment/computer,
       delivery/turn state, completion/result state, and actionable links to
-      open the ordinary worker thread.
-- [ ] Keep the normal Code sidebar authoritative: every created worker remains
+      open the ordinary worker thread. Done 2026-08-19 (commits `5dcbfa61d`,
+      `c91c563f5`): a pure `groupWorkerThreads` selector (parent→children +
+      unlinked-workers bucket, same-environment orchestrator parents only) and
+      an additive collapsible "Workers (N)" section at the top of the
+      orchestrator thread view with model/provider/turn-state and open-thread
+      links, no new server RPC. Harness/computer labels are omitted honestly
+      (client state carries model + provider name, not a separate
+      harness/computer label).
+- [x] Keep the normal Code sidebar authoritative: every created worker remains
       visible as an ordinary local or remote thread even when the specialized
-      orchestrator overview is closed.
+      orchestrator overview is closed. Verified 2026-08-19: the sidebar does no
+      role-based filtering; a test asserts worker threads stay in the source
+      thread list independent of the overview.
 - [ ] Migrate existing Swift Workjet configurations through a one-shot,
       inspectable import/export path; after parity is proven, CTOX Code must
       not require the Swift runtime or its local store.

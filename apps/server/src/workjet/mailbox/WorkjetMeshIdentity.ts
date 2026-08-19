@@ -3,9 +3,12 @@ import * as NodeCrypto from "node:crypto";
 import {
   WorkjetMailboxError,
   WorkjetMeshWorkspaceId,
+  type EnvironmentId,
+  type WorkjetMeshRoster,
   type WorkjetRoutingEnvelope,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
@@ -13,6 +16,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import type { WorkjetMeshPeerPage } from "./WorkjetMailboxStore.ts";
 
 /**
  * The local mesh identity of THIS environment (docs/workjet-plan.md →
@@ -658,3 +662,43 @@ export const makeWorkjetMeshIdentity = Effect.fn("WorkjetMeshIdentity.make")(fun
 });
 
 export const layer = Layer.effect(WorkjetMeshIdentity, makeWorkjetMeshIdentity());
+
+// ===============================
+// Recipient roster projection
+// ===============================
+
+/**
+ * Projects this environment's identity plus the peers it has pinned into the
+ * client-facing {@link WorkjetMeshRoster} (docs/workjet-plan.md → Wave 5 thread
+ * UI, "recipient selection across connected computers").
+ *
+ * It is a pure function so the redaction discipline is testable on its own: the
+ * only peer facts that cross the wire are the two ids, the first-contact
+ * timestamp, and the derived "an encryption key is pinned" flag. The pinned
+ * signing and encryption keys are not parameters here, so no future edit can
+ * leak them by accident.
+ *
+ * There is no online/offline field. The peer pin table records first contact
+ * and nothing else, and this server has no liveness signal for another machine;
+ * a fabricated indicator would be a claim the mesh cannot back.
+ */
+export const workjetMeshRosterOf = (input: {
+  readonly workspaceId: WorkjetMeshWorkspaceId;
+  readonly environmentId: EnvironmentId;
+  readonly page: WorkjetMeshPeerPage;
+}): WorkjetMeshRoster => ({
+  schemaVersion: 1,
+  local: {
+    schemaVersion: 1,
+    workspaceId: input.workspaceId,
+    environmentId: input.environmentId,
+  },
+  peers: input.page.peers.map((peer) => ({
+    schemaVersion: 1 as const,
+    workspaceId: peer.workspaceId,
+    environmentId: peer.environmentId,
+    firstSeenAt: DateTime.formatIso(DateTime.makeUnsafe(peer.firstSeenAtMillis)),
+    sealedDeliveryReady: peer.sealedDeliveryReady,
+  })),
+  truncated: input.page.truncated,
+});

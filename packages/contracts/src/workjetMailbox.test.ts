@@ -30,6 +30,8 @@ import {
   WorkjetMailboxTimestamp,
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
+  WORKJET_MESH_ROSTER_MAX_PEERS,
+  WorkjetMeshRoster,
   WorkjetReviewVerdict,
   WorkjetRoutingEnvelope,
   WorkjetThreadHandoff,
@@ -1015,5 +1017,49 @@ describe("Workjet mailbox RPC contracts", () => {
     expect(decodeUpdateResult(update)).toEqual(update);
     const cancel = { schemaVersion: V, delegationId, state: "cancelled" } as const;
     expect(decodeUpdateResult(cancel)).toEqual(cancel);
+  });
+});
+
+describe("WorkjetMeshRoster", () => {
+  const decodeRoster = Schema.decodeUnknownSync(WorkjetMeshRoster);
+  const peer = (environmentId: string) => ({
+    schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+    workspaceId: "workjet-mesh-peer",
+    environmentId,
+    firstSeenAt: "2026-08-18T10:00:00.000Z",
+    sealedDeliveryReady: true,
+  });
+  const roster = (peers: ReadonlyArray<ReturnType<typeof peer>>) => ({
+    schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+    local: {
+      schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+      workspaceId: "workjet-mesh-local",
+      environmentId: "environment-local",
+    },
+    peers,
+    truncated: false,
+  });
+
+  it("round-trips a roster with a local entry and a pinned peer", () => {
+    const value = roster([peer("environment-peer")]);
+    expect(decodeRoster(value)).toEqual(value);
+  });
+
+  it("accepts the honest empty roster of a machine with no peers", () => {
+    const value = roster([]);
+    expect(decodeRoster(value)).toEqual(value);
+  });
+
+  it("rejects a peer list past the picker bound", () => {
+    const tooMany = Array.from({ length: WORKJET_MESH_ROSTER_MAX_PEERS + 1 }, (_unused, index) =>
+      peer(`environment-${index}`),
+    );
+    expect(() => decodeRoster(roster(tooMany))).toThrow();
+  });
+
+  it("rejects an unparseable first-contact timestamp", () => {
+    expect(() =>
+      decodeRoster(roster([{ ...peer("environment-peer"), firstSeenAt: "yesterday" }])),
+    ).toThrow();
   });
 });

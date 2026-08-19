@@ -60,6 +60,17 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("reads the mesh roster under orchestration read, never a mailbox write scope", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshRoster)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    // The roster must not inherit the send scope: looking at the recipient list
+    // is not permission to put an envelope into somebody's mailbox.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMailboxSendMessage)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("allows relay status reads without granting relay installation access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
       AuthRelayReadScope,

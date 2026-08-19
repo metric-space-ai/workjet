@@ -12,6 +12,7 @@ import {
   WORKJET_MESH_WORKSPACE_ID_PREFIX,
   WORKJET_MESH_WORKSPACE_ID_SECRET,
   WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN,
+  workjetMeshRosterOf,
   type WorkjetSealedPayloadBlob,
   type WorkjetUnsignedRoutingEnvelope,
 } from "./WorkjetMeshIdentity.ts";
@@ -366,3 +367,81 @@ it.effect("seals a payload far larger than one AES block", () =>
     assert.equal(text(yield* recipient.openSealed(sealed, ENVELOPE_ID)), large);
   }),
 );
+
+// ===============================
+// Recipient roster projection
+// ===============================
+
+const LOCAL_WORKSPACE = WorkjetMeshWorkspaceId.make("workjet-mesh-local");
+const PEER_WORKSPACE = WorkjetMeshWorkspaceId.make("workjet-mesh-peer");
+const LOCAL_ENVIRONMENT = EnvironmentId.make("environment-local");
+
+it("labels the local environment and renders each peer's first contact as ISO", () => {
+  const roster = workjetMeshRosterOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: {
+      peers: [
+        {
+          workspaceId: PEER_WORKSPACE,
+          environmentId: EnvironmentId.make("environment-peer"),
+          firstSeenAtMillis: Date.UTC(2026, 7, 18, 10, 0, 0),
+          sealedDeliveryReady: true,
+        },
+      ],
+      truncated: false,
+    },
+  });
+
+  assert.deepEqual(roster.local, {
+    schemaVersion: 1,
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+  });
+  assert.equal(roster.peers.length, 1);
+  assert.equal(roster.peers[0]?.firstSeenAt, "2026-08-18T10:00:00.000Z");
+  assert.isTrue(roster.peers[0]?.sealedDeliveryReady);
+  assert.isFalse(roster.truncated);
+});
+
+it("carries ids, one timestamp, and no key material or liveness claim", () => {
+  const roster = workjetMeshRosterOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: {
+      peers: [
+        {
+          workspaceId: PEER_WORKSPACE,
+          environmentId: EnvironmentId.make("environment-peer"),
+          firstSeenAtMillis: 1_000,
+          sealedDeliveryReady: false,
+        },
+      ],
+      truncated: true,
+    },
+  });
+
+  assert.deepEqual(Object.keys(roster.peers[0] ?? {}).toSorted(), [
+    "environmentId",
+    "firstSeenAt",
+    "schemaVersion",
+    "sealedDeliveryReady",
+    "workspaceId",
+  ]);
+  const serialized = JSON.stringify(roster);
+  assert.notInclude(serialized, "publicKey");
+  assert.notInclude(serialized, "encryption");
+  assert.notInclude(serialized, "online");
+  assert.isTrue(roster.truncated);
+});
+
+it("reports an empty roster for a machine that has pinned no peer yet", () => {
+  const roster = workjetMeshRosterOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: { peers: [], truncated: false },
+  });
+
+  assert.deepEqual(roster.peers, []);
+  assert.equal(roster.local.environmentId, LOCAL_ENVIRONMENT);
+});

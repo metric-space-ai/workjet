@@ -57,7 +57,6 @@ import {
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
   WORKJET_MESH_ROSTER_MAX_PEERS,
-  type WorkjetMeshRoster,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -1726,22 +1725,11 @@ const makeWsRpcLayer = (
             Effect.gen(function* () {
               const environmentId = yield* serverEnvironment.getEnvironmentId;
               const page = yield* workjetMailboxStore.listMeshPeers(WORKJET_MESH_ROSTER_MAX_PEERS);
-              return {
-                schemaVersion: 1,
-                local: {
-                  schemaVersion: 1,
-                  workspaceId: workjetMailboxIdentity.workspaceId,
-                  environmentId,
-                },
-                peers: page.peers.map((peer) => ({
-                  schemaVersion: 1 as const,
-                  workspaceId: peer.workspaceId,
-                  environmentId: peer.environmentId,
-                  firstSeenAt: DateTime.formatIso(DateTime.makeUnsafe(peer.firstSeenAtMillis)),
-                  sealedDeliveryReady: peer.sealedDeliveryReady,
-                })),
-                truncated: page.truncated,
-              } satisfies WorkjetMeshRoster;
+              return WorkjetMeshIdentity.workjetMeshRosterOf({
+                workspaceId: workjetMailboxIdentity.workspaceId,
+                environmentId,
+                page,
+              });
             }).pipe(
               // A store outage or an undecodable pin row is the bounded
               // "mailbox-unavailable" the other mailbox RPCs already use; the

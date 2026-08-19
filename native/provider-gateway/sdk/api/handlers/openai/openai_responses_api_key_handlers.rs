@@ -478,7 +478,16 @@ mod tests {
             let response = handler
                 .handle_route(br#"{"model":"test-model","input":"hi"}"#)
                 .await;
-            assert!(matches!(response, OpenAiResponsesRouteResponse::Buffered(_)));
+            // The full round trip must succeed, not merely be buffered: an
+            // OpenAI chat.completion upstream body has to translate back into
+            // a well-formed OpenAI Responses payload for the client.
+            let OpenAiResponsesRouteResponse::Buffered(buffered) = response else {
+                panic!("expected a buffered response for {provider}");
+            };
+            assert_eq!(buffered.status(), 200, "{provider}");
+            let body = String::from_utf8_lossy(buffered.body()).into_owned();
+            assert!(body.contains("\"object\":\"response\""), "{provider}: {body}");
+            assert!(!body.contains("test-not-a-real-key"), "{provider}");
             let seen = client.seen.lock().unwrap();
             let request = seen.first().expect("an upstream request");
             assert_eq!(request.url, format!("{base_url}/chat/completions"));

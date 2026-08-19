@@ -10,7 +10,6 @@ import {
   type WorkjetGatewayAddApiKeyAccountResult,
   type WorkjetGatewayOauthProvider,
   type WorkjetGatewayOauthStartInput,
-  type WorkjetGatewayProvider,
   type WorkjetGatewayStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";

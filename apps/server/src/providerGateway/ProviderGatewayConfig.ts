@@ -112,8 +112,10 @@ export const isAcceptableApiKey = (value: unknown): value is string =>
   value.trim().length > 0 &&
   value.trim().length <= WORKJET_GATEWAY_API_KEY_MAX_LENGTH &&
   // A control character could split an outgoing header on the Rust side.
-  // eslint-disable-next-line no-control-regex
-  !/[\u0000-\u001f\u007f]/.test(value);
+  ![...value].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 0x20 || code === 0x7f;
+  });
 
 export interface ProviderGatewayConfiguration {
   readonly schemaVersion: 1;

@@ -862,7 +862,7 @@ failed | cancelled | expired`. Done in the same commit
       migration 043 (peer-key pinning) and `WorkjetMailboxTransport`: 10-s
       jittered poll loop that idles cleanly until descriptor+token resolve
       (token via CTOX's first-class `ctox secret get
-  business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
+business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       pending outbound with the existing backoff-to-dead-letter, pulls and
       verifies inbound (signature against the sender key with TOFU key
       continuity as the DOCUMENTED interim until CTOX-room-derived identity
@@ -928,6 +928,16 @@ failed | cancelled | expired`. Done in the same commit
 - [ ] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
       selection across connected computers, delivery/state badges, linked
       source/target navigation, reply, follow-up, review, cancel, and reassign.
+      Progress 2026-08-19 (commits `68e42c912`…`b5908195c`): send + render are
+      done — the four `workjet.*` activity kinds render as compact timeline
+      cards with delivery dispositions, delegation-state badges, and
+      same-environment thread links; orchestrator threads get the composer
+      “Send to worker” panel (Message / Message + Task tabs, bounded scope/
+      budget inputs) behind new `workjet.mailbox.sendMessage|delegateTask`
+      RPCs with operate-scope plus handler-side orchestrator validation that
+      collapses all refusals to one `unauthorized`. Still open: reply,
+      follow-up, review, cancel, reassign, a real cross-machine recipient
+      picker (mesh roster), and the compact-composer variant of the control.
 - [ ] Add redacted audit/observability events and user notifications without
       storing prompts, secrets, provider payloads, or artifact contents in
       relay logs, traces, push notifications, or crash reports.

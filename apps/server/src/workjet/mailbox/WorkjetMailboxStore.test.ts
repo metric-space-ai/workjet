@@ -8,6 +8,7 @@ import {
   WorkjetRepositoryPath,
   WorkjetSealedPayloadRef,
   type WorkjetDelegation,
+  type WorkjetDelegationResult,
   type WorkjetDelegationState,
   type WorkjetMailboxPayload,
   type WorkjetRoutingEnvelope,
@@ -501,6 +502,109 @@ it.effect("fails an unknown delegation transition with a typed unknown-target", 
     if (missing._tag === "Failure") {
       assertMailboxErrorReason(missing.failure, "unknown-target");
     }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+const delegationResult = (options: {
+  readonly id: WorkjetDelegationId;
+  readonly envelope: WorkjetEnvelopeId;
+  readonly outcome: "completed" | "failed";
+}): WorkjetDelegationResult => ({
+  schemaVersion: 1,
+  envelopeId: options.envelope,
+  delegation: { schemaVersion: 1, delegationId: options.id, owner: TARGET_ADDRESS },
+  reportedBy: TARGET_ADDRESS,
+  reportedAt: T1,
+  outcome: options.outcome,
+  summary: "Delegation turn completed.",
+  artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+});
+
+it.effect("finalizes a running delegation with its result and is idempotent", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("finalize");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("finalize0"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(id, "queued", "delivered", T0);
+    yield* store.transitionDelegationState(id, "delivered", "accepted", T0);
+    yield* store.transitionDelegationState(id, "accepted", "running", T0);
+
+    const stored = delegationResult({
+      id,
+      envelope: envelopeId("result00"),
+      outcome: "completed",
+    });
+    const first = yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "completed",
+      result: stored,
+      changedAt: T1,
+    });
+    assert.equal(first._tag, "finalized");
+    assert.equal(first.record.state, "completed");
+    assert.isTrue(first.record.terminal);
+
+    const record = yield* store.getDelegation(id);
+    if (Option.isNone(record)) return assert.fail("delegation missing");
+    assert.equal(record.value.state, "completed");
+    assert.isTrue(record.value.terminal);
+
+    const persisted = yield* store.getDelegationResult(id);
+    if (Option.isNone(persisted)) return assert.fail("result missing");
+    assert.deepEqual(persisted.value, stored);
+
+    // A duplicate finalize — even with a DIFFERENT payload and outcome — returns
+    // the ALREADY-stored result and never transitions or overwrites again.
+    const other = delegationResult({ id, envelope: envelopeId("result99"), outcome: "failed" });
+    const second = yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "failed",
+      result: other,
+      changedAt: T2,
+    });
+    assert.equal(second._tag, "already-finalized");
+    assert.deepEqual(second.result, stored);
+
+    const still = yield* store.getDelegationResult(id);
+    if (Option.isNone(still)) return assert.fail("result missing after replay");
+    assert.deepEqual(still.value, stored);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to finalize a delegation that is not running", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("notrun0");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("notrun00"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    const refused = yield* store
+      .finalizeDelegationResult({
+        delegationId: id,
+        to: "completed",
+        result: delegationResult({ id, envelope: envelopeId("result11"), outcome: "completed" }),
+        changedAt: T1,
+      })
+      .pipe(Effect.result);
+    assert.equal(refused._tag, "Failure");
+    if (refused._tag === "Failure") {
+      assertMailboxErrorReason(refused.failure, "invalid-state-transition");
+    }
+    assert.isTrue(Option.isNone(yield* store.getDelegationResult(id)));
   }).pipe(Effect.provide(testLayer)),
 );
 

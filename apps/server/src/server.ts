@@ -533,7 +533,15 @@ export const makeRoutesLayer = Layer.mergeAll(
   // transport for the same reason — it is a background loop, not a
   // request-scoped dependency.
   WorkjetDelegationExecutor.layer.pipe(
-    Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetSnapshotStoreLive)),
+    Layer.provide(
+      Layer.mergeAll(
+        WorkjetMailboxStoreLive,
+        WorkjetSnapshotStoreLive,
+        // The executor signs the `result` envelope it returns to a
+        // cross-environment source with this environment's key.
+        WorkjetMeshIdentity.layer,
+      ),
+    ),
   ),
 ).pipe(
   // WebSocket management and MCP search resolve this one server-lifetime

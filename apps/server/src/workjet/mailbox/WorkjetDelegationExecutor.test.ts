@@ -27,16 +27,19 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import {
+  delegationResultEnvelopeId,
   delegationTurnCommandId,
   delegationTurnMessageId,
   makeWorkjetDelegationExecutorWithSources,
   threadHasActiveTurn,
   WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND,
+  WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
   WORKJET_DELEGATION_STARTED_ACTIVITY_KIND,
   type WorkjetDelegationExecutorShape,
   type WorkjetDelegationExecutorSources,
 } from "./WorkjetDelegationExecutor.ts";
 import { WorkjetMailboxStore, WorkjetMailboxStoreLive } from "./WorkjetMailboxStore.ts";
+import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 import {
   snapshotRefForDigest,
   WorkjetSnapshotStore,
@@ -66,6 +69,7 @@ const delegationFixture = (input: {
   readonly id: string;
   readonly digest: WorkjetContentDigest;
   readonly state: WorkjetDelegationState;
+  readonly sourceEnvironmentId?: EnvironmentId;
   readonly targetEnvironmentId?: EnvironmentId;
   readonly targetThreadId?: ThreadId;
   readonly stateChangedAt?: WorkjetMailboxTimestamp;
@@ -73,7 +77,7 @@ const delegationFixture = (input: {
   schemaVersion: 1,
   envelopeId: WorkjetEnvelopeId.make(`wjm-envelope-${input.id}-0000000000`),
   delegationId: WorkjetDelegationId.make(`wjd-${input.id.padEnd(24, "0")}`),
-  source: address(LOCAL_ENVIRONMENT, SOURCE_THREAD),
+  source: address(input.sourceEnvironmentId ?? LOCAL_ENVIRONMENT, SOURCE_THREAD),
   target: address(
     input.targetEnvironmentId ?? LOCAL_ENVIRONMENT,
     input.targetThreadId ?? TARGET_THREAD,
@@ -119,6 +123,54 @@ const thread = (input?: {
         : null,
     session: null,
   }) as unknown as OrchestrationThread;
+
+/**
+ * A target thread whose dispatched delegation turn has ENDED. The user message
+ * the executor wrote is present with its `turnId`, and `latestTurn` reflects a
+ * terminal turn; `latestTurnId` overrides it to model a DIFFERENT turn ending.
+ */
+const endedTurnThread = (input: {
+  readonly delegationId: WorkjetDelegationId;
+  readonly turnId: string;
+  readonly turnState: "completed" | "error" | "interrupted";
+  readonly latestTurnId?: string;
+  readonly activeTurnId?: string | null;
+}): OrchestrationThread =>
+  ({
+    ...thread(),
+    messages: [
+      {
+        id: delegationTurnMessageId(input.delegationId),
+        role: "user",
+        text: "",
+        turnId: input.turnId,
+        streaming: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ],
+    latestTurn: {
+      turnId: input.latestTurnId ?? input.turnId,
+      state: input.turnState,
+      requestedAt: NOW,
+      startedAt: NOW,
+      completedAt: NOW,
+      assistantMessageId: null,
+    },
+    session: input.activeTurnId === undefined ? null : { activeTurnId: input.activeTurnId },
+  }) as unknown as OrchestrationThread;
+
+/**
+ * A mesh-identity double: only `workspaceId` and `signRoutingEnvelope` are read
+ * by the executor (to sign a cross-environment result envelope). The signature
+ * is a fixed base64url stub — the store never verifies it and the transport
+ * slice that would is out of scope here.
+ */
+const identityDouble = {
+  workspaceId: WORKSPACE,
+  signRoutingEnvelope: (envelope: unknown) =>
+    Effect.succeed({ ...(envelope as Record<string, unknown>), signature: "c2lnbmF0dXJlLXN0dWI" }),
+} as unknown as WorkjetMeshIdentity["Service"];
 
 /** A dispatch failure shaped like the engine's own tagged errors. */
 const retryableEngineError = {
@@ -199,6 +251,7 @@ const makeHarness = (options?: {
     executor: makeWorkjetDelegationExecutorWithSources(sources).pipe(
       Effect.provideService(OrchestrationEngineService, engine),
       Effect.provideService(ProjectionSnapshotQuery, query),
+      Effect.provideService(WorkjetMeshIdentity, identityDouble),
     ),
   };
 };
@@ -561,7 +614,7 @@ it.effect("never consumes a delegation when the projection read fails", () =>
   }).pipe(Effect.provide(testLayer("delegation-executor-transient"))),
 );
 
-it.effect("leaves terminal and non-scanned delegations untouched", () =>
+it.effect("leaves terminal and unfinished delegations untouched", () =>
   Effect.gen(function* () {
     const harness = makeHarness();
     const executor = yield* harness.executor;
@@ -575,13 +628,204 @@ it.effect("leaves terminal and non-scanned delegations untouched", () =>
 
     const status = yield* executor.runCycle;
 
-    assert.equal(status.scanned, 0);
+    // Only the `running` row is scanned now (`queued` belongs to delivery, the
+    // two terminal rows to nobody). Its default target thread has no ended turn
+    // to correlate, so it is held pending, not completed.
+    assert.equal(status.scanned, 1);
+    assert.equal(status.runningPending, 1);
+    assert.equal(status.completed, 0);
     assert.equal(status.executed, 0);
     assert.equal(turnStarts(harness.commands).length, 0);
     assert.equal(yield* stateOf(completed), "completed");
     assert.equal(yield* stateOf(failed), "failed");
-    // `queued` belongs to delivery, `running` to the (later) result reporter.
     assert.equal(yield* stateOf(queued), "queued");
     assert.equal(yield* stateOf(running), "running");
   }).pipe(Effect.provide(testLayer("delegation-executor-terminal"))),
+);
+
+// ===============================
+// Result return (running → terminal)
+// ===============================
+
+it.effect("completes a running delegation whose dispatched turn ended and returns the result", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "done",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-done",
+        turnState: "completed",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.completed, 1);
+    assert.equal(status.turnFailures, 0);
+    assert.equal(status.resultsReturned, 1);
+    assert.equal(status.resultsEnqueued, 0);
+    assert.equal(yield* stateOf(delegation), "completed");
+
+    // The result activity lands on the SOURCE thread, bounded and prompt-free.
+    const activities = harness.commands.filter(
+      (command) => command.type === "thread.activity.append",
+    );
+    const resultActivity = activities.find(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
+    );
+    assert.isDefined(resultActivity);
+    if (resultActivity === undefined || resultActivity.type !== "thread.activity.append") return;
+    assert.equal(resultActivity.threadId, SOURCE_THREAD);
+    assert.notInclude(JSON.stringify(resultActivity.activity.payload), PROMPT_TEXT);
+
+    // The result is persisted on the row so a late completion returns the same one.
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+    assert.equal(stored.value.outcome, "completed");
+    assert.equal(stored.value.envelopeId, delegationResultEnvelopeId(delegation.delegationId));
+    assert.deepEqual([...stored.value.artifacts.commitHashes], []);
+    assert.deepEqual([...stored.value.artifacts.paths], []);
+  }).pipe(Effect.provide(testLayer("delegation-executor-result-completed"))),
+);
+
+it.effect("fails a running delegation whose dispatched turn ended in error", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "err",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-err",
+        turnState: "error",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.turnFailures, 1);
+    assert.equal(status.completed, 0);
+    assert.equal(status.resultsReturned, 1);
+    assert.equal(yield* stateOf(delegation), "failed");
+
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+    assert.equal(stored.value.outcome, "failed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-result-failed"))),
+);
+
+it.effect("does NOT complete a running delegation when a DIFFERENT turn ended", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "wrongturn",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      // Our dispatched message maps to `turn-ours`, but the latest ended turn is
+      // an unrelated `turn-other`: the delegation must NOT be completed on it.
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-ours",
+        turnState: "completed",
+        latestTurnId: "turn-other",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.completed, 0);
+    assert.equal(status.turnFailures, 0);
+    assert.equal(status.runningPending, 1);
+    assert.equal(status.resultsReturned, 0);
+    assert.equal(yield* stateOf(delegation), "running");
+
+    const store = yield* WorkjetMailboxStore;
+    assert.isTrue(Option.isNone(yield* store.getDelegationResult(delegation.delegationId)));
+  }).pipe(Effect.provide(testLayer("delegation-executor-wrongturn"))),
+);
+
+it.effect("does NOT complete while the session still drives the dispatched turn", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "stilllive",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      // The latest-turn projection reads terminal, but the session still names
+      // our turn as active: wait for it to clear rather than racing it.
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-live",
+        turnState: "completed",
+        activeTurnId: "turn-live",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.completed, 0);
+    assert.equal(status.runningPending, 1);
+    assert.equal(yield* stateOf(delegation), "running");
+  }).pipe(Effect.provide(testLayer("delegation-executor-stilllive"))),
+);
+
+it.effect("enqueues a result envelope outbound for a cross-environment source", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "crossenv",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      // The SOURCE lives on another machine; the TARGET (this worker) is local.
+      sourceEnvironmentId: REMOTE_ENVIRONMENT,
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-cross",
+        turnState: "completed",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.completed, 1);
+    assert.equal(status.resultsEnqueued, 1);
+    // A cross-environment source has no local thread to append onto.
+    assert.equal(status.resultsReturned, 0);
+    assert.equal(yield* stateOf(delegation), "completed");
+
+    const store = yield* WorkjetMailboxStore;
+    const outbound = yield* store.getOutbound(delegationResultEnvelopeId(delegation.delegationId));
+    assert.isTrue(Option.isSome(outbound));
+    if (Option.isNone(outbound)) return;
+    assert.equal(outbound.value.envelope.kind, "result");
+    assert.equal(outbound.value.envelope.targetEnvironmentId, REMOTE_ENVIRONMENT);
+    assert.equal(outbound.value.state, "pending");
+    // No result activity is appended for a remote source.
+    assert.notInclude(activityKinds(harness.commands), WORKJET_DELEGATION_RESULT_ACTIVITY_KIND);
+  }).pipe(Effect.provide(testLayer("delegation-executor-crossenv"))),
 );

@@ -45,12 +45,15 @@ import {
   CommandId,
   EventId,
   MessageId,
+  WorkjetEnvelopeId,
   type EnvironmentId,
   type OrchestrationCommand,
   type OrchestrationThread,
   type ThreadId,
   type WorkjetDelegation,
   type WorkjetDelegationId,
+  type WorkjetDelegationResult,
+  type WorkjetMailboxPayload,
   type WorkjetMailboxTimestamp,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -65,6 +68,7 @@ import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { WorkjetMailboxStore, type WorkjetDelegationRecord } from "./WorkjetMailboxStore.ts";
+import { WorkjetMeshIdentity, type WorkjetUnsignedRoutingEnvelope } from "./WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStore } from "./WorkjetSnapshotStore.ts";
 
 // ===============================
@@ -95,6 +99,26 @@ const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
 /** Thread-visible activity kinds appended by the executor. */
 export const WORKJET_DELEGATION_STARTED_ACTIVITY_KIND = "workjet.delegation.started";
 export const WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND = "workjet.delegation.refused";
+/**
+ * Appended to the SOURCE thread when a delegation's result returns to it.
+ *
+ * Deliberately an UNREGISTERED kind, exactly like `started`/`refused` above: the
+ * four mailbox kinds in {@link WORKJET_MAILBOX_ACTIVITY_KINDS} are the ones the
+ * timeline card decodes through `WorkjetMailboxActivityPayload`, but the
+ * executor's lifecycle traces carry a different bounded payload and flow through
+ * the generic activity channel. Registering a literal would only be required if
+ * the client card had to decode this shape — it does not — so no contract change
+ * is made for it.
+ */
+export const WORKJET_DELEGATION_RESULT_ACTIVITY_KIND = "workjet.delegation.result";
+
+/**
+ * Time-to-live of a result envelope enqueued back to a cross-environment source.
+ * The maximum the mailbox allows (7 days): a result must outlive a transport
+ * that may be offline for a long while, and the row is dropped by the expiry
+ * sweep if it truly never leaves.
+ */
+const WORKJET_DELEGATION_RESULT_TTL_SECONDS = 604_800;
 
 /**
  * Thread roles a delegation may be executed INTO.
@@ -154,6 +178,16 @@ export interface WorkjetDelegationExecutorStatus {
   readonly transientSkips: number;
   /** `accepted` rows whose turn start will be retried with the same command id. */
   readonly dispatchRetries: number;
+  /** `running` delegations whose dispatched turn ended successfully → `completed`. */
+  readonly completed: number;
+  /** `running` delegations whose dispatched turn ended in failure → `failed`. */
+  readonly turnFailures: number;
+  /** Results delivered to a SAME-environment source as a thread activity. */
+  readonly resultsReturned: number;
+  /** Results enqueued as pending outbound for a CROSS-environment source. */
+  readonly resultsEnqueued: number;
+  /** `running` rows whose dispatched turn has not ended yet; left running. */
+  readonly runningPending: number;
   /** Delegations moved to the terminal `failed` state, by reason. */
   readonly failures: WorkjetDelegationExecutorFailures;
   readonly lastCycleAt: string | null;
@@ -195,6 +229,31 @@ export const delegationTurnCommandId = (delegationId: WorkjetDelegationId): Comm
 /** Derived for the same reason: one delegation, one user message. */
 export const delegationTurnMessageId = (delegationId: WorkjetDelegationId): MessageId =>
   MessageId.make(`workjet-delegation-message:${delegationId}`);
+
+/**
+ * The envelope id of a delegation's result. Derived from the delegation id and
+ * bounded to the envelope-id length, so the same delegation always produces the
+ * same result envelope id: the outbound enqueue deduplicates on it, making a
+ * late or duplicate result return idempotent at the transport layer too.
+ */
+export const delegationResultEnvelopeId = (delegationId: WorkjetDelegationId): WorkjetEnvelopeId =>
+  WorkjetEnvelopeId.make(`wjr-${delegationId}`.slice(0, 128));
+
+/**
+ * The id of the turn THIS executor dispatched for a delegation, read back from
+ * the target thread's projection: the user message the executor wrote carries a
+ * derived id, and its `turnId` is the only turn a completion may be attributed
+ * to. Returns `null` when that message (or its turn) is not materialized yet, so
+ * a delegation is NEVER completed on the strength of some other turn ending.
+ */
+export const dispatchedTurnId = (
+  thread: OrchestrationThread,
+  delegationId: WorkjetDelegationId,
+): string | null => {
+  const messageId = delegationTurnMessageId(delegationId);
+  const message = thread.messages?.find((candidate) => candidate.id === messageId);
+  return message?.turnId ?? null;
+};
 
 const delegationActivityCommandId = (
   delegationId: WorkjetDelegationId,
@@ -243,6 +302,9 @@ type ExecutionOutcome =
   | { readonly _tag: "foreign-environment" }
   | { readonly _tag: "transient" }
   | { readonly _tag: "retry-dispatch" }
+  | { readonly _tag: "completed" }
+  | { readonly _tag: "turn-failed" }
+  | { readonly _tag: "running-pending" }
   | { readonly _tag: "failed"; readonly reason: WorkjetDelegationRefusalReason };
 
 export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
@@ -252,6 +314,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   const snapshots = yield* WorkjetSnapshotStore;
   const engine = yield* OrchestrationEngineService;
   const query = yield* ProjectionSnapshotQuery;
+  const identity = yield* WorkjetMeshIdentity;
 
   let cycles = 0;
   let scanned = 0;
@@ -261,6 +324,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let foreignEnvironment = 0;
   let transientSkips = 0;
   let dispatchRetries = 0;
+  let completed = 0;
+  let turnFailures = 0;
+  let resultsReturned = 0;
+  let resultsEnqueued = 0;
+  let runningPending = 0;
   let targetThreadMissing = 0;
   let targetThreadDeleted = 0;
   let targetRoleNotExecutable = 0;
@@ -277,6 +345,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     foreignEnvironment,
     transientSkips,
     dispatchRetries,
+    completed,
+    turnFailures,
+    resultsReturned,
+    resultsEnqueued,
+    runningPending,
     failures: {
       targetThreadMissing,
       targetThreadDeleted,
@@ -552,6 +625,237 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       return { _tag: "ready", thread } as const;
     });
 
+  /**
+   * The bounded result reported back to the source. Summary is a fixed bounded
+   * label — never prompt, path, or output material — and artifact references are
+   * left EMPTY in this slice: a {@link WorkjetGitBranchRef} requires a head
+   * commit the thread detail does not cheaply expose, so populating a branch
+   * would mean fabricating one. The digest of the work lives on the branch the
+   * target worktree already carries; a later slice can lift it into `artifacts`.
+   */
+  const buildResult = (input: {
+    readonly delegation: WorkjetDelegation;
+    readonly outcome: "completed" | "failed";
+    readonly envelopeId: WorkjetEnvelopeId;
+    readonly now: string;
+  }): WorkjetDelegationResult => ({
+    schemaVersion: 1,
+    envelopeId: input.envelopeId,
+    delegation: {
+      schemaVersion: 1,
+      delegationId: input.delegation.delegationId,
+      // The target environment (this one) is authoritative for the delegation's
+      // state and result — never the source or a forwarding peer.
+      owner: input.delegation.target,
+    },
+    reportedBy: input.delegation.target,
+    reportedAt: input.now as WorkjetMailboxTimestamp,
+    outcome: input.outcome,
+    summary:
+      input.outcome === "completed"
+        ? "Delegation turn completed."
+        : "Delegation turn ended without success.",
+    artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+  });
+
+  /**
+   * Bounded result-activity payload for the source timeline: the delegation
+   * link, the terminal state, the bounded summary, and the (empty) artifact
+   * references — never the prompt, never the target's output.
+   */
+  const resultActivityPayload = (input: {
+    readonly delegation: WorkjetDelegation;
+    readonly result: WorkjetDelegationResult;
+  }) => ({
+    schemaVersion: 1 as const,
+    delegationId: input.delegation.delegationId,
+    envelopeId: input.result.envelopeId,
+    source: {
+      workspaceId: input.delegation.source.workspaceId,
+      environmentId: input.delegation.source.environmentId,
+      threadId: input.delegation.source.threadId,
+    },
+    target: {
+      workspaceId: input.delegation.target.workspaceId,
+      environmentId: input.delegation.target.environmentId,
+      threadId: input.delegation.target.threadId,
+    },
+    delegationState: input.result.outcome,
+    outcome: input.result.outcome,
+    summary: input.result.summary,
+    artifacts: input.result.artifacts,
+    reportedAt: input.result.reportedAt,
+  });
+
+  /** now + seconds, as an ISO string; a malformed now falls back to now. */
+  const addSeconds = (nowIso: string, seconds: number): string =>
+    Option.match(DateTime.make(nowIso), {
+      onNone: () => nowIso,
+      onSome: (instant) =>
+        DateTime.formatIso(DateTime.addDuration(instant, Duration.seconds(seconds))),
+    });
+
+  /**
+   * Return a finalized result to the delegation's SOURCE address.
+   *
+   * Same environment: append a `workjet.delegation.result` activity on the
+   * source thread, reusing the same best-effort append the started/refused
+   * traces use. Cross environment: enqueue a signed `result` envelope as pending
+   * outbound — the transport slice carries it; nothing here reaches another
+   * machine. Counts each path; a cross-environment enqueue that fails
+   * transiently is left uncounted and retried by nothing in this slice (the
+   * result is already durable on the row for a later redelivery).
+   */
+  const deliverResult = (input: {
+    readonly delegation: WorkjetDelegation;
+    readonly result: WorkjetDelegationResult;
+    readonly environmentId: EnvironmentId;
+    readonly now: string;
+  }): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const delegation = input.delegation;
+      const source = delegation.source;
+
+      if (source.environmentId === input.environmentId) {
+        yield* appendActivity({
+          threadId: source.threadId,
+          delegationId: delegation.delegationId,
+          suffix: "result",
+          kind: WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
+          tone: input.result.outcome === "completed" ? "info" : "error",
+          summary: "Workjet delegation result",
+          payload: resultActivityPayload({ delegation, result: input.result }),
+          createdAt: input.now,
+        });
+        resultsReturned += 1;
+        return;
+      }
+
+      // Cross-environment: the plaintext result payload and a signed routing
+      // envelope of kind `result`, addressed FROM this (target) environment TO
+      // the source. The transport seals the payload at send time, exactly as it
+      // does for a cross-environment delegation.
+      const createdAt = input.now as WorkjetMailboxTimestamp;
+      const expiresAt = addSeconds(
+        input.now,
+        WORKJET_DELEGATION_RESULT_TTL_SECONDS,
+      ) as WorkjetMailboxTimestamp;
+      const unsigned: WorkjetUnsignedRoutingEnvelope = {
+        schemaVersion: 1,
+        envelopeId: input.result.envelopeId,
+        kind: "result",
+        sourceWorkspaceId: identity.workspaceId,
+        sourceEnvironmentId: input.environmentId,
+        targetWorkspaceId: source.workspaceId,
+        targetEnvironmentId: source.environmentId,
+        createdAt,
+        expiresAt,
+      };
+      const payload = {
+        _tag: "result",
+        result: input.result,
+      } as const satisfies WorkjetMailboxPayload;
+
+      const enqueued = yield* identity.signRoutingEnvelope(unsigned).pipe(
+        Effect.flatMap((envelope) => store.enqueueOutbound(envelope, payload)),
+        Effect.option,
+      );
+      if (Option.isSome(enqueued)) {
+        resultsEnqueued += 1;
+      } else {
+        yield* Effect.logWarning("Workjet delegation result enqueue deferred");
+      }
+    });
+
+  /**
+   * Advance a `running` delegation whose target thread is LOCAL. The delegation
+   * is completed ONLY when the exact turn this executor dispatched has ended:
+   * the correlated user message's turn is the latest turn, that turn is no
+   * longer running, and the session is not still driving it. A turn that ended
+   * in error or interruption moves `running → failed`. Idempotent: the store
+   * refuses a second finalize and returns the stored result.
+   */
+  const advanceRunning = (input: {
+    readonly record: WorkjetDelegationRecord;
+    readonly environmentId: EnvironmentId;
+    readonly now: string;
+  }): Effect.Effect<ExecutionOutcome> =>
+    Effect.gen(function* () {
+      const delegation = input.record.delegation;
+      const environmentId = input.environmentId;
+
+      if (delegation.target.environmentId !== environmentId) {
+        // Only the machine that owns the target thread can observe its turn.
+        return { _tag: "foreign-environment" } as const;
+      }
+
+      const threadOption = yield* query
+        .getThreadDetailById(delegation.target.threadId)
+        .pipe(Effect.option);
+      if (Option.isNone(threadOption)) {
+        return { _tag: "transient" } as const;
+      }
+      const thread = Option.getOrUndefined(threadOption.value);
+      if (thread === undefined || thread.deletedAt !== null) {
+        // A vanished target thread cannot be correlated. Leaving the delegation
+        // `running` lets the budget-expiry sweep reap it rather than guessing a
+        // terminal outcome from an absence.
+        return { _tag: "running-pending" } as const;
+      }
+
+      const turnId = dispatchedTurnId(thread, delegation.delegationId);
+      if (turnId === null) {
+        // The dispatched turn is not materialized in the projection yet.
+        return { _tag: "running-pending" } as const;
+      }
+      const latest = thread.latestTurn;
+      if (latest === null || latest.turnId !== turnId || latest.state === "running") {
+        // Our turn is not the latest ended turn, or is still running. Never
+        // complete on the strength of a DIFFERENT turn ending.
+        return { _tag: "running-pending" } as const;
+      }
+      if ((thread.session?.activeTurnId ?? null) === turnId) {
+        // The session is still driving our turn even though the latest-turn
+        // projection reads terminal; wait for it to clear.
+        return { _tag: "running-pending" } as const;
+      }
+
+      const outcome: "completed" | "failed" = latest.state === "completed" ? "completed" : "failed";
+      const result = buildResult({
+        delegation,
+        outcome,
+        envelopeId: delegationResultEnvelopeId(delegation.delegationId),
+        now: input.now,
+      });
+
+      const finalized = yield* store
+        .finalizeDelegationResult({
+          delegationId: delegation.delegationId,
+          to: outcome,
+          result,
+          changedAt: input.now as WorkjetMailboxTimestamp,
+        })
+        .pipe(Effect.option);
+      if (Option.isNone(finalized)) {
+        // The row moved underneath us (cancelled/expired) between the scan and
+        // the finalize. A legitimate concurrent outcome, not a cycle failure.
+        return { _tag: "transient" } as const;
+      }
+
+      // Deliver the STORED result: on an idempotent replay this is the original
+      // result, so the source never sees two divergent envelopes.
+      yield* deliverResult({
+        delegation,
+        result: finalized.value.result,
+        environmentId,
+        now: input.now,
+      });
+
+      return outcome === "completed"
+        ? ({ _tag: "completed" } as const)
+        : ({ _tag: "turn-failed" } as const);
+    });
+
   const runCycle = Effect.fn("WorkjetDelegationExecutor.runCycle")(function* () {
     const environmentId = yield* sources.environmentId;
     const now = yield* sources.nowIso;
@@ -584,6 +888,15 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         case "retry-dispatch":
           dispatchRetries += 1;
           break;
+        case "completed":
+          completed += 1;
+          break;
+        case "turn-failed":
+          turnFailures += 1;
+          break;
+        case "running-pending":
+          runningPending += 1;
+          break;
         case "failed":
           switch (outcome.reason) {
             case "target-thread-missing":
@@ -603,7 +916,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
     };
 
-    const scan = (state: "accepted" | "delivered") =>
+    const scan = (state: "accepted" | "delivered" | "running") =>
       store
         .listDelegationsByState(state, WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
         .pipe(
@@ -612,11 +925,24 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         );
 
     /**
-     * `accepted` FIRST. Those rows are the ones a previous process (or a
-     * previous cycle) already committed to running; finishing them before
-     * accepting anything new keeps a restart from piling new work on top of
-     * half-started work, and marks their threads busy for the rest of the
-     * cycle.
+     * `running` FIRST, and before any accept moves a fresh row into `running`:
+     * this scan observes only delegations that were ALREADY running at cycle
+     * start, so a turn dispatched later in this same cycle can never be mistaken
+     * for one that has ended. It dispatches no turn and marks no thread busy, so
+     * it is otherwise independent of the accept/deliver loops.
+     */
+    for (const row of yield* scan("running")) {
+      scanned += 1;
+      if (row.terminal) continue;
+      record(yield* advanceRunning({ record: row, environmentId, now }));
+    }
+
+    /**
+     * `accepted` FIRST among the dispatch loops. Those rows are the ones a
+     * previous process (or a previous cycle) already committed to running;
+     * finishing them before accepting anything new keeps a restart from piling
+     * new work on top of half-started work, and marks their threads busy for the
+     * rest of the cycle.
      */
     for (const row of yield* scan("accepted")) {
       scanned += 1;

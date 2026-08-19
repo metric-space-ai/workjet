@@ -1,5 +1,7 @@
 import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/contracts";
 
+import { getRelativeTimeState } from "../../timestampFormat";
+
 /**
  * Visual treatment for each server-reported provider status. Centralized so
  * the default-driver card and per-instance cards share the same language.
@@ -78,6 +80,18 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     headline: "Available",
     detail: provider.message ?? "Installed and ready, but authentication could not be verified.",
   };
+}
+
+/**
+ * Age of the health check that produced a provider's claim. Rendered next to
+ * the claim itself because "Authenticated" without a timestamp is read as a
+ * live fact, and a cached one outlives an expired CLI login.
+ */
+export function providerCheckedAgeLabel(checkedAt: string | null | undefined): string {
+  const state = getRelativeTimeState(checkedAt ?? null);
+  if (state.status === "missing") return "never checked";
+  if (state.status === "invalid") return "check time unknown";
+  return state.suffix ? `checked ${state.value} ${state.suffix}` : `checked ${state.value}`;
 }
 
 /**

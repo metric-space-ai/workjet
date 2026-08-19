@@ -48,6 +48,7 @@ import {
   PROVIDER_STATUS_STYLES,
   getProviderSummary,
   getProviderVersionLabel,
+  providerCheckedAgeLabel,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -409,6 +410,7 @@ export function ProviderInstanceCard({
     ? (liveProvider?.auth.label ?? liveProvider?.auth.type ?? null)
     : null;
   const summary = rawSummary;
+  const checkedAgeLabel = providerCheckedAgeLabel(liveProvider?.checkedAt);
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
   const updateCommand = versionAdvisory?.updateCommand ?? null;
@@ -604,6 +606,14 @@ export function ProviderInstanceCard({
           <ProviderAuthEmail email={authEmail} separator prefix="Email" />
         </>
       )}
+      {/*
+        Every claim above is a cached probe result, so it carries the age of
+        the probe that produced it: a stale "Authenticated" must never read as
+        a live one.
+      */}
+      {liveProvider ? (
+        <span className="text-muted-foreground/60">{`· ${checkedAgeLabel}`}</span>
+      ) : null}
       {summary.detail ? <span>- {summary.detail}</span> : null}
     </p>
   );

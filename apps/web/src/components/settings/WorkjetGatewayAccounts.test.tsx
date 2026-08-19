@@ -69,8 +69,7 @@ const BASE: WorkjetGatewaySectionState = {
   isOperating: false,
   login: { status: "idle" },
   onRefresh: () => undefined,
-  onStart: () => undefined,
-  onStop: () => undefined,
+  onRetry: () => undefined,
   onAddAccount: () => undefined,
   onCancelLogin: () => undefined,
 };
@@ -93,9 +92,12 @@ describe("Workjet gateway account surface", () => {
     expect(markup).toContain("Disabled");
     expect(markup).toContain("1 model");
     expect(markup).toContain("No accounts are configured for this provider.");
-    // Ready gateways offer stopping, never a second start control.
-    expect(markup).toContain("Stop gateway");
+    expect(markup).toContain("Add account");
+    // The happy path never asks the user to start or stop anything: the server
+    // starts the gateway when a login begins.
     expect(markup).not.toContain("Start gateway");
+    expect(markup).not.toContain("Stop gateway");
+    expect(markup).not.toContain("Retry gateway");
   });
 
   it("selects accounts by gateway provider only", () => {
@@ -106,13 +108,32 @@ describe("Workjet gateway account surface", () => {
     expect(workjetGatewayAccountsByProvider(null, "claude")).toEqual([]);
   });
 
-  it("offers starting instead of stopping while the gateway is down", () => {
+  it("still offers no start control while the gateway is merely stopped", () => {
     const markup = render({
       status: { ...READY_STATUS, phase: "stopped", pid: null, providerEndpoint: null },
     });
 
-    expect(markup).toContain("Start gateway");
-    expect(markup).not.toContain("Stop gateway");
+    expect(markup).toContain("Stopped");
+    expect(markup).not.toContain("Start gateway");
+    expect(markup).not.toContain("Retry gateway");
+  });
+
+  it("shows the endpoint on a ready gateway and a retry with the reason when faulted", () => {
+    expect(render()).toContain("http://127.0.0.1:8317");
+
+    const markup = render({
+      status: {
+        ...READY_STATUS,
+        phase: "faulted",
+        pid: null,
+        providerEndpoint: null,
+        failureReason: "process-exit",
+      },
+    });
+
+    expect(markup).toContain("Retry gateway");
+    expect(markup).toContain("The Workjet provider gateway process exited unexpectedly.");
+    expect(markup).not.toContain("Start gateway");
   });
 
   it("shows the pending login with a masked handle and a cancel control", () => {
@@ -210,7 +231,7 @@ describe("Workjet gateway account surface", () => {
     ).toBe("The Workjet provider gateway process exited unexpectedly.");
   });
 
-  it("allows adding an account only on a ready, idle gateway", () => {
+  it("allows adding an account whenever the gateway can be autostarted", () => {
     expect(
       canAddWorkjetGatewayAccount({ status: READY_STATUS, login: BASE.login, isOperating: false }),
     ).toBe(true);
@@ -224,9 +245,18 @@ describe("Workjet gateway account surface", () => {
         isOperating: false,
       }),
     ).toBe(false);
+    // The server autostarts the gateway for the login, so a stopped gateway
+    // must not strand a surface that has no start button.
     expect(
       canAddWorkjetGatewayAccount({
         status: { ...READY_STATUS, phase: "stopped" },
+        login: BASE.login,
+        isOperating: false,
+      }),
+    ).toBe(true);
+    expect(
+      canAddWorkjetGatewayAccount({
+        status: { ...READY_STATUS, phase: "faulted", failureReason: "process-exit" },
         login: BASE.login,
         isOperating: false,
       }),

@@ -65,8 +65,12 @@ export interface WorkjetGatewaySectionState {
   readonly isOperating: boolean;
   readonly login: WorkjetGatewayLoginState;
   readonly onRefresh: () => void;
-  readonly onStart: () => void;
-  readonly onStop: () => void;
+  /**
+   * Recovery only. The server autostarts the gateway when a login begins, so
+   * the happy path never asks the user to start anything; this is offered
+   * exclusively as a retry on a faulted gateway.
+   */
+  readonly onRetry: () => void;
   readonly onAddAccount: (provider: WorkjetGatewayProvider) => void;
   readonly onCancelLogin: () => void;
 }
@@ -127,8 +131,11 @@ export function workjetGatewayAccountsByProvider(
 }
 
 /**
- * Only a ready gateway can start a login or serve a catalog, so the surface
- * gates the add-account affordance on the reported phase rather than guessing.
+ * The server autostarts the gateway when a login begins, so a stopped or
+ * starting gateway must not block the add-account affordance — otherwise a
+ * surface without a start button would be a dead end. Only a faulted or
+ * stopping gateway, an in-flight lifecycle operation, or a live login blocks
+ * it; a faulted gateway is recovered through the retry affordance instead.
  */
 export function canAddWorkjetGatewayAccount(state: {
   readonly status: WorkjetGatewayStatus | null;
@@ -137,7 +144,8 @@ export function canAddWorkjetGatewayAccount(state: {
 }): boolean {
   if (state.isOperating) return false;
   if (state.login.status === "starting" || state.login.status === "pending") return false;
-  return state.status?.phase === "ready";
+  const phase = state.status?.phase;
+  return phase === "ready" || phase === "stopped" || phase === "starting";
 }
 
 export function workjetGatewayPhaseSummary(status: WorkjetGatewayStatus | null): string {
@@ -263,7 +271,7 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
   return (
     <SettingsSection
       id={searchableSetting("workjet-provider-accounts").id}
-      title={searchableSetting("workjet-provider-accounts").title}
+      title="Workjet gateway accounts"
       headerAction={
         <div className="flex flex-wrap justify-end gap-2">
           <Button
@@ -276,34 +284,23 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
             <RefreshCwIcon className={state.isRefreshing ? "size-3.5 animate-spin" : "size-3.5"} />
             Refresh
           </Button>
-          {phase === "ready" || phase === "stopping" ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={state.onStop}
-              disabled={state.isOperating}
-            >
+          {/*
+            No start control in the happy path: the server starts the gateway
+            when a login begins. A faulted gateway is the one state the user
+            cannot wait out, so recovery is offered there and nowhere else.
+          */}
+          {phase === "faulted" ? (
+            <Button type="button" size="sm" onClick={state.onRetry} disabled={state.isOperating}>
               {state.isOperating ? <Spinner className="size-3.5" /> : null}
-              Stop gateway
+              Retry gateway
             </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={state.onStart}
-              disabled={state.isOperating || state.status === null}
-            >
-              {state.isOperating ? <Spinner className="size-3.5" /> : null}
-              Start gateway
-            </Button>
-          )}
+          ) : null}
         </div>
       }
     >
       <SettingsRow
         title="Provider gateway"
-        description="Provider accounts belong to the Workjet provider gateway on the selected server. Code harness drivers are runtimes, not LLM accounts, and are never listed here."
+        description="These are the LLM accounts owned by the Workjet provider gateway on the selected server. The harness runtimes above are CLI runtimes, not LLM accounts, and are never listed here."
         status={
           <GatewayRuntimeStatus
             status={state.status}

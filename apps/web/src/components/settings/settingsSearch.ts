@@ -204,7 +204,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-provider-accounts",
     title: "Provider accounts",
-    to: "/settings/workjet",
+    // Single provider surface: the interactive gateway account section lives
+    // on the Providers page; the Workjet tab keeps only a pointer.
+    to: "/settings/providers",
   },
   {
     id: "workjet-llm-routes",

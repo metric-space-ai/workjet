@@ -31,7 +31,7 @@ import {
   RefreshCwIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
@@ -89,6 +89,8 @@ import {
   SettingsSection,
   useRelativeTimeTick,
 } from "./settingsLayout";
+import { WorkjetGatewayAccountsSectionView } from "./WorkjetGatewayAccounts";
+import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
   buildProviderEnvironmentOptions,
   classifyProviderEnvironmentAccess,
@@ -118,6 +120,32 @@ function withoutProviderInstanceFavorites(
 const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
   provider: definition.value,
 }));
+
+/**
+ * A cached health claim ages badly: "Authenticated" from an hour ago survives
+ * an expired CLI login. Opening the page therefore re-probes, but navigation
+ * spam must not hammer the harness CLIs, so a per-environment cooldown gates
+ * the automatic probe. The manual refresh button is never gated.
+ */
+export const PROVIDER_AUTO_REFRESH_COOLDOWN_MS = 30_000;
+
+/**
+ * Last automatic probe per environment. Module-level so it survives the
+ * remount that every settings navigation performs — that remount is exactly
+ * what the cooldown has to absorb. Exported so tests can start from a known
+ * state; nothing else writes it.
+ */
+export const providerAutoRefreshTracker = new Map<EnvironmentId, number>();
+
+export function shouldAutoRefreshProviders(
+  lastAutoRefreshAtMs: number | undefined,
+  nowMs: number,
+): boolean {
+  return (
+    lastAutoRefreshAtMs === undefined ||
+    nowMs - lastAutoRefreshAtMs >= PROVIDER_AUTO_REFRESH_COOLDOWN_MS
+  );
+}
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
   useRelativeTimeTick();
@@ -277,8 +305,23 @@ export function ProviderSettingsPanel() {
           environment={selectedEnvironment}
         />
       ) : null}
+
+      {/*
+        One provider surface: the Workjet gateway's LLM accounts sit beneath the
+        harness runtimes instead of on a competing Workjet settings tab.
+      */}
+      <WorkjetGatewayAccountsSection environmentId={effectiveEnvironmentId} />
     </SettingsPageContainer>
   );
+}
+
+export function WorkjetGatewayAccountsSection({
+  environmentId,
+}: {
+  readonly environmentId: EnvironmentId | null;
+}) {
+  const gateway = useWorkjetGatewaySection(environmentId);
+  return <WorkjetGatewayAccountsSectionView {...gateway} />;
 }
 
 function SelectedEnvironmentProviderSettings({
@@ -440,6 +483,18 @@ export function EnvironmentProviderSettings({
       }
     })();
   }, [environmentId, refreshServerProviders]);
+
+  useEffect(() => {
+    // A read-only session cannot act on the result and must not spend the
+    // remote host's probe budget on a page view.
+    if (readOnly) return;
+    const nowMs = Date.now();
+    if (!shouldAutoRefreshProviders(providerAutoRefreshTracker.get(environmentId), nowMs)) {
+      return;
+    }
+    providerAutoRefreshTracker.set(environmentId, nowMs);
+    refreshProviders();
+  }, [environmentId, readOnly, refreshProviders]);
 
   const runProviderUpdate = useCallback(
     async (candidate: ProviderUpdateCandidate) => {
@@ -660,7 +715,10 @@ export function EnvironmentProviderSettings({
   return (
     <>
       <SettingsSection
-        {...searchableSetting("providers")}
+        id={searchableSetting("providers").id}
+        // Named for what these actually are — harness CLI runtimes — so the
+        // gateway account section below can never read as a rival "providers".
+        title="Harness runtimes"
         headerAction={
           <div className="flex items-center gap-1.5">
             <ProviderLastChecked lastCheckedAt={lastCheckedAt} />

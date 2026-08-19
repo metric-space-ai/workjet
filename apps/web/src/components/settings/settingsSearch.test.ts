@@ -75,7 +75,7 @@ describe("searchSettings", () => {
       { id: "workjet-workers", title: "Workers", to: "/settings/workjet" },
     ]);
     expect(searchSettings("provider accounts")).toEqual([
-      { id: "workjet-provider-accounts", title: "Provider accounts", to: "/settings/workjet" },
+      { id: "workjet-provider-accounts", title: "Provider accounts", to: "/settings/providers" },
     ]);
     expect(searchSettings("llm routes")).toEqual([
       { id: "workjet-llm-routes", title: "LLM routes", to: "/settings/workjet" },
@@ -102,7 +102,7 @@ describe("searchSettings", () => {
     expect(workjetIds).toEqual([
       "workjet-workers",
       "workjet-computers",
-      "workjet-provider-accounts",
+      // Provider accounts now resolve to /settings/providers: one surface.
       "workjet-llm-routes",
       "workjet-prompt",
       "workjet-telemetry",

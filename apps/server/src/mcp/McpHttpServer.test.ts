@@ -16,6 +16,7 @@ import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
 import * as WorkerDispatch from "../workjet/WorkerDispatch.ts";
 import * as WorkjetMailboxDelivery from "../workjet/mailbox/WorkjetMailboxDelivery.ts";
+import { WorkjetSnapshotStoreLive } from "../workjet/mailbox/WorkjetSnapshotStore.ts";
 import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
 import {
   WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
@@ -261,6 +262,9 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
         Layer.provide(GreppyRuntime.layer),
         Layer.provide(WorkerDispatchTestLayer),
         Layer.provide(WorkjetMailboxDeliveryTestLayer),
+        // `workjet_delegate_task` now produces its own prompt snapshot, so the
+        // MCP routes require the store exactly like `server.ts` provides it.
+        Layer.provide(WorkjetSnapshotStoreLive),
         Layer.provide(
           ServerConfig.layerTest(
             process.cwd(),

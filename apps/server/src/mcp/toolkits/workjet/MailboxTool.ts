@@ -1,7 +1,6 @@
 import {
   EnvironmentId,
   ThreadId,
-  WorkjetContentDigest,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
   WorkjetMeshWorkspaceId,
@@ -23,6 +22,7 @@ import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as WorkjetMailboxDelivery from "../../../workjet/mailbox/WorkjetMailboxDelivery.ts";
+import * as WorkjetSnapshotStore from "../../../workjet/mailbox/WorkjetSnapshotStore.ts";
 
 /**
  * The first two harness-neutral Workjet mailbox tools (docs/workjet-plan.md →
@@ -106,15 +106,37 @@ const DelegationBudgetInput = Schema.Struct({
   ttlSeconds: TtlSeconds,
 });
 
-const PromptSnapshotInput = Schema.Struct({
-  snapshotRef: WorkjetSealedPayloadRef,
-  digest: WorkjetContentDigest,
-  byteLength: WorkjetPayloadByteLength,
-});
+/**
+ * Ceiling on the delegation prompt TEXT, in UTF-16 code units.
+ *
+ * 256 KiB is a deliberate order of magnitude below the contract's 8 MiB
+ * payload ceiling: a delegation brief is prose plus a file whitelist, not a
+ * transcript, and the snapshot store's byte ceiling is a backstop rather than
+ * a budget. The gap also absorbs the units mismatch — `isMaxLength` counts
+ * UTF-16 code units while the store counts UTF-8 BYTES, so a worst-case
+ * all-multi-byte prompt of this length still encodes to well under 1 MiB and
+ * can never reach the store's hard limit.
+ */
+export const WORKJET_DELEGATE_PROMPT_MAX_LENGTH = 262_144;
+
+/**
+ * The prompt arrives as TEXT, not as a caller-asserted snapshot reference.
+ *
+ * The delegation contract pins a prompt by digest, and a digest is only worth
+ * anything if the side that stores the bytes is the side that computes it.
+ * Accepting `snapshotRef`/`digest`/`byteLength` from the harness meant the
+ * server pinned whatever it was told; now it stores the prompt through
+ * {@link WorkjetSnapshotStore.WorkjetSnapshotStore} and derives all three
+ * fields from the bytes it actually wrote.
+ */
+const PromptTextInput = Schema.String.check(
+  Schema.makeFilter((value) => value.trim().length > 0 || "prompt must be nonblank"),
+  Schema.isMaxLength(WORKJET_DELEGATE_PROMPT_MAX_LENGTH),
+);
 
 export const WorkjetDelegateTaskInputSchema = Schema.Struct({
   ...TargetAddressFields,
-  prompt: PromptSnapshotInput,
+  prompt: PromptTextInput,
   scope: DelegationScopeInput,
   acceptance: Schema.String.check(
     Schema.makeFilter((value) => value.trim().length > 0 || "acceptance must be nonblank"),
@@ -210,12 +232,13 @@ export const SendMessageMcpTool = Tool.make(WORKJET_SEND_MESSAGE_TOOL_NAME, {
 
 export const DelegateTaskMcpTool = Tool.make(WORKJET_DELEGATE_TASK_TOOL_NAME, {
   description:
-    "Send a Workjet message plus task (a delegation) to another worker thread through the durable mailbox. The delegation carries an immutable prompt snapshot reference, an explicit file scope, a completion contract, and a budget, and owns a durable lifecycle starting at queued.",
+    "Send a Workjet message plus task (a delegation) to another worker thread through the durable mailbox. The prompt text is stored as an immutable, content-addressed snapshot and the delegation carries its verified digest, alongside an explicit file scope, a completion contract, and a budget, and owns a durable lifecycle starting at queued.",
   parameters: WorkjetDelegateTaskInputSchema,
   success: WorkjetDelegateTaskResultSchema,
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+    WorkjetSnapshotStore.WorkjetSnapshotStore,
   ],
 })
   .annotate(Tool.Title, "Delegate Workjet task")
@@ -324,6 +347,7 @@ const registerSendMessage = Effect.fn("McpHttpServer.registerWorkjetSendMessage"
 const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTask")(function* () {
   const server = yield* McpServer.McpServer;
   const delivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+  const snapshots = yield* WorkjetSnapshotStore.WorkjetSnapshotStore;
   const tool = DelegateTaskMcpTool;
   yield* server.addTool({
     tool: new McpSchema.Tool({
@@ -343,6 +367,12 @@ const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTas
         return Effect.gen(function* () {
           yield* McpInvocationContext.requireWorkjetOrchestrator();
           const input = yield* decodeDelegateTaskInput(payload);
+          // The snapshot is written BEFORE the delegation is created, so the
+          // digest on the delegation always describes bytes that already exist
+          // on disk. The store is content-addressed and immutable, so a retry
+          // of a failed delegation re-derives the identical reference instead
+          // of accumulating duplicates.
+          const snapshot = yield* snapshots.put(input.prompt);
           // A parent edge is owned by the delegating thread itself, so the
           // delivery service resolves its address from the environment's mesh
           // identity; nothing here invents a cross-workspace owner.
@@ -352,9 +382,9 @@ const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTas
             targetThreadId: input.targetThreadId,
             prompt: {
               schemaVersion: 1,
-              snapshotRef: input.prompt.snapshotRef,
-              digest: input.prompt.digest,
-              byteLength: input.prompt.byteLength,
+              snapshotRef: snapshot.snapshotRef,
+              digest: snapshot.digest,
+              byteLength: snapshot.byteLength,
             },
             scope: {
               schemaVersion: 1,
@@ -397,6 +427,15 @@ const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTas
             WorkjetOrchestratorUnavailableError: () =>
               Effect.succeed(failureResult("unauthorized")),
             WorkjetMailboxError: (error) => Effect.succeed(failureResult(error.reason)),
+            // Snapshot failures collapse onto the mailbox contract's bounded
+            // reasons: the harness learns that the prompt was too large or
+            // that the mailbox could not accept it, and never sees a path,
+            // digest, or filesystem detail.
+            WorkjetSnapshotTooLargeError: () => Effect.succeed(failureResult("payload-too-large")),
+            WorkjetSnapshotNotFoundError: () =>
+              Effect.succeed(failureResult("mailbox-unavailable")),
+            WorkjetSnapshotCorruptError: () => Effect.succeed(failureResult("mailbox-unavailable")),
+            WorkjetSnapshotIoError: () => Effect.succeed(failureResult("mailbox-unavailable")),
           }),
         );
       }),

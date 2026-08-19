@@ -51,6 +51,7 @@ import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import { WorkjetMailboxStoreLive } from "./workjet/mailbox/WorkjetMailboxStore.ts";
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
+import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -487,6 +488,10 @@ export const makeRoutesLayer = Layer.mergeAll(
         Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
       ),
     ),
+    // `workjet_delegate_task` stores its prompt here, so the delegation's
+    // digest describes bytes the server itself wrote. One server-wide,
+    // content-addressed root under `ServerConfig.stateDir`.
+    Layer.provide(WorkjetSnapshotStoreLive),
   ),
 ).pipe(
   // WebSocket management and MCP search resolve this one server-lifetime

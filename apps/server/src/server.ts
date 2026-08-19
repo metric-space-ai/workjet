@@ -514,7 +514,16 @@ export const makeRoutesLayer = Layer.mergeAll(
   // because it is a background exchange, not a request-scoped dependency, and
   // it idles harmlessly when no daemon is running.
   WorkjetMailboxTransport.layer.pipe(
-    Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
+    Layer.provide(
+      Layer.mergeAll(
+        WorkjetMailboxStoreLive,
+        // Cross-machine delegations attach their prompt snapshot bytes on the
+        // way out and store received bytes here on the way in, so the executor
+        // finds the prompt locally instead of skipping on `missingSnapshot`.
+        WorkjetSnapshotStoreLive,
+        WorkjetMeshIdentity.layer,
+      ),
+    ),
     Layer.provide(ProcessRunner.layer),
   ),
   // The step that makes a DELIVERED delegation actually run: a bounded

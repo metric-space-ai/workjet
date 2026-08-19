@@ -1,4 +1,5 @@
 // @effect-diagnostics preferSchemaOverJson:off -- the fake daemon is a WIRE stand-in: it must read and write the same raw JSON strings the real CTOX routes exchange, so encoding through a schema here would stop testing the wire.
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -11,18 +12,26 @@ import {
   WorkjetSealedPayloadRef,
   type WorkjetDelegation,
   type WorkjetMailboxPayload,
+  type WorkjetPromptSnapshotRef,
   type WorkjetRoutingEnvelope,
   type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
+import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../../config.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { WorkjetMailboxStore, WorkjetMailboxStoreLive } from "./WorkjetMailboxStore.ts";
+import {
+  WorkjetSnapshotStore,
+  WorkjetSnapshotStoreLive,
+  snapshotRefForDigest,
+} from "./WorkjetSnapshotStore.ts";
 import {
   ctoxBaseUrlFromHealthUrl,
   makeWorkjetMailboxTransportWithSources,
@@ -67,6 +76,23 @@ const remoteAddress: WorkjetWorkerAddress = {
 const envelopeId = (suffix: string) => WorkjetEnvelopeId.make(`wjm-transport-${suffix}`);
 const delegationId = (suffix: string) => WorkjetDelegationId.make(`wjd-transport-${suffix}`);
 
+/** sha256 hex of a UTF-8 string, matching the snapshot store's own digest. */
+const sha256Hex = (text: string): WorkjetContentDigest =>
+  WorkjetContentDigest.make(
+    NodeCrypto.createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex"),
+  );
+
+/** The prompt reference the snapshot store would mint for this exact text. */
+const promptRefFor = (text: string): WorkjetPromptSnapshotRef => {
+  const digest = sha256Hex(text);
+  return {
+    schemaVersion: 1,
+    snapshotRef: snapshotRefForDigest(digest),
+    digest,
+    byteLength: Buffer.byteLength(text, "utf8"),
+  };
+};
+
 const delegationPayload = (input: {
   readonly envelopeId: WorkjetEnvelopeId;
   readonly delegationId: WorkjetDelegationId;
@@ -74,6 +100,8 @@ const delegationPayload = (input: {
   readonly target: WorkjetWorkerAddress;
   /** Overrides the scope whitelist, to build a deliberately huge payload. */
   readonly files?: ReadonlyArray<WorkjetRepositoryPath>;
+  /** Pins the prompt to a real snapshot digest for transfer tests. */
+  readonly prompt?: WorkjetPromptSnapshotRef;
 }): WorkjetMailboxPayload => {
   const delegation: WorkjetDelegation = {
     schemaVersion: 1,
@@ -83,7 +111,7 @@ const delegationPayload = (input: {
     target: input.target,
     createdAt: NOW,
     expiresAt: EXPIRES,
-    prompt: {
+    prompt: input.prompt ?? {
       schemaVersion: 1,
       snapshotRef: WorkjetSealedPayloadRef.make("cHJvbXB0LXNuYXBzaG90LXJlZi0wMDE"),
       digest: WorkjetContentDigest.make("a".repeat(63) + "b"),
@@ -301,9 +329,22 @@ const makeTransport = (input: {
     Effect.provide(environmentLayer),
   );
 
+/**
+ * A REAL content-addressed snapshot store over a fresh temp directory, so the
+ * transfer tests exercise the store's actual digest verification rather than a
+ * fake. `makeTempDirectoryScoped` mints a unique directory per layer build, so
+ * each test's store starts empty — vital here, exactly like the per-test
+ * database, so one test's stored snapshot cannot satisfy another's read.
+ */
+const snapshotStoreLayer = WorkjetSnapshotStoreLive.pipe(
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "workjet-transport-snapshots-" })),
+  Layer.provide(NodeServices.layer),
+);
+
 const testLayer = Layer.mergeAll(
   WorkjetMailboxStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
   SqlitePersistenceMemory,
+  snapshotStoreLayer,
 );
 
 type TestServices = Layer.Success<typeof testLayer>;
@@ -1315,6 +1356,364 @@ group("WorkjetMailboxTransport sealing", (it) => {
       const outbound = Option.getOrThrow(yield* store.getOutbound(id));
       assert.strictEqual(outbound.state, "pending");
       assert.strictEqual(outbound.attemptCount, 1);
+    }),
+  );
+});
+
+// ===============================
+// SNAPSHOT TRANSFER
+// ===============================
+
+group("WorkjetMailboxTransport snapshot transfer", (it) => {
+  const PROMPT_TEXT = "Implement the cross-machine snapshot transfer.\nBounded, sealed, verified.";
+
+  it.effect("attaches sealed snapshot bytes to a cross-environment delegation", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // Pin the peer so the outbound delegation takes the SEALED path.
+      const inboundId = envelopeId("snap-attach-in");
+      const daemon = makeFakeDaemon({
+        seed: [
+          yield* remoteDocument({
+            identity: peer,
+            envelopeId: inboundId,
+            kind: "message",
+            payload: messagePayload({
+              envelopeId: inboundId,
+              source: remoteAddress,
+              target: localAddress,
+            }),
+          }),
+        ],
+      });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+      yield* transport.runCycle;
+
+      // The source machine holds the prompt snapshot in its own store.
+      const stored = yield* snapshots.put(PROMPT_TEXT);
+      const id = envelopeId("snap-attach-01");
+      const payload = delegationPayload({
+        envelopeId: id,
+        delegationId: delegationId("snap-attach-01"),
+        source: localAddress,
+        target: remoteAddress,
+        prompt: { schemaVersion: 1, ...stored },
+      });
+      yield* outboundTo({ identity: local, store, envelopeId: id, payload });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.snapshotAttached, 1);
+      assert.strictEqual(status.counters.snapshotOversized, 0);
+      assert.strictEqual(
+        status.counters.sealed,
+        1,
+        "the bytes travel sealed, like everything else",
+      );
+      assert.strictEqual(status.counters.pushed, 1);
+
+      // The bytes are inside the sealed blob and unreadable to the daemon.
+      const wrapper = publishedWrapper(daemon.calls);
+      assert.isDefined(wrapper.body.sealed);
+      assert.notInclude(JSON.stringify(wrapper.body.sealed), PROMPT_TEXT);
+      const opened = yield* peer.openSealed(wrapper.body.sealed!, id);
+      const decoded = JSON.parse(new TextDecoder().decode(opened)) as {
+        readonly _tag: string;
+        readonly snapshotBytes?: string;
+        readonly delegation: { readonly prompt: { readonly digest: string } };
+      };
+      assert.strictEqual(decoded._tag, "delegation");
+      assert.strictEqual(decoded.snapshotBytes, PROMPT_TEXT);
+      assert.strictEqual(decoded.delegation.prompt.digest, stored.digest);
+    }),
+  );
+
+  it.effect("stores received snapshot bytes and makes the delegation executable", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const prompt = promptRefFor(PROMPT_TEXT);
+      const id = envelopeId("snap-recv-01");
+      const delegation = delegationId("snap-recv-01");
+      // A sealed inbound delegation whose payload carries the snapshot bytes.
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        sealToKey: local.encryptionPublicKey,
+        payload: {
+          ...delegationPayload({
+            envelopeId: id,
+            delegationId: delegation,
+            source: remoteAddress,
+            target: localAddress,
+            prompt,
+          }),
+          snapshotBytes: PROMPT_TEXT,
+        } as WorkjetMailboxPayload,
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      // The prompt is NOT readable before the delegation arrives.
+      assert.isTrue(Option.isNone(yield* snapshots.get(prompt.digest).pipe(Effect.option)));
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.snapshotStored, 1);
+      assert.strictEqual(status.rejections.snapshotDigest, 0);
+
+      // The bytes are now in THIS machine's store, so the executor's
+      // `resolvePrompt` would read them instead of skipping on `missingSnapshot`.
+      assert.strictEqual(yield* snapshots.get(prompt.digest), PROMPT_TEXT);
+
+      // The SAME reference-only lifecycle a local delegation produces.
+      const record = Option.getOrThrow(yield* store.getDelegation(delegation));
+      assert.strictEqual(record.state, "delivered");
+      assert.strictEqual(record.delegation.prompt.digest, prompt.digest);
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("rejects and consumes snapshot bytes that do not match the declared digest", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // The delegation DECLARES the digest of PROMPT_TEXT but carries different
+      // bytes: a tampered or mispaired snapshot.
+      const prompt = promptRefFor(PROMPT_TEXT);
+      const id = envelopeId("snap-mismatch-1");
+      const delegation = delegationId("snap-mismatch-1");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: {
+          ...delegationPayload({
+            envelopeId: id,
+            delegationId: delegation,
+            source: remoteAddress,
+            target: localAddress,
+            prompt,
+          }),
+          snapshotBytes: "these bytes do not hash to the declared digest",
+        } as WorkjetMailboxPayload,
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.counters.snapshotStored, 0);
+      assert.strictEqual(status.rejections.snapshotDigest, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)), "nothing durable is written");
+      assert.isTrue(
+        Option.isNone(yield* store.getDelegation(delegation)),
+        "no delegation row for a poison snapshot",
+      );
+      // The declared digest is still empty: the mismatched bytes never satisfy it.
+      assert.isTrue(Option.isNone(yield* snapshots.get(prompt.digest).pipe(Effect.option)));
+      // Poison envelopes are consumed, like every other rejection.
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("ships an oversized snapshot reference-only with a marker", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // Pin the peer so the delegation takes the SEALED path.
+      const inboundId = envelopeId("snap-big-in-01");
+      const daemon = makeFakeDaemon({
+        seed: [
+          yield* remoteDocument({
+            identity: peer,
+            envelopeId: inboundId,
+            kind: "message",
+            payload: messagePayload({
+              envelopeId: inboundId,
+              source: remoteAddress,
+              target: localAddress,
+            }),
+          }),
+        ],
+      });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+      yield* transport.runCycle;
+
+      // A snapshot that fits the store's 8 MiB cap but not the 200 000-byte wire.
+      const bigText = "p".repeat(210_000);
+      const stored = yield* snapshots.put(bigText);
+      const id = envelopeId("snap-big-out-01");
+      const payload = delegationPayload({
+        envelopeId: id,
+        delegationId: delegationId("snap-big-out-01"),
+        source: localAddress,
+        target: remoteAddress,
+        prompt: { schemaVersion: 1, ...stored },
+      });
+      yield* outboundTo({ identity: local, store, envelopeId: id, payload });
+
+      const status = yield* transport.runCycle;
+
+      // Never a silent publish failure: it goes reference-only, not too-large.
+      assert.strictEqual(status.counters.snapshotOversized, 1);
+      assert.strictEqual(status.counters.snapshotAttached, 0);
+      assert.strictEqual(status.counters.payloadTooLarge, 0);
+      assert.strictEqual(status.counters.pushed, 1);
+      assert.strictEqual(status.counters.sealed, 1);
+
+      // The wire carries the reference and the marker, never the bytes.
+      const wrapper = publishedWrapper(daemon.calls);
+      assert.isDefined(wrapper.body.sealed);
+      const opened = yield* peer.openSealed(wrapper.body.sealed!, id);
+      const decoded = JSON.parse(new TextDecoder().decode(opened)) as {
+        readonly snapshotBytes?: string;
+        readonly snapshotOversized?: boolean;
+      };
+      assert.isUndefined(decoded.snapshotBytes);
+      assert.strictEqual(decoded.snapshotOversized, true);
+    }),
+  );
+
+  it.effect("leaves an oversized-marked inbound delegation delivered with a bounded reason", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const prompt = promptRefFor("a snapshot too large to have travelled");
+      const id = envelopeId("snap-ovr-recv-1");
+      const delegation = delegationId("snap-ovr-recv-1");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: {
+          ...delegationPayload({
+            envelopeId: id,
+            delegationId: delegation,
+            source: remoteAddress,
+            target: localAddress,
+            prompt,
+          }),
+          snapshotOversized: true,
+        } as WorkjetMailboxPayload,
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.snapshotOversizedReceived, 1);
+      assert.strictEqual(status.counters.snapshotStored, 0);
+      // Accepted and delivered — never dropped — but the prompt is still absent,
+      // so the executor will wait on `missingSnapshot` rather than run it.
+      assert.strictEqual(
+        Option.getOrThrow(yield* store.getDelegation(delegation)).state,
+        "delivered",
+      );
+      assert.isTrue(Option.isNone(yield* snapshots.get(prompt.digest).pipe(Effect.option)));
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("re-receiving snapshot bytes is an idempotent no-op", () =>
+    Effect.gen(function* () {
+      const snapshots = yield* WorkjetSnapshotStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const prompt = promptRefFor(PROMPT_TEXT);
+      const id = envelopeId("snap-idem-01");
+      const delegation = delegationId("snap-idem-01");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        sealToKey: local.encryptionPublicKey,
+        payload: {
+          ...delegationPayload({
+            envelopeId: id,
+            delegationId: delegation,
+            source: remoteAddress,
+            target: localAddress,
+            prompt,
+          }),
+          snapshotBytes: PROMPT_TEXT,
+        } as WorkjetMailboxPayload,
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      const first = yield* transport.runCycle;
+      assert.strictEqual(first.counters.snapshotStored, 1);
+
+      // The daemon "forgets" the consumption and re-delivers the same document.
+      daemon.consumed.clear();
+      const second = yield* transport.runCycle;
+
+      assert.strictEqual(second.counters.inboundDuplicates, 1);
+      assert.strictEqual(second.counters.snapshotStored, 1, "a replay must not re-count the store");
+      assert.strictEqual(yield* snapshots.get(prompt.digest), PROMPT_TEXT);
+    }),
+  );
+
+  it.effect("leaves a plain message envelope entirely unaffected", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("snap-msg-out-01");
+      yield* outboundTo({
+        identity: local,
+        store,
+        envelopeId: id,
+        payload: messagePayload({ envelopeId: id, source: localAddress, target: remoteAddress }),
+      });
+      const daemon = makeFakeDaemon();
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.pushed, 1);
+      assert.strictEqual(status.counters.snapshotAttached, 0);
+      assert.strictEqual(status.counters.snapshotOversized, 0);
+      assert.strictEqual(status.counters.snapshotStored, 0);
+      // A message wrapper never grows a snapshot field.
+      const wrapper = publishedWrapper(daemon.calls);
+      assert.strictEqual((wrapper.body.plain as { _tag: string })._tag, "message");
+      assert.notProperty(wrapper.body.plain, "snapshotBytes");
     }),
   );
 });

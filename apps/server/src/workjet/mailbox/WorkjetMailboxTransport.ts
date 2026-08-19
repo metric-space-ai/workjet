@@ -30,6 +30,7 @@ import {
   type WorkjetOutboxRecord,
 } from "./WorkjetMailboxStore.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
+import { WorkjetSnapshotStore } from "./WorkjetSnapshotStore.ts";
 
 /**
  * The Workjet side of the LOCAL CTOX daemon mailbox docking (docs/workjet-plan.md
@@ -223,6 +224,30 @@ export interface WorkjetMailboxTransportCounters {
   readonly payloadTooLarge: number;
   /** Inbound envelopes whose sealed payload this environment opened. */
   readonly unsealed: number;
+  /**
+   * Outbound cross-environment delegations that shipped WITH their prompt
+   * snapshot bytes attached, so the receiver can run them without waiting for a
+   * separate snapshot transfer.
+   */
+  readonly snapshotAttached: number;
+  /**
+   * Outbound cross-environment delegations shipped reference-only because the
+   * snapshot would not fit the sealed wire ceiling. They carry a
+   * `snapshot-oversized` marker instead of the bytes; never a silent drop.
+   */
+  readonly snapshotOversized: number;
+  /**
+   * Inbound cross-environment delegations whose attached snapshot bytes this
+   * environment stored into its LOCAL snapshot store, digest re-verified, so the
+   * executor now finds the prompt locally.
+   */
+  readonly snapshotStored: number;
+  /**
+   * Inbound cross-environment delegations that arrived reference-only with the
+   * `snapshot-oversized` marker: accepted and left `delivered` with this bounded
+   * reason rather than dropped, awaiting a later bounded-reference fetch.
+   */
+  readonly snapshotOversizedReceived: number;
 }
 
 /** Why a pulled envelope was refused. Poison envelopes are consumed, not looped. */
@@ -239,6 +264,13 @@ export interface WorkjetMailboxTransportRejections {
    * envelope, and from `malformed`, which is about structure.
    */
   readonly sealing: number;
+  /**
+   * A delegation whose attached snapshot bytes did not hash to the digest the
+   * delegation declared. The bytes are worthless, so the envelope is consumed:
+   * a snapshot matching the declared digest could only arrive under a different
+   * envelope, never by re-reading this one.
+   */
+  readonly snapshotDigest: number;
 }
 
 export interface WorkjetMailboxTransportStatus {
@@ -265,6 +297,10 @@ const EMPTY_COUNTERS: WorkjetMailboxTransportCounters = {
   plainFirstContact: 0,
   payloadTooLarge: 0,
   unsealed: 0,
+  snapshotAttached: 0,
+  snapshotOversized: 0,
+  snapshotStored: 0,
+  snapshotOversizedReceived: 0,
 };
 
 const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
@@ -274,6 +310,7 @@ const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
   signature: 0,
   keyContinuity: 0,
   sealing: 0,
+  snapshotDigest: 0,
 };
 
 export interface WorkjetMailboxTransportShape {
@@ -615,6 +652,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
   "WorkjetMailboxTransport.makeWithSources",
 )(function* (sources: WorkjetMailboxTransportSources) {
   const store = yield* WorkjetMailboxStore;
+  const snapshots = yield* WorkjetSnapshotStore;
   const identity = yield* WorkjetMeshIdentity;
   const environment = yield* ServerEnvironment;
   const httpClient = yield* HttpClient.HttpClient;
@@ -850,43 +888,98 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       return;
     }
 
-    const sealedBody =
-      recipient._tag === "pinned"
-        ? yield* encodePayloadJson(input.record.payload).pipe(
-            Effect.flatMap((plaintext) =>
-              identity.sealTo(
-                recipient.key,
-                new TextEncoder().encode(plaintext),
-                envelope.envelopeId,
-              ),
-            ),
-            Effect.option,
-          )
-        : Option.none();
+    /**
+     * Encodes ONE payload into the wire wrapper for this recipient: sealed to
+     * the pinned key, or plaintext on first contact. `None` is a genuine fault
+     * (a pinned recipient whose payload will not seal — never a reason to fall
+     * back to plaintext — or a wrapper that will not encode), distinct from an
+     * oversized-but-valid wrapper, whose size is judged separately against the
+     * wire ceiling below.
+     */
+    const buildWire = (
+      payload: WorkjetMailboxPayload,
+    ): Effect.Effect<Option.Option<{ readonly json: string; readonly sealed: boolean }>> =>
+      Effect.gen(function* () {
+        const sealed =
+          recipient._tag === "pinned"
+            ? yield* encodePayloadJson(payload).pipe(
+                Effect.flatMap((plaintext) =>
+                  identity.sealTo(
+                    recipient.key,
+                    new TextEncoder().encode(plaintext),
+                    envelope.envelopeId,
+                  ),
+                ),
+                Effect.option,
+              )
+            : Option.none();
+        if (recipient._tag === "pinned" && Option.isNone(sealed)) return Option.none();
 
-    // A pinned recipient whose payload will not seal is a local crypto or
-    // encoding fault, never a reason to fall back to plaintext: the whole point
-    // of the pin is that this peer's payloads are sealed from now on.
-    if (recipient._tag === "pinned" && Option.isNone(sealedBody)) {
-      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
-      bump("pushFailures");
-      return;
+        const json = yield* encodeWrapperJson({
+          schemaVersion: 2,
+          senderSigningKey: identity.publicKey,
+          senderEncryptionKey: identity.encryptionPublicKey,
+          body: Option.match(sealed, {
+            onSome: (blob) => ({ sealed: blob }) as const,
+            onNone: () => ({ plain: payload, reason: "recipient-key-unknown" }) as const,
+          }),
+        }).pipe(Effect.option);
+        return Option.map(json, (value) => ({ json: value, sealed: Option.isSome(sealed) }));
+      });
+
+    const withinCeiling = (json: string): boolean =>
+      Buffer.byteLength(json, "utf8") <= WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES;
+
+    // A cross-environment delegation carries only a snapshot REFERENCE; its
+    // bytes live in THIS machine's snapshot store. Attach them so the receiver
+    // can run the task without waiting for a separate snapshot transfer, but
+    // only when the sealed wrapper still fits the wire — a bounded transfer,
+    // never an unbounded one. If they will not fit, ship the delegation
+    // reference-only with a `snapshot-oversized` marker rather than dropping it.
+    let attachedSnapshot = false;
+    let markedOversized = false;
+    let wire: Option.Option<{ readonly json: string; readonly sealed: boolean }>;
+
+    if (input.record.payload._tag === "delegation") {
+      const delegationPayload = input.record.payload;
+      const snapshotText = yield* snapshots
+        .get(delegationPayload.delegation.prompt.digest)
+        .pipe(Effect.option);
+
+      if (Option.isSome(snapshotText)) {
+        const withBytes = {
+          ...delegationPayload,
+          snapshotBytes: snapshotText.value,
+        } as const satisfies WorkjetMailboxPayload;
+        const attached = yield* buildWire(withBytes);
+        if (Option.isSome(attached) && withinCeiling(attached.value.json)) {
+          wire = attached;
+          attachedSnapshot = true;
+        } else {
+          // The snapshot will not fit sealed. Fall back to reference-only plus
+          // the marker, which the receiver surfaces as a bounded reason.
+          const { snapshotBytes: _dropped, ...refOnlyDelegation } = withBytes;
+          wire = yield* buildWire({
+            ...refOnlyDelegation,
+            snapshotOversized: true,
+          } as const satisfies WorkjetMailboxPayload);
+          markedOversized = true;
+        }
+      } else {
+        // The bytes are not on this machine (a source-side gap; cross-machine
+        // snapshot fetch is a later slice). Ship the reference exactly as before
+        // so the receiver's executor waits on `missingSnapshot`, unchanged.
+        wire = yield* buildWire(delegationPayload);
+      }
+    } else {
+      wire = yield* buildWire(input.record.payload);
     }
 
-    const payloadJson = yield* encodeWrapperJson({
-      schemaVersion: 2,
-      senderSigningKey: identity.publicKey,
-      senderEncryptionKey: identity.encryptionPublicKey,
-      body: Option.match(sealedBody, {
-        onSome: (sealed) => ({ sealed }) as const,
-        onNone: () => ({ plain: input.record.payload, reason: "recipient-key-unknown" }) as const,
-      }),
-    }).pipe(Effect.option);
-
-    // An outbox row that cannot be re-encoded is corrupt beyond retrying, but
-    // it still walks the ordinary attempt budget to its dead-letter state
-    // rather than being deleted behind the operator's back.
-    if (Option.isNone(envelopeJson) || Option.isNone(payloadJson)) {
+    // An outbox row that cannot be re-encoded — or a pinned recipient whose
+    // payload will not seal — is a local fault. It still walks the ordinary
+    // attempt budget to its dead-letter state rather than being deleted behind
+    // the operator's back.
+    if (Option.isNone(envelopeJson) || Option.isNone(wire)) {
       yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
       bump("pushFailures");
       return;
@@ -894,9 +987,11 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
 
     // The daemon refuses a `payload_json` over 200 000 bytes, and base64url
     // plus the GCM tag make a sealed wrapper measurably larger than the payload
-    // it wraps. Refusing here is a typed `payload-too-large` decision with the
+    // it wraps. A delegation whose snapshot pushes it over already took the
+    // reference-only path above, so anything still over the ceiling here is a
+    // genuinely oversized payload: a typed `payload-too-large` decision with the
     // real wire bytes in hand, rather than a 400 the loop would keep retrying.
-    const wireBytes = Buffer.byteLength(payloadJson.value, "utf8");
+    const wireBytes = Buffer.byteLength(wire.value.json, "utf8");
     if (wireBytes > WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES) {
       yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
       yield* Effect.logDebug("Workjet mailbox transport refused an oversized payload").pipe(
@@ -919,7 +1014,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
           publishDocument({
             record: input.record,
             envelopeJson: envelopeJson.value,
-            payloadJson: payloadJson.value,
+            payloadJson: wire.value.json,
           }),
         ),
       ),
@@ -938,7 +1033,9 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
 
     yield* store.markDelivered(input.record.envelopeId, input.now).pipe(Effect.ignore);
     bump(duplicate ? "pushDuplicates" : "pushed");
-    bump(Option.isSome(sealedBody) ? "sealed" : "plainFirstContact");
+    bump(wire.value.sealed ? "sealed" : "plainFirstContact");
+    if (attachedSnapshot) bump("snapshotAttached");
+    if (markedOversized) bump("snapshotOversized");
   });
 
   const push = Effect.fn("WorkjetMailboxTransport.push")(function* (input: {
@@ -1057,8 +1154,39 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       // solely for a sender whose key this machine has already accepted.
       const opened = yield* unwrapPayload(wrapper.value, envelope.value.envelopeId);
       if (Option.isNone(opened)) return { _tag: "rejected", kind: "sealing" } as const;
-      const payload = opened.value.payload;
+      const openedPayload = opened.value.payload;
       if (opened.value.sealed) bump("unsealed");
+
+      // A cross-machine delegation may carry its prompt snapshot bytes (or a
+      // marker that they were too large to seal). Handle that BEFORE any durable
+      // write: store the bytes into the LOCAL snapshot store with digest
+      // re-verification, then strip them so the persisted envelope and
+      // delegation row stay reference-only, exactly like the local fast path.
+      let payload = openedPayload;
+      let storedSnapshot = false;
+      let receivedOversized = false;
+      if (openedPayload._tag === "delegation") {
+        if (openedPayload.snapshotBytes !== undefined) {
+          const stored = yield* snapshots.put(openedPayload.snapshotBytes).pipe(Effect.result);
+          if (stored._tag === "Failure") {
+            // A local snapshot-store fault (I/O). Retry rather than consume: the
+            // envelope is still on the daemon and the next cycle re-reads it.
+            return { _tag: "deferred" } as const;
+          }
+          if (stored.success.digest !== openedPayload.delegation.prompt.digest) {
+            // The declared digest and the actual bytes disagree. The bytes are
+            // worthless and a matching snapshot could only arrive under a
+            // different envelope, so this one is consumed, never looped.
+            return { _tag: "rejected", kind: "snapshotDigest" } as const;
+          }
+          storedSnapshot = true;
+        } else if (openedPayload.snapshotOversized === true) {
+          receivedOversized = true;
+        }
+        // Reference-only from here on, whichever branch ran, so the persisted
+        // envelope and delegation row match the local fast path exactly.
+        payload = { _tag: "delegation", delegation: openedPayload.delegation } as const;
+      }
 
       const recorded = yield* store
         .recordInboundEnvelope(envelope.value, payload, input.now)
@@ -1073,7 +1201,19 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
           : ({ _tag: "deferred" } as const);
       }
 
+      // A replay re-`put`s the same content-addressed bytes (an idempotent
+      // no-op) but must not re-count: the counters describe the FIRST acceptance
+      // of each envelope, exactly like `accepted` itself.
       if (recorded.success._tag !== "accepted-new") return { _tag: "duplicate" } as const;
+
+      if (storedSnapshot) bump("snapshotStored");
+      if (receivedOversized) {
+        // The source could not seal the snapshot within the wire ceiling. The
+        // delegation is still valid; it stays `delivered` (the executor waits on
+        // `missingSnapshot`) and this bounded reason is surfaced, never dropped.
+        bump("snapshotOversizedReceived");
+        yield* Effect.logDebug("Workjet delegation arrived reference-only: snapshot oversized");
+      }
 
       if (payload._tag === "delegation") {
         // The SAME store semantics the local fast path applies, through the same

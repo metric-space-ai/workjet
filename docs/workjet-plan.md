@@ -798,6 +798,17 @@ failed | cancelled | expired`. Done in the same commit
       (`WorkjetDelegationState`, terminal set exported).
 - [ ] Persist source outbox, target inbox, delegation state, and thread-visible
       message/delegation events transactionally on their authoritative servers.
+      Progress 2026-08-19 (commits `d7aae00b2`, `3d48fd5f4`): migration 042 and
+      the standalone `WorkjetMailboxStore` are done — transactional outbox
+      (pending|delivered|dead with bounded exponential backoff to a queryable
+      dead-letter state), idempotent inbox insertion mirroring the delivery
+      receipt statuses (accepted-new / duplicate-ignored / expired, expiry
+      checked before dedup), the enforced delegation state machine (single
+      transaction, no TOCTOU; `running → completed` legal for zero-review-round
+      budgets), a one-transaction expiry sweep, and corrupt-row surfacing as
+      typed errors (19 focused tests). Still open before ticking: wiring the
+      store into the server layer graph and emitting the thread-visible
+      message/delegation events through the orchestration event store.
 - [ ] Replicate the per-machine durable mailboxes and the redacted activity
       projection over the CTOX Sync WebRTC data plane between the user's own
       machines (primary transport per the 2026-08-18 owner decision), joined

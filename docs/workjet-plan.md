@@ -922,10 +922,19 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       `workjet_delegate_task`, `workjet_reply`, `workjet_request_review`, and
       `workjet_update_delegation`; all harnesses receive the same schemas and
       authorization boundary from the per-session T3 MCP server.
-- [ ] Deliver accepted tasks through normal T3 `thread.turn.start` semantics
+- [x] Deliver accepted tasks through normal T3 `thread.turn.start` semantics
       and the existing Codex, Claude Code, and Grok session adapters. Do not
       implement direct harness-to-harness sockets or provider-specific remote
-      protocols.
+      protocols. Done 2026-08-19 (commits `f41a08eab`, and its parent):
+      `WorkjetDelegationExecutor` reconciles `delivered`→`accepted`→`running`
+      on a 10 s loop, resolves the prompt snapshot, refuses orchestrator
+      targets (terminal `failed`), holds `delivered` while the target thread
+      has an active turn (backpressure = the scan queue, no second table),
+      dispatches `thread.turn.start` with a derived idempotent commandId
+      (invariant/previously-rejected → terminal fail, transient → retry next
+      cycle), and resumes `delivered`/`accepted` rows after restart. 13
+      focused tests. Same-environment only — cross-machine snapshot transfer
+      and completion/result-return remain open.
 - [ ] Preserve the delegation link when a result returns to the source thread;
       allow the source worker to ask a follow-up, request independent review,
       or send `changes-requested` back to the original worker without creating

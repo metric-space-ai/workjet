@@ -78,9 +78,10 @@ import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
  * that will replace the generated {@link WorkjetMeshWorkspaceId}), this slice
  * uses a documented interim mechanism:
  *
- *   payload_json = { schemaVersion, senderPublicKey, payload }
+ *   payload_json = { schemaVersion: 2, senderSigningKey, senderEncryptionKey,
+ *                    body: { sealed } | { plain, reason } }
  *
- * The sender's public key travels WITH the payload. On its own that proves
+ * The sender's public keys travel WITH the payload. On their own that proves
  * nothing — anyone who can write to the collection could assert any key — so it
  * is paired with two independent constraints:
  *
@@ -97,6 +98,36 @@ import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
  * room-derived binding and is explicitly interim. It does NOT weaken the local
  * fast path, which continues to verify against this environment's own key and
  * never consults a peer key at all.
+ *
+ * ## Payload sealing and the first-contact exception — READ THIS
+ *
+ * A cross-machine payload is ENCRYPTED to the target environment's X25519 key
+ * (docs/workjet-plan.md → Wave 5) with the construction documented at
+ * `WORKJET_SEALED_PAYLOAD_DOMAIN` in WorkjetMeshIdentity: a fresh ephemeral
+ * X25519 key per envelope, HKDF-SHA256 to an AES-256-GCM key, and the envelope
+ * id as AAD so a sealed blob cannot be replayed under a different envelope.
+ * The daemon replicates the blob without being able to read it.
+ *
+ * Sealing needs the recipient's encryption key, and there is still no key
+ * directory. The interim exchange is the SAME trust-on-first-use table the
+ * signing key uses (migration 044): every outbound wrapper advertises this
+ * environment's encryption key, and the receiver pins it beside the signing key
+ * under one continuity rule — first key wins, a later different key from the
+ * same source pair is rejected and consumed.
+ *
+ * Hence one bounded exception, which is deliberate and visible in the status
+ * snapshot as `plainFirstContact`:
+ *
+ *   the FIRST envelope to a peer this machine has never received anything from
+ *   travels as `{plain, reason:"recipient-key-unknown"}`. Its protection is
+ *   exactly what the transport had before this slice — CTOX room membership and
+ *   the signed routing envelope — and nothing weaker. Once that peer has sent
+ *   anything back, its encryption key is pinned and every later envelope in
+ *   this direction is sealed. Two machines that talk to each other therefore
+ *   converge to sealed after one envelope in each direction.
+ *
+ * The LOCAL fast path never crosses a machine and is untouched: it neither
+ * seals nor consults a peer key.
  *
  * ## Idle rather than fail
  *
@@ -180,6 +211,18 @@ export interface WorkjetMailboxTransportCounters {
   readonly rejected: number;
   readonly consumed: number;
   readonly deferred: number;
+  /** Outbound envelopes whose payload was sealed to the target environment. */
+  readonly sealed: number;
+  /**
+   * Outbound envelopes sent in the clear because the target's encryption key
+   * was not yet pinned. One per peer per direction; a rising number means peers
+   * keep appearing, never that sealing regressed.
+   */
+  readonly plainFirstContact: number;
+  /** Outbound envelopes refused before publish for exceeding the wire ceiling. */
+  readonly payloadTooLarge: number;
+  /** Inbound envelopes whose sealed payload this environment opened. */
+  readonly unsealed: number;
 }
 
 /** Why a pulled envelope was refused. Poison envelopes are consumed, not looped. */
@@ -189,6 +232,13 @@ export interface WorkjetMailboxTransportRejections {
   readonly expired: number;
   readonly signature: number;
   readonly keyContinuity: number;
+  /**
+   * A sealed payload that would not open under this envelope id: a blob sealed
+   * to another environment, a tampered ciphertext, or a replay lifted onto a
+   * different envelope. Distinct from `signature`, which is about the routing
+   * envelope, and from `malformed`, which is about structure.
+   */
+  readonly sealing: number;
 }
 
 export interface WorkjetMailboxTransportStatus {
@@ -211,6 +261,10 @@ const EMPTY_COUNTERS: WorkjetMailboxTransportCounters = {
   rejected: 0,
   consumed: 0,
   deferred: 0,
+  sealed: 0,
+  plainFirstContact: 0,
+  payloadTooLarge: 0,
+  unsealed: 0,
 };
 
 const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
@@ -219,6 +273,7 @@ const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
   expired: 0,
   signature: 0,
   keyContinuity: 0,
+  sealing: 0,
 };
 
 export interface WorkjetMailboxTransportShape {
@@ -298,24 +353,87 @@ export const ctoxBaseUrlFromHealthUrl = (healthUrl: string): Option.Option<strin
 // Transport payload wrapper
 // ===============================
 
+/** CTOX caps `payload_json` at 200 000 bytes on the publish route. */
+export const WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES = 200_000;
+
+const MeshPublicKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,512}$/));
+
 /**
- * What travels in `payload_json`. The routing envelope keeps its own contract
- * shape in `envelope_json`; this wrapper exists solely to carry the interim
- * sender key alongside the payload without touching the signed bytes.
+ * A base64url field of a sealed blob. A ciphertext is as long as the payload it
+ * wraps, so this bound is a sanity ceiling rather than the size policy: the
+ * authoritative decision is {@link WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES},
+ * checked against the fully encoded wrapper so an oversized envelope is refused
+ * as a typed `payload-too-large` instead of an opaque encoding failure.
  */
-export const WorkjetTransportPayloadWrapper = Schema.Struct({
+const SealedField = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,1048576}$/));
+
+/**
+ * The v1 wrapper, kept ONLY so a peer that has not yet upgraded stays readable
+ * during the migration window. Nothing produces it any more.
+ */
+export const WorkjetTransportPayloadWrapperV1 = Schema.Struct({
   schemaVersion: Schema.Literal(1),
-  senderPublicKey: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,512}$/)),
+  senderPublicKey: MeshPublicKey,
   payload: WorkjetMailboxPayload,
 });
+
+/** The sealed blob exactly as {@link WORKJET_SEALED_PAYLOAD_DOMAIN} defines it. */
+export const WorkjetTransportSealedBody = Schema.Struct({
+  ephemeralKey: SealedField,
+  nonce: SealedField,
+  ciphertext: SealedField,
+});
+
+/**
+ * What travels in `payload_json` today.
+ *
+ * The routing envelope keeps its own contract shape in `envelope_json`; this
+ * wrapper exists solely to carry the interim sender keys alongside the payload
+ * without touching the signed bytes. It carries BOTH of this environment's
+ * public keys:
+ *
+ * - `senderSigningKey` verifies the routing envelope (the v1 `senderPublicKey`
+ *   under its now-unambiguous name), and
+ * - `senderEncryptionKey` is how the receiver learns where to seal its replies.
+ *
+ * `body` is the payload itself, in one of two forms:
+ *
+ * - `{sealed}` — the normal case. The payload's JSON encoding is sealed to the
+ *   recipient's pinned encryption key and bound to this envelope id.
+ * - `{plain, reason:"recipient-key-unknown"}` — the FIRST envelope to a peer
+ *   whose encryption key this machine has not yet learned. See migration 044
+ *   for why that case exists and why it is bounded to one envelope per peer.
+ */
+export const WorkjetTransportPayloadWrapperV2 = Schema.Struct({
+  schemaVersion: Schema.Literal(2),
+  senderSigningKey: MeshPublicKey,
+  senderEncryptionKey: MeshPublicKey,
+  body: Schema.Union([
+    Schema.Struct({ sealed: WorkjetTransportSealedBody }),
+    Schema.Struct({
+      plain: WorkjetMailboxPayload,
+      reason: Schema.Literal("recipient-key-unknown"),
+    }),
+  ]),
+});
+
+/** What a pull may legitimately find on the wire: v2, or a v1 straggler. */
+export const WorkjetTransportPayloadWrapper = Schema.Union([
+  WorkjetTransportPayloadWrapperV2,
+  WorkjetTransportPayloadWrapperV1,
+]);
 export type WorkjetTransportPayloadWrapper = typeof WorkjetTransportPayloadWrapper.Type;
 
 const encodeWrapperJson = Schema.encodeEffect(
-  Schema.fromJsonString(WorkjetTransportPayloadWrapper),
+  Schema.fromJsonString(WorkjetTransportPayloadWrapperV2),
 );
 const decodeWrapperJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(WorkjetTransportPayloadWrapper),
 );
+
+/** The sealed plaintext IS the payload's canonical JSON encoding. */
+const encodePayloadJson = Schema.encodeEffect(Schema.fromJsonString(WorkjetMailboxPayload));
+const decodePayloadJson = Schema.decodeUnknownEffect(Schema.fromJsonString(WorkjetMailboxPayload));
 const encodeEnvelopeJson = Schema.encodeEffect(Schema.fromJsonString(WorkjetRoutingEnvelope));
 const decodeEnvelopeJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(WorkjetRoutingEnvelope),
@@ -545,37 +663,96 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
    * primary key is the real arbiter, so a concurrent second pull that inserted
    * first simply loses the insert and is then re-checked against the winner.
    */
+  const readPeerKeys = (input: { readonly workspaceId: string; readonly environmentId: string }) =>
+    sql<{
+      readonly publicKey: string;
+      readonly encryptionPublicKey: string | null;
+    }>`
+      SELECT public_key AS "publicKey", encryption_public_key AS "encryptionPublicKey"
+      FROM workjet_mailbox_peer_keys
+      WHERE source_workspace_id = ${input.workspaceId}
+        AND source_environment_id = ${input.environmentId}
+      LIMIT 1
+    `.pipe(Effect.map((rows) => rows[0]));
+
   const acceptPeerKey = Effect.fn("WorkjetMailboxTransport.acceptPeerKey")(function* (input: {
     readonly workspaceId: WorkjetMeshWorkspaceId;
     readonly environmentId: EnvironmentId;
     readonly publicKey: string;
+    /** Absent for a v1 wrapper, which predates the encryption key entirely. */
+    readonly encryptionPublicKey: string | undefined;
     readonly nowMillis: number;
   }) {
-    const existing = yield* sql<{ readonly publicKey: string }>`
-      SELECT public_key AS "publicKey"
-      FROM workjet_mailbox_peer_keys
-      WHERE source_workspace_id = ${input.workspaceId}
-        AND source_environment_id = ${input.environmentId}
-      LIMIT 1
-    `;
-    const pinned = existing[0];
-    if (pinned !== undefined) return pinned.publicKey === input.publicKey;
+    const pinned = yield* readPeerKeys(input);
+    if (pinned !== undefined) {
+      if (pinned.publicKey !== input.publicKey) return false;
+      if (input.encryptionPublicKey === undefined) {
+        // A v1 straggler. Its silence about the encryption key is not evidence
+        // of a rotation, so an already-learned key must survive it untouched.
+        return true;
+      }
+      if (pinned.encryptionPublicKey === null) {
+        // The signing key was pinned before this peer ever advertised an
+        // encryption key (a pre-044 row, or a v1 first contact). Learning it now
+        // is the SAME first-use event, one field later.
+        yield* sql`
+          UPDATE workjet_mailbox_peer_keys
+          SET encryption_public_key = ${input.encryptionPublicKey}
+          WHERE source_workspace_id = ${input.workspaceId}
+            AND source_environment_id = ${input.environmentId}
+            AND encryption_public_key IS NULL
+        `;
+        const winner = yield* readPeerKeys(input);
+        // A concurrent pull may have filled the column first; whichever key won
+        // is now THE pinned key, and this envelope is judged against it.
+        return winner?.encryptionPublicKey === input.encryptionPublicKey;
+      }
+      // Continuity applies to both keys with the same severity: silently
+      // adopting a rotated encryption key would let a room member redirect a
+      // peer's future replies to itself.
+      return pinned.encryptionPublicKey === input.encryptionPublicKey;
+    }
 
     yield* sql`
       INSERT OR IGNORE INTO workjet_mailbox_peer_keys
-        (source_workspace_id, source_environment_id, public_key, first_seen_at_ms)
-      VALUES (${input.workspaceId}, ${input.environmentId}, ${input.publicKey}, ${input.nowMillis})
+        (source_workspace_id, source_environment_id, public_key, encryption_public_key,
+         first_seen_at_ms)
+      VALUES (${input.workspaceId}, ${input.environmentId}, ${input.publicKey},
+              ${input.encryptionPublicKey ?? null}, ${input.nowMillis})
     `;
 
-    const winner = yield* sql<{ readonly publicKey: string }>`
-      SELECT public_key AS "publicKey"
-      FROM workjet_mailbox_peer_keys
-      WHERE source_workspace_id = ${input.workspaceId}
-        AND source_environment_id = ${input.environmentId}
-      LIMIT 1
-    `;
-    return winner[0]?.publicKey === input.publicKey;
+    const winner = yield* readPeerKeys(input);
+    if (winner?.publicKey !== input.publicKey) return false;
+    return (
+      input.encryptionPublicKey === undefined ||
+      winner.encryptionPublicKey === null ||
+      winner.encryptionPublicKey === input.encryptionPublicKey
+    );
   });
+
+  /**
+   * The recipient's pinned encryption key. The three outcomes are kept distinct
+   * on purpose: `first-contact` is the documented, bounded plaintext case,
+   * while `unreadable` is a LOCAL fault that must not be mistaken for it — a
+   * broken table read may never silently downgrade an established peer back to
+   * plaintext, so that push is deferred to the next cycle instead.
+   */
+  const recipientEncryptionKey = (input: {
+    readonly workspaceId: string;
+    readonly environmentId: string;
+  }): Effect.Effect<
+    | { readonly _tag: "pinned"; readonly key: string }
+    | { readonly _tag: "first-contact" }
+    | { readonly _tag: "unreadable" }
+  > =>
+    readPeerKeys(input).pipe(
+      Effect.map((row) =>
+        row?.encryptionPublicKey == null
+          ? ({ _tag: "first-contact" } as const)
+          : ({ _tag: "pinned", key: row.encryptionPublicKey } as const),
+      ),
+      Effect.orElseSucceed(() => ({ _tag: "unreadable" }) as const),
+    );
 
   // -----------------------------
   // Loopback calls
@@ -658,11 +835,52 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     readonly record: WorkjetOutboxRecord;
     readonly now: WorkjetMailboxTimestamp;
   }) {
-    const envelopeJson = yield* encodeEnvelopeJson(input.record.envelope).pipe(Effect.option);
+    const envelope = input.record.envelope;
+    const envelopeJson = yield* encodeEnvelopeJson(envelope).pipe(Effect.option);
+
+    // A local fault reading the pin is NOT first contact: defer rather than
+    // downgrade a peer that may well have a pinned key.
+    const recipient = yield* recipientEncryptionKey({
+      workspaceId: envelope.targetWorkspaceId,
+      environmentId: envelope.targetEnvironmentId,
+    });
+    if (recipient._tag === "unreadable") {
+      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      bump("pushFailures");
+      return;
+    }
+
+    const sealedBody =
+      recipient._tag === "pinned"
+        ? yield* encodePayloadJson(input.record.payload).pipe(
+            Effect.flatMap((plaintext) =>
+              identity.sealTo(
+                recipient.key,
+                new TextEncoder().encode(plaintext),
+                envelope.envelopeId,
+              ),
+            ),
+            Effect.option,
+          )
+        : Option.none();
+
+    // A pinned recipient whose payload will not seal is a local crypto or
+    // encoding fault, never a reason to fall back to plaintext: the whole point
+    // of the pin is that this peer's payloads are sealed from now on.
+    if (recipient._tag === "pinned" && Option.isNone(sealedBody)) {
+      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      bump("pushFailures");
+      return;
+    }
+
     const payloadJson = yield* encodeWrapperJson({
-      schemaVersion: 1,
-      senderPublicKey: identity.publicKey,
-      payload: input.record.payload,
+      schemaVersion: 2,
+      senderSigningKey: identity.publicKey,
+      senderEncryptionKey: identity.encryptionPublicKey,
+      body: Option.match(sealedBody, {
+        onSome: (sealed) => ({ sealed }) as const,
+        onNone: () => ({ plain: input.record.payload, reason: "recipient-key-unknown" }) as const,
+      }),
     }).pipe(Effect.option);
 
     // An outbox row that cannot be re-encoded is corrupt beyond retrying, but
@@ -670,6 +888,25 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     // rather than being deleted behind the operator's back.
     if (Option.isNone(envelopeJson) || Option.isNone(payloadJson)) {
       yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      bump("pushFailures");
+      return;
+    }
+
+    // The daemon refuses a `payload_json` over 200 000 bytes, and base64url
+    // plus the GCM tag make a sealed wrapper measurably larger than the payload
+    // it wraps. Refusing here is a typed `payload-too-large` decision with the
+    // real wire bytes in hand, rather than a 400 the loop would keep retrying.
+    const wireBytes = Buffer.byteLength(payloadJson.value, "utf8");
+    if (wireBytes > WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES) {
+      yield* store.recordAttempt(input.record.envelopeId, input.now).pipe(Effect.ignore);
+      yield* Effect.logDebug("Workjet mailbox transport refused an oversized payload").pipe(
+        Effect.annotateLogs({
+          reason: new WorkjetMailboxError({ reason: "payload-too-large" }).reason,
+          wireBytes,
+          ceiling: WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES,
+        }),
+      );
+      bump("payloadTooLarge");
       bump("pushFailures");
       return;
     }
@@ -701,6 +938,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
 
     yield* store.markDelivered(input.record.envelopeId, input.now).pipe(Effect.ignore);
     bump(duplicate ? "pushDuplicates" : "pushed");
+    bump(Option.isSome(sealedBody) ? "sealed" : "plainFirstContact");
   });
 
   const push = Effect.fn("WorkjetMailboxTransport.push")(function* (input: {
@@ -726,6 +964,41 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
   // -----------------------------
   // PULL
   // -----------------------------
+
+  /**
+   * The payload a wrapper carries, whichever wire form it arrived in:
+   *
+   * - a v1 wrapper (migration window) carries it directly,
+   * - a v2 `{plain}` body carries it directly and says why it is not sealed,
+   * - a v2 `{sealed}` body is opened with this environment's encryption key and
+   *   the envelope id as AAD, then decoded from its canonical JSON encoding.
+   *
+   * `None` means the payload could not be recovered — a blob sealed to another
+   * environment, a tampered ciphertext, a replay lifted onto a different
+   * envelope id, or a plaintext that no longer decodes. All of them are one
+   * bounded rejection so a peer cannot probe which check it tripped.
+   */
+  const unwrapPayload = (
+    wrapper: WorkjetTransportPayloadWrapper,
+    envelopeId: string,
+  ): Effect.Effect<
+    Option.Option<{
+      readonly payload: WorkjetMailboxPayload;
+      readonly sealed: boolean;
+    }>
+  > => {
+    if (wrapper.schemaVersion === 1) {
+      return Effect.succeed(Option.some({ payload: wrapper.payload, sealed: false }));
+    }
+    if ("plain" in wrapper.body) {
+      return Effect.succeed(Option.some({ payload: wrapper.body.plain, sealed: false }));
+    }
+    return identity.openSealed(wrapper.body.sealed, envelopeId).pipe(
+      Effect.flatMap((plaintext) => decodePayloadJson(new TextDecoder().decode(plaintext))),
+      Effect.map((payload) => ({ payload, sealed: true })),
+      Effect.option,
+    );
+  };
 
   const ingest = (input: {
     readonly document: typeof CtoxEnvelopeDocument.Type;
@@ -755,10 +1028,17 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
         return { _tag: "rejected", kind: "expired" } as const;
       }
 
-      const verified = yield* identity.verifyRoutingEnvelope(
-        envelope.value,
-        wrapper.value.senderPublicKey,
-      );
+      // v1 and v2 wrappers are normalized to one shape here, so nothing below
+      // has to know which migration-window form arrived.
+      const keys =
+        wrapper.value.schemaVersion === 1
+          ? { signing: wrapper.value.senderPublicKey, encryption: undefined }
+          : {
+              signing: wrapper.value.senderSigningKey,
+              encryption: wrapper.value.senderEncryptionKey,
+            };
+
+      const verified = yield* identity.verifyRoutingEnvelope(envelope.value, keys.signing);
       if (!verified) return { _tag: "rejected", kind: "signature" } as const;
 
       // Continuity is checked only AFTER the signature verifies, so a forged
@@ -766,14 +1046,22 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       const continuous = yield* acceptPeerKey({
         workspaceId: envelope.value.sourceWorkspaceId,
         environmentId: envelope.value.sourceEnvironmentId,
-        publicKey: wrapper.value.senderPublicKey,
+        publicKey: keys.signing,
+        encryptionPublicKey: keys.encryption,
         nowMillis: input.nowMillis,
       }).pipe(Effect.orElseSucceed(() => null));
       if (continuous === null) return { _tag: "deferred" } as const;
       if (!continuous) return { _tag: "rejected", kind: "keyContinuity" } as const;
 
+      // Unsealing happens only after signature AND continuity: a blob is opened
+      // solely for a sender whose key this machine has already accepted.
+      const opened = yield* unwrapPayload(wrapper.value, envelope.value.envelopeId);
+      if (Option.isNone(opened)) return { _tag: "rejected", kind: "sealing" } as const;
+      const payload = opened.value.payload;
+      if (opened.value.sealed) bump("unsealed");
+
       const recorded = yield* store
-        .recordInboundEnvelope(envelope.value, wrapper.value.payload, input.now)
+        .recordInboundEnvelope(envelope.value, payload, input.now)
         .pipe(Effect.result);
 
       if (recorded._tag === "Failure") {
@@ -787,7 +1075,6 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
 
       if (recorded.success._tag !== "accepted-new") return { _tag: "duplicate" } as const;
 
-      const payload = wrapper.value.payload;
       if (payload._tag === "delegation") {
         // The SAME store semantics the local fast path applies, through the same
         // shared helper — `upsert: true` because this machine has never seen the

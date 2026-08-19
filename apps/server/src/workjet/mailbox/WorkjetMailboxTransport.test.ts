@@ -72,6 +72,8 @@ const delegationPayload = (input: {
   readonly delegationId: WorkjetDelegationId;
   readonly source: WorkjetWorkerAddress;
   readonly target: WorkjetWorkerAddress;
+  /** Overrides the scope whitelist, to build a deliberately huge payload. */
+  readonly files?: ReadonlyArray<WorkjetRepositoryPath>;
 }): WorkjetMailboxPayload => {
   const delegation: WorkjetDelegation = {
     schemaVersion: 1,
@@ -89,7 +91,7 @@ const delegationPayload = (input: {
     },
     scope: {
       schemaVersion: 1,
-      files: [WorkjetRepositoryPath.make("apps/server/src/workjet/mailbox/x.ts")],
+      files: input.files ?? [WorkjetRepositoryPath.make("apps/server/src/workjet/mailbox/x.ts")],
       nonGoals: "No relay, no UI.",
     },
     completion: { schemaVersion: 1, acceptance: "Focused transport tests pass." },
@@ -343,6 +345,13 @@ const remoteDocument = (input: {
   readonly expiresAt?: string;
   readonly tamperSignature?: boolean;
   readonly publicKeyOverride?: string;
+  /** Emit the pre-sealing v1 wrapper, as an un-upgraded peer still would. */
+  readonly legacyV1?: boolean;
+  /** Seal the payload to this X25519 key instead of sending it in the clear. */
+  readonly sealToKey?: string;
+  /** Seal under a DIFFERENT envelope id, to exercise the AAD binding. */
+  readonly sealEnvelopeId?: string;
+  readonly encryptionKeyOverride?: string;
 }) =>
   Effect.gen(function* () {
     const signed = yield* input.identity.signRoutingEnvelope({
@@ -360,15 +369,34 @@ const remoteDocument = (input: {
       ? `${signed.signature.startsWith("A") ? "B" : "A"}${signed.signature.slice(1)}`
       : signed.signature;
     const envelope = { ...signed, signature };
+
+    const wrapper = input.legacyV1
+      ? {
+          schemaVersion: 1,
+          senderPublicKey: input.publicKeyOverride ?? input.identity.publicKey,
+          payload: input.payload,
+        }
+      : {
+          schemaVersion: 2,
+          senderSigningKey: input.publicKeyOverride ?? input.identity.publicKey,
+          senderEncryptionKey: input.encryptionKeyOverride ?? input.identity.encryptionPublicKey,
+          body:
+            input.sealToKey === undefined
+              ? { plain: input.payload, reason: "recipient-key-unknown" }
+              : {
+                  sealed: yield* input.identity.sealTo(
+                    input.sealToKey,
+                    new TextEncoder().encode(JSON.stringify(input.payload)),
+                    input.sealEnvelopeId ?? input.envelopeId,
+                  ),
+                },
+        };
+
     return {
       id: input.envelopeId as string,
       target_environment_id: LOCAL_ENVIRONMENT as string,
       envelope_json: JSON.stringify(envelope),
-      payload_json: JSON.stringify({
-        schemaVersion: 1,
-        senderPublicKey: input.publicKeyOverride ?? input.identity.publicKey,
-        payload: input.payload,
-      }),
+      payload_json: JSON.stringify(wrapper),
     } satisfies DaemonDocument;
   });
 
@@ -534,8 +562,20 @@ group("WorkjetMailboxTransport push", (it) => {
       assert.strictEqual(document.target_environment_id, REMOTE_ENVIRONMENT);
       const wire = JSON.parse(document.envelope_json) as WorkjetRoutingEnvelope;
       assert.strictEqual(wire.signature, envelope.signature);
-      const wrapper = JSON.parse(document.payload_json) as { senderPublicKey: string };
-      assert.strictEqual(wrapper.senderPublicKey, identity.publicKey);
+      // A v2 wrapper carrying BOTH public keys. This peer is unknown, so the
+      // payload travels in the clear exactly once, with the reason on the wire.
+      const wrapper = JSON.parse(document.payload_json) as {
+        schemaVersion: number;
+        senderSigningKey: string;
+        senderEncryptionKey: string;
+        body: { plain?: unknown; reason?: string };
+      };
+      assert.strictEqual(wrapper.schemaVersion, 2);
+      assert.strictEqual(wrapper.senderSigningKey, identity.publicKey);
+      assert.strictEqual(wrapper.senderEncryptionKey, identity.encryptionPublicKey);
+      assert.strictEqual(wrapper.body.reason, "recipient-key-unknown");
+      assert.strictEqual(status.counters.plainFirstContact, 1);
+      assert.strictEqual(status.counters.sealed, 0);
     }),
   );
 
@@ -878,6 +918,403 @@ group("WorkjetMailboxTransport pull", (it) => {
       assert.strictEqual(status.rejections.misaddressed, 1);
       assert.strictEqual(status.rejections.malformed, 1);
       assert.strictEqual(status.counters.consumed, 3, "no poison envelope loops");
+    }),
+  );
+});
+
+// ===============================
+// SEALING
+// ===============================
+
+/** The wrapper a push actually put on the wire, as the daemon received it. */
+const publishedWrapper = (
+  calls: ReadonlyArray<DaemonCall>,
+  index = 0,
+): {
+  readonly schemaVersion: number;
+  readonly senderSigningKey: string;
+  readonly senderEncryptionKey: string;
+  readonly body: {
+    readonly sealed?: { ephemeralKey: string; nonce: string; ciphertext: string };
+    readonly plain?: WorkjetMailboxPayload;
+    readonly reason?: string;
+  };
+} =>
+  JSON.parse(
+    (callAt(calls, "/workjet/mailbox/publish", index).body as DaemonDocument).payload_json,
+  );
+
+const outboundTo = (input: {
+  readonly identity: WorkjetMeshIdentity["Service"];
+  readonly store: WorkjetMailboxStore["Service"];
+  readonly envelopeId: WorkjetEnvelopeId;
+  readonly payload: WorkjetMailboxPayload;
+}) =>
+  Effect.gen(function* () {
+    const envelope = yield* input.identity.signRoutingEnvelope({
+      schemaVersion: 1,
+      envelopeId: input.envelopeId,
+      kind: "message",
+      sourceWorkspaceId: WORKSPACE,
+      sourceEnvironmentId: LOCAL_ENVIRONMENT,
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      createdAt: NOW,
+      expiresAt: EXPIRES,
+    });
+    yield* input.store.enqueueOutbound(envelope, input.payload);
+  });
+
+group("WorkjetMailboxTransport sealing", (it) => {
+  it.effect("sends the first envelope to a peer plain, then seals every later one", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+      const daemon = makeFakeDaemon();
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      // FIRST CONTACT. This machine has never heard from the peer, so its
+      // encryption key is unknown and the payload cannot be sealed.
+      const firstId = envelopeId("seal-out-0001");
+      const firstPayload = messagePayload({
+        envelopeId: firstId,
+        source: localAddress,
+        target: remoteAddress,
+      });
+      yield* outboundTo({ identity: local, store, envelopeId: firstId, payload: firstPayload });
+
+      const first = yield* transport.runCycle;
+      assert.strictEqual(first.counters.plainFirstContact, 1);
+      assert.strictEqual(first.counters.sealed, 0);
+      assert.deepEqual(publishedWrapper(daemon.calls).body.plain, firstPayload);
+
+      // The peer answers. Its envelope pins BOTH of its keys, which is exactly
+      // the interim key exchange: the reply is what teaches us where to seal.
+      const inboundId = envelopeId("seal-in-00001");
+      daemon.documents.set(
+        inboundId,
+        yield* remoteDocument({
+          identity: peer,
+          envelopeId: inboundId,
+          kind: "message",
+          payload: messagePayload({
+            envelopeId: inboundId,
+            source: remoteAddress,
+            target: localAddress,
+          }),
+        }),
+      );
+      const second = yield* transport.runCycle;
+      assert.strictEqual(second.counters.accepted, 1);
+
+      // EVERY later envelope in this direction is sealed.
+      const thirdId = envelopeId("seal-out-0002");
+      const thirdPayload = messagePayload({
+        envelopeId: thirdId,
+        source: localAddress,
+        target: remoteAddress,
+      });
+      yield* outboundTo({ identity: local, store, envelopeId: thirdId, payload: thirdPayload });
+
+      const third = yield* transport.runCycle;
+      assert.strictEqual(third.counters.sealed, 1);
+      assert.strictEqual(third.counters.plainFirstContact, 1, "no second plaintext envelope");
+
+      const sealedWrapper = publishedWrapper(daemon.calls, 1);
+      assert.isUndefined(sealedWrapper.body.plain);
+      const sealed = sealedWrapper.body.sealed;
+      assert.isDefined(sealed);
+      // The daemon holds bytes it cannot read; only the recipient can.
+      assert.notInclude(JSON.stringify(sealed), thirdId);
+      const opened = yield* peer.openSealed(sealed!, thirdId);
+      assert.deepEqual(JSON.parse(new TextDecoder().decode(opened)), thirdPayload);
+    }),
+  );
+
+  it.effect("opens a sealed inbound payload and applies its delegation", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("seal-deleg-01");
+      const delegation = delegationId("seal-deleg-01");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        sealToKey: local.encryptionPublicKey,
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegation,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      // Nothing readable travels: the delegation id itself is inside the blob.
+      assert.notInclude(document.payload_json, delegation);
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.unsealed, 1);
+      assert.strictEqual(status.counters.rejected, 0);
+      // The SAME lifecycle a plaintext delegation produces.
+      assert.strictEqual(
+        Option.getOrThrow(yield* store.getDelegation(delegation)).state,
+        "delivered",
+      );
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("rejects and consumes a sealed payload it cannot open", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+      const stranger = yield* makeIdentity(WORKSPACE);
+
+      // Sealed to a THIRD environment: correctly signed, correctly addressed,
+      // and still unreadable here.
+      const wrongKeyId = envelopeId("seal-wrongkey");
+      const wrongKey = yield* remoteDocument({
+        identity: peer,
+        envelopeId: wrongKeyId,
+        kind: "message",
+        sealToKey: stranger.encryptionPublicKey,
+        payload: messagePayload({
+          envelopeId: wrongKeyId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      // Sealed to the right key but bound by AAD to ANOTHER envelope id: a
+      // blob lifted off a different envelope must not open under this one.
+      const replayId = envelopeId("seal-replay-1");
+      const replay = yield* remoteDocument({
+        identity: peer,
+        envelopeId: replayId,
+        kind: "message",
+        sealToKey: local.encryptionPublicKey,
+        sealEnvelopeId: envelopeId("seal-replay-9"),
+        payload: messagePayload({
+          envelopeId: replayId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [wrongKey, replay] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.sealing, 2);
+      assert.strictEqual(status.rejections.signature, 0, "the envelopes themselves were valid");
+      assert.isTrue(Option.isNone(yield* store.getInbound(wrongKeyId)));
+      assert.isTrue(Option.isNone(yield* store.getInbound(replayId)));
+      // Poison envelopes are consumed, exactly like every other rejection.
+      assert.deepEqual([...consumedIds(daemon.calls)].sort(), [wrongKeyId, replayId].sort());
+    }),
+  );
+
+  it.effect("accepts a v1 wrapper from a peer that has not upgraded yet", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("seal-v1-00001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        legacyV1: true,
+        payload: messagePayload({
+          envelopeId: id,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.unsealed, 0, "a v1 wrapper carries no sealed blob");
+      assert.strictEqual(status.counters.rejected, 0);
+      assert.isTrue(Option.isSome(yield* store.getInbound(id)));
+    }),
+  );
+
+  it.effect("pins the encryption key a v1 peer advertises only after it upgrades", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // A v1 envelope pins the signing key and says nothing about encryption.
+      const legacyId = envelopeId("seal-mix-00001");
+      const legacy = yield* remoteDocument({
+        identity: peer,
+        envelopeId: legacyId,
+        kind: "message",
+        legacyV1: true,
+        payload: messagePayload({
+          envelopeId: legacyId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      // The SAME peer, now upgraded. Learning its encryption key one field
+      // later is still first use, not a rotation.
+      const upgradedId = envelopeId("seal-mix-00002");
+      const upgraded = yield* remoteDocument({
+        identity: peer,
+        envelopeId: upgradedId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: upgradedId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [legacy, upgraded] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 2);
+      assert.strictEqual(status.rejections.keyContinuity, 0);
+      assert.isTrue(Option.isSome(yield* store.getInbound(legacyId)));
+      assert.isTrue(Option.isSome(yield* store.getInbound(upgradedId)));
+    }),
+  );
+
+  it.effect("rejects and consumes an envelope whose ENCRYPTION key rotated", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const impostor = yield* makeIdentity(WORKSPACE);
+
+      const firstId = envelopeId("seal-rot-00001");
+      const first = yield* remoteDocument({
+        identity: peer,
+        envelopeId: firstId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      // The signing key is unchanged and the signature verifies; only the
+      // advertised ENCRYPTION key differs. Adopting it would let a room member
+      // redirect this peer's future sealed replies to itself, so continuity
+      // must refuse it exactly as it refuses a rotated signing key.
+      const secondId = envelopeId("seal-rot-00002");
+      const second = yield* remoteDocument({
+        identity: peer,
+        envelopeId: secondId,
+        kind: "message",
+        encryptionKeyOverride: impostor.encryptionPublicKey,
+        payload: messagePayload({
+          envelopeId: secondId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [first, second] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1, "the first key pair is pinned");
+      assert.strictEqual(status.rejections.keyContinuity, 1);
+      assert.isTrue(Option.isSome(yield* store.getInbound(firstId)));
+      assert.isTrue(
+        Option.isNone(yield* store.getInbound(secondId)),
+        "a rotated encryption key must not reach the inbox",
+      );
+      assert.deepEqual([...consumedIds(daemon.calls)].sort(), [firstId, secondId].sort());
+    }),
+  );
+
+  it.effect("refuses to publish a sealed wrapper over the 200 000 byte wire ceiling", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // Pin the peer first, so the oversized envelope takes the SEALED path.
+      const inboundId = envelopeId("seal-big-in-01");
+      const daemon = makeFakeDaemon({
+        seed: [
+          yield* remoteDocument({
+            identity: peer,
+            envelopeId: inboundId,
+            kind: "message",
+            payload: messagePayload({
+              envelopeId: inboundId,
+              source: remoteAddress,
+              target: localAddress,
+            }),
+          }),
+        ],
+      });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+      yield* transport.runCycle;
+
+      const id = envelopeId("seal-big-out-1");
+      // 256 near-maximal scope paths: a delegation the contracts accept in full
+      // whose payload alone is larger than CTOX will take in `payload_json`.
+      const oversized = delegationPayload({
+        envelopeId: id,
+        delegationId: delegationId("seal-big-out-1"),
+        source: localAddress,
+        target: remoteAddress,
+        files: Array.from({ length: 256 }, (_, index) =>
+          WorkjetRepositoryPath.make(
+            `apps/server/${String(index).padStart(4, "0")}/${"f".repeat(900)}.ts`,
+          ),
+        ),
+      });
+      yield* outboundTo({ identity: local, store, envelopeId: id, payload: oversized });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.payloadTooLarge, 1);
+      assert.strictEqual(status.counters.pushFailures, 1);
+      assert.strictEqual(status.counters.pushed, 0);
+      assert.strictEqual(status.counters.sealed, 0, "nothing oversized reaches the wire");
+      assert.deepEqual(callsTo(daemon.calls, "/workjet/mailbox/publish"), []);
+
+      // It stays retryable and walks the ordinary attempt budget rather than
+      // vanishing behind the operator's back.
+      const outbound = Option.getOrThrow(yield* store.getOutbound(id));
+      assert.strictEqual(outbound.state, "pending");
+      assert.strictEqual(outbound.attemptCount, 1);
     }),
   );
 });

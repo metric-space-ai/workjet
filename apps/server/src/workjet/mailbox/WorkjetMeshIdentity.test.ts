@@ -7,10 +7,12 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import {
   canonicalRoutingEnvelopeBytes,
   makeWorkjetMeshIdentity,
+  WORKJET_MESH_ENCRYPTION_KEY_SECRET,
   WORKJET_MESH_PRIVATE_KEY_SECRET,
   WORKJET_MESH_WORKSPACE_ID_PREFIX,
   WORKJET_MESH_WORKSPACE_ID_SECRET,
   WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN,
+  type WorkjetSealedPayloadBlob,
   type WorkjetUnsignedRoutingEnvelope,
 } from "./WorkjetMeshIdentity.ts";
 
@@ -104,11 +106,19 @@ it.effect("creates the keypair and workspace id once and reuses both afterwards"
 
     assert.equal(second.publicKey, first.publicKey);
     assert.equal(second.workspaceId, first.workspaceId);
+    assert.equal(second.encryptionPublicKey, first.encryptionPublicKey);
     assert.isTrue(first.workspaceId.startsWith(WORKJET_MESH_WORKSPACE_ID_PREFIX));
     assert.match(first.publicKey, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(first.encryptionPublicKey, /^[A-Za-z0-9_-]{43}$/);
 
-    // Both durable entries exist, and the private key never left the service.
+    // Signing and agreement are two DIFFERENT keys under two different entries;
+    // one key doing both jobs is exactly what the split exists to prevent.
+    assert.notEqual(first.encryptionPublicKey, first.publicKey);
+
+    // Every durable entry exists, and no private key left the service.
     assert.isTrue(store.entries.has(WORKJET_MESH_PRIVATE_KEY_SECRET));
+    assert.isTrue(store.entries.has(WORKJET_MESH_ENCRYPTION_KEY_SECRET));
+    assert.notInclude(Object.keys(first), "encryptionPrivateKey");
     assert.equal(
       new TextDecoder().decode(store.entries.get(WORKJET_MESH_WORKSPACE_ID_SECRET)),
       first.workspaceId,
@@ -129,6 +139,7 @@ it.effect("gives two independent environments two distinct identities", () =>
     const right = yield* identityFrom(makeMemorySecretStore().service);
 
     assert.notEqual(left.publicKey, right.publicKey);
+    assert.notEqual(left.encryptionPublicKey, right.encryptionPublicKey);
     assert.notEqual(left.workspaceId, right.workspaceId);
   }),
 );
@@ -202,5 +213,156 @@ it.effect("returns false for malformed verify inputs instead of throwing", () =>
     assert.isFalse(
       yield* identity.verify(new TextEncoder().encode("other"), signature, identity.publicKey),
     );
+  }),
+);
+
+// ===============================
+// Seal / open
+// ===============================
+
+const ENVELOPE_ID = "wjm-seal-0000-0000-0000-000000000001";
+const OTHER_ENVELOPE_ID = "wjm-seal-0000-0000-0000-000000000002";
+const plaintext = (text: string) => new TextEncoder().encode(text);
+const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+it.effect("round-trips a payload sealed to the recipient's encryption key", () =>
+  Effect.gen(function* () {
+    const sender = yield* identityFrom(makeMemorySecretStore().service);
+    const recipient = yield* identityFrom(makeMemorySecretStore().service);
+
+    const secret = "delegation payload the daemon must never read";
+    const sealed = yield* sender.sealTo(
+      recipient.encryptionPublicKey,
+      plaintext(secret),
+      ENVELOPE_ID,
+    );
+
+    // Every transported field is bounded base64url, and the blob carries no
+    // plaintext of any kind.
+    assert.match(sealed.ephemeralKey, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(sealed.nonce, /^[A-Za-z0-9_-]{16}$/);
+    assert.match(sealed.ciphertext, /^[A-Za-z0-9_-]+$/);
+    assert.notInclude(sealed.ciphertext, "delegation");
+
+    assert.equal(text(yield* recipient.openSealed(sealed, ENVELOPE_ID)), secret);
+
+    // The sender cannot read back what it sealed to somebody else, and neither
+    // can a third environment in the same room.
+    const bystander = yield* identityFrom(makeMemorySecretStore().service);
+    for (const stranger of [sender, bystander]) {
+      const error = yield* stranger.openSealed(sealed, ENVELOPE_ID).pipe(Effect.flip);
+      assert.equal(error.reason, "invalid-signature");
+    }
+
+    // An empty payload is still a payload; it must not collapse into a
+    // special case that skips authentication.
+    const empty = yield* sender.sealTo(recipient.encryptionPublicKey, plaintext(""), ENVELOPE_ID);
+    assert.equal(text(yield* recipient.openSealed(empty, ENVELOPE_ID)), "");
+  }),
+);
+
+it.effect("binds a sealed blob to one envelope id through the AAD", () =>
+  Effect.gen(function* () {
+    const sender = yield* identityFrom(makeMemorySecretStore().service);
+    const recipient = yield* identityFrom(makeMemorySecretStore().service);
+
+    const sealed = yield* sender.sealTo(
+      recipient.encryptionPublicKey,
+      plaintext("bound to exactly one envelope"),
+      ENVELOPE_ID,
+    );
+
+    // Lifting the blob onto ANY other envelope fails: this is what stops a
+    // sealed payload from being replayed under a different target, expiry, or
+    // kind while its own routing envelope stays validly signed.
+    for (const wrongId of [OTHER_ENVELOPE_ID, "", `${ENVELOPE_ID} `, ENVELOPE_ID.toUpperCase()]) {
+      const error = yield* recipient.openSealed(sealed, wrongId).pipe(Effect.flip);
+      assert.equal(error.reason, "invalid-signature");
+    }
+    assert.isTrue(
+      Option.isSome(yield* recipient.openSealed(sealed, ENVELOPE_ID).pipe(Effect.option)),
+    );
+  }),
+);
+
+it.effect("gives every seal a fresh ephemeral key, nonce, and ciphertext", () =>
+  Effect.gen(function* () {
+    const sender = yield* identityFrom(makeMemorySecretStore().service);
+    const recipient = yield* identityFrom(makeMemorySecretStore().service);
+
+    const same = "the identical plaintext, sealed twice";
+    const first = yield* sender.sealTo(recipient.encryptionPublicKey, plaintext(same), ENVELOPE_ID);
+    const second = yield* sender.sealTo(
+      recipient.encryptionPublicKey,
+      plaintext(same),
+      ENVELOPE_ID,
+    );
+
+    // Equal plaintext to the same recipient under the same envelope id must
+    // still produce nothing in common: no ciphertext equality oracle.
+    assert.notEqual(first.ephemeralKey, second.ephemeralKey);
+    assert.notEqual(first.nonce, second.nonce);
+    assert.notEqual(first.ciphertext, second.ciphertext);
+
+    assert.equal(text(yield* recipient.openSealed(first, ENVELOPE_ID)), same);
+    assert.equal(text(yield* recipient.openSealed(second, ENVELOPE_ID)), same);
+  }),
+);
+
+it.effect("refuses a tampered or malformed sealed blob with one bounded reason", () =>
+  Effect.gen(function* () {
+    const sender = yield* identityFrom(makeMemorySecretStore().service);
+    const recipient = yield* identityFrom(makeMemorySecretStore().service);
+    const sealed = yield* sender.sealTo(
+      recipient.encryptionPublicKey,
+      plaintext("authenticated encryption, not just encryption"),
+      ENVELOPE_ID,
+    );
+
+    const flip = (value: string) => `${value.startsWith("A") ? "B" : "A"}${value.slice(1)}`;
+    const candidates: ReadonlyArray<WorkjetSealedPayloadBlob> = [
+      // A flipped ciphertext byte: GCM's tag, not a checksum, must catch it.
+      { ...sealed, ciphertext: flip(sealed.ciphertext) },
+      // Truncating the tag off must not decrypt "the rest" of the message.
+      { ...sealed, ciphertext: sealed.ciphertext.slice(0, 4) },
+      { ...sealed, ciphertext: "" },
+      { ...sealed, nonce: flip(sealed.nonce) },
+      { ...sealed, nonce: sealed.nonce.slice(0, 8) },
+      { ...sealed, ephemeralKey: flip(sealed.ephemeralKey) },
+      { ...sealed, ephemeralKey: "AAAA" },
+      { ...sealed, ephemeralKey: "not base64url!!" },
+      { ...sealed, ciphertext: "not base64url!!" },
+      { ...sealed, nonce: null as unknown as string },
+      undefined as unknown as WorkjetSealedPayloadBlob,
+    ];
+    for (const candidate of candidates) {
+      const error = yield* recipient.openSealed(candidate, ENVELOPE_ID).pipe(Effect.flip);
+      assert.equal(error.reason, "invalid-signature");
+    }
+
+    // Sealing to something that is not a usable X25519 key fails as a bounded
+    // LOCAL fault rather than producing an unopenable blob.
+    for (const badKey of ["", "not base64url!!", "AAAA", "a".repeat(600)]) {
+      const error = yield* sender.sealTo(badKey, plaintext("x"), ENVELOPE_ID).pipe(Effect.flip);
+      assert.equal(error.reason, "mailbox-unavailable");
+    }
+
+    // The untouched blob still opens after all of the above.
+    assert.include(text(yield* recipient.openSealed(sealed, ENVELOPE_ID)), "authenticated");
+  }),
+);
+
+it.effect("seals a payload far larger than one AES block", () =>
+  Effect.gen(function* () {
+    const sender = yield* identityFrom(makeMemorySecretStore().service);
+    const recipient = yield* identityFrom(makeMemorySecretStore().service);
+
+    const large = "p".repeat(100_000);
+    const sealed = yield* sender.sealTo(
+      recipient.encryptionPublicKey,
+      plaintext(large),
+      ENVELOPE_ID,
+    );
+    assert.equal(text(yield* recipient.openSealed(sealed, ENVELOPE_ID)), large);
   }),
 );

@@ -60,6 +60,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetGatewayOauthStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayOauthPoll]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayOauthCancel]: AuthOrchestrationOperateScope,
+  // Sending into another worker's mailbox is a write; the second, narrower
+  // check (the SOURCE thread must be an orchestrator thread) lives in the
+  // handler, exactly as it does for the equivalent MCP tools.
+  [WS_METHODS.workjetMailboxSendMessage]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxDelegateTask]: AuthOrchestrationOperateScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

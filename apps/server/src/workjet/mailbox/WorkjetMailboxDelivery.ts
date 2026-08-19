@@ -31,7 +31,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -88,6 +87,18 @@ export const WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND = "workjet.delegation.rec
 // ===============================
 // Inputs and outcomes
 // ===============================
+
+/**
+ * Who is sending. Only the two address fields are read here, so an MCP
+ * invocation scope satisfies it structurally and the WebSocket RPC path can
+ * supply the same pair (server environment + validated source thread) without
+ * inventing a fake provider session. Widening the parameter rather than
+ * duplicating the service keeps ONE source-address derivation.
+ */
+export interface WorkjetMailboxSenderScope {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}
 
 /**
  * Only the TARGET workspace is caller-supplied. The source workspace id is this
@@ -147,12 +158,12 @@ export interface WorkjetMailboxDelegationOutcome {
 
 export interface WorkjetMailboxDeliveryShape {
   readonly sendMessage: (
-    invocation: McpInvocationScope,
+    invocation: WorkjetMailboxSenderScope,
     input: WorkjetMailboxSendMessageInput,
   ) => Effect.Effect<WorkjetMailboxSendOutcome, WorkjetMailboxError>;
 
   readonly delegateTask: (
-    invocation: McpInvocationScope,
+    invocation: WorkjetMailboxSenderScope,
     input: WorkjetMailboxDelegateInput,
   ) => Effect.Effect<WorkjetMailboxDelegationOutcome, WorkjetMailboxError>;
 }
@@ -425,7 +436,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     });
 
   const resolveAddresses = (
-    invocation: McpInvocationScope,
+    invocation: WorkjetMailboxSenderScope,
     input: {
       readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
       readonly targetEnvironmentId: EnvironmentId;

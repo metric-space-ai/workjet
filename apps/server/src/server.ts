@@ -475,7 +475,20 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
-    websocketRpcRouteLayer,
+    // The WebSocket RPC surface now sends through the SAME durable mailbox the
+    // MCP tools use — one delivery service, two entrypoints — so it needs the
+    // same three services the MCP server below is given.
+    websocketRpcRouteLayer.pipe(
+      Layer.provide(
+        WorkjetMailboxDelivery.layer.pipe(
+          Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
+        ),
+      ),
+      Layer.provide(WorkjetSnapshotStoreLive),
+      // The handler substitutes this server's own mesh workspace id whenever a
+      // client omits the target one, which it cannot know.
+      Layer.provide(WorkjetMeshIdentity.layer),
+    ),
   ),
   McpHttpServer.layer.pipe(
     Layer.provide(McpSessionRegistry.layer),

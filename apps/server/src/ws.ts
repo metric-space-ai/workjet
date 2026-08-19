@@ -73,6 +73,10 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
+import * as WorkjetMailboxRpc from "./workjet/mailbox/WorkjetMailboxRpc.ts";
+import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
+import * as WorkjetSnapshotStore from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -356,6 +360,7 @@ function toAuthAccessStreamEvent(
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  workjetMailboxIdentity: WorkjetMeshIdentity.WorkjetMeshIdentity["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -425,6 +430,16 @@ const makeWsRpcLayer = (
       const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
       const providerGateway = yield* ProviderGateway.ProviderGatewayService;
       const relayClient = yield* RelayClient.RelayClient;
+      // The client-facing half of the durable Workjet mailbox. It reuses the
+      // delivery service and snapshot store the MCP tools use; only the caller
+      // identity differs, so the handlers below add no second implementation.
+      const workjetMailbox = WorkjetMailboxRpc.makeWorkjetMailboxRpcHandlers({
+        delivery: yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+        snapshots: yield* WorkjetSnapshotStore.WorkjetSnapshotStore,
+        query: projectionSnapshotQuery,
+        workspaceId: workjetMailboxIdentity.workspaceId,
+        environmentId: yield* serverEnvironment.getEnvironmentId,
+      });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
@@ -1663,6 +1678,20 @@ const makeWsRpcLayer = (
             providerGateway.oauthCancel(input).pipe(Effect.as({})),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetMailboxSendMessage]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxSendMessage,
+            workjetMailbox.sendMessage(input),
+            {
+              "rpc.aggregate": "workjet-mailbox",
+            },
+          ),
+        [WS_METHODS.workjetMailboxDelegateTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxDelegateTask,
+            workjetMailbox.delegateTask(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",
@@ -2346,6 +2375,12 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    // Resolved out here, exactly like the Greppy runtime and provider gateway
+    // below: one server-lifetime mailbox shared by every WebSocket client,
+    // never one delivery service per connection.
+    const workjetMailboxDelivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+    const workjetSnapshotStore = yield* WorkjetSnapshotStore.WorkjetSnapshotStore;
+    const workjetMeshIdentity = yield* WorkjetMeshIdentity.WorkjetMeshIdentity;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -2369,11 +2404,20 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, previewAutomationBroker).pipe(
+            makeWsRpcLayer(session, previewAutomationBroker, workjetMeshIdentity).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               Layer.provide(Layer.succeed(GreppyRuntime.GreppyRuntime, greppyRuntime)),
+              Layer.provide(
+                Layer.succeed(
+                  WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+                  workjetMailboxDelivery,
+                ),
+              ),
+              Layer.provide(
+                Layer.succeed(WorkjetSnapshotStore.WorkjetSnapshotStore, workjetSnapshotStore),
+              ),
               Layer.provide(Layer.succeed(ProviderGateway.ProviderGatewayService, providerGateway)),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.

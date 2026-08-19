@@ -651,3 +651,161 @@ export class WorkjetMailboxError extends Schema.TaggedErrorClass<WorkjetMailboxE
     }
   }
 }
+
+// ===============================
+// Client-facing RPC surface
+// ===============================
+
+/**
+ * Bounds on an envelope time-to-live a client may request. The server clamps
+ * anyway; declaring the range here lets the composer render the same
+ * constraints the wire enforces instead of guessing them.
+ */
+export const WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS = 60;
+export const WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS = 604_800;
+
+export const WorkjetMailboxTtlSeconds = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS),
+  Schema.isLessThanOrEqualTo(WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS),
+);
+
+/**
+ * Ceiling on the delegation prompt TEXT, in UTF-16 code units. Mirrors the MCP
+ * tool's bound so the two entry points cannot drift into two different limits.
+ */
+export const WORKJET_MAILBOX_RPC_PROMPT_MAX_LENGTH = 262_144;
+
+/**
+ * The addressing fields a client may choose.
+ *
+ * The SOURCE workspace and environment are never caller-supplied: the server
+ * takes them from its own mesh identity. The source THREAD is, because one
+ * client speaks for many threads — it is validated to exist and to be an
+ * orchestrator thread before anything durable is written.
+ *
+ * `targetWorkspaceId` is optional: a same-environment target lives in this
+ * server's own mesh workspace, and a client cannot know that opaque id. When
+ * omitted the server substitutes its own.
+ */
+const WorkjetMailboxRpcAddressFields = {
+  sourceThreadId: ThreadId,
+  targetWorkspaceId: Schema.optional(WorkjetMeshWorkspaceId),
+  targetEnvironmentId: EnvironmentId,
+  targetThreadId: ThreadId,
+} as const;
+
+export const WorkjetMailboxSendMessageRpcInput = Schema.Struct({
+  ...WorkjetMailboxRpcAddressFields,
+  body: WorkjetMessageBody,
+  ttlSeconds: Schema.optional(WorkjetMailboxTtlSeconds),
+  inReplyTo: Schema.optional(WorkjetEnvelopeId),
+});
+export type WorkjetMailboxSendMessageRpcInput = typeof WorkjetMailboxSendMessageRpcInput.Type;
+
+export const WorkjetMailboxDelegationBudgetRpcInput = Schema.Struct({
+  maxDepth: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(16)),
+  maxReviewRounds: Schema.Int.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(16),
+  ),
+  ttlSeconds: WorkjetMailboxTtlSeconds,
+});
+export type WorkjetMailboxDelegationBudgetRpcInput =
+  typeof WorkjetMailboxDelegationBudgetRpcInput.Type;
+
+/**
+ * The prompt arrives as TEXT, exactly as it does over MCP: the side that stores
+ * the bytes is the side that computes the digest, so a client cannot pin a
+ * snapshot reference the server never wrote.
+ */
+export const WorkjetMailboxDelegateTaskRpcInput = Schema.Struct({
+  ...WorkjetMailboxRpcAddressFields,
+  prompt: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(WORKJET_MAILBOX_RPC_PROMPT_MAX_LENGTH),
+    NoUnsafeControlCharacters,
+  ),
+  scope: Schema.Struct({
+    files: Schema.Array(WorkjetRepositoryPath).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(256),
+    ),
+    nonGoals: boundedText(4_096),
+  }),
+  acceptance: boundedText(8_192),
+  budget: WorkjetMailboxDelegationBudgetRpcInput,
+  depth: Schema.optional(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(16)),
+  ),
+  parentDelegationId: Schema.optional(WorkjetDelegationId),
+  ttlSeconds: Schema.optional(WorkjetMailboxTtlSeconds),
+});
+export type WorkjetMailboxDelegateTaskRpcInput = typeof WorkjetMailboxDelegateTaskRpcInput.Type;
+
+/**
+ * `acknowledged` means the target inbox answered with a receipt; `queued` is
+ * the honest answer for a target this server cannot reach yet.
+ */
+export const WorkjetMailboxDeliveryStatus = Schema.Literals(["acknowledged", "queued"]);
+export type WorkjetMailboxDeliveryStatus = typeof WorkjetMailboxDeliveryStatus.Type;
+
+export const WorkjetMailboxSendMessageRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  status: WorkjetMailboxDeliveryStatus,
+  envelopeId: WorkjetEnvelopeId,
+  disposition: Schema.optional(WorkjetDeliveryDisposition),
+  acknowledgedAt: Schema.optional(WorkjetMailboxTimestamp),
+});
+export type WorkjetMailboxSendMessageRpcResult = typeof WorkjetMailboxSendMessageRpcResult.Type;
+
+export const WorkjetMailboxDelegateTaskRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  status: WorkjetMailboxDeliveryStatus,
+  envelopeId: WorkjetEnvelopeId,
+  delegationId: WorkjetDelegationId,
+  ownerEnvironmentId: EnvironmentId,
+  ownerThreadId: ThreadId,
+  state: WorkjetDelegationState,
+  disposition: Schema.optional(WorkjetDeliveryDisposition),
+  acknowledgedAt: Schema.optional(WorkjetMailboxTimestamp),
+});
+export type WorkjetMailboxDelegateTaskRpcResult = typeof WorkjetMailboxDelegateTaskRpcResult.Type;
+
+/**
+ * Redacted, bounded thread-activity payload written for every mailbox event
+ * (`workjet.message.sent|received`, `workjet.delegation.sent|received`).
+ *
+ * It carries ids, addresses, and lifecycle state only — never message text,
+ * never the sealed payload reference, never prompt or artifact material. The
+ * schema exists so the timeline can decode the payload it renders instead of
+ * poking at `unknown`.
+ */
+export const WorkjetMailboxActivityAddress = Schema.Struct({
+  workspaceId: WorkjetMeshWorkspaceId,
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+});
+export type WorkjetMailboxActivityAddress = typeof WorkjetMailboxActivityAddress.Type;
+
+export const WorkjetMailboxActivityPayload = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  envelopeId: WorkjetEnvelopeId,
+  direction: Schema.Literals(["outbound", "inbound"]),
+  source: WorkjetMailboxActivityAddress,
+  target: WorkjetMailboxActivityAddress,
+  bodyKind: Schema.optional(Schema.Literals(["inline", "sealed"])),
+  disposition: Schema.optional(WorkjetDeliveryDisposition),
+  delegationId: Schema.optional(WorkjetDelegationId),
+  delegationState: Schema.optional(WorkjetDelegationState),
+  createdAt: WorkjetMailboxTimestamp,
+  expiresAt: WorkjetMailboxTimestamp,
+});
+export type WorkjetMailboxActivityPayload = typeof WorkjetMailboxActivityPayload.Type;
+
+/** The four thread-activity kinds the mailbox appends. */
+export const WORKJET_MAILBOX_ACTIVITY_KINDS = [
+  "workjet.message.sent",
+  "workjet.message.received",
+  "workjet.delegation.sent",
+  "workjet.delegation.received",
+] as const;
+export type WorkjetMailboxActivityKind = (typeof WORKJET_MAILBOX_ACTIVITY_KINDS)[number];

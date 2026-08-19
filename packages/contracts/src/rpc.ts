@@ -203,6 +203,13 @@ import {
   WorktreeStorageInspection,
   WorktreeStorageInspectionInput,
 } from "./workjet.ts";
+import {
+  WorkjetMailboxDelegateTaskRpcInput,
+  WorkjetMailboxDelegateTaskRpcResult,
+  WorkjetMailboxError,
+  WorkjetMailboxSendMessageRpcInput,
+  WorkjetMailboxSendMessageRpcResult,
+} from "./workjetMailbox.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -298,6 +305,10 @@ export const WS_METHODS = {
   workjetGatewayOauthStart: "workjet.providerGateway.oauthStart",
   workjetGatewayOauthPoll: "workjet.providerGateway.oauthPoll",
   workjetGatewayOauthCancel: "workjet.providerGateway.oauthCancel",
+
+  // Thread-scoped Workjet mailbox sends (orchestrator threads only)
+  workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
+  workjetMailboxDelegateTask: "workjet.mailbox.delegateTask",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -562,6 +573,27 @@ export const WsWorkjetGatewayOauthCancelRpc = Rpc.make(WS_METHODS.workjetGateway
   payload: WorkjetGatewayOauthPollInput,
   success: Schema.Struct({}),
   error: WorkjetGatewayRpcError,
+});
+
+/**
+ * The client-facing half of the durable Workjet mailbox. Same delivery service,
+ * same bounded schemas, and the same orchestrator-only authorization decision
+ * the MCP tools make — the caller simply arrives over the WebSocket instead of
+ * through a per-session MCP credential, so the payload names the SOURCE thread
+ * and the server proves that thread's role before writing anything durable.
+ */
+const WorkjetMailboxRpcError = Schema.Union([WorkjetMailboxError, EnvironmentAuthorizationError]);
+
+export const WsWorkjetMailboxSendMessageRpc = Rpc.make(WS_METHODS.workjetMailboxSendMessage, {
+  payload: WorkjetMailboxSendMessageRpcInput,
+  success: WorkjetMailboxSendMessageRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxDelegateTaskRpc = Rpc.make(WS_METHODS.workjetMailboxDelegateTask, {
+  payload: WorkjetMailboxDelegateTaskRpcInput,
+  success: WorkjetMailboxDelegateTaskRpcResult,
+  error: WorkjetMailboxRpcError,
 });
 
 const PullRequestRpcError = Schema.Union([
@@ -1102,6 +1134,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayOauthStartRpc,
   WsWorkjetGatewayOauthPollRpc,
   WsWorkjetGatewayOauthCancelRpc,
+  WsWorkjetMailboxSendMessageRpc,
+  WsWorkjetMailboxDelegateTaskRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

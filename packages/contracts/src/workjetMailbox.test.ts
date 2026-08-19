@@ -12,8 +12,17 @@ import {
   WorkjetDelegationState,
   WorkjetDeliveryReceipt,
   WorkjetEnvironmentAddress,
+  WORKJET_MAILBOX_ACTIVITY_KINDS,
+  WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS,
+  WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS,
+  WORKJET_MAILBOX_RPC_PROMPT_MAX_LENGTH,
+  WorkjetMailboxActivityPayload,
+  WorkjetMailboxDelegateTaskRpcInput,
+  WorkjetMailboxDelegateTaskRpcResult,
   WorkjetMailboxError,
   WorkjetMailboxPayload,
+  WorkjetMailboxSendMessageRpcInput,
+  WorkjetMailboxSendMessageRpcResult,
   WorkjetMailboxTimestamp,
   WorkjetReviewVerdict,
   WorkjetRoutingEnvelope,
@@ -655,5 +664,167 @@ describe("WorkjetMailboxError", () => {
         reason: "kaboom",
       }),
     ).toThrow();
+  });
+});
+
+describe("Workjet mailbox RPC contracts", () => {
+  const decodeSendInput = Schema.decodeUnknownSync(WorkjetMailboxSendMessageRpcInput);
+  const encodeSendInput = Schema.encodeSync(WorkjetMailboxSendMessageRpcInput);
+  const decodeDelegateInput = Schema.decodeUnknownSync(WorkjetMailboxDelegateTaskRpcInput);
+  const encodeDelegateInput = Schema.encodeSync(WorkjetMailboxDelegateTaskRpcInput);
+  const decodeSendResult = Schema.decodeUnknownSync(WorkjetMailboxSendMessageRpcResult);
+  const decodeDelegateResult = Schema.decodeUnknownSync(WorkjetMailboxDelegateTaskRpcResult);
+  const decodeActivityPayload = Schema.decodeUnknownSync(WorkjetMailboxActivityPayload);
+
+  const sendInput = {
+    sourceThreadId: "thread-orchestrator",
+    targetEnvironmentId: "environment-a",
+    targetThreadId: "thread-worker",
+    body: { _tag: "inline", text: "Please look at the failing test." },
+  } as const;
+
+  const delegateInput = {
+    sourceThreadId: "thread-orchestrator",
+    targetEnvironmentId: "environment-a",
+    targetThreadId: "thread-worker",
+    prompt: "Fix the flaky test in the mailbox store.",
+    scope: {
+      files: ["apps/server/src/workjet/mailbox/WorkjetMailboxStore.ts"],
+      nonGoals: "No API changes.",
+    },
+    acceptance: "The focused test run is green.",
+    budget: { maxDepth: 2, maxReviewRounds: 1, ttlSeconds: 3_600 },
+  } as const;
+
+  it("round-trips a minimal same-environment message send", () => {
+    const decoded = decodeSendInput(sendInput);
+    expect(decoded.targetWorkspaceId).toBeUndefined();
+    expect(encodeSendInput(decoded)).toEqual(sendInput);
+  });
+
+  it("round-trips a message send that names an explicit mesh workspace and ttl", () => {
+    const withWorkspace = {
+      ...sendInput,
+      targetWorkspaceId: "ctox-business-os:mesh-alpha",
+      ttlSeconds: 600,
+      inReplyTo: envelopeId,
+    } as const;
+    expect(encodeSendInput(decodeSendInput(withWorkspace))).toEqual(withWorkspace);
+  });
+
+  it("bounds the inline message body and rejects a blank one", () => {
+    expect(() =>
+      decodeSendInput({ ...sendInput, body: { _tag: "inline", text: "x".repeat(4_097) } }),
+    ).toThrow();
+    expect(() =>
+      decodeSendInput({ ...sendInput, body: { _tag: "inline", text: "   " } }),
+    ).toThrow();
+  });
+
+  it("rejects a ttl outside the declared bounds", () => {
+    expect(() =>
+      decodeSendInput({ ...sendInput, ttlSeconds: WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS - 1 }),
+    ).toThrow();
+    expect(() =>
+      decodeSendInput({ ...sendInput, ttlSeconds: WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS + 1 }),
+    ).toThrow();
+  });
+
+  it("round-trips a delegation input", () => {
+    expect(encodeDelegateInput(decodeDelegateInput(delegateInput))).toEqual(delegateInput);
+  });
+
+  it("requires at least one scope file and rejects absolute or traversing paths", () => {
+    expect(() =>
+      decodeDelegateInput({ ...delegateInput, scope: { files: [], nonGoals: "None." } }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegateInput({
+        ...delegateInput,
+        scope: { files: ["/etc/passwd"], nonGoals: "None." },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegateInput({
+        ...delegateInput,
+        scope: { files: ["../outside.ts"], nonGoals: "None." },
+      }),
+    ).toThrow();
+  });
+
+  it("bounds the delegation prompt and budget", () => {
+    expect(() =>
+      decodeDelegateInput({
+        ...delegateInput,
+        prompt: "x".repeat(WORKJET_MAILBOX_RPC_PROMPT_MAX_LENGTH + 1),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegateInput({ ...delegateInput, budget: { ...delegateInput.budget, maxDepth: 0 } }),
+    ).toThrow();
+    expect(() =>
+      decodeDelegateInput({
+        ...delegateInput,
+        budget: { ...delegateInput.budget, maxReviewRounds: 17 },
+      }),
+    ).toThrow();
+  });
+
+  it("round-trips both delivery outcomes of a message send", () => {
+    const queued = { schemaVersion: V, status: "queued", envelopeId } as const;
+    expect(decodeSendResult(queued)).toEqual(queued);
+    const acknowledged = {
+      schemaVersion: V,
+      status: "acknowledged",
+      envelopeId,
+      disposition: "duplicate-ignored",
+      acknowledgedAt: "2026-08-18T10:00:00.000Z",
+    } as const;
+    expect(decodeSendResult(acknowledged)).toEqual(acknowledged);
+  });
+
+  it("round-trips a delegation result carrying the delegation reference and state", () => {
+    const result = {
+      schemaVersion: V,
+      status: "acknowledged",
+      envelopeId,
+      delegationId,
+      ownerEnvironmentId: "environment-a",
+      ownerThreadId: "thread-worker",
+      state: "delivered",
+      disposition: "accepted-new",
+      acknowledgedAt: "2026-08-18T10:00:00.000Z",
+    } as const;
+    expect(decodeDelegateResult(result)).toEqual(result);
+  });
+
+  it("decodes the redacted activity payload the timeline renders", () => {
+    const payload = {
+      schemaVersion: V,
+      envelopeId,
+      direction: "outbound",
+      source: {
+        workspaceId: "ctox-business-os:mesh-alpha",
+        environmentId: "environment-a",
+        threadId: "thread-orchestrator",
+      },
+      target: {
+        workspaceId: "ctox-business-os:mesh-alpha",
+        environmentId: "environment-a",
+        threadId: "thread-worker",
+      },
+      delegationId,
+      delegationState: "running",
+      disposition: "accepted-new",
+      createdAt: "2026-08-18T10:00:00.000Z",
+      expiresAt: "2026-08-18T11:00:00.000Z",
+    } as const;
+    expect(decodeActivityPayload(payload)).toEqual(payload);
+    expect(WORKJET_MAILBOX_ACTIVITY_KINDS).toEqual([
+      "workjet.message.sent",
+      "workjet.message.received",
+      "workjet.delegation.sent",
+      "workjet.delegation.received",
+    ]);
   });
 });

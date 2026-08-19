@@ -1056,9 +1056,17 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   request-review, cancel, and reviewer approve / request-changes are
   state-gated action affordances on the delegation cards behind
   `workjet.mailbox.reply|requestReview|updateDelegation` RPCs, wired
-  through ChatView. Still open: follow-up/reassign controls, a real
-  cross-machine recipient picker (mesh roster), and the compact-composer
-  variant of the control.
+  through ChatView. Cross-machine recipient picker done 2026-08-19 (commits
+  `483749f7d`…`3200a6537` + ChatView wire `85eb60bb6`): a redacted
+  `workjet.mesh.roster` RPC (read scope) lists TOFU-pinned peers —
+  workspace/environment ids, first-contact timestamp, and a derived
+  sealed-delivery-ready flag; the panel's "Another machine" mode offers a
+  "Remote environments" group (honest "first contact" label, NO invented
+  online state), a required bounded thread-id input ("this machine cannot
+  list another machine's threads"), per-peer prefill, and the old silent
+  environment-id-as-thread-id fallback was removed as a guess dressed as a
+  default. Zero-peer/no-roster/truncated states covered. Still open:
+  follow-up/reassign controls and the compact-composer variant.
 - [x] Add redacted audit/observability events and user notifications without
       storing prompts, secrets, provider payloads, or artifact contents in
       relay logs, traces, push notifications, or crash reports. Done 2026-08-19

@@ -41,6 +41,25 @@ export class SshReadinessError extends Data.TaggedError("SshReadinessError")<{
   readonly cause?: unknown;
 }> {}
 
+/**
+ * Every way a scoped `ssh -L` local forward can fail, as one bounded reason.
+ * Callers outside this package surface the reason, never the cause: the cause
+ * may quote a destination, a path, or remote stderr.
+ */
+export type SshTunnelErrorReason =
+  | "invalid_port"
+  | "invalid_target"
+  | "local_port_unavailable"
+  | "spawn_failed"
+  | "startup_timeout"
+  | "process_exited";
+
+export class SshTunnelError extends Data.TaggedError("SshTunnelError")<{
+  readonly reason: SshTunnelErrorReason;
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
 export class SshPasswordPromptError extends Data.TaggedError("SshPasswordPromptError")<{
   readonly message: string;
   readonly cause?: unknown;

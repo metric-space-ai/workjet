@@ -73,6 +73,7 @@ const delegationFixture = (input: {
   readonly targetEnvironmentId?: EnvironmentId;
   readonly targetThreadId?: ThreadId;
   readonly stateChangedAt?: WorkjetMailboxTimestamp;
+  readonly requiresApproval?: boolean;
 }): WorkjetDelegation => ({
   schemaVersion: 1,
   envelopeId: WorkjetEnvelopeId.make(`wjm-envelope-${input.id}-0000000000`),
@@ -100,7 +101,13 @@ const delegationFixture = (input: {
     nonGoals: "No transport, no result reporting.",
   },
   completion: { schemaVersion: 1, acceptance: "The focused suite is green." },
-  budget: { schemaVersion: 1, maxDepth: 4, maxReviewRounds: 2, expiresAt: EXPIRES },
+  budget: {
+    schemaVersion: 1,
+    maxDepth: 4,
+    maxReviewRounds: 2,
+    expiresAt: EXPIRES,
+    ...(input.requiresApproval === true ? { requiresApproval: true } : {}),
+  },
   state: input.state,
   stateChangedAt: input.stateChangedAt ?? NOW,
   depth: 0,
@@ -357,6 +364,56 @@ it.effect("runs a delivered delegation as a normal turn carrying the snapshot te
     // Bounded payload: ids and lifecycle only, never the prompt.
     assert.notInclude(JSON.stringify(activity.activity.payload), PROMPT_TEXT);
   }).pipe(Effect.provide(testLayer("delegation-executor-happy"))),
+);
+
+it.effect("holds a pending-approval delegation in delivered until it is approved", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "approval", digest, state: "delivered", requiresApproval: true }),
+    );
+
+    // The approval gate blocks acceptance: the row stays `delivered`, no turn is
+    // dispatched, and the cycle counts it as awaiting approval.
+    const gated = yield* executor.runCycle;
+    assert.equal(gated.executed, 0);
+    assert.equal(gated.awaitingApproval, 1);
+    assert.equal(yield* stateOf(delegation), "delivered");
+    assert.equal(turnStarts(harness.commands).length, 0);
+
+    // A human approves it; the very next cycle runs it as a normal turn.
+    yield* store.setDelegationApproval(delegation.delegationId, true, NOW);
+    const ran = yield* executor.runCycle;
+    assert.equal(ran.executed, 1);
+    // The counters are cumulative across cycles: the gate was hit once (cycle 1)
+    // and not again (cycle 2), so the running total stays 1.
+    assert.equal(ran.awaitingApproval, 1);
+    assert.equal(yield* stateOf(delegation), "running");
+    assert.equal(turnStarts(harness.commands).length, 1);
+  }).pipe(Effect.provide(testLayer("delegation-executor-approval"))),
+);
+
+it.effect("never runs a rejected delegation", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "rejected", digest, state: "delivered", requiresApproval: true }),
+    );
+
+    // Rejection cancels the delegation terminally; the executor never touches it.
+    yield* store.setDelegationApproval(delegation.delegationId, false, NOW);
+    const status = yield* executor.runCycle;
+    assert.equal(status.executed, 0);
+    assert.equal(status.awaitingApproval, 0);
+    assert.equal(yield* stateOf(delegation), "cancelled");
+    assert.equal(turnStarts(harness.commands).length, 0);
+  }).pipe(Effect.provide(testLayer("delegation-executor-rejected"))),
 );
 
 it.effect("executes a standard-role target and refuses an orchestrator target", () =>

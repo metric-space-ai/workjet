@@ -188,6 +188,8 @@ export interface WorkjetDelegationExecutorStatus {
   readonly resultsEnqueued: number;
   /** `running` rows whose dispatched turn has not ended yet; left running. */
   readonly runningPending: number;
+  /** `delivered` rows held back because their approval gate is still pending. */
+  readonly awaitingApproval: number;
   /** Delegations moved to the terminal `failed` state, by reason. */
   readonly failures: WorkjetDelegationExecutorFailures;
   readonly lastCycleAt: string | null;
@@ -305,6 +307,7 @@ type ExecutionOutcome =
   | { readonly _tag: "completed" }
   | { readonly _tag: "turn-failed" }
   | { readonly _tag: "running-pending" }
+  | { readonly _tag: "awaiting-approval" }
   | { readonly _tag: "failed"; readonly reason: WorkjetDelegationRefusalReason };
 
 export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
@@ -329,6 +332,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let resultsReturned = 0;
   let resultsEnqueued = 0;
   let runningPending = 0;
+  let awaitingApproval = 0;
   let targetThreadMissing = 0;
   let targetThreadDeleted = 0;
   let targetRoleNotExecutable = 0;
@@ -350,6 +354,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     resultsReturned,
     resultsEnqueued,
     runningPending,
+    awaitingApproval,
     failures: {
       targetThreadMissing,
       targetThreadDeleted,
@@ -897,6 +902,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         case "running-pending":
           runningPending += 1;
           break;
+        case "awaiting-approval":
+          awaitingApproval += 1;
+          break;
         case "failed":
           switch (outcome.reason) {
             case "target-thread-missing":
@@ -974,6 +982,19 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     for (const row of yield* scan("delivered")) {
       scanned += 1;
       if (row.terminal) continue;
+      // Approval gate: a delegation whose human-approval gate is still `pending`
+      // MUST NOT be accepted or run. It stays exactly where it is (`delivered`)
+      // until a human approves it — the autonomous-escalation ceiling. Consulted
+      // BEFORE resolveTarget so a pending gate is never mistaken for
+      // backpressure, and BEFORE any transition, so nothing durable moves.
+      const executable = yield* store
+        .isDelegationExecutable(row.delegationId)
+        .pipe(Effect.option, Effect.map(Option.getOrElse(() => false)));
+      if (!executable) {
+        record({ _tag: "awaiting-approval" });
+        continue;
+      }
+
       const resolved = yield* resolveTarget({ record: row, environmentId, busyThreads, now });
       if (resolved._tag !== "ready") {
         record(resolved);

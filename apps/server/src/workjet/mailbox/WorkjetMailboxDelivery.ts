@@ -34,7 +34,12 @@ import * as Option from "effect/Option";
 import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { WorkjetMailboxStore, type WorkjetMailboxStoreError } from "./WorkjetMailboxStore.ts";
+import {
+  WorkjetMailboxStore,
+  type WorkjetDelegationRecord,
+  type WorkjetMailboxStoreError,
+  type WorkjetMailboxStoreShape,
+} from "./WorkjetMailboxStore.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 
 /**
@@ -172,9 +177,50 @@ const failure = (reason: WorkjetMailboxError["reason"]) => new WorkjetMailboxErr
  * Every store failure becomes a bounded mailbox reason. A SQL failure or a
  * corrupt row must never travel to a harness as a server message: the plan
  * forbids prompts, paths, and transport detail in anything a peer can read.
+ *
+ * Exported because the loopback CTOX transport ingests envelopes through the
+ * same store and owes a peer the same bounded vocabulary.
  */
-const boundStoreError = (cause: WorkjetMailboxStoreError): WorkjetMailboxError =>
+export const boundMailboxStoreError = (cause: WorkjetMailboxStoreError): WorkjetMailboxError =>
   cause._tag === "WorkjetMailboxError" ? cause : failure("mailbox-unavailable");
+
+const boundStoreError = boundMailboxStoreError;
+
+/**
+ * THE delegation half of accepting a delivered envelope, shared by the local
+ * fast path and the loopback CTOX transport.
+ *
+ * Both sides must move a freshly accepted delegation `queued → delivered`
+ * through the store's enforced transition table — never by rewriting the
+ * delegation row — so the two paths cannot drift into two state machines. The
+ * only honest difference between them is WHERE the `queued` row comes from:
+ *
+ * - Local fast path: sender and receiver share one store, so `delegateTask`
+ *   already upserted the row when it enqueued the envelope. Re-upserting here
+ *   would be refused by the store for a delegation that has since moved on, so
+ *   the local caller passes `upsert: false`.
+ * - Transport pull: the receiving machine has never seen this delegation, so
+ *   the row must be created from the envelope's own payload first.
+ *
+ * Everything after that — the transition, its legality check, and the returned
+ * record — is identical by construction.
+ */
+export const applyDeliveredDelegation = (input: {
+  readonly store: WorkjetMailboxStoreShape;
+  readonly delegation: WorkjetDelegation;
+  readonly now: WorkjetMailboxTimestamp;
+  readonly upsert: boolean;
+}): Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxError> =>
+  Effect.gen(function* () {
+    if (input.upsert) {
+      yield* input.store
+        .upsertDelegation(input.delegation)
+        .pipe(Effect.mapError(boundMailboxStoreError));
+    }
+    return yield* input.store
+      .transitionDelegationState(input.delegation.delegationId, "queued", "delivered", input.now)
+      .pipe(Effect.mapError(boundMailboxStoreError));
+  });
 
 const clampTtlSeconds = (value: number | undefined): number => {
   if (value === undefined || !Number.isFinite(value)) return WORKJET_MAILBOX_DEFAULT_TTL_SECONDS;
@@ -623,10 +669,10 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     }
 
     // The lifecycle advances through the store's enforced transition table,
-    // never by rewriting the delegation row directly.
-    const record = yield* store
-      .transitionDelegationState(delegationId, "queued", "delivered", now)
-      .pipe(Effect.mapError(boundStoreError));
+    // never by rewriting the delegation row directly. `upsert: false` because
+    // the enqueue above already wrote this delegation's `queued` row into the
+    // one store both ends of the fast path share.
+    const record = yield* applyDeliveredDelegation({ store, delegation, now, upsert: false });
 
     if (target.threadId !== source.threadId) {
       yield* appendActivity({

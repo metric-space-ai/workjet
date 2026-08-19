@@ -50,6 +50,7 @@ import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import { WorkjetMailboxStoreLive } from "./workjet/mailbox/WorkjetMailboxStore.ts";
+import * as WorkjetMailboxTransport from "./workjet/mailbox/WorkjetMailboxTransport.ts";
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
@@ -492,6 +493,15 @@ export const makeRoutesLayer = Layer.mergeAll(
     // digest describes bytes the server itself wrote. One server-wide,
     // content-addressed root under `ServerConfig.stateDir`.
     Layer.provide(WorkjetSnapshotStoreLive),
+  ),
+  // The cross-machine half of the same mailbox: a jittered poll loop that
+  // exchanges opaque envelopes with the LOCAL CTOX daemon's loopback surface.
+  // It sits beside the delivery service rather than inside the MCP server
+  // because it is a background exchange, not a request-scoped dependency, and
+  // it idles harmlessly when no daemon is running.
+  WorkjetMailboxTransport.layer.pipe(
+    Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
+    Layer.provide(ProcessRunner.layer),
   ),
 ).pipe(
   // WebSocket management and MCP search resolve this one server-lifetime

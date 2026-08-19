@@ -65,6 +65,9 @@ export const RPC_REQUIRED_SCOPES = {
   // handler, exactly as it does for the equivalent MCP tools.
   [WS_METHODS.workjetMailboxSendMessage]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetMailboxDelegateTask]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxReply]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxRequestReview]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxUpdateDelegation]: AuthOrchestrationOperateScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

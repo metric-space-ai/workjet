@@ -1692,6 +1692,22 @@ const makeWsRpcLayer = (
             workjetMailbox.delegateTask(input),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
+        [WS_METHODS.workjetMailboxReply]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetMailboxReply, workjetMailbox.reply(input), {
+            "rpc.aggregate": "workjet-mailbox",
+          }),
+        [WS_METHODS.workjetMailboxRequestReview]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxRequestReview,
+            workjetMailbox.requestReview(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxUpdateDelegation]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxUpdateDelegation,
+            workjetMailbox.updateDelegation(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",

@@ -788,12 +788,34 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetMailboxDelegateTask,
     concurrency: workjetMailboxConcurrency,
   });
+  // The thread-action operations (reply / request review / update delegation)
+  // are single-flighted per SOURCE THREAD exactly like send: they originate
+  // from the same orchestrator thread and the durable state/receipt returns
+  // through the ordinary thread subscription, so no optimistic refresh here.
+  const replyWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:reply",
+    tag: WS_METHODS.workjetMailboxReply,
+    concurrency: workjetMailboxConcurrency,
+  });
+  const requestReviewWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:request-review",
+    tag: WS_METHODS.workjetMailboxRequestReview,
+    concurrency: workjetMailboxConcurrency,
+  });
+  const updateDelegationWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:update-delegation",
+    tag: WS_METHODS.workjetMailboxUpdateDelegation,
+    concurrency: workjetMailboxConcurrency,
+  });
 
   return {
     configValueAtom,
     updateStateAtom,
     sendWorkjetMailboxMessage,
     delegateWorkjetMailboxTask,
+    replyWorkjetMailbox,
+    requestReviewWorkjetMailbox,
+    updateDelegationWorkjetMailbox,
     workjetGatewayStatus,
     workjetGatewayCatalog,
     startWorkjetGateway,

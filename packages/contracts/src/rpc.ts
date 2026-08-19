@@ -207,8 +207,14 @@ import {
   WorkjetMailboxDelegateTaskRpcInput,
   WorkjetMailboxDelegateTaskRpcResult,
   WorkjetMailboxError,
+  WorkjetMailboxReplyRpcInput,
+  WorkjetMailboxReplyRpcResult,
+  WorkjetMailboxRequestReviewRpcInput,
+  WorkjetMailboxRequestReviewRpcResult,
   WorkjetMailboxSendMessageRpcInput,
   WorkjetMailboxSendMessageRpcResult,
+  WorkjetMailboxUpdateDelegationRpcInput,
+  WorkjetMailboxUpdateDelegationRpcResult,
 } from "./workjetMailbox.ts";
 
 export const WS_METHODS = {
@@ -309,6 +315,9 @@ export const WS_METHODS = {
   // Thread-scoped Workjet mailbox sends (orchestrator threads only)
   workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
   workjetMailboxDelegateTask: "workjet.mailbox.delegateTask",
+  workjetMailboxReply: "workjet.mailbox.reply",
+  workjetMailboxRequestReview: "workjet.mailbox.requestReview",
+  workjetMailboxUpdateDelegation: "workjet.mailbox.updateDelegation",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -595,6 +604,27 @@ export const WsWorkjetMailboxDelegateTaskRpc = Rpc.make(WS_METHODS.workjetMailbo
   success: WorkjetMailboxDelegateTaskRpcResult,
   error: WorkjetMailboxRpcError,
 });
+
+export const WsWorkjetMailboxReplyRpc = Rpc.make(WS_METHODS.workjetMailboxReply, {
+  payload: WorkjetMailboxReplyRpcInput,
+  success: WorkjetMailboxReplyRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxRequestReviewRpc = Rpc.make(WS_METHODS.workjetMailboxRequestReview, {
+  payload: WorkjetMailboxRequestReviewRpcInput,
+  success: WorkjetMailboxRequestReviewRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxUpdateDelegationRpc = Rpc.make(
+  WS_METHODS.workjetMailboxUpdateDelegation,
+  {
+    payload: WorkjetMailboxUpdateDelegationRpcInput,
+    success: WorkjetMailboxUpdateDelegationRpcResult,
+    error: WorkjetMailboxRpcError,
+  },
+);
 
 const PullRequestRpcError = Schema.Union([
   PullRequestUnavailableError,
@@ -1136,6 +1166,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayOauthCancelRpc,
   WsWorkjetMailboxSendMessageRpc,
   WsWorkjetMailboxDelegateTaskRpc,
+  WsWorkjetMailboxReplyRpc,
+  WsWorkjetMailboxRequestReviewRpc,
+  WsWorkjetMailboxUpdateDelegationRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

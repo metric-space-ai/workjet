@@ -21,9 +21,15 @@ import {
   WorkjetMailboxDelegateTaskRpcResult,
   WorkjetMailboxError,
   WorkjetMailboxPayload,
+  WorkjetMailboxReplyRpcInput,
+  WorkjetMailboxReplyRpcResult,
+  WorkjetMailboxRequestReviewRpcInput,
+  WorkjetMailboxRequestReviewRpcResult,
   WorkjetMailboxSendMessageRpcInput,
   WorkjetMailboxSendMessageRpcResult,
   WorkjetMailboxTimestamp,
+  WorkjetMailboxUpdateDelegationRpcInput,
+  WorkjetMailboxUpdateDelegationRpcResult,
   WorkjetReviewVerdict,
   WorkjetRoutingEnvelope,
   WorkjetThreadHandoff,
@@ -918,5 +924,96 @@ describe("Workjet mailbox RPC contracts", () => {
       "workjet.delegation.sent",
       "workjet.delegation.received",
     ]);
+  });
+
+  const decodeReplyInput = Schema.decodeUnknownSync(WorkjetMailboxReplyRpcInput);
+  const encodeReplyInput = Schema.encodeSync(WorkjetMailboxReplyRpcInput);
+  const decodeReplyResult = Schema.decodeUnknownSync(WorkjetMailboxReplyRpcResult);
+  const decodeReviewInput = Schema.decodeUnknownSync(WorkjetMailboxRequestReviewRpcInput);
+  const encodeReviewInput = Schema.encodeSync(WorkjetMailboxRequestReviewRpcInput);
+  const decodeReviewResult = Schema.decodeUnknownSync(WorkjetMailboxRequestReviewRpcResult);
+  const decodeUpdateInput = Schema.decodeUnknownSync(WorkjetMailboxUpdateDelegationRpcInput);
+  const encodeUpdateInput = Schema.encodeSync(WorkjetMailboxUpdateDelegationRpcInput);
+  const decodeUpdateResult = Schema.decodeUnknownSync(WorkjetMailboxUpdateDelegationRpcResult);
+
+  const replyInput = {
+    sourceThreadId: "thread-orchestrator",
+    targetEnvironmentId: "environment-a",
+    targetThreadId: "thread-worker",
+    delegationId,
+    body: { _tag: "inline", text: "One more thing." },
+  } as const;
+
+  const reviewInput = {
+    sourceThreadId: "thread-orchestrator",
+    targetEnvironmentId: "environment-a",
+    targetThreadId: "thread-reviewer",
+    delegationId,
+    round: 1,
+    body: { _tag: "inline", text: "Please review." },
+  } as const;
+
+  it("round-trips a reply input and rejects a blank body", () => {
+    expect(encodeReplyInput(decodeReplyInput(replyInput))).toEqual(replyInput);
+    expect(() =>
+      decodeReplyInput({ ...replyInput, body: { _tag: "inline", text: "  " } }),
+    ).toThrow();
+  });
+
+  it("round-trips a review-request input and bounds the round", () => {
+    expect(encodeReviewInput(decodeReviewInput(reviewInput))).toEqual(reviewInput);
+    expect(() => decodeReviewInput({ ...reviewInput, round: 0 })).toThrow();
+    expect(() => decodeReviewInput({ ...reviewInput, round: 17 })).toThrow();
+  });
+
+  it("round-trips every delegation-update operation and bounds review reasons", () => {
+    for (const update of [
+      { _tag: "cancel" },
+      { _tag: "revise" },
+      { _tag: "follow-up" },
+      { _tag: "review", decision: "approve", round: 1 },
+      { _tag: "review", decision: "changes-requested", round: 2, reasons: ["needs a test"] },
+    ] as const) {
+      const input = { sourceThreadId: "thread-orchestrator", delegationId, update } as const;
+      expect(encodeUpdateInput(decodeUpdateInput(input))).toEqual(input);
+    }
+    // A review reason list is bounded (32 entries) and each reason is nonblank.
+    expect(() =>
+      decodeUpdateInput({
+        sourceThreadId: "thread-orchestrator",
+        delegationId,
+        update: {
+          _tag: "review",
+          decision: "changes-requested",
+          round: 1,
+          reasons: new Array(33).fill("x"),
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("round-trips the reply, review, and update results", () => {
+    const reply = { schemaVersion: V, status: "queued", envelopeId } as const;
+    expect(decodeReplyResult(reply)).toEqual(reply);
+    const review = {
+      schemaVersion: V,
+      status: "acknowledged",
+      envelopeId,
+      delegationId,
+      state: "review-requested",
+      edgeKind: "reviews",
+      disposition: "accepted-new",
+      acknowledgedAt: "2026-08-18T10:00:00.000Z",
+    } as const;
+    expect(decodeReviewResult(review)).toEqual(review);
+    const update = {
+      schemaVersion: V,
+      delegationId,
+      state: "completed",
+      edgeKind: "reviews",
+    } as const;
+    expect(decodeUpdateResult(update)).toEqual(update);
+    const cancel = { schemaVersion: V, delegationId, state: "cancelled" } as const;
+    expect(decodeUpdateResult(cancel)).toEqual(cancel);
   });
 });

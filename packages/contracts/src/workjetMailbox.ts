@@ -897,6 +897,111 @@ export const WorkjetMailboxDelegateTaskRpcResult = Schema.Struct({
 });
 export type WorkjetMailboxDelegateTaskRpcResult = typeof WorkjetMailboxDelegateTaskRpcResult.Type;
 
+// ===============================
+// Reply / request-review / update-delegation RPC surface
+//
+// These wrap the existing worker-initiated mailbox operations
+// (`workjet_reply` / `workjet_request_review` / `workjet_update_delegation`)
+// for the browser client. They mirror the send/delegate pattern exactly: the
+// SOURCE workspace and environment are the server's own mesh identity, the
+// source THREAD is caller-supplied and validated to be an orchestrator thread,
+// and every string/array is bounded. The bounds match the MCP tool-local
+// schemas in `apps/server/.../MailboxTool.ts` so the two entry points cannot
+// drift into two different limits.
+// ===============================
+
+/**
+ * Review round on the RPC wire: 1-based, mirroring the MCP tool and the
+ * delegation budget's `0..16` ceiling on `maxReviewRounds`. A delegation with
+ * `maxReviewRounds: N` admits rounds `1..N`; round `N + 1` is the loop-gate
+ * refusal enforced server-side.
+ */
+export const WorkjetMailboxReviewRoundRpcInput = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(16),
+);
+
+/**
+ * A plain informational reply on an existing delegation thread. Like a message
+ * send, only the TARGET address is caller-supplied; the server derives the
+ * `inReplyTo` envelope from the referenced delegation, so it is not an input.
+ */
+export const WorkjetMailboxReplyRpcInput = Schema.Struct({
+  ...WorkjetMailboxRpcAddressFields,
+  delegationId: WorkjetDelegationId,
+  body: WorkjetMessageBody,
+  ttlSeconds: Schema.optional(WorkjetMailboxTtlSeconds),
+});
+export type WorkjetMailboxReplyRpcInput = typeof WorkjetMailboxReplyRpcInput.Type;
+
+/**
+ * Request review of a running delegation. The target address is the REVIEWER;
+ * the delegation moves `running → review-requested` and a typed `reviews` edge
+ * is recorded server-side.
+ */
+export const WorkjetMailboxRequestReviewRpcInput = Schema.Struct({
+  ...WorkjetMailboxRpcAddressFields,
+  delegationId: WorkjetDelegationId,
+  round: WorkjetMailboxReviewRoundRpcInput,
+  body: WorkjetMessageBody,
+  ttlSeconds: Schema.optional(WorkjetMailboxTtlSeconds),
+});
+export type WorkjetMailboxRequestReviewRpcInput = typeof WorkjetMailboxRequestReviewRpcInput.Type;
+
+/**
+ * The bounded state operations `workjet_update_delegation` performs. `cancel`,
+ * `revise`, and `follow-up` carry no further fields; a `review` carries the
+ * verdict decision, its 1-based round, and bounded reasons, mirroring
+ * {@link WorkjetReviewVerdict}. Unlike a reply or review-request, an update
+ * carries NO target address — it operates on the delegation the source thread
+ * already owns knowledge of.
+ */
+export const WorkjetMailboxDelegationUpdateRpcInput = Schema.Union([
+  Schema.TaggedStruct("cancel", {}),
+  Schema.TaggedStruct("review", {
+    decision: WorkjetReviewDecision,
+    round: WorkjetMailboxReviewRoundRpcInput,
+    reasons: Schema.optional(Schema.Array(boundedText(1_024)).check(Schema.isMaxLength(32))),
+  }),
+  Schema.TaggedStruct("revise", {}),
+  Schema.TaggedStruct("follow-up", {}),
+]);
+export type WorkjetMailboxDelegationUpdateRpcInput =
+  typeof WorkjetMailboxDelegationUpdateRpcInput.Type;
+
+export const WorkjetMailboxUpdateDelegationRpcInput = Schema.Struct({
+  sourceThreadId: ThreadId,
+  delegationId: WorkjetDelegationId,
+  update: WorkjetMailboxDelegationUpdateRpcInput,
+});
+export type WorkjetMailboxUpdateDelegationRpcInput =
+  typeof WorkjetMailboxUpdateDelegationRpcInput.Type;
+
+/** A reply is a plain message send, so it returns the message send shape. */
+export const WorkjetMailboxReplyRpcResult = WorkjetMailboxSendMessageRpcResult;
+export type WorkjetMailboxReplyRpcResult = typeof WorkjetMailboxReplyRpcResult.Type;
+
+export const WorkjetMailboxRequestReviewRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  status: WorkjetMailboxDeliveryStatus,
+  envelopeId: WorkjetEnvelopeId,
+  delegationId: WorkjetDelegationId,
+  state: WorkjetDelegationState,
+  edgeKind: Schema.Literal("reviews"),
+  disposition: Schema.optional(WorkjetDeliveryDisposition),
+  acknowledgedAt: Schema.optional(WorkjetMailboxTimestamp),
+});
+export type WorkjetMailboxRequestReviewRpcResult = typeof WorkjetMailboxRequestReviewRpcResult.Type;
+
+export const WorkjetMailboxUpdateDelegationRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  delegationId: WorkjetDelegationId,
+  state: WorkjetDelegationState,
+  edgeKind: Schema.optional(WorkjetDelegationEdgeKind),
+});
+export type WorkjetMailboxUpdateDelegationRpcResult =
+  typeof WorkjetMailboxUpdateDelegationRpcResult.Type;
+
 /**
  * Redacted, bounded thread-activity payload written for every mailbox event
  * (`workjet.message.sent|received`, `workjet.delegation.sent|received`).

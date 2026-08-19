@@ -160,10 +160,29 @@ describe("Workjet mailbox client wiring", () => {
     );
   });
 
-  it("keeps the two sends distinct instead of collapsing onto one command", () => {
+  it("exposes the three thread-action commands as labelled commands", () => {
     const server = mailboxAtoms();
 
-    expect(server.delegateWorkjetMailboxTask).not.toBe(server.sendWorkjetMailboxMessage);
+    expect(server.replyWorkjetMailbox.label).toBe("environment-data:workjet:mailbox:reply");
+    expect(server.requestReviewWorkjetMailbox.label).toBe(
+      "environment-data:workjet:mailbox:request-review",
+    );
+    expect(server.updateDelegationWorkjetMailbox.label).toBe(
+      "environment-data:workjet:mailbox:update-delegation",
+    );
+  });
+
+  it("keeps every mailbox command distinct instead of collapsing onto one", () => {
+    const server = mailboxAtoms();
+
+    const commands = [
+      server.sendWorkjetMailboxMessage,
+      server.delegateWorkjetMailboxTask,
+      server.replyWorkjetMailbox,
+      server.requestReviewWorkjetMailbox,
+      server.updateDelegationWorkjetMailbox,
+    ];
+    expect(new Set(commands).size).toBe(commands.length);
   });
 });
 

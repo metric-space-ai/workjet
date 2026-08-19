@@ -4,8 +4,14 @@ import {
   type ThreadId,
   type WorkjetMailboxDelegateTaskRpcInput,
   type WorkjetMailboxDelegateTaskRpcResult,
+  type WorkjetMailboxReplyRpcInput,
+  type WorkjetMailboxReplyRpcResult,
+  type WorkjetMailboxRequestReviewRpcInput,
+  type WorkjetMailboxRequestReviewRpcResult,
   type WorkjetMailboxSendMessageRpcInput,
   type WorkjetMailboxSendMessageRpcResult,
+  type WorkjetMailboxUpdateDelegationRpcInput,
+  type WorkjetMailboxUpdateDelegationRpcResult,
   type WorkjetMeshWorkspaceId,
   type WorkjetMessageBody,
 } from "@t3tools/contracts";
@@ -67,6 +73,15 @@ export interface WorkjetMailboxRpcHandlers {
   readonly delegateTask: (
     input: WorkjetMailboxDelegateTaskRpcInput,
   ) => Effect.Effect<WorkjetMailboxDelegateTaskRpcResult, WorkjetMailboxError>;
+  readonly reply: (
+    input: WorkjetMailboxReplyRpcInput,
+  ) => Effect.Effect<WorkjetMailboxReplyRpcResult, WorkjetMailboxError>;
+  readonly requestReview: (
+    input: WorkjetMailboxRequestReviewRpcInput,
+  ) => Effect.Effect<WorkjetMailboxRequestReviewRpcResult, WorkjetMailboxError>;
+  readonly updateDelegation: (
+    input: WorkjetMailboxUpdateDelegationRpcInput,
+  ) => Effect.Effect<WorkjetMailboxUpdateDelegationRpcResult, WorkjetMailboxError>;
 }
 
 const failure = (reason: WorkjetMailboxError["reason"]) => new WorkjetMailboxError({ reason });
@@ -101,14 +116,16 @@ export const makeWorkjetMailboxRpcHandlers = (
       ),
     );
 
+  const normalizeBody = (body: WorkjetMessageBody): WorkjetMessageBody =>
+    body._tag === "inline"
+      ? { _tag: "inline", text: body.text }
+      : { _tag: "sealed", payloadRef: body.payloadRef, byteLength: body.byteLength };
+
   const sendMessage: WorkjetMailboxRpcHandlers["sendMessage"] = Effect.fn(
     "WorkjetMailboxRpc.sendMessage",
   )(function* (input) {
     const sender = yield* requireOrchestratorSource(input.sourceThreadId);
-    const body: WorkjetMessageBody =
-      input.body._tag === "inline"
-        ? { _tag: "inline", text: input.body.text }
-        : { _tag: "sealed", payloadRef: input.body.payloadRef, byteLength: input.body.byteLength };
+    const body = normalizeBody(input.body);
     const outcome = yield* dependencies.delivery.sendMessage(sender, {
       targetWorkspaceId: input.targetWorkspaceId ?? dependencies.workspaceId,
       targetEnvironmentId: input.targetEnvironmentId,
@@ -178,5 +195,85 @@ export const makeWorkjetMailboxRpcHandlers = (
         } as const);
   });
 
-  return { sendMessage, delegateTask };
+  const reply: WorkjetMailboxRpcHandlers["reply"] = Effect.fn("WorkjetMailboxRpc.reply")(
+    function* (input) {
+      const sender = yield* requireOrchestratorSource(input.sourceThreadId);
+      const outcome = yield* dependencies.delivery.reply(sender, {
+        targetWorkspaceId: input.targetWorkspaceId ?? dependencies.workspaceId,
+        targetEnvironmentId: input.targetEnvironmentId,
+        targetThreadId: input.targetThreadId,
+        delegationId: input.delegationId,
+        body: normalizeBody(input.body),
+        ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+      });
+      return outcome._tag === "queued"
+        ? ({ schemaVersion: 1, status: "queued", envelopeId: outcome.envelopeId } as const)
+        : ({
+            schemaVersion: 1,
+            status: "acknowledged",
+            envelopeId: outcome.envelopeId,
+            disposition: outcome.receipt.disposition,
+            acknowledgedAt: outcome.receipt.acknowledgedAt,
+          } as const);
+    },
+  );
+
+  const requestReview: WorkjetMailboxRpcHandlers["requestReview"] = Effect.fn(
+    "WorkjetMailboxRpc.requestReview",
+  )(function* (input) {
+    const sender = yield* requireOrchestratorSource(input.sourceThreadId);
+    const outcome = yield* dependencies.delivery.requestReview(sender, {
+      targetWorkspaceId: input.targetWorkspaceId ?? dependencies.workspaceId,
+      targetEnvironmentId: input.targetEnvironmentId,
+      targetThreadId: input.targetThreadId,
+      delegationId: input.delegationId,
+      round: input.round,
+      body: normalizeBody(input.body),
+      ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+    });
+    const base = {
+      schemaVersion: 1,
+      envelopeId: outcome.delivery.envelopeId,
+      delegationId: outcome.delegation.delegationId,
+      state: outcome.state,
+      edgeKind: outcome.edgeKind,
+    } as const;
+    return outcome.delivery._tag === "queued"
+      ? ({ ...base, status: "queued" } as const)
+      : ({
+          ...base,
+          status: "acknowledged",
+          disposition: outcome.delivery.receipt.disposition,
+          acknowledgedAt: outcome.delivery.receipt.acknowledgedAt,
+        } as const);
+  });
+
+  const updateDelegation: WorkjetMailboxRpcHandlers["updateDelegation"] = Effect.fn(
+    "WorkjetMailboxRpc.updateDelegation",
+  )(function* (input) {
+    // The source thread must still be an orchestrator thread, even though an
+    // update carries no target address: it is the caller identity the delivery
+    // service records as the actor of the transition.
+    const actor = yield* requireOrchestratorSource(input.sourceThreadId);
+    const outcome = yield* dependencies.delivery.updateDelegation(actor, {
+      delegationId: input.delegationId,
+      update:
+        input.update._tag === "review"
+          ? {
+              _tag: "review",
+              decision: input.update.decision,
+              round: input.update.round,
+              ...(input.update.reasons !== undefined ? { reasons: input.update.reasons } : {}),
+            }
+          : { _tag: input.update._tag },
+    });
+    return {
+      schemaVersion: 1,
+      delegationId: outcome.delegationId,
+      state: outcome.state,
+      ...(outcome.edgeKind !== undefined ? { edgeKind: outcome.edgeKind } : {}),
+    } as const;
+  });
+
+  return { sendMessage, delegateTask, reply, requestReview, updateDelegation };
 };

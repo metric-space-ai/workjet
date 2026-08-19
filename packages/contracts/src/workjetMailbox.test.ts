@@ -628,6 +628,7 @@ describe("WorkjetMailboxError", () => {
       "target-thread-deleted",
       "target-offline",
       "malformed-envelope",
+      "invalid-signature",
       "duplicate-envelope",
       "payload-too-large",
       "envelope-expired",

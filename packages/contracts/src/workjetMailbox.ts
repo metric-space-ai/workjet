@@ -580,6 +580,13 @@ export const WorkjetMailboxFailureReason = Schema.Literals([
   "target-thread-deleted",
   "target-offline",
   "malformed-envelope",
+  /**
+   * The detached routing-envelope signature did not verify against the claimed
+   * source environment key. It is deliberately distinct from
+   * `malformed-envelope` (a structurally invalid envelope) and from
+   * `unauthorized` (a valid signer without the right to this operation).
+   */
+  "invalid-signature",
   "duplicate-envelope",
   "payload-too-large",
   "envelope-expired",
@@ -617,6 +624,8 @@ export class WorkjetMailboxError extends Schema.TaggedErrorClass<WorkjetMailboxE
         return "The mailbox target is offline.";
       case "malformed-envelope":
         return "The mailbox envelope is malformed.";
+      case "invalid-signature":
+        return "The mailbox envelope signature is invalid.";
       case "duplicate-envelope":
         return "The mailbox envelope was already delivered.";
       case "payload-too-large":

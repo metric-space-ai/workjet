@@ -35,6 +35,7 @@ import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { WorkjetMailboxStore, type WorkjetMailboxStoreError } from "./WorkjetMailboxStore.ts";
+import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 
 /**
  * Same-environment Workjet mailbox delivery (docs/workjet-plan.md →
@@ -45,6 +46,11 @@ import { WorkjetMailboxStore, type WorkjetMailboxStoreError } from "./WorkjetMai
  * service is that fast path and nothing else:
  *
  *   enqueueOutbound → recordInboundEnvelope → markDelivered
+ *
+ * Every outbound envelope is signed with this environment's key and every
+ * inbound envelope is verified before it is accepted (see
+ * {@link WorkjetMeshIdentity}); the source address is this environment's own
+ * mesh identity, never a caller-supplied workspace id.
  *
  * every step through {@link WorkjetMailboxStore}, every value through the
  * `@t3tools/contracts` mailbox schemas, and the delegation lifecycle through
@@ -68,18 +74,6 @@ export const WORKJET_MAILBOX_MAX_TTL_SECONDS = 604_800;
 /** Default envelope time-to-live when the caller does not choose one. */
 export const WORKJET_MAILBOX_DEFAULT_TTL_SECONDS = 3_600;
 
-/**
- * Detached routing-envelope signature placeholder.
- *
- * Signing the immutable routing envelope with the source environment key is a
- * separate, still-open plan item ("Encrypt message/delegation payloads end to
- * end … and sign the immutable routing envelope"). Until that slice lands the
- * envelope carries this constant so the contract stays satisfiable without
- * pretending a signature was verified. The transport slice MUST replace it with
- * a real detached signature and MUST reject this value on the receiving side.
- */
-export const WORKJET_MAILBOX_UNSIGNED_ENVELOPE_SIGNATURE = "workjet-local-unsigned-envelope-v1";
-
 /** Thread-visible activity kinds appended for mailbox traffic. */
 export const WORKJET_MESSAGE_SENT_ACTIVITY_KIND = "workjet.message.sent";
 export const WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND = "workjet.message.received";
@@ -90,8 +84,13 @@ export const WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND = "workjet.delegation.rec
 // Inputs and outcomes
 // ===============================
 
+/**
+ * Only the TARGET workspace is caller-supplied. The source workspace id is this
+ * environment's own mesh identity ({@link WorkjetMeshIdentity}) — a caller must
+ * not be able to choose the workspace it claims to be sending from.
+ */
 export interface WorkjetMailboxSendMessageInput {
-  readonly workspaceId: WorkjetMeshWorkspaceId;
+  readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
   readonly targetEnvironmentId: EnvironmentId;
   readonly targetThreadId: ThreadId;
   readonly body: WorkjetMessageBody;
@@ -106,7 +105,7 @@ export interface WorkjetMailboxDelegationBudgetInput {
 }
 
 export interface WorkjetMailboxDelegateInput {
-  readonly workspaceId: WorkjetMeshWorkspaceId;
+  readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
   readonly targetEnvironmentId: EnvironmentId;
   readonly targetThreadId: ThreadId;
   readonly prompt: WorkjetPromptSnapshotRef;
@@ -114,7 +113,12 @@ export interface WorkjetMailboxDelegateInput {
   readonly completion: WorkjetCompletionContract;
   readonly budget: WorkjetMailboxDelegationBudgetInput;
   readonly depth?: number;
-  readonly parent?: WorkjetDelegationRef;
+  /**
+   * Id of the delegation this one continues. The owning ADDRESS is derived
+   * here from the delegating thread's own mesh identity rather than accepted
+   * from the caller, for the same reason the source workspace id is.
+   */
+  readonly parentDelegationId?: WorkjetDelegationId;
   readonly ttlSeconds?: number;
 }
 
@@ -234,6 +238,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
   const store = yield* WorkjetMailboxStore;
   const engine = yield* OrchestrationEngineService;
   const query = yield* ProjectionSnapshotQuery;
+  const identity = yield* WorkjetMeshIdentity;
 
   const envelopeId = sources.randomUUID.pipe(
     Effect.map((uuid) => WorkjetEnvelopeId.make(`wjm-${uuid}`)),
@@ -296,6 +301,12 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       ),
     );
 
+  /**
+   * Builds the immutable routing envelope and signs its canonical
+   * serialization with THIS environment's key. The signature is produced once,
+   * before the durable outbox write, so the row a future transport picks up is
+   * already the exact bytes a peer will verify.
+   */
   const routingEnvelope = (input: {
     readonly envelopeId: WorkjetEnvelopeId;
     readonly kind: WorkjetRoutingEnvelope["kind"];
@@ -303,18 +314,18 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     readonly target: WorkjetWorkerAddress;
     readonly createdAt: WorkjetMailboxTimestamp;
     readonly expiresAt: WorkjetMailboxTimestamp;
-  }): WorkjetRoutingEnvelope => ({
-    schemaVersion: 1,
-    envelopeId: input.envelopeId,
-    kind: input.kind,
-    sourceWorkspaceId: input.source.workspaceId,
-    sourceEnvironmentId: input.source.environmentId,
-    targetWorkspaceId: input.target.workspaceId,
-    targetEnvironmentId: input.target.environmentId,
-    createdAt: input.createdAt,
-    expiresAt: input.expiresAt,
-    signature: WORKJET_MAILBOX_UNSIGNED_ENVELOPE_SIGNATURE,
-  });
+  }): Effect.Effect<WorkjetRoutingEnvelope, WorkjetMailboxError> =>
+    identity.signRoutingEnvelope({
+      schemaVersion: 1,
+      envelopeId: input.envelopeId,
+      kind: input.kind,
+      sourceWorkspaceId: input.source.workspaceId,
+      sourceEnvironmentId: input.source.environmentId,
+      targetWorkspaceId: input.target.workspaceId,
+      targetEnvironmentId: input.target.environmentId,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+    });
 
   /**
    * The shared local fast path. It runs the SAME three store operations for a
@@ -331,6 +342,15 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     ) => Effect.Effect<void, WorkjetMailboxError>;
   }) =>
     Effect.gen(function* () {
+      // The receiving side verifies BEFORE it accepts anything durable, even
+      // on the local fast path: the plan requires the same contracts and state
+      // machine as remote delivery, so an unverifiable envelope must never
+      // reach an inbox — not even one this process signed a moment ago.
+      const verified = yield* identity.verifyRoutingEnvelope(input.envelope);
+      if (!verified) {
+        return yield* failure("invalid-signature");
+      }
+
       const inbound = yield* store
         .recordInboundEnvelope(input.envelope, input.payload, input.now)
         .pipe(Effect.mapError(boundStoreError));
@@ -361,20 +381,20 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
   const resolveAddresses = (
     invocation: McpInvocationScope,
     input: {
-      readonly workspaceId: WorkjetMeshWorkspaceId;
+      readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
       readonly targetEnvironmentId: EnvironmentId;
       readonly targetThreadId: ThreadId;
     },
   ) => {
     const source: WorkjetWorkerAddress = {
       schemaVersion: 1,
-      workspaceId: input.workspaceId,
+      workspaceId: identity.workspaceId,
       environmentId: invocation.environmentId,
       threadId: invocation.threadId,
     };
     const target: WorkjetWorkerAddress = {
       schemaVersion: 1,
-      workspaceId: input.workspaceId,
+      workspaceId: input.targetWorkspaceId,
       environmentId: input.targetEnvironmentId,
       threadId: input.targetThreadId,
     };
@@ -416,7 +436,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       ...(input.inReplyTo !== undefined ? { inReplyTo: input.inReplyTo } : {}),
     };
     const payload = { _tag: "message", message } as const satisfies WorkjetMailboxPayload;
-    const envelope = routingEnvelope({
+    const envelope = yield* routingEnvelope({
       envelopeId: id,
       kind: "message",
       source,
@@ -514,7 +534,15 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       state: "queued",
       stateChangedAt: now,
       depth: input.depth ?? 0,
-      ...(input.parent !== undefined ? { parent: input.parent } : {}),
+      ...(input.parentDelegationId !== undefined
+        ? {
+            parent: {
+              schemaVersion: 1,
+              delegationId: input.parentDelegationId,
+              owner: source,
+            } as const satisfies WorkjetDelegationRef,
+          }
+        : {}),
     };
 
     if (delegation.depth > delegation.budget.maxDepth) {
@@ -522,7 +550,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     }
 
     const payload = { _tag: "delegation", delegation } as const satisfies WorkjetMailboxPayload;
-    const envelope = routingEnvelope({
+    const envelope = yield* routingEnvelope({
       envelopeId: id,
       kind: "delegation",
       source,

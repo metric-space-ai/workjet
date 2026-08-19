@@ -20,6 +20,7 @@ import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import {
   makeWorkjetMailboxDeliveryWithSources,
   WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND,
@@ -31,6 +32,11 @@ import {
   type WorkjetMailboxSendMessageInput,
 } from "./WorkjetMailboxDelivery.ts";
 import { WorkjetMailboxStore, WorkjetMailboxStoreLive } from "./WorkjetMailboxStore.ts";
+import {
+  canonicalRoutingEnvelopeBytes,
+  makeWorkjetMeshIdentity,
+  WorkjetMeshIdentity,
+} from "./WorkjetMeshIdentity.ts";
 
 const WORKSPACE = WorkjetMeshWorkspaceId.make("workjet-mesh-room-1");
 const LOCAL_ENVIRONMENT = EnvironmentId.make("environment-local");
@@ -74,7 +80,7 @@ const sealedBody = {
 const messageInput = (
   overrides?: Partial<WorkjetMailboxSendMessageInput>,
 ): WorkjetMailboxSendMessageInput => ({
-  workspaceId: WORKSPACE,
+  targetWorkspaceId: WORKSPACE,
   targetEnvironmentId: LOCAL_ENVIRONMENT,
   targetThreadId: TARGET_THREAD,
   body: inlineBody,
@@ -84,7 +90,7 @@ const messageInput = (
 const delegateInput = (
   overrides?: Partial<WorkjetMailboxDelegateInput>,
 ): WorkjetMailboxDelegateInput => ({
-  workspaceId: WORKSPACE,
+  targetWorkspaceId: WORKSPACE,
   targetEnvironmentId: LOCAL_ENVIRONMENT,
   targetThreadId: TARGET_THREAD,
   prompt: {
@@ -106,12 +112,37 @@ const delegateInput = (
 });
 
 /**
+ * A REAL mesh identity (real Ed25519 keys, real signatures) over an in-memory
+ * secret store, with the generated workspace id pinned to the fixture so the
+ * address assertions stay readable. Signing and verification are never faked:
+ * the delivery path must produce envelopes that actually verify.
+ */
+const makeTestIdentity = () => {
+  const entries = new Map<string, Uint8Array>();
+  const secrets = ServerSecretStore.ServerSecretStore.of({
+    get: (name) => {
+      const value = entries.get(name);
+      return Effect.succeed(value === undefined ? Option.none() : Option.some(value));
+    },
+    set: (name, value) => Effect.sync(() => void entries.set(name, value)),
+    create: (name, value) => Effect.sync(() => void entries.set(name, value)),
+    getOrCreateRandom: () => Effect.die("unused"),
+    remove: (name) => Effect.sync(() => void entries.delete(name)),
+  });
+  return makeWorkjetMeshIdentity().pipe(
+    Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+    Effect.map((identity) => WorkjetMeshIdentity.of({ ...identity, workspaceId: WORKSPACE })),
+  );
+};
+
+/**
  * Every test builds its own in-memory database plus a recording engine, so the
  * durable rows and the thread-visible activities can be asserted exactly.
  */
 const makeHarness = (input?: {
   readonly target?: OrchestrationThread | undefined;
   readonly failCommands?: boolean;
+  readonly identity?: Effect.Effect<WorkjetMeshIdentity["Service"]>;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
   let idIndex = 0;
@@ -138,7 +169,12 @@ const makeHarness = (input?: {
       ),
   } as unknown as ProjectionSnapshotQuery["Service"];
 
-  const service = makeWorkjetMailboxDeliveryWithSources(sources).pipe(
+  const service = (input?.identity ?? makeTestIdentity()).pipe(
+    Effect.flatMap((identity) =>
+      makeWorkjetMailboxDeliveryWithSources(sources).pipe(
+        Effect.provideService(WorkjetMeshIdentity, identity),
+      ),
+    ),
     Effect.provideService(OrchestrationEngineService, engine),
     Effect.provideService(ProjectionSnapshotQuery, query),
   );
@@ -199,6 +235,65 @@ it.effect("delivers a same-environment message through the full outbox/inbox fas
       WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
       WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
     ]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("signs every stored envelope with the environment key and verifies it on receipt", () =>
+  Effect.gen(function* () {
+    const identity = yield* makeTestIdentity();
+    const { service } = makeHarness({ identity: Effect.succeed(identity) });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const local = yield* delivery.sendMessage(invocation, messageInput());
+    const remote = yield* delivery.sendMessage(
+      invocation,
+      messageInput({ targetEnvironmentId: REMOTE_ENVIRONMENT, body: sealedBody }),
+    );
+
+    for (const envelopeId of [local.envelopeId, remote.envelopeId]) {
+      const outbound = Option.getOrThrow(yield* store.getOutbound(envelopeId));
+      // The sentinel is gone: a real detached signature is stored, and it
+      // verifies against the source environment's public key.
+      assert.match(outbound.envelope.signature, /^[A-Za-z0-9_-]{86}$/);
+      assert.isTrue(yield* identity.verifyRoutingEnvelope(outbound.envelope));
+      assert.isTrue(
+        yield* identity.verify(
+          canonicalRoutingEnvelopeBytes(outbound.envelope),
+          outbound.envelope.signature,
+          identity.publicKey,
+        ),
+      );
+      assert.equal(outbound.envelope.sourceWorkspaceId, WORKSPACE);
+    }
+
+    // The envelope that actually landed in the inbox is the verified one.
+    const inbound = Option.getOrThrow(yield* store.getInbound(local.envelopeId));
+    assert.isTrue(yield* identity.verifyRoutingEnvelope(inbound.envelope));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses an inbound envelope whose signature does not verify", () =>
+  Effect.gen(function* () {
+    const real = yield* makeTestIdentity();
+    // A signer that emits a well-formed but wrong signature stands in for a
+    // forged or corrupted envelope arriving at the inbox.
+    const forging = WorkjetMeshIdentity.of({
+      ...real,
+      sign: () => Effect.succeed("A".repeat(86)),
+      signRoutingEnvelope: (envelope) => Effect.succeed({ ...envelope, signature: "A".repeat(86) }),
+    });
+    const { commands, service } = makeHarness({ identity: Effect.succeed(forging) });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const error = yield* delivery.sendMessage(invocation, messageInput()).pipe(Effect.flip);
+
+    assert.equal(error.reason, "invalid-signature");
+    // The outbound row exists, but nothing was accepted or delivered.
+    assert.equal((yield* store.listOutboundByState("pending", 10)).length, 1);
+    assert.equal((yield* store.listOutboundByState("delivered", 10)).length, 0);
+    assert.deepEqual(activityKinds(commands), [WORKJET_MESSAGE_SENT_ACTIVITY_KIND]);
   }).pipe(Effect.provide(testLayer)),
 );
 

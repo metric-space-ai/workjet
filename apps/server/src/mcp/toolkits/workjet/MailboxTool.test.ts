@@ -70,14 +70,14 @@ const makeTestLayer = (delivery: Partial<WorkjetMailboxDelivery.WorkjetMailboxDe
   );
 
 const sendArguments = {
-  workspaceId,
+  targetWorkspaceId: workspaceId,
   targetEnvironmentId: environmentId,
   targetThreadId,
   body: { _tag: "inline", text: "Please pick up the mailbox slice." },
 } as const;
 
 const delegateArguments = {
-  workspaceId,
+  targetWorkspaceId: workspaceId,
   targetEnvironmentId: environmentId,
   targetThreadId,
   prompt: {
@@ -112,7 +112,9 @@ it("declares both mailbox operations as non-idempotent open-world writes", () =>
       readonly properties?: Record<string, unknown>;
     };
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.properties).toHaveProperty("workspaceId");
+    expect(schema.properties).toHaveProperty("targetWorkspaceId");
+    // The source workspace id is the environment's own mesh identity now.
+    expect(schema.properties).not.toHaveProperty("workspaceId");
     expect(schema.properties).toHaveProperty("targetEnvironmentId");
     expect(schema.properties).toHaveProperty("targetThreadId");
   }
@@ -132,7 +134,8 @@ it.effect("rejects unknown keys, blank prose, and out-of-range bounds", () =>
       { ...sendArguments, body: { _tag: "inline", text: canary }, ttlSeconds: 1 },
       { ...sendArguments, body: { _tag: "inline", text: canary }, ttlSeconds: 604_801 },
       { ...sendArguments, body: { _tag: "inline", text: canary }, inReplyTo: "short" },
-      { workspaceId, targetEnvironmentId: environmentId },
+      { targetWorkspaceId: workspaceId, targetEnvironmentId: environmentId },
+      { ...sendArguments, workspaceId },
     ];
     for (const payload of invalidSends) {
       const error = yield* decodeSendMessageInput(payload).pipe(Effect.flip);
@@ -214,7 +217,10 @@ it.effect("returns the bounded acknowledged receipt for an orchestrator send", (
       input: WorkjetMailboxDelivery.WorkjetMailboxSendMessageInput,
     ) => {
       expect(input.targetThreadId).toBe(targetThreadId);
+      expect(input.targetWorkspaceId).toBe(workspaceId);
       expect(input.body._tag).toBe("inline");
+      // The delivery input has no source workspace field at all.
+      expect(input).not.toHaveProperty("workspaceId");
       return Effect.succeed({
         _tag: "acknowledged" as const,
         envelopeId,

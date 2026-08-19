@@ -50,6 +50,7 @@ import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import { WorkjetMailboxStoreLive } from "./workjet/mailbox/WorkjetMailboxStore.ts";
+import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -481,7 +482,11 @@ export const makeRoutesLayer = Layer.mergeAll(
     // the store resolves the ambient `SqlClient` from `PersistenceLayerLive`,
     // and the delivery service resolves the orchestration engine and projection
     // query from the same runtime the MCP routes already run inside.
-    Layer.provide(WorkjetMailboxDelivery.layer.pipe(Layer.provide(WorkjetMailboxStoreLive))),
+    Layer.provide(
+      WorkjetMailboxDelivery.layer.pipe(
+        Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
+      ),
+    ),
   ),
 ).pipe(
   // WebSocket management and MCP search resolve this one server-lifetime

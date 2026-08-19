@@ -11,7 +11,6 @@ import {
   WorkjetDelegationState,
   WorkjetDeliveryDisposition,
   WorkjetMailboxTimestamp,
-  type WorkjetDelegationRef,
   type WorkjetMessageBody,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -70,8 +69,15 @@ const MessageBodyInput = Schema.Union([
   }),
 ]);
 
+/**
+ * Only the TARGET address is caller-supplied. The source workspace id used to
+ * be an input field (`workspaceId`) that silently served as BOTH endpoints;
+ * since the environment owns a durable mesh identity, the source workspace is
+ * taken from `WorkjetMeshIdentity` inside the delivery service and a harness
+ * can no longer choose the workspace it claims to send from.
+ */
 const TargetAddressFields = {
-  workspaceId: WorkjetMeshWorkspaceId,
+  targetWorkspaceId: WorkjetMeshWorkspaceId,
   targetEnvironmentId: EnvironmentId,
   targetThreadId: ThreadId,
 } as const;
@@ -281,7 +287,7 @@ const registerSendMessage = Effect.fn("McpHttpServer.registerWorkjetSendMessage"
                   byteLength: input.body.byteLength,
                 };
           const outcome = yield* delivery.sendMessage(invocation, {
-            workspaceId: input.workspaceId,
+            targetWorkspaceId: input.targetWorkspaceId,
             targetEnvironmentId: input.targetEnvironmentId,
             targetThreadId: input.targetThreadId,
             body,
@@ -337,24 +343,11 @@ const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTas
         return Effect.gen(function* () {
           yield* McpInvocationContext.requireWorkjetOrchestrator();
           const input = yield* decodeDelegateTaskInput(payload);
-          // A parent edge is addressed inside this mesh workspace and owned by
-          // the delegating thread's own environment, exactly like the address
-          // pair above; nothing here invents a cross-workspace owner.
-          const parent: WorkjetDelegationRef | undefined =
-            input.parentDelegationId === undefined
-              ? undefined
-              : {
-                  schemaVersion: 1,
-                  delegationId: input.parentDelegationId,
-                  owner: {
-                    schemaVersion: 1,
-                    workspaceId: input.workspaceId,
-                    environmentId: invocation.environmentId,
-                    threadId: invocation.threadId,
-                  },
-                };
+          // A parent edge is owned by the delegating thread itself, so the
+          // delivery service resolves its address from the environment's mesh
+          // identity; nothing here invents a cross-workspace owner.
           const outcome = yield* delivery.delegateTask(invocation, {
-            workspaceId: input.workspaceId,
+            targetWorkspaceId: input.targetWorkspaceId,
             targetEnvironmentId: input.targetEnvironmentId,
             targetThreadId: input.targetThreadId,
             prompt: {
@@ -375,7 +368,9 @@ const registerDelegateTask = Effect.fn("McpHttpServer.registerWorkjetDelegateTas
               ttlSeconds: input.budget.ttlSeconds,
             },
             ...(input.depth !== undefined ? { depth: input.depth } : {}),
-            ...(parent !== undefined ? { parent } : {}),
+            ...(input.parentDelegationId !== undefined
+              ? { parentDelegationId: input.parentDelegationId }
+              : {}),
             ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
           });
           const base = {

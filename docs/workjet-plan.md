@@ -852,6 +852,23 @@ failed | cancelled | expired`. Done in the same commit
       outbox/inbox semantics: envelope signature verification, idempotent
       insertion, and delegation effects all stay in the Workjet mailbox store.
       The daemon treats envelope payloads as opaque bounded blobs.
+      PROVEN 2026-08-19 at the two-daemon level: CTOX rc-branch commits
+      `0faa62a12` (native peer presents its capability token in the
+      ctoxProtocol handshake), `b4fedd2ba` (a room-joining native peer
+      initiates offers — the symmetric handler otherwise waits forever),
+      `caa12db8f` (`ctox workjet mesh join|status|leave`, membership under
+      the state root 0600, own-room guard, mailbox-only session scope), and
+      `eeb62b667` (loopback writes carried malformed revisions and
+      schema-invalid tombstones — updates and retirements were silently
+      dropped by every peer, browsers included; fixed). The decisive test
+      `two_daemons_replicate_only_the_mailbox_across_a_mesh_join` runs two
+      real daemons on two storage roots against a real signaling server:
+      envelope A→B, envelope B→A, and an expiry tombstone all replicate
+      (11.3 s; independently re-verified). Client auth satisfies the
+      serving daemon's real signaling-partition and capability validators —
+      nothing serving-side was relaxed. Still open: a live (non-test)
+      two-machine run, and replacing the TOFU key exchange with the
+      room-derived identity binding.
       Progress 2026-08-19: both sides are implemented. CTOX rc-branch commit
       `9518d2ae0` adds the replicated `workjet_mailbox_envelopes` collection
       (bounds/charset validation only, payload ceiling 200 000 B derived from

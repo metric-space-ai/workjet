@@ -20,6 +20,8 @@ import {
   openApp,
   refresh,
   removePairedInstance,
+  addSshManagedInstance,
+  removeSshManagedInstance,
   setAppDocked,
 } from "./ctox.ts";
 import * as CtoxAppRail from "../../ctox/CtoxAppRail.ts";
@@ -714,4 +716,85 @@ describe("CTOX app rail IPC methods", () => {
       ),
     ),
   );
+});
+
+describe("CTOX SSH-managed IPC methods", () => {
+  const sshInstance = {
+    id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+    source: "ssh_managed",
+    displayName: "Build Box",
+    status: "offline",
+    healthSummary: {
+      dataPlane: "rxdb-webrtc",
+      dataPlaneReady: false,
+      httpDataProxy: false,
+      nativePeerObserved: false,
+    },
+  } as const;
+
+  it.effect("rejects malformed SSH input before touching the registry", () => {
+    const add = vi.fn(() => Effect.succeed(sshInstance));
+    const layer = registryLayer({ addSshManagedInstance: add });
+    return Effect.gen(function* () {
+      for (const raw of [
+        { host: "build box" },
+        { host: "build-box", stateRoot: "relative" },
+        { host: "build-box", unexpected: "field" },
+        { host: "build-box", displayName: "\u0007bell" },
+        {},
+      ]) {
+        assert.deepEqual(yield* addSshManagedInstance.handler(raw), {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      expect(add).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("passes a bounded SSH configuration through and returns only the descriptor", () => {
+    const add = vi.fn(() => Effect.succeed(sshInstance));
+    const layer = registryLayer({ addSshManagedInstance: add });
+    return Effect.gen(function* () {
+      const result = yield* addSshManagedInstance.handler({
+        host: "build-box",
+        displayName: "Build Box",
+        stateRoot: "/srv/ctox",
+      });
+      assert.deepEqual(result, { _tag: "completed", instance: sshInstance });
+      expect(add).toHaveBeenCalledExactlyOnceWith({
+        host: "build-box",
+        displayName: "Build Box",
+        stateRoot: "/srv/ctox",
+      });
+      // The renderer never learns the destination behind the row.
+      assert.notInclude(encodeUnknownJson(result), "build-box");
+      assert.notInclude(encodeUnknownJson(result), "/srv/ctox");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("surfaces the registry failure code when an SSH removal fails", () => {
+    const layer = registryLayer({
+      removeSshManagedInstance: () => failedRegistry("not_found"),
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(
+        yield* removeSshManagedInstance.handler({ instanceId: "ssh:AAAAAAAAAAAAAAAAAAAAAA" }),
+        { _tag: "failed", code: "not_found" },
+      );
+    }).pipe(Effect.provide(Layer.merge(layer, removalCleanupLayer())));
+  });
+
+  it.effect("removes a configured SSH instance and releases any guest holding it", () => {
+    const deactivateInstance = vi.fn(() => Effect.succeed({ _tag: "completed" as const }));
+    const layer = registryLayer({
+      removeSshManagedInstance: () => Effect.succeed(sshInstance),
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* removeSshManagedInstance.handler({ instanceId: sshInstance.id }), {
+        _tag: "completed",
+      });
+      expect(deactivateInstance).toHaveBeenCalledExactlyOnceWith(sshInstance.id);
+    }).pipe(Effect.provide(Layer.merge(layer, removalCleanupLayer({ deactivateInstance }))));
+  });
 });

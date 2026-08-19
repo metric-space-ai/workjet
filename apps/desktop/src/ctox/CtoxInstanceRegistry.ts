@@ -931,11 +931,17 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       : { nowEpochMs: options.sshManaged.nowEpochMs }),
   };
 
-  /** A broken or absent SSH configuration must never hide the other sources. */
-  const discoverSshInstances = readSshDocument(fileSystem, sshRegistryPath).pipe(
-    Effect.orElseSucceed(emptySshDocument),
-    Effect.flatMap((document) =>
-      discoverCtoxSshManagedInstances(document.instances, sshManagedOptions),
+  /**
+   * A broken or absent SSH configuration must never hide the other sources.
+   * The read is suspended so every discovery observes the configuration as it
+   * is now, not as it was when the service was constructed.
+   */
+  const discoverSshInstances = Effect.suspend(() =>
+    readSshDocument(fileSystem, sshRegistryPath).pipe(
+      Effect.orElseSucceed(emptySshDocument),
+      Effect.flatMap((document) =>
+        discoverCtoxSshManagedInstances(document.instances, sshManagedOptions),
+      ),
     ),
   );
 

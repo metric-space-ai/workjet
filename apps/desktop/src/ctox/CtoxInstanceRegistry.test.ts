@@ -27,6 +27,7 @@ import {
   parseCtoxPairingInvite,
 } from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
+import * as CtoxSshManagedSource from "./CtoxSshManagedSource.ts";
 
 const NOW = 1_800_000_000_000;
 const textDecoder = new TextDecoder();
@@ -172,6 +173,7 @@ function registryHarness(
     readonly nowEpochMs?: () => number;
     readonly platform?: NodeJS.Platform;
     readonly localDaemon?: CtoxLocalDaemonSource.CtoxLocalDaemonDiscoveryOptions;
+    readonly sshManaged?: CtoxSshManagedSource.CtoxSshManagedDiscoveryOptions;
   } = {},
 ) {
   const memory = input.fileSystem ?? makeMemoryFileSystem();
@@ -184,6 +186,11 @@ function registryHarness(
     // Local discovery is off unless a test supplies a state root, so the
     // developer machine's own CTOX installation cannot influence a test.
     localDaemon: input.localDaemon ?? { env: {} },
+    // SSH discovery is inert unless a test injects an exec: the default
+    // refuses every host, so no test can reach the network.
+    sshManaged: input.sshManaged ?? {
+      exec: () => Effect.fail(new CtoxSshManagedSource.CtoxSshExecError({ reason: "unreachable" })),
+    },
   }).pipe(
     Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     Effect.provideService(ElectronSafeStorage.ElectronSafeStorage, input.storage ?? safeStorage()),
@@ -895,6 +902,171 @@ describe("CtoxInstanceRegistry", () => {
       );
       assert.equal(parsed.source, "pairing_invite");
       assert.equal(parsed.instanceIdentity, "office-1");
+    });
+  });
+});
+
+describe("CtoxInstanceRegistry SSH-managed instances", () => {
+  const sshDescriptor = JSON.stringify({
+    version: 1,
+    instanceId: "remote-1",
+    displayName: "Remote Business OS",
+    status: "running",
+    lastSeenAt: NOW - 1_000,
+  });
+
+  function sshExec(responses: Readonly<Record<string, string>>): CtoxSshManagedSource.CtoxSshExec {
+    return (input) => {
+      const stdout = responses[input.host];
+      return stdout === undefined
+        ? Effect.fail(new CtoxSshManagedSource.CtoxSshExecError({ reason: "unreachable" }))
+        : Effect.succeed({ stdout });
+    };
+  }
+
+  it.effect("round-trips an SSH configuration and persists no secret", () => {
+    const { memory, registry } = registryHarness();
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const added = yield* service.addSshManagedInstance({
+        host: "build-box",
+        displayName: "Build Box",
+        stateRoot: "/srv/ctox",
+      });
+      assert.equal(added.source, "ssh_managed");
+      assert.match(added.id, /^ssh:[A-Za-z0-9_-]{22}$/);
+      assert.equal(added.displayName, "Build Box");
+      assert.equal(added.status, "offline");
+
+      const stored = memory.files.get("/state/ctox/ssh-instances.json") ?? "";
+      assert.include(stored, "build-box");
+      assert.include(stored, "/srv/ctox");
+      // The no-secret canary: this document is public by design and may never
+      // acquire pairing material, and it must not touch the paired documents.
+      for (const forbidden of [
+        "secret",
+        "token",
+        "password",
+        "credential",
+        "ciphertext",
+        "syncRoom",
+        "signaling",
+      ]) {
+        assert.notInclude(stored.toLowerCase(), forbidden.toLowerCase());
+      }
+      assert.isUndefined(memory.files.get("/state/ctox/instances.json"));
+      assert.isUndefined(memory.files.get("/state/ctox/secrets.json"));
+
+      const removed = yield* service.removeSshManagedInstance(added.id);
+      assert.equal(removed.id, added.id);
+      const emptied = decodeUnknownJson(memory.files.get("/state/ctox/ssh-instances.json") ?? "");
+      assert.deepEqual(emptied, { version: 1, instances: [] });
+
+      assert.equal(
+        failureCode(yield* service.removeSshManagedInstance(added.id).pipe(Effect.result)),
+        "not_found",
+      );
+      assert.equal(
+        failureCode(yield* service.removeSshManagedInstance("paired:x").pipe(Effect.result)),
+        "not_found",
+      );
+    });
+  });
+
+  it.effect("merges configured hosts as one deterministic ssh_managed source", () => {
+    const memory = makeMemoryFileSystem();
+    const reachable = registryHarness({
+      fileSystem: memory,
+      sshManaged: { exec: sshExec({ "build-box": sshDescriptor }), nowEpochMs: () => NOW },
+    });
+    return Effect.gen(function* () {
+      const service = yield* reachable.registry;
+      yield* service.addSshManagedInstance({ host: "build-box", displayName: "Build Box" });
+      yield* service.addSshManagedInstance({ host: "quiet-box", displayName: "Quiet Box" });
+
+      const discovery = yield* service.merge({ _tag: "ready", instances: [] });
+      assert.equal(discovery._tag, "ready");
+      if (discovery._tag !== "ready") return;
+      const ssh = discovery.instances.filter((instance) => instance.source === "ssh_managed");
+      assert.lengthOf(ssh, 2);
+      // Reachability, not launchability: the running host reads available and
+      // the silent one offline, and both sort deterministically by name.
+      assert.deepEqual(
+        ssh.map((instance) => [instance.displayName, instance.status]),
+        [
+          ["Build Box", "available"],
+          ["Quiet Box", "offline"],
+        ],
+      );
+      const repeated = yield* service.merge({ _tag: "ready", instances: [] });
+      assert.deepEqual(repeated, discovery);
+    });
+  });
+
+  it.effect("keeps a corrupt SSH configuration from hiding the other sources", () => {
+    const memory = makeMemoryFileSystem();
+    memory.files.set("/state/ctox/ssh-instances.json", '{"version":1,"instances":"broken"}');
+    const { registry } = registryHarness({ fileSystem: memory });
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const paired = yield* service.importManualPairing(manualPairing);
+      const discovery = yield* service.merge({ _tag: "ready", instances: [] });
+      assert.equal(discovery._tag, "ready");
+      if (discovery._tag !== "ready") return;
+      assert.deepEqual(
+        discovery.instances.map((instance) => instance.id),
+        [paired.id],
+      );
+    });
+  });
+
+  it.effect("refuses a configuration entry whose id was forged", () => {
+    const memory = makeMemoryFileSystem();
+    memory.files.set(
+      "/state/ctox/ssh-instances.json",
+      JSON.stringify({
+        version: 1,
+        instances: [
+          {
+            id: CtoxSshManagedSource.ctoxSshManagedInstanceId("trusted-box"),
+            host: "attacker-box",
+            displayName: "Trusted Box",
+          },
+        ],
+      }),
+    );
+    const { registry } = registryHarness({
+      fileSystem: memory,
+      sshManaged: { exec: sshExec({ "attacker-box": sshDescriptor }), nowEpochMs: () => NOW },
+    });
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const discovery = yield* service.merge({ _tag: "ready", instances: [] });
+      assert.equal(discovery._tag, "ready");
+      if (discovery._tag !== "ready") return;
+      assert.lengthOf(discovery.instances, 0);
+    });
+  });
+
+  it.effect("rejects a host that is not a plain SSH destination", () => {
+    const { registry } = registryHarness();
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      for (const host of ["build box", "-oProxyCommand=x", "build;rm -rf /", ""]) {
+        assert.equal(
+          failureCode(yield* service.addSshManagedInstance({ host }).pipe(Effect.result)),
+          "invalid_input",
+          host,
+        );
+      }
+      assert.equal(
+        failureCode(
+          yield* service
+            .addSshManagedInstance({ host: "build-box", stateRoot: "relative/path" })
+            .pipe(Effect.result),
+        ),
+        "invalid_input",
+      );
     });
   });
 });

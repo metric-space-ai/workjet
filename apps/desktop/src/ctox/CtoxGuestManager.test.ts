@@ -709,6 +709,38 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("refuses to activate an SSH-managed instance", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    // A fully well-formed, reachable SSH-managed row is still not launchable:
+    // its signaling endpoints live on the remote loopback interface, so the
+    // guest path refuses it instead of opening an unreachable room.
+    const sshDescriptor: CtoxManagedInstance = {
+      id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+      source: "ssh_managed",
+      displayName: "Build Box",
+      status: "available",
+      healthSummary: {
+        dataPlane: "rxdb-webrtc",
+        dataPlaneReady: false,
+        httpDataProxy: false,
+        nativePeerObserved: false,
+      },
+    };
+    harness.setLocalInstances([sshDescriptor]);
+    harness.setDiscovery({ _tag: "signed_out" });
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(sshDescriptor.id, bounds), { _tag: "revoked" });
+      expect(harness.resolveLocalLaunch).not.toHaveBeenCalled();
+      expect(harness.resolvePairedLaunch).not.toHaveBeenCalled();
+      expect(harness.shellLaunch).not.toHaveBeenCalled();
+      expect(harness.createView).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("fails the activation when the local daemon cannot mint an invite", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };

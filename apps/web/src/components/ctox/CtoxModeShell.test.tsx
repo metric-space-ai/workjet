@@ -16,11 +16,13 @@ import ctoxModeShellSource from "./CtoxModeShell.tsx?raw";
 import {
   activateCtoxInstance,
   buildCtoxManualPairingInput,
+  buildCtoxSshManagedInput,
   canActivateCtoxInstance,
   claimCtoxGuestActivation,
   CTOX_IMPORT_ERROR_MESSAGE,
   CTOX_IMPORT_SUCCESS_MESSAGE,
   CTOX_REMOVE_ERROR_MESSAGE,
+  CTOX_SSH_LAUNCH_PENDING_HINT,
   CTOX_RAIL_FALLBACK_CATEGORY,
   ctoxRailCollapseKey,
   CtoxAppRailList,
@@ -32,6 +34,8 @@ import {
   groupCtoxInstances,
   groupCtoxRailApps,
   isCurrentCtoxGuestActivation,
+  isRemovableCtoxInstance,
+  PairingAddSurface,
   releaseCtoxGuest,
   removeCtoxPairedInstance,
   resolveCtoxGuestBounds,
@@ -39,6 +43,7 @@ import {
   submitCtoxInvite,
   readCtoxRailCollapsed,
   submitCtoxManualPairing,
+  submitCtoxSshManagedInstance,
   trackCtoxGuestActivation,
   visibleCtoxRailApps,
   writeCtoxRailCollapsed,
@@ -172,6 +177,104 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("partition-must-not-render");
     expect(markup).not.toContain("launch-url-must-not-render");
     expect(markup).not.toContain("httpDataProxy");
+  });
+
+  it("renders SSH instances as reachable-but-not-launchable with an honest hint", () => {
+    const reachable = instance({
+      id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+      source: "ssh_managed",
+      displayName: "Build Box",
+      healthSummary: unavailable,
+    });
+    const unreachable = instance({
+      id: "ssh:BBBBBBBBBBBBBBBBBBBBBB",
+      source: "ssh_managed",
+      displayName: "Quiet Box",
+      status: "offline",
+      healthSummary: unavailable,
+    });
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          instances: [reachable, unreachable],
+        }}
+      >
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+
+    // Reachability is reported honestly; launchability is not claimed at all.
+    expect(canActivateCtoxInstance(reachable)).toBe(false);
+    expect(canActivateCtoxInstance(unreachable)).toBe(false);
+    expect(isRemovableCtoxInstance(reachable)).toBe(true);
+    expect(markup).toContain('id="ctox-ssh-heading"');
+    expect(markup).toContain("SSH CTOX instances");
+    expect(markup).toContain("SSH managed\nAvailable · WebRTC unavailable");
+    expect(markup).toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
+    expect(markup).toContain("This host is not reachable.");
+    // Both rows are inert, and both offer removal.
+    expect(markup.match(/cursor-not-allowed/gu)?.length).toBe(2);
+    expect(markup).toContain("Remove Build Box");
+    expect(markup).toContain("Remove Quiet Box");
+  });
+
+  it("offers an SSH tab in the add surface that stores no credential", async () => {
+    const addSshManagedInstance = vi.fn(async () => ({
+      _tag: "completed" as const,
+      instance: {
+        id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
+        source: "ssh_managed" as const,
+        displayName: "Build Box",
+        status: "offline" as const,
+        healthSummary: unavailable,
+      },
+    }));
+    const bridge = inertBridge({ addSshManagedInstance });
+
+    expect(
+      buildCtoxSshManagedInput({ host: " build-box ", displayName: " ", stateRoot: "" }),
+    ).toEqual({ host: "build-box" });
+    expect(
+      buildCtoxSshManagedInput({
+        host: "build-box",
+        displayName: "Build Box",
+        stateRoot: "/srv/ctox",
+      }),
+    ).toEqual({ host: "build-box", displayName: "Build Box", stateRoot: "/srv/ctox" });
+
+    const outcome = await submitCtoxSshManagedInstance(bridge, { host: "build-box" });
+    expect(outcome.ok).toBe(true);
+    expect(addSshManagedInstance).toHaveBeenCalledExactlyOnceWith({ host: "build-box" });
+
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider bridge={bridge} initialDiscovery={{ _tag: "ready", instances: [] }}>
+        <SidebarProvider>
+          <PairingAddSurface onClose={() => undefined} onImported={() => undefined} />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+    // The add surface offers three peers; SSH sits next to the pairing tabs.
+    expect(markup).toContain("grid-cols-3");
+    expect(markup).toContain(">Invite</button>");
+    expect(markup).toContain(">Manual pairing</button>");
+    expect(markup).toContain(">SSH</button>");
+
+    // The SSH branch asks only for a destination and an optional state root.
+    const sshForm = ctoxModeShellSource.slice(
+      ctoxModeShellSource.indexOf('{choice === "ssh" ? ('),
+      ctoxModeShellSource.indexOf(') : choice === "invite" ? ('),
+    );
+    expect(sshForm).toContain("SSH host or alias");
+    expect(sshForm).toContain("CTOX state root on that host (optional)");
+    expect(sshForm).toContain("No credential is stored here.");
+    expect(sshForm).toContain("CTOX_SSH_LAUNCH_PENDING_HINT");
+    expect(sshForm).not.toContain('type="password"');
+    expect(sshForm).not.toMatch(/secret|token|credential.{0,20}=/iu);
   });
 
   it("renders running local daemons as launchable and stopped ones as inert", () => {

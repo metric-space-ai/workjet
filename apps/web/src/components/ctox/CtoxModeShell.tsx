@@ -1177,7 +1177,8 @@ export function CtoxManagedInstanceList({
 const fieldClassName =
   "mt-1 w-full rounded-md border border-sidebar-border bg-sidebar-accent/20 px-2 py-1.5 text-xs text-sidebar-foreground outline-none placeholder:text-sidebar-muted-foreground focus:border-sidebar-primary/60";
 
-function PairingAddSurface({
+/** Exported for presentational tests; the sidebar renders it on demand. */
+export function PairingAddSurface({
   onClose,
   onImported,
 }: {

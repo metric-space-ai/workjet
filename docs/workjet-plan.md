@@ -1065,8 +1065,19 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   online state), a required bounded thread-id input ("this machine cannot
   list another machine's threads"), per-peer prefill, and the old silent
   environment-id-as-thread-id fallback was removed as a guess dressed as a
-  default. Zero-peer/no-roster/truncated states covered. Still open:
-  follow-up/reassign controls and the compact-composer variant.
+  default. Zero-peer/no-roster/truncated states covered. Follow-up/revise/
+  reassign + compact composer done 2026-08-20 (commits `9b08253e0`,
+  `026f95471`): follow-up on running (optional bounded note sent as a reply
+  FIRST — an undeliverable note never precedes a silent state change), revise
+  on changes-requested, reassign on delivered/needs-input via the new
+  `workjet.mailbox.reassignDelegation` RPC (operate scope; cross-env →
+  `unknown-target` before any effect) with the send panel's local-target
+  list, refusal reasons rendered on the card; the send-to-worker control now
+  also renders in the composer's compact footer as an icon-popover (it was
+  previously absent there entirely). Known follow-up: the ws layer satisfies
+  the reassign port with the store write — providing WorkjetDelegationExecutor
+  through server.ts and swapping the port keeps guard+reconciler in one
+  place. The thread-UI item is functionally COMPLETE.
 - [x] Add redacted audit/observability events and user notifications without
       storing prompts, secrets, provider payloads, or artifact contents in
       relay logs, traces, push notifications, or crash reports. Done 2026-08-19

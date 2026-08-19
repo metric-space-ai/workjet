@@ -15,6 +15,7 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
 import * as WorkerDispatch from "../workjet/WorkerDispatch.ts";
+import * as WorkjetMailboxDelivery from "../workjet/mailbox/WorkjetMailboxDelivery.ts";
 import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
 import {
   WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
@@ -50,6 +51,13 @@ const client = McpSchema.McpServerClient.of({
 const WorkerDispatchTestLayer = Layer.succeed(
   WorkerDispatch.WorkerDispatch,
   WorkerDispatch.WorkerDispatch.of({ dispatch: () => Effect.die("unused") }),
+);
+const WorkjetMailboxDeliveryTestLayer = Layer.succeed(
+  WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+  WorkjetMailboxDelivery.WorkjetMailboxDelivery.of({
+    sendMessage: () => Effect.die("unused"),
+    delegateTask: () => Effect.die("unused"),
+  }),
 );
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
@@ -252,6 +260,7 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
         Layer.provide(GreppyRuntime.layer),
         Layer.provide(WorkerDispatchTestLayer),
+        Layer.provide(WorkjetMailboxDeliveryTestLayer),
         Layer.provide(
           ServerConfig.layerTest(
             process.cwd(),

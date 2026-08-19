@@ -882,6 +882,10 @@ const buildAppUnderTest = (options?: {
     );
 
     const appLayer = servedRoutesLayer.pipe(
+      // The MCP routes now carry the durable Workjet mailbox, whose store reads
+      // the ambient `SqlClient`. The router seam therefore gets its own
+      // in-memory database, exactly like the auth test layer above.
+      Layer.provide(SqlitePersistenceMemory),
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
       Layer.provide(

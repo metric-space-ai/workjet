@@ -774,15 +774,28 @@ another worker and may require no execution. A delegation carries a prompt,
 explicit scope and completion contract, schedules a target turn, and owns a
 durable lifecycle. Sending “message + task” creates both in one atomic command.
 
-- [ ] Define a globally routable worker address as account/workspace authority
+- [x] Define a globally routable worker address as account/workspace authority
       plus `environmentId` and `threadId`; keep harness and provider IDs out of
       the address so a thread can change model without breaking the route.
-- [ ] Add versioned contracts for `WorkerMessage`, `Delegation`,
+      Done 2026-08-19 (commit `fe58d3bfc`): `WorkjetWorkerAddress` in
+      `packages/contracts/src/workjetMailbox.ts` — opaque bounded
+      `WorkjetMeshWorkspaceId` (CTOX pairing charset, no account/room/signaling
+      material) + `environmentId` + `threadId`; a test asserts the exact key
+      set contains no harness/provider field.
+- [x] Add versioned contracts for `WorkerMessage`, `Delegation`,
       `DelegationRef`, delivery receipt, result, review verdict, and bounded
-      artifact/context references.
-- [ ] Model delegation states explicitly: `queued | delivered | accepted |
+      artifact/context references. Done 2026-08-19 (commit `fe58d3bfc`,
+      46 focused tests): sealed-or-inline message bodies (inline bounded to
+      the same-environment fast path), digest-pinned prompt snapshots,
+      bounded scope/budget/artifact references, delegation graph edges
+      (`reviews | revises | follows-up`), the `WorkjetThreadHandoff` contract
+      from the portability decision, and a separate `WorkjetRoutingEnvelope`
+      that IS the only relay-inspectable projection (routing + expiry + source
+      signature; payload fields are unrepresentable on it).
+- [x] Model delegation states explicitly: `queued | delivered | accepted |
 running | needs-input | review-requested | changes-requested | completed |
-failed | cancelled | expired`.
+failed | cancelled | expired`. Done in the same commit
+      (`WorkjetDelegationState`, terminal set exported).
 - [ ] Persist source outbox, target inbox, delegation state, and thread-visible
       message/delegation events transactionally on their authoritative servers.
 - [ ] Replicate the per-machine durable mailboxes and the redacted activity

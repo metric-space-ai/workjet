@@ -451,6 +451,13 @@ describe("CtoxInstanceRegistry", () => {
             capability_expires_at_ms: NOW + 60_000,
           },
         }),
+        // The plan's invariant forbids an HTTP data bridge "or fallback", and
+        // pairing IS the fallback path. `http_bridge_available` is a
+        // `Schema.Literal(false)`, so an invite that claims the bridge is
+        // available must not decode at all — only the nested-unknown-key case
+        // below was covered, which a peer advertising the real field would
+        // have walked straight past.
+        invite({ http_bridge_available: true }),
         invite({ nested: { http_bridge: { enabled: true } } }),
         invite({ nested: Array.from({ length: 65 }, () => false) }),
         invite({ sync_room: "wrong:room" }),

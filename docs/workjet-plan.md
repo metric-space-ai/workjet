@@ -696,9 +696,26 @@ adapter conformance suite.
 
 Goal: turn the stored role metadata into real local and remote orchestration.
 
-- [ ] Add a radio-style `Code | Orchestrator` control without replacing the
-      existing provider-specific Plan/Build control.
-- [ ] Add a neighboring settings gear for Workjet configuration.
+- [x] Add a radio-style `Code | Orchestrator` control without replacing the
+      existing provider-specific Plan/Build control. Done 2026-08-20 (commit
+      `934b3d029`): the composer's left cluster now carries a role radio next
+      to Plan/Build, with the constraint made ASSERTABLE — the cluster moved
+      into `ComposerFooterControls` so one test can prove both controls render
+      together (plan mode, a provider without an interaction toggle, and the
+      worker state each keep Plan/Build). WORKER is a read-only third state,
+      not a greyed pair: the contract's worker variant REQUIRES a parent
+      reference only the dispatching orchestrator knows, so a client-side
+      conversion would orphan the worker; `aria-disabled` rather than
+      `disabled` keeps the tooltip that carries the reason. A role change
+      takes effect at the next session (the role compiles into the provider
+      system prompt at session start) and says so. Compact footer gets the
+      role as a menu radio group. Bug found while wiring: the optimistic
+      override compared only `enabledCapabilityIds`, so a role change flicked
+      back to Code before the projection caught up.
+- [x] Add a neighboring settings gear for Workjet configuration. Done
+      2026-08-20 (commit `934b3d029`): navigates to the EXISTING
+      Settings → Workjet surface as a plain push, so the settings screen's own
+      back/Escape returns to the thread. No second configuration surface.
 - [ ] Port the Swift Workjet configuration model into versioned Code-mode
       contracts and migrations: orchestrator prompt, progress-board policy,
       worker catalog, provider/model selection, computer target, telemetry,

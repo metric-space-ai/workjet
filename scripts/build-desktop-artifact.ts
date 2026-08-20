@@ -13,6 +13,7 @@ import desktopPackageJson from "../apps/desktop/package.json" with { type: "json
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
+import { enforceCapabilityVersionLock } from "./check-capability-version-lock.ts";
 import { BRAND_ASSET_PATHS, type WebAssetBrand } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
@@ -2561,6 +2562,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   yield* stageLegalNotices({ repoRoot, stageAppDir });
+  // One capability, one version, both hosts. A desktop artifact whose Code and
+  // CTOX hosts resolve different manifests, JSON schemas, implementation
+  // revisions, or contract artifacts is not releasable, so this refuses before
+  // anything is packaged.
+  yield* enforceCapabilityVersionLock(repoRoot);
+  yield* Effect.log(
+    "[desktop-artifact] Code and CTOX resolve one canonical capability version lock.",
+  );
   yield* stageResourceMonitor({
     repoRoot,
     stageResourcesDir,

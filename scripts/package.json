@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@metric-space-ai/workjet-capabilities": "workspace:*",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/shared": "workspace:*",
     "@t3tools/tailscale": "workspace:*",

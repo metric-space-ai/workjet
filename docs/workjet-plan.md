@@ -1158,7 +1158,16 @@ failure, remote version skew, and unauthorized cross-environment control.
       at every depth. Keychain finding: safeStorage is keyed by app NAME, not
       dir — nothing orphans now, but changing displayName later would and
       needs its own migration. First-launch renderer dialog mounted at the
-      app root (import and restart / start fresh).
+      app root (import and restart / start fresh). VERIFIED LIVE 2026-08-20
+      on the real profile: dialog → import → relaunch → marker `migrated`,
+      Partitions carried over, the paired CTOX instance intact, legacy dir
+      untouched, dialog never reappears. One packaged-only regression was
+      found and fixed in the process (commit on branch): the migration's
+      async FS construction let Electron's `ready` fire before the Clerk
+      bridge registered privileged schemes — the construction path now uses
+      a synchronous FileSystem (`syncFileSystemLayer`) so it is macrotask-
+      free pre-ready. LESSON: desktop main-process slices need a packaged
+      launch smoke; fake-FS tests cannot catch pre-ready ordering.
 - [ ] Keep internal `@t3tools/*` package names where changing them adds only
       upstream merge cost.
 - [ ] Update visible copy without rewriting unrelated historical comments,

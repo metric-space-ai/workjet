@@ -1,5 +1,18 @@
 # Progress-Board · Decision Hub (vormals Kundenpipeline) + Brillen-Approval
 
+## OWNER-ENTSCHEIDUNGEN (offen, nicht eigenmächtig entschieden)
+1. „Matching"-App auf welsch: Rest aus dem alten Kunden-App-Leak
+   (Juni-Bundle). Behalten oder löschen?
+2. Threads-Posteingang bis zu 30 min verzögert (Standby-Intervall der
+   Projektionsschleife, CPU-Tuning). Wecken bei neuen Entscheidungen?
+   Berührt Kern-Scheduling und die Session „CTOX Desktop App".
+3. ZUGEWIESENE Tenant-Instanzen werden NICHT automatisch aktualisiert.
+   Mein Fleet-Fix (ensureWarmPoolRelease) hält nur den Warm-Pool aktuell;
+   eine laufende Kundeninstanz ohne Zustimmung hochzuziehen wäre riskant.
+   Ohne kontrollierten Update-Pfad (Wartungsfenster oder „Update
+   verfügbar" in der UI) driftet ein langlebiger Tenant wieder in genau
+   die Alt-Version, die den ganzen Vorfall ausgelöst hat.
+
 ## Paket I (2026-08-20 vormittags) — 3 weitere Bugs, alle strukturell
 - BUG 3 (Owner-sichtbar, Ursache subtil): Threads zeigte „Handeln (0)",
   obwohl der Approval-Thread existierte. Auf welsch hat das LOGIN-Konto

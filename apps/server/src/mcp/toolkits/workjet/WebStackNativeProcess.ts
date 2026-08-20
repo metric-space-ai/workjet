@@ -1,4 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- `productionRuntime` is the Node platform implementation injected behind `WebStackRuntimeBoundary`; it needs the raw `stat`/`access(X_OK)`/`mkdir` syscalls that decide whether a native executable exists and is runnable.
 import * as NodeFs from "node:fs/promises";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Executable discovery walks the process `PATH` with the host's own delimiter and resolves argv paths for the spawned `workjet-web-stack` binary; this is the one module in the toolkit allowed to know that.
 import * as NodePath from "node:path";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -74,6 +76,13 @@ export const executableCandidates = (input: {
   ]);
 };
 
+/**
+ * The `--root` directory every Web Stack subcommand receives. Kept here with the
+ * rest of the native-process boundary so the toolkits that only ever needed it
+ * to build argv do not each have to import `node:path`.
+ */
+export const webStackStateRoot = (stateDir: string): string => NodePath.join(stateDir, "web-stack");
+
 export const productionRuntime = (): WebStackRuntimeBoundary => ({
   executableCandidates: executableCandidates({
     environment: process.env,
@@ -96,10 +105,10 @@ export const productionRuntime = (): WebStackRuntimeBoundary => ({
   },
 });
 
-const collectBounded = (
-  stream: Stream.Stream<Uint8Array, unknown>,
+const collectBounded = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
   maximumBytes: number,
-): Effect.Effect<BoundedOutput, unknown> =>
+): Effect.Effect<BoundedOutput, E> =>
   Stream.runFold(
     stream,
     () => ({ chunks: [] as Array<Uint8Array>, storedBytes: 0, totalBytes: 0 }),
@@ -124,10 +133,10 @@ const collectBounded = (
     }),
   );
 
-const drainBounded = (
-  stream: Stream.Stream<Uint8Array, unknown>,
+const drainBounded = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
   maximumBytes: number,
-): Effect.Effect<number, unknown> =>
+): Effect.Effect<number, E> =>
   Stream.runFold(
     stream,
     () => 0,

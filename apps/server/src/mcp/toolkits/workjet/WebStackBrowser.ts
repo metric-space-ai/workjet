@@ -1,4 +1,3 @@
-import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -119,7 +118,7 @@ export interface WebStackBrowserShape {
 }
 
 export class WebStackBrowser extends Context.Service<WebStackBrowser, WebStackBrowserShape>()(
-  "t3/mcp/WebStackBrowser",
+  "t3/mcp/toolkits/workjet/WebStackBrowser",
 ) {}
 
 const failure = (reason: WebStackBrowserFailureReason): WebStackBrowserError =>
@@ -127,6 +126,10 @@ const failure = (reason: WebStackBrowserFailureReason): WebStackBrowserError =>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const JsonText = Schema.fromJsonString(Schema.Unknown);
+const decodeJsonText = Schema.decodeEffect(JsonText);
+const encodeJsonText = Schema.encodeSync(JsonText);
 
 const hasExactKeys = (
   value: Record<string, unknown>,
@@ -276,14 +279,14 @@ const parseJsonResponse = (
     return Effect.fail(failure("oversized-response"));
   }
   if (output.exitCode !== 0) return Effect.fail(failure("process-exit"));
-  return Effect.try({
-    try: () => {
-      const value = JSON.parse(NativeProcess.outputText(output.stdout)) as unknown;
-      if (!isRecord(value) || value.ok !== true) throw new Error("invalid response");
-      return value;
-    },
-    catch: () => failure("malformed-response"),
-  });
+  return decodeJsonText(NativeProcess.outputText(output.stdout)).pipe(
+    Effect.mapError(() => failure("malformed-response")),
+    Effect.flatMap((value) =>
+      isRecord(value) && value.ok === true
+        ? Effect.succeed(value)
+        : Effect.fail(failure("malformed-response")),
+    ),
+  );
 };
 
 const PREPARE_REASONS = new Set<BrowserPrepareReason>([
@@ -365,7 +368,7 @@ const makeWithOptions = Effect.fn("WebStackBrowser.make")(function* (options: {
   readonly prepareTimeout?: Duration.Duration;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const stateRoot = NodePath.join(options.stateDir, "web-stack");
+  const stateRoot = NativeProcess.webStackStateRoot(options.stateDir);
   const runNative = NativeProcess.makeProbedRunner({
     spawner,
     runtime: options.runtime,
@@ -384,7 +387,7 @@ const makeWithOptions = Effect.fn("WebStackBrowser.make")(function* (options: {
       yield* ensureRoot;
       const output = yield* runNative({
         args: ["browser-prepare", "--root", stateRoot],
-        stdin: JSON.stringify({ request: input, config: {} }),
+        stdin: encodeJsonText({ request: input, config: {} }),
         maximumStdoutBytes: NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
         timeout: options.prepareTimeout ?? WEB_STACK_BROWSER_PREPARE_TIMEOUT,
       });
@@ -401,7 +404,7 @@ const makeWithOptions = Effect.fn("WebStackBrowser.make")(function* (options: {
       );
       const output = yield* runNative({
         args: ["browser-automate", "--root", stateRoot],
-        stdin: JSON.stringify({ request: { ...input, timeoutMs }, config: {} }),
+        stdin: encodeJsonText({ request: { ...input, timeoutMs }, config: {} }),
         maximumStdoutBytes: NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
         timeout: Duration.millis(timeoutMs + WEB_STACK_BROWSER_STARTUP_ALLOWANCE_MS),
       });

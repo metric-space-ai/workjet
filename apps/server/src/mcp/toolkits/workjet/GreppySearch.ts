@@ -75,7 +75,7 @@ export interface GreppySearchShape {
 }
 
 export class GreppySearch extends Context.Service<GreppySearch, GreppySearchShape>()(
-  "t3/mcp/GreppySearch",
+  "t3/mcp/toolkits/workjet/GreppySearch",
 ) {}
 
 interface BoundedOutput {
@@ -89,10 +89,10 @@ interface ProcessOutput {
   readonly exitCode: number;
 }
 
-const collectBounded = (
-  stream: Stream.Stream<Uint8Array, unknown>,
+const collectBounded = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
   maximumBytes: number,
-): Effect.Effect<BoundedOutput, unknown> =>
+): Effect.Effect<BoundedOutput, E> =>
   Stream.runFold(
     stream,
     () => ({ chunks: [] as Array<Uint8Array>, storedBytes: 0, totalBytes: 0 }),
@@ -117,7 +117,7 @@ const collectBounded = (
     }),
   );
 
-const countBytes = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<number, unknown> =>
+const countBytes = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<number, E> =>
   Stream.runFold(
     stream,
     () => 0,
@@ -168,6 +168,8 @@ const makeCommand = (
     shell: false,
   });
 
+const decodeJsonText = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
+
 const excerptOf = (summary: ReadonlyArray<string>): string =>
   summary.join("\n").slice(0, GREPPY_EXCERPT_MAX_CHARS);
 
@@ -179,10 +181,9 @@ const parseSearchOutput = (
   }
   return Effect.gen(function* () {
     const invalidResponseReason = output.exitCode === 0 ? "malformed-response" : "process-exit";
-    const parsed = yield* Effect.try({
-      try: () => JSON.parse(outputText(output.stdout)) as unknown,
-      catch: () => processError(invalidResponseReason),
-    });
+    const parsed = yield* decodeJsonText(outputText(output.stdout)).pipe(
+      Effect.mapError(() => processError(invalidResponseReason)),
+    );
     const response = yield* decodeGreppySemanticSearchV1(parsed).pipe(
       Effect.mapError(() => processError(invalidResponseReason)),
     );

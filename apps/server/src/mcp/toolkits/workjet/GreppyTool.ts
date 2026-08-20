@@ -12,6 +12,8 @@ import * as GreppySearch from "./GreppySearch.ts";
 
 export const GREPPY_MCP_TOOL_NAME = "greppy_search";
 
+const encodeJsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 const greppyManifest = builtInCapabilityManifests.find(
   (manifest) => manifest.id === "greppy" && manifest.supportedAdapters.includes("t3-mcp"),
 );
@@ -124,7 +126,7 @@ const registerGreppySearch = Effect.fn("McpHttpServer.registerGreppySearch")(fun
           return new McpSchema.CallToolResult({
             isError: false,
             structuredContent: result,
-            content: [{ type: "text", text: JSON.stringify(result) }],
+            content: [{ type: "text", text: encodeJsonText(result) }],
           });
         }).pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),

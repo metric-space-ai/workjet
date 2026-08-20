@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- This module IS the Node platform implementation behind the injected `GreppyRuntimePlatform` interface: `nodeRun` supervises a `child_process` it must SIGKILL, `nodeDownload` polices its own HTTPS redirect chain byte by byte before anything touches disk, and `nodePlatform` performs the mkdtemp/rename/chmod activation dance. Everything above `GreppyRuntimePlatform` is ordinary Effect code and receives a fake in tests.
 import { WorkjetGreppyOperationError } from "@t3tools/contracts";
 import {
   decodeGreppyIndexStatus,
@@ -205,7 +206,7 @@ export interface GreppyRuntimeShape {
 }
 
 export class GreppyRuntime extends Context.Service<GreppyRuntime, GreppyRuntimeShape>()(
-  "t3/mcp/GreppyRuntime",
+  "t3/mcp/toolkits/workjet/GreppyRuntime",
 ) {}
 
 interface RuntimePaths {
@@ -229,6 +230,8 @@ const runtimePaths = (stateDir: string): RuntimePaths => {
 };
 
 const safeError = (reason: GreppyRuntimeReason) => new GreppyRuntimeError({ reason });
+
+const isGreppyRuntimeError = Schema.is(GreppyRuntimeError);
 
 export const toWorkjetGreppyOperationError = (
   error: GreppyRuntimeError,
@@ -588,7 +591,7 @@ const installSingleFlight = (
 const fromPromise = <A>(operation: () => Promise<A>): Effect.Effect<A, GreppyRuntimeError> =>
   Effect.tryPromise({
     try: operation,
-    catch: (error) => (error instanceof GreppyRuntimeError ? error : safeError("install-failed")),
+    catch: (error) => (isGreppyRuntimeError(error) ? error : safeError("install-failed")),
   });
 
 export const make = (options: {
@@ -600,39 +603,40 @@ export const make = (options: {
   const workspaceFlights = new Map<string, Promise<GreppyWorkspaceReadiness>>();
 
   const resolve = () => fromPromise(() => makeResolved(options.platform, paths));
+  // `inspect` reports availability instead of failing: the body already turns
+  // every rejection into an "unavailable" snapshot. `Effect.promise` states that
+  // in the type — an impossible rejection remains a defect exactly as the
+  // previous `Effect.orDie` made it — without minting an untagged `Error` for a
+  // failure channel that has no members.
   const inspect = (): Effect.Effect<GreppyRuntimeSnapshot> =>
-    Effect.tryPromise({
-      try: async () => {
-        const installSupported = supportedHost(options.platform);
-        try {
-          const runtime = await makeResolved(options.platform, paths);
+    Effect.promise(async () => {
+      const installSupported = supportedHost(options.platform);
+      try {
+        const runtime = await makeResolved(options.platform, paths);
+        return {
+          availability: "available",
+          source: runtime.source,
+          version: GREPPY_RUNTIME_PIN.version,
+          installSupported,
+        } satisfies GreppyRuntimeSnapshot;
+      } catch (error) {
+        const reason = isGreppyRuntimeError(error) ? error.reason : ("binary-unavailable" as const);
+        if (!installSupported && reason === "path-unavailable") {
           return {
-            availability: "available",
-            source: runtime.source,
-            version: GREPPY_RUNTIME_PIN.version,
-            installSupported,
-          } satisfies GreppyRuntimeSnapshot;
-        } catch (error) {
-          const reason =
-            error instanceof GreppyRuntimeError ? error.reason : ("binary-unavailable" as const);
-          if (!installSupported && reason === "path-unavailable") {
-            return {
-              availability: "unsupported",
-              reason: "unsupported-host",
-              version: GREPPY_RUNTIME_PIN.version,
-              installSupported,
-            } satisfies GreppyRuntimeSnapshot;
-          }
-          return {
-            availability: "unavailable",
-            reason,
+            availability: "unsupported",
+            reason: "unsupported-host",
             version: GREPPY_RUNTIME_PIN.version,
             installSupported,
           } satisfies GreppyRuntimeSnapshot;
         }
-      },
-      catch: () => new Error("unreachable"),
-    }).pipe(Effect.orDie);
+        return {
+          availability: "unavailable",
+          reason,
+          version: GREPPY_RUNTIME_PIN.version,
+          installSupported,
+        } satisfies GreppyRuntimeSnapshot;
+      }
+    });
   const install = () =>
     fromPromise(async () => {
       const runtime = await installSingleFlight(options.platform, paths, options.buildTempRoot);
@@ -708,6 +712,7 @@ const nodeRun = (command: RuntimeCommand): Promise<RuntimeCommandResult> =>
     let stderrBytes = 0;
     let outputExceeded = false;
     let timedOut = false;
+    // @effect-diagnostics-next-line globalTimers:off -- `nodeRun` is a raw Promise wrapper around `child_process.spawn`; this timer is the kill deadline for that OS process and is cleared from the child's own `error`/`close` events. `Effect.sleep` cannot arm it: there is no fiber here to interrupt, and routing it through the Effect Clock would make the SIGKILL depend on a TestClock in tests that today drive this path with real Node timers.
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");

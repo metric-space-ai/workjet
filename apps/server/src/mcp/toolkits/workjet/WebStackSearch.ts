@@ -1,4 +1,3 @@
-import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -72,7 +71,7 @@ export interface WebStackSearchShape {
 }
 
 export class WebStackSearch extends Context.Service<WebStackSearch, WebStackSearchShape>()(
-  "t3/mcp/WebStackSearch",
+  "t3/mcp/toolkits/workjet/WebStackSearch",
 ) {}
 
 export type WebStackRuntimeBoundary = NativeProcess.WebStackRuntimeBoundary;
@@ -84,6 +83,10 @@ const failure = (reason: WebStackSearchFailureReason): WebStackSearchError =>
 const truncateChars = (value: string, maximum: number): string =>
   Array.from(value).slice(0, maximum).join("");
 
+const JsonText = Schema.fromJsonString(Schema.Unknown);
+const decodeJsonText = Schema.decodeEffect(JsonText);
+const encodeJsonText = Schema.encodeSync(JsonText);
+
 const parseResponse = (
   output: ProcessOutput,
 ): Effect.Effect<WebStackSearchResult, WebStackSearchError> => {
@@ -92,10 +95,9 @@ const parseResponse = (
   }
   if (output.exitCode !== 0) return Effect.fail(failure("process-exit"));
   return Effect.gen(function* () {
-    const value = yield* Effect.try({
-      try: () => JSON.parse(outputText(output.stdout)) as unknown,
-      catch: () => failure("malformed-response"),
-    });
+    const value = yield* decodeJsonText(outputText(output.stdout)).pipe(
+      Effect.mapError(() => failure("malformed-response")),
+    );
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return yield* failure("malformed-response");
     }
@@ -134,7 +136,7 @@ const makeWithOptions = Effect.fn("WebStackSearch.make")(function* (options: {
   readonly probeTimeout?: Duration.Duration;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const stateRoot = NodePath.join(options.stateDir, "web-stack");
+  const stateRoot = NativeProcess.webStackStateRoot(options.stateDir);
   const timeout = options.timeout ?? WEB_STACK_TIMEOUT;
   const probeTimeout = options.probeTimeout ?? WEB_STACK_PROBE_TIMEOUT;
 
@@ -153,7 +155,7 @@ const makeWithOptions = Effect.fn("WebStackSearch.make")(function* (options: {
         try: () => options.runtime.makeDirectory(stateRoot),
         catch: () => failure("execution-failed"),
       });
-      const request = JSON.stringify({ request: { query: input.query }, config: {} });
+      const request = encodeJsonText({ request: { query: input.query }, config: {} });
       const output = yield* runNative({
         args: ["search", "--root", stateRoot],
         stdin: request,

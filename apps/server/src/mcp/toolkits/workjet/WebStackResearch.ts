@@ -2,7 +2,6 @@ import {
   WEB_DEEP_RESEARCH_OUTPUT_SCHEMA,
   WEB_READ_OUTPUT_SCHEMA,
 } from "@metric-space-ai/workjet-capabilities";
-import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -237,7 +236,7 @@ export interface WebStackResearchShape {
 }
 
 export class WebStackResearch extends Context.Service<WebStackResearch, WebStackResearchShape>()(
-  "t3/mcp/WebStackResearch",
+  "t3/mcp/toolkits/workjet/WebStackResearch",
 ) {}
 
 const failure = (reason: WebStackResearchFailureReason): WebStackResearchError =>
@@ -245,6 +244,10 @@ const failure = (reason: WebStackResearchFailureReason): WebStackResearchError =
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const JsonText = Schema.fromJsonString(Schema.Unknown);
+const decodeJsonText = Schema.decodeEffect(JsonText);
+const encodeJsonText = Schema.encodeSync(JsonText);
 
 const hasExactKeys = (
   value: Record<string, unknown>,
@@ -422,21 +425,24 @@ function parseResponse(
     return Effect.fail(failure("oversized-response"));
   }
   if (output.exitCode !== 0) return Effect.fail(failure("process-exit"));
-  return Effect.try({
-    try: () => {
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - strict projection validates this bounded native process boundary.
-      const value = JSON.parse(NativeProcess.outputText(output.stdout)) as unknown;
-      if (!isRecord(value) || value.ok !== true || value.operation !== operation) {
-        throw new Error("invalid response");
-      }
-      const schema =
-        operation === "read" ? WEB_READ_OUTPUT_SCHEMA : WEB_DEEP_RESEARCH_OUTPUT_SCHEMA;
-      const result = projectJsonContract(schema as JsonContract, value);
-      if (result === INVALID_JSON_CONTRACT) throw new Error("invalid response");
-      return result as WebReadResult | WebDeepResearchResult;
-    },
-    catch: () => failure("malformed-response"),
-  });
+  return decodeJsonText(NativeProcess.outputText(output.stdout)).pipe(
+    Effect.mapError(() => failure("malformed-response")),
+    Effect.flatMap((value) =>
+      Effect.try({
+        try: () => {
+          if (!isRecord(value) || value.ok !== true || value.operation !== operation) {
+            throw new Error("invalid response");
+          }
+          const schema =
+            operation === "read" ? WEB_READ_OUTPUT_SCHEMA : WEB_DEEP_RESEARCH_OUTPUT_SCHEMA;
+          const result = projectJsonContract(schema as JsonContract, value);
+          if (result === INVALID_JSON_CONTRACT) throw new Error("invalid response");
+          return result as WebReadResult | WebDeepResearchResult;
+        },
+        catch: () => failure("malformed-response"),
+      }),
+    ),
+  );
 }
 
 const makeWithOptions = Effect.fn("WebStackResearch.make")(function* (options: {
@@ -447,7 +453,7 @@ const makeWithOptions = Effect.fn("WebStackResearch.make")(function* (options: {
   readonly researchTimeouts?: Partial<Record<WebDeepResearchDepth, Duration.Duration>>;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const stateRoot = NodePath.join(options.stateDir, "web-stack");
+  const stateRoot = NativeProcess.webStackStateRoot(options.stateDir);
   const runNative = NativeProcess.makeProbedRunner({
     spawner,
     runtime: options.runtime,
@@ -465,7 +471,7 @@ const makeWithOptions = Effect.fn("WebStackResearch.make")(function* (options: {
     yield* ensureRoot;
     const output = yield* runNative({
       args: ["read", "--root", stateRoot],
-      stdin: JSON.stringify({ request: input, config: {} }),
+      stdin: encodeJsonText({ request: input, config: {} }),
       maximumStdoutBytes: NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
       timeout: options.readTimeout ?? WEB_STACK_READ_TIMEOUT,
     });
@@ -478,7 +484,7 @@ const makeWithOptions = Effect.fn("WebStackResearch.make")(function* (options: {
     yield* ensureRoot;
     const output = yield* runNative({
       args: ["deep-research", "--root", stateRoot],
-      stdin: JSON.stringify({ request: input, config: {} }),
+      stdin: encodeJsonText({ request: input, config: {} }),
       maximumStdoutBytes: NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
       timeout: options.researchTimeouts?.[input.depth] ?? researchTimeoutForDepth(input.depth),
     });

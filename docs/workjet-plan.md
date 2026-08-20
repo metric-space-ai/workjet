@@ -1133,13 +1133,32 @@ failure, remote version skew, and unauthorized cross-environment control.
         `icon.icns`, and the final DMG/ZIP names.
   - [ ] Finish the About-panel and update-channel identity audit on every
         supported platform before closing the parent identity task.
-- [ ] Introduce `ctox-desktop:` and `ctox-desktop-dev:` protocol schemes while
-      keeping CTOX instance/invite protocols distinct.
+- [x] Introduce `ctox-desktop:` and `ctox-desktop-dev:` protocol schemes while
+      keeping CTOX instance/invite protocols distinct. Done 2026-08-20
+      (commits `f4d40317d`…`7914623a6`): registered at all four points
+      (registerSchemesAsPrivileged, setAsDefaultProtocolClient guarded by
+      isPackaged, generated electron-builder protocols in
+      scripts/build-desktop-artifact.ts, dev-launcher CFBundleURLSchemes +
+      Linux desktop-entry MimeType), plus a NEW deep-link parser (none
+      existed) accepting ctox-desktop/t3code schemes and normalizing to one
+      canonical form; `ctox:` is asserted untouched. The renderer still
+      SERVES from t3code://app deliberately (flipping the origin would break
+      DESKTOP_RENDERER_ORIGINS and every persisted partition).
 - [ ] Keep safe one-time migration support for existing T3 Code desktop links
       and user data where useful.
-- [ ] Use a distinct CTOX Desktop App user-data directory; import legacy
+- [x] Use a distinct CTOX Desktop App user-data directory; import legacy
       T3 Code/Workjet settings only
-      through an explicit, tested migration.
+      through an explicit, tested migration. Done 2026-08-20: user-data dir
+      is now "CTOX Desktop App" (dev variant separate); legacy t3code dirs
+      are migration SOURCES only. Explicit one-time offer (pure decision
+      matrix + durable marker incl. "declined"; accept → relaunch → copy runs
+      before the Chromium profile opens; COPY, legacy untouched) with a
+      deliberate allowlist — Partitions included on purpose (dropping them
+      would sign the user out of every paired CTOX instance), caches denied
+      at every depth. Keychain finding: safeStorage is keyed by app NAME, not
+      dir — nothing orphans now, but changing displayName later would and
+      needs its own migration. First-launch renderer dialog mounted at the
+      app root (import and restart / start fresh).
 - [ ] Keep internal `@t3tools/*` package names where changing them adds only
       upstream merge cost.
 - [ ] Update visible copy without rewriting unrelated historical comments,

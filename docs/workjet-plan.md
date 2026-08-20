@@ -968,8 +968,19 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       durable source-thread link); the target machine continues in a new
       thread with any harness/LLM. Prove a real machine-A → machine-B handoff
       including a worker worktree branch.
-- [ ] Add the global multi-computer activity overview on the replicated
+- [x] Add the global multi-computer activity overview on the replicated
       redacted projection, including last known state of offline machines.
+      Done 2026-08-20 (commits `3b9e49d2b`, `3e12960cf`): a `/machines` route
+      (sidebar footer, mirrors /usage) fed by the redacted
+      `workjet.mesh.overview` RPC — per peer: identity/trust level (roster),
+      lastInboundAt (inbox MAX), lastOutboundAt (outbox enqueue MAX — never
+      framed as delivery), delegation counts by state; NO liveness claims,
+      enforced at contract, projection-test, and page-test layers (the words
+      online/offline/connected are asserted absent). Verified finding: the
+      daemon loopback exposes NO presence route, so last-known contact is the
+      honest maximum. Known follow-ups: no index behind the JSON-extract
+      scans (fine at current volumes), per-environment (unmerged) rendering
+      by design.
 - [x] Encrypt message/delegation payloads end to end to the target environment
       key and sign the immutable routing envelope with the source environment
       key; the relay may inspect only the minimum routing and expiry metadata.

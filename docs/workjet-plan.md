@@ -2798,22 +2798,99 @@ generated notices remains a release gate.
 ## 14. Upstream maintenance strategy
 
 - [x] Keep `upstream/main` configured and fetch it regularly.
-- [ ] Maintain a short, ordered Workjet patch stack: contracts, orchestration,
-      capabilities, provider integration, CTOX services, shell UI, branding.
-- [ ] Prefer additive files and adapters over invasive rewrites of T3 core.
-- [ ] Avoid changing internal T3 identifiers that are not user-visible.
+- [~] Maintain a short, ordered Workjet patch stack: contracts, orchestration,
+  capabilities, provider integration, CTOX services, shell UI, branding.
+  **Measured false, 2026-08-20; recommended for removal.** The stack is 485 commits (348
+  first-parent) and fully interleaved: every theme spans nearly the whole
+  chain (contracts #6→#305, capabilities #14→#322, provider #3→#332, CTOX
+  #5→#315, shell UI #35→#284 of 348). There is no ordered stack to rebase
+  and reordering 485 commits does not pay for itself against 43 conflict
+  hunks per upstream cycle. The additive-file shape below already delivers
+  what the ordering was meant to buy.
+- [x] Prefer additive files and adapters over invasive rewrites of T3 core.
+      **Verified 2026-08-20**: 1900 added / 206 modified / 1 deleted / 0 renamed
+      across 2107 changed paths (90.2% additive). Of the 206 modified T3 core
+      files only 25 conflict against 172 upstream commits — a 12% collision
+      rate, and zero conflicts on Workjet-added files.
+- [x] Avoid changing internal T3 identifiers that are not user-visible.
+      **Verified 2026-08-20**: zero removals or renames across 78 desktop IPC
+      channel literals, 228 `Schema.Literal` values, 13 `Schema.TaggedStruct`
+      tags, 11 `_tag` literals, 18 `CREATE TABLE` names, 2 `localStorage` keys,
+      5 `@t3tools/*` package names, and the `com.t3tools.t3code` bundle id. The
+      copy sweep only added identifiers; the CTOX URL scheme is registered
+      alongside the legacy `t3code` scheme, not in place of it.
 - [ ] Rebase or merge upstream at the end of every completed wave and run the
       affected regression suite.
 - [x] Track conflicts and recurring upstream hot spots in this document.
-  - [ ] Reconnect sanitized Workjet baseline `39d3a27d3` to its tree-identical
-        public T3 baseline `6ae44b418` before a normal merge or pull request;
-        the current 225-commit downstream stack has no Git ancestry link.
-  - [ ] Reconcile the Workjet patch stack with refreshed `upstream/main`
-        `d484735c6` and record recurring conflicts after the first replay.
+  - [x] **Reconnect technique chosen and proven on a scratch branch,
+        2026-08-20**; execution on the real branch is still pending an owner
+        decision. Premise re-verified: `39d3a27d3` and `6ae44b418` are
+        tree-identical (both `7a67bc947…`, `git diff` empty) with no ancestry
+        (`git merge-base` rc 1) and disjoint roots; the sanitized side is a full
+        2516-commit parallel rewrite, not a truncated import. **KORREKTUR:** the
+        downstream stack is **485** commits, not the 225 this plan claimed.
+        Technique: re-parent replay (`git commit-tree` over
+        `39d3a27d3..tip` with `39d3a27d3` → `6ae44b418`), preserving every tree.
+        Proven as `scratch/ancestry-probe` `98cd9ef0f`: `git diff` against
+        today's tip empty, ancestry rc 0, and a PR to `origin/main` would list
+        **485** commits instead of today's **3001**. `git replace --graft` was
+        rejected (local-only; GitHub never honours replace refs — the probe ref
+        was created and deleted in the same run) and a tip-level `-s ours` merge
+        was rejected (works, but still lists 3002 commits).
+        Cost to accept: all 485 commit ids change; re-point every agent branch
+        in the same pass.
+  - [x] **First replay against refreshed upstream recorded, 2026-08-20.**
+        **KORREKTUR:** `upstream/main` is now `beab6886f`, not `d484735c6`
+        (which remains an ancestor, 62 commits back; 172 commits past
+        `6ae44b418`). Once ancestry exists the reconciliation is an ordinary
+        three-way merge: **25 conflicted files, 43 hunks, 1 modify/delete** —
+        13 files / 27 hunks structural, 11 files / 16 hunks incidental,
+        independently reproduced with `git merge-tree`. Full map, per-file
+        recurrence counts, mitigations and environment traps:
+        `docs/workjet-upstream-conflict-map.md`.
+  - [ ] OWNER: decide whether to execute the reconnect (rewrites the 485 commit
+        ids once) or keep the fork permanently unmergeable to upstream.
+  - [ ] OWNER: confirm dropping the "short, ordered patch stack" goal above, or
+        fund rebuilding 485 interleaved commits into ordered theme branches.
+  - [ ] OWNER: `apps/web/src/orchestrationEventEffects.test.ts` — upstream
+        deleted it in `277322933` "test: remove redundant and stale tests
+        (#6267)"; Workjet still edits it. Keep the Workjet copy or drop it.
+  - [ ] Land the three cheap conflict mitigations from the map: a single
+        trailing `workjet*` barrel import in `ChatView.tsx`, `ChatComposer.tsx`,
+        `SidebarChrome.tsx` and `packages/contracts/src/settings.ts`; a marked
+        Workjet section at the end of `apps/desktop/src/ipc/channels.ts`; and
+        extraction of the Workjet turn-option threading out of
+        `CodexSessionRuntime.ts` (5 of 43 hunks, guaranteed to repeat).
 - [ ] Contribute generally useful, non-Workjet-specific fixes upstream where
       practical.
 - [ ] Never commit `.deps`, build output, local databases, credentials, or
       generated agent worktrees.
+
+### Upstream conflict hot spots (measured 2026-08-20, `beab6886f`)
+
+Structural — Workjet owns the behaviour, expect these every cycle:
+`CodexSessionRuntime.ts` (5 hunks, worst offender),
+`apps/desktop/scripts/electron-launcher.mjs` (4),
+`scripts/build-desktop-artifact.ts` (4), `SidebarChrome.tsx` (3),
+`ProviderService.ts` (2), `build-desktop-artifact.test.ts` (2), plus one hunk
+each in `DesktopEnvironment.ts`, `DesktopAppIdentity.test.ts`,
+`DesktopLifecycle.test.ts`, `DesktopApplicationMenu.test.ts`,
+`electron-launcher.test.mjs`, `DiagnosticsSettings.tsx`, `scripts/package.json`.
+
+Incidental — both sides appended to the same import block or constant list,
+resolution is "keep both": `ChatComposer.tsx` (3), `ChatView.tsx` (2),
+`threadSidebarWidth.test.ts` (2), `pnpm-lock.yaml` (2, regenerate with
+`pnpm install --lockfile-only`, never hand-merge), and one hunk each in
+`apps/desktop/src/ipc/channels.ts`, `packages/contracts/src/settings.ts`,
+`CodexDeveloperInstructions.ts`, `ProviderInstanceRegistryLive.ts`,
+`ProviderService.test.ts`, `MessagesTimeline.tsx`, `desktopUpdate.logic.ts`.
+
+Traps: `origin/main` of the fork is the public T3 commit `6ae44b418`, so any
+`origin/main..` count above 3000 is the missing-ancestry problem, not a real
+diff. macOS BSD `grep` treats several of these `.tsx` files as binary — count
+conflict hunks with `grep -a` or the map undercounts (39 vs the true 43). The
+stack has 4 root commits (T3 plus three imported repositories), which breaks
+`git rebase` and `git filter-branch` but not the re-parent replay.
 
 ## 15. Test and release matrix
 

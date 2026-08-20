@@ -92,16 +92,41 @@ than a shared database or an untyped renderer bridge:
 
 ### Cross-mode workflow bridge
 
-- [ ] Define versioned contracts for a cross-mode link containing the CTOX
+- [x] Define versioned contracts for a cross-mode link containing the CTOX
       authority/instance and Business OS object reference plus the Code
       authority/environment/thread/run/artifact references; reject ambient or
-      renderer-invented authority.
-- [ ] Add `Delegate to Code`/`Open in Code` actions to eligible Business OS
-      work, creating or selecting a Code thread with an explicit scoped context
-      handoff and durable backlink.
-- [ ] Add `Return to Business OS`, result/evidence submission, review request,
-      and follow-up actions to linked Code threads through validated CTOX MCP
-      commands and the existing approval model.
+      renderer-invented authority. Done 2026-08-20 (commit `eeff37c0b`,
+      migration 052): `WorkjetCrossModeLink` reuses existing bounded ids on
+      both sides; presentation is a CLOSED struct (title/subtitle only) and a
+      test asserts record/data/body keys are dropped by decode. Authority is
+      not the caller's: the Code side has NO `environmentId` input field at
+      all (the ambient mistake is unrepresentable) and the CTOX side is
+      re-verified on EVERY operation, refusing `unverified-authority` before
+      any durable effect. Two UNIQUE constraints carry the invariants in SQL:
+      (instance, module, kind, object) IS the create-or-select guarantee, and
+      a unique code thread gives "which object does this thread implement"
+      exactly one answer.
+- [~] Add `Delegate to Code`/`Open in Code` actions to eligible Business OS
+  work, creating or selecting a Code thread with an explicit scoped context
+  handoff and durable backlink. Server half done 2026-08-20 (commits
+  `6ff86928c`, `6bb947285`): the RPC creates the thread with the scoped
+  context and the durable backlink, or SELECTS the existing linked thread
+  (the server decides created|selected, not the caller). Remaining: the
+  invoking button lives in the CTOX Business OS UI, i.e. the CTOX repo.
+- [~] Add `Return to Business OS`, result/evidence submission, review request,
+  and follow-up actions to linked Code threads through validated CTOX MCP
+  commands and the existing approval model. Done 2026-08-20 (commits
+  `e47a643ab` + the navigator wire): the link card carries the three
+  operations and reuses the existing `WorkjetDelegationApprovalState`
+  rather than a parallel enum; "Return to Business OS" now routes through
+  the cross-mode navigator (teardown-before-mount). HONEST BLOCKER, with
+  evidence: `apps/server` has NO path to a Business OS command today —
+  there is no MCP CLIENT in the repo, the mailbox transport's daemon
+  treats payloads as opaque blobs by contract, and commands travel
+  renderer→IPC→guest. `WorkjetCrossModeCtoxPort` is the single typed
+  boundary and its only implementation refuses honestly; a real one needs
+  either the repo's first MCP client against the daemon's `business_os.*`
+  surface or a desktop-main implementation behind new IPC.
 - [x] Add a shared desktop link navigator and context-preserving mode switch;
       opening a link selects the correct mode, sidebar entry, and main surface
       without mounting both surfaces simultaneously. Done 2026-08-20 (commit

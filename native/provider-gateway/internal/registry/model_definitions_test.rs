@@ -103,12 +103,26 @@ fn antigravity_web_search_requires_requested_provider_capability() {
 
 #[test]
 fn complete_embedded_catalog_hash_channels_and_lookup_are_stable() {
+    // A BYTE pin over the embedded catalog, not a semantic one: the file is
+    // baked into the binary with `include_str!`, so its exact bytes ship.
+    // That means a pure REFORMAT breaks this too, and the failure is a bare
+    // hash mismatch that says nothing about which of the two happened.
+    //
+    // Re-pinned 2026-08-20 after eaa6e4792 ("style: run the formatter over the
+    // tracked tree") reflowed models.json — 116 insertions, 571 deletions.
+    // Verified benign before re-pinning: both revisions parse to EQUAL JSON,
+    // so no model, channel or limit changed. Previous pin was
+    // 483f7fb1b0f159bcda08c01ea91e21162b8f50ad34e83b7d7884e6a5384525c7.
+    //
+    // If this fails again: diff the two revisions as PARSED JSON first. Equal
+    // means a formatter ran and you may re-pin. Unequal means the catalog
+    // actually changed and the channel counts below must be re-checked too.
     assert_eq!(
         format!(
             "{:x}",
             Sha256::digest(include_str!("models/models.json").trim_end().as_bytes())
         ),
-        "483f7fb1b0f159bcda08c01ea91e21162b8f50ad34e83b7d7884e6a5384525c7"
+        "55fe5b3bb0496588ca2168bf11c46b4f1809cb96bd459b110bae4207597611e9"
     );
     let expected = [
         ("claude", 15),

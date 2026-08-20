@@ -35,6 +35,16 @@ import {
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
   WORKJET_MESH_OVERVIEW_MAX_PEERS,
+  WORKJET_HANDOFF_LIST_MAX,
+  WORKJET_HANDOFF_SNAPSHOT_TRANSFER_MAX_BYTES,
+  WorkjetHandoffActivityPayload,
+  WorkjetMailboxAcceptHandoffRpcInput,
+  WorkjetMailboxAcceptHandoffRpcResult,
+  WorkjetMailboxListHandoffsRpcInput,
+  WorkjetMailboxListHandoffsRpcResult,
+  WorkjetMailboxSendHandoffRpcInput,
+  WorkjetMailboxSendHandoffRpcResult,
+  WorkjetReceivedHandoff,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WorkjetMeshOverview,
   WorkjetMeshRoster,
@@ -199,7 +209,7 @@ const handoff = {
     schemaVersion: V,
     branch: "agent/m-mailbox-contracts",
     headCommit: "339c6940f",
-    delivery: "pushed",
+    remoteConfigured: true,
   },
   artifacts,
 } as const;
@@ -584,9 +594,30 @@ describe("WorkjetThreadHandoff", () => {
   it("round-trips a snapshot handoff", () => {
     const decoded = decodeHandoff(handoff);
     expect(decoded.sourceThread.threadId).toBe("thread-orchestrator");
-    expect(decoded.branch.delivery).toBe("pushed");
+    expect(decoded.branch?.branch).toBe("agent/m-mailbox-contracts");
+    expect(decoded.branch?.remoteConfigured).toBe(true);
     roundTrip(WorkjetThreadHandoff, handoff);
     roundTrip(WorkjetThreadHandoff, { ...handoff, note: "Continue with any harness." });
+  });
+
+  it("keeps the branch reference, and its head commit, optional", () => {
+    // A source thread without a worktree is a legitimate handoff, and a server
+    // that cannot read a branch head offline must omit it rather than guess.
+    const { branch: _dropped, ...withoutBranch } = handoff;
+    expect(() => decodeHandoff(withoutBranch)).not.toThrow();
+    roundTrip(WorkjetThreadHandoff, withoutBranch);
+
+    const { headCommit: _noCommit, ...branchWithoutCommit } = handoff.branch;
+    const partialBranch = { ...handoff, branch: branchWithoutCommit };
+    expect(decodeHandoff(partialBranch).branch).not.toHaveProperty("headCommit");
+    roundTrip(WorkjetThreadHandoff, partialBranch);
+  });
+
+  it("refuses a branch reference that omits the remote-configured answer", () => {
+    // `remoteConfigured` is the ONLY reachability statement a handoff makes.
+    // Leaving it out would let a reader assume the branch is fetchable.
+    const { remoteConfigured: _dropped, ...incomplete } = handoff.branch;
+    expect(() => decodeHandoff({ ...handoff, branch: incomplete })).toThrow();
   });
 
   it("carries no harness or provider selection for the target", () => {
@@ -596,8 +627,8 @@ describe("WorkjetThreadHandoff", () => {
     expect(keys).not.toContain("modelId");
   });
 
-  it("requires a durable source-thread link, a snapshot, and a branch", () => {
-    for (const key of ["sourceThread", "contextSnapshot", "branch"] as const) {
+  it("requires a durable source-thread link and a snapshot", () => {
+    for (const key of ["sourceThread", "contextSnapshot", "target"] as const) {
       const { [key]: _removed, ...partial } = handoff;
       expect(() => decodeHandoff(partial)).toThrow();
     }
@@ -675,6 +706,42 @@ describe("WorkjetMailboxPayload", () => {
 
   it("rejects an unknown payload tag", () => {
     expect(() => decodePayload({ _tag: "prompt", message })).toThrow();
+  });
+
+  it("carries optional cross-machine snapshot bytes on a handoff payload", () => {
+    // Exactly the delegation shape: the receiver re-hashes the bytes, so only
+    // the LENGTH is bounded here, and a same-environment payload omits both.
+    const withBytes = {
+      _tag: "handoff",
+      handoff,
+      snapshotBytes: "# Workjet thread handoff\nSource thread: Mailbox contracts",
+    } as const;
+    const decoded = decodePayload(withBytes);
+    expect(decoded._tag).toBe("handoff");
+    if (decoded._tag === "handoff") {
+      expect(decoded.snapshotBytes).toBe(withBytes.snapshotBytes);
+      expect(decoded.snapshotOversized).toBeUndefined();
+    }
+    roundTrip(WorkjetMailboxPayload, withBytes);
+
+    const refOnly = decodePayload({ _tag: "handoff", handoff });
+    if (refOnly._tag === "handoff") {
+      expect(refOnly.snapshotBytes).toBeUndefined();
+      expect(refOnly.snapshotOversized).toBeUndefined();
+    }
+
+    const oversized = { _tag: "handoff", handoff, snapshotOversized: true } as const;
+    expect(decodePayload(oversized)._tag).toBe("handoff");
+    roundTrip(WorkjetMailboxPayload, oversized);
+
+    // The schema ceiling is a sanity bound before the sealed wire check.
+    expect(() =>
+      decodePayload({
+        _tag: "handoff",
+        handoff,
+        snapshotBytes: "x".repeat(WORKJET_HANDOFF_SNAPSHOT_TRANSFER_MAX_BYTES + 1),
+      }),
+    ).toThrow();
   });
 
   it("carries optional cross-machine snapshot bytes on a delegation payload", () => {
@@ -931,6 +998,8 @@ describe("Workjet mailbox RPC contracts", () => {
       "workjet.message.received",
       "workjet.delegation.sent",
       "workjet.delegation.received",
+      "workjet.handoff.sent",
+      "workjet.handoff.accepted",
     ]);
   });
 
@@ -1260,5 +1329,158 @@ describe("workjet.mesh.overview RPC", () => {
     // The payload is empty by design: the read is scoped to the connected
     // environment, so a caller cannot ask for another machine's mesh.
     expect(Schema.decodeUnknownSync(WsWorkjetMeshOverviewRpc.payloadSchema)({})).toEqual({});
+  });
+});
+
+describe("thread-handoff RPC surface", () => {
+  const sendInput = {
+    sourceThreadId: "thread-orchestrator",
+    targetEnvironmentId: "environment-b",
+    note: "Continue the transport slice here.",
+  } as const;
+
+  it("addresses a MACHINE and never a target thread", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetMailboxSendHandoffRpcInput)(sendInput);
+    expect(decoded).not.toHaveProperty("targetThreadId");
+    roundTrip(WorkjetMailboxSendHandoffRpcInput, sendInput);
+    roundTrip(WorkjetMailboxSendHandoffRpcInput, {
+      ...sendInput,
+      targetWorkspaceId: "ctox-business-os:mesh-alpha",
+      ttlSeconds: WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS,
+    });
+  });
+
+  it("never accepts a caller-supplied snapshot digest or reference", () => {
+    const keys = Object.keys(
+      Schema.decodeUnknownSync(WorkjetMailboxSendHandoffRpcInput)(sendInput),
+    );
+    expect(keys).not.toContain("contextSnapshot");
+    expect(keys).not.toContain("digest");
+    expect(keys).not.toContain("snapshotRef");
+  });
+
+  it("reports the composed snapshot size back to the sender", () => {
+    const queued = {
+      schemaVersion: V,
+      status: "queued",
+      envelopeId,
+      handoffId: "hnd-0123456789abcdef",
+      snapshotByteLength: 8_192,
+    } as const;
+    expect(Schema.decodeUnknownSync(WorkjetMailboxSendHandoffRpcResult)(queued).status).toBe(
+      "queued",
+    );
+    roundTrip(WorkjetMailboxSendHandoffRpcResult, queued);
+    roundTrip(WorkjetMailboxSendHandoffRpcResult, {
+      ...queued,
+      status: "acknowledged",
+      disposition: "accepted-new",
+      acknowledgedAt: "2026-08-18T13:00:01.000Z",
+    });
+  });
+
+  const received = {
+    schemaVersion: V,
+    handoffId: "hnd-0123456789abcdef",
+    envelopeId,
+    sourceThread: sourceAddress,
+    createdAt: "2026-08-18T13:00:00.000Z",
+    expiresAt: "2026-08-19T13:00:00.000Z",
+    receivedAt: "2026-08-18T13:00:02.000Z",
+    snapshotAvailable: true,
+    snapshotByteLength: 8_192,
+  } as const;
+
+  it("round-trips a received handoff and never carries snapshot text", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetReceivedHandoff)(received);
+    expect(decoded.snapshotAvailable).toBe(true);
+    expect(decoded).not.toHaveProperty("snapshotBytes");
+    expect(decoded).not.toHaveProperty("snapshotText");
+    roundTrip(WorkjetReceivedHandoff, received);
+    roundTrip(WorkjetReceivedHandoff, {
+      ...received,
+      snapshotAvailable: false,
+      branch: handoff.branch,
+      note: "Continue with any harness.",
+      acceptedThreadId: "thread-continued",
+      acceptedAt: "2026-08-18T14:00:00.000Z",
+    });
+  });
+
+  it("bounds the inbox listing", () => {
+    roundTrip(WorkjetMailboxListHandoffsRpcInput, {});
+    roundTrip(WorkjetMailboxListHandoffsRpcInput, { limit: WORKJET_HANDOFF_LIST_MAX });
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetMailboxListHandoffsRpcInput)({
+        limit: WORKJET_HANDOFF_LIST_MAX + 1,
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetMailboxListHandoffsRpcInput)({ limit: 0 }),
+    ).toThrow();
+
+    roundTrip(WorkjetMailboxListHandoffsRpcResult, { schemaVersion: V, handoffs: [received] });
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetMailboxListHandoffsRpcResult)({
+        schemaVersion: V,
+        handoffs: Array.from({ length: WORKJET_HANDOFF_LIST_MAX + 1 }, () => received),
+      }),
+    ).toThrow();
+  });
+
+  it("accepts a handoff into a NEW thread anchored on a local host thread", () => {
+    const input = { handoffId: "hnd-0123456789abcdef", hostThreadId: "thread-local" } as const;
+    roundTrip(WorkjetMailboxAcceptHandoffRpcInput, input);
+    // No project, model, harness, or provider is chosen on the wire: the new
+    // thread inherits them from the host thread, on the server.
+    const keys = Object.keys(Schema.decodeUnknownSync(WorkjetMailboxAcceptHandoffRpcInput)(input));
+    expect(keys).not.toContain("projectId");
+    expect(keys).not.toContain("modelSelection");
+    expect(keys).not.toContain("harness");
+
+    roundTrip(WorkjetMailboxAcceptHandoffRpcResult, {
+      schemaVersion: V,
+      handoffId: "hnd-0123456789abcdef",
+      threadId: "thread-continued",
+      acceptedAt: "2026-08-18T14:00:00.000Z",
+    });
+  });
+
+  it("keeps the handoff activity payload free of snapshot and note text", () => {
+    const payload = {
+      schemaVersion: V,
+      envelopeId,
+      handoffId: "hnd-0123456789abcdef",
+      direction: "outbound",
+      sourceThread: {
+        workspaceId: sourceAddress.workspaceId,
+        environmentId: sourceAddress.environmentId,
+        threadId: sourceAddress.threadId,
+      },
+      targetWorkspaceId: "ctox-business-os:mesh-alpha",
+      targetEnvironmentId: "environment-b",
+      snapshotByteLength: 8_192,
+      createdAt: "2026-08-18T13:00:00.000Z",
+      expiresAt: "2026-08-19T13:00:00.000Z",
+    } as const;
+    const decoded = Schema.decodeUnknownSync(WorkjetHandoffActivityPayload)(payload);
+    expect(decoded).not.toHaveProperty("note");
+    expect(decoded).not.toHaveProperty("snapshotBytes");
+    roundTrip(WorkjetHandoffActivityPayload, payload);
+    roundTrip(WorkjetHandoffActivityPayload, {
+      ...payload,
+      direction: "inbound",
+      acceptedThreadId: "thread-continued",
+    });
+  });
+
+  it("lists the handoff activity kinds", () => {
+    expect(WORKJET_MAILBOX_ACTIVITY_KINDS).toContain("workjet.handoff.sent");
+    expect(WORKJET_MAILBOX_ACTIVITY_KINDS).toContain("workjet.handoff.accepted");
+  });
+
+  it("has a bounded, distinct reason for a missing handoff snapshot", () => {
+    const error = new WorkjetMailboxError({ reason: "handoff-snapshot-unavailable" });
+    expect(error.message).toBe("The handoff context snapshot is not available on this machine.");
   });
 });

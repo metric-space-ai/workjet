@@ -588,6 +588,47 @@ export const WorkjetDelegationEdge = Schema.Struct({
 export type WorkjetDelegationEdge = typeof WorkjetDelegationEdge.Type;
 
 /**
+ * CHANGED (thread-handoff slice): the branch reference a HANDOFF carries.
+ *
+ * A handoff previously pinned a {@link WorkjetGitBranchRef}, which makes both a
+ * `headCommit` and a `delivery` verdict mandatory. Neither is something the
+ * composing server can state honestly today:
+ *
+ * - `headCommit` needs a `git rev-parse` in the source worktree. The server's
+ *   Git service exposes no local head-commit read, and INVENTING one — or
+ *   copying a stale checkpoint hash — would pin a commit that may not be the
+ *   branch head. It is therefore OPTIONAL and simply absent until a slice adds
+ *   that read; a receiver must treat an absent commit as "resolve the branch
+ *   head yourself", never as "the branch is empty".
+ * - `delivery: "pushed" | "sync-bundled"` asserts that the branch HAS been made
+ *   reachable. Pushing is an explicit operator action that a handoff must never
+ *   perform implicitly, and no sync bundle is produced either, so neither
+ *   literal is true at compose time. What the server CAN answer offline is
+ *   whether the source repository has a primary remote configured at all —
+ *   `remoteConfigured` — and it says exactly that and nothing more. Whether the
+ *   commit is actually reachable on that remote is for the target to discover
+ *   and report; establishing it here would require `git ls-remote`, a network
+ *   call this slice forbids.
+ *
+ * The whole reference is optional on a handoff: a source thread with no branch
+ * (no worktree) is a legitimate handoff, and omitting the field is the honest
+ * encoding of that.
+ */
+export const WorkjetHandoffBranchRef = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  branch: WorkjetGitBranchName,
+  /** Absent when the composing server could not read the branch head offline. */
+  headCommit: Schema.optionalKey(WorkjetGitCommitHash),
+  /**
+   * True when the SOURCE repository has a primary remote configured. It is a
+   * statement about repository configuration, never a claim that the branch or
+   * its head has been pushed there.
+   */
+  remoteConfigured: Schema.Boolean,
+});
+export type WorkjetHandoffBranchRef = typeof WorkjetHandoffBranchRef.Type;
+
+/**
  * Typed thread handoff (owner decision, 2026-08-18): the portability model is
  * an immutable prompt/context snapshot plus bounded artifact references plus a
  * pushed-or-bundled Git branch plus a durable link to the source thread. The
@@ -595,6 +636,12 @@ export type WorkjetDelegationEdge = typeof WorkjetDelegationEdge.Type;
  * this contract carries no harness, model, or provider field — exactly like
  * {@link WorkjetWorkerAddress}. The source server keeps the original raw
  * history readable; no events are exported or replicated.
+ *
+ * CHANGED in the thread-handoff slice: `branch` is now the honest, optional
+ * {@link WorkjetHandoffBranchRef} instead of a mandatory
+ * {@link WorkjetGitBranchRef} — see that type for why a mandatory head commit
+ * and a mandatory pushed/bundled verdict were both unstateable. `artifacts`
+ * keeps carrying bounded commit hashes and repository paths exactly as before.
  */
 export const WorkjetThreadHandoff = Schema.Struct({
   schemaVersion: MailboxSchemaVersion,
@@ -607,13 +654,34 @@ export const WorkjetThreadHandoff = Schema.Struct({
   createdAt: WorkjetMailboxTimestamp,
   expiresAt: WorkjetMailboxTimestamp,
   contextSnapshot: WorkjetPromptSnapshotRef,
-  /** The worker worktree branch is mandatory for a handoff, unlike a plain result. */
-  branch: WorkjetGitBranchRef,
+  /** The source thread's worktree branch, when it has one. */
+  branch: Schema.optionalKey(WorkjetHandoffBranchRef),
   artifacts: WorkjetArtifactReferences,
   /** Bounded operator-facing note; the snapshot carries the real context. */
   note: Schema.optionalKey(boundedText(4_096)),
 });
 export type WorkjetThreadHandoff = typeof WorkjetThreadHandoff.Type;
+
+/**
+ * ADDITIVE. Ceiling on the CONTEXT-snapshot bytes a handoff may carry inline
+ * for cross-machine transfer, deliberately the same 256 KiB the delegation
+ * prompt transfer uses ({@link WORKJET_DELEGATION_SNAPSHOT_TRANSFER_MAX_BYTES}).
+ * One ceiling for both keeps a single number to reason about on the wire; the
+ * authoritative gate remains the transport's sealed 200 000-byte check against
+ * the fully encoded wrapper.
+ */
+export const WORKJET_HANDOFF_SNAPSHOT_TRANSFER_MAX_BYTES =
+  WORKJET_DELEGATION_SNAPSHOT_TRANSFER_MAX_BYTES;
+
+/**
+ * The verbatim context-snapshot text a cross-machine handoff carries. Bounded
+ * by length only, for the same reason the delegation variant is: the digest,
+ * re-computed by the receiver, is the integrity check — not a content shape.
+ */
+export const WorkjetHandoffSnapshotBytes = Schema.String.check(
+  Schema.isMaxLength(WORKJET_HANDOFF_SNAPSHOT_TRANSFER_MAX_BYTES),
+);
+export type WorkjetHandoffSnapshotBytes = typeof WorkjetHandoffSnapshotBytes.Type;
 
 /** Discriminator of the payload an envelope carries. */
 export const WorkjetMailboxEnvelopeKind = Schema.Literals([
@@ -685,7 +753,29 @@ export const WorkjetMailboxPayload = Schema.Union([
   Schema.TaggedStruct("receipt", { receipt: WorkjetDeliveryReceipt }),
   Schema.TaggedStruct("result", { result: WorkjetDelegationResult }),
   Schema.TaggedStruct("review", { verdict: WorkjetReviewVerdict }),
-  Schema.TaggedStruct("handoff", { handoff: WorkjetThreadHandoff }),
+  Schema.TaggedStruct("handoff", {
+    handoff: WorkjetThreadHandoff,
+    /**
+     * ADDITIVE, cross-machine only. The verbatim bytes of the handoff's
+     * immutable context snapshot, attached by the transport when the handoff is
+     * enqueued to a DIFFERENT environment and the sealed wrapper still fits the
+     * wire ceiling. The receiver `put`s them into its LOCAL snapshot store,
+     * re-verifying the digest, so "Continue here" can seed the new thread from
+     * local bytes instead of a reference it cannot resolve. Absent on every
+     * same-environment (local fast-path) payload and stripped before the row is
+     * persisted, so the durable handoff stays reference-only. Mirrors the
+     * delegation variant exactly.
+     */
+    snapshotBytes: Schema.optionalKey(WorkjetHandoffSnapshotBytes),
+    /**
+     * ADDITIVE, cross-machine only. Set to `true` when the context snapshot was
+     * too large to seal within the wire ceiling: the handoff then travels
+     * reference-only and the receiving machine records it as unacceptable-for-now
+     * with a bounded reason rather than silently dropping it. Mutually exclusive
+     * with {@link snapshotBytes}.
+     */
+    snapshotOversized: Schema.optionalKey(Schema.Literal(true)),
+  }),
 ]);
 export type WorkjetMailboxPayload = typeof WorkjetMailboxPayload.Type;
 
@@ -716,6 +806,16 @@ export const WorkjetMailboxFailureReason = Schema.Literals([
    */
   "token-budget-exceeded",
   "cost-budget-exceeded",
+  /**
+   * ADDITIVE (thread-handoff slice). A received handoff cannot be continued
+   * because its immutable context snapshot is not readable on THIS machine —
+   * the bytes never arrived (the source could not seal them within the wire
+   * ceiling) or the local snapshot store cannot return them. It is deliberately
+   * distinct from `mailbox-unavailable` (the mailbox itself is down) and from
+   * `unknown-target` (no such handoff): the handoff is known and valid, and the
+   * honest answer is that its context is missing, not that it does not exist.
+   */
+  "handoff-snapshot-unavailable",
   "invalid-state-transition",
   "version-skew",
   "transport-unavailable",
@@ -765,6 +865,8 @@ export class WorkjetMailboxError extends Schema.TaggedErrorClass<WorkjetMailboxE
         return "The delegation token budget is exhausted.";
       case "cost-budget-exceeded":
         return "The delegation cost budget is exhausted.";
+      case "handoff-snapshot-unavailable":
+        return "The handoff context snapshot is not available on this machine.";
       case "invalid-state-transition":
         return "The requested delegation state transition is not allowed.";
       case "version-skew":
@@ -1037,6 +1139,142 @@ export const WorkjetMailboxReassignDelegationRpcResult = Schema.Struct({
 export type WorkjetMailboxReassignDelegationRpcResult =
   typeof WorkjetMailboxReassignDelegationRpcResult.Type;
 
+// ===============================
+// Typed thread handoff RPC surface
+// ===============================
+// ADDITIVE (docs/workjet-plan.md → "Add the typed thread-handoff contract and
+// flow"). Three operations, mirroring the send/read/write split the mailbox
+// already uses:
+//
+//   workjet.mailbox.sendHandoff    (operate) — compose, store, enqueue
+//   workjet.mailbox.listHandoffs   (read)    — what arrived here
+//   workjet.mailbox.acceptHandoff  (operate) — continue in a NEW local thread
+//
+// The context snapshot is NEVER caller-supplied, exactly as the delegation
+// prompt is not: the server composes it from its own thread projection, stores
+// the bytes, and derives the digest. A client that could pin a digest could pin
+// a snapshot the server never wrote.
+
+/**
+ * Upper bound on the handoffs one inbox read returns. The surface is an inbox
+ * list, not an archive dump.
+ */
+export const WORKJET_HANDOFF_LIST_MAX = 100;
+
+/**
+ * Send a handoff. Only the TARGET MACHINE is addressed — a handoff has no
+ * target thread by construction, because the receiving machine creates one.
+ *
+ * `targetWorkspaceId` is optional for the same reason it is on every other
+ * mailbox send: a same-environment target lives in this server's own mesh
+ * workspace, whose opaque id the client cannot know.
+ */
+export const WorkjetMailboxSendHandoffRpcInput = Schema.Struct({
+  sourceThreadId: ThreadId,
+  targetWorkspaceId: Schema.optional(WorkjetMeshWorkspaceId),
+  targetEnvironmentId: EnvironmentId,
+  /** Bounded operator note. The composed snapshot carries the real context. */
+  note: Schema.optional(boundedText(4_096)),
+  ttlSeconds: Schema.optional(WorkjetMailboxTtlSeconds),
+});
+export type WorkjetMailboxSendHandoffRpcInput = typeof WorkjetMailboxSendHandoffRpcInput.Type;
+
+export const WorkjetMailboxSendHandoffRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  status: WorkjetMailboxDeliveryStatus,
+  envelopeId: WorkjetEnvelopeId,
+  handoffId: WorkjetHandoffId,
+  /**
+   * Size of the snapshot the server composed. Returned so the composer can show
+   * what was actually captured instead of implying the whole history travelled.
+   */
+  snapshotByteLength: WorkjetPayloadByteLength,
+  disposition: Schema.optional(WorkjetDeliveryDisposition),
+  acknowledgedAt: Schema.optional(WorkjetMailboxTimestamp),
+});
+export type WorkjetMailboxSendHandoffRpcResult = typeof WorkjetMailboxSendHandoffRpcResult.Type;
+
+/**
+ * One handoff THIS machine received, as the inbox surface renders it.
+ *
+ * Redaction discipline matches every other client-facing mailbox schema: ids,
+ * addresses, timestamps, bounded note and branch metadata. The snapshot TEXT is
+ * never carried here — it is seeded into the new thread by the accept, on the
+ * server, from the local snapshot store.
+ */
+export const WorkjetReceivedHandoff = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  handoffId: WorkjetHandoffId,
+  envelopeId: WorkjetEnvelopeId,
+  /** The source thread this handoff came from; it stays authoritative for its history. */
+  sourceThread: WorkjetWorkerAddress,
+  createdAt: WorkjetMailboxTimestamp,
+  expiresAt: WorkjetMailboxTimestamp,
+  receivedAt: WorkjetMailboxTimestamp,
+  /**
+   * True when the context-snapshot bytes are readable in THIS machine's
+   * snapshot store, i.e. when "Continue here" can actually seed a thread. A
+   * handoff whose snapshot was too large to seal arrives with `false`, and the
+   * surface says so instead of offering an action that would fail.
+   */
+  snapshotAvailable: Schema.Boolean,
+  snapshotByteLength: WorkjetPayloadByteLength,
+  branch: Schema.optional(WorkjetHandoffBranchRef),
+  note: Schema.optional(boundedText(4_096)),
+  /** Set once the handoff was accepted; a handoff is accepted at most once. */
+  acceptedThreadId: Schema.optional(ThreadId),
+  acceptedAt: Schema.optional(WorkjetMailboxTimestamp),
+});
+export type WorkjetReceivedHandoff = typeof WorkjetReceivedHandoff.Type;
+
+export const WorkjetMailboxListHandoffsRpcInput = Schema.Struct({
+  limit: Schema.optional(
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(1),
+      Schema.isLessThanOrEqualTo(WORKJET_HANDOFF_LIST_MAX),
+    ),
+  ),
+});
+export type WorkjetMailboxListHandoffsRpcInput = typeof WorkjetMailboxListHandoffsRpcInput.Type;
+
+export const WorkjetMailboxListHandoffsRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  handoffs: Schema.Array(WorkjetReceivedHandoff).check(
+    Schema.isMaxLength(WORKJET_HANDOFF_LIST_MAX),
+  ),
+});
+export type WorkjetMailboxListHandoffsRpcResult = typeof WorkjetMailboxListHandoffsRpcResult.Type;
+
+/**
+ * Continue a received handoff in a NEW local thread.
+ *
+ * `hostThreadId` names a LIVE thread on this machine whose project, model
+ * selection, runtime mode, and interaction mode the new thread inherits —
+ * exactly the inheritance `WorkerDispatch` performs from an orchestrator
+ * parent. It exists because a handoff crosses machines: the sending side knows
+ * nothing about this machine's projects, and inventing a project or a model
+ * here would be a guess. The host thread is a settings template and a project
+ * anchor, not a parent: the created thread is an ordinary standalone thread.
+ *
+ * No worktree and no branch checkout are created. The named branch may not
+ * exist on this machine at all, and obtaining it is an explicit operator
+ * action; the seeded snapshot states the branch so the operator can fetch it.
+ */
+export const WorkjetMailboxAcceptHandoffRpcInput = Schema.Struct({
+  handoffId: WorkjetHandoffId,
+  hostThreadId: ThreadId,
+});
+export type WorkjetMailboxAcceptHandoffRpcInput = typeof WorkjetMailboxAcceptHandoffRpcInput.Type;
+
+export const WorkjetMailboxAcceptHandoffRpcResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  handoffId: WorkjetHandoffId,
+  /** The NEW thread. The handoff's durable row now points at it, permanently. */
+  threadId: ThreadId,
+  acceptedAt: WorkjetMailboxTimestamp,
+});
+export type WorkjetMailboxAcceptHandoffRpcResult = typeof WorkjetMailboxAcceptHandoffRpcResult.Type;
+
 /**
  * Redacted, bounded thread-activity payload written for every mailbox event
  * (`workjet.message.sent|received`, `workjet.delegation.sent|received`).
@@ -1068,12 +1306,48 @@ export const WorkjetMailboxActivityPayload = Schema.Struct({
 });
 export type WorkjetMailboxActivityPayload = typeof WorkjetMailboxActivityPayload.Type;
 
-/** The four thread-activity kinds the mailbox appends. */
+/**
+ * ADDITIVE. The redacted activity payload for the handoff kinds.
+ *
+ * It is a separate schema rather than a widening of
+ * {@link WorkjetMailboxActivityPayload} because a handoff's target is a
+ * MACHINE, not a thread: forcing it into a `target` with a `threadId` would
+ * require inventing one. Ids, addresses, and the snapshot's SIZE only — never
+ * the snapshot text, never the note.
+ */
+export const WorkjetHandoffActivityPayload = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  envelopeId: WorkjetEnvelopeId,
+  handoffId: WorkjetHandoffId,
+  direction: Schema.Literals(["outbound", "inbound"]),
+  sourceThread: WorkjetMailboxActivityAddress,
+  targetWorkspaceId: WorkjetMeshWorkspaceId,
+  targetEnvironmentId: EnvironmentId,
+  /** Present on `workjet.handoff.accepted`: the NEW thread continuing the work. */
+  acceptedThreadId: Schema.optional(ThreadId),
+  snapshotByteLength: WorkjetPayloadByteLength,
+  createdAt: WorkjetMailboxTimestamp,
+  expiresAt: WorkjetMailboxTimestamp,
+});
+export type WorkjetHandoffActivityPayload = typeof WorkjetHandoffActivityPayload.Type;
+
+/**
+ * The thread-activity kinds the mailbox appends.
+ *
+ * ADDITIVE (thread-handoff slice): the three handoff kinds. `sent` lands on the
+ * SOURCE thread, `received` on nothing (a handoff has no target thread — it is
+ * recorded in the handoff table instead), and `accepted` lands twice: on the
+ * NEW thread, where it is the durable backlink to the source address, and — for
+ * a SAME-environment source only — on the source thread, so the operator who
+ * handed the work over sees that it was picked up.
+ */
 export const WORKJET_MAILBOX_ACTIVITY_KINDS = [
   "workjet.message.sent",
   "workjet.message.received",
   "workjet.delegation.sent",
   "workjet.delegation.received",
+  "workjet.handoff.sent",
+  "workjet.handoff.accepted",
 ] as const;
 export type WorkjetMailboxActivityKind = (typeof WORKJET_MAILBOX_ACTIVITY_KINDS)[number];
 

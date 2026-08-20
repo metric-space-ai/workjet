@@ -206,15 +206,21 @@ import {
   WorktreeStorageInspectionInput,
 } from "./workjet.ts";
 import {
+  WorkjetMailboxAcceptHandoffRpcInput,
+  WorkjetMailboxAcceptHandoffRpcResult,
   WorkjetMailboxDelegateTaskRpcInput,
   WorkjetMailboxDelegateTaskRpcResult,
   WorkjetMailboxError,
+  WorkjetMailboxListHandoffsRpcInput,
+  WorkjetMailboxListHandoffsRpcResult,
   WorkjetMailboxReplyRpcInput,
   WorkjetMailboxReplyRpcResult,
   WorkjetMailboxReassignDelegationRpcInput,
   WorkjetMailboxReassignDelegationRpcResult,
   WorkjetMailboxRequestReviewRpcInput,
   WorkjetMailboxRequestReviewRpcResult,
+  WorkjetMailboxSendHandoffRpcInput,
+  WorkjetMailboxSendHandoffRpcResult,
   WorkjetMailboxSendMessageRpcInput,
   WorkjetMailboxSendMessageRpcResult,
   WorkjetMailboxUpdateDelegationRpcInput,
@@ -328,6 +334,12 @@ export const WS_METHODS = {
   workjetMailboxUpdateDelegation: "workjet.mailbox.updateDelegation",
   // ADDITIVE Wave-5 write: move a pending delegation to another LOCAL thread.
   workjetMailboxReassignDelegation: "workjet.mailbox.reassignDelegation",
+
+  // ADDITIVE thread-handoff slice: hand a thread's bounded context snapshot to
+  // another machine, list what arrived here, and continue one in a NEW thread.
+  workjetMailboxSendHandoff: "workjet.mailbox.sendHandoff",
+  workjetMailboxListHandoffs: "workjet.mailbox.listHandoffs",
+  workjetMailboxAcceptHandoff: "workjet.mailbox.acceptHandoff",
 
   // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
   workjetMeshRoster: "workjet.mesh.roster",
@@ -674,6 +686,42 @@ export const WsWorkjetMailboxReassignDelegationRpc = Rpc.make(
     error: WorkjetMailboxRpcError,
   },
 );
+
+/**
+ * ADDITIVE (thread-handoff slice). Hand this thread's work to another machine.
+ *
+ * The context snapshot is composed and stored SERVER-side and its digest is
+ * derived from the bytes the server wrote, exactly as the delegation prompt is:
+ * no caller-supplied digest is ever trusted. `orchestration:operate`, with the
+ * same orchestrator-source validation as every other thread-scoped send.
+ */
+export const WsWorkjetMailboxSendHandoffRpc = Rpc.make(WS_METHODS.workjetMailboxSendHandoff, {
+  payload: WorkjetMailboxSendHandoffRpcInput,
+  success: WorkjetMailboxSendHandoffRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * ADDITIVE (thread-handoff slice). The bounded inbox of handoffs THIS machine
+ * received, so a surface can offer "Continue here". Ids, addresses, timestamps,
+ * bounded note and branch metadata — never the snapshot text.
+ */
+export const WsWorkjetMailboxListHandoffsRpc = Rpc.make(WS_METHODS.workjetMailboxListHandoffs, {
+  payload: WorkjetMailboxListHandoffsRpcInput,
+  success: WorkjetMailboxListHandoffsRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * ADDITIVE (thread-handoff slice). Continue a received handoff in a NEW local
+ * thread seeded with the stored snapshot. A handoff is accepted AT MOST ONCE: a
+ * second accept is `invalid-state-transition`, never a second thread.
+ */
+export const WsWorkjetMailboxAcceptHandoffRpc = Rpc.make(WS_METHODS.workjetMailboxAcceptHandoff, {
+  payload: WorkjetMailboxAcceptHandoffRpcInput,
+  success: WorkjetMailboxAcceptHandoffRpcResult,
+  error: WorkjetMailboxRpcError,
+});
 
 /**
  * ADDITIVE Wave-5 read. The bounded, redacted list of mesh peers this machine
@@ -1260,6 +1308,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxRequestReviewRpc,
   WsWorkjetMailboxUpdateDelegationRpc,
   WsWorkjetMailboxReassignDelegationRpc,
+  WsWorkjetMailboxSendHandoffRpc,
+  WsWorkjetMailboxListHandoffsRpc,
+  WsWorkjetMailboxAcceptHandoffRpc,
   WsWorkjetMeshRosterRpc,
   WsWorkjetMeshOverviewRpc,
   WsCloudGetRelayClientStatusRpc,

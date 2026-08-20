@@ -3792,10 +3792,16 @@ public keys` on the first envelope that verifies, and any later different
       is the record of the current answer, not an obstacle to be deleted quietly.
       Deliberately not changed on 2026-08-20: `native/**` was out of scope and
       flipping a pinned behaviour needs the owner first.
-      ALSO STILL UNTESTED (Rust side, unchanged): that the host never selects
-      `RequestLoggingPolicy::full` (all seven call sites use `error_only_scoped`;
-      switching one breaks no test), that `sdk_config.request_log` defaults to
-      `false`, and that `commercial_mode` suppresses upstream capture.
+      NOW GUARDED (Rust side, 2026-08-20, commit 6c03e99c7): the three
+      properties that were previously untested. `request_logging_policy_test.rs`
+      pins that the host never selects `RequestLoggingPolicy::full` — it scans
+      `server.rs`, names the offending line, and pins the positive half too, so
+      deleting the logging setup outright does not satisfy it either — and that
+      `sdk_config.request_log` defaults to `false`;
+      `logging_helpers_test.rs` pins that `commercial_mode` suppresses upstream
+      capture. Mutation-verified: one call site flipped to `full_scoped` makes
+      the guard fail with "selects full request logging at line(s) [2047]", and
+      the mutation was reverted.
       RESIDUAL (TypeScript side, recorded not fixed): the provider event NDJSON
       at `<stateDir>/logs/provider/events.*.log` stores raw provider payloads by
       design (`EventNdjsonLogger.ts:557-593`), and `server.trace.ndjson` records
@@ -3815,12 +3821,10 @@ public keys` on the first envelope that verifies, and any later different
       the counter-test is the record of the current answer, so a fix must change
       the record deliberately, not delete it quietly. Until this is decided,
       provider credentials leave the machine whenever the home sink is bound.
-      IMPLEMENTABLE, independent of that decision: the three untested Rust
-      properties named below — that the host never selects
-      `RequestLoggingPolicy::full` (all seven call sites use `error_only_scoped`
-      and switching one breaks no test), that `sdk_config.request_log` defaults
-      to `false`, and that `commercial_mode` suppresses upstream capture. ~1
-      Rust test file, small.
+      DONE 2026-08-20 (commit 6c03e99c7), independent of that decision: the
+      three formerly untested Rust properties are now mutation-verified guards.
+      This half of the line is closed; the line itself stays unticked because
+      the home-sink owner decision below is unresolved.
       The two TypeScript RESIDUES recorded below are deliberately larger
       decisions and stay recorded, not scheduled.
 

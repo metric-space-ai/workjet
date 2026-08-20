@@ -772,8 +772,12 @@ it("cross-mode invariant B no http data bridge: the guard holds and the cross-mo
     }),
   );
 
-  // 2. NO SECOND DATA ROUTE. The cross-mode server path opens no socket and
-  //    speaks no URL of its own; the only egress it has is the port interface.
+  // 2. NO SECOND DATA ROUTE. Exactly ONE file may speak to a CTOX daemon: the
+  //    command client, and only over the MCP command endpoint. A command
+  //    dispatch is not a data bridge — the distinction is the whole point of
+  //    the plan's rule, so it is asserted rather than assumed. Every other
+  //    cross-mode file keeps the strict no-egress rule.
+  const COMMAND_CLIENT = "WorkjetCrossModeCtoxClient.ts";
   const forbidden = [
     /\bfetch\s*\(/,
     /XMLHttpRequest/,
@@ -785,8 +789,36 @@ it("cross-mode invariant B no http data bridge: the guard holds and the cross-mo
     /wss?:\/\//,
     /https?:\/\//,
   ];
+  // A Business OS DATA route is what the plan forbids: reading records over
+  // HTTP instead of through the owning authority. These must never appear,
+  // not even in the command client.
+  const forbiddenEverywhere = [
+    /\/api\/business-os/,
+    /\/rxdb\//,
+    /\/collections?\//,
+    /\/commands?\//,
+  ];
   for (const file of sourceFiles()) {
     const code = withoutComments(file.body);
+    for (const pattern of forbiddenEverywhere) {
+      assert.notMatch(code, pattern, `${file.name} reaches a Business OS data route (${pattern})`);
+    }
+    if (file.name === COMMAND_CLIENT) {
+      // The sanctioned exception, held to a positive rule: every request this
+      // file builds targets the MCP command endpoint and nothing else.
+      const requestPaths = [
+        ...code.matchAll(/HttpClientRequest\.[a-z]+\(`?\$\{[^}]*\}([^`"')]*)/g),
+      ].map((match) => match[1]);
+      assert.isAtLeast(requestPaths.length, 1, `${file.name} builds no request at all`);
+      for (const path of requestPaths) {
+        assert.equal(
+          path,
+          "/mcp",
+          `${file.name} speaks a route other than the MCP command endpoint`,
+        );
+      }
+      continue;
+    }
     for (const pattern of forbidden) {
       assert.notMatch(code, pattern, `${file.name} introduces a second data route (${pattern})`);
     }

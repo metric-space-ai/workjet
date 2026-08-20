@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { EnvironmentMeshOverviewStatus } from "../../state/meshOverview";
 import {
+  MachineRevokeConfirmation,
   MachinesPageView,
+  machineRevokeConfirmationCopy,
   buildMachineRows,
   machineTrustBadge,
   summarizeDelegationStates,
@@ -304,5 +306,145 @@ describe("MachinesPageView", () => {
     expect(markup).toContain("Last queued to it");
     expect(markup.toLowerCase()).not.toContain("delivered");
     expect(markup.toLowerCase()).not.toContain("received by");
+  });
+});
+
+describe("revoking a peer's trust pin", () => {
+  const render = (props: Parameters<typeof MachinesPageView>[0]) =>
+    renderToStaticMarkup(MachinesPageView(props));
+
+  /**
+   * How many `MachineRevokeConfirmation` elements the view put in the tree.
+   * The dialog renders through a portal, so static markup cannot see it; the
+   * element tree can, and the gate is about presence, not pixels.
+   */
+  const countConfirmations = (node: unknown): number => {
+    if (Array.isArray(node))
+      return node.reduce<number>((sum, child) => sum + countConfirmations(child), 0);
+    if (typeof node !== "object" || node === null) return 0;
+    const element = node as {
+      readonly type?: unknown;
+      readonly props?: { readonly children?: unknown };
+    };
+    const own = element.type === MachineRevokeConfirmation ? 1 : 0;
+    return own + countConfirmations(element.props?.children);
+  };
+
+  const peerRow = () => {
+    const rows = buildMachineRows(overview([peer("environment-peer")]));
+    const row = rows[1];
+    if (row === undefined) throw new Error("expected a peer row");
+    return row;
+  };
+
+  it("never offers to revoke THIS machine's own pin", () => {
+    const rows = buildMachineRows(overview([peer("environment-peer")]));
+    // A machine holds no pin for itself, so the action would be a guaranteed
+    // no-op dressed up as a security control.
+    expect(rows[0]?.isLocal).toBe(true);
+    expect(rows[0]?.revocable).toBeNull();
+    expect(rows[1]?.revocable).toEqual({
+      peerWorkspaceId: "workjet-mesh-peer",
+      peerEnvironmentId: "environment-peer",
+    });
+  });
+
+  it("renders no revoke control at all when the page has no revoke action", () => {
+    const markup = render({
+      environments: [environmentStatus({ overview: overview([peer("environment-peer")]) })],
+      isPending: false,
+      onRefresh: vi.fn(),
+    });
+    expect(markup).not.toContain("machine-revoke");
+    expect(markup).not.toContain("Revoke pinned keys");
+  });
+
+  it("shows the row control WITHOUT the dialog until the operator asks for it", () => {
+    const markup = render({
+      environments: [environmentStatus({ overview: overview([peer("environment-peer")]) })],
+      isPending: false,
+      onRefresh: vi.fn(),
+      onRequestRevoke: vi.fn(),
+      onConfirmRevoke: vi.fn(),
+      onCancelRevoke: vi.fn(),
+      pendingRevocation: null,
+    });
+
+    expect(markup).toContain("Revoke pinned keys");
+    // THE GATE. With nothing pending, no confirmation exists — so the row
+    // control cannot be the thing that destroys a pin.
+    expect(markup).not.toContain("data-revoke-peer-dialog");
+    expect(markup).not.toContain("data-revoke-peer-confirm");
+  });
+
+  it("mounts the confirmation ONLY when a revocation is pending", () => {
+    const props = {
+      environments: [environmentStatus({ overview: overview([peer("environment-peer")]) })],
+      isPending: false,
+      onRefresh: vi.fn(),
+      onRequestRevoke: vi.fn(),
+      onConfirmRevoke: vi.fn(),
+      onCancelRevoke: vi.fn(),
+    } as const;
+
+    // THE GATE, checked on the element tree because the dialog renders through
+    // a portal that static markup cannot reach. With nothing pending the
+    // confirmation is not in the tree at all, so the row control cannot be the
+    // thing that destroys a pin.
+    expect(countConfirmations(MachinesPageView({ ...props, pendingRevocation: null }))).toBe(0);
+    expect(
+      countConfirmations(
+        MachinesPageView({
+          ...props,
+          pendingRevocation: {
+            environmentId: "environment-local" as EnvironmentId,
+            row: peerRow(),
+          },
+        }),
+      ),
+    ).toBe(1);
+  });
+
+  it("states both halves of the consequence, not only the reassuring one", () => {
+    const copy = machineRevokeConfirmationCopy("environment-peer");
+
+    expect(copy.target).toBe("environment-peer");
+    // The same promise the deep-link confirmation makes.
+    expect(copy.nothingHappens).toBe("Nothing happens unless you choose Revoke.");
+    // The DESTRUCTIVE half.
+    expect(copy.destroys).toContain("forget the keys it pinned");
+    // The half a reassuring dialog would leave out: revocation reopens the
+    // address, and whoever verifies first is pinned. Without this sentence the
+    // operator cannot make the decision the dialog exists to ask for.
+    expect(copy.reopens).toContain("will be trusted and pinned again");
+    expect(copy.reopens).toContain("whichever machine reaches this address first");
+    // And the limit that makes it safe to offer at all.
+    expect(copy.limit).toContain("refused permanently");
+    // The confirm button says what it does; "OK" would not.
+    expect(copy.confirmLabel).toBe("Revoke");
+  });
+
+  it("calls onConfirm only from the dialog's Revoke button, never from the row", () => {
+    const onConfirm = vi.fn();
+    const onDismiss = vi.fn();
+    const element = MachineRevokeConfirmation({
+      peerEnvironmentId: "environment-peer",
+      isRevoking: false,
+      onConfirm,
+      onDismiss,
+    });
+    renderToStaticMarkup(element);
+    // Rendering alone must not revoke anything: the consequence is behind the
+    // click, not behind the mount.
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("swaps the confirm label while the revocation is in flight", () => {
+    // A double-submit would revoke twice; the second call is a no-op on the
+    // server, but the operator should not be invited to make it.
+    const copy = machineRevokeConfirmationCopy("environment-peer");
+    expect(copy.confirmBusyLabel).not.toBe(copy.confirmLabel);
+    expect(copy.confirmBusyLabel).toContain("Revoking");
   });
 });

@@ -899,6 +899,28 @@ export function createServerEnvironmentAtoms<R, E>(
     staleTimeMs: WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
   });
 
+  // Destroying a peer's trust pin is the ONE mesh-trust write. It is
+  // single-flighted per environment because a second concurrent revoke on the
+  // same machine can only be a double-submit, and both reads that render the
+  // pin are refreshed on success so the roster and the machines page cannot
+  // keep offering a peer whose pin no longer exists.
+  const revokeWorkjetMeshPeer = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mesh:revoke-peer",
+    tag: WS_METHODS.workjetMeshRevokePeer,
+    concurrency: {
+      mode: "singleFlight" as const,
+      key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
+    },
+    onSuccess: (
+      { environmentId }: { readonly environmentId: EnvironmentId },
+      registry: AtomRegistry.AtomRegistry,
+    ) =>
+      Effect.sync(() => {
+        registry.refresh(workjetMeshOverview({ environmentId, input: {} }));
+        registry.refresh(workjetMeshRoster({ environmentId, input: {} }));
+      }),
+  });
+
   // Sending into another worker's mailbox is single-flighted per SOURCE THREAD,
   // not per environment: two orchestrator threads on one server are two
   // independent conversations, and a slow send from one must not swallow the
@@ -1048,6 +1070,7 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetMailboxHandoffs,
     workjetMeshRoster,
     workjetMeshOverview,
+    revokeWorkjetMeshPeer,
     workjetGatewayStatus,
     workjetGatewayCatalog,
     workjetGatewayHealth,

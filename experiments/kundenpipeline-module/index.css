@@ -1,0 +1,102 @@
+/* Kundenpipeline — App-CSS nur für das genuin Eigene (Brillen-Display).
+   Frame, Panes, Listen, Controls kommen aus shared/base.css und den Tokens. */
+
+.kpl { grid-template-columns: var(--ctox-left-width, 320px) 12px minmax(300px, 1fr); }
+.kpl [hidden] { display: none !important; }
+.kpl-left { grid-column: 1; }
+.kpl .ctox-column-resizer { grid-column: 2; }
+.kpl-center { grid-column: 3; }
+
+.kpl-left, .kpl-center { min-height: 0; display: flex; flex-direction: column; }
+.kpl-filterbar { display: flex; gap: 6px; align-items: center; }
+.kpl-filterbar .ctox-pane-search { flex: 1; min-width: 0; }
+.kpl-view-toggle { display: flex; gap: 2px; }
+.kpl-filter-tray { background: var(--surface-2); border-radius: 8px; padding: 8px; margin-top: 6px; }
+.kpl-filter-row { display: flex; gap: 6px; align-items: center; }
+.kpl-filter-row .ctox-select { flex: 1; min-width: 0; }
+.kpl-filter-reset { background: none; border: 0; color: var(--muted); cursor: pointer; width: 28px; height: 28px; padding: 4px; }
+.kpl-filter-reset:hover { color: var(--text); }
+.kpl-filter-reset svg { width: 100%; height: 100%; }
+.kpl-well { background: var(--surface-2); border-top: 1px solid var(--line); flex: 1; min-height: 0; overflow: auto; }
+.kpl-footer { border-top: 1px solid var(--line); padding: 6px 12px; font-size: 12px; color: var(--muted); }
+.kpl-view-switch { border-top: 1px solid var(--line); }
+.kpl-list .ctox-list-item small { color: var(--muted); }
+
+.kpl-stage { display: flex; flex-direction: column; gap: 14px; align-items: center; overflow: auto; }
+.kpl-mode-switch { border-top: 1px solid var(--line); }
+
+/* Desktop-Modus: dieselbe Entscheidung als ordentliche Seite. */
+.kpl-desktop-view { width: min(760px, 100%); }
+.kpl-desktop-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.kpl-desktop-title { margin: 2px 0 0; font-size: 18px; color: var(--text-strong); }
+.kpl-desktop-sections { display: grid; gap: 12px; }
+.kpl-desktop-section { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; }
+.kpl-desktop-section h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.kpl-desktop-section p { margin: 0; white-space: pre-wrap; line-height: 1.5; color: var(--text); }
+.kpl-desktop-section .kpl-agent { color: var(--accent); font-weight: 600; margin-left: 6px; }
+
+/* Brillen-Display: das Schwarz/Grün der simulierten Hardware zeichnet der
+   Canvas selbst (JS); der Rahmen und alle Controls nutzen Shell-Tokens. */
+.kpl-glass-frame {
+  background: color-mix(in srgb, var(--surface-2) 40%, var(--text-strong) 60%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 14px 10px;
+  max-width: 100%;
+}
+.kpl-glass {
+  display: block;
+  width: min(576px, 100%);
+  aspect-ratio: 2 / 1;
+  outline: none;
+  cursor: default;
+}
+.kpl-glass:focus-visible { box-shadow: 0 0 0 2px var(--focus-ring); border-radius: 4px; }
+
+/* Eine Gestenzeile — Teil des Geräterahmens, Labels dynamisch je Karte. */
+.kpl-gestures { display: flex; gap: 8px; justify-content: center; padding-top: 10px; flex-wrap: wrap; }
+.kpl-gesture {
+  font: 600 12px/1 "SF Mono", Menlo, monospace;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 7px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.kpl-gesture:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 22%, var(--accent-soft)); }
+.kpl-gesture:disabled { opacity: 0.35; cursor: default; }
+
+/* Korrektur-Komposer: Desktop-Ersatz für das Brillen-Diktat. */
+.kpl-correction { width: min(576px, 100%); display: flex; gap: 8px; align-items: flex-end; }
+.kpl-correction .ctox-textarea { flex: 1; min-height: 40px; max-height: 120px; resize: vertical; }
+
+/* Vorgangskontext (Progressive Disclosure: Toggle im Pane-Header). */
+.kpl-context { width: min(576px, 100%); border-top: 1px solid var(--line); padding-top: 12px; }
+.kpl-audit { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.kpl-audit li { font-size: 12px; line-height: 1.4; color: var(--text); }
+.kpl-audit .kpl-audit-meta { color: var(--muted); }
+
+/* Kompakt: unter 640px stapeln, Liste <-> Display per Mobile-Back. */
+@container business-app-window (max-width: 640px) {
+  .kpl { grid-template-columns: 1fr; }
+  .kpl-left, .kpl-center { grid-column: 1; }
+  .kpl.is-detail .kpl-left { display: none; }
+  .kpl:not(.is-detail) .kpl-center { display: none; }
+  .kpl-mobile-back[hidden] { display: inline-flex !important; }
+}
+
+/* Desktop-Editing + Diktat */
+.kpl-dv-body { display: grid; gap: 8px; }
+.kpl-dv-edit { width: 100%; box-sizing: border-box; resize: vertical; }
+.kpl-dv-agent { max-width: 320px; }
+.kpl-desktop-section h4 { display: flex; align-items: center; gap: 6px; }
+.kpl-desktop-section h4 .ctox-pane-icon { width: 24px; height: 24px; padding: 3px; }
+.kpl-mic.is-recording { color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, transparent); animation: kpl-pulse 1.2s ease-in-out infinite; }
+@keyframes kpl-pulse { 50% { opacity: .55; } }
+
+/* Lazy setup: what is still missing before decisions can arrive. */
+.kpl-setup { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; text-align: left; }
+.kpl-setup li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.kpl-setup li[data-done="true"] { color: var(--text-muted); }
+.kpl-setup .kpl-setup-mark { flex: none; width: 16px; text-align: center; color: var(--accent); }

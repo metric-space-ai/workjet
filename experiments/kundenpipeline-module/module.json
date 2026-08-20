@@ -1,0 +1,61 @@
+{
+  "id": "kundenpipeline",
+  "title": "Decision Hub",
+  "description": "Hub für Executive-Entscheidungen: Kundenanfragen und Agent-Vorschläge triagieren, freigeben, korrigieren — am Desktop und auf der Brille.",
+  "entry": "installed-modules/kundenpipeline/index.html",
+  "icon": "icon.svg",
+  "install_scope": "installed",
+  "version": "0.1.0",
+  "collections": [
+    "kundenpipeline_vorgaenge",
+    "kundenpipeline_entscheidungen",
+    "kundenpipeline_projekte"
+  ],
+  "category": "Operations",
+  "developer": "CTOX",
+  "license": "AGPL-3.0-only",
+  "launch_kind": "desktop-app",
+  "archetype": "queue-workflow",
+  "presentation": {
+    "default_mode": "window",
+    "supported_modes": [
+      "window",
+      "maximized",
+      "focus"
+    ],
+    "initial_size": {
+      "width": 1360,
+      "height": 860
+    },
+    "minimum_size": {
+      "width": 640,
+      "height": 480
+    },
+    "multi_instance": false,
+    "auto_restore": false
+  },
+  "layout": {
+    "shell": "windowed",
+    "default_width": 960,
+    "default_height": 680,
+    "min_width": 640,
+    "min_height": 480,
+    "left": "Entscheidungsqueue mit gezähltem View-Band (Offen/Vorgänge/Erledigt)",
+    "center": "Brillen-Display (576×288, grün-monochrom, scrollbar) mit Gestenleiste, Korrektur-Komposer und einblendbarem Vorgangskontext"
+  },
+  "store": {
+    "summary": "Executive-Entscheidungen an einem Ort: Vorschläge prüfen, diktieren, freigeben — brillen- und desktop-tauglich.",
+    "distribution": "ctox-runtime-installed-module",
+    "source_path": "installed-modules/kundenpipeline",
+    "generator": "ctox-runtime-app-starter-v2",
+    "archetype": "record-workbench",
+    "last_request": "Create request: Prepare a Business OS app source workspace for direct MCP coding.",
+    "updated_at_ms": 1787053601154
+  },
+  "tags": [
+    "inbox",
+    "triage",
+    "approvals",
+    "glasses"
+  ]
+}

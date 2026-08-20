@@ -346,16 +346,49 @@ both modes.
       surface only.
 - [x] Add adapter conformance tests proving the same manifest and JSON schemas
       are visible from T3 and CTOX.
-- [ ] Enforce one canonical capability version lock for both hosts in release
+- [x] Enforce one canonical capability version lock for both hosts in release
       assembly; fail the build when Code and CTOX resolve different manifests,
-      schemas, implementation revisions, or artifact hashes.
-- [ ] Add a cross-host conformance gate that invokes every dual-host capability
+      schemas, implementation revisions, or artifact hashes. Done 2026-08-20
+      (commits `66e0ee4fc`, `21b5c6466`): dual-host membership is DERIVED from
+      each manifest's `supportedAdapters` (never a second list); the committed
+      `capability-version-lock.json` is checked by a repo test AND enforced
+      inside release assembly, so a divergent artifact is refused before
+      packaging. All four dimensions are genuinely enforced for the two
+      web-stack capabilities (Code's TS catalog/generated schemas/compiled
+      surface strings vs the crate's published fixture, schema and Rust
+      source). HONEST GAP, not faked: Greppy is `unenforceable` on all four —
+      CTOX runs its own Greppy runtime and this repo pins Greppy for the Code
+      host only, so there IS no second value; the check refuses to compare a
+      value with itself and a test asserts every unenforceable dimension
+      carries its reason. Mutation-verified with 8 proofs, four of them
+      editing the real on-disk artifacts and restoring them.
+- [x] Add a cross-host conformance gate that invokes every dual-host capability
       through both adapters against the same fixtures and compares canonical
       success/error projections while allowing only documented host-policy
-      differences.
-- [ ] Make capability availability visible in both UIs from the same catalog:
-      per-thread toggles/settings in Code and instance-policy-derived controls
-      or status in Business OS, without duplicating capability metadata.
+      differences. Done 2026-08-20 (commit `fea754053`): 26 cases across all
+      three dual-host capabilities. The Code leg really calls the production
+      tool registrations (an unregistered tool surfaces as a defect instead of
+      being laundered into a conforming refusal); the CTOX leg reads the
+      crate's OWN published fixture — the same file the Rust side is
+      independently held to — so there is no private copy. Host-policy
+      differences must be declared with a reason (response budget 2 MiB vs
+      256 KiB, runtime config store, Greppy's Code-only cwd precondition);
+      an undeclared difference fails, and a new dual-host capability with no
+      declared coverage fails rather than being skipped. Mutation-verified on
+      all three capabilities. Limitation stated: the gate compares
+      projections, not two running binaries.
+- [~] Make capability availability visible in both UIs from the same catalog:
+  per-thread toggles/settings in Code and instance-policy-derived controls
+  or status in Business OS, without duplicating capability metadata. Code
+  side done 2026-08-20 (commit `935f5e0ec`): one resolver answers the
+  question for both hosts and returns the manifest BY REFERENCE, never
+  copies; the composer's Tools menu now takes its label, description,
+  aria-label and failure toast from the catalog — the hardcoded Greppy
+  strings are gone. Availability stays separate from activation, and a
+  pinned-but-uninstalled version reports `incompatible` instead of
+  silently resolving another. Business OS side needs the CTOX repo: a
+  settings surface rendering `CapabilityAvailabilityView[]` plus an MCP
+  control method to read those views and write instance activation.
 
 ### First capabilities
 

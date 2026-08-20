@@ -434,8 +434,7 @@ const remoteDocument = (input: {
     const envelope = { ...signed, signature };
 
     const senderSigningKey = input.publicKeyOverride ?? input.identity.publicKey;
-    const senderEncryptionKey =
-      input.encryptionKeyOverride ?? input.identity.encryptionPublicKey;
+    const senderEncryptionKey = input.encryptionKeyOverride ?? input.identity.encryptionPublicKey;
 
     const body =
       input.sealToKey === undefined
@@ -1916,61 +1915,59 @@ group("WorkjetMailboxTransport peer key binding", (it) => {
     }),
   );
 
-  it.effect(
-    "refuses a first-contact wrapper whose encryption key the signer never bound",
-    () =>
-      Effect.gen(function* () {
-        const store = yield* WorkjetMailboxStore;
-        const peer = yield* makeIdentity(WORKSPACE);
-        const attacker = yield* makeIdentity(WORKSPACE);
+  it.effect("refuses a first-contact wrapper whose encryption key the signer never bound", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const attacker = yield* makeIdentity(WORKSPACE);
 
-        // THE substitution attack. `payload_json` is covered by no signature,
-        // so a room member republishes the honest peer's envelope and its
-        // honest binding with its OWN encryption key advertised. Pinning that
-        // pair would seal every later reply to this peer to the attacker.
-        const id = envelopeId("bind-sub-00001");
-        const document = yield* remoteDocument({
-          identity: peer,
-          envelopeId: id,
-          kind: "message",
-          encryptionKeyOverride: attacker.encryptionPublicKey,
-          bindEncryptionKey: peer.encryptionPublicKey,
-          payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
-        });
+      // THE substitution attack. `payload_json` is covered by no signature,
+      // so a room member republishes the honest peer's envelope and its
+      // honest binding with its OWN encryption key advertised. Pinning that
+      // pair would seal every later reply to this peer to the attacker.
+      const id = envelopeId("bind-sub-00001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        encryptionKeyOverride: attacker.encryptionPublicKey,
+        bindEncryptionKey: peer.encryptionPublicKey,
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
 
-        const captured = capturing();
-        const daemon = makeFakeDaemon({ seed: [document] });
-        const transport = yield* makeTransport({
-          client: daemon.client,
-          sources: { audit: captured.sink },
-        });
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
 
-        const status = yield* transport.runCycle;
+      const status = yield* transport.runCycle;
 
-        assert.strictEqual(status.counters.accepted, 0);
-        assert.strictEqual(status.rejections.keyBinding, 1);
-        assert.strictEqual(status.rejections.keyContinuity, 0, "this is a binding failure");
-        assert.isTrue(Option.isNone(yield* store.getInbound(id)));
-        // NOTHING was pinned: a refused claim must not leave a row behind that
-        // a second attempt could then match against.
-        assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 0);
-        // Poison is consumed, or every cycle re-reads it forever.
-        assert.deepEqual([...consumedIds(daemon.calls)], [id as string]);
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.keyBinding, 1);
+      assert.strictEqual(status.rejections.keyContinuity, 0, "this is a binding failure");
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      // NOTHING was pinned: a refused claim must not leave a row behind that
+      // a second attempt could then match against.
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 0);
+      // Poison is consumed, or every cycle re-reads it forever.
+      assert.deepEqual([...consumedIds(daemon.calls)], [id as string]);
 
-        const audited = bindingRejections(captured.events);
-        assert.strictEqual(audited.length, 1);
-        assert.deepInclude(audited[0], {
-          _tag: "mesh-peer-binding-rejected",
-          envelopeId: id,
-          sourceWorkspaceId: WORKSPACE,
-          sourceEnvironmentId: REMOTE_ENVIRONMENT,
-          reasonCode: "binding-invalid",
-        });
-        // Redaction: an audit event never carries key material.
-        const serialized = JSON.stringify(captured.events);
-        assert.notInclude(serialized, attacker.encryptionPublicKey);
-        assert.notInclude(serialized, peer.publicKey);
-      }),
+      const audited = bindingRejections(captured.events);
+      assert.strictEqual(audited.length, 1);
+      assert.deepInclude(audited[0], {
+        _tag: "mesh-peer-binding-rejected",
+        envelopeId: id,
+        sourceWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: REMOTE_ENVIRONMENT,
+        reasonCode: "binding-invalid",
+      });
+      // Redaction: an audit event never carries key material.
+      const serialized = JSON.stringify(captured.events);
+      assert.notInclude(serialized, attacker.encryptionPublicKey);
+      assert.notInclude(serialized, peer.publicKey);
+    }),
   );
 
   it.effect("refuses a binding lifted from another envelope of the same peer", () =>

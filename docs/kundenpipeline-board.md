@@ -1,5 +1,33 @@
 # Progress-Board · Decision Hub (vormals Kundenpipeline) + Brillen-Approval
 
+## Paket J (2026-08-20 mittags) — Kette bewiesen, Mailbox-Setup gefixt
+- VOLLE KETTE VERIFIZIERT auf welsch (final-verify.sh, Testdaten danach
+  gelöscht): frische Mail (kunde@example.org) → Vorgang → Entscheidung →
+  Thread `thread_kundenpipeline_entscheidung_…` mit
+  assigned_user_id=michael.welsch@metric-space.ai, status=open,
+  kind=approval. Threads-UI zeigt „Handeln (1) · kunde@example.org"
+  (Screenshot welsch-threads-ui.png). Decision Hub zeigt die Brille mit
+  Tab-Leiste, Mailtext und ✓ ✗ ✎ ◷ (welsch-hub-live.png).
+- BUG 5: Das persönliche Postfach war auf einem MANAGED Tenant nicht
+  einrichtbar — /api/business-os/mail/accounts fehlte in der Allowlist
+  des Tenant-Proxys (app/instance/[tenant]/[[...path]]/route.ts), also
+  401. Lokal funktionierte es, auf welsch nie. FIX deployed (ctox-dev
+  deploy/fleet-timeout-fix, Vercel ctox-b0vbcp5az, Ready): GET listet
+  (admin-gated), POST verbindet/trennt (admin + same-origin);
+  Zugangsdaten laufen über den SSH-Kanal, NIE über RxDB-Replikation.
+  Backend direkt auf dem Guest verifiziert: {"ok":true,"accounts":[]}.
+- BLOCKIERT (Owner): Browser-Verifikation der Mail-Maske nicht möglich —
+  das welsch-Passwort wurde am 2026-08-20 um 05:12 UTC zurückgesetzt
+  (2 reset-tokens, access_version 1→4). Mein Login-Cookie ist damit für
+  die HTTP-API ungültig (Shell/WebRTC lief weiter, daher sind die
+  Screenshots oben gültig). Ich setze KEIN Passwort zurück. Owner:
+  aktuelles Passwort nennen ODER Mail-Maske selbst öffnen
+  (Mail-App → Zahnrad „Einstellungen" → „Persönliches Konto verbinden").
+- HINWEIS: Mein Vercel-Prod-Deploy hat die auf origin/main liegenden
+  Commits der Parallel-Session (Passwort-Recovery ae980c1 u. a.)
+  mitveröffentlicht — sie waren bereits auf main, aber der Zeitpunkt
+  kam von mir.
+
 ## OWNER-ENTSCHEIDUNGEN (offen, nicht eigenmächtig entschieden)
 1. „Matching"-App auf welsch: Rest aus dem alten Kunden-App-Leak
    (Juni-Bundle). Behalten oder löschen?

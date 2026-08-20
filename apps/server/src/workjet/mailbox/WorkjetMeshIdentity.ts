@@ -221,7 +221,8 @@ export const canonicalRoutingEnvelopeBytes = (
     expiresAt: envelope.expiresAt,
   };
   return new TextEncoder().encode(
-    // @effect-diagnostics-next-line preferSchemaOverJson:off -- The canonical signing payload is defined as this exact literal serialization.
+    // The canonical signing payload is defined as this exact literal
+    // serialization; a Schema codec must never reshape it.
     `${WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN}\n${JSON.stringify(canonical)}`,
   );
 };
@@ -327,7 +328,8 @@ export const canonicalKeyBindingBytes = (claim: WorkjetMeshKeyBindingClaim): Uin
     senderEncryptionKey: claim.senderEncryptionKey,
   };
   return new TextEncoder().encode(
-    // @effect-diagnostics-next-line preferSchemaOverJson:off -- The canonical binding payload is defined as this exact literal serialization.
+    // The canonical binding payload is defined as this exact literal
+    // serialization; a Schema codec must never reshape it.
     `${WORKJET_MESH_KEY_BINDING_DOMAIN}\n${JSON.stringify(canonical)}`,
   );
 };

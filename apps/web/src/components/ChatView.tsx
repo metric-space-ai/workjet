@@ -1730,30 +1730,30 @@ function ChatViewContent(props: ChatViewProps) {
                   } as const),
             )
           : workjetSendDraft.tab === "task"
-          ? await delegateWorkjetMailboxTask({
-              environmentId: activeThreadEnvironmentId,
-              input: buildWorkjetDelegateTaskInput(payloadArguments),
-            }).then((result) =>
-              result._tag === "Failure"
-                ? result
-                : ({
-                    status: result.value.status,
-                    envelopeId: String(result.value.envelopeId),
-                    disposition: result.value.disposition,
-                  } as const),
-            )
-          : await sendWorkjetMailboxMessage({
-              environmentId: activeThreadEnvironmentId,
-              input: buildWorkjetSendMessageInput(payloadArguments),
-            }).then((result) =>
-              result._tag === "Failure"
-                ? result
-                : ({
-                    status: result.value.status,
-                    envelopeId: String(result.value.envelopeId),
-                    disposition: result.value.disposition,
-                  } as const),
-            );
+            ? await delegateWorkjetMailboxTask({
+                environmentId: activeThreadEnvironmentId,
+                input: buildWorkjetDelegateTaskInput(payloadArguments),
+              }).then((result) =>
+                result._tag === "Failure"
+                  ? result
+                  : ({
+                      status: result.value.status,
+                      envelopeId: String(result.value.envelopeId),
+                      disposition: result.value.disposition,
+                    } as const),
+              )
+            : await sendWorkjetMailboxMessage({
+                environmentId: activeThreadEnvironmentId,
+                input: buildWorkjetSendMessageInput(payloadArguments),
+              }).then((result) =>
+                result._tag === "Failure"
+                  ? result
+                  : ({
+                      status: result.value.status,
+                      envelopeId: String(result.value.envelopeId),
+                      disposition: result.value.disposition,
+                    } as const),
+              );
       setWorkjetSendBusy(false);
       if ("_tag" in receipt) {
         if (isAtomCommandInterrupted(receipt)) return;
@@ -6572,7 +6572,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
       <PullRequestsUnavailableState
         title="Pull requests unavailable"
-        error="Update this environment's T3 Code server to browse pull requests."
+        error="Update this environment's CTOX server to browse pull requests."
       />
     ) : activeRightPanelSurface?.kind === "pull-request" ? (
       // No onClose: the surface tab's own X owns closing here, and a second X in the header

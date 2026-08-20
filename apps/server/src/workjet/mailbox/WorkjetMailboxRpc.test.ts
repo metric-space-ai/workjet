@@ -11,8 +11,11 @@ import {
   WorkjetRepositoryPath,
   WorkjetSealedPayloadRef,
   type OrchestrationThread,
+  WorkjetHandoffId,
   type WorkjetMailboxDelegateTaskRpcInput,
+  type WorkjetMailboxSendHandoffRpcInput,
   type WorkjetMailboxSendMessageRpcInput,
+  type WorkjetThreadHandoff,
   type WorkjetDelegation,
   type WorkjetThreadRole,
   type WorkjetWorkerAddress,
@@ -22,8 +25,10 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
 import type {
+  WorkjetMailboxAcceptHandoffInput,
   WorkjetMailboxDelegateInput,
   WorkjetMailboxDeliveryShape,
+  WorkjetMailboxSendHandoffInput,
   WorkjetMailboxReplyInput,
   WorkjetMailboxRequestReviewInput,
   WorkjetMailboxSendMessageInput,
@@ -43,6 +48,8 @@ const DELEGATION_ID = WorkjetDelegationId.make("dlg-0123456789abcdef");
 const DIGEST = WorkjetContentDigest.make("a".repeat(64));
 const SNAPSHOT_REF = WorkjetSealedPayloadRef.make(Buffer.alloc(32, 7).toString("base64url"));
 const NOW = "2026-08-18T10:00:00.000Z";
+const HANDOFF_ID = WorkjetHandoffId.make("wjh-0123456789abcdef");
+const CONTINUED_THREAD_ID = ThreadId.make("thread-continued");
 
 const thread = (
   role: WorkjetThreadRole,
@@ -50,6 +57,13 @@ const thread = (
 ): OrchestrationThread =>
   ({
     id: SOURCE_THREAD_ID,
+    title: "Thread handoff contract",
+    branch: "agent/th-thread-handoff",
+    worktreePath: "/private/tmp/worktrees/th",
+    messages: [
+      { role: "user", text: "Start the handoff slice.", createdAt: "2026-08-18T09:58:00.000Z" },
+      { role: "assistant", text: "Contracts first.", createdAt: "2026-08-18T09:59:00.000Z" },
+    ],
     deletedAt: overrides.deletedAt ?? null,
     workjetConfig: {
       schemaVersion: 1,
@@ -127,12 +141,23 @@ interface Recorded {
     readonly delegationId: WorkjetDelegationId;
     readonly newTarget: WorkjetWorkerAddress;
   }>;
+  readonly handoffs: Array<{
+    readonly sender: WorkjetMailboxSenderScope;
+    readonly input: WorkjetMailboxSendHandoffInput;
+  }>;
+  readonly accepts: Array<WorkjetMailboxAcceptHandoffInput>;
 }
 
 const doubles = (
   options: {
     readonly sameEnvironment?: boolean;
     readonly reassignRefusal?: WorkjetMailboxError["reason"];
+    /** No handoff with this id arrived here. */
+    readonly handoffMissing?: boolean;
+    /** The handoff arrived but was already continued in a thread. */
+    readonly handoffAccepted?: boolean;
+    /** The context bytes are not readable on this machine. */
+    readonly snapshotMissing?: boolean;
   } = {},
 ) => {
   const recorded: Recorded = {
@@ -143,8 +168,34 @@ const doubles = (
     updates: [],
     prompts: [],
     reassignments: [],
+    handoffs: [],
+    accepts: [],
   };
   const acknowledged = options.sameEnvironment !== false;
+  const receivedHandoff: WorkjetThreadHandoff = {
+    schemaVersion: 1,
+    envelopeId: ENVELOPE_ID,
+    handoffId: HANDOFF_ID,
+    sourceThread: {
+      schemaVersion: 1,
+      workspaceId: WORKSPACE_ID,
+      environmentId: EnvironmentId.make("environment-remote"),
+      threadId: ThreadId.make("thread-remote-source"),
+    },
+    target: { schemaVersion: 1, workspaceId: WORKSPACE_ID, environmentId: ENVIRONMENT_ID },
+    createdAt: NOW,
+    expiresAt: "2026-08-19T10:00:00.000Z",
+    contextSnapshot: { schemaVersion: 1, snapshotRef: SNAPSHOT_REF, digest: DIGEST, byteLength: 64 },
+    artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+    note: "Continue the transport slice here.",
+  };
+  const receivedHandoffRecord = {
+    handoffId: HANDOFF_ID,
+    handoff: receivedHandoff,
+    receivedAtMillis: Date.parse(NOW),
+    acceptedThreadId: options.handoffAccepted === true ? CONTINUED_THREAD_ID : null,
+    acceptedAtMillis: options.handoffAccepted === true ? Date.parse(NOW) : null,
+  };
   const sendOutcome = (targetEnvironmentId: EnvironmentId, targetThreadId: ThreadId) =>
     acknowledged
       ? ({
@@ -270,6 +321,38 @@ const doubles = (
         ...(edgeKind !== undefined ? { edgeKind } : {}),
       });
     },
+    sendHandoff: (sender, input) => {
+      recorded.handoffs.push({ sender, input });
+      return Effect.succeed({
+        handoffId: HANDOFF_ID,
+        delivery: acknowledged
+          ? ({
+              _tag: "acknowledged",
+              envelopeId: ENVELOPE_ID,
+              disposition: "accepted-new",
+              acknowledgedAt: NOW,
+            } as const)
+          : ({ _tag: "queued", envelopeId: ENVELOPE_ID } as const),
+      });
+    },
+    listReceivedHandoffs: () =>
+      Effect.succeed(options.handoffMissing === true ? [] : [receivedHandoffRecord]),
+    getReceivedHandoff: () =>
+      Effect.succeed(
+        options.handoffMissing === true ? Option.none() : Option.some(receivedHandoffRecord),
+      ),
+    acceptHandoff: (input) => {
+      recorded.accepts.push(input);
+      // The store owns the exactly-once claim; the double mirrors its verdict.
+      if (options.handoffAccepted === true) {
+        return Effect.fail(new WorkjetMailboxError({ reason: "invalid-state-transition" }));
+      }
+      return Effect.succeed({
+        handoffId: input.handoffId,
+        threadId: CONTINUED_THREAD_ID,
+        acceptedAt: NOW,
+      });
+    },
   };
   const snapshots = {
     put: (text: string) => {
@@ -280,6 +363,14 @@ const doubles = (
         byteLength: Buffer.byteLength(text, "utf8"),
       });
     },
+    stat: () =>
+      Effect.succeed(
+        options.snapshotMissing === true ? Option.none() : Option.some({ byteLength: 64 }),
+      ),
+    get: () =>
+      options.snapshotMissing === true
+        ? Effect.fail({ _tag: "WorkjetSnapshotNotFoundError" })
+        : Effect.succeed("# Workjet thread handoff\nSource thread: remote"),
   } as unknown as WorkjetSnapshotStoreShape;
   // The reconciler's reassignment port. It records the call and answers with
   // the record the real store returns: the delegation re-pointed at the new
@@ -349,6 +440,10 @@ const handlers = (
     readonly deletedAt?: string | null;
     readonly sameEnvironment?: boolean;
     readonly reassignRefusal?: WorkjetMailboxError["reason"];
+    readonly handoffMissing?: boolean;
+    readonly handoffAccepted?: boolean;
+    readonly snapshotMissing?: boolean;
+    readonly remoteConfigured?: boolean;
   } = {},
 ) => {
   const { recorded, delivery, snapshots, reassign } = doubles(options);
@@ -365,6 +460,9 @@ const handlers = (
       workspaceId: WORKSPACE_ID,
       environmentId: ENVIRONMENT_ID,
       reassign,
+      // Injected so a content-addressed snapshot composes deterministically.
+      nowIso: Effect.succeed(NOW),
+      sourceRemoteConfigured: () => Effect.succeed(options.remoteConfigured ?? true),
     }),
   };
 };
@@ -502,6 +600,8 @@ it.effect("maps an oversized prompt onto payload-too-large and never delegates",
       query: query(Option.some(thread("orchestrator"))),
       workspaceId: WORKSPACE_ID,
       environmentId: ENVIRONMENT_ID,
+      nowIso: Effect.succeed(NOW),
+      sourceRemoteConfigured: () => Effect.succeed(false),
     });
 
     const error = yield* Effect.flip(rpc.delegateTask(delegateInput));
@@ -749,6 +849,183 @@ it.effect("surfaces the store's invalid-state-transition refusal unchanged", () 
     const error = yield* Effect.flip(rpc.reassignDelegation(reassignInput));
 
     expect(error).toBeInstanceOf(WorkjetMailboxError);
+    expect(error.reason).toBe("invalid-state-transition");
+  }),
+);
+
+// ===============================
+// Typed thread handoff
+// ===============================
+
+const handoffInput: WorkjetMailboxSendHandoffRpcInput = {
+  sourceThreadId: SOURCE_THREAD_ID,
+  targetEnvironmentId: EnvironmentId.make("environment-b"),
+  note: "Continue the transport slice here.",
+};
+
+it.effect("composes the handoff snapshot server-side and never trusts a caller digest", () =>
+  Effect.gen(function* () {
+    const { recorded, handlers: rpc } = handlers("orchestrator");
+
+    const result = yield* rpc.sendHandoff(handoffInput);
+
+    // The snapshot text was produced HERE, from this server's own projection,
+    // and stored before the handoff was handed to delivery.
+    expect(recorded.prompts).toHaveLength(1);
+    const snapshot = recorded.prompts[0] ?? "";
+    expect(snapshot).toContain("Workjet thread handoff");
+    expect(snapshot).toContain(SOURCE_THREAD_ID);
+    expect(snapshot).toContain("Start the handoff slice.");
+    expect(snapshot).toContain("Contracts first.");
+
+    expect(recorded.handoffs).toHaveLength(1);
+    const sent = recorded.handoffs[0];
+    // The digest on the wire describes the bytes the store just wrote.
+    expect(sent?.input.contextSnapshot.digest).toBe(DIGEST);
+    expect(sent?.input.contextSnapshot.byteLength).toBe(Buffer.byteLength(snapshot, "utf8"));
+    // The source address is the server's own identity plus the validated thread.
+    expect(sent?.sender).toEqual({ environmentId: ENVIRONMENT_ID, threadId: SOURCE_THREAD_ID });
+    expect(sent?.input.targetWorkspaceId).toBe(WORKSPACE_ID);
+
+    expect(result.handoffId).toBe(HANDOFF_ID);
+    expect(result.snapshotByteLength).toBe(Buffer.byteLength(snapshot, "utf8"));
+  }),
+);
+
+it.effect("carries the branch name with the honest remote answer and no worktree path", () =>
+  Effect.gen(function* () {
+    const configured = handlers("orchestrator", { remoteConfigured: true });
+    yield* configured.handlers.sendHandoff(handoffInput);
+    const sent = configured.recorded.handoffs[0];
+    expect(sent?.input.branch).toEqual({
+      schemaVersion: 1,
+      branch: "agent/th-thread-handoff",
+      remoteConfigured: true,
+    });
+    // A head commit is never invented, and no local path travels.
+    expect(sent?.input.branch).not.toHaveProperty("headCommit");
+    expect(configured.recorded.prompts[0] ?? "").not.toContain("/private/tmp/worktrees");
+
+    const offline = handlers("orchestrator", { remoteConfigured: false });
+    yield* offline.handlers.sendHandoff(handoffInput);
+    expect(offline.recorded.handoffs[0]?.input.branch?.remoteConfigured).toBe(false);
+  }),
+);
+
+it.effect("refuses a handoff from a non-orchestrator or missing thread and stores nothing", () =>
+  Effect.gen(function* () {
+    const worker = handlers("worker");
+    const workerError = yield* Effect.flip(worker.handlers.sendHandoff(handoffInput));
+    expect(workerError.reason).toBe("unauthorized");
+    // Refused BEFORE the snapshot is written: no bytes, no envelope.
+    expect(worker.recorded.prompts).toHaveLength(0);
+    expect(worker.recorded.handoffs).toHaveLength(0);
+
+    const missing = yield* Effect.flip(handlers("missing").handlers.sendHandoff(handoffInput));
+    expect(missing.reason).toBe("unauthorized");
+
+    const deleted = yield* Effect.flip(
+      handlers("orchestrator", { deletedAt: NOW }).handlers.sendHandoff(handoffInput),
+    );
+    expect(deleted.reason).toBe("unauthorized");
+  }),
+);
+
+it.effect("reports a cross-machine handoff as queued", () =>
+  Effect.gen(function* () {
+    const { handlers: rpc } = handlers("orchestrator", { sameEnvironment: false });
+    const result = yield* rpc.sendHandoff(handoffInput);
+    expect(result.status).toBe("queued");
+    expect(result).not.toHaveProperty("disposition");
+  }),
+);
+
+it.effect("lists received handoffs with snapshot availability and never their text", () =>
+  Effect.gen(function* () {
+    const { handlers: rpc } = handlers("orchestrator");
+
+    const result = yield* rpc.listHandoffs({});
+
+    expect(result.handoffs).toHaveLength(1);
+    const row = result.handoffs[0];
+    expect(row?.handoffId).toBe(HANDOFF_ID);
+    expect(row?.sourceThread.threadId).toBe("thread-remote-source");
+    expect(row?.snapshotAvailable).toBe(true);
+    expect(row?.acceptedThreadId).toBeUndefined();
+    expect(row).not.toHaveProperty("snapshotBytes");
+    expect(JSON.stringify(row)).not.toContain("Workjet thread handoff");
+  }),
+);
+
+it.effect("says a handoff is not continuable when its context never arrived", () =>
+  Effect.gen(function* () {
+    const { handlers: rpc } = handlers("orchestrator", { snapshotMissing: true });
+    const result = yield* rpc.listHandoffs({});
+    expect(result.handoffs[0]?.snapshotAvailable).toBe(false);
+  }),
+);
+
+it.effect("shows a continued handoff pointing at the thread that continues it", () =>
+  Effect.gen(function* () {
+    const { handlers: rpc } = handlers("orchestrator", { handoffAccepted: true });
+    const result = yield* rpc.listHandoffs({});
+    expect(result.handoffs[0]?.acceptedThreadId).toBe(CONTINUED_THREAD_ID);
+    expect(result.handoffs[0]?.acceptedAt).toBe(NOW);
+  }),
+);
+
+it.effect("continues a handoff in a new thread seeded with the stored snapshot", () =>
+  Effect.gen(function* () {
+    const { recorded, handlers: rpc } = handlers("orchestrator");
+
+    const result = yield* rpc.acceptHandoff({
+      handoffId: HANDOFF_ID,
+      hostThreadId: SOURCE_THREAD_ID,
+    });
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      handoffId: HANDOFF_ID,
+      threadId: CONTINUED_THREAD_ID,
+      acceptedAt: NOW,
+    });
+    expect(recorded.accepts).toHaveLength(1);
+    // The snapshot the new thread starts from is read from the LOCAL store, by
+    // digest, never taken from anything the caller sent.
+    expect(recorded.accepts[0]?.snapshotText).toContain("Workjet thread handoff");
+    expect(recorded.accepts[0]?.hostThreadId).toBe(SOURCE_THREAD_ID);
+  }),
+);
+
+it.effect("refuses to continue an unknown handoff", () =>
+  Effect.gen(function* () {
+    const { recorded, handlers: rpc } = handlers("orchestrator", { handoffMissing: true });
+    const error = yield* Effect.flip(
+      rpc.acceptHandoff({ handoffId: HANDOFF_ID, hostThreadId: SOURCE_THREAD_ID }),
+    );
+    expect(error.reason).toBe("unknown-target");
+    expect(recorded.accepts).toHaveLength(0);
+  }),
+);
+
+it.effect("refuses to continue a handoff whose context is unavailable, before any thread", () =>
+  Effect.gen(function* () {
+    const { recorded, handlers: rpc } = handlers("orchestrator", { snapshotMissing: true });
+    const error = yield* Effect.flip(
+      rpc.acceptHandoff({ handoffId: HANDOFF_ID, hostThreadId: SOURCE_THREAD_ID }),
+    );
+    // Its own bounded reason: the handoff exists, its context does not.
+    expect(error.reason).toBe("handoff-snapshot-unavailable");
+    expect(recorded.accepts).toHaveLength(0);
+  }),
+);
+
+it.effect("refuses a second continuation of the same handoff", () =>
+  Effect.gen(function* () {
+    const { handlers: rpc } = handlers("orchestrator", { handoffAccepted: true });
+    const error = yield* Effect.flip(
+      rpc.acceptHandoff({ handoffId: HANDOFF_ID, hostThreadId: SOURCE_THREAD_ID }),
+    );
     expect(error.reason).toBe("invalid-state-transition");
   }),
 );

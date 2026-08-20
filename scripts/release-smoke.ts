@@ -31,6 +31,9 @@ const workspaceFiles = [
   "packages/tailscale/package.json",
   "packages/effect-acp/package.json",
   "packages/effect-codex-app-server/package.json",
+  // The Workjet fork added this workspace package and apps/server depends on
+  // it, so a lockfile-only install fails without it.
+  "packages/workjet-capabilities/package.json",
   "scripts/package.json",
 ] as const;
 

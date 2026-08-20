@@ -2311,6 +2311,275 @@ group("WorkjetMailboxTransport peer key binding", (it) => {
       assert.strictEqual(bindingRejections(captured.events).length, 0);
     }),
   );
+
+  // -----------------------------------------------------------------
+  // Revocation and re-pin (migration 053)
+  // -----------------------------------------------------------------
+  // The recovery path out of "rejects and consumes an envelope whose sender key
+  // rotated". Those tests pin the REFUSAL; these pin the way back, and the
+  // limit on it — because a revocation that let the revoked key return would be
+  // an attack surface rather than a recovery.
+
+  it.effect("re-pins a rotated peer's NEW key once an operator revokes the old pin", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const before = yield* makeIdentity(WORKSPACE);
+      const after = yield* makeIdentity(WORKSPACE);
+
+      // First contact pins the peer's original key.
+      const firstId = envelopeId("repin-old-0001");
+      const first = yield* remoteDocument({
+        identity: before,
+        envelopeId: firstId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const firstDaemon = makeFakeDaemon({ seed: [first] });
+      const firstTransport = yield* makeTransport({ client: firstDaemon.client });
+      assert.strictEqual((yield* firstTransport.runCycle).counters.accepted, 1);
+
+      // The peer rotates. WITHOUT the revocation this is `keyContinuity`
+      // forever — the dead end this whole path exists to open.
+      const rotatedId = envelopeId("repin-rot-0001");
+      const rotated = yield* remoteDocument({
+        identity: after,
+        envelopeId: rotatedId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: rotatedId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const refusedDaemon = makeFakeDaemon({ seed: [rotated] });
+      const refusedTransport = yield* makeTransport({ client: refusedDaemon.client });
+      const refused = yield* refusedTransport.runCycle;
+      assert.strictEqual(refused.rejections.keyContinuity, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(rotatedId)));
+
+      // The operator revokes.
+      assert.strictEqual(
+        yield* store.revokeMeshPeer(
+          { workspaceId: WORKSPACE, environmentId: REMOTE_ENVIRONMENT },
+          5_000,
+        ),
+        "revoked",
+      );
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 0);
+
+      // The SAME rotated key now lands, and the pin is re-established on it.
+      const acceptedId = envelopeId("repin-new-0001");
+      const accepted = yield* remoteDocument({
+        identity: after,
+        envelopeId: acceptedId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: acceptedId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const daemon = makeFakeDaemon({ seed: [accepted] });
+      const transport = yield* makeTransport({ client: daemon.client });
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.rejections.keyContinuity, 0);
+      assert.strictEqual(status.rejections.keyRevoked, 0);
+      assert.isTrue(Option.isSome(yield* store.getInbound(acceptedId)));
+
+      // The pin really is the NEW peer's, at the trust level its wrapper
+      // earned — not a leftover of the destroyed one.
+      const page = yield* store.listMeshPeers(10);
+      assert.strictEqual(page.peers.length, 1);
+      assert.strictEqual(page.peers[0]?.environmentId, REMOTE_ENVIRONMENT);
+      assert.strictEqual(page.peers[0]?.binding, "self-signed");
+      assert.isTrue(page.peers[0]?.sealedDeliveryReady);
+    }),
+  );
+
+  it.effect("refuses the REVOKED key forever, so replaying it cannot undo the revocation", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const compromised = yield* makeIdentity(WORKSPACE);
+
+      const firstId = envelopeId("revoke-old-001");
+      const first = yield* remoteDocument({
+        identity: compromised,
+        envelopeId: firstId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const firstDaemon = makeFakeDaemon({ seed: [first] });
+      const firstTransport = yield* makeTransport({ client: firstDaemon.client });
+      assert.strictEqual((yield* firstTransport.runCycle).counters.accepted, 1);
+
+      yield* store.revokeMeshPeer(
+        { workspaceId: WORKSPACE, environmentId: REMOTE_ENVIRONMENT },
+        5_000,
+      );
+
+      // THE reason revocation is not itself the attack's second half. Deleting
+      // the pin reopens the address, and whoever holds the revoked key is
+      // exactly who would race to fill it. A perfectly signed envelope under
+      // that key must not re-pin it.
+      const replayId = envelopeId("revoke-rep-001");
+      const replay = yield* remoteDocument({
+        identity: compromised,
+        envelopeId: replayId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: replayId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [replay] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.keyRevoked, 1);
+      // Counted APART from a continuity conflict: there is no pin to conflict
+      // with, and an operator watching for a revoked key returning must not
+      // have that signal buried in the impersonation counter.
+      assert.strictEqual(status.rejections.keyContinuity, 0);
+      assert.strictEqual(status.rejections.keyBinding, 0);
+      assert.isTrue(Option.isNone(yield* store.getInbound(replayId)));
+      assert.strictEqual(
+        (yield* store.listMeshPeers(10)).peers.length,
+        0,
+        "a revoked key must never re-establish the pin it lost",
+      );
+      // Poison is consumed, or the cycle re-reads it forever.
+      assert.deepEqual([...consumedIds(daemon.calls)], [replayId as string]);
+
+      const audited = bindingRejections(captured.events);
+      assert.strictEqual(audited.length, 1);
+      assert.deepInclude(audited[0], {
+        _tag: "mesh-peer-binding-rejected",
+        envelopeId: replayId,
+        sourceWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: REMOTE_ENVIRONMENT,
+        reasonCode: "key-revoked",
+      });
+      assert.notInclude(JSON.stringify(captured.events), compromised.publicKey);
+    }),
+  );
+
+  it.effect("refuses a revoked ENCRYPTION key even when it arrives under a fresh signer", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const compromised = yield* makeIdentity(WORKSPACE);
+      const freshSigner = yield* makeIdentity(WORKSPACE);
+
+      const firstId = envelopeId("revoke-enc-001");
+      const first = yield* remoteDocument({
+        identity: compromised,
+        envelopeId: firstId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const firstDaemon = makeFakeDaemon({ seed: [first] });
+      const firstTransport = yield* makeTransport({ client: firstDaemon.client });
+      assert.strictEqual((yield* firstTransport.runCycle).counters.accepted, 1);
+
+      yield* store.revokeMeshPeer(
+        { workspaceId: WORKSPACE, environmentId: REMOTE_ENVIRONMENT },
+        5_000,
+      );
+
+      // The X25519 key is the one an attacker actually wants: it redirects
+      // every future sealed reply. Checking only the signing key would let it
+      // come back attached to a brand-new signer.
+      const laundryId = envelopeId("revoke-enc-002");
+      const laundry = yield* remoteDocument({
+        identity: freshSigner,
+        envelopeId: laundryId,
+        kind: "message",
+        encryptionKeyOverride: compromised.encryptionPublicKey,
+        bindEncryptionKey: compromised.encryptionPublicKey,
+        payload: messagePayload({
+          envelopeId: laundryId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const daemon = makeFakeDaemon({ seed: [laundry] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.keyRevoked, 1);
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 0);
+      assert.isTrue(Option.isNone(yield* store.getInbound(laundryId)));
+    }),
+  );
+
+  it.effect("leaves an unrelated peer's pin untouched when one address is revoked", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("revoke-other-1");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+      const seedDaemon = makeFakeDaemon({ seed: [document] });
+      const seedTransport = yield* makeTransport({ client: seedDaemon.client });
+      assert.strictEqual((yield* seedTransport.runCycle).counters.accepted, 1);
+
+      // Revoking somebody else must not widen into a fleet-wide trust reset:
+      // that would turn one operate credential into a mesh-wide re-pin window.
+      assert.strictEqual(
+        yield* store.revokeMeshPeer(
+          { workspaceId: WORKSPACE, environmentId: EnvironmentId.make("environment-elsewhere") },
+          5_000,
+        ),
+        "unknown-peer",
+      );
+
+      const nextId = envelopeId("revoke-other-2");
+      const next = yield* remoteDocument({
+        identity: peer,
+        envelopeId: nextId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: nextId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const daemon = makeFakeDaemon({ seed: [next] });
+      const transport = yield* makeTransport({ client: daemon.client });
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.rejections.keyRevoked, 0);
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 1);
+    }),
+  );
 });
 
 group("WorkjetMailboxTransport thread handoff", (it) => {

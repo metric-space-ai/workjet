@@ -107,6 +107,12 @@ const samples = {
     sourceEnvironmentId: "environment-b",
     reasonCode: "encryption-key-conflict",
   },
+  "mesh-peer-revoked": {
+    ...base,
+    _tag: "mesh-peer-revoked",
+    sourceWorkspaceId: "ctox-business-os:mesh-alpha",
+    sourceEnvironmentId: "environment-b",
+  },
 } as const;
 
 describe("WorkjetMailboxAuditEvent", () => {
@@ -117,8 +123,8 @@ describe("WorkjetMailboxAuditEvent", () => {
     }
   });
 
-  it("covers all ten observable lifecycle moments with a sample", () => {
-    expect(Object.keys(samples).length).toBe(10);
+  it("covers all eleven observable lifecycle moments with a sample", () => {
+    expect(Object.keys(samples).length).toBe(11);
   });
 
   it("redaction canary: a would-be secret has no field to travel in and is dropped", () => {
@@ -176,6 +182,7 @@ describe("WorkjetMailboxNotification", () => {
       "envelope-delivered",
       "delegation-state-changed",
       "mesh-peer-binding-rejected",
+      "mesh-peer-revoked",
     ] as const;
     for (const tag of nonNotification) {
       const event = decode(samples[tag]);
@@ -193,6 +200,7 @@ describe("mesh-peer-binding-rejected", () => {
       "encryption-key-conflict",
       "binding-invalid",
       "binding-downgrade",
+      "key-revoked",
     ]) {
       expect(decode({ ...sample, reasonCode })).toMatchObject({ reasonCode });
     }
@@ -211,5 +219,36 @@ describe("mesh-peer-binding-rejected", () => {
     // and there is no field for them, so an excess key is DROPPED on decode.
     expect(event).toMatchObject({ sourceEnvironmentId: "environment-b" });
     expect(JSON.stringify(encode(event))).not.toContain(SECRET);
+  });
+});
+
+describe("mesh-peer-revoked", () => {
+  it("names the revoked address and has no field for the keys it destroyed", () => {
+    const event = decode({
+      ...samples["mesh-peer-revoked"],
+      publicKey: SECRET,
+      encryptionPublicKey: SECRET,
+      revokedKey: SECRET,
+    });
+    // Revocation is the one mesh-trust write an operator performs, and the
+    // address is the whole point of auditing it: an unexpected revocation must
+    // be identifiable. The DESTROYED keys are not, and there is no field for
+    // them, so an excess key is DROPPED on decode.
+    expect(event).toMatchObject({
+      _tag: "mesh-peer-revoked",
+      sourceWorkspaceId: "ctox-business-os:mesh-alpha",
+      sourceEnvironmentId: "environment-b",
+    });
+    expect(JSON.stringify(encode(event))).not.toContain(SECRET);
+  });
+
+  it("is distinct from a binding rejection, because a human caused it", () => {
+    // A refusal is something a PEER provoked; a revocation is something the
+    // operator did. Collapsing them would hide the only event that says the
+    // trust pin was destroyed deliberately.
+    expect(decode(samples["mesh-peer-revoked"])._tag).not.toBe("mesh-peer-binding-rejected");
+    expect(() =>
+      decode({ ...samples["mesh-peer-revoked"], _tag: "mesh-peer-unrevoked" }),
+    ).toThrow();
   });
 });

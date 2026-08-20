@@ -1616,6 +1616,34 @@ it.effect("keeps every revoked key generation refused when an address is revoked
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("never leaves a tombstone behind when the pin could not be deleted", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const store = yield* WorkjetMailboxStore;
+    yield* pinPeer({ environmentId: "environment-atomic", firstSeenAtMillis: 1_000 });
+    // Fail the DELETE half, with the tombstone INSERT already applied.
+    yield* sql`
+      CREATE TRIGGER refuse_peer_key_delete BEFORE DELETE ON workjet_mailbox_peer_keys
+      BEGIN SELECT RAISE(ABORT, 'refused'); END
+    `;
+
+    const outcome = yield* store
+      .revokeMeshPeer(
+        { workspaceId: WORKSPACE, environmentId: EnvironmentId.make("environment-atomic") },
+        9_000,
+      )
+      .pipe(Effect.result);
+    assert.equal(outcome._tag, "Failure");
+
+    // The two writes are one transaction, so a half-applied revocation is
+    // impossible. Without the rollback this peer would be in the worst state
+    // available: still pinned, and its key already tombstoned — refused by the
+    // transport forever with no revocation ever having been reported.
+    assert.deepEqual(yield* readRevocations, []);
+    assert.equal((yield* store.listMeshPeers(10)).peers.length, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 // =========================================================
 // Multi-computer overview reads (last-known contact + counts)
 // =========================================================

@@ -9,11 +9,8 @@ import { memo, useCallback, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import type { WorkjetProductMode } from "@t3tools/contracts/settings";
 
-import {
-  useClientSettings,
-  useEnvironmentIdentificationMode,
-  useUpdateClientSettings,
-} from "../../hooks/useSettings";
+import { useCrossModeNavigator } from "../../crossMode/useCrossModeNavigator";
+import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { resolveWorkjetProductMode } from "../../workjetProductMode";
@@ -59,26 +56,20 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     configuredMode: configuredProductMode,
     isElectron,
   });
-  const updateClientSettings = useUpdateClientSettings();
+  const navigateToCrossMode = useCrossModeNavigator();
+  // The header toggle is a cross-mode navigation with no target beyond the
+  // mode itself, so it goes through the same navigator as a link: the outgoing
+  // mode's heavy surface is torn down before the incoming one mounts, and the
+  // bare target restores whatever selection that mode was last left on. The
+  // navigator also keeps the rule this handler used to own alone — an
+  // unconfirmed `exitBusinessOsMode` blocks the switch rather than painting
+  // Code underneath a live guest view.
   const handleProductModeChange = useCallback(
     (nextMode: WorkjetProductMode) => {
       if (nextMode === productMode) return;
-      if (productMode === "ctox" && nextMode === "code") {
-        const exitBusinessOsMode = window.desktopBridge?.ctox?.exitBusinessOsMode;
-        if (typeof exitBusinessOsMode === "function") {
-          void exitBusinessOsMode()
-            .then((result) => {
-              if (result._tag === "completed") {
-                updateClientSettings({ workjetProductMode: nextMode });
-              }
-            })
-            .catch(() => undefined);
-          return;
-        }
-      }
-      updateClientSettings({ workjetProductMode: nextMode });
+      void navigateToCrossMode({ mode: nextMode === "ctox" ? "business-os" : "code" });
     },
-    [productMode, updateClientSettings],
+    [navigateToCrossMode, productMode],
   );
 
   return (

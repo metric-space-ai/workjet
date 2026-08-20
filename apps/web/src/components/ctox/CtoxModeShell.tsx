@@ -27,6 +27,13 @@ import {
 
 import { Plus, RefreshCw } from "lucide-react";
 
+import {
+  peekCrossModeBusinessOsRequest,
+  subscribeToCrossModeBusinessOsRequest,
+  takeCrossModeBusinessOsRequest,
+  type CrossModeBusinessOsRequest,
+} from "../../crossMode/crossModeBusinessOsHandoff";
+import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
@@ -317,6 +324,25 @@ export async function removeCtoxSshManagedInstance(
   }
 }
 
+/**
+ * What a pending cross-mode request resolves to against the instances this
+ * shell currently knows about, or `null` when it cannot be honoured yet.
+ *
+ * Pure so the decision is testable: the effect that consumes it runs only in a
+ * real renderer, and the interesting cases are all about NOT acting — an
+ * instance that has not been discovered yet, or one that cannot be activated,
+ * must leave the request pending rather than drop it.
+ */
+export function resolveCrossModeBusinessOsActivation(
+  request: CrossModeBusinessOsRequest | null,
+  instances: readonly CtoxManagedInstance[],
+): { readonly instance: CtoxManagedInstance; readonly moduleId?: string } | null {
+  if (request === null) return null;
+  const instance = instances.find((candidate) => candidate.id === request.instanceId);
+  if (instance === undefined || !canActivateCtoxInstance(instance)) return null;
+  return request.moduleId === undefined ? { instance } : { instance, moduleId: request.moduleId };
+}
+
 export function releaseCtoxGuest(bridge: DesktopCtoxBridge | undefined): void {
   void bridge?.deactivate().catch(() => undefined);
 }
@@ -485,6 +511,10 @@ export function CtoxModeProvider({
     setSelectedId(instance.id);
     setActivationKey((current) => current + 1);
     setConnection("connecting");
+    // Keep the cross-mode memory current so leaving for Code and coming back
+    // lands on this instance again. An instance id only — the guest's data
+    // never leaves the guest.
+    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: instance.id });
   }, []);
 
   const [appRailVersion, setAppRailVersion] = useState(0);
@@ -542,6 +572,36 @@ export function CtoxModeProvider({
     pendingOpenRef.current = null;
     dispatchOpenApp(pending.instanceId, pending.moduleId);
   }, [connection, dispatchOpenApp]);
+
+  // A cross-mode link that arrives while Code mode is showing cannot be acted
+  // on immediately: this provider does not exist yet. The link navigator
+  // therefore files the request in `crossModeBusinessOsHandoff` AFTER it has
+  // released the Code surface and switched the mode, and this effect is the
+  // only thing that honours it — which is what keeps "the guest is never
+  // created while Code is still up" true rather than merely likely.
+  //
+  // The request is one-shot and is taken only once its instance is present and
+  // activatable, so a link naming an instance that is still loading waits for
+  // the next discovery instead of being dropped, and a stale request can never
+  // re-select an instance the user has since left.
+  useEffect(() => {
+    if (discovery === "loading" || discovery._tag !== "ready") return;
+    const instances = discovery.instances;
+    const honourPendingRequest = () => {
+      const activation = resolveCrossModeBusinessOsActivation(
+        peekCrossModeBusinessOsRequest(),
+        instances,
+      );
+      if (activation === null) return;
+      takeCrossModeBusinessOsRequest();
+      if (activation.moduleId === undefined) select(activation.instance);
+      else openApp(activation.instance, activation.moduleId);
+    };
+    // Subscribe first: a request filed between the two calls still lands.
+    const unsubscribe = subscribeToCrossModeBusinessOsRequest(honourPendingRequest);
+    honourPendingRequest();
+    return unsubscribe;
+  }, [discovery, openApp, select]);
 
   const pushHostThemeRef = useRef<() => void>(() => undefined);
 

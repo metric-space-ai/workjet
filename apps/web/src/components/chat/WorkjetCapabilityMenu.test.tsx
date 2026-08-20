@@ -5,6 +5,8 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { builtInCapabilityManifests } from "@metric-space-ai/workjet-capabilities";
+
 import { MenuGroup } from "../ui/menu";
 
 import {
@@ -13,9 +15,15 @@ import {
   setWorkjetCapabilityEnabled,
   WorkjetCapabilityMenu,
   WorkjetCapabilityMenuContent,
+  workjetComposerCapabilities,
+  WORKJET_CODE_HOST_ADAPTER,
+  WORKJET_GREPPY_DESCRIPTION,
+  WORKJET_GREPPY_DISPLAY_NAME,
   WORKJET_GREPPY_FAILURE_TOAST,
   type WorkjetCapabilityMenuProps,
 } from "./WorkjetCapabilityMenu";
+
+const greppyManifest = builtInCapabilityManifests.find(({ id }) => id === GREPPY_CAPABILITY_ID);
 
 const workerConfig = {
   schemaVersion: 1,
@@ -92,7 +100,32 @@ describe("setWorkjetCapabilityEnabled", () => {
 });
 
 describe("WorkjetCapabilityMenu", () => {
-  it("exposes enabled and disabled Greppy switch states with shared-store copy", () => {
+  it("takes every label and description from the catalog, never a local copy", () => {
+    expect(greppyManifest).toBeDefined();
+    expect(WORKJET_GREPPY_DISPLAY_NAME).toBe(greppyManifest?.metadata.displayName);
+    expect(WORKJET_GREPPY_DESCRIPTION).toBe(greppyManifest?.metadata.description);
+    expect(WORKJET_GREPPY_FAILURE_TOAST.title).toContain(
+      greppyManifest?.metadata.displayName ?? "",
+    );
+
+    // Membership is resolved from the catalog for the Code host, so a manifest
+    // that stops exposing the T3 MCP adapter stops appearing here.
+    const views = workjetComposerCapabilities([GREPPY_CAPABILITY_ID]);
+    const greppyView = views.find(({ manifest }) => manifest.id === GREPPY_CAPABILITY_ID);
+    expect(greppyView?.manifest).toBe(greppyManifest);
+    expect(greppyView?.availability.status).toBe("available");
+    expect(greppyView?.activated).toBe(true);
+    expect(
+      workjetComposerCapabilities([]).find(({ manifest }) => manifest.id === GREPPY_CAPABILITY_ID)
+        ?.activated,
+    ).toBe(false);
+    for (const view of views) {
+      expect(view.manifest.supportedAdapters).toContain(WORKJET_CODE_HOST_ADAPTER);
+      expect(view.host).toBe("code");
+    }
+  });
+
+  it("exposes enabled and disabled Greppy switch states with catalog and activation copy", () => {
     const enabledContent = WorkjetCapabilityMenuContent({
       ...baseMenuProps,
       greppyEnabled: true,
@@ -103,8 +136,10 @@ describe("WorkjetCapabilityMenu", () => {
 
     expect(enabledSwitch?.props.checked).toBe(true);
     expect(enabledSwitch?.props.disabled).toBe(false);
-    expect(enabledSwitch?.props["aria-label"]).toBe("Greppy for this thread");
+    expect(enabledSwitch?.props["aria-label"]).toBe(`${WORKJET_GREPPY_DISPLAY_NAME} for this thread`);
+    expect(textContent(enabledSwitch)).toContain(WORKJET_GREPPY_DISPLAY_NAME);
     expect(enabledContent.type).toBe(MenuGroup);
+    expect(textContent(explanation)).toContain(WORKJET_GREPPY_DESCRIPTION);
     expect(textContent(explanation)).toContain("activated only for this thread");
     expect(textContent(explanation)).toContain(
       "runtime and store are shared by all threads on this server",
@@ -198,8 +233,8 @@ describe("executeWorkjetCapabilityToggle", () => {
     expect(notifyFailure).toHaveBeenCalledTimes(1);
     expect(WORKJET_GREPPY_FAILURE_TOAST).toEqual({
       type: "error",
-      title: "Could not update Greppy",
-      description: "Greppy was left unchanged for this thread.",
+      title: `Could not update ${WORKJET_GREPPY_DISPLAY_NAME}`,
+      description: `${WORKJET_GREPPY_DISPLAY_NAME} was left unchanged for this thread.`,
       data: { hideCopyButton: true },
     });
     expect(JSON.stringify(WORKJET_GREPPY_FAILURE_TOAST)).not.toContain("private server details");

@@ -549,6 +549,9 @@ importers:
       '@lexical/react':
         specifier: ^0.41.0
         version: 0.41.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(yjs@13.6.31)
+      '@metric-space-ai/workjet-capabilities':
+        specifier: workspace:*
+        version: link:../../packages/workjet-capabilities
       '@noble/hashes':
         specifier: 'catalog:'
         version: 1.8.0

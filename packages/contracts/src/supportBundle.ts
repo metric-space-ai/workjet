@@ -104,7 +104,9 @@ export const SUPPORT_BUNDLE_PLACEHOLDERS = {
  */
 export const SupportBundleText = Schema.String.pipe(
   Schema.check(Schema.isMaxLength(SUPPORT_BUNDLE_MAX_FIELD_LENGTH)),
-  Schema.check(Schema.isPattern(/^[^\u0000-\u001f\u007f]*$/u)),
+  // \P{Cc} rather than an explicit range: the point is that no control
+  // character may smuggle a newline into a bundle field.
+  Schema.check(Schema.isPattern(/^\P{Cc}*$/u)),
 );
 export type SupportBundleText = typeof SupportBundleText.Type;
 

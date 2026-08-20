@@ -469,33 +469,36 @@ export const make = (
     const encodeWithinBudget = (
       document: SupportBundleDocument,
     ): { readonly serialized: string; readonly document: SupportBundleDocument } => {
-      let current = document;
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - the bundle is
-      // a human-readable artifact, so it is written with JSON indentation that
+      const logs: SupportBundleLogExcerpt[] = [...document.logs];
+      const withCurrentLogs = (): SupportBundleDocument => ({
+        ...document,
+        logs,
+        counters: {
+          ...document.counters,
+          collectedLogLineCount: logs.reduce((total, entry) => total + entry.lines.length, 0),
+        },
+      });
+
+      // The bundle is a human-readable artifact, written with JSON indentation
       // no Schema codec produces; every value in it already passed the gate.
-      let serialized = JSON.stringify(current, null, 2);
-      let dropIndex = current.logs.length - 1;
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const encode = (value: SupportBundleDocument) => JSON.stringify(value, null, 2);
+
+      let current = withCurrentLogs();
+      let serialized = encode(current);
+      let dropIndex = logs.length - 1;
 
       while (Buffer.byteLength(serialized, "utf8") > SUPPORT_BUNDLE_MAX_BYTES && dropIndex >= 0) {
-        const logs = current.logs.map((excerpt, index) =>
-          index === dropIndex
-            ? ({
-                ...excerpt,
-                omittedReason: SUPPORT_BUNDLE_PLACEHOLDERS.oversized,
-                lines: [],
-              } satisfies SupportBundleLogExcerpt)
-            : excerpt,
-        );
-        current = {
-          ...current,
-          logs,
-          counters: {
-            ...current.counters,
-            collectedLogLineCount: logs.reduce((total, entry) => total + entry.lines.length, 0),
-          },
-        };
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - see above.
-        serialized = JSON.stringify(current, null, 2);
+        const excerpt = logs[dropIndex];
+        if (excerpt !== undefined) {
+          logs[dropIndex] = {
+            ...excerpt,
+            omittedReason: SUPPORT_BUNDLE_PLACEHOLDERS.oversized,
+            lines: [],
+          };
+        }
+        current = withCurrentLogs();
+        serialized = encode(current);
         dropIndex -= 1;
       }
 

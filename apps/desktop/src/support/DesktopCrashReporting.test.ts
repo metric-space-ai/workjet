@@ -60,66 +60,68 @@ const makeRecordingCrashReporterLayer = (
     getCrashesDirectory: Effect.succeed("/tmp/crashes"),
   } satisfies ElectronCrashReporter.ElectronCrashReporter["Service"]);
 
-const runConfigure = (settings: DesktopAppSettings.DesktopSettings) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const recorded = yield* Ref.make<ReadonlyArray<Electron.CrashReporterStartOptions>>([]);
-      const crashReporting = yield* DesktopCrashReporting.make.pipe(
-        Effect.provide(makeRecordingCrashReporterLayer(recorded)),
-      );
-      yield* crashReporting.configure;
-      // A second call must not re-start the reporter.
-      yield* crashReporting.configure;
-      return {
-        started: yield* Ref.get(recorded),
-        state: yield* crashReporting.state,
-      };
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(appIdentityLayer, makeSettingsLayer(settings)).pipe(
-          Layer.provideMerge(environmentLayer),
-          Layer.provideMerge(DesktopConfig.layerTest({})),
-          Layer.provideMerge(NodeServices.layer),
-        ),
+const configureAndRecord = (settings: DesktopAppSettings.DesktopSettings) =>
+  Effect.gen(function* () {
+    const recorded = yield* Ref.make<ReadonlyArray<Electron.CrashReporterStartOptions>>([]);
+    const crashReporting = yield* DesktopCrashReporting.make.pipe(
+      Effect.provide(makeRecordingCrashReporterLayer(recorded)),
+    );
+    yield* crashReporting.configure;
+    // A second call must not re-start the reporter.
+    yield* crashReporting.configure;
+    return {
+      started: yield* Ref.get(recorded),
+      state: yield* crashReporting.state,
+    };
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(appIdentityLayer, makeSettingsLayer(settings)).pipe(
+        Layer.provideMerge(environmentLayer),
+        Layer.provideMerge(DesktopConfig.layerTest({})),
+        Layer.provideMerge(NodeServices.layer),
       ),
     ),
   );
 
 describe("DesktopCrashReporting", () => {
-  it("never uploads and configures no submit URL", async () => {
-    const outcome = await runConfigure(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
-    assert.strictEqual(outcome.started.length, 1);
+  it.effect("never uploads and configures no submit URL", () =>
+    Effect.gen(function* () {
+      const outcome = yield* configureAndRecord(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
+      assert.strictEqual(outcome.started.length, 1);
 
-    const options = outcome.started[0];
-    assert.isDefined(options);
-    assert.strictEqual(options?.uploadToServer, false);
-    assert.isUndefined(options?.submitURL);
-    assert.strictEqual(options?.compress, true);
-    assert.strictEqual(options?.ignoreSystemCrashHandler, false);
-    assert.strictEqual(outcome.state.started, true);
-    assert.strictEqual(outcome.state.uploadToServer, false);
-  });
+      const options = outcome.started[0];
+      assert.isDefined(options);
+      assert.strictEqual(options?.uploadToServer, false);
+      assert.isUndefined(options?.submitURL);
+      assert.strictEqual(options?.compress, true);
+      assert.strictEqual(options?.ignoreSystemCrashHandler, false);
+      assert.strictEqual(outcome.state.started, true);
+      assert.strictEqual(outcome.state.uploadToServer, false);
+    }),
+  );
 
-  it("attaches exactly the declared metadata keys", async () => {
-    const outcome = await runConfigure(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
-    const options = outcome.started[0];
-    assert.deepStrictEqual(
-      Object.keys(options?.extra ?? {}).sort(),
-      [...SUPPORT_CRASH_METADATA_KEYS].sort(),
-    );
-    assert.deepStrictEqual(
-      Object.keys(options?.globalExtra ?? {}).sort(),
-      [...SUPPORT_CRASH_METADATA_KEYS].sort(),
-    );
-    assert.deepStrictEqual(options?.extra, {
-      appVersion: "1.2.3",
-      commitHash: "a1b2c3d4e5f6",
-      platform: "darwin",
-      arch: "arm64",
-      channel: "latest",
-      packaged: "true",
-    });
-  });
+  it.effect("attaches exactly the declared metadata keys", () =>
+    Effect.gen(function* () {
+      const outcome = yield* configureAndRecord(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
+      const options = outcome.started[0];
+      assert.deepStrictEqual(
+        Object.keys(options?.extra ?? {}).sort(),
+        [...SUPPORT_CRASH_METADATA_KEYS].sort(),
+      );
+      assert.deepStrictEqual(
+        Object.keys(options?.globalExtra ?? {}).sort(),
+        [...SUPPORT_CRASH_METADATA_KEYS].sort(),
+      );
+      assert.deepStrictEqual(options?.extra, {
+        appVersion: "1.2.3",
+        commitHash: "a1b2c3d4e5f6",
+        platform: "darwin",
+        arch: "arm64",
+        channel: "latest",
+        packaged: "true",
+      });
+    }),
+  );
 
   it("gates every metadata value, so no secret can reach extra", () => {
     const ledger = {

@@ -15,6 +15,7 @@ import {
   flattenSupportBundlePaths,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -22,8 +23,8 @@ import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-import * as NodeFs from "node:fs";
-import * as NodeOs from "node:os";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as DesktopAppIdentity from "../app/DesktopAppIdentity.ts";
@@ -58,12 +59,12 @@ interface Fixture {
 }
 
 const makeFixture = (): Fixture => {
-  const root = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "ctox-support-bundle-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "ctox-support-bundle-"));
   const stateDir = NodePath.join(root, "userdata");
   const logDir = NodePath.join(stateDir, "logs");
-  NodeFs.mkdirSync(logDir, { recursive: true });
+  NodeFS.mkdirSync(logDir, { recursive: true });
 
-  NodeFs.writeFileSync(
+  NodeFS.writeFileSync(
     NodePath.join(stateDir, "provider-gateway.json"),
     JSON.stringify({
       schemaVersion: 1,
@@ -97,7 +98,7 @@ const makeFixture = (): Fixture => {
       routes: [{ id: "route-1" }, { id: "route-2" }],
     }),
   );
-  NodeFs.writeFileSync(
+  NodeFS.writeFileSync(
     NodePath.join(stateDir, "provider-gateway-host.pid.json"),
     JSON.stringify({ schemaVersion: 1, pid: 4242 }),
   );
@@ -131,19 +132,19 @@ const makeFixture = (): Fixture => {
     }),
     "raw stdout line pairingPassword=hunter2CorrectHorseBattery",
   ].join("\n");
-  NodeFs.writeFileSync(NodePath.join(logDir, "server-child.log"), `${childLog}\n`);
+  NodeFS.writeFileSync(NodePath.join(logDir, "server-child.log"), `${childLog}\n`);
 
   const traceLines = Array.from({ length: SUPPORT_BUNDLE_MAX_LOG_LINES + 40 }, (_unused, index) =>
     JSON.stringify({ name: `desktop.span.number${index}`, traceId: `trace-${index}` }),
   ).join("\n");
-  NodeFs.writeFileSync(NodePath.join(logDir, "desktop.trace.ndjson"), `${traceLines}\n`);
-  NodeFs.writeFileSync(NodePath.join(logDir, "ignored.txt"), "not a log file\n");
+  NodeFS.writeFileSync(NodePath.join(logDir, "desktop.trace.ndjson"), `${traceLines}\n`);
+  NodeFS.writeFileSync(NodePath.join(logDir, "ignored.txt"), "not a log file\n");
 
   return {
     baseDir: root,
     stateDir,
     logDir,
-    cleanup: () => NodeFs.rmSync(root, { recursive: true, force: true }),
+    cleanup: () => NodeFS.rmSync(root, { recursive: true, force: true }),
   };
 };
 
@@ -222,15 +223,23 @@ type BundleUseError =
   | DesktopSupportBundle.DesktopSupportBundleWriteError
   | PlatformError.PlatformError;
 
-const runBundle = <A>(
+/** The environment layer reads its configuration, so ConfigError rides along. */
+type BundleRunError = BundleUseError | Config.ConfigError;
+
+/**
+ * Plants a poisoned state directory, builds against it, and removes it again.
+ * The layer is derived from the fixture's path, so the fixture is created
+ * inside the effect rather than at module scope.
+ */
+const withBundle = <A>(
   use: (
     bundle: DesktopSupportBundle.DesktopSupportBundle["Service"],
     fixture: Fixture,
   ) => Effect.Effect<A, BundleUseError, FileSystem.FileSystem>,
-): Promise<A> => {
-  const fixture = makeFixture();
-  return Effect.runPromise(
-    Effect.gen(function* () {
+): Effect.Effect<A, BundleRunError> =>
+  Effect.suspend(() => {
+    const fixture = makeFixture();
+    return Effect.gen(function* () {
       const bundle = yield* DesktopSupportBundle.make({
         runtimeVersions: {
           electron: "41.5.0",
@@ -240,9 +249,10 @@ const runBundle = <A>(
         },
       });
       return yield* use(bundle, fixture);
-    }).pipe(Effect.provide(makeTestLayer(fixture)), Effect.ensuring(Effect.sync(fixture.cleanup))),
-  );
-};
+    }).pipe(Effect.provide(makeTestLayer(fixture)), Effect.ensuring(Effect.sync(fixture.cleanup)));
+  });
+
+const decodeSupportBundleDocument = Schema.decodeUnknownSync(SupportBundleDocument);
 
 const assertNoPlantedSecret = (serialized: string): void => {
   for (const secret of PLANTED_SECRETS) {
@@ -253,123 +263,137 @@ const assertNoPlantedSecret = (serialized: string): void => {
 };
 
 describe("DesktopSupportBundle", () => {
-  it("declares every field it emits", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    const produced = flattenSupportBundlePaths(document);
-    const declared = new Set(SUPPORT_BUNDLE_FIELD_INVENTORY);
+  it.effect("declares every field it emits", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      const produced = flattenSupportBundlePaths(document);
+      const declared = new Set(SUPPORT_BUNDLE_FIELD_INVENTORY);
 
-    const undeclared = [...produced].filter((path) => !declared.has(path)).sort();
-    const unused = [...declared].filter((path) => !produced.has(path)).sort();
+      const undeclared = [...produced].filter((path) => !declared.has(path)).sort();
+      const unused = [...declared].filter((path) => !produced.has(path)).sort();
 
-    assert.deepStrictEqual(
-      undeclared,
-      [],
-      "the bundle emitted fields that SUPPORT_BUNDLE_FIELD_INVENTORY does not declare",
-    );
-    assert.deepStrictEqual(
-      unused,
-      [],
-      "SUPPORT_BUNDLE_FIELD_INVENTORY declares fields the bundle no longer emits",
-    );
-  });
+      assert.deepStrictEqual(
+        undeclared,
+        [],
+        "the bundle emitted fields that SUPPORT_BUNDLE_FIELD_INVENTORY does not declare",
+      );
+      assert.deepStrictEqual(
+        unused,
+        [],
+        "SUPPORT_BUNDLE_FIELD_INVENTORY declares fields the bundle no longer emits",
+      );
+    }),
+  );
 
-  it("decodes against the published schema", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    const decoded = Schema.decodeUnknownSync(SupportBundleDocument)(
-      JSON.parse(JSON.stringify(document)),
-    );
-    assert.strictEqual(decoded.schemaVersion, 1);
-    assert.strictEqual(decoded.uploadSupported, false);
-    assert.strictEqual(decoded.features.crashReportUploadToServer, false);
-  });
+  it.effect("decodes against the published schema", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      const decoded = decodeSupportBundleDocument(JSON.parse(JSON.stringify(document)));
+      assert.strictEqual(decoded.schemaVersion, 1);
+      assert.strictEqual(decoded.uploadSupported, false);
+      assert.strictEqual(decoded.features.crashReportUploadToServer, false);
+    }),
+  );
 
-  it("carries no planted secret, label, prompt, or home path", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    assertNoPlantedSecret(JSON.stringify(document));
-  });
+  it.effect("carries no planted secret, label, prompt, or home path", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      assertNoPlantedSecret(JSON.stringify(document));
+    }),
+  );
 
-  it("summarizes gateway accounts without labels or credential suffixes", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    const gateway = document.providerGateway;
+  it.effect("summarizes gateway accounts without labels or credential suffixes", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      const gateway = document.providerGateway;
 
-    assert.isTrue(gateway.configurationPresent);
-    assert.isTrue(gateway.configurationReadable);
-    assert.isTrue(gateway.hostProcessRecorded);
-    assert.strictEqual(gateway.routingStrategy, "round-robin");
-    assert.strictEqual(gateway.accountCount, 2);
-    assert.strictEqual(gateway.enabledAccountCount, 1);
-    assert.strictEqual(gateway.poolCount, 1);
-    assert.strictEqual(gateway.routeCount, 2);
-    assert.strictEqual(gateway.accountHealth, "not-reported-by-host");
-    assert.deepStrictEqual(
-      gateway.accounts.map((account) => account.provider),
-      ["claude", "kimi"],
-    );
-    assert.isTrue(gateway.accounts[0]?.hasCredentialReference);
-    assert.strictEqual(gateway.accounts[0]?.modelCount, 2);
-    for (const account of gateway.accounts) {
-      assert.deepStrictEqual(Object.keys(account).sort(), [
-        "enabled",
-        "hasCredentialReference",
-        "index",
-        "modelCount",
-        "priority",
-        "provider",
-        "weight",
-      ]);
-    }
-  });
+      assert.isTrue(gateway.configurationPresent);
+      assert.isTrue(gateway.configurationReadable);
+      assert.isTrue(gateway.hostProcessRecorded);
+      assert.strictEqual(gateway.routingStrategy, "round-robin");
+      assert.strictEqual(gateway.accountCount, 2);
+      assert.strictEqual(gateway.enabledAccountCount, 1);
+      assert.strictEqual(gateway.poolCount, 1);
+      assert.strictEqual(gateway.routeCount, 2);
+      assert.strictEqual(gateway.accountHealth, "not-reported-by-host");
+      assert.deepStrictEqual(
+        gateway.accounts.map((account) => account.provider),
+        ["claude", "kimi"],
+      );
+      assert.isTrue(gateway.accounts[0]?.hasCredentialReference);
+      assert.strictEqual(gateway.accounts[0]?.modelCount, 2);
+      for (const account of gateway.accounts) {
+        assert.deepStrictEqual(Object.keys(account).sort(), [
+          "enabled",
+          "hasCredentialReference",
+          "index",
+          "modelCount",
+          "priority",
+          "provider",
+          "weight",
+        ]);
+      }
+    }),
+  );
 
-  it("reduces a user-typed WSL distro to a presence flag", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    assert.isTrue(document.features.wslDistroConfigured);
-    assert.isFalse(JSON.stringify(document.features).includes("example.com"));
-  });
+  it.effect("reduces a user-typed WSL distro to a presence flag", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      assert.isTrue(document.features.wslDistroConfigured);
+      assert.isFalse(JSON.stringify(document.features).includes("example.com"));
+    }),
+  );
 
-  it("bounds log excerpts and names what it dropped", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    const names = document.logs.map((excerpt) => excerpt.fileName).sort();
-    assert.deepStrictEqual(names, ["desktop.trace.ndjson", "server-child.log"]);
+  it.effect("bounds log excerpts and names what it dropped", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      const names = document.logs.map((excerpt) => excerpt.fileName).sort();
+      assert.deepStrictEqual(names, ["desktop.trace.ndjson", "server-child.log"]);
 
-    const trace = document.logs.find((excerpt) => excerpt.fileName === "desktop.trace.ndjson");
-    assert.isDefined(trace);
-    assert.strictEqual(trace?.lines.length, SUPPORT_BUNDLE_MAX_LOG_LINES);
-    assert.strictEqual(trace?.omittedLeadingLineCount, 40);
+      const trace = document.logs.find((excerpt) => excerpt.fileName === "desktop.trace.ndjson");
+      assert.isDefined(trace);
+      assert.strictEqual(trace?.lines.length, SUPPORT_BUNDLE_MAX_LOG_LINES);
+      assert.strictEqual(trace?.omittedLeadingLineCount, 40);
 
-    const child = document.logs.find((excerpt) => excerpt.fileName === "server-child.log");
-    assert.isDefined(child);
-    // The unstructured stdout line is named-omitted, not silently dropped.
-    assert.isTrue(child?.lines.includes(SUPPORT_BUNDLE_PLACEHOLDERS.unredactable));
-    assert.strictEqual(child?.lines.length, 4);
-  });
+      const child = document.logs.find((excerpt) => excerpt.fileName === "server-child.log");
+      assert.isDefined(child);
+      // The unstructured stdout line is named-omitted, not silently dropped.
+      assert.isTrue(child?.lines.includes(SUPPORT_BUNDLE_PLACEHOLDERS.unredactable));
+      assert.strictEqual(child?.lines.length, 4);
+    }),
+  );
 
-  it("counts what it redacted and omitted", async () => {
-    const document = await runBundle((bundle) => bundle.build);
-    assert.strictEqual(document.counters.logFileCount, 2);
-    assert.strictEqual(document.counters.collectedLogFileCount, 2);
-    assert.isAbove(document.counters.collectedLogLineCount, 0);
-    assert.isAbove(document.counters.redactedFieldCount, 0);
-    assert.isAbove(document.counters.omittedFieldCount, 0);
-  });
+  it.effect("counts what it redacted and omitted", () =>
+    Effect.gen(function* () {
+      const document = yield* withBundle((bundle) => bundle.build);
+      assert.strictEqual(document.counters.logFileCount, 2);
+      assert.strictEqual(document.counters.collectedLogFileCount, 2);
+      assert.isAbove(document.counters.collectedLogLineCount, 0);
+      assert.isAbove(document.counters.redactedFieldCount, 0);
+      assert.isAbove(document.counters.omittedFieldCount, 0);
+    }),
+  );
 
-  it("writes one inspectable file, reports its exact path, and stays within the size cap", async () => {
-    const outcome = await runBundle((bundle) =>
-      Effect.gen(function* () {
-        const result = yield* bundle.create;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const contents = yield* fileSystem.readFileString(result.filePath);
-        return { result, contents };
-      }),
-    );
+  it.effect("writes one inspectable file, reports its path, and stays within the size cap", () =>
+    Effect.gen(function* () {
+      const outcome = yield* withBundle((bundle) =>
+        Effect.gen(function* () {
+          const result = yield* bundle.create;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const contents = yield* fileSystem.readFileString(result.filePath);
+          return { result, contents };
+        }),
+      );
 
-    assert.isTrue(outcome.result.filePath.endsWith(".json"));
-    assert.include(outcome.result.filePath, "support-bundles");
-    assert.strictEqual(Buffer.byteLength(outcome.contents, "utf8"), outcome.result.byteLength);
-    assert.isAtMost(outcome.result.byteLength, SUPPORT_BUNDLE_MAX_BYTES + 1);
-    assert.isAbove(outcome.result.fieldCount, 0);
-    assertNoPlantedSecret(outcome.contents);
+      assert.isTrue(outcome.result.filePath.endsWith(".json"));
+      assert.include(outcome.result.filePath, "support-bundles");
+      assert.strictEqual(Buffer.byteLength(outcome.contents, "utf8"), outcome.result.byteLength);
+      assert.isAtMost(outcome.result.byteLength, SUPPORT_BUNDLE_MAX_BYTES + 1);
+      assert.isAbove(outcome.result.fieldCount, 0);
+      assertNoPlantedSecret(outcome.contents);
 
-    const reparsed = Schema.decodeUnknownSync(SupportBundleDocument)(JSON.parse(outcome.contents));
-    assert.strictEqual(reparsed.uploadSupported, false);
-  });
+      const reparsed = decodeSupportBundleDocument(JSON.parse(outcome.contents));
+      assert.strictEqual(reparsed.uploadSupported, false);
+    }),
+  );
 });

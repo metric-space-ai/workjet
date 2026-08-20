@@ -189,7 +189,8 @@ const POSIX_PATH = /(?<![A-Za-z0-9_])\/(?:[A-Za-z0-9._~%+-]+\/)+[A-Za-z0-9._~%+-
 const WINDOWS_PATH = /(?:[A-Za-z]:|\\)\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/gu;
 
 const WHITESPACE_RUN = /\s+/gu;
-const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/gu;
+/** A bundle field must be one printable line, so every control character goes. */
+const CONTROL_CHARACTER = /\p{Cc}/gu;
 
 /** Every placeholder, so the residue check ignores what the gate itself wrote. */
 const PLACEHOLDER_TOKEN = /\[(?:redacted|omitted):[a-z]+\]/gu;

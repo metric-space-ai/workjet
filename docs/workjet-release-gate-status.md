@@ -163,3 +163,40 @@ because each slice only ran its own area:
 
 Lesson recorded: a slice that changes a shared contract must run the packages
 it does not own. Mobile is the one nothing in this project's workflow touches.
+
+## CTOX PR #28: the "red CI" question, settled on 2026-08-20
+
+The Business OS shell PR (`metric-space-ai/ctox` #28,
+`codex/ctox-desktop-host-theme`) has been sitting on an owner decision phrased
+as "merge despite red CI?". That phrasing was too vague to decide. Measured:
+
+| Check                                        | PR #28  | `main`  |
+| -------------------------------------------- | ------- | ------- |
+| Business OS Desktop E2E (mac / linux / win)  | SUCCESS | —       |
+| Desktop extra check (linux)                  | SUCCESS | —       |
+| CTOX CLI check (all 5 targets)               | FAILURE | FAILURE |
+
+The five failing CLI jobs fail with a byte-identical assertion on both
+branches:
+
+    did not match the regular expression /officeEngine:\s*'ctox_spreadsheets'/
+
+`main` is red on **every one of the last twelve CI runs** (checked
+2026-08-20), the newest being run 32364751052, whose failing-job list is the
+same five targets. The failure lives in the spreadsheets office-engine
+assertion and touches nothing this PR changes.
+
+So: **PR #28 introduces no new failure, and every check that actually covers
+its change is green.** The gate that matters — Business OS Desktop E2E on all
+three platforms — passes.
+
+Two things remain genuinely owner-owned, and they are separate decisions:
+
+1. **Merging #28.** Now evidence-backed; the only remaining objection would be
+   a policy of never merging into a red `main`, which would block the whole
+   repo indefinitely.
+2. **Cutting a CTOX release tag.** This is the one with real blast radius:
+   managed tenants only receive the new shell after a release, so the tag
+   redeploys the shell for every tenant at once. That is why the managed
+   instances still show the old shell today while the local instance shows the
+   new one — not a bug, and not something a further code change can fix.

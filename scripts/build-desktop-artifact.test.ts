@@ -20,7 +20,12 @@ import {
   createDesktopExtraResources,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
+  DESKTOP_LEGAL_EXTRA_RESOURCE,
+  DESKTOP_LEGAL_NOTICE_FILES,
+  DESKTOP_LEGAL_RESOURCE_DIRECTORY,
   DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
+  MissingDesktopLegalNoticeError,
+  stageLegalNotices,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -853,6 +858,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         from: "/verified/ctox-business-os-shell",
         to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
       },
+      DESKTOP_LEGAL_EXTRA_RESOURCE,
     ]);
     assert.equal(CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY, "ctox-business-os-shell");
     assert.deepStrictEqual(resolveResourceMonitorRustTargets("mac", "universal"), [
@@ -868,6 +874,46 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resourceMonitorExecutableName("mac"), "t3-resource-monitor");
     assert.equal(resourceMonitorExecutableName("win"), "t3-resource-monitor.exe");
   });
+  it.effect("ships the license notices as a packaged extra resource", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+
+      assert.deepStrictEqual(DESKTOP_LEGAL_EXTRA_RESOURCE, { from: "legal", to: "legal" });
+      assert.deepStrictEqual(
+        [...DESKTOP_LEGAL_NOTICE_FILES],
+        ["LICENSE", "LICENSE_POLICY.md", "NOTICE.md"],
+      );
+
+      const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+      const stageAppDir = yield* fs.makeTempDirectoryScoped();
+      yield* stageLegalNotices({ repoRoot, stageAppDir });
+      for (const noticeFile of DESKTOP_LEGAL_NOTICE_FILES) {
+        const staged = path.join(stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY, noticeFile);
+        assert.isTrue(yield* fs.exists(staged), `${noticeFile} was not staged`);
+        assert.equal(
+          yield* fs.readFileString(staged),
+          yield* fs.readFileString(path.join(repoRoot, noticeFile)),
+        );
+      }
+      assert.include(
+        yield* fs.readFileString(
+          path.join(stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY, "LICENSE"),
+        ),
+        "Copyright (c) 2026 T3 Tools Inc.",
+      );
+
+      // A tree without the notices must fail the build instead of shipping a
+      // binary that silently drops the upstream MIT notice.
+      const emptyRoot = yield* fs.makeTempDirectoryScoped();
+      const failure = yield* stageLegalNotices({
+        repoRoot: emptyRoot,
+        stageAppDir: yield* fs.makeTempDirectoryScoped(),
+      }).pipe(Effect.flip);
+      assert.instanceOf(failure, MissingDesktopLegalNoticeError);
+      assert.equal(failure.noticeFile, "LICENSE");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
   it("promotes target fff binaries to direct staged dependencies", () => {
     assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-darwin-arm64": "0.9.4",

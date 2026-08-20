@@ -496,6 +496,18 @@ export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<Missi
   }
 }
 
+export class MissingDesktopLegalNoticeError extends Schema.TaggedErrorClass<MissingDesktopLegalNoticeError>()(
+  "MissingDesktopLegalNoticeError",
+  {
+    noticeFile: Schema.String,
+    noticePath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Missing required license notice ${this.noticeFile} at ${this.noticePath}. Every desktop artifact must ship the T3 MIT notice, the Workjet license policy, and the generated release NOTICE; run 'pnpm run notice:generate' if NOTICE.md is missing.`;
+  }
+}
+
 export class MacProvisioningProfileNotFoundError extends Schema.TaggedErrorClass<MacProvisioningProfileNotFoundError>()(
   "MacProvisioningProfileNotFoundError",
   {
@@ -762,6 +774,17 @@ export const DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE = {
 } as const;
 export const CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY = "ctox-business-os-shell";
 
+// The T3 MIT notice, the Workjet license policy, and the generated release
+// NOTICE must travel with every binary. They are staged into `legal/` and
+// shipped as a plain extra resource rather than inside the asar so the notices
+// remain readable in the installed application without unpacking anything.
+export const DESKTOP_LEGAL_RESOURCE_DIRECTORY = "legal";
+export const DESKTOP_LEGAL_NOTICE_FILES = ["LICENSE", "LICENSE_POLICY.md", "NOTICE.md"] as const;
+export const DESKTOP_LEGAL_EXTRA_RESOURCE = {
+  from: DESKTOP_LEGAL_RESOURCE_DIRECTORY,
+  to: DESKTOP_LEGAL_RESOURCE_DIRECTORY,
+} as const;
+
 export function createDesktopExtraResources(businessOsShellInstallPath: string) {
   return [
     DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
@@ -769,6 +792,7 @@ export function createDesktopExtraResources(businessOsShellInstallPath: string) 
       from: businessOsShellInstallPath,
       to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
     },
+    DESKTOP_LEGAL_EXTRA_RESOURCE,
   ] as const;
 }
 
@@ -1799,6 +1823,28 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
   },
 );
 
+/**
+ * Copy the repository license notices into the staged app so electron-builder
+ * ships them as `Resources/legal/**`. Fails closed: a binary that silently drops
+ * the T3 MIT notice or the generated NOTICE is not a releasable artifact.
+ */
+export const stageLegalNotices = Effect.fn("stageLegalNotices")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageAppDir: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const legalDir = path.join(input.stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY);
+  yield* fs.makeDirectory(legalDir, { recursive: true });
+  for (const noticeFile of DESKTOP_LEGAL_NOTICE_FILES) {
+    const noticePath = path.join(input.repoRoot, noticeFile);
+    if (!(yield* fs.exists(noticePath))) {
+      return yield* new MissingDesktopLegalNoticeError({ noticeFile, noticePath });
+    }
+    yield* fs.copyFile(noticePath, path.join(legalDir, noticeFile));
+  }
+});
+
 const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
@@ -2514,6 +2560,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
+  yield* stageLegalNotices({ repoRoot, stageAppDir });
   yield* stageResourceMonitor({
     repoRoot,
     stageResourcesDir,

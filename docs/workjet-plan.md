@@ -1710,13 +1710,31 @@ licensing claims.
       option for dual-licensed CTOX-owned components in Workjet releases.
 - [x] Add the dual SPDX expression only to files Metric Space AI owns or
       controls; do not relicense third-party contributions implicitly.
-- [ ] Preserve the T3 MIT copyright and license notices.
+- [x] Preserve the T3 MIT copyright and license notices. The root `LICENSE`
+      keeps the unmodified T3 Tools notice, and `stageLegalNotices` in
+      `scripts/build-desktop-artifact.ts` ships `LICENSE`, `LICENSE_POLICY.md`,
+      and `NOTICE.md` as the packaged `Resources/legal/**` extra resource. The
+      build fails closed when any of the three is missing.
 - [x] Preserve CLIProxyAPI upstream MIT provenance and the license applicable to
       the Rust-port modifications.
-- [ ] Preserve Greppy Apache-2.0 notices.
-- [ ] Generate a release NOTICE/source-offer inventory.
-- [ ] Review Electron guest-shell packaging and network-use obligations before
-      the first public binary.
+- [x] Preserve Greppy Apache-2.0 notices. Verified outcome: no Greppy source is
+      vendored and no Greppy binary is packaged. Workjet pins the upstream
+      Apache-2.0 source archive in
+      `packages/workjet-capabilities/src/greppyRuntime.ts` and builds it on the
+      user's machine on opt-in, so this artifact performs no Apache-2.0
+      redistribution. `NOTICE.md` section 3 records that boundary and the
+      separate model-asset terms.
+- [x] Generate a release NOTICE/source-offer inventory.
+      `scripts/generate-release-notice.ts` derives the production dependency
+      closure of `apps/desktop`, `apps/server`, and `apps/web` from
+      `pnpm-lock.yaml`, reads license metadata from installed manifests, and
+      emits the committed `NOTICE.md` offline, deterministically, and without a
+      timestamp. `pnpm run notice:check` fails when the committed file is stale.
+- [x] Review Electron guest-shell packaging and network-use obligations before
+      the first public binary. Recorded in
+      `docs/workjet-electron-guest-shell-license-review.md`; six items remain
+      for legal sign-off, chiefly the ownership of the packaged CTOX Business OS
+      shell archive.
 
 The license choice is closed. Completing file-level provenance, headers, and
 generated notices remains a release gate.

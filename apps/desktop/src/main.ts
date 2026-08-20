@@ -224,6 +224,10 @@ const desktopApplicationLayer = Layer.mergeAll(
 // constructed, and DesktopClerk depends on it, so the import always completes
 // before the single-instance lock opens the profile.
 const desktopUserDataMigrationLayer = DesktopUserDataMigration.layer.pipe(
+  // The sync FileSystem keeps this construction free of macrotask yields so
+  // Electron's `ready` cannot fire before the Clerk bridge registers its
+  // privileged schemes (see syncFileSystemLayer).
+  Layer.provide(DesktopUserDataMigration.syncFileSystemLayer),
   Layer.provideMerge(desktopEnvironmentLayer),
   Layer.provideMerge(NodeServices.layer),
 );

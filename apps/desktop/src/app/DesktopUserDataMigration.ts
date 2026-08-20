@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - the construction path must stay free of macrotask yields (pre-ready ordering), so it uses Node's synchronous fs; see syncFileSystemLayer.
+import * as NodeFs from "node:fs";
+
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -240,6 +243,105 @@ export const copyAllowlistedUserData = Effect.fn("desktop.userDataMigration.copy
     return copied as readonly string[];
   },
 );
+
+/**
+ * A SYNCHRONOUS FileSystem for this service's construction path.
+ *
+ * The service is constructed before Electron's `ready` event because
+ * `DesktopClerk.make` depends on it and the Clerk bridge must register
+ * privileged schemes pre-ready. The async Node FileSystem yields to the
+ * macrotask queue on every operation, which lets `ready` fire mid-graph and
+ * crashed the packaged app with "registerSchemesAsPrivileged should be called
+ * before app is ready". Wrapping Node's sync fs in `Effect.sync` keeps the
+ * whole construction free of macrotask boundaries, so `ready` cannot preempt
+ * it. The one-time blocking copy is acceptable: it runs exactly once, on the
+ * launch after the user accepted the import.
+ */
+export const syncFileSystemLayer = FileSystem.layerNoop({
+  exists: (path) => Effect.sync(() => NodeFs.existsSync(path)),
+  stat: (path) =>
+    Effect.try({
+      try: () => {
+        const info = NodeFs.lstatSync(path);
+        const type = info.isDirectory() ? "Directory" : info.isFile() ? "File" : "Unknown";
+        return { type } as FileSystem.File.Info;
+      },
+      catch: () =>
+        PlatformError.systemError({
+          _tag: "NotFound",
+          module: "FileSystem",
+          method: "stat",
+          description: "stat failed",
+          pathOrDescriptor: path,
+        }),
+    }),
+  readDirectory: (path) =>
+    Effect.try({
+      try: () => NodeFs.readdirSync(path),
+      catch: () =>
+        PlatformError.systemError({
+          _tag: "NotFound",
+          module: "FileSystem",
+          method: "readDirectory",
+          description: "readdir failed",
+          pathOrDescriptor: path,
+        }),
+    }),
+  makeDirectory: (path) =>
+    Effect.try({
+      try: () => {
+        NodeFs.mkdirSync(path, { recursive: true });
+      },
+      catch: () =>
+        PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "makeDirectory",
+          description: "mkdir failed",
+          pathOrDescriptor: path,
+        }),
+    }),
+  copyFile: (from, to) =>
+    Effect.try({
+      try: () => {
+        NodeFs.copyFileSync(from, to);
+      },
+      catch: () =>
+        PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "copyFile",
+          description: "copy failed",
+          pathOrDescriptor: from,
+        }),
+    }),
+  readFileString: (path) =>
+    Effect.try({
+      try: () => NodeFs.readFileSync(path, "utf8"),
+      catch: () =>
+        PlatformError.systemError({
+          _tag: "NotFound",
+          module: "FileSystem",
+          method: "readFileString",
+          description: "read failed",
+          pathOrDescriptor: path,
+        }),
+    }),
+  writeFileString: (path, content) =>
+    Effect.try({
+      try: () => {
+        NodeFs.writeFileSync(path, content, "utf8");
+      },
+      catch: () =>
+        PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "writeFileString",
+          description: "write failed",
+          pathOrDescriptor: path,
+        }),
+    }),
+});
 
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;

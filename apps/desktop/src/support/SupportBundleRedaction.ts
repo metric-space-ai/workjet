@@ -50,6 +50,16 @@ import {
   SUPPORT_BUNDLE_PLACEHOLDERS,
   type SupportBundleRedactionPlaceholder,
 } from "@t3tools/contracts";
+import {
+  AUTHORIZATION_HEADER,
+  containsCredentialRun,
+  ENTROPY_RUN,
+  KNOWN_CREDENTIAL,
+  looksLikeCredentialRun,
+  PASSWORD_PROMPT,
+  PEM_PRIVATE_KEY,
+  SECRET_ASSIGNMENT,
+} from "@t3tools/shared/secretShapes";
 
 /**
  * Most words a single gated value may contain. Diagnostics are short: a
@@ -57,36 +67,6 @@ import {
  * prose is where prompts, model output, and pasted secrets live.
  */
 export const SUPPORT_BUNDLE_MAX_WORDS = 32;
-
-/**
- * Shortest generic run treated as a credential. Deliberately long: shorter
- * thresholds swallow ordinary camel-case identifiers out of stack frames,
- * which makes the bundle useless without making it safer.
- */
-const ENTROPY_RUN_LENGTH = 28;
-
-/**
- * Generic credential shape: a long unbroken run of base64/hex characters.
- * `.`, `_` and `-` are NOT part of the class — including them turns every
- * dotted span name and every SCREAMING_SNAKE constant into a false positive —
- * so the well-known prefixes below carry the shapes that need them.
- */
-const ENTROPY_RUN = /[A-Za-z0-9+/=]{28,}/gu;
-
-/**
- * A long alphanumeric run is only a credential when it actually carries
- * entropy. `resolveRemoteT3CliPackageSpec` is 29 characters with one digit;
- * a base64 token of the same length has five or more, and a hex digest more
- * still. Base64 padding and the `+`/`/` alphabet are decisive on their own.
- */
-const DIGIT_DENSITY_THRESHOLD = 0.15;
-
-const looksLikeCredentialRun = (run: string): boolean => {
-  if (run.length < ENTROPY_RUN_LENGTH) return false;
-  if (/[+/=]/u.test(run)) return true;
-  const digitCount = (run.match(/[0-9]/gu) ?? []).length;
-  return digitCount / run.length >= DIGIT_DENSITY_THRESHOLD;
-};
 
 const replaceCredentialRuns = (value: string): string =>
   value.replace(ENTROPY_RUN, (run) =>
@@ -99,110 +79,8 @@ const replaceCredentialRuns = (value: string): string =>
  * post-condition directly on every gate output rather than trusting the
  * substitution list to have been exhaustive.
  */
-export const containsSupportCredentialShape = (value: string): boolean => {
-  for (const match of value.replace(PLACEHOLDER_TOKEN, " ").matchAll(ENTROPY_RUN)) {
-    if (looksLikeCredentialRun(match[0])) return true;
-  }
-  return false;
-};
-
-/**
- * Credential shapes whose separators (`-`, `_`, `.`) would otherwise break
- * them below the generic run threshold: provider keys, VCS tokens, cloud
- * keys, and JWTs.
- */
-const KNOWN_CREDENTIAL = new RegExp(
-  [
-    "sk-[A-Za-z0-9_-]{12,}",
-    "sk_[A-Za-z0-9]{12,}",
-    "gh[pousr]_[A-Za-z0-9]{12,}",
-    "glpat-[A-Za-z0-9_-]{12,}",
-    "npm_[A-Za-z0-9]{12,}",
-    "xox[baprs]-[A-Za-z0-9-]{12,}",
-    "AKIA[0-9A-Z]{12,}",
-    "AIza[0-9A-Za-z_-]{12,}",
-    "eyJ[A-Za-z0-9_-]{8,}(?:\\.[A-Za-z0-9_-]+){1,2}",
-    // Private-key BODIES, by their fixed base64 magic. The generic entropy run
-    // cannot see these: an OpenSSH key body is mostly letters and `A` padding,
-    // so its digit density sits far BELOW the threshold — the heuristic is
-    // anti-correlated with exactly this shape. `b3BlbnNzaC1rZXktdjE` is
-    // base64("openssh-key-v1"); `MII` opens every base64 DER key and cert.
-    "b3BlbnNzaC1rZXktdjE[A-Za-z0-9+/=]*",
-    "MII[A-Za-z0-9+/=]{16,}",
-  ].join("|"),
-  "gu",
-);
-
-/**
- * A PEM block, collapsed onto one line by the whitespace normalizer before the
- * substitutions run. Matched whole — including a TRUNCATED block whose `END`
- * marker never arrived, which is the usual shape in a log tail.
- */
-const PEM_PRIVATE_KEY =
-  /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/gu;
-
-/**
- * `[sudo] password for alice: hunter2` and bare `Password: hunter2`. The
- * assignment rule below cannot see these: the keyword is separated from the
- * `:` by " for <user>", and a typed password is usually far too short to reach
- * the generic entropy threshold. Everything after the colon goes.
- */
-const PASSWORD_PROMPT = /(?:\[sudo\]\s*)?\b(?:password|passphrase)\b(?:\s+for\s+\S+)?\s*:\s*\S+/giu;
-
-/**
- * Words whose assigned value is a credential, matched against `word = value`,
- * `word: value`, and quoted JSON shapes, case-insensitively — these appear in
- * logs, in query strings, and in configuration dumps alike.
- */
-const SECRET_KEY_WORDS = [
-  "password",
-  "passwd",
-  "passphrase",
-  "pairing",
-  "pairingpassword",
-  "pairingtoken",
-  "pairing_token",
-  "secret",
-  "token",
-  "accesstoken",
-  "access_token",
-  "refreshtoken",
-  "refresh_token",
-  "idtoken",
-  "id_token",
-  "apikey",
-  "api_key",
-  "authorization",
-  "credential",
-  "cookie",
-  "sessionid",
-  "session_id",
-  "privatekey",
-  "private_key",
-  "clientsecret",
-  "client_secret",
-];
-
-/**
- * The keyword may be the TAIL of a compound identifier: `capabilityToken`,
- * `sudoPassword`, `sshPassphrase`, `providerApiKey`. Without the prefix the
- * word boundary falls inside the identifier (`…yToken` has no `\b` before
- * `Token`), so every camel-cased secret name slipped through while the bare
- * word was caught — which is why the list previously had to spell out
- * `pairingtoken` by hand.
- */
-const SECRET_ASSIGNMENT = new RegExp(
-  `\\b[A-Za-z0-9_]*(?:${SECRET_KEY_WORDS.join("|")})\\b["']?\\s*[:=]\\s*["']?[^\\s"',;)\\]}]+`,
-  "giu",
-);
-
-/**
- * `Authorization: Bearer x`, `authorization=Basic y`, and a bare `Bearer z`.
- * The credential must be at least eight unbroken characters so the ordinary
- * English word "basic" followed by a short word is not mistaken for a header.
- */
-const AUTHORIZATION_HEADER =
-  /(?:\bauthorization\b\s*["']?\s*[:=]\s*["']?)?\b(?:bearer|basic|digest)\s+[^\s"',;)\]}]{8,}/giu;
+export const containsSupportCredentialShape = (value: string): boolean =>
+  containsCredentialRun(value.replace(PLACEHOLDER_TOKEN, " "));
 
 const EMAIL =
   /[^\s<>@,;:"'()[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+/gu;

@@ -1,5 +1,35 @@
 # Progress-Board · Decision Hub (vormals Kundenpipeline) + Brillen-Approval
 
+## Paket H (2026-08-20 früh) — Threads-Kette verifiziert + 2 echte Bugs
+- BUG 1 (selbst gefunden, VOR Auslieferung): Threads-Projektion liest
+  `business_records`; die App schreibt Entscheidungen aber per RxDB —
+  Browser-Writes landen dort NIE. Der Approval-Thread wäre aufgegangen
+  und beim Entscheiden nie geschlossen (toter Posteingang). FIX
+  793064950: nativer Command `kundenpipeline.decision.answer`
+  (upsert_projection_record schreibt BEIDE Stores); die App dispatcht ihn
+  zusätzlich zum RxDB-Write (der bleibt für sofortiges UI-Feedback).
+- BUG 2 / UMGEBUNGSFALLE (kostete ~1 h Fehlsuche): Auf dem welsch-Guest
+  lief seit 14 h 41 min ein verwaister `ctox business-os peer start`
+  (PID 305949, ALTES Binary aus ~/.local/bin) aus meiner Debug-Session
+  der Nacht — ein ZWEITER nativer Peer auf demselben State-Root, parallel
+  zum Service. Symptom: user_threads blieb bei 0, obwohl Code, Grants und
+  Daten korrekt waren; keine Fehlermeldung im Journal. REGEL: nach jeder
+  interaktiven `peer start`-Diagnose `pgrep -af ctox-real` prüfen und
+  Fremd-Peers killen; genau EIN ctox-real service --foreground erlaubt.
+- MESSFALLE: Die Business-Record-Projektion arbeitet in 25-Doc-Slices mit
+  bis zu 300 s Pause (BUSINESS_RECORD_PROJECTION_PARTIAL_SYNC_INTERVAL_SECS).
+  Ein 2-Minuten-Wartefenster im E2E meldet fälschlich „kein Thread".
+  Verifikationsskripte brauchen ≥8 min Geduld.
+- VERIFIZIERT nach Aufräumen: Thread
+  `thread_kundenpipeline_entscheidung_kpl-e-zuord-…` existiert mit
+  kind=approval, status=completed, title=tester@example.org.
+- E2E-Skript: scratchpad/e2e-welsch.sh (Mail-Injektion NUR example.org,
+  Schema-vollständiger INSERT in communication_messages), Session-Halter
+  scratchpad/hold-session.mjs.
+- Regressionsschutz: Unit-Test
+  `app_relevance_projection_surfaces_pipeline_decision_for_owner`
+  (offen→open, entschieden→completed) in threads.rs.
+
 ## Paket G (2026-08-20) — Rollout auf welsch + Kunden-App-Leak + Threads
 - KUNDEN-APP-LEAK (Owner-Fund): rem-dsgvo-document-writer, rem-foerder-explorer,
   rem-foerdervorhaben-agent, rem-fozu-checker, rem-vertriebsmanagement lagen

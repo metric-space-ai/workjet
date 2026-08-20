@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import type { Session } from "electron";
 
 import { normalizeCtoxManagedBaseUrl } from "./CtoxManagedDiscovery.ts";
+import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 
 const DEFAULT_CTOX_DEV_BASE_URL = "https://ctox.dev";
@@ -188,6 +189,8 @@ async function fetchJson(
   }
 }
 
+const { logInfo } = makeComponentLogger("ctox-managed-launch");
+
 export const make = (options: CtoxManagedLaunchOptions = {}) =>
   Effect.gen(function* () {
     const baseUrl = normalizeCtoxManagedBaseUrl(options.baseUrl ?? DEFAULT_CTOX_DEV_BASE_URL);
@@ -273,6 +276,15 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
       if (webRtcConfig === undefined) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       }
+      // Redacted contract trace: origin+path only, never query or secrets.
+      // The server names its own launch surface here; when the desktop's
+      // canonical path drifts from the deploy (e.g. a retired /business-os/),
+      // this line is the evidence.
+      yield* logInfo("managed launch contract", {
+        serverLaunchOrigin: serverLaunchUrl.origin,
+        serverLaunchPath: serverLaunchUrl.pathname,
+        pairingRedacted: containsRedactedPairingSecret(pairingConfig),
+      });
       const launchUrl = buildCanonicalLaunchUrl(
         baseUrl,
         withManagedDesktopInstance(webRtcConfig, descriptor),

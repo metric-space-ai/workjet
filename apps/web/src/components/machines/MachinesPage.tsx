@@ -252,7 +252,7 @@ export function MachinesPageView(props: MachinesPageViewProps) {
 
         {props.environments.length === 0 ? (
           <p data-testid="machines-no-environments" className="text-sm text-muted-foreground">
-            No environment is connected, so there is nothing to report yet.
+            No environment is available, so there is nothing to report yet.
           </p>
         ) : null}
 

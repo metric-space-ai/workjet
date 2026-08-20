@@ -14,6 +14,7 @@ import {
   WORKJET_MESH_WORKSPACE_ID_SECRET,
   WORKJET_MESH_KEY_BINDING_DOMAIN,
   WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN,
+  workjetMeshOverviewOf,
   workjetMeshRosterOf,
   type WorkjetSealedPayloadBlob,
   type WorkjetUnsignedRoutingEnvelope,
@@ -586,4 +587,124 @@ it("serializes a binding claim with a fixed domain, field order, and no key-orde
   assert.deepEqual(canonicalKeyBindingBytes(reordered), canonicalKeyBindingBytes(claim));
   // A binding signature is not usable as a routing-envelope signature.
   assert.notStrictEqual(WORKJET_MESH_KEY_BINDING_DOMAIN, WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN);
+});
+
+// ===============================
+// Multi-computer overview projection
+// ===============================
+
+const OBSERVED_AT_MILLIS = Date.UTC(2026, 7, 19, 12, 0, 0);
+const PEER_ONE = EnvironmentId.make("environment-peer-one");
+const PEER_TWO = EnvironmentId.make("environment-peer-two");
+
+const peerRecord = (environmentId: EnvironmentId) => ({
+  workspaceId: PEER_WORKSPACE,
+  environmentId,
+  firstSeenAtMillis: Date.UTC(2026, 7, 18, 10, 0, 0),
+  sealedDeliveryReady: true,
+  binding: "self-signed" as const,
+});
+
+it("joins contact and delegation counts onto the peers that own them", () => {
+  const overview = workjetMeshOverviewOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: { peers: [peerRecord(PEER_ONE), peerRecord(PEER_TWO)], truncated: false },
+    contact: [
+      {
+        environmentId: PEER_ONE,
+        lastInboundAtMillis: Date.UTC(2026, 7, 19, 9, 0, 0),
+        lastOutboundAtMillis: Date.UTC(2026, 7, 19, 8, 0, 0),
+      },
+    ],
+    delegationCounts: [
+      { environmentId: PEER_ONE, direction: "sent", state: "running", count: 2 },
+      { environmentId: PEER_ONE, direction: "received", state: "completed", count: 5 },
+      { environmentId: PEER_TWO, direction: "sent", state: "queued", count: 1 },
+    ],
+    observedAtMillis: OBSERVED_AT_MILLIS,
+  });
+
+  assert.deepEqual(overview.local, {
+    schemaVersion: 1,
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+  });
+  assert.equal(overview.observedAt, "2026-08-19T12:00:00.000Z");
+
+  const [first, second] = overview.peers;
+  assert.equal(first?.environmentId, PEER_ONE);
+  assert.equal(first?.lastInboundAt, "2026-08-19T09:00:00.000Z");
+  assert.equal(first?.lastOutboundAt, "2026-08-19T08:00:00.000Z");
+  assert.deepEqual(first?.delegationsSent, [{ state: "running", count: 2 }]);
+  assert.deepEqual(first?.delegationsReceived, [{ state: "completed", count: 5 }]);
+
+  // A count belonging to another peer never bleeds across.
+  assert.equal(second?.environmentId, PEER_TWO);
+  assert.deepEqual(second?.delegationsSent, [{ state: "queued", count: 1 }]);
+  assert.deepEqual(second?.delegationsReceived, []);
+});
+
+it("omits the contact keys entirely for a peer with nothing on record", () => {
+  const overview = workjetMeshOverviewOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: { peers: [peerRecord(PEER_ONE)], truncated: true },
+    contact: [{ environmentId: PEER_ONE, lastInboundAtMillis: null, lastOutboundAtMillis: null }],
+    delegationCounts: [],
+    observedAtMillis: OBSERVED_AT_MILLIS,
+  });
+
+  const peer = overview.peers[0]!;
+  // Absent, not zeroed: the expiry sweep removing rows must never render as a
+  // 1970 timestamp or as "just now".
+  assert.isFalse("lastInboundAt" in peer);
+  assert.isFalse("lastOutboundAt" in peer);
+  assert.isTrue(overview.truncated);
+});
+
+it("carries no key material and no liveness claim of any kind", () => {
+  const overview = workjetMeshOverviewOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: { peers: [peerRecord(PEER_ONE)], truncated: false },
+    contact: [{ environmentId: PEER_ONE, lastInboundAtMillis: 1_000, lastOutboundAtMillis: 2_000 }],
+    delegationCounts: [],
+    observedAtMillis: OBSERVED_AT_MILLIS,
+  });
+
+  assert.deepEqual(Object.keys(overview.peers[0]!).toSorted(), [
+    "binding",
+    "delegationsReceived",
+    "delegationsSent",
+    "environmentId",
+    "firstSeenAt",
+    "lastInboundAt",
+    "lastOutboundAt",
+    "schemaVersion",
+    "sealedDeliveryReady",
+    "workspaceId",
+  ]);
+  const serialized = JSON.stringify(overview);
+  for (const forbidden of ["online", "offline", "reachable", "publicKey", "privateKey", "key"]) {
+    assert.notInclude(serialized, forbidden);
+  }
+});
+
+it("keeps the peer order the store chose rather than re-sorting by contact", () => {
+  // Ordering is the CLIENT's presentation decision; the projection stays a pure
+  // join so the server contract does not silently change what "first" means.
+  const overview = workjetMeshOverviewOf({
+    workspaceId: LOCAL_WORKSPACE,
+    environmentId: LOCAL_ENVIRONMENT,
+    page: { peers: [peerRecord(PEER_TWO), peerRecord(PEER_ONE)], truncated: false },
+    contact: [{ environmentId: PEER_ONE, lastInboundAtMillis: 9_000, lastOutboundAtMillis: null }],
+    delegationCounts: [],
+    observedAtMillis: OBSERVED_AT_MILLIS,
+  });
+
+  assert.deepEqual(
+    overview.peers.map((peer) => peer.environmentId),
+    [PEER_TWO, PEER_ONE],
+  );
 });

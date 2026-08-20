@@ -71,6 +71,15 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("reads the multi-computer overview under orchestration read too", () => {
+    // The overview is the roster plus timestamps and counts this server already
+    // holds. Wider data, same class of read — it must never require, or grant,
+    // an operate scope.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshOverview)).toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
+
   it("allows relay status reads without granting relay installation access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
       AuthRelayReadScope,

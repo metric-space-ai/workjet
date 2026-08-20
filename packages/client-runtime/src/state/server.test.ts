@@ -39,6 +39,7 @@ import {
   GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
   WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
+  WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
   WORKJET_MESH_ROSTER_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
@@ -223,6 +224,36 @@ describe("Workjet mesh roster client wiring", () => {
     expect(server.workjetMeshRoster({ environmentId: TARGET.environmentId, input: {} })).not.toBe(
       server.sendWorkjetMailboxMessage,
     );
+  });
+
+  it("keys the multi-computer overview per environment, like the roster", () => {
+    const server = rosterAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetMeshOverview({ environmentId: first, input: {} })).toBe(
+      server.workjetMeshOverview({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetMeshOverview({ environmentId: second, input: {} })).not.toBe(
+      server.workjetMeshOverview({ environmentId: first, input: {} }),
+    );
+  });
+
+  it("keeps the overview a distinct read from the roster", () => {
+    // Two different reads of the same mesh: collapsing them would make the
+    // composer's picker refetch the far heavier dashboard query.
+    const server = rosterAtoms();
+    const environmentId = TARGET.environmentId;
+    expect(server.workjetMeshOverview({ environmentId, input: {} })).not.toBe(
+      server.workjetMeshRoster({ environmentId, input: {} }),
+    );
+  });
+
+  it("refreshes the overview far sooner than the roster", () => {
+    // Envelope and delegation state move constantly; the pin table almost never
+    // does. A shorter window is honest freshness, not a liveness signal.
+    expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeGreaterThan(0);
+    expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeLessThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
   });
 });
 

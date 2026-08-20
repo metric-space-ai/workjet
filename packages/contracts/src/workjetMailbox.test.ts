@@ -2,6 +2,8 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
+import { WS_METHODS, WsRpcGroup, WsWorkjetMeshOverviewRpc } from "./rpc.ts";
+
 import {
   WORKJET_MAILBOX_SCHEMA_VERSION,
   WORKJET_TERMINAL_DELEGATION_STATES,
@@ -1200,5 +1202,63 @@ describe("WorkjetMeshOverview", () => {
   it("requires the server observation instant, so ages are never client-relative", () => {
     const { observedAt: _omitted, ...withoutObservedAt } = overview([]);
     expect(() => decodeOverview(withoutObservedAt as never)).toThrow();
+  });
+});
+
+describe("workjet.mesh.overview RPC", () => {
+  it("is registered on the WebSocket group under its exact method name", () => {
+    expect(WS_METHODS.workjetMeshOverview).toBe("workjet.mesh.overview");
+    const registered = [...WsRpcGroup.requests.keys()];
+    expect(registered).toContain(WS_METHODS.workjetMeshOverview);
+    // The roster stays a separate read; the overview does not replace it.
+    expect(registered).toContain(WS_METHODS.workjetMeshRoster);
+  });
+
+  it("round-trips the server's projection through the RPC success schema", () => {
+    // Exactly the shape `workjetMeshOverviewOf` produces on the server, encoded
+    // and decoded back, so a wire hop cannot silently drop the optional contact
+    // keys or the delegation buckets.
+    const projected = {
+      schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+      local: {
+        schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+        workspaceId: "workjet-mesh-local",
+        environmentId: "environment-local",
+      },
+      peers: [
+        {
+          schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+          workspaceId: "workjet-mesh-peer",
+          environmentId: "environment-peer-one",
+          firstSeenAt: "2026-08-18T10:00:00.000Z",
+          sealedDeliveryReady: true,
+          binding: "self-signed",
+          lastInboundAt: "2026-08-19T09:00:00.000Z",
+          lastOutboundAt: "2026-08-19T08:00:00.000Z",
+          delegationsSent: [{ state: "running", count: 2 }],
+          delegationsReceived: [{ state: "completed", count: 5 }],
+        },
+        {
+          schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+          workspaceId: "workjet-mesh-peer",
+          environmentId: "environment-peer-two",
+          firstSeenAt: "2026-08-18T11:00:00.000Z",
+          sealedDeliveryReady: false,
+          binding: "tofu",
+          delegationsSent: [],
+          delegationsReceived: [],
+        },
+      ],
+      truncated: false,
+      observedAt: "2026-08-19T12:00:00.000Z",
+    };
+
+    const decoded = Schema.decodeUnknownSync(WsWorkjetMeshOverviewRpc.successSchema)(projected);
+    const encoded = Schema.encodeUnknownSync(WsWorkjetMeshOverviewRpc.successSchema)(decoded);
+    expect(encoded).toEqual(projected);
+
+    // The payload is empty by design: the read is scoped to the connected
+    // environment, so a caller cannot ask for another machine's mesh.
+    expect(Schema.decodeUnknownSync(WsWorkjetMeshOverviewRpc.payloadSchema)({})).toEqual({});
   });
 });

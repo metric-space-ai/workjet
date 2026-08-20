@@ -1505,3 +1505,185 @@ it.effect("surfaces an undecodable peer pin row as a typed corrupt-row error", (
     }
   }).pipe(Effect.provide(testLayer)),
 );
+
+// =========================================================
+// Multi-computer overview reads (last-known contact + counts)
+// =========================================================
+// These are the ONLY cross-machine facts a server can honestly report: rows it
+// wrote itself. The assertions below therefore pin what the reads must NOT do —
+// count the local environment as a peer, or invent a timestamp for a peer whose
+// envelopes the expiry sweep already removed.
+
+const LOCAL_ENVIRONMENT = SOURCE_ENVIRONMENT;
+const PEER_A = EnvironmentId.make("environment-peer-a");
+const PEER_B = EnvironmentId.make("environment-peer-b");
+
+const meshEnvelope = (options: {
+  readonly id: WorkjetEnvelopeId;
+  readonly source: EnvironmentId;
+  readonly target: EnvironmentId;
+  readonly createdAt: string;
+}): WorkjetRoutingEnvelope => ({
+  schemaVersion: 1,
+  envelopeId: options.id,
+  kind: "message",
+  sourceWorkspaceId: WORKSPACE,
+  sourceEnvironmentId: options.source,
+  targetWorkspaceId: WORKSPACE,
+  targetEnvironmentId: options.target,
+  createdAt: options.createdAt,
+  expiresAt: FAR_FUTURE,
+  signature: "c2lnbmF0dXJlLWZvci10ZXN0cw",
+});
+
+it.effect("reports last inbound and outbound contact per peer, newest peer first", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+
+    // Inbound from peer A at T0, from peer B at T2.
+    const fromA = envelopeId("mesh-in-aa");
+    yield* store.recordInboundEnvelope(
+      meshEnvelope({ id: fromA, source: PEER_A, target: LOCAL_ENVIRONMENT, createdAt: T0 }),
+      messagePayload(fromA, T0, FAR_FUTURE),
+      T0,
+    );
+    const fromB = envelopeId("mesh-in-bb");
+    yield* store.recordInboundEnvelope(
+      meshEnvelope({ id: fromB, source: PEER_B, target: LOCAL_ENVIRONMENT, createdAt: T2 }),
+      messagePayload(fromB, T2, FAR_FUTURE),
+      T2,
+    );
+    // Outbound to peer A at T1 — later than A's inbound, and a different column.
+    const toA = envelopeId("mesh-out-aa");
+    yield* store.enqueueOutbound(
+      meshEnvelope({ id: toA, source: LOCAL_ENVIRONMENT, target: PEER_A, createdAt: T1 }),
+      messagePayload(toA, T1, FAR_FUTURE),
+    );
+
+    const contact = yield* store.listMeshEnvelopeContact(LOCAL_ENVIRONMENT, 10);
+
+    // Peer B (T2) outranks peer A (T1).
+    assert.deepEqual(
+      contact.map((record) => record.environmentId),
+      [PEER_B, PEER_A],
+    );
+    assert.deepEqual(contact, [
+      {
+        environmentId: PEER_B,
+        lastInboundAtMillis: millis(T2),
+        lastOutboundAtMillis: null,
+      },
+      {
+        environmentId: PEER_A,
+        lastInboundAtMillis: millis(T0),
+        lastOutboundAtMillis: millis(T1),
+      },
+    ]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("never reports the local environment as a peer machine", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    // The local fast path can leave same-environment rows behind; a machine
+    // must never appear in its own peer list because of them.
+    const selfIn = envelopeId("mesh-self-in");
+    yield* store.recordInboundEnvelope(
+      meshEnvelope({
+        id: selfIn,
+        source: LOCAL_ENVIRONMENT,
+        target: LOCAL_ENVIRONMENT,
+        createdAt: T0,
+      }),
+      messagePayload(selfIn, T0, FAR_FUTURE),
+      T0,
+    );
+    const selfOut = envelopeId("mesh-self-ou");
+    yield* store.enqueueOutbound(
+      meshEnvelope({
+        id: selfOut,
+        source: LOCAL_ENVIRONMENT,
+        target: LOCAL_ENVIRONMENT,
+        createdAt: T0,
+      }),
+      messagePayload(selfOut, T0, FAR_FUTURE),
+    );
+
+    assert.deepEqual(yield* store.listMeshEnvelopeContact(LOCAL_ENVIRONMENT, 10), []);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("returns nothing for a machine with no mailbox rows at all", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    assert.deepEqual(yield* store.listMeshEnvelopeContact(LOCAL_ENVIRONMENT, 10), []);
+    assert.deepEqual(yield* store.listMeshDelegationCounts(LOCAL_ENVIRONMENT, 10), []);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("counts delegations by peer, direction, and lifecycle state", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+
+    const peerAddress = (environmentId: EnvironmentId, threadId: string) =>
+      address(environmentId, threadId);
+    const crossDelegation = (options: {
+      readonly id: WorkjetDelegationId;
+      readonly source: EnvironmentId;
+      readonly target: EnvironmentId;
+      readonly state: WorkjetDelegationState;
+    }) => ({
+      ...delegation({
+        id: options.id,
+        envelope: envelopeId(`del-${options.id.slice(-8)}`),
+        state: options.state,
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+      source: peerAddress(options.source, "thread-source"),
+      target: peerAddress(options.target, "thread-target"),
+    });
+
+    // Two running delegations sent to peer A, one completed received from A,
+    // and one purely local delegation that must not be counted at all.
+    yield* store.upsertDelegation(
+      crossDelegation({
+        id: delegationId("sentaa01"),
+        source: LOCAL_ENVIRONMENT,
+        target: PEER_A,
+        state: "running",
+      }),
+    );
+    yield* store.upsertDelegation(
+      crossDelegation({
+        id: delegationId("sentaa02"),
+        source: LOCAL_ENVIRONMENT,
+        target: PEER_A,
+        state: "running",
+      }),
+    );
+    yield* store.upsertDelegation(
+      crossDelegation({
+        id: delegationId("recvaa01"),
+        source: PEER_A,
+        target: LOCAL_ENVIRONMENT,
+        state: "completed",
+      }),
+    );
+    yield* store.upsertDelegation(
+      crossDelegation({
+        id: delegationId("localonl"),
+        source: LOCAL_ENVIRONMENT,
+        target: LOCAL_ENVIRONMENT,
+        state: "queued",
+      }),
+    );
+
+    const counts = yield* store.listMeshDelegationCounts(LOCAL_ENVIRONMENT, 10);
+
+    assert.deepEqual(counts, [
+      { environmentId: PEER_A, direction: "received", state: "completed", count: 1 },
+      { environmentId: PEER_A, direction: "sent", state: "running", count: 2 },
+    ]);
+  }).pipe(Effect.provide(testLayer)),
+);

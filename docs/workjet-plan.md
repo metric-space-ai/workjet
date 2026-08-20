@@ -3772,26 +3772,38 @@ public keys` on the first envelope that verifies, and any later different
       refuses any attribute named after request content or a credential (with an
       explicit, justified exemption list rather than a weakened pattern) and any
       attribute that serializes a structure without a declared justification.
-      OWNER DECISION — THE HOME SINK SHIPS A RAW BEARER TOKEN OFF-BOX.
-      `HomeRequestLogPayload::new`
-      (`native/provider-gateway/internal/logging/request_logger_home.rs:35-42`)
-      builds its `headers` map with `clone_headers`
-      (`request_logger_home.rs:55-61`), which filters only empty names and
-      applies NO masking. The `request_log` blob it ships alongside is redacted;
-      the sibling `headers` field is not, so a raw
-      `Authorization: Bearer …` leaves the machine for the home sink.
-      This behaviour is deliberately PINNED by a counter-test:
-      `native/provider-gateway/internal/logging/request_logger_home_test.rs:48`
-      → `bound_home_sink_replaces_local_request_log_output`, whose line 61
-      asserts `pushed[0].headers["Authorization"][0] == "Bearer secret"`. Any fix
-      breaks that test, which is why this is a decision and not a bug fix.
-      THE DECISION: is the home sink a trusted destination that may receive
-      unmasked provider credentials, or is this a leak to close? If it is a leak,
-      closing it means masking in `clone_headers` (or dropping the `headers`
-      field) AND rewriting the counter-test to assert the mask — the counter-test
-      is the record of the current answer, not an obstacle to be deleted quietly.
-      Deliberately not changed on 2026-08-20: `native/**` was out of scope and
-      flipping a pinned behaviour needs the owner first.
+      OWNER DECIDED 2026-08-20 — THE HOME SINK LEAK IS CLOSED.
+      WAS: `HomeRequestLogPayload::new` built its `headers` map with
+      `clone_headers`, which filtered only empty names and applied NO masking.
+      The `request_log` blob shipped alongside was redacted; the sibling
+      `headers` field was not, so a raw `Authorization: Bearer …` left the
+      machine whenever the home sink was bound. The behaviour was PINNED by a
+      counter-test asserting `"Bearer secret"` verbatim, which is why it was a
+      decision and not a bug fix.
+      THE ANSWER: the home sink is NOT a trusted destination for unmasked
+      provider credentials. The leak is closed.
+      HOW (commit recorded in the git log for `request_logger_home.rs`): a new
+      `mask_headers_for_home_sink` masks at the EGRESS boundary only — both
+      sites that build the off-box `HomeRequestLogPayload.headers`. The two
+      in-process `clone_headers` copies stay verbatim, because the local record
+      still needs the real values; masking the copy would have been a wider and
+      less honest change. It applies the gateway's EXISTING shared rule
+      `mask_sensitive_header_value` (`internal/util/provider.rs:146`) rather
+      than a second list, so the header masks exactly as it does in the blob
+      shipped alongside, and the two cannot drift apart.
+      THE COUNTER-TEST WAS REWRITTEN, NOT DELETED: it now asserts
+      `"Bearer se...et"`, carries a comment recording that it previously pinned
+      the opposite and who changed it when, and adds a second, stronger
+      assertion — the raw credential must not appear anywhere in the SERIALIZED
+      payload, so a future field cannot reintroduce the leak past a
+      header-shaped guard.
+      Mutation-verified: reverting one egress site to `clone_headers` fails the
+      test with `left: "Bearer secret"` / `right: "Bearer se...et"`; reverted.
+      RESIDUAL, accepted with the decision: `hide_api_key` is a prefix/suffix
+      masker, so a SHORT credential still shows most of itself (`secret` →
+      `se...et`); for real long tokens it exposes eight characters, the usual
+      convention. Tightening the egress beyond the shared local-log rule would
+      be a deliberate divergence and is not done here.
       NOW GUARDED (Rust side, 2026-08-20, commit 6c03e99c7): the three
       properties that were previously untested. `request_logging_policy_test.rs`
       pins that the host never selects `RequestLoggingPolicy::full` — it scans
@@ -3810,17 +3822,19 @@ public keys` on the first envelope that verifies, and any later different
       `opencodeRuntime.ts:69-83`'s serialized HTTP error body reaches disk. Both
       are local files rather than off-box traffic, and both are larger decisions
       than this line's wording.
-      BUCKET 2026-08-20: SPLIT, and the owner half is the one that matters.
-      BLOCKED-ON-OWNER: the home sink. OWNER: decide whether the home sink is a
-      trusted destination that may receive unmasked provider credentials, or
-      whether the raw `Authorization: Bearer …` in
-      `native/provider-gateway/internal/logging/request_logger_home.rs:35-42` is
-      a leak to close. Consequence: closing it means masking in `clone_headers`
-      (`:55-61`) or dropping the `headers` field AND rewriting the counter-test
-      `request_logger_home_test.rs:48` that currently PINS the unmasked value —
-      the counter-test is the record of the current answer, so a fix must change
-      the record deliberately, not delete it quietly. Until this is decided,
-      provider credentials leave the machine whenever the home sink is bound.
+      BUCKET 2026-08-20, REVISED: the owner half is RESOLVED and the
+      implementable half is DONE. STILL UNTICKED, deliberately, and the reason
+      is now a different one: the two TypeScript RESIDUES above. The provider
+      event NDJSON stores raw provider payloads BY DESIGN, which contradicts
+      this line's plain wording ("never log request bodies by default"), and
+      nothing yet fails if that changes. Ticking now would overstate what is
+      guarded. What remains is therefore an OWNER question about the two local
+      sinks, not an implementation gap: are local raw-payload logs inside the
+      intent of this line, or do they need bounding and a guard as well?
+      RESOLVED 2026-08-20: the home sink was decided to be an UNTRUSTED
+      destination and the leak is closed at the egress boundary, counter-test
+      rewritten and mutation-verified (see the decision block above). Provider
+      credentials no longer leave the machine in the clear.
       DONE 2026-08-20 (commit 6c03e99c7), independent of that decision: the
       three formerly untested Rust properties are now mutation-verified guards.
       This half of the line is closed; the line itself stays unticked because

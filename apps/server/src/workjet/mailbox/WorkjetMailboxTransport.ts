@@ -319,6 +319,21 @@ export interface WorkjetMailboxTransportRejections {
    * envelope, never by re-reading this one.
    */
   readonly snapshotDigest: number;
+  /**
+   * A payload whose CLAIMED addresses disagree with the ones the routing
+   * envelope's signature actually authenticates.
+   *
+   * The signature covers the routing envelope only, and the seal binds the
+   * payload to the envelope ID — neither binds the addresses INSIDE the payload
+   * to the ones outside it. Without this check a pinned peer could deliver a
+   * delegation whose `source` names a third environment (making this machine
+   * sign and relay a `result` envelope to it) or names THIS environment
+   * (making the executor's same-environment result path write an activity onto
+   * a locally addressed thread the peer chose). Both are cross-environment
+   * authority escalation by a sender that is otherwise perfectly authenticated,
+   * so the mismatch is refused before anything durable is written.
+   */
+  readonly addressMismatch: number;
 }
 
 export interface WorkjetMailboxTransportStatus {
@@ -362,6 +377,7 @@ const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
   keyBinding: 0,
   sealing: 0,
   snapshotDigest: 0,
+  addressMismatch: 0,
 };
 
 export interface WorkjetMailboxTransportShape {
@@ -467,8 +483,17 @@ const MeshPublicKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,512
  * authoritative decision is {@link WORKJET_TRANSPORT_PAYLOAD_CEILING_BYTES},
  * checked against the fully encoded wrapper so an oversized envelope is refused
  * as a typed `payload-too-large` instead of an opaque encoding failure.
+ *
+ * That authoritative ceiling is an OUTBOUND check, so this bound is the only
+ * thing standing between a hostile peer and an unbounded inbound wrapper. It is
+ * exported so a test can pin both halves: that the ceiling is enforced, and
+ * that the number itself has not been widened.
  */
-const SealedField = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,1048576}$/));
+export const WORKJET_TRANSPORT_SEALED_FIELD_MAX_CHARS = 1_048_576;
+
+const SealedField = Schema.String.check(
+  Schema.isPattern(new RegExp(`^[A-Za-z0-9_-]{1,${WORKJET_TRANSPORT_SEALED_FIELD_MAX_CHARS}}$`)),
+);
 
 /**
  * The v1 wrapper, kept ONLY so a peer that has not yet upgraded stays readable
@@ -761,6 +786,96 @@ const isBoundedMailboxError = (cause: WorkjetMailboxStoreError): cause is Workje
 
 /** A rejection is a decision about ONE envelope, never about the whole page. */
 type RejectionKind = keyof WorkjetMailboxTransportRejections;
+
+/** A mesh address reduced to the pair a routing envelope authenticates. */
+interface ClaimedAddress {
+  readonly workspaceId: string;
+  readonly environmentId: string;
+}
+
+/**
+ * The addresses and envelope id a payload CLAIMS about itself.
+ *
+ * `receipt` is the one variant whose `envelopeId` names a DIFFERENT envelope
+ * (the one being acknowledged), so it contributes no envelope-id claim.
+ */
+interface PayloadClaim {
+  readonly sources: ReadonlyArray<ClaimedAddress>;
+  readonly targets: ReadonlyArray<ClaimedAddress>;
+  readonly envelopeId: string | undefined;
+}
+
+const payloadClaim = (payload: WorkjetMailboxPayload): PayloadClaim => {
+  switch (payload._tag) {
+    case "message":
+      return {
+        sources: [payload.message.source],
+        targets: [payload.message.target],
+        envelopeId: payload.message.envelopeId,
+      };
+    case "delegation":
+      return {
+        sources: [payload.delegation.source],
+        targets: [payload.delegation.target],
+        envelopeId: payload.delegation.envelopeId,
+      };
+    case "handoff":
+      return {
+        sources: [payload.handoff.sourceThread],
+        targets: [payload.handoff.target],
+        envelopeId: payload.handoff.envelopeId,
+      };
+    case "result":
+      // `reportedBy` and the delegation's `owner` are the SAME address by
+      // construction (`WorkjetDelegationExecutor.buildResult`): the environment
+      // that executed the work is authoritative for it and is the one sending.
+      return {
+        sources: [payload.result.reportedBy, payload.result.delegation.owner],
+        targets: [],
+        envelopeId: payload.result.envelopeId,
+      };
+    case "review":
+      return {
+        sources: [payload.verdict.reviewer],
+        targets: [],
+        envelopeId: payload.verdict.envelopeId,
+      };
+    case "receipt":
+      return {
+        sources: [payload.receipt.acknowledgedBy],
+        targets: [],
+        envelopeId: undefined,
+      };
+  }
+};
+
+/**
+ * Whether the payload's own claims agree with what the routing envelope's
+ * signature authenticates.
+ *
+ * The Ed25519 signature covers the routing envelope's canonical serialization
+ * and the AES-GCM seal binds the ciphertext to the envelope id — so the payload
+ * cannot be swapped between envelopes. Neither, however, constrains what the
+ * payload SAYS about itself: the addresses inside it are attacker-chosen text
+ * until they are compared with the authenticated ones. This is that comparison.
+ */
+export const payloadMatchesEnvelope = (
+  payload: WorkjetMailboxPayload,
+  envelope: WorkjetRoutingEnvelope,
+): boolean => {
+  const claim = payloadClaim(payload);
+  if (claim.envelopeId !== undefined && claim.envelopeId !== envelope.envelopeId) return false;
+  const agrees = (address: ClaimedAddress, workspaceId: string, environmentId: string) =>
+    address.workspaceId === workspaceId && address.environmentId === environmentId;
+  return (
+    claim.sources.every((address) =>
+      agrees(address, envelope.sourceWorkspaceId, envelope.sourceEnvironmentId),
+    ) &&
+    claim.targets.every((address) =>
+      agrees(address, envelope.targetWorkspaceId, envelope.targetEnvironmentId),
+    )
+  );
+};
 
 type IngestOutcome =
   | { readonly _tag: "accepted" }
@@ -1461,6 +1576,15 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       if (Option.isNone(opened)) return { _tag: "rejected", kind: "sealing" } as const;
       const openedPayload = opened.value.payload;
       if (opened.value.sealed) bump("unsealed");
+
+      // The signature authenticates the ENVELOPE's addresses; nothing so far
+      // constrains the addresses the payload claims for itself. An authenticated
+      // peer that is free to name a different source or target speaks for
+      // environments it does not hold a key for, so the two must agree before
+      // any durable write — including the snapshot `put` immediately below.
+      if (!payloadMatchesEnvelope(openedPayload, envelope.value)) {
+        return { _tag: "rejected", kind: "addressMismatch" } as const;
+      }
 
       // A cross-machine delegation may carry its prompt snapshot bytes (or a
       // marker that they were too large to seal). Handle that BEFORE any durable

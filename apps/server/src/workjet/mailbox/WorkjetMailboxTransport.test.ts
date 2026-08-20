@@ -38,6 +38,7 @@ import {
   ctoxBaseUrlFromHealthUrl,
   makeWorkjetMailboxTransportWithSources,
   resolveCtoxEndpointFromDescriptor,
+  WORKJET_TRANSPORT_SEALED_FIELD_MAX_CHARS,
   type CtoxDaemonEndpoint,
   type WorkjetMailboxTransportSources,
 } from "./WorkjetMailboxTransport.ts";
@@ -416,16 +417,29 @@ const remoteDocument = (input: {
   /** Seal under a DIFFERENT envelope id, to exercise the AAD binding. */
   readonly sealEnvelopeId?: string;
   readonly encryptionKeyOverride?: string;
+  /**
+   * The source environment the ENVELOPE is signed for. The key binding follows
+   * it, so an override still produces a wholly self-consistent, correctly
+   * signed document — the divergence under test is always somewhere else.
+   */
+  readonly sourceEnvironmentId?: string;
+  /**
+   * The target environment the ENVELOPE is signed for, independent of the
+   * `target_environment_id` the daemon routes on. CTOX never reads the envelope,
+   * so the two disagreeing is exactly what a misaddressed envelope looks like.
+   */
+  readonly targetEnvironmentId?: string;
 }) =>
   Effect.gen(function* () {
+    const sourceEnvironmentId = input.sourceEnvironmentId ?? REMOTE_ENVIRONMENT;
     const signed = yield* input.identity.signRoutingEnvelope({
       schemaVersion: 1,
       envelopeId: input.envelopeId,
       kind: input.kind,
       sourceWorkspaceId: WORKSPACE,
-      sourceEnvironmentId: REMOTE_ENVIRONMENT,
+      sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
       targetWorkspaceId: WORKSPACE,
-      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetEnvironmentId: EnvironmentId.make(input.targetEnvironmentId ?? LOCAL_ENVIRONMENT),
       createdAt: NOW,
       expiresAt: input.expiresAt ?? EXPIRES,
     });
@@ -455,7 +469,7 @@ const remoteDocument = (input: {
       canonicalKeyBindingBytes({
         envelopeId: input.bindEnvelopeId ?? input.envelopeId,
         sourceWorkspaceId: WORKSPACE,
-        sourceEnvironmentId: input.bindEnvironmentId ?? REMOTE_ENVIRONMENT,
+        sourceEnvironmentId: input.bindEnvironmentId ?? sourceEnvironmentId,
         senderSigningKey,
         senderEncryptionKey: input.bindEncryptionKey ?? senderEncryptionKey,
       }),
@@ -2487,6 +2501,333 @@ group("WorkjetMailboxTransport thread handoff", (it) => {
 
       // At-least-once transport, exactly-once inbox effect: one offer, not two.
       assert.lengthOf(yield* store.listReceivedHandoffs(10), 1);
+    }),
+  );
+});
+
+// ==========================================================================
+// Remote dispatch authentication
+//
+// Plan invariant 12: "Authenticate remote worker dispatch and prevent
+// cross-environment authority escalation." Every test below is written so that
+// it FAILS if the property it names is removed — the signature check, the
+// locality check, the payload/envelope address binding, or the expiry gate.
+// ==========================================================================
+
+group("WorkjetMailboxTransport remote dispatch authentication", (it) => {
+  const THIRD_ENVIRONMENT = EnvironmentId.make("environment-third");
+
+  /** `NOW` plus exactly one millisecond, for the expiry boundary. */
+  const ONE_MS_AFTER_NOW = "2026-08-19T12:00:00.001Z";
+
+  const thirdAddress: WorkjetWorkerAddress = {
+    schemaVersion: 1,
+    workspaceId: WORKSPACE,
+    environmentId: THIRD_ENVIRONMENT,
+    threadId: ThreadId.make("thread-third"),
+  };
+
+  it.effect("refuses a correctly signed envelope that names another environment", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("cross-env-00001");
+      const delegation = delegationId("cross-env-00001");
+
+      // The daemon routes on its own `target_environment_id` column and never
+      // reads the envelope, so a peer (or a compromised daemon) can hand this
+      // machine an envelope whose SIGNED target is somebody else entirely. The
+      // signature is genuine; only the address is wrong.
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        targetEnvironmentId: THIRD_ENVIRONMENT,
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegation,
+          source: remoteAddress,
+          target: thirdAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.misaddressed, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)), "no inbox row");
+      assert.isTrue(Option.isNone(yield* store.getDelegation(delegation)), "no delegation row");
+      // Refused BEFORE the sender was ever pinned: an envelope this machine does
+      // not own must not teach it anything about the peer that sent it.
+      assert.strictEqual(status.counters.bindingVerified, 0);
+      assert.strictEqual(status.counters.bindingAbsent, 0);
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("refuses a delegation whose claimed source is not the signer's environment", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("claim-third-001");
+      const delegation = delegationId("claim-third-001");
+
+      // A fully authenticated peer, signing with its own pinned key for its own
+      // address — but attributing the delegation to a THIRD environment. The
+      // executor returns results to `delegation.source`, so accepting this would
+      // make this machine sign and relay an unsolicited `result` envelope to an
+      // environment that never asked for anything: a confused deputy.
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegation,
+          source: thirdAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.addressMismatch, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.isTrue(Option.isNone(yield* store.getDelegation(delegation)));
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("refuses a delegation that claims THIS environment as its source", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("claim-local-001");
+      const delegation = delegationId("claim-local-001");
+
+      // The sharper form of the same attack: naming the LOCAL environment as the
+      // source sends the executor down its same-environment result path, which
+      // appends a delegation-result activity onto whichever local thread the
+      // remote peer picked — a remote write to a thread that was never a target.
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegation,
+          source: localAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.strictEqual(status.rejections.addressMismatch, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.isTrue(Option.isNone(yield* store.getDelegation(delegation)));
+    }),
+  );
+
+  it.effect("refuses a handoff whose claimed target environment is not this one", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("claim-hoff-001");
+
+      // The handoff variant of the target claim. The envelope is addressed here
+      // and signed correctly; the handoff inside it says it belongs elsewhere.
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "handoff",
+        payload: {
+          _tag: "handoff",
+          handoff: {
+            schemaVersion: 1,
+            envelopeId: id,
+            handoffId: WorkjetHandoffId.make("wjh-abcdef0123456789"),
+            sourceThread: remoteAddress,
+            target: { schemaVersion: 1, workspaceId: WORKSPACE, environmentId: THIRD_ENVIRONMENT },
+            createdAt: NOW,
+            expiresAt: EXPIRES,
+            contextSnapshot: promptRefFor("handoff context"),
+            artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+          },
+        },
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.addressMismatch, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.lengthOf(yield* store.listReceivedHandoffs(10), 0);
+    }),
+  );
+
+  it.effect("refuses a payload lifted onto an envelope with a different id", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("claim-elsew-01");
+      const other = envelopeId("claim-elsew-02");
+
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: other,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.addressMismatch, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+    }),
+  );
+
+  it.effect("refuses a validly signed but expired envelope before it opens the seal", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("expiry-past-01");
+
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        expiresAt: EXPIRED,
+        sealToKey: local.encryptionPublicKey,
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.expired, 1);
+      assert.strictEqual(status.counters.accepted, 0);
+      // The seal was never opened and the sender was never pinned: an expired
+      // envelope buys a peer no state on this machine at all.
+      assert.strictEqual(status.counters.unsealed, 0);
+      assert.strictEqual(status.counters.bindingVerified, 0);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("treats the expiry instant itself as expired and one millisecond later as live", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const atInstant = envelopeId("expiry-edge-01");
+      const justAfter = envelopeId("expiry-edge-02");
+
+      // `expiresAt === now` is expired (the check is `<=`); `now + 1ms` is not.
+      // Pinning the boundary keeps a later `<` from silently widening the window.
+      const documents = [
+        yield* remoteDocument({
+          identity: peer,
+          envelopeId: atInstant,
+          kind: "message",
+          expiresAt: NOW,
+          payload: messagePayload({
+            envelopeId: atInstant,
+            source: remoteAddress,
+            target: localAddress,
+          }),
+        }),
+        yield* remoteDocument({
+          identity: peer,
+          envelopeId: justAfter,
+          kind: "message",
+          expiresAt: ONE_MS_AFTER_NOW,
+          payload: messagePayload({
+            envelopeId: justAfter,
+            source: remoteAddress,
+            target: localAddress,
+          }),
+        }),
+      ];
+
+      const daemon = makeFakeDaemon({ seed: documents });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.expired, 1);
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(atInstant)), "the instant is expired");
+      assert.isTrue(Option.isSome(yield* store.getInbound(justAfter)), "one ms later is live");
+    }),
+  );
+
+  it.effect("refuses a sealed field beyond the wrapper's one-mebibyte ceiling", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("oversize-in-01");
+
+      // Nothing stops a peer pushing an arbitrarily large wrapper at this
+      // machine — the 200 000-byte wire ceiling is an OUTBOUND check. The
+      // wrapper schema is the inbound bound, and it is a bound only while the
+      // sealed field stays capped.
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+      // Two halves, because either alone is defeatable: the ceiling must be
+      // ENFORCED, and the number itself must not drift upward.
+      assert.isAtMost(
+        WORKJET_TRANSPORT_SEALED_FIELD_MAX_CHARS,
+        1_048_576,
+        "the inbound sealed-field ceiling was widened",
+      );
+      const wrapper = JSON.parse(document.payload_json) as { body: unknown };
+      const oversized = {
+        ...wrapper,
+        body: { sealed: "A".repeat(WORKJET_TRANSPORT_SEALED_FIELD_MAX_CHARS + 1) },
+      };
+
+      const daemon = makeFakeDaemon({
+        seed: [{ ...document, payload_json: JSON.stringify(oversized) }],
+      });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.malformed, 1);
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
     }),
   );
 });

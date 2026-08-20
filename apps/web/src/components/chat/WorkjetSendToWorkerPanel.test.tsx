@@ -11,11 +11,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   buildWorkjetDelegateTaskInput,
+  buildWorkjetSendHandoffInput,
   buildWorkjetSendMessageInput,
   EMPTY_WORKJET_SEND_DRAFT,
   parseWorkjetScopeFiles,
   resolveWorkjetSendTarget,
   validateWorkjetSendDraft,
+  WORKJET_HANDOFF_NOTE_MAX_LENGTH,
   WORKJET_MAX_TTL_SECONDS,
   WORKJET_MESSAGE_MAX_LENGTH,
   WORKJET_MIN_TTL_SECONDS,
@@ -293,7 +295,7 @@ describe("WorkjetSendToWorkerPanelContent", () => {
   const render = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
     WorkjetSendToWorkerPanelContent(panelProps(overrides)) as InspectableElement;
 
-  it("shows both tabs and marks the active one", () => {
+  it("shows all three tabs and marks the active one", () => {
     const tabs = descendants(render().props.children).filter(
       (element) => element.props.role === "tab",
     );
@@ -301,8 +303,9 @@ describe("WorkjetSendToWorkerPanelContent", () => {
     expect(tabs.map((tab) => textContent(tab.props.children))).toEqual([
       "Message",
       "Message + Task",
+      "Hand off",
     ]);
-    expect(tabs.map((tab) => tab.props["aria-selected"])).toEqual([true, false]);
+    expect(tabs.map((tab) => tab.props["aria-selected"])).toEqual([true, false, false]);
   });
 
   it("hides every task field until the task tab is chosen", () => {
@@ -716,5 +719,149 @@ describe("WorkjetSendToWorkerPanel compact variant", () => {
     expect(trigger({ disabled: true }).trigger.props.disabled).toBe(true);
     expect(trigger({ disabled: true, compact: true }).trigger.props.disabled).toBe(true);
     expect(trigger({ compact: true }).trigger.props.disabled).toBe(false);
+  });
+});
+
+// ===============================
+// Hand off
+// ===============================
+
+const validHandoffDraft: WorkjetSendDraft = {
+  ...EMPTY_WORKJET_SEND_DRAFT,
+  tab: "handoff",
+  handoffNote: "Continue the transport slice here.",
+};
+
+describe("hand-off drafts", () => {
+  it("needs no thread id: a handoff addresses a MACHINE", () => {
+    // "This machine" is a legitimate target — it takes the local fast path —
+    // and neither mode may demand a thread id the receiving side has not made.
+    expect(validateWorkjetSendDraft(validHandoffDraft)).toEqual([]);
+    expect(
+      validateWorkjetSendDraft({
+        ...validHandoffDraft,
+        recipientMode: "environment",
+        targetEnvironmentId: "environment-b",
+      }),
+    ).toEqual([]);
+  });
+
+  it("still requires a machine when another machine is chosen", () => {
+    expect(
+      validateWorkjetSendDraft({
+        ...validHandoffDraft,
+        recipientMode: "environment",
+        targetEnvironmentId: "  ",
+      }),
+    ).toEqual(["recipient-environment-required"]);
+  });
+
+  it("treats the note as optional but bounded", () => {
+    expect(validateWorkjetSendDraft({ ...validHandoffDraft, handoffNote: "" })).toEqual([]);
+    expect(
+      validateWorkjetSendDraft({
+        ...validHandoffDraft,
+        handoffNote: "x".repeat(WORKJET_HANDOFF_NOTE_MAX_LENGTH + 1),
+      }),
+    ).toEqual(["handoff-note-too-long"]);
+  });
+
+  it("does not inherit the message requirement from the other two tabs", () => {
+    expect(validateWorkjetSendDraft({ ...validHandoffDraft, message: "" })).toEqual([]);
+    expect(validateWorkjetSendDraft({ ...EMPTY_WORKJET_SEND_DRAFT, message: "" })).toContain(
+      "message-required",
+    );
+  });
+});
+
+describe("buildWorkjetSendHandoffInput", () => {
+  it("sends only a machine and an optional note — never a snapshot or digest", () => {
+    const input = buildWorkjetSendHandoffInput({
+      draft: validHandoffDraft,
+      sourceThreadId: SOURCE_THREAD_ID,
+      activeEnvironmentId: ENVIRONMENT_ID,
+    });
+    expect(input).toEqual({
+      sourceThreadId: SOURCE_THREAD_ID,
+      targetEnvironmentId: ENVIRONMENT_ID,
+      note: "Continue the transport slice here.",
+    });
+    // The snapshot is the server's to compose; a client that could pin one
+    // could pin bytes the server never wrote.
+    expect(input).not.toHaveProperty("contextSnapshot");
+    expect(input).not.toHaveProperty("digest");
+    expect(input).not.toHaveProperty("branch");
+    expect(input).not.toHaveProperty("targetThreadId");
+  });
+
+  it("addresses the chosen remote machine and omits an empty note", () => {
+    const input = buildWorkjetSendHandoffInput({
+      draft: {
+        ...validHandoffDraft,
+        recipientMode: "environment",
+        targetEnvironmentId: " environment-b ",
+        handoffNote: "   ",
+      },
+      sourceThreadId: SOURCE_THREAD_ID,
+      activeEnvironmentId: ENVIRONMENT_ID,
+    });
+    expect(input.targetEnvironmentId).toBe("environment-b");
+    expect(input).not.toHaveProperty("note");
+  });
+});
+
+describe("WorkjetSendToWorkerPanelContent hand-off tab", () => {
+  const handoffPanel = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
+    WorkjetSendToWorkerPanelContent(panelProps({ draft: validHandoffDraft, ...overrides }));
+
+  it("offers a third tab and labels the action as a handoff", () => {
+    const tabs = descendants(handoffPanel()).filter((node) => node.props.role === "tab");
+    expect(tabs.map((tab) => textContent(tab.props.children))).toEqual([
+      "Message",
+      "Message + Task",
+      "Hand off",
+    ]);
+    const submit = descendants(handoffPanel()).find(
+      (node) => textContent(node.props.children) === "Hand off" && node.props.role !== "tab",
+    );
+    expect(submit).toBeDefined();
+  });
+
+  it("removes the thread pickers a handoff cannot answer", () => {
+    const labels = descendants(handoffPanel()).flatMap((node) =>
+      typeof node.props["aria-label"] === "string" ? [node.props["aria-label"]] : [],
+    );
+    expect(labels).not.toContain("Recipient thread");
+    expect(labels).not.toContain("Recipient thread id on the other machine");
+    expect(labels).toContain("Handoff note");
+  });
+
+  it("says what the snapshot carries and that no branch is pushed", () => {
+    const text = textContent(handoffPanel());
+    expect(text).toContain("bounded context snapshot");
+    expect(text).toContain("full history stays here");
+    expect(text).toContain("No branch is pushed");
+  });
+
+  it("explains that a remote handoff needs no thread id", () => {
+    const text = textContent(
+      handoffPanel({
+        draft: {
+          ...validHandoffDraft,
+          recipientMode: "environment",
+          targetEnvironmentId: "environment-b",
+        },
+      }),
+    );
+    expect(text).toContain("receiving side creates a new thread");
+  });
+
+  it("keeps the message tab unchanged", () => {
+    const labels = descendants(WorkjetSendToWorkerPanelContent(panelProps())).flatMap((node) =>
+      typeof node.props["aria-label"] === "string" ? [node.props["aria-label"]] : [],
+    );
+    expect(labels).toContain("Recipient thread");
+    expect(labels).toContain("Message");
+    expect(labels).not.toContain("Handoff note");
   });
 });

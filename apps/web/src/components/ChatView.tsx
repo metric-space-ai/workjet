@@ -15,6 +15,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
+  type WorkjetHandoffId,
   type TurnId,
   type KeybindingCommand,
   type WorkjetThreadConfig,
@@ -257,6 +258,7 @@ import {
 } from "./chat/WorkjetCapabilityMenu";
 import {
   buildWorkjetDelegateTaskInput,
+  buildWorkjetSendHandoffInput,
   buildWorkjetSendMessageInput,
   EMPTY_WORKJET_SEND_DRAFT,
   workjetMailboxFailureMessage,
@@ -296,6 +298,7 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
+import { WorkjetHandoffInbox } from "./WorkjetHandoffInbox";
 import { WorkjetWorkerOverview } from "./WorkjetWorkerOverview";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
@@ -1627,6 +1630,10 @@ function ChatViewContent(props: ChatViewProps) {
     useState<WorkjetSendDraft>(EMPTY_WORKJET_SEND_DRAFT);
   const [workjetSendOutcome, setWorkjetSendOutcome] = useState<WorkjetSendOutcome | null>(null);
   const [workjetSendBusy, setWorkjetSendBusy] = useState(false);
+  // The handoff whose continuation is in flight, plus the last refusal. Nothing
+  // optimistic: the inbox row changes only when the server's listing does.
+  const [workjetContinuingHandoffId, setWorkjetContinuingHandoffId] = useState<string | null>(null);
+  const [workjetHandoffError, setWorkjetHandoffError] = useState<string | null>(null);
   const sendWorkjetMailboxMessage = useAtomCommand(serverEnvironment.sendWorkjetMailboxMessage, {
     reportFailure: false,
   });
@@ -1650,6 +1657,13 @@ function ChatViewContent(props: ChatViewProps) {
     serverEnvironment.reassignDelegationWorkjetMailbox,
     { reportFailure: false },
   );
+  const sendHandoffWorkjetMailbox = useAtomCommand(serverEnvironment.sendHandoffWorkjetMailbox, {
+    reportFailure: false,
+  });
+  const acceptHandoffWorkjetMailbox = useAtomCommand(
+    serverEnvironment.acceptHandoffWorkjetMailbox,
+    { reportFailure: false },
+  );
   // The mesh roster feeds the send-to-worker recipient picker; queried only
   // while an orchestrator thread is active so ordinary threads pay nothing.
   const workjetMeshRosterQuery = useEnvironmentQuery(
@@ -1661,6 +1675,18 @@ function ChatViewContent(props: ChatViewProps) {
       : null,
   );
   const workjetMeshRoster = workjetMeshRosterQuery.data ?? null;
+  // Handoffs arrive addressed to this MACHINE, so the inbox is read per
+  // environment and only while an orchestrator thread is open — the same
+  // scoping the roster read uses, so ordinary threads pay nothing for it.
+  const workjetHandoffInboxQuery = useEnvironmentQuery(
+    workjetIsOrchestratorThread && activeThreadEnvironmentId
+      ? serverEnvironment.workjetMailboxHandoffs({
+          environmentId: activeThreadEnvironmentId,
+          input: {},
+        })
+      : null,
+  );
+  const workjetReceivedHandoffs = workjetHandoffInboxQuery.data?.handoffs ?? [];
   const allThreadShells = useThreadShells();
   // Recipients are the OTHER live threads on this machine; a thread cannot be
   // offered itself, and a deleted thread is not a destination.
@@ -1690,7 +1716,20 @@ function ChatViewContent(props: ChatViewProps) {
       // narrows its own receipt; both collapse onto the one inline outcome the
       // panel renders.
       const receipt =
-        workjetSendDraft.tab === "task"
+        workjetSendDraft.tab === "handoff"
+          ? await sendHandoffWorkjetMailbox({
+              environmentId: activeThreadEnvironmentId,
+              input: buildWorkjetSendHandoffInput(payloadArguments),
+            }).then((result) =>
+              result._tag === "Failure"
+                ? result
+                : ({
+                    status: result.value.status,
+                    envelopeId: String(result.value.envelopeId),
+                    disposition: result.value.disposition,
+                  } as const),
+            )
+          : workjetSendDraft.tab === "task"
           ? await delegateWorkjetMailboxTask({
               environmentId: activeThreadEnvironmentId,
               input: buildWorkjetDelegateTaskInput(payloadArguments),
@@ -1738,6 +1777,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadEnvironmentId,
     activeThreadId,
     delegateWorkjetMailboxTask,
+    sendHandoffWorkjetMailbox,
     sendWorkjetMailboxMessage,
     workjetSendBusy,
     workjetSendDraft,
@@ -3696,6 +3736,39 @@ function ChatViewContent(props: ChatViewProps) {
       });
     },
     [navigate],
+  );
+  // Continue a received handoff HERE. The server creates the thread, seeds it
+  // from its own stored snapshot, and takes the exactly-once claim; this only
+  // navigates to whatever it created.
+  const onContinueWorkjetHandoff = useCallback(
+    (handoffId: string) => {
+      if (!activeThreadEnvironmentId || workjetContinuingHandoffId !== null) return;
+      const environmentId = activeThreadEnvironmentId;
+      const hostThreadId = activeThreadId;
+      if (!hostThreadId) return;
+      setWorkjetContinuingHandoffId(handoffId);
+      setWorkjetHandoffError(null);
+      void (async () => {
+        const result = await acceptHandoffWorkjetMailbox({
+          environmentId,
+          input: { handoffId: handoffId as WorkjetHandoffId, hostThreadId },
+        });
+        setWorkjetContinuingHandoffId(null);
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) return;
+          setWorkjetHandoffError(workjetMailboxFailureMessage(squashAtomCommandFailure(result)));
+          return;
+        }
+        onOpenWorkjetPeerThread({ environmentId, threadId: result.value.threadId });
+      })();
+    },
+    [
+      acceptHandoffWorkjetMailbox,
+      activeThreadEnvironmentId,
+      activeThreadId,
+      onOpenWorkjetPeerThread,
+      workjetContinuingHandoffId,
+    ],
   );
   const openFileSurface = useCallback(
     (relativePath: string) => {
@@ -6644,6 +6717,23 @@ function ChatViewContent(props: ChatViewProps) {
             orchestratorThreadId={activeThreadId}
             threads={allThreadShells}
             onOpenWorker={onOpenWorkjetPeerThread}
+          />
+        ) : null}
+        {/*
+          The receiving half of the typed thread handoff: work another machine
+          offered this one. It renders nothing until something arrives, and it
+          offers "Continue here" only for a handoff whose context snapshot is
+          actually readable on this machine.
+        */}
+        {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
+          <WorkjetHandoffInbox
+            handoffs={workjetReceivedHandoffs}
+            busyHandoffId={workjetContinuingHandoffId}
+            error={workjetHandoffError}
+            onContinue={onContinueWorkjetHandoff}
+            onOpenThread={(threadId) =>
+              onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })
+            }
           />
         ) : null}
         {/* Main content area with optional plan sidebar */}

@@ -9,6 +9,7 @@ import {
   type EnvironmentId,
   type ThreadId,
   type WorkjetMailboxDelegateTaskRpcInput,
+  type WorkjetMailboxSendHandoffRpcInput,
   type WorkjetMailboxSendMessageRpcInput,
   type WorkjetMeshPeerBinding,
   type WorkjetMeshRoster,
@@ -30,6 +31,14 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
  * refuses what the contract would refuse rather than letting the user discover
  * it from a rejected RPC. Reply, review, cancel and reassign are later slices;
  * nothing here pretends to offer them.
+ *
+ * A third mode, "Hand off", sends this thread's BOUNDED CONTEXT SNAPSHOT to
+ * another machine, which continues it in a NEW thread. It differs from the
+ * other two in one structural way the form has to reflect: a handoff addresses
+ * a MACHINE, never a thread, because the receiving side has no thread yet. The
+ * snapshot itself is never composed here — the server builds it from its own
+ * projection, so this panel offers a note and nothing that could pretend to
+ * choose what travels.
  */
 
 export const WORKJET_MESSAGE_MAX_LENGTH = 4_096;
@@ -40,7 +49,9 @@ export const WORKJET_SCOPE_MAX_FILES = 256;
 export const WORKJET_MIN_TTL_SECONDS = WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS;
 export const WORKJET_MAX_TTL_SECONDS = WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS;
 
-export type WorkjetSendTab = "message" | "task";
+export const WORKJET_HANDOFF_NOTE_MAX_LENGTH = 4_096;
+
+export type WorkjetSendTab = "message" | "task" | "handoff";
 /**
  * A recipient is either a thread on THIS server, picked from the threads the
  * client already knows, or a bare environment id for a machine the mesh has
@@ -59,6 +70,8 @@ export interface WorkjetSendDraft {
   readonly scopeFiles: string;
   readonly nonGoals: string;
   readonly acceptance: string;
+  /** Operator note carried with a handoff. The snapshot carries the context. */
+  readonly handoffNote: string;
   readonly maxDepth: number;
   readonly maxReviewRounds: number;
   readonly ttlSeconds: number;
@@ -74,6 +87,7 @@ export const EMPTY_WORKJET_SEND_DRAFT: WorkjetSendDraft = {
   scopeFiles: "",
   nonGoals: "",
   acceptance: "",
+  handoffNote: "",
   maxDepth: 2,
   maxReviewRounds: 1,
   ttlSeconds: 3_600,
@@ -119,6 +133,7 @@ export type WorkjetSendFieldError =
   | "scope-too-many"
   | "acceptance-required"
   | "acceptance-too-long"
+  | "handoff-note-too-long"
   | "non-goals-required"
   | "non-goals-too-long"
   | "budget-depth-out-of-range"
@@ -138,6 +153,7 @@ export const WORKJET_SEND_FIELD_ERROR_MESSAGES: Record<WorkjetSendFieldError, st
   "scope-too-many": `A scope holds at most ${WORKJET_SCOPE_MAX_FILES} files.`,
   "acceptance-required": "Write what finished means.",
   "acceptance-too-long": `Acceptance is at most ${WORKJET_ACCEPTANCE_MAX_LENGTH} characters.`,
+  "handoff-note-too-long": `A handoff note is at most ${WORKJET_HANDOFF_NOTE_MAX_LENGTH} characters.`,
   "non-goals-required": "Write the non-goals.",
   "non-goals-too-long": `Non-goals are at most ${WORKJET_NON_GOALS_MAX_LENGTH} characters.`,
   "budget-depth-out-of-range": "Depth is between 1 and 16.",
@@ -159,6 +175,20 @@ export function validateWorkjetSendDraft(
   draft: WorkjetSendDraft,
 ): ReadonlyArray<WorkjetSendFieldError> {
   const errors: WorkjetSendFieldError[] = [];
+  // A handoff addresses a MACHINE: the receiving side creates the thread, so
+  // there is no thread id to require and none to guess. "This machine" is a
+  // legitimate handoff target — it takes the same local fast path.
+  if (draft.tab === "handoff") {
+    if (draft.recipientMode === "environment" && draft.targetEnvironmentId.trim().length === 0) {
+      errors.push("recipient-environment-required");
+    }
+    const note = boundedProse(draft.handoffNote, WORKJET_HANDOFF_NOTE_MAX_LENGTH);
+    // The note is optional: the snapshot is what carries the context, and
+    // demanding prose the server does not need would be a fake requirement.
+    if (!note.empty && note.tooLong) errors.push("handoff-note-too-long");
+    return errors;
+  }
+
   if (draft.recipientMode === "thread") {
     if (draft.targetThreadId.trim().length === 0) errors.push("recipient-thread-required");
   } else {
@@ -361,6 +391,29 @@ export function buildWorkjetDelegateTaskInput(input: {
   };
 }
 
+/**
+ * The handoff send input. It carries a target MACHINE and an optional note —
+ * and deliberately nothing else: no snapshot, no digest, no branch, no message
+ * tail. Every one of those is composed server-side from the source thread's own
+ * projection, which is what makes the digest describe bytes the server wrote.
+ */
+export function buildWorkjetSendHandoffInput(input: {
+  readonly draft: WorkjetSendDraft;
+  readonly sourceThreadId: ThreadId;
+  readonly activeEnvironmentId: EnvironmentId;
+}): WorkjetMailboxSendHandoffRpcInput {
+  const targetEnvironmentId =
+    input.draft.recipientMode === "environment"
+      ? (input.draft.targetEnvironmentId.trim() as EnvironmentId)
+      : input.activeEnvironmentId;
+  const note = input.draft.handoffNote.trim();
+  return {
+    sourceThreadId: input.sourceThreadId,
+    targetEnvironmentId,
+    ...(note.length > 0 ? { note } : {}),
+  };
+}
+
 const MAILBOX_FAILURE_REASONS: ReadonlySet<string> = new Set(WorkjetMailboxFailureReason.literals);
 
 /**
@@ -435,6 +488,9 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
   const errorOf = (error: WorkjetSendFieldError) => (errors.includes(error) ? error : undefined);
   const patch = (next: Partial<WorkjetSendDraft>) => onDraftChange({ ...draft, ...next });
   const remoteRecipient = draft.recipientMode === "environment";
+  // A handoff addresses a machine, so the thread pickers are not merely empty
+  // here — they would be a question with no answer, and are removed.
+  const handoffTab = draft.tab === "handoff";
   const peers = orderWorkjetRosterPeers(props.roster);
   // `undefined` means "not a roster peer", which is what reveals the free-text
   // environment field: a hand-typed id stays possible, because the roster only
@@ -446,7 +502,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
   return (
     <div className="flex w-full flex-col gap-2" data-workjet-send-panel={draft.tab}>
       <div className="flex items-center gap-1" role="tablist" aria-label="Workjet send mode">
-        {(["message", "task"] as const).map((tab) => (
+        {(["message", "task", "handoff"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -461,7 +517,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
                 : "text-muted-foreground hover:bg-accent/30",
             )}
           >
-            {tab === "message" ? "Message" : "Message + Task"}
+            {tab === "message" ? "Message" : tab === "task" ? "Message + Task" : "Hand off"}
           </button>
         ))}
       </div>
@@ -487,6 +543,8 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
           ))}
         </div>
         {draft.recipientMode === "thread" ? (
+          // A handoff to THIS machine needs no thread: the machine creates one.
+          handoffTab ? null : (
           <select
             aria-label="Recipient thread"
             disabled={disabled}
@@ -501,6 +559,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
               </option>
             ))}
           </select>
+          )
         ) : (
           <>
             {peers.length > 0 ? (
@@ -541,20 +600,34 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
                 onChange={(event) => patch({ targetEnvironmentId: event.target.value })}
               />
             ) : null}
-            <input
-              aria-label="Recipient thread id on the other machine"
-              placeholder="thread id"
-              disabled={disabled}
-              className={fieldClass}
-              value={draft.targetThreadId}
-              onChange={(event) => patch({ targetThreadId: event.target.value })}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              This machine cannot list another machine&rsquo;s threads, so the thread id has to be
-              typed.
-            </p>
+            {handoffTab ? (
+              <p className="text-[11px] text-muted-foreground">
+                A handoff addresses the machine. The receiving side creates a new thread, so there
+                is no thread id to enter.
+              </p>
+            ) : (
+              <>
+                <input
+                  aria-label="Recipient thread id on the other machine"
+                  placeholder="thread id"
+                  disabled={disabled}
+                  className={fieldClass}
+                  value={draft.targetThreadId}
+                  onChange={(event) => patch({ targetThreadId: event.target.value })}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  This machine cannot list another machine&rsquo;s threads, so the thread id has to
+                  be typed.
+                </p>
+              </>
+            )}
           </>
         )}
+        {handoffTab && draft.recipientMode === "thread" ? (
+          <p className="text-[11px] text-muted-foreground">
+            This machine will create a new thread from the snapshot.
+          </p>
+        ) : null}
         <ErrorNote error={errorOf("recipient-thread-required")} />
         <ErrorNote error={errorOf("recipient-environment-required")} />
         <ErrorNote error={errorOf("recipient-remote-thread-required")} />
@@ -587,19 +660,42 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-0.5">
-        <textarea
-          aria-label="Message"
-          rows={3}
-          maxLength={WORKJET_MESSAGE_MAX_LENGTH}
-          disabled={disabled}
-          className={fieldClass}
-          value={draft.message}
-          onChange={(event) => patch({ message: event.target.value })}
-        />
-        <ErrorNote error={errorOf("message-required")} />
-        <ErrorNote error={errorOf("message-too-long")} />
-      </div>
+      {handoffTab ? (
+        <div className="flex flex-col gap-0.5">
+          <textarea
+            aria-label="Handoff note"
+            rows={3}
+            placeholder="Optional note for whoever continues this"
+            maxLength={WORKJET_HANDOFF_NOTE_MAX_LENGTH}
+            disabled={disabled}
+            className={fieldClass}
+            value={draft.handoffNote}
+            onChange={(event) => patch({ handoffNote: event.target.value })}
+          />
+          <ErrorNote error={errorOf("handoff-note-too-long")} />
+          <p className="text-[11px] text-muted-foreground">
+            A bounded context snapshot is composed on this machine: the thread title, its branch,
+            and the most recent messages. The full history stays here and is not copied.
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            No branch is pushed. The snapshot names the branch so it can be fetched deliberately.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          <textarea
+            aria-label="Message"
+            rows={3}
+            maxLength={WORKJET_MESSAGE_MAX_LENGTH}
+            disabled={disabled}
+            className={fieldClass}
+            value={draft.message}
+            onChange={(event) => patch({ message: event.target.value })}
+          />
+          <ErrorNote error={errorOf("message-required")} />
+          <ErrorNote error={errorOf("message-too-long")} />
+        </div>
+      )}
 
       {draft.tab === "task" ? (
         <>
@@ -712,7 +808,15 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
         onClick={onSubmit}
         className="self-end rounded-md border border-border/60 bg-card px-2.5 py-1 text-[12px] font-medium text-foreground hover:bg-accent/50 disabled:opacity-50"
       >
-        {busy ? "Sending…" : draft.tab === "task" ? "Send task" : "Send message"}
+        {busy
+          ? handoffTab
+            ? "Handing off…"
+            : "Sending…"
+          : handoffTab
+            ? "Hand off"
+            : draft.tab === "task"
+              ? "Send task"
+              : "Send message"}
       </button>
 
       {outcome ? (

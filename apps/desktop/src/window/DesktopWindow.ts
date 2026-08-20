@@ -9,6 +9,7 @@ import * as Ref from "effect/Ref";
 import * as Electron from "electron";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
+import * as DesktopDeepLink from "../app/DesktopDeepLink.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
@@ -524,6 +525,16 @@ export const make = Effect.gen(function* () {
       }
 
       event.preventDefault();
+
+      // A ctox-desktop:// deep link is ours but is not the origin the renderer
+      // is served from — normalize it onto the renderer origin and stay in the
+      // app instead of handing it to the OS browser.
+      const deepLinkRedirect = DesktopDeepLink.resolveDesktopDeepLinkRedirect(url);
+      if (Option.isSome(deepLinkRedirect)) {
+        void window.webContents.loadURL(deepLinkRedirect.value).catch(() => undefined);
+        return;
+      }
+
       if (Option.isSome(ElectronShell.parseSafeExternalUrl(url))) {
         void runPromise(electronShell.openExternal(url));
       }

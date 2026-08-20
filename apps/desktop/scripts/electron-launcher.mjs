@@ -23,8 +23,12 @@ export const APP_DISPLAY_NAME = resolveLauncherDisplayName(isDevelopment);
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
   : "com.t3tools.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
-const LAUNCHER_VERSION = 14;
+// CTOX-branded scheme first, legacy t3code scheme kept so old links still open
+// the app. Mirrors apps/desktop/src/electron/desktopSchemes.ts.
+const APP_PROTOCOL_SCHEMES = isDevelopment
+  ? ["ctox-desktop-dev", "t3code-dev"]
+  : ["ctox-desktop", "t3code"];
+const LAUNCHER_VERSION = 15;
 const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
 export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
   repoRoot,

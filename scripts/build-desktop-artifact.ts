@@ -2100,6 +2100,17 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
+// Deep-link schemes the packaged app claims. The CTOX-branded pair is the
+// current identity; the legacy t3code pair stays claimed so links in older
+// documents keep opening the app. Kept in sync with
+// apps/desktop/src/electron/desktopSchemes.ts (DESKTOP_DEEP_LINK_SCHEMES).
+export const DESKTOP_PROTOCOL_SCHEMES = [
+  "ctox-desktop",
+  "ctox-desktop-dev",
+  "t3code",
+  "t3code-dev",
+] as const;
+
 export function resolveDesktopProductName(_version: string): string {
   return desktopPackageJson.productName ?? "CTOX Desktop App";
 }
@@ -2155,7 +2166,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "CTOX Desktop App",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: [...DESKTOP_PROTOCOL_SCHEMES],
         },
       ],
       ...(macPasskeySigning
@@ -2175,11 +2186,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // t3code:// OAuth callbacks to the app.
+      // ctox-desktop:// (and legacy t3code://) callbacks to the app.
       protocols: [
         {
           name: "CTOX Desktop App",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: [...DESKTOP_PROTOCOL_SCHEMES],
         },
       ],
       desktop: {

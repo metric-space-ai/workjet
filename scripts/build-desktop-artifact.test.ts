@@ -620,7 +620,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "CTOX Desktop App", schemes: ["t3code", "t3code-dev"] },
+        {
+          name: "CTOX Desktop App",
+          schemes: ["ctox-desktop", "ctox-desktop-dev", "t3code", "t3code-dev"],
+        },
       ]);
       for (const config of [mac, linux, win]) {
         assert.equal(config.productName, "CTOX Desktop App");
@@ -811,7 +814,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
-        { name: "CTOX Desktop App", schemes: ["t3code", "t3code-dev"] },
+        {
+          name: "CTOX Desktop App",
+          schemes: ["ctox-desktop", "ctox-desktop-dev", "t3code", "t3code-dev"],
+        },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );

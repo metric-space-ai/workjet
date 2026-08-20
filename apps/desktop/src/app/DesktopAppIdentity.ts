@@ -7,6 +7,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronProtocol from "../electron/desktopSchemes.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -128,6 +129,18 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "win32") {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
+    }
+
+    // Claim every deep-link scheme this build answers to. macOS and Linux also
+    // get this from the packaged Info.plist / .desktop entry, but Windows has
+    // no packaging-level protocol registration, and a repeat claim is a no-op
+    // everywhere. Development builds are left alone: the dev launcher owns the
+    // OS-level association (see apps/desktop/scripts/electron-launcher.mjs) and
+    // a checkout must never steal the scheme from the installed app.
+    if (environment.isPackaged) {
+      for (const scheme of ElectronProtocol.getDesktopDeepLinkSchemes(environment.isDevelopment)) {
+        yield* electronApp.setAsDefaultProtocolClient(scheme);
+      }
     }
 
     if (environment.platform === "linux") {

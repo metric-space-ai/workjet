@@ -107,7 +107,7 @@ describe("DesktopLinuxUrlHandler", () => {
     const entry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
       displayName: "T3 Code (Nightly)",
       execTarget: '/home/al ice/Apps/T3 "100%" $HOME\\x.AppImage',
-      scheme: "t3code",
+      schemes: ["ctox-desktop", "t3code"],
     });
 
     assert.include(entry, "[Desktop Entry]");
@@ -121,7 +121,7 @@ describe("DesktopLinuxUrlHandler", () => {
     );
     assert.include(entry, "NoDisplay=true");
     assert.notInclude(entry, "StartupWMClass=");
-    assert.include(entry, "MimeType=x-scheme-handler/t3code;");
+    assert.include(entry, "MimeType=x-scheme-handler/ctox-desktop;x-scheme-handler/t3code;");
   });
 
   it("carries structured context on registration errors", () => {
@@ -167,8 +167,16 @@ describe("DesktopLinuxUrlHandler", () => {
         recorded.files[0]?.content,
         'Exec="/home/alice/Applications/T3-Code.AppImage" %U',
       );
-      assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/t3code;");
+      assert.include(
+        recorded.files[0]?.content,
+        "MimeType=x-scheme-handler/ctox-desktop;x-scheme-handler/t3code;",
+      );
+      // Both the CTOX scheme and the legacy scheme are claimed by the one entry.
       assert.deepEqual(recorded.commands, [
+        {
+          command: "xdg-mime",
+          args: ["default", "t3code-url-handler.desktop", "x-scheme-handler/ctox-desktop"],
+        },
         {
           command: "xdg-mime",
           args: ["default", "t3code-url-handler.desktop", "x-scheme-handler/t3code"],

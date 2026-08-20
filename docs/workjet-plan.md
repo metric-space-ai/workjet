@@ -2733,25 +2733,208 @@ CtoxManagedDiscovery.ts:12}`, all of which are wire contracts that must stay),
 
 ## 12. Security invariants
 
-- [ ] No Business OS HTTP data bridge or fallback.
+An item here is ticked only when A TEST EXISTS THAT FAILS IF THE INVARIANT IS
+VIOLATED. Reading the code and concluding "looks right" does not qualify:
+several of these were already true in code but unguarded, and an unguarded
+invariant regresses silently. Every guard named below was mutation-verified —
+the property was inverted, the guard was observed to fail, and the inversion
+was reverted. Audited 2026-08-20.
+
+- [x] No Business OS HTTP data bridge or fallback. Four independent guards:
+      the contract's `httpDataProxy` is a `Schema.Literal(false)`, so "the
+      proxy is on" is not a representable state
+      (`packages/contracts/src/ctox.test.ts:97`, and
+      `WorkjetCrossModeProofMatrix.test.ts` → `invariant B no http data bridge`);
+      that same test source-scans the cross-mode server path for a second data
+      route; the Electron guest cancels Business OS data requests at the
+      `webRequest` layer (`CtoxGuestManager.test.ts` → "allows shell/control
+      resources but blocks Business OS HTTP data routes"); and the managed
+      launch refuses a config advertising the bridge
+      (`CtoxManagedLaunch.test.ts` → "rejects non-WebRTC and HTTP-bridge launch
+      configurations"). SCOPE NOTE: the source scan covers
+      `apps/server/src/workjet/crossmode/` only — it guards the cross-mode path,
+      not every module in the repository. The pairing FALLBACK path is guarded
+      by two independent defences (a deep key scan and the schema literal),
+      both now exercised through the real `http_bridge_available` field in
+      `CtoxInstanceRegistry.test.ts` → "rejects expired, bridged, oversized,
+      malformed-room, and dangerous URL inputs"; previously only a synthetic
+      nested `http_bridge` key was covered.
 - [ ] No raw provider, pairing, capability, sudo, or SSH secrets in Git,
       browser storage, thread events, instance registries, logs, crash reports, or
       support bundles.
-- [ ] Separate Electron session partitions for CTOX instances.
-- [ ] Default-deny guest permissions; explicitly allow only required safe
-      capabilities.
-- [ ] Deny untrusted guest navigation and window creation; open validated
-      external URLs through the OS.
-- [ ] Pin managed launch-config requests to the authenticated ctox.dev origin.
-- [ ] Require confirmation for external pairing and instance-switch links.
+      KORREKTUR 2026-08-20 — this was VIOLATED, not merely unguarded, and is
+      now partly fixed. The support-bundle gate recognized provider and pairing
+      secrets but leaked three of the five kinds this line names: an OpenSSH
+      private key passed through verbatim with or without its PEM markers
+      (a key body is mostly letters and `A` padding, so its digit density falls
+      BELOW the generic entropy threshold — the heuristic that catches an
+      opaque token is anti-correlated with real key material); a sudo password
+      answered at a `[sudo] password for <user>:` prompt missed the assignment
+      rule; and every camel-cased secret name (`capabilityToken`) escaped the
+      word-boundary anchor. Fixed in `SupportBundleRedaction.ts` with canaries
+      for all three plus a set-equality check tying the canary table to the
+      kinds this line declares (`SupportBundleRedaction.test.ts`).
+      Still unticked because two named sinks have no test: GIT (no
+      secret-scanning gate over tracked files) and BROWSER STORAGE. The other
+      sinks are guarded — logs and support bundles by the canary table and the
+      log projection, crash reports by `DesktopCrashReporting.test.ts`
+      ("attaches exactly the declared metadata keys", "gates every metadata
+      value, so no secret can reach extra"), the bundle's field surface by the
+      `SUPPORT_BUNDLE_FIELD_INVENTORY` set equality in
+      `DesktopSupportBundle.test.ts`, and instance registries by
+      `CtoxInstanceRegistry.test.ts`, which asserts the room secret and
+      capability token appear in neither the public document nor the persisted
+      file.
+- [x] Separate Electron session partitions for CTOX instances.
+      `CtoxElectronSessions.test.ts` proves deterministic per-instance
+      partitions for managed, invited, manually paired, and SSH-managed
+      sources, that each differs from the control plane and from the others,
+      that mismatched or forged descriptors are refused before Electron is
+      reached, and that clearing storage touches only the selected partition.
+- [x] Default-deny guest permissions; explicitly allow only required safe
+      capabilities. NEWLY GUARDED. The existing test enumerated four
+      permissions it expected to be denied, which left the ALLOW-LIST ITSELF
+      unguarded: adding `media` or `usb` to `ALLOWED_INSTANCE_PERMISSIONS` kept
+      every assertion green. `CtoxElectronSessions.test.ts` → "grants exactly
+      the declared permissions and denies the rest of the surface" now drives
+      Electron's whole permission surface plus unknown strings through both
+      handlers, holds the grant set to an exact declared value, requires the
+      two handlers to agree, and proves the control plane grants nothing.
+- [x] Deny untrusted guest navigation and window creation; open validated
+      external URLs through the OS. NEWLY GUARDED. The predicates were tested;
+      the WIRING was not — deleting the `setWindowOpenHandler` call or the
+      `will-navigate` `preventDefault` left every predicate assertion green
+      while the guest gained popups and free navigation. `CtoxGuestManager.test.ts`
+      → "denies every guest-opened window and routes only safe URLs to the OS"
+      drives the handlers the guest actually installed: every window is denied
+      including same-origin, same-origin navigation proceeds, foreign
+      navigation is prevented, and `file:`/`javascript:` are neither loaded nor
+      handed to the shell.
+- [x] Pin managed launch-config requests to the authenticated ctox.dev origin.
+      `CtoxManagedLaunch.test.ts` → "pins the credential-bearing launch config
+      POST to the exact control-plane origin": a `launchConfigUrl` naming a
+      foreign origin fails the launch, and the credential-bearing POST is never
+      sent (exactly one fetch happened).
+      CORRECTION — the line is accurate but INCOMPLETE, and reads as a stronger
+      claim than what holds. Two different URLs are bounded differently. The
+      launch-CONFIG request is pinned to the exact control origin
+      (`CtoxManagedLaunch.ts:258-264`). The launch TARGET the guest then loads
+      is only bounded to the control host or a subdomain of it
+      (`isTrustedManagedLaunchTarget`, `CtoxManagedLaunch.ts:169-179`), because
+      the server names its own tenant URL and forcing a desktop-chosen path
+      broke every managed activation when the deploy retired `/business-os/`.
+      That weaker bound is itself guarded — `CtoxManagedLaunch.test.ts` →
+      "refuses a launch URL outside the control plane's own domain", which also
+      covers the `ctox.dev.attacker.example` suffix-confusion case.
+- [x] Require confirmation for external pairing and instance-switch links.
+      `DesktopDeepLinkRouter` never acts on an OS link: it parses, queues
+      (capped, malformed dropped, foreign schemes left to their owners) and
+      offers it to the renderer, and `DeepLinkConfirmationDialog.test.tsx` →
+      "navigates through the supplied callback only when the user confirms" is
+      the gate that turns one into a navigation.
+      CORRECTION — the line names a surface that only partly exists. Pairing is
+      NOT reachable through an OS deep link: the `ctox-business-os-desktop://pair`
+      invite format is not among the schemes this app claims
+      (`desktopSchemes.ts:39-44`), and `importInvite` is reached only by
+      explicit entry in `CtoxModeShell`. No instance-switch deep-link route
+      exists at all. Rewrite the line to describe OS-delivered links generally
+      when this section is next revised.
 - [ ] Preserve Web Stack SSRF, redirect, content-size, and untrusted-content
       defenses.
-- [ ] Scope T3 MCP tools to the current session/thread and capability grants.
+      Untrusted-content and content-size are guarded:
+      `web_search.rs` → `model_facing_context_fences_untrusted_page_content`
+      drives adversarial fixtures and asserts hostile strings land inside the
+      fence while trusted framing stays outside;
+      `local_fixture_rejects_over_limit_body_without_truncation` and the
+      capability response budget (`capability_contract.rs` →
+      `public_search_projection_is_exact_and_honors_both_host_budgets`) cover
+      size.
+      Unticked for three reasons found on 2026-08-20:
+      (1) SSRF is INCOMPLETE, not merely untested. Three production `ureq`
+      agents in `native/web-stack/src/scholarly_search.rs`
+      (`annas_archive_search`, `augment_results_with_open_access_pdfs`,
+      `fetch_json`) do not install `SsrfResolver`; `fetch_json` fetches an
+      arbitrary caller-supplied URL. They are enumerated in
+      `KNOWN_UNRESOLVED_AGENTS` in `WebStackEgressWiring.test.ts` so the gap is
+      visible and a NEW unguarded agent fails, but they are not fixed — that
+      needs a full crate build and a decision about which configured hosts must
+      stay reachable, as `web_search.rs` already grants a self-hosted SearXNG
+      base.
+      (2) There is NO max-redirect limit anywhere in the crate; the hop cap is
+      whatever `ureq` defaults to, so a dependency bump could change it
+      unnoticed. The plan line asserts a redirect defense that does not exist as
+      such — redirect TARGETS are re-validated per hop through the resolver,
+      which is a different (and weaker) property than a bounded chain.
+      (3) The TypeScript stdout byte budget (`WebStackSearch.ts:90`,
+      `WebStackBrowser.ts:275`, `WebStackResearch.ts:421`) has no test.
+      NEWLY GUARDED in the meantime: that the SSRF policy is INSTALLED at all.
+      `egress.rs` proved the policy correct, but every HTTP fixture test
+      allow-lists `127.0.0.1`, so deleting `.resolver(...)` from an agent left
+      the entire Rust suite green. `WebStackEgressWiring.test.ts` now holds
+      every production agent to installing it.
+- [x] Scope T3 MCP tools to the current session/thread and capability grants.
+      Behaviour is covered (`McpInvocationContext.test.ts`,
+      `WorkerTool.test.ts` and `MailboxTool.test.ts` → "denies direct calls for
+      standard, worker, and missing roles", `McpHttpServer.test.ts` → tools/list
+      filtered by the authoritative bearer scope). NEWLY GUARDED: every one of
+      those tests names a tool that exists TODAY, so a new `addTool` whose
+      handler never checks scope was reachable with the whole suite green.
+      `WorkjetToolScopeGate.test.ts` scans the registrations per-registration
+      (so one guarded tool cannot vouch for four unguarded siblings), holds
+      them to a declared inventory, and pins that the enforcers still refuse and
+      that the scope still carries `threadId` and `providerSessionId`.
+      RESIDUAL: no confused-deputy test exists — nothing proves a valid
+      credential for thread A cannot act on thread B's resources. The property
+      holds structurally (tools take the thread from the invocation scope, never
+      from the payload — `WorkerDispatch.ts:139`), but that is unproven.
 - [ ] Authenticate remote worker dispatch and prevent cross-environment
       authority escalation. Require signed, end-to-end encrypted delegation
       envelopes, target-side capability checks, bounded payloads, expiry, and
       revocable environment credentials.
+      Verified open 2026-08-20. Two of the six required properties are covered
+      well — SIGNED (`WorkjetMeshIdentity.test.ts`,
+      `WorkjetMailboxTransport.test.ts` → "rejects and consumes a tampered
+      signature", plus key-binding verification) and END-TO-END ENCRYPTED
+      (ephemeral X25519 → HKDF → AES-256-GCM with the envelope id bound through
+      the AAD). The other four are not:
+      • TARGET-SIDE CAPABILITY CHECKS do not exist. Only a target ROLE check
+      does (`WorkjetDelegationExecutor.ts:857`). The parent-superset grant
+      check exists solely on the LOCAL path (`WorkerDispatch.ts:152-160`),
+      never on the remote one.
+      • REVOCABLE ENVIRONMENT CREDENTIALS do not exist in this repository.
+      There is no `revokePeer`, `forgetPeer`, or `rotateMeshKey`; key rotation
+      is treated as a rejection, not a supported revocation path. Revocation
+      is explicitly deferred to the CTOX daemon, outside this repo.
+      • BOUNDED PAYLOADS are enforced and tested OUTBOUND only (the 200 000-byte
+      wire ceiling); nothing asserts the receiver refuses an oversized wrapper
+      pushed at it, and the 1 MiB seal-field bound has no test.
+      • EXPIRY has one bundled assertion sharing a test with two unrelated
+      conditions; no test covers the boundary, or a validly-signed but expired
+      envelope being refused before unsealing.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
+      Verified open 2026-08-20. The second half holds and is guarded: bodies are
+      captured only on the error path (`response_writer_test.rs` →
+      `error_only_success_does_not_call_disabled_logger`), management routes are
+      never request-logged, and the TypeScript ACP layer logs structure only
+      (`AcpNativeLogging.test.ts` → "records bounded request and protocol
+      diagnostics without raw payloads", which feeds a canary through every
+      field and asserts it never appears).
+      The FIRST half is VIOLATED on one path. `HomeRequestLogPayload::new`
+      (`native/provider-gateway/internal/logging/request_logger_home.rs:35-43`)
+      builds its `headers` map with `clone_headers`, which filters only empty
+      names and applies NO masking — so while the `request_log` blob it ships
+      is redacted, the sibling `headers` field carries a raw
+      `Authorization: Bearer …` off-box to the home sink. This is
+      COUNTER-TESTED: `request_logger_home_test.rs` →
+      `bound_home_sink_replaces_local_request_log_output` asserts the raw token
+      IS present, so any fix breaks that test.
+      OWNER: decide whether the home sink is a trusted destination that may
+      receive unmasked credentials, or a leak to close. Not changed here —
+      flipping a deliberately pinned behaviour needs that decision first.
+      Also untested: that the host never selects `RequestLoggingPolicy::full`
+      (all seven call sites use `error_only_scoped`; switching one breaks no
+      test), that `sdk_config.request_log` defaults to `false`, and that
+      `commercial_mode` suppresses upstream capture.
 
 ## 13. Licensing policy and release gate
 

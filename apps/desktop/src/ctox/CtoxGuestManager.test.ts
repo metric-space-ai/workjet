@@ -339,7 +339,7 @@ function makeGuestHarness() {
     destroyAll: Effect.void,
     syncAllAppearance: () => Effect.void,
   });
-  const openExternal = vi.fn((_url: string) => Effect.succeed(true));
+  const openExternal = vi.fn((_rawUrl: unknown) => Effect.succeed(true));
   const electronShell = ElectronShell.ElectronShell.of({
     openExternal,
     copyText: () => Effect.void,

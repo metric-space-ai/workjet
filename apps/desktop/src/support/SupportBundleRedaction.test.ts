@@ -142,7 +142,7 @@ describe("SupportBundleRedaction gate", () => {
   }
 
   it("carries a canary for every secret kind the plan's invariant names", () => {
-    const canaryNames = new Set(SECRET_CANARIES.map((canary) => canary.name));
+    const canaryNames = new Set<string>(SECRET_CANARIES.map((canary) => canary.name));
     for (const kind of DECLARED_SECRET_KINDS) {
       const name = CANARY_KIND_COVERAGE[kind];
       assert.isTrue(

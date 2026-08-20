@@ -40,6 +40,7 @@ import {
   WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
   WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
+  WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
   WORKJET_MESH_ROSTER_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
@@ -254,6 +255,31 @@ describe("Workjet mesh roster client wiring", () => {
     // does. A shorter window is honest freshness, not a liveness signal.
     expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeGreaterThan(0);
     expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeLessThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+  });
+
+  it("polls the received-handoff inbox more eagerly than the recipient roster", () => {
+    // A handoff is work somebody is waiting on; a roster entry is not. Both are
+    // still polls, and neither claims a liveness signal the mesh cannot give.
+    expect(WORKJET_HANDOFF_INBOX_STALE_TIME_MS).toBeGreaterThan(0);
+    expect(WORKJET_HANDOFF_INBOX_STALE_TIME_MS).toBeLessThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+  });
+
+  it("keys the received-handoff inbox per environment and keeps it a read", () => {
+    const server = rosterAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetMailboxHandoffs({ environmentId: first, input: {} })).toBe(
+      server.workjetMailboxHandoffs({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetMailboxHandoffs({ environmentId: second, input: {} })).not.toBe(
+      server.workjetMailboxHandoffs({ environmentId: first, input: {} }),
+    );
+    // Listing what arrived is not permission to send or to continue one.
+    expect(server.workjetMailboxHandoffs({ environmentId: first, input: {} })).not.toBe(
+      server.sendHandoffWorkjetMailbox,
+    );
+    expect(server.sendHandoffWorkjetMailbox).not.toBe(server.acceptHandoffWorkjetMailbox);
   });
 });
 

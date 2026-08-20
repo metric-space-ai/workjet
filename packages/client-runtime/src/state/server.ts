@@ -70,6 +70,16 @@ export const WORKJET_MESH_ROSTER_STALE_TIME_MS = 30_000;
  */
 export const WORKJET_MESH_OVERVIEW_STALE_TIME_MS = 5_000;
 
+/**
+ * How long a received-handoff listing stays fresh.
+ *
+ * Shorter than the roster's: a handoff is work somebody is waiting on, so the
+ * inbox should notice an arrival within a few seconds — but it is still a poll,
+ * not a subscription, and saying so here keeps the surface from implying a
+ * liveness guarantee the mesh does not provide.
+ */
+export const WORKJET_HANDOFF_INBOX_STALE_TIME_MS = 10_000;
+
 export type ServerUpdateState =
   | { readonly status: "idle" }
   | {
@@ -859,6 +869,39 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetMailboxReassignDelegation,
     concurrency: workjetMailboxConcurrency,
   });
+  // A handoff is sent FROM a thread, so it shares the per-source-thread single
+  // flight with every other thread-scoped write.
+  const sendHandoffWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:send-handoff",
+    tag: WS_METHODS.workjetMailboxSendHandoff,
+    concurrency: workjetMailboxConcurrency,
+  });
+  // The received-handoff inbox: a bounded, redacted READ, so it is a query atom
+  // family beside the roster rather than one of the writes above.
+  const workjetMailboxHandoffs = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:mailbox:handoffs",
+    tag: WS_METHODS.workjetMailboxListHandoffs,
+    staleTimeMs: WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
+  });
+  // Accepting is single-flighted per ENVIRONMENT, not per source thread: the
+  // input names no source thread — it continues work that arrived from another
+  // machine — and two concurrent accepts on one server are exactly the race the
+  // server refuses. Serialising them here means the operator sees one honest
+  // refusal instead of a second thread being created and deleted. On success the
+  // inbox is refreshed, because the row's acceptance link changed and the
+  // listing is polled, not pushed.
+  const acceptHandoffWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:accept-handoff",
+    tag: WS_METHODS.workjetMailboxAcceptHandoff,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: (
+      { environmentId }: { readonly environmentId: EnvironmentId },
+      registry: AtomRegistry.AtomRegistry,
+    ) =>
+      Effect.sync(() => {
+        registry.refresh(workjetMailboxHandoffs({ environmentId, input: {} }));
+      }),
+  });
 
   return {
     configValueAtom,
@@ -869,6 +912,9 @@ export function createServerEnvironmentAtoms<R, E>(
     requestReviewWorkjetMailbox,
     updateDelegationWorkjetMailbox,
     reassignDelegationWorkjetMailbox,
+    sendHandoffWorkjetMailbox,
+    acceptHandoffWorkjetMailbox,
+    workjetMailboxHandoffs,
     workjetMeshRoster,
     workjetMeshOverview,
     workjetGatewayStatus,

@@ -586,7 +586,10 @@ impl CliproxyRuntimeConfig {
                 .antigravity_accounts
                 .iter()
                 .any(|account| !account.disabled)
-            && !self.api_key_accounts.iter().any(|account| !account.disabled)
+            && !self
+                .api_key_accounts
+                .iter()
+                .any(|account| !account.disabled)
         {
             return Err(RuntimeConfigError::NoEnabledAccounts);
         }
@@ -862,10 +865,7 @@ mod tests {
         }
         let mut trailing = api_key_account("zai-a", "zai");
         trailing.upstream_base_url = "https://api.z.ai/api/paas/v4/".to_owned();
-        assert_eq!(
-            trailing.base_url().unwrap(),
-            "https://api.z.ai/api/paas/v4"
-        );
+        assert_eq!(trailing.base_url().unwrap(), "https://api.z.ai/api/paas/v4");
     }
 
     #[test]
@@ -876,7 +876,10 @@ mod tests {
             claude_accounts: Vec::new(),
             codex_accounts: Vec::new(),
             antigravity_accounts: Vec::new(),
-            api_key_accounts: vec![api_key_account("zai-a", "zai"), api_key_account("xai-a", "xai")],
+            api_key_accounts: vec![
+                api_key_account("zai-a", "zai"),
+                api_key_account("xai-a", "xai"),
+            ],
         };
         let validated = config.clone().validate().unwrap();
         assert_eq!(validated.api_key_accounts().len(), 2);
@@ -884,16 +887,19 @@ mod tests {
         assert_eq!(validated.api_key_accounts_for("zai").len(), 1);
         assert_eq!(validated.api_key_candidates()[0].auth_id, "zai-a");
 
-        config.api_key_accounts.push(api_key_account("zai-a", "zai"));
+        config
+            .api_key_accounts
+            .push(api_key_account("zai-a", "zai"));
         assert_eq!(
             config.clone().validate(),
             Err(RuntimeConfigError::DuplicateAccountId)
         );
 
         config.api_key_accounts.clear();
-        config
-            .api_key_accounts
-            .push(ApiKeyAccountConfig { disabled: true, ..api_key_account("zai-a", "zai") });
+        config.api_key_accounts.push(ApiKeyAccountConfig {
+            disabled: true,
+            ..api_key_account("zai-a", "zai")
+        });
         assert_eq!(
             config.validate(),
             Err(RuntimeConfigError::NoEnabledAccounts)

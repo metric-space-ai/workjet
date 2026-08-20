@@ -118,7 +118,7 @@ fn auth_url_contains_the_complete_upstream_parameter_set() {
     assert_eq!(params.get("code_challenge").unwrap(), "fixed-challenge");
     assert_eq!(params.get("code_challenge_method").unwrap(), "S256");
     // The official client sends no `prompt`; it does send `originator`.
-    assert!(params.get("prompt").is_none());
+    assert!(!params.contains_key("prompt"));
     assert_eq!(params.get("originator").unwrap(), "codex_cli_rs");
     assert_eq!(params.get("id_token_add_organizations").unwrap(), "true");
     assert_eq!(params.get("codex_cli_simplified_flow").unwrap(), "true");

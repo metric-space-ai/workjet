@@ -42,9 +42,7 @@ use crate::sdk::pluginapi::{
 };
 use crate::sdk::translator::Registry;
 
-use super::openai_responses_handlers::{
-    OpenAiResponsesHttpResponse, OpenAiResponsesRouteResponse,
-};
+use super::openai_responses_handlers::{OpenAiResponsesHttpResponse, OpenAiResponsesRouteResponse};
 
 /// One resolved API-key account. The key is held zeroizing and is never
 /// rendered by `Debug`, logged, or returned on any route.
@@ -328,9 +326,9 @@ impl OpenAiResponsesApiKeyHandler {
             };
         }
         match self.pool.execute(&model, body).await {
-            Ok(payload) if !payload.is_empty() => {
-                OpenAiResponsesRouteResponse::Buffered(OpenAiResponsesHttpResponse::json(200, payload))
-            }
+            Ok(payload) if !payload.is_empty() => OpenAiResponsesRouteResponse::Buffered(
+                OpenAiResponsesHttpResponse::json(200, payload),
+            ),
             Ok(_) => OpenAiResponsesRouteResponse::Buffered(OpenAiResponsesHttpResponse::error(
                 502,
                 "API-key provider response translation failed",
@@ -360,9 +358,10 @@ fn pool_error(error: ApiKeyPoolError) -> OpenAiResponsesHttpResponse {
             503,
             "no API-key account is currently available for this model",
         ),
-        ApiKeyPoolError::Upstream(_) => {
-            OpenAiResponsesHttpResponse::error(502, "API-key provider upstream rejected the request")
-        }
+        ApiKeyPoolError::Upstream(_) => OpenAiResponsesHttpResponse::error(
+            502,
+            "API-key provider upstream rejected the request",
+        ),
     }
 }
 
@@ -474,7 +473,8 @@ mod tests {
                 seen: Mutex::new(Vec::new()),
                 body: br#"{"id":"chatcmpl","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#.to_vec(),
             });
-            let handler = OpenAiResponsesApiKeyHandler::new(pool(provider, base_url, client.clone()));
+            let handler =
+                OpenAiResponsesApiKeyHandler::new(pool(provider, base_url, client.clone()));
             let response = handler
                 .handle_route(br#"{"model":"test-model","input":"hi"}"#)
                 .await;
@@ -486,7 +486,10 @@ mod tests {
             };
             assert_eq!(buffered.status(), 200, "{provider}");
             let body = String::from_utf8_lossy(buffered.body()).into_owned();
-            assert!(body.contains("\"object\":\"response\""), "{provider}: {body}");
+            assert!(
+                body.contains("\"object\":\"response\""),
+                "{provider}: {body}"
+            );
             assert!(!body.contains("test-not-a-real-key"), "{provider}");
             let seen = client.seen.lock().unwrap();
             let request = seen.first().expect("an upstream request");

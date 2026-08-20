@@ -51,9 +51,7 @@ mod native {
     use tokio::sync::mpsc;
     use wreq::{Client, Proxy};
 
-    use super::{
-        ApiKeyTransportBuildError, ApiKeyTransportFailure, API_KEY_MAX_RESPONSE_BYTES,
-    };
+    use super::{ApiKeyTransportBuildError, ApiKeyTransportFailure, API_KEY_MAX_RESPONSE_BYTES};
     use crate::sdk::pluginapi::{
         HostHttpClient, HttpRequest, HttpResponse, HttpStreamChunk, HttpStreamResponse,
         PluginFuture,
@@ -103,10 +101,7 @@ mod native {
             let mut outgoing = self
                 .client
                 .request(
-                    request
-                        .method
-                        .parse()
-                        .unwrap_or(wreq::Method::POST),
+                    request.method.parse().unwrap_or(wreq::Method::POST),
                     request.url.clone(),
                 )
                 .timeout(self.timeout)
@@ -136,18 +131,10 @@ mod native {
     impl HostHttpClient for ApiKeyHttpClient {
         fn execute<'a>(&'a self, request: HttpRequest) -> PluginFuture<'a, HttpResponse> {
             Box::pin(async move {
-                let response = self
-                    .outgoing(&request)
-                    .send()
-                    .await
-                    .map_err(failure)?;
+                let response = self.outgoing(&request).send().await.map_err(failure)?;
                 let status_code = response.status().as_u16();
                 let headers = collect_headers(&response);
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(failure)?
-                    .to_vec();
+                let body = response.bytes().await.map_err(failure)?.to_vec();
                 if body.len() > API_KEY_MAX_RESPONSE_BYTES {
                     return Err(failure(()));
                 }
@@ -164,11 +151,7 @@ mod native {
             request: HttpRequest,
         ) -> PluginFuture<'a, HttpStreamResponse> {
             Box::pin(async move {
-                let response = self
-                    .outgoing(&request)
-                    .send()
-                    .await
-                    .map_err(failure)?;
+                let response = self.outgoing(&request).send().await.map_err(failure)?;
                 let status_code = response.status().as_u16();
                 let headers = collect_headers(&response);
                 let (sender, receiver) = mpsc::channel(STREAM_CHANNEL_CAPACITY);

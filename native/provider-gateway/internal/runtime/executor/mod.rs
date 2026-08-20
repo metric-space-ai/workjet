@@ -3,7 +3,6 @@
 
 pub mod aistudio_executor;
 pub mod antigravity_executor;
-pub mod api_key_transport;
 pub mod antigravity_executor_auth;
 pub mod antigravity_executor_credits;
 pub mod antigravity_executor_execute;
@@ -11,6 +10,7 @@ pub mod antigravity_executor_request;
 pub mod antigravity_executor_stream;
 pub mod antigravity_executor_tokens;
 pub mod antigravity_reasoning_replay;
+pub mod api_key_transport;
 pub mod claude_executor;
 pub mod claude_executor_auth;
 pub mod claude_executor_cloaking;
@@ -182,6 +182,11 @@ pub use antigravity_executor_request::{
     prepare_antigravity_generate_body, AntigravityRequestError,
 };
 pub use antigravity_executor_tokens::{AntigravityTokenCountError, AntigravityTokenCounter};
+#[cfg(feature = "api-key-http-transport")]
+pub use api_key_transport::ApiKeyHttpClient;
+pub use api_key_transport::{
+    ApiKeyTransportBuildError, ApiKeyTransportFailure, API_KEY_MAX_RESPONSE_BYTES,
+};
 pub use claude_executor::{
     decode_claude_response_body, parse_claude_stream_usage_line, parse_claude_usage,
     ClaudeAuthorizationHeader, ClaudeCredentialMode, ClaudeDeviceProfile, ClaudeMessagesRequest,
@@ -314,11 +319,6 @@ pub use gemini_executor::{GeminiExecutor, GeminiExecutorConfig, GeminiExecutorEr
 pub use gemini_vertex_executor::{
     GeminiVertexExecutor, VertexAccessTokenProvider, VertexExecutorError,
 };
-pub use api_key_transport::{
-    ApiKeyTransportBuildError, ApiKeyTransportFailure, API_KEY_MAX_RESPONSE_BYTES,
-};
-#[cfg(feature = "api-key-http-transport")]
-pub use api_key_transport::ApiKeyHttpClient;
 pub use openai_compat_executor::{
     normalize_openai_tool_results_text_only, openai_compat_image_endpoint_path,
     prepare_openai_compat_images_payload, rewrite_openai_compat_images_multipart_payload,

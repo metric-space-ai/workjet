@@ -18,6 +18,16 @@
   release-aktuelle VMs, nimmt nie eine VM mid-upgrade; (c) XDG_RUNTIME_DIR
   im configureFallbackLlmOnGuest-Guest-Kommando exportiert (systemctl
   --user griff sonst nie).
+- ERLEDIGT (2026-08-20 früh): welsch-Guest auf branch-main-20260820T004927Z
+  (Upgrade-Versuch 4, 31 min Build). Room-Drop-in ENTFERNT — Service und
+  CLI leiten jetzt beide aus dem Secret-Store ab und konvergieren von
+  selbst (Raum …JAlBwB4svwVArKqcYGAHig; Env-Pin hätte nach jedem Upgrade
+  wieder divergiert, da die Shell-Pairing-Config aus dem CLI-Aufruf kommt).
+  VERIFIZIERT im echten Headless-Browser (Playwright + Session-Cookie,
+  echtes WebRTC): Boot-Sequenz „CTOX wird gestartet" → „Echtzeit-
+  Synchronisierung" → „Anwendungen werden vorbereitet" → Desktop mit
+  allen Apps (Screenshot scratchpad/welsch-verify3.png, an Owner gesendet).
+  Verify-Skripte: scratchpad/verify-welsch{,2,3}.mjs (wiederverwendbar).
 - NACHTRAG (2026-08-20): Build-Versuch 3 starb an btls-sys/bindgen —
   „stddef.h not found": Warm-Pool-Images haben kein clang/libclang.
   FIX 1b (ctox main e88dd9a56): build_ctox installiert clang/libclang-dev

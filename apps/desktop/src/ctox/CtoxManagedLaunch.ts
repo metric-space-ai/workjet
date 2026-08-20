@@ -158,12 +158,30 @@ function withManagedDesktopInstance(
   };
 }
 
-function buildCanonicalLaunchUrl(
-  baseUrl: string,
-  config: Record<string, unknown>,
-): string | undefined {
+/**
+ * The launch surface is the SERVER's to name: the control plane's
+ * launch-config response carries the tenant URL the guest must load (e.g.
+ * `https://<tenant>.ctox.dev/`). Forcing a desktop-chosen path here broke
+ * every managed activation when the deploy retired `/business-os/` (HTTP 410).
+ * The desktop only bounds WHERE it will follow: https, no credentials, and a
+ * host equal to or under the control origin's host.
+ */
+function isTrustedManagedLaunchTarget(url: URL, controlOrigin: string): boolean {
   try {
-    const launchUrl = new URL("/business-os/", baseUrl);
+    const control = new URL(controlOrigin);
+    if (url.protocol !== control.protocol) return false;
+    const host = url.hostname.toLowerCase();
+    const controlHost = control.hostname.toLowerCase();
+    return host === controlHost || host.endsWith(`.${controlHost}`);
+  } catch {
+    return false;
+  }
+}
+
+function buildCanonicalLaunchUrl(target: URL, config: Record<string, unknown>): string | undefined {
+  try {
+    const launchUrl = new URL(target.href);
+    launchUrl.hash = "";
     launchUrl.searchParams.set(
       "ctox_config",
       Buffer.from(encodeUnknownJson(config), "utf8").toString("base64url"),
@@ -285,14 +303,17 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         serverLaunchPath: serverLaunchUrl.pathname,
         pairingRedacted: containsRedactedPairingSecret(pairingConfig),
       });
+      if (!isTrustedManagedLaunchTarget(serverLaunchUrl, controlOrigin)) {
+        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
+      }
       const launchUrl = buildCanonicalLaunchUrl(
-        baseUrl,
+        serverLaunchUrl,
         withManagedDesktopInstance(webRtcConfig, descriptor),
       );
       if (launchUrl === undefined) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       }
-      return { launchUrl, launchOrigin: controlOrigin };
+      return { launchUrl, launchOrigin: serverLaunchUrl.origin };
     });
 
     return CtoxManagedLaunch.of({ launch });

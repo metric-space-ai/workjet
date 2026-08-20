@@ -61,71 +61,71 @@ function harness(fetchImpl: ReturnType<typeof vi.fn>, baseUrl = "https://ctox.de
 }
 
 describe("CtoxManagedLaunch", () => {
-  it.effect(
-    "posts the tenant launch handshake and emits only the canonical Business OS shell",
-    () => {
-      const calls: Array<{ url: string; init: RequestInit }> = [];
-      const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
-        calls.push({ url, init });
-        if (url.endsWith("/api/desktop/launch-token")) {
-          return response({ launchConfigUrl: "https://ctox.dev/api/desktop/launch/token_1" });
-        }
-        return response({
-          launchUrl: "https://skf.ctox.dev/legacy",
-          pairingConfig: {
-            transport: "webrtc",
-            http_bridge_available: false,
-            sync_room: "ctox-business-os:skf",
-            session: { capability_token: "native-secret" },
-          },
-        });
+  it.effect("posts the tenant launch handshake and loads the tenant URL the server names", () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      if (url.endsWith("/api/desktop/launch-token")) {
+        return response({ launchConfigUrl: "https://ctox.dev/api/desktop/launch/token_1" });
+      }
+      return response({
+        launchUrl: "https://skf.ctox.dev/legacy",
+        pairingConfig: {
+          transport: "webrtc",
+          http_bridge_available: false,
+          sync_room: "ctox-business-os:skf",
+          session: { capability_token: "native-secret" },
+        },
       });
+    });
 
-      return Effect.gen(function* () {
-        const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
-        const launch = yield* launches.launch(descriptor);
-        const url = new URL(launch.launchUrl);
-        const config = decodeConfig(launch.launchUrl);
+    return Effect.gen(function* () {
+      const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      const launch = yield* launches.launch(descriptor);
+      const url = new URL(launch.launchUrl);
+      const config = decodeConfig(launch.launchUrl);
 
-        assert.equal(url.origin, "https://ctox.dev");
-        assert.equal(url.pathname, "/business-os/");
-        assert.equal(launch.launchOrigin, "https://ctox.dev");
-        assert.deepEqual(config.desktop_instance, {
-          id: descriptor.id,
-          source: "ctox_dev",
-          display_name: descriptor.displayName,
-          domain: descriptor.domain,
-        });
-        assert.deepEqual(config.desktop_managed_auth, { required: true });
-        assert.equal(config.transport, "webrtc");
-        assert.equal(config.http_bridge_available, false);
-        assert.deepEqual(calls, [
-          {
-            url: "https://ctox.dev/api/desktop/launch-token",
-            init: {
-              method: "POST",
-              credentials: "include",
-              cache: "no-store",
-              headers: {
-                "content-type": "application/json",
-                "x-ctox-desktop-client": "ctox-business-os-desktop",
-              },
-              body: encodeUnknownJson({ tenantId: "tenant_skf" }),
+      // The SERVER names the launch surface; the desktop only bounds it to
+      // the control host's own domain. Forcing a desktop-chosen path here
+      // is what broke every managed activation when /business-os/ retired.
+      assert.equal(url.origin, "https://skf.ctox.dev");
+      assert.equal(url.pathname, "/legacy");
+      assert.equal(launch.launchOrigin, "https://skf.ctox.dev");
+      assert.deepEqual(config.desktop_instance, {
+        id: descriptor.id,
+        source: "ctox_dev",
+        display_name: descriptor.displayName,
+        domain: descriptor.domain,
+      });
+      assert.deepEqual(config.desktop_managed_auth, { required: true });
+      assert.equal(config.transport, "webrtc");
+      assert.equal(config.http_bridge_available, false);
+      assert.deepEqual(calls, [
+        {
+          url: "https://ctox.dev/api/desktop/launch-token",
+          init: {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-ctox-desktop-client": "ctox-business-os-desktop",
             },
+            body: encodeUnknownJson({ tenantId: "tenant_skf" }),
           },
-          {
-            url: "https://ctox.dev/api/desktop/launch/token_1",
-            init: {
-              method: "POST",
-              credentials: "include",
-              cache: "no-store",
-              headers: { "x-ctox-desktop-client": "ctox-business-os-desktop" },
-            },
+        },
+        {
+          url: "https://ctox.dev/api/desktop/launch/token_1",
+          init: {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "x-ctox-desktop-client": "ctox-business-os-desktop" },
           },
-        ]);
-      }).pipe(Effect.provide(harness(fetchImpl)));
-    },
-  );
+        },
+      ]);
+    }).pipe(Effect.provide(harness(fetchImpl)));
+  });
 
   it.effect("requests a fresh launch exchange on every activation", () => {
     let epoch = 0;
@@ -220,6 +220,31 @@ describe("CtoxManagedLaunch", () => {
       assert.equal(config.sync_room, "real-room");
       assert.equal(config.signaling_room_password, "real-secret");
       assert.notInclude(launch.launchUrl, "<redacted>");
+    }).pipe(Effect.provide(harness(fetchImpl)));
+  });
+
+  it.effect("refuses a launch URL outside the control plane's own domain", () => {
+    // Following the server's URL is only safe while it stays on the control
+    // host or a subdomain of it. A compromised or misconfigured response
+    // naming a foreign host must fail the launch, not open it.
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/desktop/launch-token")) {
+        return response({ launchConfigUrl: "https://ctox.dev/api/desktop/launch/token_1" });
+      }
+      return response({
+        launchUrl: "https://ctox.dev.attacker.example/business-os/",
+        pairingConfig: {
+          transport: "webrtc",
+          http_bridge_available: false,
+          sync_room: "ctox-business-os:skf",
+        },
+      });
+    });
+
+    return Effect.gen(function* () {
+      const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      const result = yield* launches.launch(descriptor).pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
     }).pipe(Effect.provide(harness(fetchImpl)));
   });
 });

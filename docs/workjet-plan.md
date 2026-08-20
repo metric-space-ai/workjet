@@ -2849,24 +2849,53 @@ was reverted. Audited 2026-08-20.
       capability response budget (`capability_contract.rs` →
       `public_search_projection_is_exact_and_honors_both_host_budgets`) cover
       size.
-      Unticked for three reasons found on 2026-08-20:
-      (1) SSRF is INCOMPLETE, not merely untested. Three production `ureq`
-      agents in `native/web-stack/src/scholarly_search.rs`
+      Unticked for one remaining reason. Two of the three reasons found on
+      2026-08-20 were CLOSED the same day:
+      (1) CLOSED 2026-08-20. SSRF was INCOMPLETE, not merely untested: three
+      production `ureq` agents in `native/web-stack/src/scholarly_search.rs`
       (`annas_archive_search`, `augment_results_with_open_access_pdfs`,
-      `fetch_json`) do not install `SsrfResolver`; `fetch_json` fetches an
-      arbitrary caller-supplied URL. They are enumerated in
-      `KNOWN_UNRESOLVED_AGENTS` in `WebStackEgressWiring.test.ts` so the gap is
-      visible and a NEW unguarded agent fails, but they are not fixed — that
-      needs a full crate build and a decision about which configured hosts must
-      stay reachable, as `web_search.rs` already grants a self-hosted SearXNG
-      base.
-      (2) There is NO max-redirect limit anywhere in the crate; the hop cap is
-      whatever `ureq` defaults to, so a dependency bump could change it
-      unnoticed. The plan line asserts a redirect defense that does not exist as
-      such — redirect TARGETS are re-validated per hop through the resolver,
-      which is a different (and weaker) property than a bounded chain.
-      (3) The TypeScript stdout byte budget (`WebStackSearch.ts:90`,
-      `WebStackBrowser.ts:275`, `WebStackResearch.ts:421`) has no test.
+      `fetch_json`) did not install `SsrfResolver`, and `fetch_json` fetches a
+      caller-assembled URL. All three now install
+      `SsrfResolver::new(crate::egress::allow_hosts_from_context(context))`,
+      and `fetch_json` additionally runs `assert_fetchable_url` before any I/O.
+      HOST-REACHABILITY DECISION: the public Anna's Archive, Unpaywall,
+      Crossref, OpenAlex, and Semantic Scholar defaults are all public
+      addresses and are unaffected; an operator who points a base URL at an
+      internally hosted mirror must now also name that host in
+      `CTOX_WEB_EGRESS_ALLOW` — the same exemption `web_search.rs` grants a
+      self-hosted SearXNG base. `KNOWN_UNRESOLVED_AGENTS` in
+      `WebStackEgressWiring.test.ts` is consequently EMPTY, and
+      `scholarly_search.rs` joined that test's by-name must-resolve list.
+      Guarded by four new `scholarly_search.rs` tests
+      (`annas_archive_refuses_loopback_link_local_and_private_bases`,
+      `annas_archive_refuses_non_http_bases_before_any_io`,
+      `unpaywall_agent_refuses_loopback_link_local_and_private_hosts`,
+      `open_access_augmentation_never_opens_a_connection_to_unlisted_loopback`,
+      `fetch_json_refuses_loopback_link_local_private_and_non_http_urls`) that
+      cover loopback, `169.254.169.254`, and each RFC1918 block; the
+      augmentation one asserts the mock listener's accept backlog is EMPTY, so
+      it fails on a connection being opened at all rather than on an error
+      string. All mutation-verified.
+      (2) CLOSED 2026-08-20, with a KORREKTUR to the original wording. "There is
+      NO max-redirect limit anywhere in the crate" was imprecise: the crate sets
+      no explicit `.redirects(n)`, but every `ureq` agent inherits ureq's
+      default cap of 5 (`ureq-2.12.1/src/agent.rs:262`, and `unit.rs:168` errors
+      once `history.len() + 1 >= redirects`). The real hole was the stated one —
+      nothing proved it, so a dependency bump could change it unnoticed. Pinned
+      by `egress.rs` →
+      `crate_shaped_agents_bound_the_redirect_chain_at_five_requests`, which
+      drives a self-redirecting loopback fixture through a crate-shaped agent
+      and asserts exactly five requests plus `reached max redirects (5)`.
+      Behaviour deliberately UNCHANGED. FOLLOW-UP (optional, not done): making
+      the cap explicit rather than inherited means adding `.redirects(n)` to
+      every builder — `web_search.rs` `build_agent_with_timeout`,
+      `deep_research.rs` `fetch_text`, `scholarly_search.rs`
+      `annas_archive_search` / `build_unpaywall_agent` / `fetch_json`, and the
+      six `sources/*.rs` `build_agent()` fns. Skipped here as behaviour-neutral
+      churn across nine call sites.
+      (3) STILL OPEN: the TypeScript stdout byte budget (`WebStackSearch.ts:90`,
+      `WebStackBrowser.ts:275`, `WebStackResearch.ts:421`) has no test. This is
+      the only reason the box is still unticked.
       NEWLY GUARDED in the meantime: that the SSRF policy is INSTALLED at all.
       `egress.rs` proved the policy correct, but every HTTP fixture test
       allow-lists `127.0.0.1`, so deleting `.resolver(...)` from an agent left
@@ -2909,7 +2938,7 @@ was reverted. Audited 2026-08-20.
       • CAN A PEER ESCALATE BY CLAIMING AN ENVIRONMENT ID IT DOES NOT OWN? Only
       at FIRST CONTACT, and that limit is now exactly as narrow as it was
       described. Trust-on-first-use pins `(workspaceId, environmentId) → both
-    public keys` on the first envelope that verifies, and any later different
+  public keys` on the first envelope that verifies, and any later different
       key is refused, audited, and consumed
       (`acceptPeerKey`, `WorkjetMailboxTransport.ts:907-918`;
       `WorkjetMailboxTransport.test.ts` → "audits a conflicting re-pin attempt
@@ -3237,6 +3266,13 @@ three cargo target dirs). `vp` is not on PATH — use `./node_modules/.bin/vp`.
   **463 passed, 0 failed, 23 ignored** (lib 454, `capability_contract` 2,
   `scrape_target_fixtures` 6, one long integration test). SSRF is the 7
   `src/egress.rs` tests plus `apps/server/.../WebStackEgressWiring.test.ts`.
+  UPDATED 2026-08-20 after the scholarly-agent SSRF fix: `cargo test
+--all-features` (default threads, `CARGO_TARGET_DIR=/Volumes/tmp/workjet/
+cargo-target-ss`) → exit 0, **469 passed, 0 failed, 23 ignored** (lib 460,
+  `capability_contract` 2, `scrape_target_fixtures` 6, one long integration
+  test). SSRF is now 8 `src/egress.rs` tests (the eighth pins the redirect hop
+  cap) plus 5 new `src/scholarly_search.rs` egress tests plus the TS wiring
+  gate, whose `KNOWN_UNRESOLVED_AGENTS` list is empty.
   `cargo fmt --check` and
   `cargo clippy --all-targets --all-features -- -D warnings`
   both PASS. **search/browser/E2E NOT-RUNNABLE-HERE**:

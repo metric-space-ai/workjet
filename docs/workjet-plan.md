@@ -1045,15 +1045,39 @@ Schema.Boolean (default false), executableOverride? }`
       orchestrator overview is closed. Verified 2026-08-19: the sidebar does no
       role-based filtering; a test asserts worker threads stay in the source
       thread list independent of the overview.
-- [ ] Migrate existing Swift Workjet configurations through a one-shot,
-      inspectable import/export path; after parity is proven, CTOX Code must
-      not require the Swift runtime or its local store.
-      Verified open 2026-08-20: nothing exists. There is no import/export RPC
-      in `packages/contracts/src/rpc.ts`, no importer/exporter module anywhere
-      under `apps/` or `packages/`, and no Swift source or Swift Workjet store
-      in the tree. The only migration machinery is the in-schema
-      `migrateWorkjetLlmRouteV1ToV2`, which migrates T3's OWN v1 config to v2,
-      not a Swift document.
+- [~] Migrate existing Swift Workjet configurations through a one-shot,
+  inspectable import/export path; after parity is proven, CTOX Code must
+  not require the Swift runtime or its local store. Reader, mapping and
+  runner done 2026-08-20 (commits `e89873c6a`, `b23729f49`, `a6b2c5e1b`,
+  47 tests). The format was NOT guessed: the real
+  `~/Library/Application Support/Workjet/config.v1.json` (62 KB) plus six
+  dated backups were read READ-ONLY, and the complete key universe and
+  every enum raw value were recovered from the shipped app binary's
+  CodingKeys tables — two keys exist there that appear in no live
+  document, which is why the sample alone was not enough. All seven real
+  documents decode with ZERO unknown fields. The reader fails closed and
+  never silently drops: 74 source leaves are each mapped, folded into the
+  managed prompt, or dropped WITH a reason (46), and 5 sourceless
+  destinations state their default. A wrong first assumption
+  (`reasoningEffort: ""` meaning automatic) was caught by the real data —
+  the key is simply absent — which is what fail-closed is for. DECISIVE
+  FINDING: computer→environment, provider→gateway-account and pool→route
+  cannot be carried over at all (the Swift ids are UUIDs and CLIProxy
+  hashes; no value would ever resolve), so they are operator BINDINGS and
+  unbound records land in `pending` instead of a silent partial import —
+  on the real config: 3 computers, 7 providers, 4 pools, 12 workers. The
+  runner lives server-side because the authority is `settings.workjet` in
+  each environment's own settings and the legacy file belongs to the
+  machine that server runs on. Remaining: no offer surface is wired — the
+  service exposes decision/offer/accept/decline but no RPC or settings
+  panel calls it yet, and `make` resolves the decision eagerly, which
+  wants a look before it goes on the boot path.
+  Verified open 2026-08-20: nothing exists. There is no import/export RPC
+  in `packages/contracts/src/rpc.ts`, no importer/exporter module anywhere
+  under `apps/` or `packages/`, and no Swift source or Swift Workjet store
+  in the tree. The only migration machinery is the in-schema
+  `migrateWorkjetLlmRouteV1ToV2`, which migrates T3's OWN v1 config to v2,
+  not a Swift document.
 - [x] Compile deterministic Workjet role instructions through the existing
       managed-prompt path used by Codex, Claude Code, and Grok.
 - [x] Keep user/developer instructions clearly separated from managed Workjet
@@ -1197,7 +1221,7 @@ Schema.Boolean (default false), executableOverride? }`
   check, `thread.workjet-config.set` being a wholly separate case. Workers
   keep an explicit per-worker combination:
   `apps/server/src/workjet/WorkerDispatch.ts:162` (`input.modelSelection ??
-  parent.modelSelection`) applied to both create and turn-start, proven by
+parent.modelSelection`) applied to both create and turn-start, proven by
   `WorkerDispatch.test.ts` "accepts a capability subset and canonical model
   override including options". Remaining delta: no test asserts the
   PICKER itself stays rendered and enabled on an orchestrator or worker
@@ -1573,7 +1597,7 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       even with two delivered delegations", with "treats both a running latest
       turn and a live session as an active turn" defining busy; ordering per
       delegation — `listDelegationRowsByState` scans `ORDER BY
-  state_changed_at_ms ASC, delegation_id ASC`
+state_changed_at_ms ASC, delegation_id ASC`
       (`WorkjetMailboxStore.ts:1816`) and the cycle scans `running` before any
       accept moves a fresh row into `running`. Bounded at 32 rows per state per
       cycle, 10 s cadence, 60 s cycle timeout, with a resilient per-row scan so

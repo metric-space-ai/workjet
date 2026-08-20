@@ -18,6 +18,12 @@
   release-aktuelle VMs, nimmt nie eine VM mid-upgrade; (c) XDG_RUNTIME_DIR
   im configureFallbackLlmOnGuest-Guest-Kommando exportiert (systemctl
   --user griff sonst nie).
+- NACHTRAG (2026-08-20): Build-Versuch 3 starb an btls-sys/bindgen —
+  „stddef.h not found": Warm-Pool-Images haben kein clang/libclang.
+  FIX 1b (ctox main e88dd9a56): build_ctox installiert clang/libclang-dev
+  best-effort via sudo -n auf Linux. Auf dem welsch-Guest manuell
+  installiert (clang 18.1.3), Versuch 4 läuft (~/upgrade-dev4.log,
+  Monitor-Task bv0i73yl0).
 - welsch-Guest (Port 22017, NICHT 22003): rustup manuell installiert
   (cargo 1.97.1), `ctox upgrade --dev` läuft detached (setsid,
   ~/upgrade-dev3.log, CTOX_SKIP_OPTIONAL_RUNTIME_BUILDS=1); Hintergrund-

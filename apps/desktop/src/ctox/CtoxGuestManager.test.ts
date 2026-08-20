@@ -150,6 +150,8 @@ function makeGuestHarness() {
     readonly finishLoad: () => void;
     readonly listenerCount: (event: string) => number;
     readonly refresh: (...args: Array<unknown>) => void;
+    readonly openWindow: (url: string) => { readonly action: string };
+    readonly willNavigate: (url: string) => boolean;
   }> = [];
   const createView = vi.fn((webPreferences: CtoxGuestManager.CtoxGuestWebPreferences) => {
     assert.deepEqual(webPreferences, {
@@ -214,6 +216,18 @@ function makeGuestHarness() {
       finishLoad: () => emit("did-finish-load"),
       listenerCount: (event) => listeners.get(event)?.size ?? 0,
       refresh: (...args) => refreshHandler?.({}, ...args),
+      /** The handler the guest installed, so a test can ask it for a verdict. */
+      openWindow: (url: string) => {
+        const handler = webContents.setWindowOpenHandler.mock.calls[0]?.[0];
+        assert.isFunction(handler);
+        return handler({ url }) as { readonly action: string };
+      },
+      /** Drives `will-navigate` and reports whether the guest blocked it. */
+      willNavigate: (url: string) => {
+        const preventDefault = vi.fn();
+        emit("will-navigate", { preventDefault }, url);
+        return preventDefault.mock.calls.length > 0;
+      },
     });
     return view;
   });
@@ -325,8 +339,9 @@ function makeGuestHarness() {
     destroyAll: Effect.void,
     syncAllAppearance: () => Effect.void,
   });
+  const openExternal = vi.fn((_url: string) => Effect.succeed(true));
   const electronShell = ElectronShell.ElectronShell.of({
-    openExternal: () => Effect.succeed(true),
+    openExternal,
     copyText: () => Effect.void,
   });
   const dependencies = Layer.mergeAll(
@@ -349,6 +364,7 @@ function makeGuestHarness() {
     instance,
     launch,
     layer,
+    openExternal,
     removeChildView,
     closeForwards,
     resolveLocalLaunch,
@@ -1079,6 +1095,83 @@ describe("CtoxGuestManager", () => {
         { id: "long", title: "Long", category: "c".repeat(64) },
       ]);
       assert.equal(observation.activeModuleId, "tickets");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  /**
+   * THE NAVIGATION POLICY IS WIRED, NOT MERELY WRITTEN
+   * (docs/workjet-plan.md → "Security invariants": "Deny untrusted guest
+   * navigation and window creation; open validated external URLs through the
+   * OS").
+   *
+   * The predicate test at the bottom of this file proves
+   * `isAllowedCtoxTopFrameNavigation` and `isSafeCtoxExternalUrl` answer
+   * correctly. It proves nothing about whether the guest ASKS them: deleting
+   * the `setWindowOpenHandler` call or the `will-navigate` listener leaves
+   * every predicate assertion green while a guest gains the ability to open
+   * popups and navigate itself anywhere. This drives the handlers the guest
+   * actually installed.
+   */
+  it.effect("denies every guest-opened window and routes only safe URLs to the OS", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      const guest = harness.views[0];
+      assert.isDefined(guest);
+
+      // 1. WINDOW CREATION IS ALWAYS DENIED — including for the guest's OWN
+      //    origin. A popup is never rendered in-app, whatever it points at.
+      for (const url of [
+        "https://ctox.dev/business-os/popup",
+        "https://docs.ctox.dev/help",
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "not a url",
+      ]) {
+        assert.deepEqual(
+          guest.openWindow(url),
+          { action: "deny" },
+          `the guest was allowed to open a window for ${url}`,
+        );
+      }
+
+      // 2. ONLY THE SAFE ONES REACHED THE OS. `file:` and `javascript:` must
+      //    not be handed to the shell — that is the whole point of validating
+      //    before delegating.
+      assert.deepEqual(
+        harness.openExternal.mock.calls.map(([url]) => url),
+        ["https://ctox.dev/business-os/popup", "https://docs.ctox.dev/help"],
+      );
+      harness.openExternal.mockClear();
+
+      // 3. SAME-ORIGIN TOP-FRAME NAVIGATION PROCEEDS, untouched.
+      assert.isFalse(
+        guest.willNavigate("https://ctox.dev/business-os/deals"),
+        "the guest was blocked from navigating inside its own launch origin",
+      );
+      expect(harness.openExternal).not.toHaveBeenCalled();
+
+      // 4. FOREIGN NAVIGATION IS PREVENTED, and a safe one leaves through the
+      //    OS instead of loading in the guest.
+      assert.isTrue(
+        guest.willNavigate("https://evil.example/steal"),
+        "the guest navigated to a foreign origin",
+      );
+      assert.deepEqual(
+        harness.openExternal.mock.calls.map(([url]) => url),
+        ["https://evil.example/steal"],
+      );
+      harness.openExternal.mockClear();
+
+      // 5. A DANGEROUS SCHEME IS PREVENTED AND NOT DELEGATED EITHER.
+      for (const url of ["file:///etc/passwd", "javascript:alert(1)"]) {
+        assert.isTrue(guest.willNavigate(url), `the guest navigated to ${url}`);
+      }
+      expect(harness.openExternal).not.toHaveBeenCalled();
     }).pipe(Effect.provide(harness.layer));
   });
 

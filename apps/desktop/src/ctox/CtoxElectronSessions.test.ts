@@ -252,6 +252,92 @@ describe("CtoxElectronSessions", () => {
     }).pipe(Effect.provide(CtoxElectronSessions.layer)),
   );
 
+  /**
+   * DEFAULT-DENY, PROVED AGAINST THE WHOLE PERMISSION SURFACE
+   * (docs/workjet-plan.md → "Security invariants": "Default-deny guest
+   * permissions; explicitly allow only required safe capabilities").
+   *
+   * The test above enumerates a handful of permissions it expects to be
+   * denied, which proves those four are denied and nothing more: an entry
+   * added to `ALLOWED_INSTANCE_PERMISSIONS` — `media`, `geolocation`, `usb` —
+   * would keep every existing assertion green. So this drives EVERY permission
+   * string Electron can hand the handler, plus unknown strings, and holds the
+   * grant set to an exact declared value. Widening the allow-list is then a
+   * visible edit to this list, not a silent one.
+   *
+   * Mirrors the capability conformance gate's declared allow-list of
+   * differences: the tolerated set is data the test owns, not an inference.
+   */
+  const ELECTRON_PERMISSION_SURFACE = [
+    "clipboard-read",
+    "clipboard-sanitized-write",
+    "display-capture",
+    "fullscreen",
+    "geolocation",
+    "hid",
+    "idle-detection",
+    "keyboardLock",
+    "media",
+    "mediaKeySystem",
+    "midi",
+    "midiSysex",
+    "notifications",
+    "openExternal",
+    "pointerLock",
+    "serial",
+    "speaker-selection",
+    "storage-access",
+    "top-level-storage-access",
+    "usb",
+    "window-management",
+    "unknown",
+    // Not Electron names: a permission this build has never heard of must be
+    // denied by the shape of the policy, not by having been listed here.
+    "future-permission-electron-adds-next-release",
+    "",
+  ] as const;
+
+  /** The ONLY permissions a CTOX guest may ever hold. */
+  const DECLARED_GUEST_GRANTS = ["notifications", "clipboard-sanitized-write"] as const;
+
+  it.effect("grants exactly the declared permissions and denies the rest of the surface", () =>
+    Effect.gen(function* () {
+      const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+      const instanceDescriptor = descriptor();
+      yield* sessions.account;
+      yield* sessions.instance(instanceDescriptor);
+
+      const instancePartition = partitionOf(instanceDescriptor);
+      const grantedOnRequest = ELECTRON_PERMISSION_SURFACE.filter((permission) =>
+        requestDecision(instancePartition, permission),
+      );
+      const grantedOnCheck = ELECTRON_PERMISSION_SURFACE.filter((permission) =>
+        checkDecision(instancePartition, permission),
+      );
+
+      assert.deepEqual(
+        [...grantedOnRequest].sort(),
+        [...DECLARED_GUEST_GRANTS].sort(),
+        "the guest permission allow-list changed; widen DECLARED_GUEST_GRANTS deliberately or fix the policy",
+      );
+      // The two handlers must not disagree: a permission granted on check but
+      // denied on request (or the reverse) is a policy with two answers.
+      assert.deepEqual([...grantedOnCheck].sort(), [...grantedOnRequest].sort());
+
+      // The control plane holds NOTHING, across the same full surface.
+      for (const permission of ELECTRON_PERMISSION_SURFACE) {
+        assert.isFalse(
+          requestDecision(CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION, permission),
+          `the control plane granted ${permission} on request`,
+        );
+        assert.isFalse(
+          checkDecision(CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION, permission),
+          `the control plane granted ${permission} on check`,
+        );
+      }
+    }).pipe(Effect.provide(CtoxElectronSessions.layer)),
+  );
+
   it.effect("clears storage and cache only in the selected instance partition", () =>
     Effect.gen(function* () {
       const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;

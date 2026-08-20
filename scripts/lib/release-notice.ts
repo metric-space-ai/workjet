@@ -350,7 +350,7 @@ export const VENDORED_NATIVE_COMPONENTS: readonly VendoredComponent[] = [
       "native/provider-gateway/LICENSE.upstream",
     ],
     upstream:
-      "First-party Workjet host wrapper around the provider gateway; the executable statically links native/provider-gateway, so that crate's notices apply to it. It is not packaged inside the desktop artifact, but standalone executables ARE published under provider-gateway-host-v* release tags, and .github/workflows/provider-gateway-host-release.yml copies these license texts and this NOTICE into every such release (see docs/workjet-provider-gateway-host-artifacts.md).",
+      "First-party Workjet host wrapper around the provider gateway; the executable statically links native/provider-gateway, so that crate's notices apply to it. It is not packaged inside the desktop artifact, but standalone executables ARE published under `provider-gateway-host-v*` release tags, and `.github/workflows/provider-gateway-host-release.yml` copies these license texts and this NOTICE into every such release (see `docs/workjet-provider-gateway-host-artifacts.md`).",
     shipped: false,
   },
   {

@@ -209,6 +209,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/providers",
   },
   {
+    id: "workjet-provider-pools",
+    title: "Gateway pools",
+    // Sits directly under the account list on the same Providers page.
+    to: "/settings/providers",
+  },
+  {
     id: "workjet-llm-routes",
     title: "LLM routes",
     to: "/settings/workjet",

@@ -1,8 +1,12 @@
 import {
+  WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
   WorkjetGatewayAccountId,
   WorkjetGatewayOperationError,
   type WorkjetGatewayCatalog,
+  type WorkjetGatewayDiscoveredModel,
   type WorkjetGatewayFailureReason,
+  type WorkjetGatewayHealth,
+  type WorkjetGatewayModelDiscovery,
   type WorkjetGatewayOauthPollInput,
   type WorkjetGatewayOauthPollResult,
   type WorkjetGatewayOauthSession,
@@ -10,7 +14,13 @@ import {
   type WorkjetGatewayAddApiKeyAccountResult,
   type WorkjetGatewayOauthProvider,
   type WorkjetGatewayOauthStartInput,
+  type WorkjetGatewayProvider,
+  type WorkjetGatewayProviderHealth,
+  type WorkjetGatewayProviderModels,
+  type WorkjetGatewayProviderPhase,
   type WorkjetGatewayStatus,
+  type WorkjetGatewayUpdateRoutingInput,
+  type WorkjetGatewayUpdateRoutingResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -34,6 +44,12 @@ import {
   type GatewaySecretReference,
   type ProviderGatewayConfiguration,
 } from "./ProviderGatewayConfig.ts";
+import {
+  GATEWAY_MODEL_CHANNELS,
+  decodeModelDefinitions,
+  decodeRuntimeConfigSummary,
+  decodeRuntimeStatus,
+} from "./ProviderGatewayManagement.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
@@ -102,6 +118,8 @@ export interface ProviderGatewayPlatform {
   readonly signalProcess: (pid: number, signal: "SIGTERM" | "SIGKILL" | "probe") => boolean;
   /** Bounded sleep used while waiting for a stale host to exit. */
   readonly sleep: (ms: number) => Promise<void>;
+  /** Wall clock, injected so a health snapshot's age is testable. */
+  readonly now: () => number;
 }
 
 export interface ProviderGatewayServiceShape {
@@ -133,6 +151,25 @@ export interface ProviderGatewayServiceShape {
   readonly addApiKeyAccount: (
     input: WorkjetGatewayAddApiKeyAccountInput,
   ) => Effect.Effect<WorkjetGatewayAddApiKeyAccountResult, WorkjetGatewayOperationError>;
+  /**
+   * Health as the RUNNING host reports it. Everything here is read from the
+   * host's management surface; the dimensions the host does not publish are
+   * reported as unavailable rather than filled in from configuration.
+   */
+  readonly health: () => Effect.Effect<WorkjetGatewayHealth, WorkjetGatewayOperationError>;
+  /**
+   * Models the host's own catalog serves per provider, merged with the models
+   * recorded on the accounts. The host performs no upstream capability query,
+   * so every entry is labelled with where it came from.
+   */
+  readonly discoverModels: () => Effect.Effect<
+    WorkjetGatewayModelDiscovery,
+    WorkjetGatewayOperationError
+  >;
+  /** Edits the host-wide selection strategy and per-account pool membership. */
+  readonly updateRouting: (
+    input: WorkjetGatewayUpdateRoutingInput,
+  ) => Effect.Effect<WorkjetGatewayUpdateRoutingResult, WorkjetGatewayOperationError>;
 }
 
 export class ProviderGatewayService extends Context.Service<
@@ -305,6 +342,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       pools: [],
       routes: [],
       models: [],
+      routingStrategy: WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
+      providerPools: [],
     };
     let hostProcess: GatewayHostProcess | undefined;
     let managementCredential: string | undefined;
@@ -331,6 +370,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       accounts: [],
       pools: [],
       routes: [],
+      routingStrategy: WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
     };
 
     const loadConfiguration = async (): Promise<ProviderGatewayConfiguration> => {
@@ -860,6 +900,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         accounts,
         pools: existing?.pools ?? [],
         routes: existing?.routes ?? [],
+        routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
         ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
         ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
       };
@@ -975,6 +1016,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         accounts,
         pools: existing?.pools ?? [],
         routes: existing?.routes ?? [],
+        routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
         ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
         ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
       };
@@ -998,6 +1040,219 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         // status() carries the failure reason.
       }
       return { schemaVersion: 1, accountId: WorkjetGatewayAccountId.make(id) };
+    };
+
+    const GATEWAY_PROVIDERS: ReadonlyArray<WorkjetGatewayProvider> = [
+      "claude",
+      "codex",
+      "antigravity",
+      "zai",
+      "minimax",
+      "xai",
+      "kimi",
+    ];
+    const isGatewayProvider = (value: string): value is WorkjetGatewayProvider =>
+      (GATEWAY_PROVIDERS as ReadonlyArray<string>).includes(value);
+
+    /**
+     * Reads the two management routes the host genuinely serves and reports
+     * exactly what they say.
+     *
+     * What is deliberately NOT here: per-account cooldown, rate-limit class,
+     * last failure and quota state. The host tracks all of that in a
+     * `CooldownStateRecord` held by an in-process store, and its management
+     * surface publishes no route for it — `/v0/management/api-key-usage` and
+     * `/v0/management/usage-queue` answer 404 on this host because it attaches
+     * no source for them, and there is no read route for cooldown state at all.
+     * The host also exposes no concurrency or capacity figure anywhere. Both
+     * are therefore reported as `not-reported-by-host` instead of being
+     * reconstructed from configuration, which would look like health while
+     * being nothing of the kind.
+     */
+    const runHealth = async (): Promise<WorkjetGatewayHealth> => {
+      const { endpoint, key } = requireManagement();
+      let status: unknown;
+      let configuration: unknown;
+      try {
+        [status, configuration] = await Promise.all([
+          platform.managementGet(
+            endpoint,
+            "/v0/management/runtime-status",
+            key,
+            MANAGEMENT_MAX_BYTES,
+          ),
+          platform.managementGet(
+            endpoint,
+            "/v0/management/runtime-config",
+            key,
+            MANAGEMENT_MAX_BYTES,
+          ),
+        ]);
+      } catch {
+        throw safeError("management-unavailable");
+      }
+      const decodedStatus = decodeRuntimeStatus(status);
+      const decodedConfiguration = decodeRuntimeConfigSummary(configuration);
+      if (decodedStatus === undefined || decodedConfiguration === undefined) {
+        throw safeError("management-unavailable");
+      }
+      // The host reports one phase for the whole provider endpoint, not one per
+      // provider, so every provider carries that same phase rather than an
+      // invented per-provider state.
+      const providers: ReadonlyArray<WorkjetGatewayProviderHealth> =
+        decodedConfiguration.providers.flatMap((summary) =>
+          isGatewayProvider(summary.provider)
+            ? [
+                {
+                  provider: summary.provider,
+                  accountCount: summary.accountCount,
+                  enabledAccountCount: summary.enabledAccountCount,
+                  modelIds: summary.modelIds,
+                  phase: decodedStatus.providerPhase satisfies WorkjetGatewayProviderPhase,
+                },
+              ]
+            : [],
+        );
+      const activeProvider = decodedStatus.activeProvider ?? decodedConfiguration.defaultProvider;
+      return {
+        schemaVersion: 1,
+        observedAtMs: Math.max(0, Math.trunc(platform.now())),
+        activeProvider:
+          activeProvider !== undefined && isGatewayProvider(activeProvider) ? activeProvider : null,
+        providers,
+        accountHealth: "not-reported-by-host",
+        capacity: "not-reported-by-host",
+      };
+    };
+
+    /**
+     * Asks the host which models it serves per provider.
+     *
+     * The host answers from `GET /v0/management/model-definitions/<channel>`,
+     * which is its own pinned catalog compiled into the binary. It makes NO
+     * upstream capability call for this — not at request time and not on the
+     * management surface — so every model is labelled `gateway-catalog` and the
+     * models recorded on the accounts are merged in as `account-configuration`.
+     * Neither label may be presented as a live provider answer. A provider the
+     * host has no channel for (zai, minimax) reports `catalogAvailable: false`
+     * and lists only its configured models.
+     */
+    const runDiscoverModels = async (): Promise<WorkjetGatewayModelDiscovery> => {
+      const { endpoint, key } = requireManagement();
+      const configuration = await loadConfiguration();
+      const observedAtMs = Math.max(0, Math.trunc(platform.now()));
+      const providers: Array<WorkjetGatewayProviderModels> = [];
+      for (const provider of GATEWAY_PROVIDERS) {
+        const accounts = configuration.accounts.filter(
+          (account) => account.provider === provider && account.enabled,
+        );
+        if (accounts.length === 0) continue;
+        const channel = GATEWAY_MODEL_CHANNELS[provider];
+        let catalog: ReadonlyArray<{ readonly id: string; readonly displayName: string }> = [];
+        let catalogAvailable = false;
+        if (channel !== null) {
+          try {
+            const response = await platform.managementGet(
+              endpoint,
+              `/v0/management/model-definitions/${encodeURIComponent(channel)}`,
+              key,
+              MANAGEMENT_MAX_BYTES,
+            );
+            const decoded = decodeModelDefinitions(response, channel);
+            if (decoded !== undefined) {
+              catalog = decoded;
+              catalogAvailable = true;
+            }
+          } catch {
+            // A channel the host refuses is reported as unavailable for this
+            // provider; it must not fail the whole discovery.
+            catalogAvailable = false;
+          }
+        }
+        const models: Array<WorkjetGatewayDiscoveredModel> = catalog.map((model) => ({
+          id: model.id,
+          displayName: model.displayName,
+          source: "gateway-catalog" as const,
+        }));
+        const known = new Set(models.map((model) => model.id));
+        for (const account of accounts) {
+          for (const model of account.models) {
+            if (known.has(model)) continue;
+            known.add(model);
+            models.push({ id: model, displayName: model, source: "account-configuration" });
+          }
+        }
+        providers.push({
+          provider,
+          channel,
+          catalogAvailable,
+          models: models.slice(0, 256),
+        });
+      }
+      return { schemaVersion: 1, observedAtMs, providers };
+    };
+
+    /**
+     * Rewrites the pool configuration and reloads the host.
+     *
+     * The host's `PUT /v0/management/runtime-config` route exists but this
+     * host's config source refuses every mutation (`replace` returns
+     * `Invalid`), so the durable configuration file is the only way to change a
+     * strategy or a membership. That is the same path the OAuth claim and the
+     * API-key add already take: write the file, then stop and start the host.
+     */
+    const runUpdateRouting = async (
+      input: WorkjetGatewayUpdateRoutingInput,
+    ): Promise<WorkjetGatewayUpdateRoutingResult> => {
+      const existing = await loadConfiguration();
+      const updates = new Map(input.accounts.map((update) => [String(update.accountId), update]));
+      // An edit naming an account that does not exist is a stale client, not a
+      // no-op: refuse it instead of silently applying the rest.
+      if (
+        [...updates.keys()].some(
+          (accountId) => !existing.accounts.some((account) => account.id === accountId),
+        )
+      ) {
+        throw safeError("invalid-configuration");
+      }
+      const accounts = existing.accounts.map((account) => {
+        const update = updates.get(account.id);
+        return update === undefined
+          ? account
+          : {
+              ...account,
+              enabled: update.enabled,
+              priority: update.priority,
+              weight: update.weight,
+            };
+      });
+      const candidate = {
+        schemaVersion: 1,
+        defaultProvider: existing.defaultProvider,
+        accounts,
+        pools: existing.pools,
+        routes: existing.routes,
+        routingStrategy: input.strategy,
+        ...(existing.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+        ...(existing.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+      };
+      const serialized = `${JSON.stringify(candidate, null, 2)}\n`;
+      // Disabling the default provider's last enabled account would produce a
+      // configuration the host refuses to start on; decoding catches that here
+      // instead of after the gateway is already down.
+      const decoded = decodeProviderGatewayConfiguration(JSON.parse(serialized));
+      if (decoded === undefined) throw safeError("invalid-configuration");
+      await platform.writePrivateText(configurationPath, serialized).catch(() => {
+        throw safeError("invalid-configuration");
+      });
+      currentCatalog = gatewayCatalog(decoded);
+      try {
+        await stopSingleFlight();
+        await startSingleFlight();
+      } catch {
+        // status() carries the failure reason; the edit itself is persisted.
+      }
+      return { schemaVersion: 1, catalog: currentCatalog };
     };
 
     const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
@@ -1092,6 +1347,24 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       addApiKeyAccount: (input) =>
         Effect.tryPromise({
           try: () => runAddApiKeyAccount(input),
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+        }),
+      health: () =>
+        Effect.tryPromise({
+          try: runHealth,
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("management-unavailable"),
+        }),
+      discoverModels: () =>
+        Effect.tryPromise({
+          try: runDiscoverModels,
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("management-unavailable"),
+        }),
+      updateRouting: (input) =>
+        Effect.tryPromise({
+          try: () => runUpdateRouting(input),
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),

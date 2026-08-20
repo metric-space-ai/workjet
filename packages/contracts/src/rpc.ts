@@ -195,12 +195,16 @@ import {
   WorkjetGatewayAddApiKeyAccountInput,
   WorkjetGatewayAddApiKeyAccountResult,
   WorkjetGatewayCatalog,
+  WorkjetGatewayHealth,
+  WorkjetGatewayModelDiscovery,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
   WorkjetGatewayOauthSession,
   WorkjetGatewayOauthStartInput,
   WorkjetGatewayOperationError,
   WorkjetGatewayStatus,
+  WorkjetGatewayUpdateRoutingInput,
+  WorkjetGatewayUpdateRoutingResult,
   WorkjetGreppyOperationError,
   WorktreeStorageInspection,
   WorktreeStorageInspectionInput,
@@ -336,6 +340,9 @@ export const WS_METHODS = {
   workjetGatewayOauthPoll: "workjet.providerGateway.oauthPoll",
   workjetGatewayOauthCancel: "workjet.providerGateway.oauthCancel",
   workjetGatewayAddApiKeyAccount: "workjet.providerGateway.addApiKeyAccount",
+  workjetGatewayHealth: "workjet.providerGateway.health",
+  workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
+  workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
   // Thread-scoped Workjet mailbox sends (orchestrator threads only)
   workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
@@ -646,6 +653,30 @@ export const WsWorkjetGatewayAddApiKeyAccountRpc = Rpc.make(
     error: WorkjetGatewayRpcError,
   },
 );
+
+/**
+ * Health as the running gateway host reports it. Read-only, and deliberately
+ * carries availability flags for the dimensions the host does not publish.
+ */
+export const WsWorkjetGatewayHealthRpc = Rpc.make(WS_METHODS.workjetGatewayHealth, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayHealth,
+  error: WorkjetGatewayRpcError,
+});
+
+/** Models the host's own catalog serves, merged with the configured account models. */
+export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGatewayDiscoverModels, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayModelDiscovery,
+  error: WorkjetGatewayRpcError,
+});
+
+/** Edits the host-wide selection strategy and per-account pool membership. */
+export const WsWorkjetGatewayUpdateRoutingRpc = Rpc.make(WS_METHODS.workjetGatewayUpdateRouting, {
+  payload: WorkjetGatewayUpdateRoutingInput,
+  success: WorkjetGatewayUpdateRoutingResult,
+  error: WorkjetGatewayRpcError,
+});
 
 /**
  * The client-facing half of the durable Workjet mailbox. Same delivery service,
@@ -1378,6 +1409,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayOauthPollRpc,
   WsWorkjetGatewayOauthCancelRpc,
   WsWorkjetGatewayAddApiKeyAccountRpc,
+  WsWorkjetGatewayHealthRpc,
+  WsWorkjetGatewayDiscoverModelsRpc,
+  WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetMailboxSendMessageRpc,
   WsWorkjetMailboxDelegateTaskRpc,
   WsWorkjetMailboxReplyRpc,

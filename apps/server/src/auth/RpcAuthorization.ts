@@ -63,6 +63,9 @@ export const RPC_REQUIRED_SCOPES = {
   // Writing a provider credential is an operate action, exactly like starting
   // an OAuth login; a read-only session can never add an account.
   [WS_METHODS.workjetGatewayAddApiKeyAccount]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayHealth]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,
   // Sending into another worker's mailbox is a write; the second, narrower
   // check (the SOURCE thread must be an orchestrator thread) lives in the
   // handler, exactly as it does for the equivalent MCP tools.

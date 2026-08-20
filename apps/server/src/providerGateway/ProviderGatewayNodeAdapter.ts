@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Explicit Node platform boundary injected into the Effect gateway service.
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off globalDate:off -- Explicit Node platform boundary injected into the Effect gateway service.
 import { spawn } from "node:child_process";
 import * as NodeFs from "node:fs/promises";
 import * as NodeNet from "node:net";
@@ -131,6 +131,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     }
   },
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => Date.now(),
   allocateLoopbackPort: () =>
     new Promise<number>((resolve, reject) => {
       const server = NodeNet.createServer();

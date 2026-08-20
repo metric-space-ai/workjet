@@ -55,6 +55,8 @@ const catalog: WorkjetGatewayCatalog = {
     { id: "glm-5.3", displayName: "glm-5.3", providers: ["zai"], accountIds: [] },
     { id: "shared-model", displayName: "shared-model", providers: ["kimi", "zai"], accountIds: [] },
   ],
+  routingStrategy: "round-robin",
+  providerPools: [],
 };
 
 describe("WorkjetGatewayModelRoutes", () => {

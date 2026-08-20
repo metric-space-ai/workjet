@@ -1,14 +1,18 @@
 import {
   WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
+  WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
   WorkjetGatewayAccountId,
   WorkjetGatewayPoolId,
   WorkjetGatewayRouteId,
   type WorkjetGatewayAccountSummary,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayModelSummary,
+  type WorkjetGatewayPoolMember,
   type WorkjetGatewayPoolSummary,
+  type WorkjetGatewayProviderPool,
   type WorkjetGatewayApiKeyProvider,
   type WorkjetGatewayProvider,
+  type WorkjetGatewayRoutingStrategy,
   type WorkjetGatewayRouteSummary,
 } from "@t3tools/contracts";
 
@@ -117,12 +121,33 @@ export const isAcceptableApiKey = (value: unknown): value is string =>
     return code < 0x20 || code === 0x7f;
   });
 
+/**
+ * The three strategies the Rust host implements, in its own serialization. The
+ * host holds ONE strategy for the whole runtime (`CliproxyRuntimeConfig
+ * .routing_strategy`), not one per pool, so this is a single configuration
+ * value rather than a per-pool field.
+ */
+export const ROUTING_STRATEGIES: ReadonlyArray<WorkjetGatewayRoutingStrategy> = [
+  "round-robin",
+  "fill-first",
+  "weighted-round-robin",
+];
+
+export const isRoutingStrategy = (value: unknown): value is WorkjetGatewayRoutingStrategy =>
+  typeof value === "string" && (ROUTING_STRATEGIES as ReadonlyArray<string>).includes(value);
+
 export interface ProviderGatewayConfiguration {
   readonly schemaVersion: 1;
   readonly defaultProvider: WorkjetGatewayProvider;
   readonly accounts: ReadonlyArray<GatewayAccount>;
   readonly pools: ReadonlyArray<WorkjetGatewayPoolSummary>;
   readonly routes: ReadonlyArray<WorkjetGatewayRouteSummary>;
+  /**
+   * Additive and optional: a configuration written before pools existed decodes
+   * unchanged and behaves exactly as before, because the omitted value is the
+   * host's own default.
+   */
+  readonly routingStrategy: WorkjetGatewayRoutingStrategy;
   /**
    * Stable loopback port for the provider endpoint. Allocated once and then
    * persisted so harness sessions routed through the gateway survive gateway
@@ -463,12 +488,20 @@ export const decodeProviderGatewayConfiguration = (
       "accounts",
       "pools",
       "routes",
+      "routingStrategy",
       "providerPort",
       "antigravityOauth",
     ])
   ) {
     return undefined;
   }
+  const routingStrategy =
+    value.routingStrategy === undefined
+      ? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY
+      : isRoutingStrategy(value.routingStrategy)
+        ? value.routingStrategy
+        : undefined;
+  if (routingStrategy === undefined) return undefined;
   const defaultProvider = provider(value.defaultProvider);
   if (
     !Array.isArray(value.accounts) ||
@@ -524,6 +557,7 @@ export const decodeProviderGatewayConfiguration = (
     accounts: typedAccounts,
     pools,
     routes,
+    routingStrategy,
     ...(providerPort !== undefined ? { providerPort } : {}),
     ...(antigravityOauth ? { antigravityOauth } : {}),
   };
@@ -542,6 +576,54 @@ export const accountSecretReferences = (
   if (account.provider === "antigravity") references.push(account.stateSecret);
   if (account.proxyUrlSecret) references.push(account.proxyUrlSecret);
   return references;
+};
+
+/**
+ * Derives the pools the Rust host actually runs. There is exactly one pool per
+ * provider that has an account, because the host builds one account pool per
+ * provider and has no way to route a request to a subset of a provider's
+ * accounts. Nothing here is a preference: every flag mirrors a decision the
+ * host's own selection code makes.
+ *
+ * - OAuth pools (`claude`, `codex`, `antigravity`) run the configured strategy
+ *   through `AccountRouter`, and their scheduler keeps only the highest-priority
+ *   available candidates (`retain_highest_priority`), so a lower-priority
+ *   account is never selected while a higher-priority one is usable.
+ * - API-key pools (`zai`, `minimax`, `xai`, `kimi`) use `ApiKeyAccountPool`,
+ *   which sorts by priority and then round-robins across the WHOLE eligible
+ *   list. It reads neither `weight` nor the configured strategy, so both are
+ *   reported as not honoured rather than displayed as if they mattered.
+ */
+export const providerPools = (
+  configuration: ProviderGatewayConfiguration,
+): ReadonlyArray<WorkjetGatewayProviderPool> => {
+  const strategy = configuration.routingStrategy;
+  return PROVIDERS.flatMap((poolProvider) => {
+    const accounts = configuration.accounts.filter((account) => account.provider === poolProvider);
+    if (accounts.length === 0) return [];
+    const apiKeyPool = isApiKeyProvider(poolProvider);
+    const weightHonored = !apiKeyPool && strategy === "weighted-round-robin";
+    const priorityExclusive = !apiKeyPool;
+    const eligible = accounts.filter(
+      (account) => account.enabled && (!weightHonored || account.weight > 0),
+    );
+    const bestPriority = eligible.reduce<number | undefined>(
+      (best, account) => (best === undefined ? account.priority : Math.max(best, account.priority)),
+      undefined,
+    );
+    const members: ReadonlyArray<WorkjetGatewayPoolMember> = accounts.map((account) => ({
+      accountId: WorkjetGatewayAccountId.make(account.id),
+      label: account.label,
+      enabled: account.enabled,
+      priority: account.priority,
+      weight: account.weight,
+      selectable:
+        account.enabled &&
+        (!weightHonored || account.weight > 0) &&
+        (!priorityExclusive || account.priority === bestPriority),
+    }));
+    return [{ provider: poolProvider, strategy, weightHonored, priorityExclusive, members }];
+  });
 };
 
 export const gatewayCatalog = (
@@ -585,6 +667,8 @@ export const gatewayCatalog = (
     pools: configuration.pools,
     routes: configuration.routes,
     models,
+    routingStrategy: configuration.routingStrategy,
+    providerPools: providerPools(configuration),
   };
 };
 
@@ -608,7 +692,10 @@ export const rustHostConfiguration = (
   ...(configuration.accounts.length > 0 ? { defaultProvider: configuration.defaultProvider } : {}),
   runtime: {
     request_timeout_ms: 30_000,
-    routing_strategy: "round-robin",
+    // The host's own kebab-case `SchedulerStrategy` values; the configured
+    // value is passed through unchanged so a weighted pool is actually
+    // weighted rather than silently round-robined.
+    routing_strategy: configuration.routingStrategy,
     claude_accounts: configuration.accounts
       .filter((account): account is ClaudeGatewayAccount => account.provider === "claude")
       .map((account) => ({

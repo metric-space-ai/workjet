@@ -74,6 +74,8 @@ const gatewayCatalog = (
     modelIds: entry.modelIds,
   })),
   models: [],
+  routingStrategy: "round-robin",
+  providerPools: [],
 });
 
 const CATALOG = gatewayCatalog([

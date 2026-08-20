@@ -217,6 +217,26 @@ export function maskGatewayCredentialSuffix(suffix: string | null): string | nul
   return trimmed === "" ? null : `Key ••••${trimmed}`;
 }
 
+/**
+ * Whether the gateway would currently pick this account, taken from the
+ * derived pool rather than guessed from `enabled`. An enabled account whose
+ * provider pool holds it back behind a higher priority is not "Enabled" in any
+ * useful sense, and saying so is the whole point.
+ *
+ * `null` means the catalog carries no pool for this account yet, in which case
+ * the row says nothing rather than assuming.
+ */
+export function gatewayAccountRotationLabel(
+  catalog: WorkjetGatewayCatalog | null,
+  account: WorkjetGatewayAccountSummary,
+): string | null {
+  const pool = (catalog?.providerPools ?? []).find((entry) => entry.provider === account.provider);
+  const member = pool?.members.find((entry) => entry.accountId === account.id);
+  if (member === undefined) return null;
+  if (!member.enabled) return "Disabled";
+  return member.selectable ? "In rotation" : "Held back by priority";
+}
+
 export function workjetGatewayPhaseSummary(status: WorkjetGatewayStatus | null): string {
   if (status === null) return "Select a primary environment to inspect its provider gateway.";
   switch (status.phase) {
@@ -557,8 +577,9 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
                 >
                   <span className="min-w-0 truncate text-sm text-foreground">{account.label}</span>
                   <span className="text-xs text-muted-foreground">
-                    {account.enabled ? "Enabled" : "Disabled"} · {account.modelIds.length}{" "}
-                    {account.modelIds.length === 1 ? "model" : "models"}
+                    {gatewayAccountRotationLabel(state.catalog, account) ??
+                      (account.enabled ? "Enabled" : "Disabled")}{" "}
+                    · {account.modelIds.length} {account.modelIds.length === 1 ? "model" : "models"}
                     {maskGatewayCredentialSuffix(account.credentialSuffix) === null
                       ? null
                       : ` · ${maskGatewayCredentialSuffix(account.credentialSuffix)}`}

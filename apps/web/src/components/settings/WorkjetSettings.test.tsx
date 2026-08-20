@@ -276,6 +276,8 @@ describe("Workjet configuration settings", () => {
             pools: [],
             routes: [],
             models: [],
+            routingStrategy: "round-robin",
+            providerPools: [],
           },
         }}
         automaticWorktreeStorage={automaticWorktreeStorage}

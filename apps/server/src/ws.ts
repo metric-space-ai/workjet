@@ -1766,6 +1766,22 @@ const makeWsRpcLayer = (
             providerGateway.addApiKeyAccount(input),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetGatewayHealth]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayHealth, providerGateway.health(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayDiscoverModels]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayDiscoverModels,
+            providerGateway.discoverModels(),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        [WS_METHODS.workjetGatewayUpdateRouting]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayUpdateRouting,
+            providerGateway.updateRouting(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
         [WS_METHODS.workjetMailboxSendMessage]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetMailboxSendMessage,

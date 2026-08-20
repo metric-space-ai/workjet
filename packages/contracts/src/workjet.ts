@@ -500,14 +500,212 @@ export const WorkjetGatewayModelSummary = Schema.Struct({
 });
 export type WorkjetGatewayModelSummary = typeof WorkjetGatewayModelSummary.Type;
 
+/**
+ * Account selection strategy. These are exactly the three variants the Rust
+ * host implements (`SchedulerStrategy`, sdk/cliproxy/auth/scheduler.rs), in the
+ * host's own kebab-case serialization, and the value is written straight into
+ * the host runtime configuration's `routing_strategy`. No fourth strategy may
+ * be added here without the host learning it first.
+ */
+export const WorkjetGatewayRoutingStrategy = Schema.Literals([
+  "round-robin",
+  "fill-first",
+  "weighted-round-robin",
+]);
+export type WorkjetGatewayRoutingStrategy = typeof WorkjetGatewayRoutingStrategy.Type;
+
+export const WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY: WorkjetGatewayRoutingStrategy =
+  "round-robin";
+
+/** Highest priority and weight the gateway configuration accepts per account. */
+export const WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY = 10_000;
+export const WORKJET_GATEWAY_MAX_ACCOUNT_WEIGHT = 10_000;
+
+/**
+ * One account's membership in its provider pool. `selectable` is the host's
+ * live eligibility, not a wish: an account is unselectable when it is disabled,
+ * or when the pool runs the weighted strategy and the account's weight is not
+ * positive (the host's `available_candidates` drops those outright), or when a
+ * priority-exclusive pool has a higher-priority member.
+ */
+export const WorkjetGatewayPoolMember = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+  label: TrimmedNonEmptyString,
+  enabled: Schema.Boolean,
+  priority: Schema.Number,
+  weight: PositiveInt,
+  selectable: Schema.Boolean,
+});
+export type WorkjetGatewayPoolMember = typeof WorkjetGatewayPoolMember.Type;
+
+/**
+ * A pool as the gateway host actually implements it: one implicit pool per
+ * provider, holding every account configured for that provider. The host has no
+ * named-pool concept and no way to route a request to a subset of a provider's
+ * accounts, so this contract deliberately offers none.
+ *
+ * `weightHonored` is false for the API-key providers: their `ApiKeyAccountPool`
+ * sorts by priority and then round-robins, ignoring both `weight` and the
+ * configured strategy. `priorityExclusive` is true only for the OAuth pools,
+ * whose scheduler retains the highest-priority candidates and drops the rest;
+ * the API-key pool keeps lower-priority accounts in the rotation.
+ */
+export const WorkjetGatewayProviderPool = Schema.Struct({
+  provider: WorkjetGatewayProvider,
+  strategy: WorkjetGatewayRoutingStrategy,
+  weightHonored: Schema.Boolean,
+  priorityExclusive: Schema.Boolean,
+  members: Schema.Array(WorkjetGatewayPoolMember),
+});
+export type WorkjetGatewayProviderPool = typeof WorkjetGatewayProviderPool.Type;
+
 export const WorkjetGatewayCatalog = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   accounts: Schema.Array(WorkjetGatewayAccountSummary),
   pools: Schema.Array(WorkjetGatewayPoolSummary),
   routes: Schema.Array(WorkjetGatewayRouteSummary),
   models: Schema.Array(WorkjetGatewayModelSummary),
+  /**
+   * Additive. The single host-wide selection strategy; the host's
+   * `CliproxyRuntimeConfig.routing_strategy` is one value for the whole
+   * runtime, not one per pool.
+   */
+  routingStrategy: WorkjetGatewayRoutingStrategy.pipe(
+    Schema.withDecodingDefault(Effect.succeed(WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY)),
+  ),
+  /** Additive. Derived per-provider pools; see {@link WorkjetGatewayProviderPool}. */
+  providerPools: Schema.Array(WorkjetGatewayProviderPool).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type WorkjetGatewayCatalog = typeof WorkjetGatewayCatalog.Type;
+
+/**
+ * Whether a health dimension is something the gateway host reports at all.
+ * Kept explicit rather than omitted so the surface can say "the host does not
+ * publish this" instead of rendering an invented value or a silent blank.
+ */
+export const WorkjetGatewayHealthAvailability = Schema.Literals([
+  "reported",
+  "not-reported-by-host",
+]);
+export type WorkjetGatewayHealthAvailability = typeof WorkjetGatewayHealthAvailability.Type;
+
+export const WorkjetGatewayProviderPhase = Schema.Literals([
+  "ready",
+  "waiting-for-subscription",
+  "unknown",
+]);
+export type WorkjetGatewayProviderPhase = typeof WorkjetGatewayProviderPhase.Type;
+
+/**
+ * Per-provider health as the host's management surface reports it: the account
+ * counts and model list from `GET /v0/management/runtime-config` plus the
+ * endpoint phase from `GET /v0/management/runtime-status`.
+ */
+export const WorkjetGatewayProviderHealth = Schema.Struct({
+  provider: WorkjetGatewayProvider,
+  accountCount: NonNegativeInt,
+  enabledAccountCount: NonNegativeInt,
+  modelIds: Schema.Array(TrimmedNonEmptyString),
+  phase: WorkjetGatewayProviderPhase,
+});
+export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.Type;
+
+/**
+ * A health snapshot read from the running gateway host, with the time it was
+ * read so the surface can age it honestly.
+ *
+ * `accountHealth` and `capacity` are availability flags, not data. The host
+ * tracks per-credential cooldown state (`CooldownStateRecord`: status, reason,
+ * next retry, quota, last error) but keeps it in an in-process store that its
+ * management surface never publishes, and it exposes no concurrency or
+ * capacity figure anywhere. Both therefore read `not-reported-by-host` until
+ * the host grows a route for them.
+ */
+export const WorkjetGatewayHealth = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  observedAtMs: NonNegativeInt,
+  activeProvider: Schema.NullOr(WorkjetGatewayProvider),
+  providers: Schema.Array(WorkjetGatewayProviderHealth),
+  accountHealth: WorkjetGatewayHealthAvailability,
+  capacity: WorkjetGatewayHealthAvailability,
+});
+export type WorkjetGatewayHealth = typeof WorkjetGatewayHealth.Type;
+
+/**
+ * Where a model id came from. `gateway-catalog` is the host's own pinned model
+ * catalog (`GET /v0/management/model-definitions/<channel>`);
+ * `account-configuration` is a model id recorded on the account when it was
+ * created. Neither is an upstream capability query — the host makes no such
+ * call — so the surface must not present either as "live from the provider".
+ */
+export const WorkjetGatewayModelSource = Schema.Literals([
+  "gateway-catalog",
+  "account-configuration",
+]);
+export type WorkjetGatewayModelSource = typeof WorkjetGatewayModelSource.Type;
+
+export const WorkjetGatewayDiscoveredModel = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  displayName: TrimmedNonEmptyString,
+  source: WorkjetGatewayModelSource,
+});
+export type WorkjetGatewayDiscoveredModel = typeof WorkjetGatewayDiscoveredModel.Type;
+
+/**
+ * Model discovery for one provider. `channel` is the host catalog channel that
+ * answered, or `null` when the host has no catalog for this provider at all
+ * (zai and minimax have none), in which case only the configured account models
+ * are listed and `catalogAvailable` is false.
+ */
+export const WorkjetGatewayProviderModels = Schema.Struct({
+  provider: WorkjetGatewayProvider,
+  channel: Schema.NullOr(TrimmedNonEmptyString),
+  catalogAvailable: Schema.Boolean,
+  models: Schema.Array(WorkjetGatewayDiscoveredModel),
+});
+export type WorkjetGatewayProviderModels = typeof WorkjetGatewayProviderModels.Type;
+
+export const WorkjetGatewayModelDiscovery = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  observedAtMs: NonNegativeInt,
+  providers: Schema.Array(WorkjetGatewayProviderModels),
+});
+export type WorkjetGatewayModelDiscovery = typeof WorkjetGatewayModelDiscovery.Type;
+
+/** One account's pool membership edit. Every field is replaced, never merged. */
+export const WorkjetGatewayAccountRoutingUpdate = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+  enabled: Schema.Boolean,
+  priority: Schema.Int.check(
+    Schema.isGreaterThanOrEqualTo(-WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY),
+    Schema.isLessThanOrEqualTo(WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY),
+  ),
+  weight: PositiveInt.check(Schema.isLessThanOrEqualTo(WORKJET_GATEWAY_MAX_ACCOUNT_WEIGHT)),
+});
+export type WorkjetGatewayAccountRoutingUpdate = typeof WorkjetGatewayAccountRoutingUpdate.Type;
+
+/**
+ * Replaces the pool configuration: the host-wide selection strategy plus the
+ * membership of every listed account. Accounts omitted from `accounts` keep
+ * their current membership; an unknown account id is refused rather than
+ * silently ignored.
+ */
+export const WorkjetGatewayUpdateRoutingInput = Schema.Struct({
+  strategy: WorkjetGatewayRoutingStrategy,
+  accounts: Schema.Array(WorkjetGatewayAccountRoutingUpdate).pipe(
+    Schema.check(Schema.isMaxLength(64)),
+  ),
+});
+export type WorkjetGatewayUpdateRoutingInput = typeof WorkjetGatewayUpdateRoutingInput.Type;
+
+/** The catalog as it stands after the edit, so no second read is needed. */
+export const WorkjetGatewayUpdateRoutingResult = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  catalog: WorkjetGatewayCatalog,
+});
+export type WorkjetGatewayUpdateRoutingResult = typeof WorkjetGatewayUpdateRoutingResult.Type;
 
 /**
  * One provider OAuth login flow through the local gateway host. The user opens

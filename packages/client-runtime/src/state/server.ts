@@ -53,6 +53,17 @@ export const GREPPY_RUNTIME_INSPECT_STALE_TIME_MS = 15_000;
  */
 export const WORKJET_GATEWAY_STATUS_STALE_TIME_MS = 5_000;
 export const WORKJET_GATEWAY_CATALOG_STALE_TIME_MS = 5_000;
+/**
+ * Health is a live reading of the running host and the surface shows its age,
+ * so it may go stale sooner than the configuration-derived catalog.
+ */
+export const WORKJET_GATEWAY_HEALTH_STALE_TIME_MS = 5_000;
+/**
+ * Model discovery answers from the host's compiled-in catalog plus the stored
+ * account models; neither moves while the gateway runs, so this is cached for
+ * far longer than the live reads.
+ */
+export const WORKJET_GATEWAY_MODELS_STALE_TIME_MS = 60_000;
 
 /**
  * The mesh roster changes only when this machine exchanges mail with a peer it
@@ -754,8 +765,19 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayCatalog,
     staleTimeMs: WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   });
-  // Every lifecycle and login transition changes both the runtime phase and the
-  // configured accounts, so refresh the pair instead of a single read.
+  const workjetGatewayHealth = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:health",
+    tag: WS_METHODS.workjetGatewayHealth,
+    staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
+  });
+  const workjetGatewayModels = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:models",
+    tag: WS_METHODS.workjetGatewayDiscoverModels,
+    staleTimeMs: WORKJET_GATEWAY_MODELS_STALE_TIME_MS,
+  });
+  // Every lifecycle and login transition changes the runtime phase, the
+  // configured accounts, the health snapshot, and the model answer, so refresh
+  // the set instead of a single read.
   const refreshWorkjetGateway = (
     { environmentId }: { readonly environmentId: EnvironmentId },
     registry: AtomRegistry.AtomRegistry,
@@ -763,6 +785,8 @@ export function createServerEnvironmentAtoms<R, E>(
     Effect.sync(() => {
       registry.refresh(workjetGatewayStatus({ environmentId, input: {} }));
       registry.refresh(workjetGatewayCatalog({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayHealth({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayModels({ environmentId, input: {} }));
     });
   const workjetGatewayConcurrency = {
     mode: "singleFlight" as const,
@@ -804,6 +828,14 @@ export function createServerEnvironmentAtoms<R, E>(
   const addWorkjetGatewayApiKeyAccount = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:gateway:add-api-key-account",
     tag: WS_METHODS.workjetGatewayAddApiKeyAccount,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  // Pool editing rewrites the configuration and reloads the host, so it shares
+  // the gateway's single-flight key with every other lifecycle command.
+  const updateWorkjetGatewayRouting = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:update-routing",
+    tag: WS_METHODS.workjetGatewayUpdateRouting,
     concurrency: workjetGatewayConcurrency,
     onSuccess: refreshWorkjetGateway,
   });
@@ -978,12 +1010,15 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetMeshOverview,
     workjetGatewayStatus,
     workjetGatewayCatalog,
+    workjetGatewayHealth,
+    workjetGatewayModels,
     startWorkjetGateway,
     stopWorkjetGateway,
     startWorkjetGatewayOauth,
     pollWorkjetGatewayOauth,
     cancelWorkjetGatewayOauth,
     addWorkjetGatewayApiKeyAccount,
+    updateWorkjetGatewayRouting,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {

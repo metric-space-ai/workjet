@@ -74,6 +74,25 @@ const CATALOG: WorkjetGatewayCatalog = {
   pools: [],
   routes: [],
   models: [],
+  routingStrategy: "round-robin",
+  providerPools: [
+    {
+      provider: "claude",
+      strategy: "round-robin",
+      weightHonored: false,
+      priorityExclusive: true,
+      members: [
+        {
+          accountId: WorkjetGatewayAccountId.make("account-claude-1"),
+          label: "Claude Work",
+          enabled: true,
+          priority: 1,
+          weight: 1,
+          selectable: true,
+        },
+      ],
+    },
+  ],
 };
 
 const BASE: WorkjetGatewaySectionState = {

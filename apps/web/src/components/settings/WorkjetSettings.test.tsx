@@ -81,6 +81,22 @@ describe("Workjet configuration settings", () => {
     apiKey: { status: "idle" as const },
     onAddApiKey: () => undefined,
   };
+  const legacyImport = {
+    hasOffer: false,
+    draft: {},
+    onAnswer: () => undefined,
+    state: {
+      inspection: { schemaVersion: 1 as const, state: "nothing-to-import" as const },
+      isInitialLoading: false,
+      hasInspectFailure: false,
+      isRefreshing: false,
+      isDeciding: false,
+      error: null,
+      onRefresh: () => undefined,
+      onAccept: () => undefined,
+      onDecline: () => undefined,
+    },
+  };
   const automaticWorktreeStorage = {
     configuredRoot: "",
     selectedServerLabel: "Code server",
@@ -111,6 +127,7 @@ describe("Workjet configuration settings", () => {
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
+        legacyImport={legacyImport}
         onChange={() => undefined}
       />,
     );
@@ -124,6 +141,7 @@ describe("Workjet configuration settings", () => {
       "Telemetry",
       "Execution",
       "Capabilities",
+      "Legacy import",
     ];
     for (const tab of tabs) expect(markup).toContain(`>${tab}<`);
     expect(markup).toContain('role="tablist"');
@@ -142,6 +160,7 @@ describe("Workjet configuration settings", () => {
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
+        legacyImport={legacyImport}
         defaultSection="telemetry"
         onChange={() => undefined}
       />,
@@ -159,6 +178,7 @@ describe("Workjet configuration settings", () => {
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
+        legacyImport={legacyImport}
         defaultSection="capabilities"
         onChange={() => undefined}
       />,
@@ -186,6 +206,7 @@ describe("Workjet configuration settings", () => {
             canonicalRoot: "/Volumes/worktrees",
           },
         }}
+        legacyImport={legacyImport}
         defaultSection="execution"
         onChange={() => undefined}
       />,
@@ -281,6 +302,7 @@ describe("Workjet configuration settings", () => {
           },
         }}
         automaticWorktreeStorage={automaticWorktreeStorage}
+        legacyImport={legacyImport}
         defaultSection="provider-accounts"
         onChange={() => undefined}
       />,

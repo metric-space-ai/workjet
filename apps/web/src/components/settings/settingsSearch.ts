@@ -251,6 +251,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/workjet",
   },
   {
+    id: "workjet-legacy-import",
+    title: "Legacy import",
+    to: "/settings/workjet",
+  },
+  {
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",

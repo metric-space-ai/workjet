@@ -254,6 +254,15 @@ export const makeWorkjetCrossModeRpcHandlers = (
       .pipe(Effect.mapError(boundCrossModeStoreError));
     const selected = Option.filter(existing, (record) => !isExpired(record, nowAt));
     if (Option.isSome(selected)) {
+      // DELETED COUNTERPART. The stored link is live and unexpired, but the Code
+      // thread it names may since have been deleted. Handing that link back would
+      // answer "Open in Code" with a thread nobody can open, so the counterpart is
+      // re-checked before the link is returned as a selection. The refusal is the
+      // contract's `unauthorized`, which is documented to cover exactly "missing,
+      // deleted, or not permitted" and is the same answer `submit` gives for the
+      // same thread — the link ROW is deliberately left in place, because a
+      // deleted thread is history, not a reason to erase the record of the work.
+      yield* requireLiveThread(selected.value.link.code.threadId);
       return {
         schemaVersion: 1,
         selection: "selected",

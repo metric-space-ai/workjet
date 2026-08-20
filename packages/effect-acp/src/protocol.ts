@@ -24,6 +24,56 @@ export interface AcpProtocolLogEvent {
   readonly payload: unknown;
 }
 
+/**
+ * A label that is safe to log verbatim: a method or message tag, never content.
+ * Peers choose these strings, so they are allow-listed by shape AND by length
+ * rather than trusted because of where they sit in the object.
+ */
+const STRUCTURAL_LABEL = /^[A-Za-z][A-Za-z0-9._:/-]{0,63}$/;
+
+const structuralLabel = (value: unknown): string | undefined =>
+  typeof value === "string" && STRUCTURAL_LABEL.test(value) ? value : undefined;
+
+/**
+ * What the FALLBACK protocol logger is allowed to say about a protocol event.
+ *
+ * `AcpProtocolLogEvent.payload` is the whole thing on the wire: the raw stdio
+ * line, or the decoded RPC message including a `session/prompt`'s params. The
+ * plan's invariant ("never log request bodies by default") is about exactly
+ * this default, so the fallback reduces the payload to its SHAPE — type, size,
+ * and allow-listed tag — and can carry no content whatever the peer sends.
+ * A caller that genuinely needs more supplies its own `logger`, which is then
+ * responsible for its own redaction (see `AcpNativeLogging`).
+ */
+export const summarizeAcpProtocolLogEvent = (
+  event: AcpProtocolLogEvent,
+): Record<string, unknown> => {
+  const payload = event.payload;
+  const shape: Record<string, unknown> =
+    typeof payload === "string"
+      ? { valueType: "string", length: payload.length }
+      : Array.isArray(payload)
+        ? { valueType: "array", itemCount: payload.length }
+        : payload === null
+          ? { valueType: "null" }
+          : typeof payload === "object"
+            ? { valueType: "object", fieldCount: Object.keys(payload).length }
+            : { valueType: typeof payload };
+  const record =
+    typeof payload === "object" && payload !== null
+      ? (payload as { readonly _tag?: unknown; readonly tag?: unknown })
+      : undefined;
+  const messageTag = structuralLabel(record?._tag);
+  const method = structuralLabel(record?.tag);
+  return {
+    direction: event.direction,
+    stage: event.stage,
+    ...shape,
+    ...(messageTag !== undefined ? { messageTag } : {}),
+    ...(method !== undefined ? { method } : {}),
+  };
+};
+
 export type AcpIncomingNotification =
   | {
       readonly _tag: "SessionUpdate";
@@ -99,7 +149,9 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     }
     return (
       options.logger?.(event) ??
-      Effect.logDebug("ACP protocol event").pipe(Effect.annotateLogs({ event }))
+      Effect.logDebug("ACP protocol event").pipe(
+        Effect.annotateLogs(summarizeAcpProtocolLogEvent(event)),
+      )
     );
   };
 

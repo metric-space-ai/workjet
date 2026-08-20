@@ -1,7 +1,10 @@
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -289,6 +292,58 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
         });
       }),
   );
+
+  /**
+   * THE DEFAULT-LOGGER CANARY
+   * (docs/workjet-plan.md → "Security invariants": "Redact provider traffic
+   * metadata and never log request bodies by default").
+   *
+   * `logIncoming`/`logOutgoing` without a custom `logger` is the DEFAULT
+   * logging path, and its payload is the whole wire message — the raw stdio
+   * line outbound, and the decoded JSON-RPC message including a turn's prompt
+   * params inbound. The canary goes through every stage at once and must
+   * survive nowhere, while the structural fields still have to be there.
+   */
+  it.effect("emits no payload content from the default protocol logger", () => {
+    const captured: Array<unknown> = [];
+    const capture = Logger.map(Logger.formatStructured, (output) => {
+      captured.push(output);
+    });
+    const secret = "codex-default-logger-canary-prompt";
+
+    return Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio,
+        logIncoming: true,
+        logOutgoing: true,
+        // Deliberately NO `logger`: this is the default the invariant names.
+      });
+
+      yield* transport.notify("thread/interrupt", { threadId: secret });
+      yield* Queue.offer(
+        input,
+        encodeJsonl({ jsonrpc: "2.0", method: "x/canary", params: { text: secret } }),
+      );
+      yield* Effect.yieldNow;
+
+      const serialized = encodeUnknownJsonString(captured);
+      assert.notInclude(serialized, secret, "the default logger carried wire content");
+      // Positive half: emitting nothing at all would also pass the line above.
+      assert.include(serialized, '"stage":"decoded"');
+      assert.include(serialized, '"stage":"raw"');
+      assert.include(serialized, '"direction":"outgoing"');
+      assert.include(serialized, '"direction":"incoming"');
+      assert.include(serialized, '"method":"thread/interrupt"');
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Logger.layer([capture], { mergeWithExisting: false }),
+          Layer.succeed(References.MinimumLogLevel, "Debug"),
+        ),
+      ),
+    );
+  });
 
   it.effect("surfaces JSON encoding failures as protocol parse errors", () =>
     Effect.gen(function* () {

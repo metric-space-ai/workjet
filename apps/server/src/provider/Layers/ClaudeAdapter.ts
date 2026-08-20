@@ -4207,7 +4207,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.additional_directories": additionalDirectories,
         "claude.query.setting_sources": [...CLAUDE_SETTING_SOURCES],
         "claude.query.settings_json": encodeJsonStringForDiagnostics(settings) ?? "",
-        "claude.query.extra_args_json": encodeJsonStringForDiagnostics(extraArgs) ?? "",
+        // Flag NAMES only. `extraArgs` is whatever the operator typed into
+        // `launchArgs`, so its VALUES are provider request metadata of unknown
+        // sensitivity — an `--api-key` or a `--setting` payload would otherwise
+        // land verbatim in `server.trace.ndjson`. The names alone answer the
+        // diagnostic question ("which extra flags were in play?").
+        "claude.query.extra_arg_names": Object.keys(extraArgs).sort(),
         "claude.query.path_to_executable": claudeBinaryPath,
       });
 

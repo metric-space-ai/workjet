@@ -6,6 +6,9 @@ import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
+import * as References from "effect/References";
 import * as Ref from "effect/Ref";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -217,6 +220,70 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       ]);
     }),
   );
+
+  /**
+   * THE DEFAULT-LOGGER CANARY
+   * (docs/workjet-plan.md → "Security invariants": "Redact provider traffic
+   * metadata and never log request bodies by default").
+   *
+   * `logIncoming`/`logOutgoing` without a custom `logger` is the DEFAULT
+   * logging path, and its payload is the whole wire message — the raw stdio
+   * line outbound, and the decoded RPC message (a `session/prompt`'s params
+   * included) inbound. The canary is pushed through every stage at once and
+   * must survive nowhere in the emitted log records, while the structural
+   * fields that make the log useful must still be there.
+   */
+  it.effect("emits no payload content from the default protocol logger", () => {
+    const captured: Array<unknown> = [];
+    const capture = Logger.map(Logger.formatStructured, (output) => {
+      captured.push(output);
+    });
+    const secret = "acp-default-logger-canary-prompt";
+
+    return Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+        logIncoming: true,
+        logOutgoing: true,
+        // Deliberately NO `logger`: this is the default the invariant names.
+      });
+
+      // Outgoing: decoded message and raw encoded line, both carrying the canary.
+      yield* transport.notify("session/cancel", { sessionId: secret });
+      // Incoming: a well-formed notification whose params carry the canary.
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({
+            jsonrpc: "2.0",
+            method: "x/canary",
+            params: { text: secret },
+          })}\n`,
+        ),
+      );
+      yield* Effect.yieldNow;
+
+      const serialized = encodeUnknownJsonString(captured);
+      assert.notInclude(serialized, secret, "the default logger carried wire content");
+      // Positive half: redacting by emitting nothing would also pass the line
+      // above, so the structural fields have to survive.
+      assert.include(serialized, '"stage":"decoded"');
+      assert.include(serialized, '"stage":"raw"');
+      assert.include(serialized, '"direction":"outgoing"');
+      assert.include(serialized, '"direction":"incoming"');
+      assert.include(serialized, '"valueType":"string"');
+      assert.include(serialized, '"messageTag":"Request"');
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Logger.layer([capture], { mergeWithExisting: false }),
+          Layer.succeed(References.MinimumLogLevel, "Debug"),
+        ),
+      ),
+    );
+  });
 
   it.effect("logs decode failures without copying the cause or wire payload", () =>
     Effect.gen(function* () {

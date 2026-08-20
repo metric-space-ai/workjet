@@ -4,6 +4,7 @@ import {
   WorkjetContentDigest,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
+  WorkjetGitBranchName,
   WorkjetHandoffId,
   WorkjetMeshWorkspaceId,
   WorkjetRepositoryPath,
@@ -1718,7 +1719,7 @@ const receivedHandoff = (options: {
   },
   branch: {
     schemaVersion: 1,
-    branch: "agent/th-thread-handoff",
+    branch: WorkjetGitBranchName.make("agent/th-thread-handoff"),
     remoteConfigured: false,
   },
   artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },

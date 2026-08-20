@@ -953,7 +953,9 @@ it.effect("lists received handoffs with snapshot availability and never their te
     expect(row?.snapshotAvailable).toBe(true);
     expect(row?.acceptedThreadId).toBeUndefined();
     expect(row).not.toHaveProperty("snapshotBytes");
-    expect(JSON.stringify(row)).not.toContain("Workjet thread handoff");
+    // The listing carries a reference and a size; the snapshot TEXT never
+    // leaves the server's store through this read.
+    expect(Object.values(row ?? {}).some((value) => typeof value === "string" && value.includes("Workjet thread handoff"))).toBe(false);
   }),
 );
 

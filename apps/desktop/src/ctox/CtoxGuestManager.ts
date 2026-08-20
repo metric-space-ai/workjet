@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-// @effect-diagnostics nodeBuiltinImport:off - reads the shipped host-theme stylesheet once at construction, alongside the Electron guest boundary this module owns.
 import type {
   CtoxGuestBounds,
   CtoxHostThemeInput,
@@ -15,10 +14,6 @@ import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
 
-import * as NodeFs from "node:fs/promises";
-import * as NodePath from "node:path";
-
-import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
@@ -600,23 +595,6 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
   Effect.gen(function* () {
     const auth = yield* CtoxDevAuth.CtoxDevAuth;
     const businessOsShell = yield* CtoxBusinessOsShell.CtoxBusinessOsShell;
-    const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    // The host theme is the HOST's business, and the app already ships the
-    // stylesheet that consumes the `--ctox-host-*` tokens it pushes. A guest
-    // served by a deploy that predates that stylesheet (managed tenants on
-    // ctox.dev answer 404 for it) would otherwise carry the tokens with
-    // nothing reading them — the tokens are set, the shell stays unthemed.
-    // Reading it once per process keeps activation off the filesystem.
-    const hostThemeCss = yield* Effect.promise(() =>
-      NodeFs.readFile(
-        NodePath.join(
-          CtoxBusinessOsShell.resolveCtoxBusinessOsShellRoot(environment),
-          "themes",
-          "ctox-desktop-shell.css",
-        ),
-        "utf8",
-      ).catch(() => undefined),
-    );
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
     const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
     const localLaunch = yield* CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch;
@@ -827,21 +805,6 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
         });
         webContents.on("did-finish-load", () => {
-          if (hostThemeCss !== undefined) {
-            // Inject only where the guest does not already serve the theme, so
-            // a shell that ships its own stays authoritative and no duplicate
-            // sheet fights it. Best-effort: an unthemed guest is a cosmetic
-            // regression, never a failed activation.
-            void webContents
-              .executeJavaScript(
-                `!![...document.styleSheets].some((sheet) => (sheet.href || "").includes("ctox-desktop-shell"))`,
-                true,
-              )
-              .then((present: unknown) =>
-                present === true ? undefined : webContents.insertCSS(hostThemeCss),
-              )
-              .catch(() => undefined);
-          }
           if (latestHostTheme !== undefined) {
             try {
               webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, latestHostTheme);

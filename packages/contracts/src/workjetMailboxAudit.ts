@@ -74,6 +74,35 @@ export const WorkjetMailboxMeshReplicationReason = Schema.Literals([
 ]);
 export type WorkjetMailboxMeshReplicationReason = typeof WorkjetMailboxMeshReplicationReason.Type;
 
+/**
+ * Why a peer's advertised keys were refused before they could be pinned.
+ *
+ * Every value is a CODE, never a key, a signature, or a peer-supplied string.
+ * The set is deliberately narrow, because each value is a distinct ATTACK
+ * shape an operator should be able to count separately:
+ *
+ * - `signing-key-conflict`    — a later envelope from an already-pinned source
+ *   pair advertised a different Ed25519 key. Either the peer rotated (which
+ *   this mesh has no protocol for) or a room member is impersonating it.
+ * - `encryption-key-conflict` — same, for the X25519 key. This is the one an
+ *   attacker actually wants: adopting it would redirect every future sealed
+ *   reply to that peer into the attacker's hands.
+ * - `binding-invalid`         — the wrapper carried a key binding that did not
+ *   verify against the signing key the routing envelope verified against, or
+ *   that named a different environment/workspace/envelope than the envelope
+ *   does. A forged or lifted binding, never a benign one.
+ * - `binding-downgrade`       — a source pair whose keys were pinned WITH a
+ *   verified binding sent a wrapper carrying none. Accepting it would let a
+ *   room member strip the binding to get back to bare trust-on-first-use.
+ */
+export const WorkjetMailboxPeerBindingRejection = Schema.Literals([
+  "signing-key-conflict",
+  "encryption-key-conflict",
+  "binding-invalid",
+  "binding-downgrade",
+]);
+export type WorkjetMailboxPeerBindingRejection = typeof WorkjetMailboxPeerBindingRejection.Type;
+
 /** Which budget dimension a delegation exhausted. */
 export const WorkjetMailboxBudgetKind = Schema.Literals(["tokens", "cost"]);
 export type WorkjetMailboxBudgetKind = typeof WorkjetMailboxBudgetKind.Type;
@@ -172,6 +201,24 @@ export const WorkjetMailboxAuditEvent = Schema.Union([
     ...auditEventBase,
     envelopeId: WorkjetEnvelopeId,
     reasonCode: WorkjetMailboxMeshReplicationReason,
+  }),
+  /**
+   * An inbound envelope's advertised peer keys were REFUSED before pinning.
+   *
+   * This is the security-relevant sibling of `envelope-rejected`: the envelope
+   * itself was well-formed and its signature verified, but the identity claim
+   * behind it did not hold. It carries the claimed source pair — never the
+   * keys, never the binding signature — so an operator can see WHICH mesh
+   * address is being contested and how often, which is exactly the signal a
+   * key-substitution attempt produces.
+   */
+  Schema.TaggedStruct("mesh-peer-binding-rejected", {
+    ...auditEventBase,
+    envelopeId: WorkjetEnvelopeId,
+    /** The source pair the refused envelope CLAIMED. A claim, not a fact. */
+    sourceWorkspaceId: WorkjetMeshWorkspaceId,
+    sourceEnvironmentId: EnvironmentId,
+    reasonCode: WorkjetMailboxPeerBindingRejection,
   }),
 ]);
 export type WorkjetMailboxAuditEvent = typeof WorkjetMailboxAuditEvent.Type;

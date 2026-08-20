@@ -220,6 +220,112 @@ export const canonicalRoutingEnvelopeBytes = (
 };
 
 // ===============================
+// Peer key binding
+// ===============================
+
+/**
+ * Domain separator of the PEER KEY BINDING — the answer this slice actually
+ * ships to "the CTOX room secret is deliberately not the only security
+ * boundary" (docs/workjet-plan.md → Wave 5 security follow-up).
+ *
+ * ## Why there is no room-derived MAC here
+ *
+ * The obvious design is a MAC keyed on something both endpoints' servers share.
+ * Three candidates were checked against the actual reachable surface, and all
+ * three fail for reasons worth writing down so nobody re-derives them:
+ *
+ *  1. **The CTOX room secret.** It IS reachable server-side: the local daemon
+ *     mints `ctox business-os desktop invite --format json`, whose
+ *     `signaling_room_password` is the room secret, and every machine in the
+ *     room resolves the same value. It is nevertheless USELESS here, because
+ *     the adversary is a peer that can write into the replicated
+ *     `workjet_mailbox_envelopes` collection — and writing into it requires
+ *     room membership, which requires knowing that very secret. A MAC keyed on
+ *     it would prove only "the author is in the room", which the write itself
+ *     already proved. That is security theater, so it is not implemented.
+ *  2. **`business_os/mcp_inbound_auth_token`.** Per-daemon and local-only; two
+ *     machines never hold the same value, so it cannot bind anything across
+ *     the mesh.
+ *  3. **The pairing invite.** Its binding-relevant fields (`sync_room`,
+ *     `signaling_room_password`, `capability_token`) are room-wide join
+ *     material handed to every guest, not a per-environment attestation. It
+ *     also lives in the desktop's encrypted pairing registry, which the server
+ *     has no path to.
+ *
+ * A binding that actually excluded an in-room attacker would need the daemon to
+ * expose a per-DEVICE attestation over Workjet's environment key — its device
+ * identity and revocation layer already has that material internally. Exposing
+ * it is a CTOX-repo change and out of scope here, so the gap is reported rather
+ * than papered over.
+ *
+ * ## What this binding IS
+ *
+ * A SELF-signature that closes a real, currently-open hole. The transport's
+ * `payload_json` wrapper carries the sender's two public keys, and NOTHING
+ * signs that wrapper: the routing envelope's signature covers only
+ * `envelope_json`. So a room member could take an honest, correctly signed
+ * envelope and publish it with `senderEncryptionKey` replaced by its own. The
+ * receiver would verify the signature (genuine), pin the honest signing key
+ * beside the ATTACKER's encryption key, and seal every later reply to that peer
+ * straight into the attacker's hands.
+ *
+ * The binding is a detached Ed25519 signature, by the SAME key the routing
+ * envelope verifies against, over
+ *
+ *   utf8( DOMAIN + "\n" + JSON.stringify({
+ *     envelopeId, sourceWorkspaceId, sourceEnvironmentId,
+ *     senderSigningKey, senderEncryptionKey
+ *   }) )
+ *
+ * with the key order fixed by that literal. Every field is a bounded string, so
+ * the serialization is deterministic. Including the envelope id stops a binding
+ * from being lifted onto another envelope; including the source pair stops one
+ * from being lifted onto another claimed mesh address; including both keys is
+ * the point.
+ *
+ * ## What it does and does not buy
+ *
+ * It buys: the encryption key is now provably chosen by the holder of the
+ * signing key, and both are bound to the environment id claimed. Third-party
+ * key substitution is out. Combined with the receiver refusing to downgrade a
+ * `self-signed` pin back to `tofu`, an attacker cannot strip the binding either.
+ *
+ * It does NOT buy: protection against a room member that reaches an environment
+ * id FIRST with a keypair it genuinely holds. That peer signs a perfectly valid
+ * binding for a mesh address it does not own, and this machine has no evidence
+ * to contradict it. Pure first-contact impersonation remains open, and remains
+ * open until a per-device attestation exists.
+ */
+export const WORKJET_MESH_KEY_BINDING_DOMAIN = "workjet-mesh-key-binding-v1";
+
+/** The claim a {@link WORKJET_MESH_KEY_BINDING_DOMAIN} signature covers. */
+export interface WorkjetMeshKeyBindingClaim {
+  readonly envelopeId: string;
+  readonly sourceWorkspaceId: string;
+  readonly sourceEnvironmentId: string;
+  readonly senderSigningKey: string;
+  readonly senderEncryptionKey: string;
+}
+
+/**
+ * THE canonical byte serialization of a key-binding claim. Producer and
+ * verifier must both use this function and nothing else.
+ */
+export const canonicalKeyBindingBytes = (claim: WorkjetMeshKeyBindingClaim): Uint8Array => {
+  const canonical = {
+    envelopeId: claim.envelopeId,
+    sourceWorkspaceId: claim.sourceWorkspaceId,
+    sourceEnvironmentId: claim.sourceEnvironmentId,
+    senderSigningKey: claim.senderSigningKey,
+    senderEncryptionKey: claim.senderEncryptionKey,
+  };
+  return new TextEncoder().encode(
+    // @effect-diagnostics-next-line preferSchemaOverJson:off -- The canonical binding payload is defined as this exact literal serialization.
+    `${WORKJET_MESH_KEY_BINDING_DOMAIN}\n${JSON.stringify(canonical)}`,
+  );
+};
+
+// ===============================
 // Service
 // ===============================
 
@@ -285,6 +391,27 @@ export interface WorkjetMeshIdentityShape {
   readonly verifyRoutingEnvelope: (
     envelope: WorkjetRoutingEnvelope,
     publicKey?: string,
+  ) => Effect.Effect<boolean>;
+
+  /**
+   * Signs a {@link WorkjetMeshKeyBindingClaim} with this environment's signing
+   * key. The claim's two key fields are IGNORED as inputs and overwritten with
+   * this environment's own public keys, so no caller can ever produce a binding
+   * for key material this environment does not hold.
+   */
+  readonly signKeyBinding: (
+    claim: Omit<WorkjetMeshKeyBindingClaim, "senderSigningKey" | "senderEncryptionKey">,
+  ) => Effect.Effect<string, WorkjetMailboxError>;
+
+  /**
+   * Verifies a peer's key binding against the signing key named IN the claim.
+   * The caller must have already established that this is the key the routing
+   * envelope verified against — otherwise a peer could bind its own keypair to
+   * somebody else's envelope and this would happily agree.
+   */
+  readonly verifyKeyBinding: (
+    claim: WorkjetMeshKeyBindingClaim,
+    signature: string,
   ) => Effect.Effect<boolean>;
 }
 
@@ -648,6 +775,21 @@ export const makeWorkjetMeshIdentity = Effect.fn("WorkjetMeshIdentity.make")(fun
       publicKey ?? material.publicKey,
     );
 
+  const signKeyBinding: WorkjetMeshIdentityShape["signKeyBinding"] = (claim) =>
+    sign(
+      canonicalKeyBindingBytes({
+        ...claim,
+        // Deliberately not caller-supplied: a binding may only ever assert THIS
+        // environment's keys, so there is no parameter through which a wrong or
+        // borrowed key could enter the signed bytes.
+        senderSigningKey: material.publicKey,
+        senderEncryptionKey: encryption.publicKey,
+      }),
+    );
+
+  const verifyKeyBinding: WorkjetMeshIdentityShape["verifyKeyBinding"] = (claim, signature) =>
+    verify(canonicalKeyBindingBytes(claim), signature, claim.senderSigningKey);
+
   return WorkjetMeshIdentity.of({
     workspaceId,
     publicKey: material.publicKey,
@@ -658,6 +800,8 @@ export const makeWorkjetMeshIdentity = Effect.fn("WorkjetMeshIdentity.make")(fun
     verify,
     signRoutingEnvelope,
     verifyRoutingEnvelope,
+    signKeyBinding,
+    verifyKeyBinding,
   });
 });
 
@@ -674,9 +818,16 @@ export const layer = Layer.effect(WorkjetMeshIdentity, makeWorkjetMeshIdentity()
  *
  * It is a pure function so the redaction discipline is testable on its own: the
  * only peer facts that cross the wire are the two ids, the first-contact
- * timestamp, and the derived "an encryption key is pinned" flag. The pinned
- * signing and encryption keys are not parameters here, so no future edit can
- * leak them by accident.
+ * timestamp, the derived "an encryption key is pinned" flag, and the trust
+ * LEVEL of the pin. The pinned signing and encryption keys are not parameters
+ * here, so no future edit can leak them by accident.
+ *
+ * `binding` is carried deliberately: `sealedDeliveryReady` says a payload CAN
+ * be sealed, which a reader easily mistakes for "and it is sealed to the right
+ * machine". Those are different claims, and only `binding` answers the second
+ * one. Reporting `"tofu"` honestly is the point — see
+ * {@link WORKJET_MESH_KEY_BINDING_DOMAIN} for what each level does and does not
+ * exclude.
  *
  * There is no online/offline field. The peer pin table records first contact
  * and nothing else, and this server has no liveness signal for another machine;
@@ -699,6 +850,7 @@ export const workjetMeshRosterOf = (input: {
     environmentId: peer.environmentId,
     firstSeenAt: DateTime.formatIso(DateTime.makeUnsafe(peer.firstSeenAtMillis)),
     sealedDeliveryReady: peer.sealedDeliveryReady,
+    binding: peer.binding,
   })),
   truncated: input.page.truncated,
 });

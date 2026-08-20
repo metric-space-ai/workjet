@@ -5,7 +5,9 @@ import {
   WorkjetMailboxPayload,
   WorkjetRoutingEnvelope,
   type EnvironmentId,
+  type WorkjetMailboxPeerBindingRejection,
   type WorkjetMailboxTimestamp,
+  type WorkjetMeshPeerBinding,
   type WorkjetMeshWorkspaceId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -77,34 +79,50 @@ import { WorkjetSnapshotStore } from "./WorkjetSnapshotStore.ts";
  * All three require the same `Authorization: Bearer <token>` as `POST /mcp` and
  * refuse any non-loopback peer address before reading a body.
  *
- * ## Interim sender-key distribution — READ THIS
+ * ## Sender-key distribution and what actually secures it — READ THIS
  *
  * A pulled envelope must be verified against the SENDER's public key, and the
  * daemon cannot supply it: it is opaque to the envelope's contents by design.
- * Until the CTOX-room-derived identity binding lands (the same open plan item
- * that will replace the generated {@link WorkjetMeshWorkspaceId}), this slice
- * uses a documented interim mechanism:
+ * So the sender's keys travel WITH the payload:
  *
- *   payload_json = { schemaVersion: 2, senderSigningKey, senderEncryptionKey,
- *                    body: { sealed } | { plain, reason } }
+ *   payload_json = { schemaVersion: 3, senderSigningKey, senderEncryptionKey,
+ *                    keyBinding, body: { sealed } | { plain, reason } }
  *
- * The sender's public keys travel WITH the payload. On their own that proves
- * nothing — anyone who can write to the collection could assert any key — so it
- * is paired with two independent constraints:
+ * Self-asserted keys prove nothing on their own, so FOUR constraints hold them
+ * down, listed weakest first:
  *
  *  1. **CTOX room membership.** Only machines already paired into the room
  *     replicate this collection at all. The room, its password, and the
  *     capability/session layer are the daemon's existing admission control.
- *  2. **Key continuity (TOFU).** The first key seen for a
- *     `(sourceWorkspaceId, sourceEnvironmentId)` pair is pinned durably
- *     (migration 043). A later envelope from that same source carrying a
- *     DIFFERENT key is rejected with `invalid-signature`, counted, and consumed
- *     — never silently adopted, which would make the self-asserted key useless.
+ *     This is admission control, not identity: every member is equally inside.
+ *  2. **Signature over the routing envelope.** Verified against
+ *     `senderSigningKey` BEFORE anything is pinned, so a peer can never pin a
+ *     signing key it does not hold. First contact has never been unauthenticated
+ *     in this sense — what was missing was everything below.
+ *  3. **Key binding (`WORKJET_MESH_KEY_BINDING_DOMAIN`).** `payload_json` is
+ *     covered by NO signature, so up to wrapper v2 a room member could
+ *     republish an honest envelope with `senderEncryptionKey` swapped for its
+ *     own and capture every later sealed reply to that peer. v3 carries a
+ *     detached Ed25519 signature, by the same key the envelope verified
+ *     against, over both public keys plus the claimed source pair and envelope
+ *     id. It is verified before the pin, and a pin established under one can
+ *     never be DOWNGRADED by a later wrapper that omits it.
+ *  4. **Key continuity (TOFU).** The first keys seen for a
+ *     `(sourceWorkspaceId, sourceEnvironmentId)` pair are pinned durably
+ *     (migrations 043/044, trust level 049). A later envelope from that source
+ *     carrying a DIFFERENT key is refused, audited as
+ *     `mesh-peer-binding-rejected`, counted, and consumed.
  *
- * Trust root = room membership + continuity. This is strictly weaker than a
- * room-derived binding and is explicitly interim. It does NOT weaken the local
- * fast path, which continues to verify against this environment's own key and
- * never consults a peer key at all.
+ * WHAT REMAINS OPEN, stated plainly: a room member that reaches an environment
+ * id FIRST, with a keypair it genuinely holds, is indistinguishable from the
+ * rightful owner of that id. Nothing above contradicts it, and no room-derived
+ * MAC could — the room secret is known to every member, which is precisely the
+ * adversary. Closing it needs a per-device attestation from the CTOX daemon.
+ * The roster reports each peer's level (`tofu` / `self-signed`) rather than
+ * implying a uniform trust the mesh does not have.
+ *
+ * None of this weakens the local fast path, which verifies against this
+ * environment's own key and never consults a peer key at all.
  *
  * ## Payload sealing and the first-contact exception — READ THIS
  *
@@ -231,6 +249,19 @@ export interface WorkjetMailboxTransportCounters {
   /** Inbound envelopes whose sealed payload this environment opened. */
   readonly unsealed: number;
   /**
+   * Inbound envelopes accepted from a peer whose pin stands at `self-signed`:
+   * both of its public keys are provably chosen by one holder and bound to the
+   * mesh address claimed.
+   */
+  readonly bindingVerified: number;
+  /**
+   * Inbound envelopes accepted from a peer still pinned on bare
+   * trust-on-first-use, because the wrapper carried no key binding (a v1/v2
+   * migration-window peer). Not an error — an honest count of how much of this
+   * mesh is still unbound.
+   */
+  readonly bindingAbsent: number;
+  /**
    * Outbound cross-environment delegations that shipped WITH their prompt
    * snapshot bytes attached, so the receiver can run them without waiting for a
    * separate snapshot transfer.
@@ -263,6 +294,17 @@ export interface WorkjetMailboxTransportRejections {
   readonly expired: number;
   readonly signature: number;
   readonly keyContinuity: number;
+  /**
+   * A wrapper whose key binding did not hold: a signature that did not verify
+   * against the envelope's signing key, a claim naming a different
+   * envelope/source pair than the envelope does, or a wrapper that omitted the
+   * binding for a peer already pinned WITH one (a strip-the-binding downgrade).
+   *
+   * Deliberately distinct from `keyContinuity`, which is a CONFLICT with an
+   * already-pinned key. These are different attacks and an operator watching
+   * one should not have it hidden inside the other's count.
+   */
+  readonly keyBinding: number;
   /**
    * A sealed payload that would not open under this envelope id: a blob sealed
    * to another environment, a tampered ciphertext, or a replay lifted onto a
@@ -303,6 +345,8 @@ const EMPTY_COUNTERS: WorkjetMailboxTransportCounters = {
   plainFirstContact: 0,
   payloadTooLarge: 0,
   unsealed: 0,
+  bindingVerified: 0,
+  bindingAbsent: 0,
   snapshotAttached: 0,
   snapshotOversized: 0,
   snapshotStored: 0,
@@ -315,6 +359,7 @@ const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
   expired: 0,
   signature: 0,
   keyContinuity: 0,
+  keyBinding: 0,
   sealing: 0,
   snapshotDigest: 0,
 };
@@ -460,15 +505,55 @@ export const WorkjetTransportPayloadWrapperV2 = Schema.Struct({
   ]),
 });
 
-/** What a pull may legitimately find on the wire: v2, or a v1 straggler. */
+/** A detached Ed25519 signature, base64url. 86 characters when well-formed. */
+const KeyBindingSignature = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,512}$/));
+
+/**
+ * What this transport produces today: v2 plus a self-signed KEY BINDING.
+ *
+ * The binding is the whole point of v3 and the reason a wrapper version had to
+ * change at all. `payload_json` is covered by NO signature — the routing
+ * envelope's signature covers `envelope_json` only — so up to v2 any CTOX room
+ * member could republish an honest peer's envelope with `senderEncryptionKey`
+ * swapped for its own, and the receiver would pin the honest signing key beside
+ * the attacker's encryption key. Every later reply to that peer would then be
+ * sealed to the attacker.
+ *
+ * `keyBinding` is a detached Ed25519 signature by `senderSigningKey` over the
+ * canonical claim documented at `WORKJET_MESH_KEY_BINDING_DOMAIN` (WorkjetMeshIdentity):
+ * envelope id, claimed source pair, and BOTH public keys. The receiver verifies
+ * it against the same key the routing envelope verified against, before pinning
+ * anything, so the two keys are provably chosen by one holder and bound to the
+ * mesh address being claimed.
+ *
+ * It is NOT a room-derived binding and does not pretend to be one; see the
+ * domain constant for what remains open and why a room-keyed MAC would add
+ * nothing against an in-room attacker.
+ */
+export const WorkjetTransportPayloadWrapperV3 = Schema.Struct({
+  schemaVersion: Schema.Literal(3),
+  senderSigningKey: MeshPublicKey,
+  senderEncryptionKey: MeshPublicKey,
+  keyBinding: KeyBindingSignature,
+  body: Schema.Union([
+    Schema.Struct({ sealed: WorkjetTransportSealedBody }),
+    Schema.Struct({
+      plain: WorkjetMailboxPayload,
+      reason: Schema.Literal("recipient-key-unknown"),
+    }),
+  ]),
+});
+
+/** What a pull may legitimately find on the wire: v3, or a v2/v1 straggler. */
 export const WorkjetTransportPayloadWrapper = Schema.Union([
+  WorkjetTransportPayloadWrapperV3,
   WorkjetTransportPayloadWrapperV2,
   WorkjetTransportPayloadWrapperV1,
 ]);
 export type WorkjetTransportPayloadWrapper = typeof WorkjetTransportPayloadWrapper.Type;
 
 const encodeWrapperJson = Schema.encodeEffect(
-  Schema.fromJsonString(WorkjetTransportPayloadWrapperV2),
+  Schema.fromJsonString(WorkjetTransportPayloadWrapperV3),
 );
 const decodeWrapperJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(WorkjetTransportPayloadWrapper),
@@ -759,13 +844,25 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     sql<{
       readonly publicKey: string;
       readonly encryptionPublicKey: string | null;
+      readonly keyBinding: string;
     }>`
-      SELECT public_key AS "publicKey", encryption_public_key AS "encryptionPublicKey"
+      SELECT public_key AS "publicKey", encryption_public_key AS "encryptionPublicKey",
+             key_binding AS "keyBinding"
       FROM workjet_mailbox_peer_keys
       WHERE source_workspace_id = ${input.workspaceId}
         AND source_environment_id = ${input.environmentId}
       LIMIT 1
     `.pipe(Effect.map((rows) => rows[0]));
+
+  /**
+   * The verdict on one envelope's identity claim. `accepted` carries the level
+   * the pin now stands at, so the caller can count sealed-but-unbound peers
+   * separately from bound ones; every refusal carries the bounded code that
+   * goes into the audit event and the rejection counter.
+   */
+  type PeerKeyVerdict =
+    | { readonly _tag: "accepted"; readonly binding: WorkjetMeshPeerBinding }
+    | { readonly _tag: "refused"; readonly reason: WorkjetMailboxPeerBindingRejection };
 
   const acceptPeerKey = Effect.fn("WorkjetMailboxTransport.acceptPeerKey")(function* (input: {
     readonly workspaceId: WorkjetMeshWorkspaceId;
@@ -773,23 +870,46 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     readonly publicKey: string;
     /** Absent for a v1 wrapper, which predates the encryption key entirely. */
     readonly encryptionPublicKey: string | undefined;
+    /**
+     * `true` when this envelope carried a key binding that ALREADY verified
+     * against `publicKey`. The caller does the crypto; this function only
+     * decides what that verified fact means for the durable pin.
+     */
+    readonly bound: boolean;
     readonly nowMillis: number;
   }) {
+    const level: WorkjetMeshPeerBinding = input.bound ? "self-signed" : "tofu";
     const pinned = yield* readPeerKeys(input);
+
     if (pinned !== undefined) {
-      if (pinned.publicKey !== input.publicKey) return false;
+      if (pinned.publicKey !== input.publicKey) {
+        return { _tag: "refused", reason: "signing-key-conflict" } as const;
+      }
+
+      // A peer whose keys were pinned under a verified binding must never fall
+      // back to bare trust-on-first-use. Without this, an attacker strips the
+      // `keyBinding` field (or replays a v2 wrapper) and is back to the exact
+      // substitution the binding exists to prevent.
+      if (pinned.keyBinding === "self-signed" && !input.bound) {
+        return { _tag: "refused", reason: "binding-downgrade" } as const;
+      }
+
       if (input.encryptionPublicKey === undefined) {
         // A v1 straggler. Its silence about the encryption key is not evidence
         // of a rotation, so an already-learned key must survive it untouched.
-        return true;
+        return { _tag: "accepted", binding: pinned.keyBinding as WorkjetMeshPeerBinding } as const;
       }
+
       if (pinned.encryptionPublicKey === null) {
         // The signing key was pinned before this peer ever advertised an
         // encryption key (a pre-044 row, or a v1 first contact). Learning it now
-        // is the SAME first-use event, one field later.
+        // is the SAME first-use event, one field later — and the binding level
+        // is set with it, because the key and the proof of who chose it arrive
+        // together or not at all.
         yield* sql`
           UPDATE workjet_mailbox_peer_keys
-          SET encryption_public_key = ${input.encryptionPublicKey}
+          SET encryption_public_key = ${input.encryptionPublicKey},
+              key_binding = ${level}
           WHERE source_workspace_id = ${input.workspaceId}
             AND source_environment_id = ${input.environmentId}
             AND encryption_public_key IS NULL
@@ -797,29 +917,61 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
         const winner = yield* readPeerKeys(input);
         // A concurrent pull may have filled the column first; whichever key won
         // is now THE pinned key, and this envelope is judged against it.
-        return winner?.encryptionPublicKey === input.encryptionPublicKey;
+        return winner?.encryptionPublicKey === input.encryptionPublicKey
+          ? ({
+              _tag: "accepted",
+              binding: (winner?.keyBinding ?? level) as WorkjetMeshPeerBinding,
+            } as const)
+          : ({ _tag: "refused", reason: "encryption-key-conflict" } as const);
       }
+
       // Continuity applies to both keys with the same severity: silently
       // adopting a rotated encryption key would let a room member redirect a
       // peer's future replies to itself.
-      return pinned.encryptionPublicKey === input.encryptionPublicKey;
+      if (pinned.encryptionPublicKey !== input.encryptionPublicKey) {
+        return { _tag: "refused", reason: "encryption-key-conflict" } as const;
+      }
+
+      // The keys are unchanged and this envelope proved the binding the stored
+      // row never had. UPGRADING is safe in a way downgrading is not: it is the
+      // same key material, now with evidence attached.
+      if (input.bound && pinned.keyBinding !== "self-signed") {
+        yield* sql`
+          UPDATE workjet_mailbox_peer_keys
+          SET key_binding = 'self-signed'
+          WHERE source_workspace_id = ${input.workspaceId}
+            AND source_environment_id = ${input.environmentId}
+            AND public_key = ${input.publicKey}
+            AND encryption_public_key = ${input.encryptionPublicKey}
+        `;
+        return { _tag: "accepted", binding: "self-signed" } as const;
+      }
+      return { _tag: "accepted", binding: pinned.keyBinding as WorkjetMeshPeerBinding } as const;
     }
 
     yield* sql`
       INSERT OR IGNORE INTO workjet_mailbox_peer_keys
         (source_workspace_id, source_environment_id, public_key, encryption_public_key,
-         first_seen_at_ms)
+         first_seen_at_ms, key_binding)
       VALUES (${input.workspaceId}, ${input.environmentId}, ${input.publicKey},
-              ${input.encryptionPublicKey ?? null}, ${input.nowMillis})
+              ${input.encryptionPublicKey ?? null}, ${input.nowMillis}, ${level})
     `;
 
     const winner = yield* readPeerKeys(input);
-    if (winner?.publicKey !== input.publicKey) return false;
-    return (
-      input.encryptionPublicKey === undefined ||
-      winner.encryptionPublicKey === null ||
-      winner.encryptionPublicKey === input.encryptionPublicKey
-    );
+    if (winner?.publicKey !== input.publicKey) {
+      return { _tag: "refused", reason: "signing-key-conflict" } as const;
+    }
+    if (
+      input.encryptionPublicKey !== undefined &&
+      winner.encryptionPublicKey !== null &&
+      winner.encryptionPublicKey !== input.encryptionPublicKey
+    ) {
+      return { _tag: "refused", reason: "encryption-key-conflict" } as const;
+    }
+    return {
+      _tag: "accepted",
+      binding: (winner.keyBinding ?? level) as WorkjetMeshPeerBinding,
+    } as const;
   });
 
   /**
@@ -969,10 +1121,27 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
             : Option.none();
         if (recipient._tag === "pinned" && Option.isNone(sealed)) return Option.none();
 
+        // The binding is signed over the SIGNED envelope's own source pair and
+        // envelope id, never over anything the caller chose, so a wrapper can
+        // only ever assert the address the routing envelope already claims.
+        const keyBinding = yield* identity
+          .signKeyBinding({
+            envelopeId: envelope.envelopeId,
+            sourceWorkspaceId: envelope.sourceWorkspaceId,
+            sourceEnvironmentId: envelope.sourceEnvironmentId,
+          })
+          .pipe(Effect.option);
+        // A wrapper without a binding would be pinned as bare `tofu` by the
+        // receiver and would fail outright against a peer that has already seen
+        // a bound wrapper. Shipping one is worse than not shipping the
+        // envelope, so a signing fault takes the ordinary attempt budget.
+        if (Option.isNone(keyBinding)) return Option.none();
+
         const json = yield* encodeWrapperJson({
-          schemaVersion: 2,
+          schemaVersion: 3,
           senderSigningKey: identity.publicKey,
           senderEncryptionKey: identity.encryptionPublicKey,
+          keyBinding: keyBinding.value,
           body: Option.match(sealed, {
             onSome: (blob) => ({ sealed: blob }) as const,
             onNone: () => ({ plain: payload, reason: "recipient-key-unknown" }) as const,
@@ -1179,30 +1348,81 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
         return { _tag: "rejected", kind: "expired" } as const;
       }
 
-      // v1 and v2 wrappers are normalized to one shape here, so nothing below
-      // has to know which migration-window form arrived.
+      // v1, v2 and v3 wrappers are normalized to one shape here, so nothing
+      // below has to know which migration-window form arrived. `binding` is
+      // `undefined` for every form that predates it.
       const keys =
         wrapper.value.schemaVersion === 1
-          ? { signing: wrapper.value.senderPublicKey, encryption: undefined }
+          ? {
+              signing: wrapper.value.senderPublicKey,
+              encryption: undefined,
+              binding: undefined,
+            }
           : {
               signing: wrapper.value.senderSigningKey,
               encryption: wrapper.value.senderEncryptionKey,
+              binding: wrapper.value.schemaVersion === 3 ? wrapper.value.keyBinding : undefined,
             };
 
       const verified = yield* identity.verifyRoutingEnvelope(envelope.value, keys.signing);
       if (!verified) return { _tag: "rejected", kind: "signature" } as const;
 
-      // Continuity is checked only AFTER the signature verifies, so a forged
-      // envelope can never pin a key for a source it does not control.
-      const continuous = yield* acceptPeerKey({
+      /** Refuse this envelope's identity claim, audited with its bounded code. */
+      const refuseBinding = (reasonCode: WorkjetMailboxPeerBindingRejection, kind: RejectionKind) =>
+        emit({
+          _tag: "mesh-peer-binding-rejected",
+          occurredAt: input.now,
+          envelopeId: envelope.value.envelopeId,
+          sourceWorkspaceId: envelope.value.sourceWorkspaceId,
+          sourceEnvironmentId: envelope.value.sourceEnvironmentId,
+          reasonCode,
+        }).pipe(Effect.as({ _tag: "rejected", kind } as const));
+
+      // The key binding is checked against the SAME key the routing envelope
+      // just verified against — not against the key the binding names — so a
+      // peer cannot bind its own keypair onto somebody else's signed envelope.
+      // The claim is rebuilt from the SIGNED envelope's fields, so a binding
+      // lifted from another envelope or another source pair cannot verify here
+      // even though it is a genuine signature somewhere else.
+      let bound = false;
+      if (keys.binding !== undefined && keys.encryption !== undefined) {
+        bound = yield* identity.verifyKeyBinding(
+          {
+            envelopeId: envelope.value.envelopeId,
+            sourceWorkspaceId: envelope.value.sourceWorkspaceId,
+            sourceEnvironmentId: envelope.value.sourceEnvironmentId,
+            senderSigningKey: keys.signing,
+            senderEncryptionKey: keys.encryption,
+          },
+          keys.binding,
+        );
+        // A wrapper that CARRIES a binding and fails it is not a peer without
+        // one: it is a forgery or a lifted signature, and it is refused rather
+        // than quietly demoted to trust-on-first-use.
+        if (!bound) return yield* refuseBinding("binding-invalid", "keyBinding");
+      }
+
+      // Continuity is checked only AFTER the signature and the binding verify,
+      // so a forged envelope can never pin a key for a source it does not
+      // control, and an unverifiable binding never reaches the pin table.
+      const verdict = yield* acceptPeerKey({
         workspaceId: envelope.value.sourceWorkspaceId,
         environmentId: envelope.value.sourceEnvironmentId,
         publicKey: keys.signing,
         encryptionPublicKey: keys.encryption,
+        bound,
         nowMillis: input.nowMillis,
       }).pipe(Effect.orElseSucceed(() => null));
-      if (continuous === null) return { _tag: "deferred" } as const;
-      if (!continuous) return { _tag: "rejected", kind: "keyContinuity" } as const;
+      if (verdict === null) return { _tag: "deferred" } as const;
+      if (verdict._tag === "refused") {
+        // A downgrade is an attack on the binding, the two key conflicts are
+        // attacks on continuity. They are audited alike and counted apart.
+        return yield* refuseBinding(
+          verdict.reason,
+          verdict.reason === "binding-downgrade" ? "keyBinding" : "keyContinuity",
+        );
+      }
+      bump(verdict.binding === "self-signed" ? "bindingVerified" : "bindingAbsent");
 
       // Unsealing happens only after signature AND continuity: a blob is opened
       // solely for a sender whose key this machine has already accepted.

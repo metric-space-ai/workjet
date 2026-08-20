@@ -1094,8 +1094,33 @@ export type WorkjetMailboxActivityKind = (typeof WORKJET_MAILBOX_ACTIVITY_KINDS)
 export const WORKJET_MESH_ROSTER_MAX_PEERS = 200;
 
 /**
+ * How strongly a peer's pinned keys are bound to the environment id they claim.
+ *
+ * There are exactly two honest levels today, and neither of them is a
+ * ROOM-derived binding — see `WORKJET_MESH_KEY_BINDING_DOMAIN` in the server's
+ * WorkjetMeshIdentity for why a room-keyed MAC would be worthless against the
+ * adversary that matters (every CTOX room member knows the room secret, and
+ * room membership is exactly what "can write into the replicated collection"
+ * means).
+ *
+ * - `"tofu"` — trust on first use and nothing more. The keys were pinned from a
+ *   wrapper that carried no key binding (a v1/v2 migration-window peer). The
+ *   signing key is proven-possessed, because the routing envelope verified
+ *   against it before the pin; the ENCRYPTION key is not, so a room member who
+ *   raced the first envelope could have substituted its own.
+ * - `"self-signed"` — the peer's wrapper carried a key binding signed by the
+ *   same Ed25519 key the routing envelope verified against, covering BOTH
+ *   public keys and the environment id claimed. Key substitution by a third
+ *   room member is excluded; a first-contact impersonation by a room member
+ *   that owns neither key is NOT — that needs a per-device attestation the
+ *   CTOX daemon does not expose.
+ */
+export const WorkjetMeshPeerBinding = Schema.Literals(["tofu", "self-signed"]);
+export type WorkjetMeshPeerBinding = typeof WorkjetMeshPeerBinding.Type;
+
+/**
  * One mesh peer this machine has ALREADY exchanged envelopes with, as recorded
- * by trust-on-first-use peer-key pinning (migrations 043/044).
+ * by trust-on-first-use peer-key pinning (migrations 043/044/049).
  *
  * Redaction discipline, identical to every other client-facing mailbox schema:
  * ids and timestamps only. The pinned Ed25519 signing key and X25519 encryption
@@ -1115,6 +1140,12 @@ export const WorkjetMeshRosterPeer = Schema.Struct({
   firstSeenAt: WorkjetMailboxTimestamp,
   /** True once the peer's encryption key is pinned, so a send can be sealed. */
   sealedDeliveryReady: Schema.Boolean,
+  /**
+   * How strongly this peer's keys are bound to the environment id it claims.
+   * Surfaced so the UI can say which trust level a peer actually has instead of
+   * implying every pinned peer is equally verified.
+   */
+  binding: WorkjetMeshPeerBinding,
 });
 export type WorkjetMeshRosterPeer = typeof WorkjetMeshRosterPeer.Type;
 

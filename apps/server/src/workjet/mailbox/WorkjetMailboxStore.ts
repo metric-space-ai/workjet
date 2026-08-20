@@ -9,6 +9,7 @@ import {
   WorkjetMailboxError,
   WorkjetMailboxPayload,
   WorkjetMailboxTimestamp,
+  WorkjetMeshPeerBinding,
   WorkjetMeshWorkspaceId,
   WorkjetRoutingEnvelope,
   WORKJET_TERMINAL_DELEGATION_STATES,
@@ -271,6 +272,8 @@ export interface WorkjetMeshPeerRecord {
   readonly environmentId: EnvironmentId;
   readonly firstSeenAtMillis: number;
   readonly sealedDeliveryReady: boolean;
+  /** The trust level of the pin (migration 050). `tofu` for pre-050 rows. */
+  readonly binding: WorkjetMeshPeerBinding;
 }
 
 /** A bounded page of peers plus whether the pin table holds more than the bound. */
@@ -430,18 +433,25 @@ const DelegationEdgeDbRow = Schema.Struct({
 });
 
 /**
- * One trust-on-first-use peer pin (migrations 043/044) as the ROSTER sees it.
+ * One peer pin (migrations 043/044/049) as the ROSTER sees it.
  *
  * The two key columns are absent on purpose: the roster read exists to answer
  * "which machines has this one exchanged mail with", and no caller of it ever
  * needs key material. `sealedDeliveryReady` is SQL's derived answer to "is an
- * encryption key pinned", which is the only key fact a recipient picker needs.
+ * encryption key pinned", which is the only key fact a recipient picker needs,
+ * and `binding` is the trust LEVEL of the pin — a different question, which
+ * `sealedDeliveryReady` alone would let a reader answer wrongly.
+ *
+ * `binding` is decoded through the contract literal rather than as a bare
+ * string, so a hand-edited or corrupted column surfaces as a corrupt-row error
+ * instead of quietly becoming an unknown trust level the UI would render raw.
  */
 const MeshPeerDbRow = Schema.Struct({
   workspaceId: WorkjetMeshWorkspaceId,
   environmentId: EnvironmentId,
   firstSeenAtMillis: Schema.Int,
   sealedDeliveryReady: Schema.Int,
+  binding: WorkjetMeshPeerBinding,
 });
 const decodeMeshPeerDbRow = Schema.decodeUnknownEffect(MeshPeerDbRow);
 
@@ -449,7 +459,8 @@ const MESH_PEER_COLUMNS = `
   source_workspace_id AS "workspaceId",
   source_environment_id AS "environmentId",
   first_seen_at_ms AS "firstSeenAtMillis",
-  CASE WHEN encryption_public_key IS NULL THEN 0 ELSE 1 END AS "sealedDeliveryReady"
+  CASE WHEN encryption_public_key IS NULL THEN 0 ELSE 1 END AS "sealedDeliveryReady",
+  key_binding AS "binding"
 `;
 
 const decodeOutboxDbRow = Schema.decodeUnknownEffect(OutboxDbRow);
@@ -2124,6 +2135,7 @@ export const make = Effect.gen(function* () {
               environmentId: decoded.environmentId,
               firstSeenAtMillis: decoded.firstSeenAtMillis,
               sealedDeliveryReady: decoded.sealedDeliveryReady === 1,
+              binding: decoded.binding,
             }),
           ),
         ),

@@ -61,6 +61,7 @@ import Migration0045 from "./Migrations/045_WorkjetDelegationEdges.ts";
 import Migration0047 from "./Migrations/047_WorkjetDelegationResult.ts";
 import Migration0048 from "./Migrations/048_WorkjetDelegationUsage.ts";
 import Migration0049 from "./Migrations/049_WorkjetDelegationResultRedelivery.ts";
+import Migration0050 from "./Migrations/050_WorkjetMailboxPeerKeyBinding.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -122,6 +123,7 @@ export const migrationEntries = [
   [47, "WorkjetDelegationResult", Migration0047],
   [48, "WorkjetDelegationUsage", Migration0048],
   [49, "WorkjetDelegationResultRedelivery", Migration0049],
+  [50, "WorkjetMailboxPeerKeyBinding", Migration0050],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -10,6 +10,7 @@ import {
   type ThreadId,
   type WorkjetMailboxDelegateTaskRpcInput,
   type WorkjetMailboxSendMessageRpcInput,
+  type WorkjetMeshPeerBinding,
   type WorkjetMeshRoster,
   type WorkjetMeshRosterPeer,
 } from "@t3tools/contracts";
@@ -256,6 +257,21 @@ export function orderWorkjetRosterPeers(
 ): ReadonlyArray<WorkjetMeshRosterPeer> {
   if (!roster) return [];
   return [...roster.peers].sort((left, right) => right.firstSeenAt.localeCompare(left.firstSeenAt));
+}
+
+/**
+ * What the mesh actually knows about WHOSE machine a peer entry is.
+ *
+ * This exists because `sealedDeliveryReady` reads like a security assurance and
+ * is not one: it says a payload can be encrypted to a pinned key, not that the
+ * key belongs to the machine that owns the environment id. Only the binding
+ * level answers that, and both of its answers are qualified — neither says
+ * "verified", because the mesh cannot yet make that claim about any peer.
+ */
+export function workjetPeerTrustLabel(binding: WorkjetMeshPeerBinding): string {
+  return binding === "self-signed"
+    ? "This peer signed for its own keys, so no other machine in the room could have substituted them. It is still the machine that claimed this environment id first."
+    : "Keys pinned on first contact only, without a signed key binding. Trust here rests on CTOX room membership alone.";
 }
 
 /** `2026-08-18T10:00:00.000Z` → `2026-08-18`, the honest resolution for a pin date. */
@@ -555,11 +571,16 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
           </p>
         ) : null}
         {selectedPeer ? (
-          <p className="text-[11px] text-muted-foreground">
-            {selectedPeer.sealedDeliveryReady
-              ? "This peer's encryption key is pinned, so the payload is sealed."
-              : "No encryption key pinned yet, so the first envelope travels unsealed inside the CTOX room."}
-          </p>
+          <>
+            <p className="text-[11px] text-muted-foreground">
+              {selectedPeer.sealedDeliveryReady
+                ? "This peer's encryption key is pinned, so the payload is sealed."
+                : "No encryption key pinned yet, so the first envelope travels unsealed inside the CTOX room."}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {workjetPeerTrustLabel(selectedPeer.binding)}
+            </p>
+          </>
         ) : null}
         {remoteRecipient ? (
           <p className="text-[11px] text-muted-foreground">Queued until the mesh delivers.</p>

@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   ThreadId,
   WorkjetMeshWorkspaceId,
+  type WorkjetMeshPeerBinding,
   type WorkjetMeshRoster,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -417,12 +418,18 @@ describe("WorkjetSendToWorkerPanelContent", () => {
 // Cross-machine recipient roster
 // ===============================
 
-const rosterPeer = (environmentId: string, firstSeenAt: string, sealed = true) => ({
+const rosterPeer = (
+  environmentId: string,
+  firstSeenAt: string,
+  sealed = true,
+  binding: WorkjetMeshPeerBinding = "self-signed",
+) => ({
   schemaVersion: 1 as const,
   workspaceId: WorkjetMeshWorkspaceId.make("workjet-mesh-peer"),
   environmentId: EnvironmentId.make(environmentId),
   firstSeenAt,
   sealedDeliveryReady: sealed,
+  binding,
 });
 
 const ROSTER: WorkjetMeshRoster = {

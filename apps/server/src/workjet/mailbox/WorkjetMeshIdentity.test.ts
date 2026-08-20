@@ -387,6 +387,7 @@ it("labels the local environment and renders each peer's first contact as ISO", 
           environmentId: EnvironmentId.make("environment-peer"),
           firstSeenAtMillis: Date.UTC(2026, 7, 18, 10, 0, 0),
           sealedDeliveryReady: true,
+          binding: "self-signed",
         },
       ],
       truncated: false,
@@ -401,6 +402,10 @@ it("labels the local environment and renders each peer's first contact as ISO", 
   assert.equal(roster.peers.length, 1);
   assert.equal(roster.peers[0]?.firstSeenAt, "2026-08-18T10:00:00.000Z");
   assert.isTrue(roster.peers[0]?.sealedDeliveryReady);
+  // The trust LEVEL travels beside the "can be sealed" flag: sealing to a key
+  // and knowing whose key it is are different claims, and the roster must not
+  // let a reader collapse them.
+  assert.equal(roster.peers[0]?.binding, "self-signed");
   assert.isFalse(roster.truncated);
 });
 
@@ -415,6 +420,7 @@ it("carries ids, one timestamp, and no key material or liveness claim", () => {
           environmentId: EnvironmentId.make("environment-peer"),
           firstSeenAtMillis: 1_000,
           sealedDeliveryReady: false,
+          binding: "tofu",
         },
       ],
       truncated: true,
@@ -422,12 +428,16 @@ it("carries ids, one timestamp, and no key material or liveness claim", () => {
   });
 
   assert.deepEqual(Object.keys(roster.peers[0] ?? {}).toSorted(), [
+    "binding",
     "environmentId",
     "firstSeenAt",
     "schemaVersion",
     "sealedDeliveryReady",
     "workspaceId",
   ]);
+  // An unbound peer reports `tofu` rather than being silently rendered like a
+  // bound one; the honest label is the whole point of the field.
+  assert.equal(roster.peers[0]?.binding, "tofu");
   const serialized = JSON.stringify(roster);
   assert.notInclude(serialized, "publicKey");
   assert.notInclude(serialized, "encryption");

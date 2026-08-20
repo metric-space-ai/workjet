@@ -403,11 +403,15 @@ finishes. Scope estimates are rough and name the files.
     decoded (`WorkjetMailboxTransport.ts:595`) and then dropped, so a backlog
     drains one 50-envelope page per 10-second cycle. A small loop change in
     `pull` — **small**.
-28. **Three Rust logging-policy tests.** §12, independent of decision 3. Pin that
-    the host never selects `RequestLoggingPolicy::full` (all seven call sites use
-    `error_only_scoped` and switching one breaks no test), that
-    `sdk_config.request_log` defaults to `false`, and that `commercial_mode`
-    suppresses upstream capture. ~1 Rust test file — **small**.
+28. ~~**Three Rust logging-policy tests.**~~ **DONE 2026-08-20, commit
+    6c03e99c7.** §12, independent of decision 3. All three are now guards:
+    `request_logging_policy_test.rs` pins that the host never selects
+    `RequestLoggingPolicy::full` (it scans `server.rs` and names the offending
+    line, and pins the positive half so deleting the setup does not pass) and
+    that `sdk_config.request_log` defaults to `false`;
+    `logging_helpers_test.rs` pins that `commercial_mode` suppresses upstream
+    capture. Mutation-verified: one call site flipped to `full_scoped` fails
+    the guard with "selects full request logging at line(s) [2047]"; reverted.
 29. **Assert the provider/model picker stays enabled on orchestrator and worker
     threads.** §8. The property holds structurally but nothing proves it. One
     test file — **tiny**, and the cheapest open box in the plan.

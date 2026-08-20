@@ -42,3 +42,7 @@ node_modules/
 *.log
 .env*
 !.env.example
+
+# CTOX runtime state accidentally created by running ctox from this checkout.
+# Contains ctox-secrets.key — must never be committed.
+/runtime/

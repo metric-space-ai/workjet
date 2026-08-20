@@ -1,5 +1,36 @@
 # Progress-Board · Decision Hub (vormals Kundenpipeline) + Brillen-Approval
 
+## Paket I (2026-08-20 vormittags) — 3 weitere Bugs, alle strukturell
+- BUG 3 (Owner-sichtbar, Ursache subtil): Threads zeigte „Handeln (0)",
+  obwohl der Approval-Thread existierte. Auf welsch hat das LOGIN-Konto
+  michael.welsch@metric-space.ai die Rolle **admin**, ein per
+  issue-capability entstandenes UUID-Konto ist **chef** — meine Regel
+  „chef vor admin" wählte die Maschinen-Identität als Assignee.
+  FIX a19bb7afe: Owner = ÄLTESTES aktives chef/admin-Konto (das Konto,
+  mit dem der Workspace eingerichtet wurde); zusätzlich landen ALLE
+  Autoritätskonten in participant_ids, damit eine Fehlzuordnung nie
+  wieder einen unsichtbaren Posteingang erzeugt.
+- BUG 4 (Upgrade-Blocker, betrifft JEDEN Guest): `ctox upgrade --dev`
+  bricht im State-Backup ab, sobald der verwaltete Chromium läuft —
+  „state backup aborted … first_party_sets.db: database is locked".
+  Der Abbruch ist bewusst (kein inkonsistenter WAL-Snapshot), aber
+  Browser-Profile sind regenerierbarer Cache. FIX e40b60110: Backup
+  überspringt state/browser/profiles komplett. Ein Guest, der je den
+  Browser geöffnet hatte, konnte sonst NIE mehr upgraden.
+- BEFUND (kein Bug, Produktentscheidung für den Owner): Die
+  Business-Record-Projektion geht nach EINER Leerlaufrunde in
+  BUSINESS_OS_STANDBY_RECONCILE_INTERVAL_SECS = 30 min Schlaf. Neue
+  Entscheidungen erscheinen im Threads-Posteingang daher bis zu 30 min
+  verzögert. Der Decision Hub selbst ist sofort aktuell (liest RxDB
+  direkt) — betroffen ist nur die Aggregatsicht. OWNER: Wecken bei
+  neuen Entscheidungen gewünscht? (Kern-Tuning, CPU-relevant, ggf.
+  Abstimmung mit der Session „CTOX Desktop App".)
+- BEFUND: System-Module (mail, threads, ctox) werden aus dem RELEASE
+  serviert (current/src/apps/business-os/...), NICHT aus dem State.
+  Ein rsync nach state/business-os/modules/... wirkt nicht. Nur
+  installed-modules leben im State. Mail-Konto-UI kommt daher erst mit
+  Build 10 auf welsch an.
+
 ## Paket H (2026-08-20 früh) — Threads-Kette verifiziert + 2 echte Bugs
 - BUG 1 (selbst gefunden, VOR Auslieferung): Threads-Projektion liest
   `business_records`; die App schreibt Entscheidungen aber per RxDB —

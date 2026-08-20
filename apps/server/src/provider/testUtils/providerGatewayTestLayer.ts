@@ -8,7 +8,11 @@
  *
  * @module provider/testUtils/providerGatewayTestLayer
  */
-import { WorkjetGatewayOperationError, type WorkjetGatewayStatus } from "@t3tools/contracts";
+import {
+  WorkjetGatewayOperationError,
+  type WorkjetGatewayCatalog,
+  type WorkjetGatewayStatus,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -39,12 +43,22 @@ export const readyGatewayStatus = (providerEndpoint: string): WorkjetGatewayStat
   configuredModelCount: 1,
 });
 
-/** Layer serving one fixed status snapshot. */
-export const providerGatewayTestLayer = (status: WorkjetGatewayStatus) =>
+/**
+ * Layer serving one fixed status snapshot, and optionally one fixed catalog.
+ *
+ * `catalog` stays unsupported by default so a test that reaches for it
+ * unintentionally still fails loudly: model→provider resolution must only
+ * happen for a session that actually pinned a model on a header-carrying
+ * driver, and a silently-succeeding catalog would hide a regression there.
+ */
+export const providerGatewayTestLayer = (
+  status: WorkjetGatewayStatus,
+  catalog?: WorkjetGatewayCatalog,
+) =>
   Layer.succeed(ProviderGatewayService)(
     ProviderGatewayService.of({
       status: () => Effect.succeed(status),
-      catalog: () => unsupported(),
+      catalog: () => (catalog === undefined ? unsupported() : Effect.succeed(catalog)),
       start: () => unsupported(),
       stop: () => unsupported(),
       oauthStart: () => unsupported(),

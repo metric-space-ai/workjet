@@ -209,6 +209,15 @@ export class ProviderSessionDirectoryPersistenceError extends Schema.TaggedError
  *                            OpenCode instance pointed at an externally
  *                            managed server, whose environment Workjet never
  *                            gets to set
+ *   - `catalog-unavailable` the gateway is ready but its account/model
+ *                            catalog could not be read, so the selected
+ *                            model cannot be resolved to a provider
+ *   - `model-unrouted`      no enabled gateway account, pool, or route
+ *                            serves the model the composer selected
+ *   - `model-ambiguous`     several gateway providers serve the model and no
+ *                            route decides between them
+ *   - `route-ambiguous`     equally specific gateway routes claim the model
+ *                            for different pools
  */
 export class ProviderGatewayRoutingError extends Schema.TaggedErrorClass<ProviderGatewayRoutingError>()(
   "ProviderGatewayRoutingError",
@@ -220,6 +229,10 @@ export class ProviderGatewayRoutingError extends Schema.TaggedErrorClass<Provide
       "endpoint-unavailable",
       "driver-unsupported",
       "instance-unroutable",
+      "catalog-unavailable",
+      "model-unrouted",
+      "model-ambiguous",
+      "route-ambiguous",
     ]),
     detail: Schema.String,
     cause: Schema.optional(Schema.Defect()),

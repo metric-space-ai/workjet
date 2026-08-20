@@ -29,6 +29,15 @@
  * environment list is the most specific, operator-authored statement of
  * intent, and silently overriding it would make a declared variable a lie.
  *
+ * A routed session also has to tell the gateway WHICH upstream to serve. The
+ * gateway host's only per-request selector is the `X-CTOX-Provider` header, so
+ * the model the composer selected is resolved against the gateway catalog
+ * (`resolveWorkjetGatewayModelRoute`) and the answer is written as a request
+ * header through the mechanism each CLI actually has — `ANTHROPIC_CUSTOM_HEADERS`
+ * for Claude Code, a `http_headers` `-c` override for Codex. Grok and OpenCode
+ * have no such env mechanism, so their sessions keep relying on the gateway's
+ * configured default provider; see {@link GATEWAY_PROVIDER_HEADER_DRIVERS}.
+ *
  * Resolution is LAZY: it runs per session start, not at driver construction.
  * The gateway is a long-lived process that starts, stops, and faults
  * independently of the provider registry, so a value captured when the
@@ -38,7 +47,13 @@
  *
  * @module provider/ProviderGatewayRouting
  */
-import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
+import {
+  resolveWorkjetGatewayModelRoute,
+  WORKJET_GATEWAY_PROVIDER_HEADER,
+  type ProviderInstanceEnvironment,
+  type WorkjetGatewayCatalog,
+  type WorkjetGatewayProvider,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import { ProviderGatewayService } from "../providerGateway/ProviderGatewayService.ts";
@@ -111,6 +126,45 @@ export function isGatewayRoutableDriver(driver: string): driver is GatewayRoutab
 }
 
 /**
+ * Env var Claude Code reads extra request headers from, one `Name: Value` per
+ * line. Verified against the installed CLI 2.1.226 (loopback probe): with
+ * `ANTHROPIC_CUSTOM_HEADERS="X-CTOX-Provider: claude"` the observed
+ * `POST /v1/messages?beta=true` carried `x-ctox-provider: claude`.
+ */
+export const GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV = "ANTHROPIC_CUSTOM_HEADERS";
+
+/**
+ * Drivers that can actually CARRY the resolved provider to the gateway.
+ *
+ * The gateway host's only per-request selector is the
+ * `X-CTOX-Provider` header; with the header absent it serves its configured
+ * default provider. So a driver belongs here only when a verified mechanism
+ * exists to put that header on its requests:
+ *   - claudeAgent  `ANTHROPIC_CUSTOM_HEADERS` (verified, CLI 2.1.226)
+ *   - codex        `model_providers.<id>.http_headers.<name>` through the
+ *                  existing `-c` launch-argument seam (verified, codex-cli
+ *                  0.144.1: the probe saw `x-ctox-provider` on
+ *                  `GET /v1/models` and `POST /v1/responses`)
+ *
+ * Grok and OpenCode are deliberately absent. Grok does support per-header
+ * configuration, but only as `extra_headers`/`env_http_headers` inside
+ * `config.toml`, which Workjet does not author; OpenCode's AI-SDK providers
+ * expose no header environment variable at all. For those two the model is
+ * still resolved for reporting, but the session is NOT failed on a resolution
+ * error and no header is written — inventing one the request never carries
+ * would be a lie in the environment, and failing would regress routing that
+ * works today via the gateway's default provider.
+ */
+export const GATEWAY_PROVIDER_HEADER_DRIVERS = ["claudeAgent", "codex"] as const;
+export type GatewayProviderHeaderDriver = (typeof GATEWAY_PROVIDER_HEADER_DRIVERS)[number];
+
+export function driverCarriesGatewayProvider(
+  driver: string,
+): driver is GatewayProviderHeaderDriver {
+  return (GATEWAY_PROVIDER_HEADER_DRIVERS as ReadonlyArray<string>).includes(driver);
+}
+
+/**
  * Normalize the gateway's advertised endpoint for use as a base URL.
  *
  * A trailing slash is stripped because the harness CLIs join paths onto the
@@ -148,7 +202,10 @@ export function gatewayVersionedBaseUrl(providerEndpoint: string): string {
  * arrives as a literal string. Avoiding quotes also keeps the arguments
  * safe for the driver's plain whitespace tokenizer.
  */
-export function codexGatewayLaunchArgs(providerEndpoint: string): string {
+export function codexGatewayLaunchArgs(
+  providerEndpoint: string,
+  gatewayProvider?: WorkjetGatewayProvider | undefined,
+): string {
   const providerKey = `model_providers.${GATEWAY_CODEX_PROVIDER_ID}`;
   return [
     `-c model_provider=${GATEWAY_CODEX_PROVIDER_ID}`,
@@ -156,6 +213,13 @@ export function codexGatewayLaunchArgs(providerEndpoint: string): string {
     `-c ${providerKey}.base_url=${gatewayVersionedBaseUrl(providerEndpoint)}`,
     `-c ${providerKey}.wire_api=responses`,
     `-c ${providerKey}.env_key=${GATEWAY_CODEX_API_KEY_ENV}`,
+    // Static request header naming the upstream the gateway must serve.
+    // Verified against codex-cli 0.144.1: a dotted `-c` override under
+    // `http_headers` accepts a hyphenated header name and the probe saw the
+    // header on both `GET /v1/models` and `POST /v1/responses`.
+    ...(gatewayProvider === undefined
+      ? []
+      : [`-c ${providerKey}.http_headers.${WORKJET_GATEWAY_PROVIDER_HEADER}=${gatewayProvider}`]),
   ].join(" ");
 }
 
@@ -171,6 +235,13 @@ export function gatewayRoutingEnvironmentOverlay(input: {
   readonly driver: GatewayRoutableDriver;
   readonly providerEndpoint: string;
   readonly existingLaunchArgs?: string | undefined;
+  /**
+   * The gateway provider the selected model resolved to. Omitted when the
+   * session pinned no model, when the catalog declares none, or when the
+   * driver has no verified header mechanism — in each case the gateway falls
+   * back to its own configured default provider.
+   */
+  readonly gatewayProvider?: WorkjetGatewayProvider | undefined;
 }): Record<string, string> {
   const baseUrl = normalizeGatewayBaseUrl(input.providerEndpoint);
   const versionedBaseUrl = gatewayVersionedBaseUrl(input.providerEndpoint);
@@ -183,6 +254,11 @@ export function gatewayRoutingEnvironmentOverlay(input: {
       return {
         ANTHROPIC_BASE_URL: baseUrl,
         ANTHROPIC_API_KEY: GATEWAY_PLACEHOLDER_API_KEY,
+        ...(input.gatewayProvider === undefined
+          ? {}
+          : {
+              [GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV]: `${WORKJET_GATEWAY_PROVIDER_HEADER}: ${input.gatewayProvider}`,
+            }),
       };
 
     case "grok":
@@ -213,7 +289,7 @@ export function gatewayRoutingEnvironmentOverlay(input: {
 
     case "codex": {
       const configured = input.existingLaunchArgs?.trim() ?? "";
-      const gatewayArgs = codexGatewayLaunchArgs(input.providerEndpoint);
+      const gatewayArgs = codexGatewayLaunchArgs(input.providerEndpoint, input.gatewayProvider);
       return {
         [GATEWAY_CODEX_API_KEY_ENV]: GATEWAY_PLACEHOLDER_API_KEY,
         [GATEWAY_CODEX_LAUNCH_ARGS_ENV]:
@@ -274,9 +350,63 @@ export interface ResolveGatewayRoutedEnvironmentInput {
   readonly environment: ProviderInstanceEnvironment | undefined;
   /** Codex only — the instance's configured launch arguments, preserved. */
   readonly launchArgs?: string | undefined;
+  /**
+   * The model the composer selected for this session, as the harness sees it.
+   * Absent when the thread pinned no model; the gateway then serves its own
+   * default provider, exactly as before this resolution existed.
+   */
+  readonly model?: string | null | undefined;
   /** Overridable for tests; defaults to the server process environment. */
   readonly baseEnv?: NodeJS.ProcessEnv;
 }
+
+/**
+ * Resolve the selected model to a gateway provider, or fail typed.
+ *
+ * Only called for a driver that can carry the answer, and only when a model
+ * was actually selected: reading the catalog for a session that could not use
+ * the result would be a pointless management round trip on every session
+ * start, and — worse — would turn a catalog outage into a routing failure for
+ * sessions that never needed the catalog.
+ */
+const resolveGatewayProviderForModel = Effect.fn("resolveGatewayProviderForModel")(
+  function* (input: {
+    readonly driver: string;
+    readonly instanceId: string;
+    readonly model: string;
+  }): Effect.fn.Return<
+    WorkjetGatewayProvider | undefined,
+    ProviderGatewayRoutingError,
+    ProviderGatewayService
+  > {
+    const gateway = yield* ProviderGatewayService;
+    const catalog: WorkjetGatewayCatalog = yield* gateway.catalog().pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderGatewayRoutingError({
+            provider: input.driver,
+            instanceId: input.instanceId,
+            reason: "catalog-unavailable",
+            detail: `The Workjet gateway is ready but its account catalog could not be read (${cause.reason}), so model '${input.model}' cannot be resolved to a provider.`,
+            cause,
+          }),
+      ),
+    );
+
+    const resolution = resolveWorkjetGatewayModelRoute({ catalog, model: input.model });
+    if (resolution.outcome === "failed") {
+      return yield* new ProviderGatewayRoutingError({
+        provider: input.driver,
+        instanceId: input.instanceId,
+        reason: resolution.reason,
+        detail: resolution.detail,
+      });
+    }
+    // A skipped resolution leaves the header off on purpose; the gateway then
+    // applies its configured default provider.
+    return resolution.outcome === "resolved" ? resolution.provider : undefined;
+  },
+);
 
 /**
  * Resolve the environment a session should start with.
@@ -327,6 +457,16 @@ export const resolveGatewayRoutedEnvironment = Effect.fn("resolveGatewayRoutedEn
       });
     }
 
+    const selectedModel = input.model?.trim() ?? "";
+    const gatewayProvider =
+      selectedModel.length > 0 && driverCarriesGatewayProvider(input.driver)
+        ? yield* resolveGatewayProviderForModel({
+            driver: input.driver,
+            instanceId: input.instanceId,
+            model: selectedModel,
+          })
+        : undefined;
+
     return applyGatewayRoutingOverlay({
       merged,
       declared: input.environment,
@@ -334,6 +474,7 @@ export const resolveGatewayRoutedEnvironment = Effect.fn("resolveGatewayRoutedEn
         driver: input.driver,
         providerEndpoint,
         ...(input.launchArgs === undefined ? {} : { existingLaunchArgs: input.launchArgs }),
+        ...(gatewayProvider === undefined ? {} : { gatewayProvider }),
       }),
     });
   },

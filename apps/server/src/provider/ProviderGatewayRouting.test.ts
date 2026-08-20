@@ -1,11 +1,20 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
+import {
+  WorkjetGatewayAccountId,
+  WorkjetGatewayPoolId,
+  WorkjetGatewayRouteId,
+  type ProviderInstanceEnvironment,
+  type WorkjetGatewayCatalog,
+  type WorkjetGatewayProvider,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import {
   applyGatewayRoutingOverlay,
   codexGatewayLaunchArgs,
+  driverCarriesGatewayProvider,
   gatewayRoutingEnvironmentOverlay,
+  GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV,
   GATEWAY_CODEX_API_KEY_ENV,
   GATEWAY_CODEX_LAUNCH_ARGS_ENV,
   GATEWAY_GROK_API_KEY_ENV,
@@ -31,6 +40,49 @@ const declared = (
 ): ProviderInstanceEnvironment => variables.map((variable) => ({ ...variable, sensitive: false }));
 
 const readyLayer = providerGatewayTestLayer(readyGatewayStatus(ENDPOINT));
+
+const gatewayCatalog = (
+  accounts: ReadonlyArray<{
+    readonly id: string;
+    readonly provider: WorkjetGatewayProvider;
+    readonly modelIds: ReadonlyArray<string>;
+  }>,
+  routes: ReadonlyArray<{
+    readonly id: string;
+    readonly poolId: string;
+    readonly provider: WorkjetGatewayProvider;
+    readonly modelIds: ReadonlyArray<string>;
+  }> = [],
+): WorkjetGatewayCatalog => ({
+  schemaVersion: 1,
+  accounts: accounts.map((entry) => ({
+    id: WorkjetGatewayAccountId.make(entry.id),
+    label: entry.id,
+    provider: entry.provider,
+    enabled: true,
+    priority: 0,
+    weight: 1,
+    modelIds: entry.modelIds,
+    credentialSuffix: null,
+  })),
+  pools: [],
+  routes: routes.map((entry) => ({
+    id: WorkjetGatewayRouteId.make(entry.id),
+    label: entry.id,
+    poolId: WorkjetGatewayPoolId.make(entry.poolId),
+    provider: entry.provider,
+    modelIds: entry.modelIds,
+  })),
+  models: [],
+});
+
+const CATALOG = gatewayCatalog([
+  { id: "claude_1", provider: "claude", modelIds: ["claude-opus-4"] },
+  { id: "codex_1", provider: "codex", modelIds: ["gpt-5.4"] },
+]);
+
+const readyLayerWithCatalog = (catalog: WorkjetGatewayCatalog = CATALOG) =>
+  providerGatewayTestLayer(readyGatewayStatus(ENDPOINT), catalog);
 
 describe("gateway routing env mapping", () => {
   it("maps the Claude harness to base URL + placeholder key, never an auth token", () => {
@@ -353,6 +405,162 @@ describe("resolveGatewayRoutedEnvironment", () => {
           ANTHROPIC_BASE_URL: "https://api.anthropic.com",
         });
       }).pipe(Effect.provide(readyLayer)),
+  );
+
+  it.effect("carries the model's resolved provider as a Claude request header", () =>
+    Effect.gen(function* () {
+      const resolved = yield* resolveGatewayRoutedEnvironment({
+        driver: "claudeAgent",
+        instanceId: "claude_main",
+        routeViaGateway: true,
+        environment: [],
+        model: "claude-opus-4",
+        baseEnv: {},
+      });
+
+      // Verified against Claude Code 2.1.226 with a loopback probe: this
+      // variable puts `x-ctox-provider` on POST /v1/messages, which is the
+      // gateway host's only per-request upstream selector.
+      expect(resolved[GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV]).toBe("X-CTOX-Provider: claude");
+    }).pipe(Effect.provide(readyLayerWithCatalog())),
+  );
+
+  it.effect("carries the resolved provider as a Codex http_headers override", () =>
+    Effect.gen(function* () {
+      const resolved = yield* resolveGatewayRoutedEnvironment({
+        driver: "codex",
+        instanceId: "codex_main",
+        routeViaGateway: true,
+        environment: [],
+        model: "gpt-5.4",
+        baseEnv: {},
+      });
+
+      expect(resolved[GATEWAY_CODEX_LAUNCH_ARGS_ENV]).toContain(
+        "-c model_providers.workjet_gateway.http_headers.X-CTOX-Provider=codex",
+      );
+    }).pipe(Effect.provide(readyLayerWithCatalog())),
+  );
+
+  it.effect("lets an explicit route override which provider the model resolves to", () =>
+    Effect.gen(function* () {
+      const resolved = yield* resolveGatewayRoutedEnvironment({
+        driver: "claudeAgent",
+        instanceId: "claude_main",
+        routeViaGateway: true,
+        environment: [],
+        model: "claude-opus-4",
+        baseEnv: {},
+      });
+
+      expect(resolved[GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV]).toBe("X-CTOX-Provider: antigravity");
+    }).pipe(
+      Effect.provide(
+        readyLayerWithCatalog(
+          gatewayCatalog(
+            [
+              { id: "claude_1", provider: "claude", modelIds: ["claude-opus-4"] },
+              { id: "ag_1", provider: "antigravity", modelIds: [] },
+            ],
+            [{ id: "opus", poolId: "ag_pool", provider: "antigravity", modelIds: ["claude-*"] }],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("fails typed for a model the gateway does not serve", () =>
+    Effect.gen(function* () {
+      const failure = yield* resolveGatewayRoutedEnvironment({
+        driver: "claudeAgent",
+        instanceId: "claude_main",
+        routeViaGateway: true,
+        environment: [],
+        model: "made-up-model",
+        baseEnv: {},
+      }).pipe(Effect.flip);
+
+      expect(failure.reason).toBe("model-unrouted");
+      expect(failure.detail).toContain("made-up-model");
+    }).pipe(Effect.provide(readyLayerWithCatalog())),
+  );
+
+  it.effect("fails typed when two providers both serve the model", () =>
+    Effect.gen(function* () {
+      const failure = yield* resolveGatewayRoutedEnvironment({
+        driver: "codex",
+        instanceId: "codex_main",
+        routeViaGateway: true,
+        environment: [],
+        model: "shared-model",
+        baseEnv: {},
+      }).pipe(Effect.flip);
+
+      expect(failure.reason).toBe("model-ambiguous");
+    }).pipe(
+      Effect.provide(
+        readyLayerWithCatalog(
+          gatewayCatalog([
+            { id: "kimi_1", provider: "kimi", modelIds: ["shared-model"] },
+            { id: "zai_1", provider: "zai", modelIds: ["shared-model"] },
+          ]),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("reads no catalog at all when the session pinned no model", () =>
+    Effect.gen(function* () {
+      // The default test layer's `catalog()` FAILS, so this only passes while
+      // an unpinned session skips the lookup entirely.
+      const resolved = yield* resolveGatewayRoutedEnvironment({
+        driver: "claudeAgent",
+        instanceId: "claude_main",
+        routeViaGateway: true,
+        environment: [],
+        baseEnv: {},
+      });
+
+      expect(resolved[GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV]).toBeUndefined();
+    }).pipe(Effect.provide(readyLayer)),
+  );
+
+  it.effect("reads no catalog for a driver that cannot carry the header", () =>
+    Effect.gen(function* () {
+      // Grok and OpenCode have no verified header env var. Resolving anyway
+      // would turn an unroutable model into a session failure for a session
+      // whose request could never have carried the answer.
+      for (const driver of ["grok", "opencode"] as const) {
+        const resolved = yield* resolveGatewayRoutedEnvironment({
+          driver,
+          instanceId: `${driver}_main`,
+          routeViaGateway: true,
+          environment: [],
+          model: "made-up-model",
+          baseEnv: {},
+        });
+        expect(resolved[GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV]).toBeUndefined();
+      }
+      expect(driverCarriesGatewayProvider("grok")).toBe(false);
+      expect(driverCarriesGatewayProvider("opencode")).toBe(false);
+      expect(driverCarriesGatewayProvider("claudeAgent")).toBe(true);
+      expect(driverCarriesGatewayProvider("codex")).toBe(true);
+    }).pipe(Effect.provide(readyLayer)),
+  );
+
+  it.effect("fails typed when the catalog cannot be read", () =>
+    Effect.gen(function* () {
+      const failure = yield* resolveGatewayRoutedEnvironment({
+        driver: "claudeAgent",
+        instanceId: "claude_main",
+        routeViaGateway: true,
+        environment: [],
+        model: "claude-opus-4",
+        baseEnv: {},
+      }).pipe(Effect.flip);
+
+      expect(failure.reason).toBe("catalog-unavailable");
+    }).pipe(Effect.provide(readyLayer)),
   );
 
   it.effect("fails for a driver with no verified routing mechanism", () =>

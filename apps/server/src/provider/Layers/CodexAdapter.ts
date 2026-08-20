@@ -86,10 +86,14 @@ export interface CodexAdapterLiveOptions {
    * stale. When absent, the static `environment` above is used, which is
    * exactly the unrouted behavior.
    */
-  readonly resolveSessionEnvironment?: () => Effect.Effect<
-    NodeJS.ProcessEnv,
-    ProviderGatewayRoutingError
-  >;
+  readonly resolveSessionEnvironment?: (input?: {
+    /**
+     * The model the composer selected. The gateway needs it to pick the
+     * upstream provider that serves it, so the resolver — not the driver —
+     * decides what the session's request header says.
+     */
+    readonly model?: string | undefined;
+  }) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError>;
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -1679,8 +1683,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
         // Resolved per session start so gateway-routed instances observe the
         // gateway's current status rather than a value frozen at construction.
+        const selectedModel =
+          input.modelSelection?.instanceId === boundInstanceId
+            ? input.modelSelection.model
+            : undefined;
         const sessionEnvironment = options?.resolveSessionEnvironment
-          ? yield* options.resolveSessionEnvironment()
+          ? yield* options.resolveSessionEnvironment({ model: selectedModel })
           : options?.environment;
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,

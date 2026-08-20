@@ -289,10 +289,14 @@ export interface ClaudeAdapterLiveOptions {
    * path stays construction-time, because gateway routing changes where
    * requests go, never which binary runs.
    */
-  readonly resolveSessionEnvironment?: () => Effect.Effect<
-    NodeJS.ProcessEnv,
-    ProviderGatewayRoutingError
-  >;
+  readonly resolveSessionEnvironment?: (input?: {
+    /**
+     * The model the composer selected. The gateway needs it to pick the
+     * upstream provider that serves it, so the resolver — not the driver —
+     * decides what the session's request header says.
+     */
+    readonly model?: string | undefined;
+  }) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError>;
   readonly createQuery?: (input: {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
@@ -4128,7 +4132,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const sessionEnvironment = options?.resolveSessionEnvironment
         ? yield* makeClaudeEnvironment(
             claudeSettings,
-            yield* options.resolveSessionEnvironment(),
+            // The API model id is what actually travels on the wire, so it is
+            // the identity the gateway catalog has to be matched against.
+            yield* options.resolveSessionEnvironment({ model: apiModelId }),
           ).pipe(Effect.provideService(Path.Path, path))
         : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);

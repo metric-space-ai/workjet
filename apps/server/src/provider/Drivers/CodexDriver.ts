@@ -170,12 +170,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // rather than requiring it from the adapter's own R channel; the
       // gateway STATUS itself is still read lazily, per session start.
       const gateway = yield* ProviderGatewayService;
-      const resolveSessionEnvironment = () =>
+      const resolveSessionEnvironment = (session?: { readonly model?: string | undefined }) =>
         resolveGatewayRoutedEnvironment({
           driver: DRIVER_KIND,
           instanceId,
           routeViaGateway,
           environment,
+          // The composer's model decides which gateway upstream serves the
+          // session, so it has to reach the resolver per session start.
+          ...(session?.model === undefined ? {} : { model: session.model }),
           // Codex routing rides on the launch-args env var, so the operator's
           // configured launch arguments must be carried through rather than
           // shadowed.

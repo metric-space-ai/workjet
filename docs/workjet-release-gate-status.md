@@ -148,3 +148,18 @@ believing it.
   CLI entry point for `native/web-stack` (the crate already declares
   `[[bin]] workjet-web-stack`) and retarget the two shell scripts at it, or
   declare these gates CTOX-side and stop listing them as Workjet release gates.
+
+## Debts fixed on 2026-08-20 after the first measurement
+
+The first full gate run surfaced three breakages introduced by that same day's
+Workjet work — none of which any slice's own test run could have caught,
+because each slice only ran its own area:
+
+| Gate                                    | Was                                                                                                                                               | Now                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `@t3tools/mobile` typecheck             | 8 errors; `workjetConfig` became required and mobile could no longer build a `thread.turn.start` — thread creation was BROKEN, not merely untyped | 0 errors, 679/679 tests        |
+| `scripts/release-smoke.ts`              | aborted: the hardcoded workspace list did not know `packages/workjet-capabilities`, which `apps/server` depends on                                | "Release smoke checks passed." |
+| provider-gateway `cargo fmt` / `clippy` | 16 hunks in 4 files from the API-key slice; 1 clippy error                                                                                        | both exit 0                    |
+
+Lesson recorded: a slice that changes a shared contract must run the packages
+it does not own. Mobile is the one nothing in this project's workflow touches.

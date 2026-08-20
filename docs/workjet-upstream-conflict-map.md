@@ -65,6 +65,42 @@ foreign-history commits as standalone patches; with `--rebase-merges` it still
 re-applies patches rather than reusing trees, so tip-tree identity becomes an
 outcome to hope for instead of an invariant. The replay guarantees it.
 
+The exact script that produced `scratch/ancestry-probe`. Note `git log -1
+--format=%P` for the parents — see the root-commit trap in section 5.
+
+```bash
+#!/bin/bash
+set -euo pipefail
+OLD_BASE=$(git rev-parse 39d3a27d3)
+NEW_BASE=$(git rev-parse 6ae44b418)
+TIP=$(git rev-parse HEAD)
+MAPFILE=$(mktemp)
+echo "$OLD_BASE $NEW_BASE" > "$MAPFILE"
+
+lookup() {
+  local v
+  v=$(grep -m1 "^$1 " "$MAPFILE" | cut -d' ' -f2 || true)
+  [ -n "$v" ] && echo "$v" || echo "$1"
+}
+
+while read -r sha; do
+  args=()
+  for p in $(git log -1 --format=%P "$sha"); do args+=(-p "$(lookup "$p")"); done
+  new=$(
+    GIT_AUTHOR_NAME=$(git log -1 --format=%an "$sha") \
+    GIT_AUTHOR_EMAIL=$(git log -1 --format=%ae "$sha") \
+    GIT_AUTHOR_DATE=$(git log -1 --format=%aD "$sha") \
+    GIT_COMMITTER_NAME=$(git log -1 --format=%cn "$sha") \
+    GIT_COMMITTER_EMAIL=$(git log -1 --format=%ce "$sha") \
+    GIT_COMMITTER_DATE=$(git log -1 --format=%cD "$sha") \
+    git commit-tree "$sha^{tree}" "${args[@]}" -F <(git log -1 --format=%B "$sha")
+  )
+  echo "$sha $new" >> "$MAPFILE"
+done < <(git rev-list --topo-order --reverse "$OLD_BASE..$TIP")
+
+git branch -f scratch/ancestry-probe "$(lookup "$TIP")"
+```
+
 ### Verification of `scratch/ancestry-probe` (`98cd9ef0f`)
 
 ```

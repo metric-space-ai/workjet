@@ -2149,12 +2149,23 @@ ElectronSafeStorage.ts` with the Linux backend guard in
   `open-url` paths are unimplemented (`DesktopClerk.ts:142` handles
   `second-instance` for Clerk only). Confirmation is therefore not merely
   missing UI — the OS-originated link path it would guard does not exist.
-- [ ] Port support-bundle redaction and crash-report metadata without secrets.
-      Verified open 2026-08-20: nothing exists — no support/diagnostic bundle
-      builder, no `crashReporter` call, and no crash-metadata surface anywhere
-      under `apps/`, `packages/`, or `scripts/` (case-insensitive search for
-      `support-bundle`, `diagnostics bundle`, `crashReporter`,
-      `setUploadToServer` returns zero implementation hits).
+- [x] Port support-bundle redaction and crash-report metadata without secrets.
+      Done 2026-08-20 (commits `726decaeb`…`7999e8986`): a single JSON support
+      bundle with a DECLARED 59-field inventory that the builder test asserts
+      by set equality in both directions — an undeclared field fails, and so
+      does a declared field that stopped being emitted. One deny-biased
+      redaction gate (admission → substitution → residue check → bound); an
+      over-long value is OMITTED, never truncated, because a truncated secret
+      is a leaked prefix. The load-bearing decision: a log line is never
+      carried as free text but projected onto four named fields, so
+      `annotations.text` — where backend stdout could hold a prompt or a
+      provider payload — is dropped BY CONSTRUCTION. Crash metadata is
+      local-only: `uploadToServer: false` and NO `submitURL` at all, so no
+      later edit can quietly enable uploading, with exactly six gated keys and
+      no `addExtraParameter` path. Reachable from Help and from Diagnostics
+      settings; the bundle lands at a stated path and nothing is ever sent.
+      Canaries cover nine secret shapes plus six planted in a real temp state
+      directory, each asserted absent from the written file.
 - [x] Port permission denial, safe external navigation, launch-origin checks,
       secret scrubbing, and HTTP data/resource guards. Verified 2026-08-20,
       all five in place with tests. Permission denial: default-deny

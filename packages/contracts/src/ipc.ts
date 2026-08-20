@@ -485,6 +485,20 @@ export const DesktopWslDistroSchema = Schema.Struct({
   version: Schema.Literals([1, 2]),
 });
 
+/**
+ * One-time offer to import a legacy T3 Code user-data directory into the CTOX
+ * Desktop App directory. The import is a copy; the legacy directory is never
+ * modified or removed.
+ */
+export interface DesktopUserDataMigrationOffer {
+  /** Absolute path of the legacy directory the data would be copied from. */
+  legacyPath: string;
+  /** Absolute path of the current CTOX Desktop App user-data directory. */
+  targetPath: string;
+  /** Top-level entries the import would copy. Caches are never copied. */
+  entries: readonly string[];
+}
+
 export interface DesktopWslState {
   // True when the user has opted the WSL backend in; the actual backend
   // process is registered with the desktop pool independently of this
@@ -1071,6 +1085,16 @@ export interface DesktopBridge {
     readonly port?: number;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
+  /**
+   * One-time offer to import a legacy T3 Code user-data directory into the
+   * CTOX Desktop App directory. Null means nothing to offer. Optional: older
+   * desktop builds do not expose it.
+   */
+  getUserDataMigrationOffer?: () => Promise<DesktopUserDataMigrationOffer | null>;
+  /** Records acceptance and relaunches; the copy runs during the next launch. */
+  acceptUserDataMigration?: () => Promise<void>;
+  /** Records refusal. The offer is never shown again. */
+  declineUserDataMigration?: () => Promise<void>;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;

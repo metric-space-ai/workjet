@@ -4,7 +4,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as PlatformError from "effect/PlatformError";
 
 import type * as Electron from "electron";
 
@@ -34,6 +33,7 @@ interface ElectronAppCalls {
   readonly setAboutPanelOptions: Array<Electron.AboutPanelOptionsOptions>;
   readonly setDockIcon: string[];
   readonly setName: string[];
+  readonly setAsDefaultProtocolClient: string[];
 }
 
 const makeElectronAppLayer = (calls: ElectronAppCalls) =>
@@ -56,7 +56,11 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
     isDefaultProtocolClient: () => Effect.succeed(false),
-    setAsDefaultProtocolClient: () => Effect.succeed(true),
+    setAsDefaultProtocolClient: (protocol) =>
+      Effect.sync(() => {
+        calls.setAsDefaultProtocolClient.push(protocol);
+        return true;
+      }),
     setDesktopName: () => Effect.void,
     setDockIcon: (iconPath) =>
       Effect.sync(() => {
@@ -108,7 +112,6 @@ const withIdentity = <A, E, R>(
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
     readonly legacyPathExists?: boolean;
-    readonly legacyPathProbeError?: PlatformError.PlatformError;
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
   } = {},
@@ -117,6 +120,7 @@ const withIdentity = <A, E, R>(
     setAboutPanelOptions: [],
     setDockIcon: [],
     setName: [],
+    setAsDefaultProtocolClient: [],
   };
 
   return effect.pipe(
@@ -125,11 +129,7 @@ const withIdentity = <A, E, R>(
         Layer.provideMerge(
           FileSystem.layerNoop({
             exists: (path) =>
-              input.legacyPathProbeError
-                ? Effect.fail(input.legacyPathProbeError)
-                : Effect.succeed(
-                    input.legacyPathExists === true && path.includes("T3 Code (Alpha)"),
-                  ),
+              Effect.succeed(input.legacyPathExists === true && path.includes("t3code")),
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -143,50 +143,35 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("always resolves the CTOX Desktop App user-data path", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/CTOX Desktop App");
+      }),
+    ),
+  );
+
+  it.effect("never adopts an existing legacy directory as the live profile", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/CTOX Desktop App");
       }),
       { legacyPathExists: true },
     ),
   );
-
-  it.effect("preserves failures while inspecting the legacy userData path", () => {
-    const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
-    const cause = PlatformError.systemError({
-      _tag: "PermissionDenied",
-      module: "FileSystem",
-      method: "exists",
-      description: "permission denied",
-      pathOrDescriptor: legacyPath,
-    });
-
-    return withIdentity(
-      Effect.gen(function* () {
-        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-        const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
-
-        assert.instanceOf(error, DesktopAppIdentity.DesktopUserDataPathResolutionError);
-        assert.equal(error.legacyPath, legacyPath);
-        assert.strictEqual(error.cause, cause);
-        assert.equal(
-          error.message,
-          `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
-        );
-      }),
-      { legacyPathProbeError: cause },
-    );
-  });
 
   it.effect("configures app identity from the environment commit override", () => {
     const calls: ElectronAppCalls = {
       setAboutPanelOptions: [],
       setDockIcon: [],
       setName: [],
+      setAsDefaultProtocolClient: [],
     };
 
     return withIdentity(
@@ -199,6 +184,9 @@ describe("DesktopAppIdentity", () => {
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);
+        // The CTOX scheme is claimed first; the legacy scheme stays claimed so
+        // t3code:// links in older documents keep opening the app.
+        assert.deepEqual(calls.setAsDefaultProtocolClient, ["ctox-desktop", "t3code"]);
       }),
       {
         calls,

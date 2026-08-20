@@ -70,7 +70,11 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
     readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
+    /**
+     * Older user-data directory names, newest first. Never used as the live
+     * profile — only as migration sources (see DesktopUserDataMigration).
+     */
+    readonly legacyUserDataDirNames: readonly string[];
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -169,8 +173,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  // The CTOX Desktop App keeps its own Chromium profile directory, distinct
+  // from every T3 Code-era one. Matching the packaged productName means the
+  // explicit setPath below and Electron's own default resolve to the same
+  // place, so the single-instance lock can never create a second profile.
+  const userDataDirName = isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App";
+  const legacyUserDataDirNames: readonly string[] = isDevelopment
+    ? ["t3code-dev", "T3 Code (Dev)"]
+    : ["t3code", "T3 Code (Alpha)"];
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -221,7 +231,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,
-    legacyUserDataDirName,
+    legacyUserDataDirNames,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

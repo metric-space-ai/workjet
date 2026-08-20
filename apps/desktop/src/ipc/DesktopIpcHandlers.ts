@@ -31,6 +31,11 @@ import {
   setUpdateChannel,
 } from "./methods/updates.ts";
 import {
+  acceptUserDataMigration,
+  declineUserDataMigration,
+  getUserDataMigrationOffer,
+} from "./methods/userDataMigration.ts";
+import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
@@ -53,6 +58,10 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
+
+  yield* ipc.handle(getUserDataMigrationOffer);
+  yield* ipc.handle(acceptUserDataMigration);
+  yield* ipc.handle(declineUserDataMigration);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);

@@ -64,6 +64,7 @@ import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
 import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopState from "./app/DesktopState.ts";
+import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
@@ -219,7 +220,16 @@ const desktopApplicationLayer = Layer.mergeAll(
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),
 );
 
+// The migration layer runs the pending legacy user-data import while it is
+// constructed, and DesktopClerk depends on it, so the import always completes
+// before the single-instance lock opens the profile.
+const desktopUserDataMigrationLayer = DesktopUserDataMigration.layer.pipe(
+  Layer.provideMerge(desktopEnvironmentLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
 const desktopClerkLayer = DesktopClerk.layer.pipe(
+  Layer.provideMerge(desktopUserDataMigrationLayer),
   Layer.provideMerge(desktopEnvironmentLayer),
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(ElectronApp.layer),

@@ -229,6 +229,17 @@ import {
   WorkjetMeshRoster,
 } from "./workjetMailbox.ts";
 import { WorkjetMailboxAuditEvent } from "./workjetMailboxAudit.ts";
+import {
+  WorkjetCrossModeError,
+  WorkjetCrossModeGetThreadLinkRpcInput,
+  WorkjetCrossModeGetThreadLinkRpcResult,
+  WorkjetCrossModeListLinksRpcInput,
+  WorkjetCrossModeListLinksRpcResult,
+  WorkjetCrossModeOpenInCodeRpcInput,
+  WorkjetCrossModeOpenInCodeRpcResult,
+  WorkjetCrossModeSubmitRpcInput,
+  WorkjetCrossModeSubmitRpcResult,
+} from "./workjetCrossMode.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -340,6 +351,14 @@ export const WS_METHODS = {
   workjetMailboxSendHandoff: "workjet.mailbox.sendHandoff",
   workjetMailboxListHandoffs: "workjet.mailbox.listHandoffs",
   workjetMailboxAcceptHandoff: "workjet.mailbox.acceptHandoff",
+
+  // ADDITIVE cross-mode workflow bridge: link a Business OS object to a Code
+  // thread, read the backlink either way, and return results/reviews/follow-ups
+  // to the Business OS authority through the validated CTOX MCP command path.
+  workjetCrossModeOpenInCode: "workjet.crossMode.openInCode",
+  workjetCrossModeGetThreadLink: "workjet.crossMode.getThreadLink",
+  workjetCrossModeListLinks: "workjet.crossMode.listLinks",
+  workjetCrossModeSubmit: "workjet.crossMode.submit",
 
   // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
   workjetMeshRoster: "workjet.mesh.roster",
@@ -721,6 +740,63 @@ export const WsWorkjetMailboxAcceptHandoffRpc = Rpc.make(WS_METHODS.workjetMailb
   payload: WorkjetMailboxAcceptHandoffRpcInput,
   success: WorkjetMailboxAcceptHandoffRpcResult,
   error: WorkjetMailboxRpcError,
+});
+
+const WorkjetCrossModeRpcError = Schema.Union([
+  WorkjetCrossModeError,
+  EnvironmentAuthorizationError,
+]);
+
+/**
+ * ADDITIVE (cross-mode workflow bridge). `Delegate to Code` / `Open in Code`:
+ * create OR select the Code thread that implements a Business OS object.
+ *
+ * The payload carries no `environmentId`: the Code authority is this server and
+ * is filled in server-side, and the CTOX authority the payload DOES name is
+ * re-verified against the instance this server can independently observe. A
+ * renderer-invented authority is refused with `unverified-authority`, never
+ * honoured. `orchestration:operate` — it can create a thread and start a turn.
+ */
+export const WsWorkjetCrossModeOpenInCodeRpc = Rpc.make(WS_METHODS.workjetCrossModeOpenInCode, {
+  payload: WorkjetCrossModeOpenInCodeRpcInput,
+  success: WorkjetCrossModeOpenInCodeRpcResult,
+  error: WorkjetCrossModeRpcError,
+});
+
+/**
+ * ADDITIVE (cross-mode workflow bridge). The Code-side backlink read: does this
+ * thread carry a cross-mode link, and to which Business OS object. Typed
+ * references and the bounded redacted title/subtitle only — never a record.
+ */
+export const WsWorkjetCrossModeGetThreadLinkRpc = Rpc.make(
+  WS_METHODS.workjetCrossModeGetThreadLink,
+  {
+    payload: WorkjetCrossModeGetThreadLinkRpcInput,
+    success: WorkjetCrossModeGetThreadLinkRpcResult,
+    error: WorkjetCrossModeRpcError,
+  },
+);
+
+/** ADDITIVE (cross-mode workflow bridge). Bounded listing of this server's links. */
+export const WsWorkjetCrossModeListLinksRpc = Rpc.make(WS_METHODS.workjetCrossModeListLinks, {
+  payload: WorkjetCrossModeListLinksRpcInput,
+  success: WorkjetCrossModeListLinksRpcResult,
+  error: WorkjetCrossModeRpcError,
+});
+
+/**
+ * ADDITIVE (cross-mode workflow bridge). `Return to Business OS`: submit a
+ * result with evidence, request a review, or ask for a follow-up on the linked
+ * Business OS object.
+ *
+ * The link id is the only authority reference on the wire — the instance,
+ * module, and object are read from the stored link — and the command leaves
+ * this server only through the validated CTOX MCP command path.
+ */
+export const WsWorkjetCrossModeSubmitRpc = Rpc.make(WS_METHODS.workjetCrossModeSubmit, {
+  payload: WorkjetCrossModeSubmitRpcInput,
+  success: WorkjetCrossModeSubmitRpcResult,
+  error: WorkjetCrossModeRpcError,
 });
 
 /**
@@ -1311,6 +1387,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxSendHandoffRpc,
   WsWorkjetMailboxListHandoffsRpc,
   WsWorkjetMailboxAcceptHandoffRpc,
+  WsWorkjetCrossModeOpenInCodeRpc,
+  WsWorkjetCrossModeGetThreadLinkRpc,
+  WsWorkjetCrossModeListLinksRpc,
+  WsWorkjetCrossModeSubmitRpc,
   WsWorkjetMeshRosterRpc,
   WsWorkjetMeshOverviewRpc,
   WsCloudGetRelayClientStatusRpc,

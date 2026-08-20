@@ -24,6 +24,7 @@ export * from "./workjet.ts";
 export * from "./workjetGatewayRouting.ts";
 export * from "./workjetMailbox.ts";
 export * from "./workjetMailboxAudit.ts";
+export * from "./workjetCrossMode.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
 export * from "./t3ProjectFile.ts";

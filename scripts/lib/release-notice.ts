@@ -344,8 +344,13 @@ export const VENDORED_NATIVE_COMPONENTS: readonly VendoredComponent[] = [
     component: "workjet-provider-gateway-host",
     version: "0.1.0",
     license: "MIT OR AGPL-3.0-only",
-    licenseFiles: ["native/provider-gateway/LICENSE.MIT"],
-    upstream: "First-party Workjet host wrapper around the provider gateway.",
+    licenseFiles: [
+      "native/provider-gateway/LICENSE.MIT",
+      "native/provider-gateway/LICENSE.AGPL-3.0-only",
+      "native/provider-gateway/LICENSE.upstream",
+    ],
+    upstream:
+      "First-party Workjet host wrapper around the provider gateway; the executable statically links native/provider-gateway, so that crate's notices apply to it. It is not packaged inside the desktop artifact, but standalone executables ARE published under provider-gateway-host-v* release tags, and .github/workflows/provider-gateway-host-release.yml copies these license texts and this NOTICE into every such release (see docs/workjet-provider-gateway-host-artifacts.md).",
     shipped: false,
   },
   {

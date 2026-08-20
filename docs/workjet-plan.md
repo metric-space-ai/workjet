@@ -607,6 +607,26 @@ Tasks:
       passes CTOX provider and Business OS tests.
 - [ ] Add release artifacts for macOS arm64/x64, Linux x64/arm64, and Windows
       x64/arm64 as required by Workjet and CTOX packaging.
+      PIPELINE LANDED 2026-08-20, NO RELEASE TAGGED YET. The artifact contract
+      (six target triples, asset naming, detached manifest, sha256sums, tag
+      `provider-gateway-host-v*` which cannot collide with `release.yml`'s
+      `v*.*.*`) lives in `scripts/lib/provider-gateway-host-artifacts.ts`;
+      `scripts/provider-gateway-host-artifacts.ts` stages/collects/verifies/pins
+      and is exactly what `.github/workflows/provider-gateway-host-release.yml`
+      calls. Consumer side mirrors the CTOX-shell precedent:
+      `apps/desktop/resources/provider-gateway/host-release.pin.json` +
+      `apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts`
+      (packaged builds accept ONLY a digest-verified pinned artifact;
+      development falls back to the existing local build and says why).
+      VERIFIED LOCALLY: `aarch64-apple-darwin` (17 311 904 B, sha256
+      `bebddae6…95ec1`) and `x86_64-apple-darwin` (18 693 696 B, sha256
+      `db8d6ea2…6b7f9`) built and digest-checked; the other four triples cannot
+      be built on macOS and were NOT faked — only the workflow covers them. See
+      `docs/workjet-provider-gateway-host-artifacts.md` and its
+      `.local-builds.md` evidence file. STILL OPEN: tag the first release, then
+      replace the `unreleased` pin with the workflow's emitted pin — that is
+      what unblocks the CTOX pinned dependency and the portable-duplicate
+      removal above.
 
 Mandatory regression gates:
 

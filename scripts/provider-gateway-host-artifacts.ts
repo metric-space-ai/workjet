@@ -234,8 +234,15 @@ export async function verifyRelease(input: {
       throw new Error(`${artifact.fileName} does not match its checksums entry.`);
     }
   }
+  // A dual-licensed binary must not be published without its notices.
   for (const license of LICENSE_ASSET_FILES) {
-    await NodeFSP.access(NodePath.join(input.directory, license.asset));
+    try {
+      await NodeFSP.access(NodePath.join(input.directory, license.asset));
+    } catch {
+      throw new Error(
+        `Required release notice ${license.asset} is missing from ${input.directory}.`,
+      );
+    }
   }
   return manifest;
 }

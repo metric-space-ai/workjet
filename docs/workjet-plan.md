@@ -154,9 +154,24 @@ than a shared database or an untyped renderer bridge:
   Deliberately NOT mounted yet: nothing publishes into the store until the
   cross-mode link RPCs land, and a panel that can only say "no activity"
   would be a worse lie than showing nothing.
-- [ ] Prove local, remote, offline, revoked-access, stale-link, and deleted-
+- [x] Prove local, remote, offline, revoked-access, stale-link, and deleted-
       counterpart behavior without a shared database or a Business OS HTTP
-      data bridge.
+      data bridge. Done 2026-08-20 (commit `aaafe6ed2`): all six behaviours
+      plus both invariants proved in `WorkjetCrossModeProofMatrix.test.ts`
+      against the port INTERFACE with fakes over a real migration-052 store —
+      local (select reuses the thread), remote (`unauthorized`), offline
+      (`ctox-command-unavailable`, nothing durable written), revoked
+      (`unverified-authority` before any effect, link row survives), stale
+      (`link-expired`; reads still show it — a stale link is history, not a
+      lie), deleted counterpart both directions. EVERY proof was
+      mutation-verified: 13 inverted guards, each killing its intended proof
+      (table in the log). Invariant A/B are source+schema scans, so a second
+      data route or a CTOX table in this database fails the build. Found and
+      fixed while proving: "Open in Code" returned a SELECTED link pointing at
+      a DELETED thread — the select branch now checks the counterpart lives.
+      Honest limitation recorded: a link to an already-vanished Business OS
+      object can still be created locally, because the port verifies an
+      instance, not an object.
 
 - Every closed CTOX instance runs its own CLI-proxy Rust runtime and owns its
   own provider credentials, pools, cooldowns, and routing state.

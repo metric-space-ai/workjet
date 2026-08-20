@@ -22,6 +22,7 @@ export * from "./pullRequest.ts";
 export * from "./orchestration.ts";
 export * from "./workjet.ts";
 export * from "./workjetGatewayRouting.ts";
+export * from "./workjetLegacyImport.ts";
 export * from "./workjetMailbox.ts";
 export * from "./workjetMailboxAudit.ts";
 export * from "./workjetCrossMode.ts";

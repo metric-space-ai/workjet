@@ -51,6 +51,7 @@ import {
   AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
+  type EnvironmentId,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -82,6 +83,8 @@ import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossMod
 import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
 import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
 import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
+import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
+import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -376,6 +379,7 @@ const makeWsRpcLayer = (
   workjetMailboxStore: WorkjetMailboxStore.WorkjetMailboxStore["Service"],
   workjetDelegationExecutor: WorkjetDelegationExecutor.WorkjetDelegationExecutor["Service"],
   workjetCrossModeLinkStore: WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore["Service"],
+  legacyWorkjetImport: LegacyWorkjetImport.LegacyWorkjetImport["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -482,6 +486,27 @@ const makeWsRpcLayer = (
             ),
             Effect.orElseSucceed(() => false),
           ),
+      });
+      // The one-shot legacy Swift Workjet import. Same construction discipline:
+      // a handler factory over injected ports. The runner itself is resolved
+      // ONCE for the whole server (see `websocketRpcRouteLayer` below), so its
+      // lazily resolved decision is shared by every client instead of being
+      // re-read per connection, and the two authorities a binding is checked
+      // against are this server's own: the environment id it persists for
+      // itself plus whatever `settings.workjet` already references, and the
+      // environment's provider-gateway catalog.
+      const workjetLegacyImport = LegacyWorkjetImportRpc.makeLegacyWorkjetImportRpcHandlers({
+        importer: legacyWorkjetImport,
+        gatewayCatalog: providerGateway.catalog(),
+        environmentId: serverEnvironment.getEnvironmentId,
+        configuredEnvironmentIds: serverSettings.getSettings.pipe(
+          Effect.map((settings) =>
+            settings.workjet.computers.map((computer) => computer.environmentId),
+          ),
+          // A settings read that fails yields no verifiable environments, which
+          // refuses more bindings rather than fewer.
+          Effect.orElseSucceed(() => [] as readonly EnvironmentId[]),
+        ),
       });
       // The cross-mode workflow bridge. Same construction discipline as the
       // mailbox above: a pure handler factory whose every capability is an
@@ -1782,6 +1807,22 @@ const makeWsRpcLayer = (
             providerGateway.updateRouting(input),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetLegacyImportInspect]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetLegacyImportInspect,
+            workjetLegacyImport.inspect(input),
+            {
+              "rpc.aggregate": "workjet-legacy-import",
+            },
+          ),
+        [WS_METHODS.workjetLegacyImportDecide]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetLegacyImportDecide,
+            workjetLegacyImport.decide(input),
+            {
+              "rpc.aggregate": "workjet-legacy-import",
+            },
+          ),
         [WS_METHODS.workjetMailboxSendMessage]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetMailboxSendMessage,
@@ -2644,6 +2685,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // WebSocket client, never one per connection.
     const workjetCrossModeLinkStore = yield* WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
+    // The one-shot legacy import runner, resolved once for the whole server.
+    // Constructing it is FREE: it resolves its decision lazily on the first
+    // inspect, so a server that nobody asks never reads the legacy document.
+    const legacyWorkjetImport = yield* LegacyWorkjetImport.LegacyWorkjetImport;
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
@@ -2673,6 +2718,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               workjetMailboxStore,
               workjetDelegationExecutor,
               workjetCrossModeLinkStore,
+              legacyWorkjetImport,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
@@ -2742,4 +2788,8 @@ export const websocketRpcRouteLayer = Layer.unwrap(
   // The cross-mode link store is the same kind of stateless SQL facade over the
   // ambient `SqlClient`, so it is built here for the same reason.
   Layer.provide(WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStoreLive),
+  // The legacy import runner is built here for the same reason again: it needs
+  // only services this route graph already has (server config, filesystem,
+  // settings), and building it performs no I/O at all.
+  Layer.provide(LegacyWorkjetImport.layer),
 );

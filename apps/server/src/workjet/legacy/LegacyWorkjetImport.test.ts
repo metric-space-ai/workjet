@@ -128,18 +128,26 @@ const MARKER_PATH = `${STATE_DIR}/${LEGACY_WORKJET_IMPORT_MARKER_FILE}`;
 interface FakeDisk {
   readonly files: Map<string, string>;
   readonly writes: string[];
+  /** Every path the service probed or read, in order. Used to prove laziness. */
+  readonly reads: string[];
 }
 
 const makeDisk = (files: Record<string, string> = {}): FakeDisk => ({
   files: new Map(Object.entries(files)),
   writes: [],
+  reads: [],
 });
 
 const makeImportLayer = (disk: FakeDisk) => {
   const fileSystem = FileSystem.layerNoop({
-    exists: (path) => Effect.succeed(disk.files.has(path)),
+    exists: (path) =>
+      Effect.sync(() => {
+        disk.reads.push(path);
+        return disk.files.has(path);
+      }),
     makeDirectory: () => Effect.void,
     readFileString: (path) => {
+      disk.reads.push(path);
       const contents = disk.files.get(path);
       return contents === undefined
         ? Effect.fail(
@@ -192,11 +200,12 @@ describe("LegacyWorkjetImport against a fake filesystem", () => {
 
     return Effect.gen(function* () {
       const importer = yield* LegacyWorkjetImport;
-      assert.deepEqual(importer.decision, { _tag: "import-offer", legacyPath: LEGACY_PATH });
-      assert.isTrue(Option.isSome(importer.offer));
-      if (Option.isNone(importer.offer)) return;
+      const state = yield* importer.state;
+      assert.deepEqual(state.decision, { _tag: "import-offer", legacyPath: LEGACY_PATH });
+      assert.isTrue(Option.isSome(state.offer));
+      if (Option.isNone(state.offer)) return;
 
-      const offer = importer.offer.value;
+      const offer = state.offer.value;
       assert.strictEqual(offer.settingsPath, SETTINGS_PATH);
       assert.strictEqual(offer.preview._tag, "mapped");
       if (offer.preview._tag !== "mapped") return;
@@ -213,8 +222,8 @@ describe("LegacyWorkjetImport against a fake filesystem", () => {
     const disk = makeDisk();
     return Effect.gen(function* () {
       const importer = yield* LegacyWorkjetImport;
-      assert.deepEqual(importer.decision, { _tag: "fresh" });
-      assert.isTrue(Option.isNone(importer.offer));
+      assert.deepEqual(yield* importer.decision, { _tag: "fresh" });
+      assert.isTrue(Option.isNone(yield* importer.offer));
       assert.deepEqual(yield* importer.accept(EMPTY_LEGACY_WORKJET_BINDINGS), { _tag: "fresh" });
       assert.deepEqual(disk.writes, []);
     }).pipe(Effect.provide(makeImportLayer(disk)), Effect.scoped);
@@ -226,9 +235,10 @@ describe("LegacyWorkjetImport against a fake filesystem", () => {
 
     return Effect.gen(function* () {
       const importer = yield* LegacyWorkjetImport;
-      assert.isTrue(Option.isSome(importer.offer));
-      if (Option.isNone(importer.offer)) return;
-      assert.strictEqual(importer.offer.value.preview._tag, "unreadable");
+      const offer = yield* importer.offer;
+      assert.isTrue(Option.isSome(offer));
+      if (Option.isNone(offer)) return;
+      assert.strictEqual(offer.value.preview._tag, "unreadable");
 
       const result = yield* importer.accept(EMPTY_LEGACY_WORKJET_BINDINGS);
       assert.strictEqual(result._tag, "unreadable");
@@ -285,8 +295,11 @@ describe("LegacyWorkjetImport against a fake filesystem", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const importer = yield* LegacyWorkjetImport;
-          assert.deepEqual(importer.decision, { _tag: "already-decided", outcome: "imported" });
-          assert.isTrue(Option.isNone(importer.offer));
+          assert.deepEqual(yield* importer.decision, {
+            _tag: "already-decided",
+            outcome: "imported",
+          });
+          assert.isTrue(Option.isNone(yield* importer.offer));
         }).pipe(Effect.provide(makeImportLayer(disk))),
       );
     });
@@ -314,8 +327,11 @@ describe("LegacyWorkjetImport against a fake filesystem", () => {
         Effect.gen(function* () {
           const importer = yield* LegacyWorkjetImport;
           const settings = yield* ServerSettingsService;
-          assert.deepEqual(importer.decision, { _tag: "already-decided", outcome: "declined" });
-          assert.isTrue(Option.isNone(importer.offer));
+          assert.deepEqual(yield* importer.decision, {
+            _tag: "already-decided",
+            outcome: "declined",
+          });
+          assert.isTrue(Option.isNone(yield* importer.offer));
           // A declined environment that calls accept anyway stays declined.
           assert.deepEqual(yield* importer.accept(BINDINGS), {
             _tag: "already-decided",
@@ -332,7 +348,71 @@ describe("LegacyWorkjetImport against a fake filesystem", () => {
 
     return Effect.gen(function* () {
       const importer = yield* LegacyWorkjetImport;
-      assert.deepEqual(importer.decision, { _tag: "import-offer", legacyPath: LEGACY_PATH });
+      assert.deepEqual(yield* importer.decision, {
+        _tag: "import-offer",
+        legacyPath: LEGACY_PATH,
+      });
+    }).pipe(Effect.provide(makeImportLayer(disk)), Effect.scoped);
+  });
+});
+
+describe("LegacyWorkjetImport resolves lazily", () => {
+  it("performs no filesystem access while the service is constructed", () => {
+    const disk = makeDisk({ [LEGACY_PATH]: goldenText });
+
+    return Effect.gen(function* () {
+      const importer = yield* LegacyWorkjetImport;
+      // Constructing the service is on the server's boot path. Nothing about
+      // this machine's home directory may be touched because a server started.
+      assert.deepEqual(disk.reads, [], "constructing the service reads nothing");
+      assert.deepEqual(disk.writes, []);
+
+      // The first ASK is what resolves it: the marker, the candidate probe, and
+      // the legacy document itself.
+      const state = yield* importer.state;
+      assert.deepEqual(state.decision, { _tag: "import-offer", legacyPath: LEGACY_PATH });
+      assert.include(disk.reads, MARKER_PATH);
+      assert.include(disk.reads, LEGACY_PATH);
+
+      // ...and it is resolved at most once: a second ask reads nothing more.
+      const after = [...disk.reads];
+      const again = yield* importer.state;
+      assert.strictEqual(again, state, "the resolution is memoized, not repeated");
+      assert.deepEqual(disk.reads, after);
+    }).pipe(Effect.provide(makeImportLayer(disk)), Effect.scoped);
+  });
+
+  it("re-resolves after it records a decision, so the memo cannot go stale", () => {
+    const disk = makeDisk({ [LEGACY_PATH]: goldenText });
+
+    return Effect.gen(function* () {
+      const importer = yield* LegacyWorkjetImport;
+      assert.strictEqual((yield* importer.state).decision._tag, "import-offer");
+
+      assert.strictEqual((yield* importer.accept(BINDINGS))._tag, "imported");
+
+      // Same service instance, same process: the offer it just answered must
+      // not still be on offer.
+      const state = yield* importer.state;
+      assert.deepEqual(state.decision, { _tag: "already-decided", outcome: "imported" });
+      assert.isTrue(Option.isNone(state.offer));
+      assert.isTrue(Option.isSome(state.marker));
+    }).pipe(Effect.provide(makeImportLayer(disk)), Effect.scoped);
+  });
+
+  it("carries the marker so a recorded decision can state its date", () => {
+    const disk = makeDisk({ [LEGACY_PATH]: goldenText });
+
+    return Effect.gen(function* () {
+      const importer = yield* LegacyWorkjetImport;
+      yield* importer.decline;
+      const state = yield* importer.state;
+      assert.deepEqual(state.decision, { _tag: "already-decided", outcome: "declined" });
+      assert.isTrue(Option.isSome(state.marker));
+      if (Option.isNone(state.marker)) return;
+      assert.strictEqual(state.marker.value.outcome, "declined");
+      assert.strictEqual(state.marker.value.legacyPath, LEGACY_PATH);
+      assert.isAbove(state.marker.value.decidedAt.length, 0);
     }).pipe(Effect.provide(makeImportLayer(disk)), Effect.scoped);
   });
 });

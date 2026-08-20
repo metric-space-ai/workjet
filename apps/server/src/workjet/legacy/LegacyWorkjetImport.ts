@@ -39,6 +39,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -179,13 +180,41 @@ export type LegacyWorkjetImportResult =
   /** The mapping succeeded but the settings store rejected the patch. No marker. */
   | { readonly _tag: "not-persisted"; readonly legacyPath: string; readonly detail: string };
 
+/**
+ * Everything one resolution of the question produces: the decision, the marker
+ * it was made from, and the offer that follows. Resolved together because they
+ * come from the same two filesystem facts and must never disagree.
+ */
+export interface LegacyWorkjetImportState {
+  readonly decision: LegacyWorkjetImportDecision;
+  /** The recorded marker, when one exists. Carries the decision's DATE. */
+  readonly marker: Option.Option<LegacyWorkjetImportMarker>;
+  /** Present only when a one-time offer should be shown. */
+  readonly offer: Option.Option<LegacyWorkjetImportOffer>;
+}
+
 export class LegacyWorkjetImport extends Context.Service<
   LegacyWorkjetImport,
   {
-    /** Decision resolved once, while this service is constructed. */
-    readonly decision: LegacyWorkjetImportDecision;
-    /** Present only when a one-time offer should be shown. */
-    readonly offer: Option.Option<LegacyWorkjetImportOffer>;
+    /**
+     * The decision, its marker, and the offer — resolved on FIRST USE and
+     * memoized, not while the service is constructed.
+     *
+     * Constructing this service is on the server's boot path, and resolving the
+     * question means reading the marker, probing for the legacy document, and
+     * mapping a 62 KB file. None of that may happen because a server started;
+     * it happens because somebody asked. The decision RULES are unchanged: the
+     * same two facts produce the same answer, a recorded marker always wins, and
+     * the answer is computed at most once per recorded decision. Recording a
+     * decision through {@link accept} or {@link decline} invalidates the memo, so
+     * the next read reflects the marker this service just wrote instead of the
+     * offer it saw before.
+     */
+    readonly state: Effect.Effect<LegacyWorkjetImportState>;
+    /** The decision alone. Same lazy, memoized resolution as {@link state}. */
+    readonly decision: Effect.Effect<LegacyWorkjetImportDecision>;
+    /** The offer alone. Same lazy, memoized resolution as {@link state}. */
+    readonly offer: Effect.Effect<Option.Option<LegacyWorkjetImportOffer>>;
     /**
      * Run the import with the operator's bindings and record the outcome. Safe to
      * call twice: a recorded marker short-circuits to `already-decided`.
@@ -265,39 +294,66 @@ export const make = Effect.gen(function* () {
   const readLegacyText = (legacyPath: string) =>
     fileSystem.readFileString(legacyPath).pipe(Effect.option);
 
-  const candidatePaths = legacyWorkjetConfigCandidatePaths({
-    homeDirectory,
-    platform,
-    join: path.join,
-  });
-  const candidates = yield* Effect.forEach(candidatePaths, (candidatePath) =>
-    fileSystem.exists(candidatePath).pipe(
-      Effect.orElseSucceed(() => false),
-      Effect.map((exists) => ({ path: candidatePath, exists })),
-    ),
+  /**
+   * The whole question, answered from scratch. Nothing above this line touches
+   * the filesystem, so building the service is free; every read below happens
+   * only when somebody asks, and at most once per recorded decision.
+   */
+  const resolveState = Effect.gen(function* () {
+    const candidatePaths = legacyWorkjetConfigCandidatePaths({
+      homeDirectory,
+      platform,
+      join: path.join,
+    });
+    const candidates = yield* Effect.forEach(candidatePaths, (candidatePath) =>
+      fileSystem.exists(candidatePath).pipe(
+        Effect.orElseSucceed(() => false),
+        Effect.map((exists) => ({ path: candidatePath, exists })),
+      ),
+    );
+
+    const marker = yield* readMarker;
+    const decision = decideLegacyWorkjetImport({ marker, candidates });
+
+    const offer: Option.Option<LegacyWorkjetImportOffer> = yield* Effect.gen(function* () {
+      if (decision._tag !== "import-offer") return Option.none<LegacyWorkjetImportOffer>();
+      const text = yield* readLegacyText(decision.legacyPath);
+      // A document that exists but cannot be read at all is not an offer we can
+      // describe, so no offer is made and nothing is recorded.
+      if (Option.isNone(text)) return Option.none<LegacyWorkjetImportOffer>();
+      const read = readAndMapLegacyWorkjetConfig({
+        text: text.value,
+        bindings: EMPTY_LEGACY_WORKJET_BINDINGS,
+      });
+      return Option.some({
+        legacyPath: decision.legacyPath,
+        settingsPath: config.settingsPath,
+        preview:
+          read._tag === "mapped"
+            ? ({ _tag: "mapped", result: read.result } as const)
+            : ({ _tag: "unreadable", failure: read.failure } as const),
+      });
+    });
+
+    return { decision, marker, offer } satisfies LegacyWorkjetImportState;
+  }).pipe(Effect.withSpan("workjet.legacyImport.resolve"));
+
+  /**
+   * The memo. `SynchronizedRef` rather than a plain flag so concurrent first
+   * readers await ONE resolution instead of each running its own.
+   */
+  const cache = yield* SynchronizedRef.make<Option.Option<LegacyWorkjetImportState>>(Option.none());
+
+  const state: Effect.Effect<LegacyWorkjetImportState> = SynchronizedRef.modifyEffect(
+    cache,
+    (current) =>
+      Option.isSome(current)
+        ? Effect.succeed([current.value, current] as const)
+        : resolveState.pipe(Effect.map((resolved) => [resolved, Option.some(resolved)] as const)),
   );
 
-  const decision = decideLegacyWorkjetImport({ marker: yield* readMarker, candidates });
-
-  const offer: Option.Option<LegacyWorkjetImportOffer> = yield* Effect.gen(function* () {
-    if (decision._tag !== "import-offer") return Option.none<LegacyWorkjetImportOffer>();
-    const text = yield* readLegacyText(decision.legacyPath);
-    // A document that exists but cannot be read at all is not an offer we can
-    // describe, so no offer is made and nothing is recorded.
-    if (Option.isNone(text)) return Option.none<LegacyWorkjetImportOffer>();
-    const read = readAndMapLegacyWorkjetConfig({
-      text: text.value,
-      bindings: EMPTY_LEGACY_WORKJET_BINDINGS,
-    });
-    return Option.some({
-      legacyPath: decision.legacyPath,
-      settingsPath: config.settingsPath,
-      preview:
-        read._tag === "mapped"
-          ? ({ _tag: "mapped", result: read.result } as const)
-          : ({ _tag: "unreadable", failure: read.failure } as const),
-    });
-  });
+  /** Called after this service records a decision, so the memo cannot go stale. */
+  const invalidate = SynchronizedRef.set(cache, Option.none<LegacyWorkjetImportState>());
 
   const accept = (
     bindings: LegacyWorkjetImportBindings,
@@ -314,6 +370,7 @@ export const make = Effect.gen(function* () {
         return alreadyDecided;
       }
       const nothingToDo: LegacyWorkjetImportResult = { _tag: "fresh" };
+      const { decision } = yield* state;
       if (decision._tag !== "import-offer") return nothingToDo;
 
       const legacyPath = decision.legacyPath;
@@ -364,6 +421,9 @@ export const make = Effect.gen(function* () {
         importedWorkerProfiles: read.result.counts.workersImported,
         pendingBindings: read.result.pending.length,
       });
+      // The marker this service just wrote is now the answer, so the memoized
+      // offer must not survive it.
+      yield* invalidate;
 
       yield* Effect.logInfo("imported the legacy Workjet configuration", {
         legacyPath,
@@ -385,6 +445,7 @@ export const make = Effect.gen(function* () {
     });
 
   const decline = Effect.gen(function* () {
+    const { decision } = yield* state;
     if (decision._tag !== "import-offer") return;
     if (Option.isSome(yield* readMarker)) return;
     yield* writeMarker({
@@ -398,9 +459,16 @@ export const make = Effect.gen(function* () {
       importedWorkerProfiles: 0,
       pendingBindings: 0,
     });
+    yield* invalidate;
   });
 
-  return LegacyWorkjetImport.of({ decision, offer, accept, decline });
+  return LegacyWorkjetImport.of({
+    state,
+    decision: Effect.map(state, (resolved) => resolved.decision),
+    offer: Effect.map(state, (resolved) => resolved.offer),
+    accept,
+    decline,
+  });
 }).pipe(Effect.withSpan("workjet.legacyImport.make"));
 
 export const layer = Layer.effect(LegacyWorkjetImport, make);

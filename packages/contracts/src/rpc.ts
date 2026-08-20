@@ -210,6 +210,13 @@ import {
   WorktreeStorageInspectionInput,
 } from "./workjet.ts";
 import {
+  WorkjetLegacyImportDecideInput,
+  WorkjetLegacyImportDecisionResult,
+  WorkjetLegacyImportError,
+  WorkjetLegacyImportInspectInput,
+  WorkjetLegacyImportInspection,
+} from "./workjetLegacyImport.ts";
+import {
   WorkjetMailboxAcceptHandoffRpcInput,
   WorkjetMailboxAcceptHandoffRpcResult,
   WorkjetMailboxDelegateTaskRpcInput,
@@ -343,6 +350,13 @@ export const WS_METHODS = {
   workjetGatewayHealth: "workjet.providerGateway.health",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
+
+  // ADDITIVE one-shot import of the legacy Swift Workjet configuration. The
+  // decision is per ENVIRONMENT — the legacy document lives on the machine the
+  // server runs on and lands in that server's own `settings.workjet` — so both
+  // methods answer for this server and take no environment in their payload.
+  workjetLegacyImportInspect: "workjet.legacyImport.inspect",
+  workjetLegacyImportDecide: "workjet.legacyImport.decide",
 
   // Thread-scoped Workjet mailbox sends (orchestrator threads only)
   workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
@@ -676,6 +690,34 @@ export const WsWorkjetGatewayUpdateRoutingRpc = Rpc.make(WS_METHODS.workjetGatew
   payload: WorkjetGatewayUpdateRoutingInput,
   success: WorkjetGatewayUpdateRoutingResult,
   error: WorkjetGatewayRpcError,
+});
+
+/**
+ * The one-shot legacy Swift Workjet configuration import.
+ *
+ * `inspect` is a pure READ: it resolves the decision, previews the offer with NO
+ * bindings (the honest floor), and lists every pending record and every drop.
+ * `decide` is the only write, and it is terminal: accept applies exactly one
+ * settings patch and records a marker, decline records the refusal, and both are
+ * refused a second time. A binding naming an environment, gateway account, or
+ * legacy record the server cannot verify is refused with
+ * {@link WorkjetLegacyImportError} — nothing partial is ever stored.
+ */
+const WorkjetLegacyImportRpcError = Schema.Union([
+  WorkjetLegacyImportError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetLegacyImportInspectRpc = Rpc.make(WS_METHODS.workjetLegacyImportInspect, {
+  payload: WorkjetLegacyImportInspectInput,
+  success: WorkjetLegacyImportInspection,
+  error: WorkjetLegacyImportRpcError,
+});
+
+export const WsWorkjetLegacyImportDecideRpc = Rpc.make(WS_METHODS.workjetLegacyImportDecide, {
+  payload: WorkjetLegacyImportDecideInput,
+  success: WorkjetLegacyImportDecisionResult,
+  error: WorkjetLegacyImportRpcError,
 });
 
 /**
@@ -1412,6 +1454,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayHealthRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
+  WsWorkjetLegacyImportInspectRpc,
+  WsWorkjetLegacyImportDecideRpc,
   WsWorkjetMailboxSendMessageRpc,
   WsWorkjetMailboxDelegateTaskRpc,
   WsWorkjetMailboxReplyRpc,

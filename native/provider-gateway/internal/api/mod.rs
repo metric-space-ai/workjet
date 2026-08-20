@@ -15,6 +15,8 @@ pub mod server_routes;
 #[cfg(test)]
 mod redis_queue_protocol_integration_test;
 #[cfg(test)]
+mod request_logging_policy_test;
+#[cfg(test)]
 mod server_sdk_config_test;
 #[cfg(test)]
 mod server_test;

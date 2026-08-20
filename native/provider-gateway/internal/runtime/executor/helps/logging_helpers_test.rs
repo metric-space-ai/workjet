@@ -120,3 +120,55 @@ fn error_summaries_and_websocket_url_are_safe() {
         "https://api.example/ws?q=1"
     );
 }
+
+fn record_one(policy: RequestLogPolicy) -> ApiLogContext {
+    let context = context(RequestContext::default());
+    record_api_request(
+        Some(&context),
+        policy,
+        UpstreamRequestLog {
+            url: "https://api.example.com/v1/responses".into(),
+            method: "POST".into(),
+            body: br#"{"prompt":"user text"}"#.to_vec(),
+            ..UpstreamRequestLog::default()
+        },
+    );
+    context
+}
+
+/// Commercial mode must suppress upstream capture regardless of `request_log`.
+/// The two are independent inputs, so suppression has to win over an explicitly
+/// ENABLED `request_log` — agreeing with a disabled one proves nothing. Asserted
+/// through the public recording path rather than the private predicate, so it
+/// survives that predicate being refactored away.
+#[test]
+fn commercial_mode_suppresses_upstream_capture() {
+    let capturing = record_one(RequestLogPolicy {
+        request_log: true,
+        commercial_mode: false,
+    });
+    let captured =
+        String::from_utf8(capturing.aggregated_request()).expect("captured request is valid UTF-8");
+    assert!(
+        captured.contains("api.example.com"),
+        "request_log alone must capture, otherwise the suppression below proves nothing; got: \
+         {captured:?}"
+    );
+
+    let commercial = record_one(RequestLogPolicy {
+        request_log: true,
+        commercial_mode: true,
+    });
+    let suppressed = String::from_utf8(commercial.aggregated_request())
+        .expect("suppressed request is valid UTF-8");
+    assert!(
+        suppressed.is_empty(),
+        "commercial_mode failed to suppress upstream capture while request_log was enabled; got: \
+         {suppressed:?}"
+    );
+    assert!(
+        commercial.deferred_requests().is_empty(),
+        "commercial_mode deferred the capture instead of dropping it, so the body still reaches \
+         disk on a later flush"
+    );
+}

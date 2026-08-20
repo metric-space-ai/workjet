@@ -39,6 +39,15 @@ export const USER_DATA_MIGRATION_MARKER_FILE = "ctox-user-data-migration.json";
  *    children inside them are filtered out by the deny list below.
  *
  * Everything not named here is deliberately left behind.
+ *
+ * OS keychain: safeStorage's encryption key is keyed by the *application name*
+ * (Electron asks the OS for "<app.getName()> Safe Storage"), not by the
+ * user-data directory. Changing the directory therefore orphans nothing —
+ * every safeStorage-encrypted value stays decryptable, and the copied cookie
+ * jar keeps working. The app's own encrypted secrets (connection catalog,
+ * saved environments) live under ~/.t3 and are untouched by this migration
+ * altogether. If the display name in DesktopEnvironment ever changes, THAT is
+ * what orphans keychain secrets, and it needs its own migration.
  */
 export const USER_DATA_MIGRATION_ALLOWLIST: readonly string[] = [
   "Preferences",

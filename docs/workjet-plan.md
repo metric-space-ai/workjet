@@ -999,21 +999,28 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       cycle), and resumes `delivered`/`accepted` rows after restart. 13
       focused tests. Same-environment only — cross-machine snapshot transfer
       and completion/result-return remain open.
-- [~] Preserve the delegation link when a result returns to the source thread;
-  allow the source worker to ask a follow-up, request independent review,
-  or send `changes-requested` back to the original worker without creating
-  an unrelated task chain. Result return done 2026-08-19 (commit
-  `c4c5d8851`): the executor completes a `running` delegation only on the
-  exact turn it dispatched (message-id + turn-id + session correlation),
-  writes a durable `WorkjetDelegationResult` (migration 047), and returns
-  it to the source — a `workjet.delegation.result` thread activity
-  same-environment, a signed pending-outbound result envelope
-  cross-environment (idempotent). Cross-machine snapshot transfer done
-  (commit `ee82c5ac2`): a cross-env delegation carries its prompt bytes
-  SEALED within the 200000-byte wire ceiling, digest-reverified into the
-  receiver's snapshot store before the delegation row so the executor can
-  run it; oversized → ref-only marker, never silent. Follow-up/review
-  linkage lands with the reply/review/update MCP tools (in flight).
+- [x] Preserve the delegation link when a result returns to the source thread;
+      allow the source worker to ask a follow-up, request independent review,
+      or send `changes-requested` back to the original worker without creating
+      an unrelated task chain. Result return done 2026-08-19 (commit
+      `c4c5d8851`): the executor completes a `running` delegation only on the
+      exact turn it dispatched (message-id + turn-id + session correlation),
+      writes a durable `WorkjetDelegationResult` (migration 047), and returns
+      it to the source — a `workjet.delegation.result` thread activity
+      same-environment, a signed pending-outbound result envelope
+      cross-environment (idempotent). Cross-machine snapshot transfer done
+      (commit `ee82c5ac2`): a cross-env delegation carries its prompt bytes
+      SEALED within the 200000-byte wire ceiling, digest-reverified into the
+      receiver's snapshot store before the delegation row so the executor can
+      run it; oversized → ref-only marker, never silent. Follow-up/review
+      linkage lands with the reply/review/update MCP tools (in flight).
+      COMPLETE 2026-08-20: follow-up/review linkage landed with the
+      reply/review/update tools and the card actions; cross-env result
+      redelivery is durable (migration 049 markers, executor retry scan,
+      permanent failures marked; dead-letter reconcile stamps
+      `reconciled_at_ms` so dead rows are handled exactly once; the ws
+      reassign port now routes through the ONE executor instance provided via
+      server.ts).
 - [~] Represent review and revision as typed edges (`reviews`, `revises`,
   `follows-up`) in one delegation graph, with configurable maximum depth,
   review rounds, token/cost/time budgets, and approval gates to prevent

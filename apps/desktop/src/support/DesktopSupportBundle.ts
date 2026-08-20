@@ -189,6 +189,25 @@ const emptyGatewaySection = (ledger: SupportRedactionLedger): SupportBundleGatew
 });
 
 /**
+ * Parses the gateway configuration as a FOREIGN document. The server owns the
+ * file and it carries provider-specific account variants, so it is inspected
+ * key by key and never decoded into a shape this module would then have to
+ * trust. Undefined means "present but unreadable", which the section reports
+ * rather than hides.
+ *
+ * A plain function, not an Effect: this is a pure string-to-value parse whose
+ * only failure mode is "not JSON".
+ */
+const parseGatewayConfiguration = (raw: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
  * Reads the gateway configuration the SERVER writes into the shared state
  * directory. Deliberately a bounded read of an existing artifact rather than
  * a new RPC: the desktop already owns this directory, and the file's account
@@ -218,22 +237,8 @@ const collectGatewaySection = Effect.fn("desktop.supportBundle.collectGateway")(
     return { ...emptyGatewaySection(ledger), hostProcessRecorded };
   }
 
-  let parsed: unknown;
-  try {
-    // The gateway configuration is a FOREIGN document: the server owns it and
-    // it carries provider-specific account variants. It is inspected key by
-    // key and never decoded into a shape this module would then have to trust.
-    // @effect-diagnostics-next-line preferSchemaOverJson:off
-    parsed = JSON.parse(raw.value);
-  } catch {
-    return {
-      ...emptyGatewaySection(ledger),
-      configurationPresent: true,
-      hostProcessRecorded,
-    };
-  }
-
-  if (!isRecord(parsed)) {
+  const parsed = parseGatewayConfiguration(raw.value);
+  if (parsed === undefined) {
     return {
       ...emptyGatewaySection(ledger),
       configurationPresent: true,
@@ -481,7 +486,6 @@ export const make = (
 
       // The bundle is a human-readable artifact, written with JSON indentation
       // no Schema codec produces; every value in it already passed the gate.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const encode = (value: SupportBundleDocument) => JSON.stringify(value, null, 2);
 
       let current = withCurrentLogs();

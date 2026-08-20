@@ -4,6 +4,7 @@ import {
   WorkjetContentDigest,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
+  WorkjetHandoffId,
   WorkjetMeshWorkspaceId,
   WorkjetRepositoryPath,
   WorkjetSealedPayloadRef,
@@ -12,6 +13,7 @@ import {
   type WorkjetDelegationState,
   type WorkjetMailboxPayload,
   type WorkjetRoutingEnvelope,
+  type WorkjetThreadHandoff,
   type WorkjetWorkerAddress,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
@@ -1685,5 +1687,166 @@ it.effect("counts delegations by peer, direction, and lifecycle state", () =>
       { environmentId: PEER_A, direction: "received", state: "completed", count: 1 },
       { environmentId: PEER_A, direction: "sent", state: "running", count: 2 },
     ]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Received thread handoffs (migration 051)
+// ===============================
+
+const HANDOFF_SNAPSHOT_REF = WorkjetSealedPayloadRef.make(
+  Buffer.alloc(32, 9).toString("base64url"),
+);
+
+const receivedHandoff = (options: {
+  readonly handoffId: string;
+  readonly envelope: WorkjetEnvelopeId;
+  readonly createdAt?: string;
+}): WorkjetThreadHandoff => ({
+  schemaVersion: 1,
+  envelopeId: options.envelope,
+  handoffId: WorkjetHandoffId.make(options.handoffId),
+  sourceThread: SOURCE_ADDRESS,
+  target: { schemaVersion: 1, workspaceId: WORKSPACE, environmentId: TARGET_ENVIRONMENT },
+  createdAt: options.createdAt ?? "2026-08-19T10:00:00.000Z",
+  expiresAt: "2026-08-20T10:00:00.000Z",
+  contextSnapshot: {
+    schemaVersion: 1,
+    snapshotRef: HANDOFF_SNAPSHOT_REF,
+    digest: WorkjetContentDigest.make("b".repeat(64)),
+    byteLength: 512,
+  },
+  branch: {
+    schemaVersion: 1,
+    branch: "agent/th-thread-handoff",
+    remoteConfigured: false,
+  },
+  artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+  note: "Continue here.",
+});
+
+it.effect("records a received handoff idempotently on the sender's handoff id", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const handoff = receivedHandoff({
+      handoffId: "wjh-0123456789abcdef",
+      envelope: envelopeId("hnd1"),
+    });
+
+    const first = yield* store.upsertReceivedHandoff(handoff, "2026-08-19T10:00:01.000Z");
+    assert.equal(first._tag, "inserted");
+
+    // At-least-once transport: the same handoff arriving again is ONE inbox row
+    // and one continuation offer, not two.
+    const replay = yield* store.upsertReceivedHandoff(handoff, "2026-08-19T10:05:00.000Z");
+    assert.equal(replay._tag, "duplicate");
+
+    const listed = yield* store.listReceivedHandoffs(10);
+    assert.lengthOf(listed, 1);
+    assert.equal(listed[0]?.handoffId, handoff.handoffId);
+    assert.equal(listed[0]?.handoff.note, "Continue here.");
+    assert.equal(listed[0]?.handoff.branch?.branch, "agent/th-thread-handoff");
+    assert.isNull(listed[0]?.acceptedThreadId ?? null);
+    // The first arrival's timestamp stands; a replay does not restamp the row.
+    assert.equal(listed[0]?.receivedAtMillis, Date.parse("2026-08-19T10:00:01.000Z"));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("lists received handoffs newest arrival first, bounded by the limit", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    yield* store.upsertReceivedHandoff(
+      receivedHandoff({ handoffId: "wjh-000000000000old", envelope: envelopeId("hndA") }),
+      "2026-08-19T09:00:00.000Z",
+    );
+    yield* store.upsertReceivedHandoff(
+      receivedHandoff({ handoffId: "wjh-000000000000new", envelope: envelopeId("hndB") }),
+      "2026-08-19T11:00:00.000Z",
+    );
+
+    const listed = yield* store.listReceivedHandoffs(10);
+    assert.deepEqual(
+      listed.map((record) => record.handoffId as string),
+      ["wjh-000000000000new", "wjh-000000000000old"],
+    );
+    assert.lengthOf(yield* store.listReceivedHandoffs(1), 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("claims a handoff for exactly one continuing thread", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const handoff = receivedHandoff({
+      handoffId: "wjh-0123456789abcdef",
+      envelope: envelopeId("hnd2"),
+    });
+    yield* store.upsertReceivedHandoff(handoff, "2026-08-19T10:00:01.000Z");
+
+    const claimed = yield* store.markReceivedHandoffAccepted(
+      handoff.handoffId,
+      ThreadId.make("thread-continued"),
+      "2026-08-19T10:10:00.000Z",
+    );
+    assert.equal(claimed.acceptedThreadId, "thread-continued");
+    assert.equal(claimed.acceptedAtMillis, Date.parse("2026-08-19T10:10:00.000Z"));
+
+    // The second accept loses on the `IS NULL` guard, so the invariant holds in
+    // the database rather than depending on request ordering.
+    const second = yield* store
+      .markReceivedHandoffAccepted(
+        handoff.handoffId,
+        ThreadId.make("thread-other"),
+        "2026-08-19T10:11:00.000Z",
+      )
+      .pipe(Effect.result);
+    assert.equal(second._tag, "Failure");
+    if (second._tag === "Failure") {
+      assert.isTrue(isWorkjetMailboxError(second.failure));
+      if (isWorkjetMailboxError(second.failure)) {
+        assert.equal(second.failure.reason, "invalid-state-transition");
+      }
+    }
+
+    // The winner's link is untouched.
+    const reread = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.isTrue(Option.isSome(reread));
+    if (Option.isSome(reread)) {
+      assert.equal(reread.value.acceptedThreadId, "thread-continued");
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to claim a handoff this machine never received", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const missing = yield* store
+      .markReceivedHandoffAccepted(
+        WorkjetHandoffId.make("wjh-ffffffffffffffff"),
+        ThreadId.make("thread-continued"),
+        "2026-08-19T10:10:00.000Z",
+      )
+      .pipe(Effect.result);
+    assert.equal(missing._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getReceivedHandoff(
+      WorkjetHandoffId.make("wjh-ffffffffffffffff"),
+    )));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("surfaces an undecodable handoff row as a typed corrupt-row error", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const store = yield* WorkjetMailboxStore;
+    yield* store.upsertReceivedHandoff(
+      receivedHandoff({ handoffId: "wjh-0123456789abcdef", envelope: envelopeId("hnd3") }),
+      "2026-08-19T10:00:01.000Z",
+    );
+    yield* sql`UPDATE workjet_thread_handoffs SET handoff_json = '{"nope":true}'`;
+
+    const corrupt = yield* store.listReceivedHandoffs(10).pipe(Effect.result);
+    assert.equal(corrupt._tag, "Failure");
+    if (corrupt._tag === "Failure") {
+      assert.isTrue(isWorkjetMailboxStoreCorruptRowError(corrupt.failure));
+    }
   }).pipe(Effect.provide(testLayer)),
 );

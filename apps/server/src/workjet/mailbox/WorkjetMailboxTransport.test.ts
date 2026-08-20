@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  WorkjetHandoffId,
   ThreadId,
   WorkjetContentDigest,
   WorkjetDelegationId,
@@ -1097,12 +1098,14 @@ const outboundTo = (input: {
   readonly store: WorkjetMailboxStore["Service"];
   readonly envelopeId: WorkjetEnvelopeId;
   readonly payload: WorkjetMailboxPayload;
+  /** The routing kind a forwarding peer reads; defaults to a plain message. */
+  readonly kind?: WorkjetRoutingEnvelope["kind"];
 }) =>
   Effect.gen(function* () {
     const envelope = yield* input.identity.signRoutingEnvelope({
       schemaVersion: 1,
       envelopeId: input.envelopeId,
-      kind: "message",
+      kind: input.kind ?? "message",
       sourceWorkspaceId: WORKSPACE,
       sourceEnvironmentId: LOCAL_ENVIRONMENT,
       targetWorkspaceId: WORKSPACE,
@@ -2274,6 +2277,196 @@ group("WorkjetMailboxTransport peer key binding", (it) => {
       // A signature failure is not a binding dispute and must not be audited
       // as one, or the binding-rejection signal stops meaning anything.
       assert.strictEqual(bindingRejections(captured.events).length, 0);
+    }),
+  );
+});
+
+group("WorkjetMailboxTransport thread handoff", (it) => {
+  const SNAPSHOT_TEXT =
+    "# Workjet thread handoff\nSource thread: Transport slice\n\n### user\n\nContinue here.";
+
+  const handoffPayload = (input: {
+    readonly envelopeId: WorkjetEnvelopeId;
+    readonly handoffId: string;
+    readonly source: WorkjetWorkerAddress;
+    readonly targetEnvironmentId: EnvironmentId;
+    readonly contextSnapshot: WorkjetPromptSnapshotRef;
+  }): WorkjetMailboxPayload => ({
+    _tag: "handoff",
+    handoff: {
+      schemaVersion: 1,
+      envelopeId: input.envelopeId,
+      handoffId: WorkjetHandoffId.make(input.handoffId),
+      sourceThread: input.source,
+      target: {
+        schemaVersion: 1,
+        workspaceId: WORKSPACE,
+        environmentId: input.targetEnvironmentId,
+      },
+      createdAt: NOW,
+      expiresAt: EXPIRES,
+      contextSnapshot: input.contextSnapshot,
+      artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+      note: "Continue the transport slice here.",
+    },
+  });
+
+  it.effect("attaches sealed snapshot bytes to a cross-environment handoff", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // Pin the peer first so the outbound handoff takes the SEALED path.
+      const inboundId = envelopeId("hnd-attach-in");
+      const daemon = makeFakeDaemon({
+        seed: [
+          yield* remoteDocument({
+            identity: peer,
+            envelopeId: inboundId,
+            kind: "message",
+            payload: messagePayload({
+              envelopeId: inboundId,
+              source: remoteAddress,
+              target: localAddress,
+            }),
+          }),
+        ],
+      });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+      yield* transport.runCycle;
+
+      const stored = yield* snapshots.put(SNAPSHOT_TEXT);
+      const id = envelopeId("hnd-attach-01");
+      const payload = handoffPayload({
+        envelopeId: id,
+        handoffId: "wjh-0123456789abcdef",
+        source: localAddress,
+        targetEnvironmentId: remoteAddress.environmentId,
+        contextSnapshot: { schemaVersion: 1, ...stored },
+      });
+      yield* outboundTo({ identity: local, store, envelopeId: id, payload, kind: "handoff" });
+
+      const status = yield* transport.runCycle;
+
+      // A handoff's context snapshot travels exactly like a delegation prompt.
+      assert.strictEqual(status.counters.snapshotAttached, 1);
+      assert.strictEqual(status.counters.snapshotOversized, 0);
+      assert.strictEqual(status.counters.sealed, 1);
+      assert.strictEqual(status.counters.pushed, 1);
+
+      const wrapper = publishedWrapper(daemon.calls);
+      assert.isDefined(wrapper.body.sealed);
+      // The daemon forwards the blob and can read none of it.
+      assert.notInclude(JSON.stringify(wrapper.body.sealed), SNAPSHOT_TEXT);
+      const opened = yield* peer.openSealed(wrapper.body.sealed!, id);
+      const decoded = JSON.parse(new TextDecoder().decode(opened)) as {
+        readonly _tag: string;
+        readonly snapshotBytes?: string;
+        readonly handoff: { readonly contextSnapshot: { readonly digest: string } };
+      };
+      assert.strictEqual(decoded._tag, "handoff");
+      assert.strictEqual(decoded.snapshotBytes, SNAPSHOT_TEXT);
+      assert.strictEqual(decoded.handoff.contextSnapshot.digest, stored.digest);
+    }),
+  );
+
+  it.effect("stores received handoff bytes and records one continuable inbox row", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const snapshots = yield* WorkjetSnapshotStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const contextSnapshot = promptRefFor(SNAPSHOT_TEXT);
+      const id = envelopeId("hnd-recv-01");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "handoff",
+        sealToKey: local.encryptionPublicKey,
+        payload: {
+          ...handoffPayload({
+            envelopeId: id,
+            handoffId: "wjh-0123456789abcdef",
+            source: remoteAddress,
+            targetEnvironmentId: localAddress.environmentId,
+            contextSnapshot,
+          }),
+          snapshotBytes: SNAPSHOT_TEXT,
+        } as WorkjetMailboxPayload,
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      assert.isTrue(Option.isNone(yield* snapshots.get(contextSnapshot.digest).pipe(Effect.option)));
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.snapshotStored, 1);
+      assert.strictEqual(status.rejections.snapshotDigest, 0);
+
+      // The context is readable HERE, which is what makes "Continue here" real.
+      assert.strictEqual(yield* snapshots.get(contextSnapshot.digest), SNAPSHOT_TEXT);
+
+      const received = yield* store.listReceivedHandoffs(10);
+      assert.lengthOf(received, 1);
+      assert.strictEqual(received[0]?.handoff.sourceThread.threadId, remoteAddress.threadId);
+      assert.isNull(received[0]?.acceptedThreadId ?? null);
+      // The persisted envelope stays REFERENCE-ONLY: the bytes live in the
+      // snapshot store, exactly as on the local fast path.
+      const inbound = Option.getOrThrow(yield* store.getInbound(id));
+      assert.strictEqual(inbound.payload._tag, "handoff");
+      if (inbound.payload._tag === "handoff") {
+        assert.isUndefined(inbound.payload.snapshotBytes);
+      }
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
+  it.effect("records a replayed handoff exactly once", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const local = yield* makeIdentity(WORKSPACE);
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const contextSnapshot = promptRefFor(SNAPSHOT_TEXT);
+      const id = envelopeId("hnd-replay-01");
+      const build = () =>
+        remoteDocument({
+          identity: peer,
+          envelopeId: id,
+          kind: "handoff",
+          sealToKey: local.encryptionPublicKey,
+          payload: {
+            ...handoffPayload({
+              envelopeId: id,
+              handoffId: "wjh-0123456789abcdef",
+              source: remoteAddress,
+              targetEnvironmentId: localAddress.environmentId,
+              contextSnapshot,
+            }),
+            snapshotBytes: SNAPSHOT_TEXT,
+          } as WorkjetMailboxPayload,
+        });
+      const daemon = makeFakeDaemon({ seed: [yield* build(), yield* build()] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        identity: Effect.succeed(local),
+      });
+
+      yield* transport.runCycle;
+
+      // At-least-once transport, exactly-once inbox effect: one offer, not two.
+      assert.lengthOf(yield* store.listReceivedHandoffs(10), 1);
     }),
   );
 });

@@ -5,6 +5,9 @@ import {
   ProviderInstanceId,
   ThreadId,
   WorkjetContentDigest,
+  WorkjetEnvelopeId,
+  WorkjetGitBranchName,
+  WorkjetHandoffId,
   WorkjetMeshWorkspaceId,
   WorkjetRepositoryPath,
   WorkjetSealedPayloadRef,
@@ -13,6 +16,7 @@ import {
   type OrchestrationThread,
   type WorkjetDelegationState,
   type WorkjetMessageBody,
+  type WorkjetThreadHandoff,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -27,11 +31,14 @@ import {
   makeWorkjetMailboxDeliveryWithSources,
   WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND,
   WORKJET_DELEGATION_SENT_ACTIVITY_KIND,
+  WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+  WORKJET_HANDOFF_SENT_ACTIVITY_KIND,
   WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
   WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
   type WorkjetMailboxDelegateInput,
   type WorkjetMailboxDeliveryShape,
   type WorkjetMailboxDeliverySources,
+  type WorkjetMailboxSendHandoffInput,
   type WorkjetMailboxSendMessageInput,
 } from "./WorkjetMailboxDelivery.ts";
 import {
@@ -946,5 +953,321 @@ it.effect("keeps delivery authoritative when the audit emitter throws (best-effo
     assert.equal(Option.getOrThrow(outbound).state, "delivered");
     // The events were still handed to the (exploding) sink.
     assert.isTrue(events.length >= 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Typed thread handoff
+// ===============================
+
+const HANDOFF_SNAPSHOT = {
+  schemaVersion: 1,
+  snapshotRef: WorkjetSealedPayloadRef.make("aGFuZG9mZi1zbmFwc2hvdC1yZWYtMDAx"),
+  digest: WorkjetContentDigest.make("c".repeat(64)),
+  byteLength: 2_048,
+} as const;
+
+const handoffInput = (overrides?: Partial<WorkjetMailboxSendHandoffInput>) =>
+  ({
+    targetWorkspaceId: WORKSPACE,
+    targetEnvironmentId: LOCAL_ENVIRONMENT,
+    contextSnapshot: HANDOFF_SNAPSHOT,
+    branch: {
+      schemaVersion: 1,
+      branch: WorkjetGitBranchName.make("agent/th-thread-handoff"),
+      remoteConfigured: true,
+    },
+    artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+    note: "Continue the transport slice here.",
+    ...overrides,
+  }) satisfies WorkjetMailboxSendHandoffInput;
+
+/** The LOCAL thread an accept borrows project and runtime settings from. */
+const hostThread = {
+  id: TARGET_THREAD,
+  deletedAt: null,
+  projectId: "project-local",
+  modelSelection: { provider: "anthropic", model: "claude-opus-5" },
+  runtimeMode: "local",
+  interactionMode: "agent",
+} as unknown as OrchestrationThread;
+
+const SNAPSHOT_TEXT = "# Workjet thread handoff\nSource thread: thread-remote-source";
+
+const arrivedHandoff = (overrides?: {
+  readonly sourceEnvironmentId?: EnvironmentId;
+}): WorkjetThreadHandoff => ({
+  schemaVersion: 1,
+  envelopeId: WorkjetEnvelopeId.make("wjm-handoff-000000000001"),
+  handoffId: WorkjetHandoffId.make("wjh-0123456789abcdef"),
+  sourceThread: {
+    schemaVersion: 1,
+    workspaceId: WORKSPACE,
+    environmentId: overrides?.sourceEnvironmentId ?? REMOTE_ENVIRONMENT,
+    threadId: ThreadId.make("thread-remote-source"),
+  },
+  target: { schemaVersion: 1, workspaceId: WORKSPACE, environmentId: LOCAL_ENVIRONMENT },
+  createdAt: NOW,
+  expiresAt: "2026-08-20T12:00:00.000Z",
+  contextSnapshot: HANDOFF_SNAPSHOT,
+  artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+});
+
+it.effect("delivers a same-environment handoff and records it in the receiving inbox", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendHandoff(invocation, handoffInput());
+
+    assert.equal(outcome.delivery._tag, "acknowledged");
+    if (outcome.delivery._tag !== "acknowledged") return;
+    assert.equal(outcome.delivery.disposition, "accepted-new");
+
+    // The same durable path as every other envelope: outbox delivered, inbox
+    // recorded once, with the handoff payload.
+    const outbound = yield* store.getOutbound(outcome.delivery.envelopeId);
+    assert.equal(Option.getOrThrow(outbound).state, "delivered");
+    const inbound = yield* store.getInbound(outcome.delivery.envelopeId);
+    assert.equal(Option.getOrThrow(inbound).payload._tag, "handoff");
+
+    // Plus the handoff's own row, which is what makes "Continue here" offerable.
+    const received = yield* store.getReceivedHandoff(outcome.handoffId);
+    assert.isTrue(Option.isSome(received));
+    if (Option.isSome(received)) {
+      assert.equal(received.value.handoff.sourceThread.threadId, SOURCE_THREAD);
+      assert.isNull(received.value.acceptedThreadId);
+    }
+
+    // Exactly one activity, on the SOURCE thread. A handoff has no target
+    // thread, so there is nothing to append a "received" activity to.
+    assert.deepEqual(activityKinds(commands), [WORKJET_HANDOFF_SENT_ACTIVITY_KIND]);
+    const sent = activityFor(commands, WORKJET_HANDOFF_SENT_ACTIVITY_KIND);
+    assert.isDefined(sent);
+    if (sent?.type !== "thread.activity.append") return;
+    assert.equal(sent.threadId, SOURCE_THREAD);
+    const payload = JSON.stringify(sent.activity.payload);
+    // Redaction: the size travels, the note and the snapshot text do not.
+    assert.include(payload, String(HANDOFF_SNAPSHOT.byteLength));
+    assert.notInclude(payload, "Continue the transport slice here.");
+    assert.notInclude(payload, HANDOFF_SNAPSHOT.snapshotRef as string);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("queues a cross-environment handoff and records nothing in the local inbox", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendHandoff(
+      invocation,
+      handoffInput({ targetEnvironmentId: REMOTE_ENVIRONMENT }),
+    );
+
+    assert.equal(outcome.delivery._tag, "queued");
+    const outbound = yield* store.getOutbound(outcome.delivery.envelopeId);
+    assert.equal(Option.getOrThrow(outbound).state, "pending");
+    assert.isTrue(Option.isNone(yield* store.getInbound(outcome.delivery.envelopeId)));
+    // The receiving row belongs to the RECEIVING machine, not this one.
+    assert.lengthOf(yield* store.listReceivedHandoffs(10), 0);
+    assert.deepEqual(activityKinds(commands), [WORKJET_HANDOFF_SENT_ACTIVITY_KIND]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("continues a handoff in exactly one new thread seeded with the snapshot", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    const outcome = yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    // Exactly one thread, and it is a standalone thread with no worktree.
+    const creates = commands.filter((command) => command.type === "thread.create");
+    assert.lengthOf(creates, 1);
+    const created = creates[0];
+    if (created?.type !== "thread.create") return;
+    assert.equal(created.threadId, outcome.threadId);
+    assert.equal(created.projectId, "project-local");
+    assert.equal(created.workjetConfig.role, "standard");
+    assert.isNull(created.branch);
+    assert.isNull(created.worktreePath);
+
+    // The snapshot IS the first user message.
+    const turns = commands.filter((command) => command.type === "thread.turn.start");
+    assert.lengthOf(turns, 1);
+    const turn = turns[0];
+    if (turn?.type !== "thread.turn.start") return;
+    assert.equal(turn.threadId, outcome.threadId);
+    assert.equal(turn.message.role, "user");
+    assert.equal(turn.message.text, SNAPSHOT_TEXT);
+
+    // Nothing was rolled back.
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.delete"),
+      0,
+    );
+
+    // The durable backlink, in the store and on the new thread's own stream.
+    const stored = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.equal(Option.getOrThrow(stored).acceptedThreadId, outcome.threadId);
+    const backlink = activityFor(commands, WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND);
+    if (backlink?.type !== "thread.activity.append") return;
+    assert.equal(backlink.threadId, outcome.threadId);
+    assert.include(JSON.stringify(backlink.activity.payload), "thread-remote-source");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("tells a SAME-environment source thread that its handoff was continued", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff({ sourceEnvironmentId: LOCAL_ENVIRONMENT });
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    const accepted = commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+    );
+    // One on the new thread, one back on the source thread.
+    assert.lengthOf(accepted, 2);
+    const threads = accepted.flatMap((command) =>
+      command.type === "thread.activity.append" ? [command.threadId as string] : [],
+    );
+    assert.include(threads, "thread-remote-source");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("never appends an acceptance activity onto a thread another machine owns", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    // A cross-machine source: this server does not own `thread-remote-source`,
+    // and writing to that id here would land on the wrong thread.
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    const accepted = commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+    );
+    assert.lengthOf(accepted, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses a second continuation without creating a second thread", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    const first = yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    const second = yield* delivery
+      .acceptHandoff({
+        handoffId: handoff.handoffId,
+        hostThreadId: TARGET_THREAD,
+        snapshotText: SNAPSHOT_TEXT,
+      })
+      .pipe(Effect.result);
+    assert.equal(second._tag, "Failure");
+    if (second._tag === "Failure") {
+      assert.equal(second.failure.reason, "invalid-state-transition");
+    }
+
+    // The already-accepted check short-circuits BEFORE any thread is created,
+    // so the ordinary repeat costs nothing and leaves nothing to clean up. The
+    // store's `WHERE accepted_thread_id IS NULL` guard is the authority for the
+    // genuinely concurrent case (see the store's own claim test); this asserts
+    // the observable invariant either way: exactly ONE thread per handoff.
+    const stored = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.equal(Option.getOrThrow(stored).acceptedThreadId, first.threadId);
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.create"),
+      1,
+    );
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.delete"),
+      0,
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to continue a handoff this machine never received", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+
+    const error = yield* delivery
+      .acceptHandoff({
+        handoffId: WorkjetHandoffId.make("wjh-ffffffffffffffff"),
+        hostThreadId: TARGET_THREAD,
+        snapshotText: SNAPSHOT_TEXT,
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "unknown-target");
+    // Refused before any thread exists.
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.create"),
+      0,
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to continue into a deleted or unknown host thread", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: deletedTargetThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    const error = yield* delivery
+      .acceptHandoff({
+        handoffId: handoff.handoffId,
+        hostThreadId: TARGET_THREAD,
+        snapshotText: SNAPSHOT_TEXT,
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "target-thread-deleted");
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.create"),
+      0,
+    );
+    // The handoff stays continuable somewhere else.
+    const stored = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.isNull(Option.getOrThrow(stored).acceptedThreadId);
   }).pipe(Effect.provide(testLayer)),
 );

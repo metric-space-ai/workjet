@@ -88,11 +88,14 @@ describe("readLegacyWorkjetConfig", () => {
     });
   });
 
-  it("reads an empty reasoning effort as the automatic selection's raw value", () => {
+  it("reads an absent reasoning effort as absent, not as a raw value", () => {
     const result = readGolden();
     assert.strictEqual(result._tag, "read");
     if (result._tag !== "read") return;
-    assert.strictEqual(result.config.workers[2]?.reasoningEffort, "");
+    // The Swift property is an Optional: two of the twelve workers in the live
+    // document carry no `reasoningEffort` key at all.
+    assert.isUndefined(result.config.workers[2]?.reasoningEffort);
+    assert.strictEqual(result.config.workers[0]?.reasoningEffort, "high");
   });
 });
 
@@ -137,7 +140,8 @@ describe("readLegacyWorkjetConfig surfaces unknown fields", () => {
     const result = readGolden((document) => {
       (document["modelPrompts"] as Record<string, unknown>)["a-new-model"] = "rules";
       const workers = document["workers"] as Record<string, unknown>[];
-      (workers[0]?.["skillOverrides"] as Record<string, unknown>)["some-new-skill"] = true;
+      const skillOverrides = workers[0]?.["skillOverrides"] as Record<string, unknown>;
+      skillOverrides["some-new-skill"] = true;
     });
     assert.strictEqual(result._tag, "read");
     if (result._tag !== "read") return;

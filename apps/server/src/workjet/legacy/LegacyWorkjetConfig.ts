@@ -68,11 +68,12 @@ export const LEGACY_PROVIDER_KINDS = ["Direkte API", "CLIProxyAPI"] as const;
 export type LegacyWorkjetProviderKind = (typeof LEGACY_PROVIDER_KINDS)[number];
 
 /**
- * `""` is what the Swift app persists for "automatic"; the remaining values are
- * the raw values of its reasoning-effort enum, in binary order.
+ * Raw values of the Swift reasoning-effort enum, in binary order. The Swift
+ * property is an Optional, so "automatic" is the ABSENCE of the key rather than
+ * a raw value of its own — verified against the live document, where two of
+ * twelve workers carry no `reasoningEffort` at all.
  */
 export const LEGACY_REASONING_EFFORTS = [
-  "",
   "low",
   "medium",
   "high",
@@ -133,7 +134,8 @@ export interface LegacyWorkjetWorker {
   readonly name: string;
   readonly model: string;
   readonly instructions: string;
-  readonly reasoningEffort: LegacyWorkjetReasoningEffort;
+  /** Absent means "automatic": the Swift property is an Optional. */
+  readonly reasoningEffort?: LegacyWorkjetReasoningEffort | undefined;
   readonly harness: LegacyWorkjetHarness;
   readonly computerID: string;
   /** At most one of `providerID` / `providerPool` is set. */
@@ -326,7 +328,7 @@ const CLI_PROXY_KEYS = [
 
 const CAPACITY_KEYS = ["observed", "unavailable"] as const;
 
-const CONTAINER_ROOT_KEYS: readonly string[] = ["workers", "computers", "providers", "cliProxy"];
+const CONTAINER_ROOT_KEYS = new Set(["workers", "computers", "providers", "cliProxy"]);
 
 /**
  * Every leaf field this reader models, in a stable, sorted, collection-agnostic
@@ -335,7 +337,7 @@ const CONTAINER_ROOT_KEYS: readonly string[] = ["workers", "computers", "provide
  * disappearing from an import.
  */
 export const LEGACY_WORKJET_FIELD_PATHS: readonly string[] = [
-  ...ROOT_KEYS.filter((key) => !CONTAINER_ROOT_KEYS.includes(key)),
+  ...ROOT_KEYS.filter((key) => !CONTAINER_ROOT_KEYS.has(key)),
   ...COMPUTER_KEYS.map((key) => `computers[].${key}`),
   ...WORKER_KEYS.filter((key) => key !== "invocation").map((key) => `workers[].${key}`),
   ...INVOCATION_KEYS.map((key) => `workers[].invocation.${key}`),
@@ -483,6 +485,17 @@ const readEnum = <Value extends string>(
     return allowed[0];
   }
   return value as Value;
+};
+
+const readOptionalEnum = <Value extends string>(
+  state: ReadState,
+  owner: Record<string, unknown>,
+  path: string,
+  key: string,
+  allowed: readonly [Value, ...Value[]],
+): Value | undefined => {
+  if (state.failure !== undefined || owner[key] === undefined) return undefined;
+  return readEnum(state, owner, path, key, allowed);
 };
 
 const readStringArray = (
@@ -649,7 +662,13 @@ const readWorker = (
     name: readString(state, raw, path, "name"),
     model: readString(state, raw, path, "model"),
     instructions: readString(state, raw, path, "instructions"),
-    reasoningEffort: readEnum(state, raw, path, "reasoningEffort", LEGACY_REASONING_EFFORTS),
+    reasoningEffort: readOptionalEnum(
+      state,
+      raw,
+      path,
+      "reasoningEffort",
+      LEGACY_REASONING_EFFORTS,
+    ),
     harness: readEnum(state, raw, path, "harness", LEGACY_HARNESSES),
     computerID: readString(state, raw, path, "computerID"),
     providerID: readOptionalString(state, raw, path, "providerID"),

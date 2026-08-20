@@ -24,6 +24,9 @@ import {
 } from "./LegacyWorkjetMapping.ts";
 import goldenSample from "./testFixtures/legacyWorkjetConfig.v1.json" with { type: "json" };
 
+const encodeWorkjetConfiguration = Schema.encodeUnknownSync(WorkjetConfiguration);
+const decodeWorkjetConfiguration = Schema.decodeUnknownSync(WorkjetConfiguration);
+
 const LOCAL = "00000000-0000-0000-0000-000000000001";
 const TAILNET = "00000000-0000-0000-0000-000000000002";
 const SSH_BOX = "00000000-0000-0000-0000-000000000003";
@@ -189,8 +192,8 @@ describe("mapLegacyWorkjetConfig without bindings", () => {
 describe("mapLegacyWorkjetConfig with bindings", () => {
   it("produces a configuration the contract accepts", () => {
     const result = mapGolden(FULL_BINDINGS);
-    const encoded = Schema.encodeUnknownSync(WorkjetConfiguration)(result.configuration);
-    assert.deepEqual(Schema.decodeUnknownSync(WorkjetConfiguration)(encoded), result.configuration);
+    const encoded = encodeWorkjetConfiguration(result.configuration);
+    assert.deepEqual(decodeWorkjetConfiguration(encoded), result.configuration);
   });
 
   it("imports every computer and derives its harness list from the workers", () => {
@@ -344,7 +347,8 @@ describe("mapLegacyWorkjetConfig reports the awkward cases", () => {
   it("reports an unrecognized skill id rather than enabling a plausible capability", () => {
     const result = mapGolden(FULL_BINDINGS, (document) => {
       const workers = document["workers"] as Record<string, unknown>[];
-      (workers[1]?.["skillOverrides"] as Record<string, unknown>)["web-stack"] = true;
+      const skillOverrides = workers[1]?.["skillOverrides"] as Record<string, unknown>;
+      skillOverrides["web-stack"] = true;
     });
     const decision = result.decisions.find(
       (entry) =>

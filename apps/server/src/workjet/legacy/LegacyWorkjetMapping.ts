@@ -161,11 +161,10 @@ const PRESENTATION_BY_TRANSPORT: Readonly<
   SSH: "ssh",
 };
 
-/** `""` is the Swift app's "automatic"; every other raw value is shared. */
+/** Every Swift raw value is shared with the destination; absence is "automatic". */
 const REASONING_BY_LEGACY: Readonly<
   Record<LegacyWorkjetReasoningEffort, WorkjetReasoningSelection>
 > = {
-  "": "automatic",
   low: "low",
   medium: "medium",
   high: "high",
@@ -575,7 +574,8 @@ export const LEGACY_WORKJET_MAPPING_TABLE: readonly LegacyWorkjetDecision[] = [
     source: "workers[].reasoningEffort",
     destination: "workerProfiles[].reasoning",
     outcome: "mapped",
-    reason: 'Total map; the legacy "" is the destination\'s "automatic".',
+    reason:
+      'Total map over the shared raw values. The Swift property is an Optional, so an absent effort becomes the destination\'s "automatic".',
   },
   {
     source: "workers[].harness",
@@ -1136,7 +1136,10 @@ const mapWorker = (input: {
       harness: HARNESS_BY_LEGACY[worker.harness],
       llmRouteId: WorkjetLlmRouteId.make(routeId),
       modelId,
-      reasoning: REASONING_BY_LEGACY[worker.reasoningEffort],
+      reasoning:
+        worker.reasoningEffort === undefined
+          ? "automatic"
+          : REASONING_BY_LEGACY[worker.reasoningEffort],
       capabilityIds,
     },
   };

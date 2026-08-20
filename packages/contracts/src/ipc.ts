@@ -499,6 +499,27 @@ export interface DesktopUserDataMigrationOffer {
   entries: readonly string[];
 }
 
+/**
+ * One OS-delivered deep link the main process has parsed and is holding until
+ * the user explicitly confirms it. Deep links are never acted on silently:
+ * the main process only ever hands the renderer this description, and the
+ * renderer navigates only after the user picks "Open".
+ */
+export interface DesktopPendingDeepLink {
+  /** Stable per-launch id, used as the renderer's queue key. */
+  linkId: string;
+  /** Scheme the link arrived on, without the trailing colon. */
+  scheme: string;
+  /** The same link expressed on the renderer's serving origin. */
+  canonicalUrl: string;
+  /** Path portion of the canonical URL, always starting with `/`. */
+  path: string;
+  /** Query string including the leading `?`, or an empty string. */
+  search: string;
+  /** Fragment including the leading `#`, or an empty string. */
+  hash: string;
+}
+
 export interface DesktopWslState {
   // True when the user has opted the WSL backend in; the actual backend
   // process is registered with the desktop pool independently of this
@@ -1095,6 +1116,18 @@ export interface DesktopBridge {
   acceptUserDataMigration?: () => Promise<void>;
   /** Records refusal. The offer is never shown again. */
   declineUserDataMigration?: () => Promise<void>;
+  /**
+   * Drains the OS deep links the main process is holding. Draining is the
+   * only way links leave the main process, so a link is delivered exactly
+   * once. Optional: older desktop builds have no OS deep-link entry point.
+   */
+  takePendingDeepLinks?: () => Promise<readonly DesktopPendingDeepLink[]>;
+  /**
+   * Signal that at least one deep link is waiting. The signal carries no
+   * payload — the listener calls `takePendingDeepLinks` — so a link can never
+   * be delivered twice by racing the push against the drain.
+   */
+  onDeepLinkPending?: (listener: () => void) => () => void;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;

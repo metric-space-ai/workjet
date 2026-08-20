@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
+import { takePendingDeepLinks } from "./methods/deepLinks.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
@@ -62,6 +63,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getUserDataMigrationOffer);
   yield* ipc.handle(acceptUserDataMigration);
   yield* ipc.handle(declineUserDataMigration);
+
+  yield* ipc.handle(takePendingDeepLinks);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);

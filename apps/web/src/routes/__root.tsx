@@ -15,6 +15,7 @@ import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
+import { DeepLinkConfirmationDialog } from "../components/desktop/DeepLinkConfirmationDialog";
 import { UserDataMigrationDialog } from "../components/desktop/UserDataMigrationDialog";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
@@ -138,6 +139,7 @@ function RootRouteView() {
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />
         <UserDataMigrationDialog />
+        <DeepLinkConfirmationDialog />
         <ConfirmDialogHost />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />

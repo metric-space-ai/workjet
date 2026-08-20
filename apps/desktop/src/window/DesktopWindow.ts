@@ -529,6 +529,14 @@ export const make = Effect.gen(function* () {
       // A ctox-desktop:// deep link is ours but is not the origin the renderer
       // is served from — normalize it onto the renderer origin and stay in the
       // app instead of handing it to the OS browser.
+      //
+      // This is a RENDERER-initiated navigation: the user just clicked a link
+      // inside the app, so the redirect only re-expresses their own click on
+      // the serving origin and needs no further confirmation. An
+      // OS-initiated deep link is the other case entirely — any web page or
+      // document on the machine can trigger one — and it never lands here: it
+      // goes through DesktopDeepLinkRouter, which queues it for an explicit
+      // confirmation dialog in the renderer.
       const deepLinkRedirect = DesktopDeepLink.resolveDesktopDeepLinkRedirect(url);
       if (Option.isSome(deepLinkRedirect)) {
         void window.webContents.loadURL(deepLinkRedirect.value).catch(() => undefined);

@@ -96,6 +96,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   acceptUserDataMigration: () => ipcRenderer.invoke(IpcChannels.ACCEPT_USER_DATA_MIGRATION_CHANNEL),
   declineUserDataMigration: () =>
     ipcRenderer.invoke(IpcChannels.DECLINE_USER_DATA_MIGRATION_CHANNEL),
+  takePendingDeepLinks: () => ipcRenderer.invoke(IpcChannels.TAKE_PENDING_DEEP_LINKS_CHANNEL),
+  onDeepLinkPending: (listener: () => void) => {
+    // Payload-free by design: the listener drains through
+    // takePendingDeepLinks, so the signal can never duplicate a link.
+    const wrappedListener = () => {
+      listener();
+    };
+
+    ipcRenderer.on(IpcChannels.DEEP_LINK_PENDING_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.DEEP_LINK_PENDING_CHANNEL, wrappedListener);
+    };
+  },
   getWslState: () => ipcRenderer.invoke(IpcChannels.GET_WSL_STATE_CHANNEL),
   setWslBackendEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_WSL_BACKEND_ENABLED_CHANNEL, enabled),

@@ -136,7 +136,9 @@ describe("WorkjetCapabilityMenu", () => {
 
     expect(enabledSwitch?.props.checked).toBe(true);
     expect(enabledSwitch?.props.disabled).toBe(false);
-    expect(enabledSwitch?.props["aria-label"]).toBe(`${WORKJET_GREPPY_DISPLAY_NAME} for this thread`);
+    expect(enabledSwitch?.props["aria-label"]).toBe(
+      `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`,
+    );
     expect(textContent(enabledSwitch)).toContain(WORKJET_GREPPY_DISPLAY_NAME);
     expect(enabledContent.type).toBe(MenuGroup);
     expect(textContent(explanation)).toContain(WORKJET_GREPPY_DESCRIPTION);

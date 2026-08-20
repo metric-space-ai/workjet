@@ -70,7 +70,10 @@ import * as WebStackTool from "./WebStackTool.ts";
  * shared fixture declares.
  */
 
-const repoRoot = NodePath.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../../../..");
+const repoRoot = NodePath.resolve(
+  fileURLToPath(new URL(".", import.meta.url)),
+  "../../../../../..",
+);
 const FIXTURE_PATH = "native/web-stack/fixtures/capability-adapter-v1.json";
 
 interface AdapterFixture {
@@ -148,9 +151,11 @@ const CORE_SUCCESS: Readonly<Record<string, unknown>> = {
   greppy_search: { matches: [{ path: "src/retry.ts", line: 17, excerpt: "Retries." }] },
 };
 
-const grantsFor = (capabilityId: string): ReadonlyArray<
-  "greppy" | "web-search" | "web-stack-browser"
-> => [capabilityId as "greppy" | "web-search" | "web-stack-browser"];
+const grantsFor = (
+  capabilityId: string,
+): ReadonlyArray<"greppy" | "web-search" | "web-stack-browser"> => [
+  capabilityId as "greppy" | "web-search" | "web-stack-browser",
+];
 
 const webStackCases: ReadonlyArray<ConformanceCase> = [
   ...fixture.validInputs.map((entry) => ({
@@ -273,8 +278,7 @@ const stubLayer = Layer.mergeAll(
   Layer.succeed(
     GreppySearch.GreppySearch,
     GreppySearch.GreppySearch.of({
-      search: () =>
-        Effect.succeed(CORE_SUCCESS.greppy_search as GreppySearch.GreppySearchResult),
+      search: () => Effect.succeed(CORE_SUCCESS.greppy_search as GreppySearch.GreppySearchResult),
     }),
   ),
   Layer.succeed(
@@ -316,9 +320,7 @@ const errorReason = (result: McpSchema.CallToolResult): string => {
   return structured?.error?.reason ?? "unknown";
 };
 
-const projectCallToolResult = (
-  result: McpSchema.CallToolResult,
-): CanonicalCapabilityProjection =>
+const projectCallToolResult = (result: McpSchema.CallToolResult): CanonicalCapabilityProjection =>
   result.isError
     ? {
         outcome: "error",
@@ -415,8 +417,7 @@ describe("cross-host capability conformance gate", () => {
       assert.ok(
         conformanceCases.some(
           (conformanceCase) =>
-            conformanceCase.tool === entry.tool &&
-            conformanceCase.fixtureId.includes(entry.tool),
+            conformanceCase.tool === entry.tool && conformanceCase.fixtureId.includes(entry.tool),
         ),
         `fixture case for ${entry.tool} is not driven by the gate`,
       );

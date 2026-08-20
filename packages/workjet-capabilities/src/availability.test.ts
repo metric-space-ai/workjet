@@ -73,7 +73,8 @@ describe("capability availability from one catalog", () => {
         ?.target,
     ).toEqual({ kind: "thread", environmentId, threadId });
     expect(
-      resolveCtoxInstanceCapabilityAvailability({ instanceId, enabledCapabilityIds: [] })[0]?.target,
+      resolveCtoxInstanceCapabilityAvailability({ instanceId, enabledCapabilityIds: [] })[0]
+        ?.target,
     ).toEqual({ kind: "ctox-instance", instanceId });
     expect(
       resolveCapabilityCatalogForHost({ adapter: "t3-mcp", enabledCapabilityIds: [] })[0]?.target,

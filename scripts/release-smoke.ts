@@ -191,6 +191,19 @@ function assertMissing(path: string, message: string): void {
 const tempRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-release-smoke-"));
 
 try {
+  // The tracked-file secret gate runs FIRST and against the real checkout, not
+  // the temp fixture root: a committed credential is the one release problem
+  // that cannot be fixed after the fact, because the artifact is the Git
+  // history. See scripts/check-tracked-secrets.ts.
+  NodeChildProcess.execFileSync(
+    process.execPath,
+    [NodePath.resolve(repoRoot, "scripts/check-tracked-secrets.ts"), "--repo-root", repoRoot],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    },
+  );
+
   copyWorkspaceManifestFixture(tempRoot);
 
   NodeChildProcess.execFileSync(

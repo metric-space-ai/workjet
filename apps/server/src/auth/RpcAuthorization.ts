@@ -110,6 +110,16 @@ export const RPC_REQUIRED_SCOPES = {
   // this server already holds. Still a pure read, still no key material, so it
   // carries the roster's scope and never an operate scope.
   [WS_METHODS.workjetMeshOverview]: AuthOrchestrationReadScope,
+  // Revoking a peer DESTROYS a pinned mesh identity: the trust-on-first-use
+  // binding that every later envelope from that address is judged against. It
+  // is the only mesh-trust write in this table, and it is unambiguously an
+  // operate action — a read-only session must never be able to clear the pin
+  // an impersonator would then race to replace. This scope is also the reason
+  // revocation is not itself the attack: no envelope, daemon route, MCP tool,
+  // or worker thread can reach this RPC, and a caller who already holds
+  // `orchestration:operate` can start turns on local threads outright, so
+  // revocation grants it no authority it did not already have.
+  [WS_METHODS.workjetMeshRevokePeer]: AuthOrchestrationOperateScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

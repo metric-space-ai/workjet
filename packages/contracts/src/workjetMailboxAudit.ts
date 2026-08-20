@@ -94,12 +94,18 @@ export type WorkjetMailboxMeshReplicationReason = typeof WorkjetMailboxMeshRepli
  * - `binding-downgrade`       — a source pair whose keys were pinned WITH a
  *   verified binding sent a wrapper carrying none. Accepting it would let a
  *   room member strip the binding to get back to bare trust-on-first-use.
+ * - `key-revoked`             — the advertised key was REVOKED on this machine
+ *   by an operator (migration 053). Revocation deletes the pin so a rotated
+ *   peer can re-pin, and the tombstone is what keeps the revoked key itself
+ *   from coming back: without it, replaying the old key after a revocation
+ *   would re-establish exactly the pin the operator destroyed.
  */
 export const WorkjetMailboxPeerBindingRejection = Schema.Literals([
   "signing-key-conflict",
   "encryption-key-conflict",
   "binding-invalid",
   "binding-downgrade",
+  "key-revoked",
 ]);
 export type WorkjetMailboxPeerBindingRejection = typeof WorkjetMailboxPeerBindingRejection.Type;
 
@@ -219,6 +225,23 @@ export const WorkjetMailboxAuditEvent = Schema.Union([
     sourceWorkspaceId: WorkjetMeshWorkspaceId,
     sourceEnvironmentId: EnvironmentId,
     reasonCode: WorkjetMailboxPeerBindingRejection,
+  }),
+  /**
+   * An operator REVOKED a peer's pinned keys on this machine (migration 053).
+   *
+   * This is the one mesh-trust event a human causes rather than a peer, and it
+   * is the most consequential: it destroys the trust-on-first-use pin that
+   * every later envelope from that address is judged against, so the next
+   * verifying envelope establishes a NEW pin. It carries the address that was
+   * revoked — never the keys — so an operator reading the stream can see which
+   * pins were destroyed and when, which is the audit trail that makes an
+   * unexpected revocation visible instead of silent.
+   */
+  Schema.TaggedStruct("mesh-peer-revoked", {
+    ...auditEventBase,
+    /** The pair whose pin was destroyed. */
+    sourceWorkspaceId: WorkjetMeshWorkspaceId,
+    sourceEnvironmentId: EnvironmentId,
   }),
 ]);
 export type WorkjetMailboxAuditEvent = typeof WorkjetMailboxAuditEvent.Type;

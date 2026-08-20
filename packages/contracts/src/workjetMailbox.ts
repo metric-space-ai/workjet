@@ -1546,3 +1546,66 @@ export const WorkjetMeshOverview = Schema.Struct({
   observedAt: WorkjetMailboxTimestamp,
 });
 export type WorkjetMeshOverview = typeof WorkjetMeshOverview.Type;
+
+// =========================================================
+// Peer revocation (the recovery path out of a refused key rotation)
+// =========================================================
+// docs/workjet-plan.md → "Authenticate remote worker dispatch […] and revocable
+// environment credentials", and the key-ROTATION gap on the replication line.
+//
+// Trust-on-first-use pins `(workspaceId, environmentId) → both public keys` and
+// refuses every later different key. Without a way out, a peer that legitimately
+// rotated its keys is locked out forever: `signing-key-conflict` on every
+// envelope, no operator recovery, and the plan's revocable-credentials clause
+// unsatisfiable. Revocation is that way out.
+//
+// WHY REVOCATION IS NOT ITSELF THE ATTACK. Destroying a pin is exactly what an
+// impersonator wants, so the authority to do it must be strictly greater than
+// the authority a peer has. It is:
+//
+//   - It is not on the wire at all. No envelope kind, no payload field, and no
+//     daemon loopback route can revoke anything; the ONLY caller is
+//     `workjet.mesh.revokePeer` on this server's authenticated RPC socket. A
+//     mesh peer — including one that already holds the room secret and can
+//     write the replicated collection — has no reach into that socket.
+//   - That socket requires an `orchestration:operate` credential, the same
+//     scope that starts turns and writes provider credentials. A read-only
+//     session cannot revoke, and neither can any worker thread or MCP tool: the
+//     RPC is not exposed as one.
+//   - The UI requires an explicit typed-consequence confirmation, so revocation
+//     is never a stray click.
+//   - Every revocation is audited (`mesh-peer-revoked`), so a revocation the
+//     operator did not perform is visible rather than silent.
+//
+// An attacker who already holds an `orchestration:operate` credential on this
+// machine does not need to attack the mesh: that credential starts turns on
+// local threads directly. Revocation therefore grants no authority the caller
+// did not already have, which is the property that makes it safe to expose.
+
+/** Which mesh peer to revoke. The address only — never key material. */
+export const WorkjetMeshRevokePeerInput = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  workspaceId: WorkjetMeshWorkspaceId,
+  environmentId: EnvironmentId,
+});
+export type WorkjetMeshRevokePeerInput = typeof WorkjetMeshRevokePeerInput.Type;
+
+/**
+ * What the revocation did.
+ *
+ * - `revoked`      — a pin existed and was destroyed. Its keys are tombstoned,
+ *   so the NEXT verifying envelope from that address pins whatever key it
+ *   presents, unless that key is one of the revoked ones.
+ * - `unknown-peer` — no pin existed for that address. Reported honestly rather
+ *   than as a success, so an operator who mistyped an address is told so
+ *   instead of believing a pin was destroyed. It is not an error: revocation is
+ *   idempotent, and revoking twice must not fail the second time.
+ */
+export const WorkjetMeshRevokePeerOutcome = Schema.Literals(["revoked", "unknown-peer"]);
+export type WorkjetMeshRevokePeerOutcome = typeof WorkjetMeshRevokePeerOutcome.Type;
+
+export const WorkjetMeshRevokePeerResult = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  outcome: WorkjetMeshRevokePeerOutcome,
+});
+export type WorkjetMeshRevokePeerResult = typeof WorkjetMeshRevokePeerResult.Type;

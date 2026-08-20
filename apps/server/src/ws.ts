@@ -91,6 +91,7 @@ import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDeliver
 import * as WorkjetMailboxRpc from "./workjet/mailbox/WorkjetMailboxRpc.ts";
 import * as WorkjetMailboxStore from "./workjet/mailbox/WorkjetMailboxStore.ts";
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
+import { revokeMeshPeer as revokeWorkjetMeshPeer } from "./workjet/mailbox/WorkjetMeshRevocationRpc.ts";
 import * as WorkjetSnapshotStore from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
@@ -1967,6 +1968,22 @@ const makeWsRpcLayer = (
               // reaches the client.
               Effect.mapError(() => new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
             ),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        // The ONE mesh-trust WRITE: destroy a peer's pinned keys so a
+        // legitimately rotated peer can be re-pinned. It carries
+        // `orchestration:operate`, it is reachable only over this
+        // authenticated socket (never from an envelope, a daemon route, or an
+        // MCP tool), and it is audited — see `WorkjetMeshRevocationRpc.ts` for
+        // why that is what stops revocation from being the attack.
+        [WS_METHODS.workjetMeshRevokePeer]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMeshRevokePeer,
+            revokeWorkjetMeshPeer({
+              store: workjetMailboxStore,
+              peer: input,
+              audit: { emit: workjetMailboxAudit.publish },
+            }),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>

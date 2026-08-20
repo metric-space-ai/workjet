@@ -237,6 +237,8 @@ import {
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
   WorkjetMeshOverview,
+  WorkjetMeshRevokePeerInput,
+  WorkjetMeshRevokePeerResult,
   WorkjetMeshRoster,
 } from "./workjetMailbox.ts";
 import { WorkjetMailboxAuditEvent } from "./workjetMailboxAudit.ts";
@@ -386,6 +388,10 @@ export const WS_METHODS = {
   // ADDITIVE read: the global multi-computer activity overview. Same redacted
   // projection as the roster, plus last-known contact and delegation counts.
   workjetMeshOverview: "workjet.mesh.overview",
+  // ADDITIVE operate action: destroy one peer's trust-on-first-use pin so a
+  // legitimately rotated peer can be re-pinned. The only recovery path out of a
+  // refused key rotation, and the only mesh-trust WRITE this server exposes.
+  workjetMeshRevokePeer: "workjet.mesh.revokePeer",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -896,6 +902,26 @@ export const WsWorkjetMeshRosterRpc = Rpc.make(WS_METHODS.workjetMeshRoster, {
 export const WsWorkjetMeshOverviewRpc = Rpc.make(WS_METHODS.workjetMeshOverview, {
   payload: Schema.Struct({}),
   success: WorkjetMeshOverview,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * Destroy one peer's pinned mesh keys, so the next envelope that verifies from
+ * that address establishes a FRESH pin.
+ *
+ * This is the operator recovery path out of a key rotation, which
+ * trust-on-first-use otherwise refuses forever. It is the only mesh-trust write
+ * in the RPC surface and it destroys a security binding, so it carries the
+ * `orchestration:operate` scope, never the roster's read scope — see
+ * {@link WorkjetMeshRevokePeerInput} for the full argument that revocation is
+ * not itself an attack.
+ *
+ * The payload is an ADDRESS, never key material, and the result is a bounded
+ * outcome literal: nothing about the destroyed keys crosses the wire.
+ */
+export const WsWorkjetMeshRevokePeerRpc = Rpc.make(WS_METHODS.workjetMeshRevokePeer, {
+  payload: WorkjetMeshRevokePeerInput,
+  success: WorkjetMeshRevokePeerResult,
   error: WorkjetMailboxRpcError,
 });
 
@@ -1471,6 +1497,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetCrossModeSubmitRpc,
   WsWorkjetMeshRosterRpc,
   WsWorkjetMeshOverviewRpc,
+  WsWorkjetMeshRevokePeerRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

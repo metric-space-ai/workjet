@@ -306,6 +306,15 @@ export interface WorkjetMailboxTransportRejections {
    */
   readonly keyBinding: number;
   /**
+   * An envelope advertising a key an OPERATOR revoked on this machine
+   * (migration 053). Counted apart from `keyContinuity` because it is not a
+   * conflict with a pin — the pin is gone — and apart from `keyBinding`
+   * because nothing about the wrapper is wrong. It is the one rejection whose
+   * cause is a local human decision, and a non-zero count is the signal that
+   * something is still presenting a key the operator destroyed.
+   */
+  readonly keyRevoked: number;
+  /**
    * A sealed payload that would not open under this envelope id: a blob sealed
    * to another environment, a tampered ciphertext, or a replay lifted onto a
    * different envelope. Distinct from `signature`, which is about the routing
@@ -375,6 +384,7 @@ const EMPTY_REJECTIONS: WorkjetMailboxTransportRejections = {
   signature: 0,
   keyContinuity: 0,
   keyBinding: 0,
+  keyRevoked: 0,
   sealing: 0,
   snapshotDigest: 0,
   addressMismatch: 0,
@@ -877,6 +887,28 @@ export const payloadMatchesEnvelope = (
   );
 };
 
+/**
+ * Which rejection bucket a refused identity claim belongs in. The three are
+ * genuinely different events and are counted apart on purpose: a DOWNGRADE is
+ * an attack on the binding, a key CONFLICT is an attack on continuity, and a
+ * REVOKED key is a local operator decision being honoured. Exported so a test
+ * can hold the mapping rather than re-deriving it.
+ */
+export const rejectionKindOfBindingRefusal = (
+  reason: WorkjetMailboxPeerBindingRejection,
+): RejectionKind => {
+  switch (reason) {
+    case "binding-downgrade":
+    case "binding-invalid":
+      return "keyBinding";
+    case "key-revoked":
+      return "keyRevoked";
+    case "signing-key-conflict":
+    case "encryption-key-conflict":
+      return "keyContinuity";
+  }
+};
+
 type IngestOutcome =
   | { readonly _tag: "accepted" }
   | { readonly _tag: "duplicate" }
@@ -993,6 +1025,48 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     `.pipe(Effect.map((rows) => rows[0]));
 
   /**
+   * Whether either key this envelope advertises was REVOKED on this machine
+   * (migration 053).
+   *
+   * Revocation deletes the pin so a rotated peer can be re-pinned; this read is
+   * the other half, and without it revocation would be worse than useless. The
+   * operator revokes precisely because a key may be in the wrong hands, and
+   * whoever holds it can send an envelope the moment the pin is gone — pinning
+   * it again as a fresh first-use event and undoing the revocation. Both keys
+   * are checked: adopting a revoked X25519 key alongside a new signing key
+   * would still redirect every future sealed reply.
+   *
+   * The read is by ADDRESS and the comparison is in memory, because the
+   * encryption key is not part of the tombstone's primary key. The row count
+   * per address is the number of key generations an operator has revoked there
+   * — a handful at most.
+   */
+  const keyRevoked = (input: {
+    readonly workspaceId: string;
+    readonly environmentId: string;
+    readonly publicKey: string;
+    readonly encryptionPublicKey: string | undefined;
+  }) =>
+    sql<{
+      readonly publicKey: string;
+      readonly encryptionPublicKey: string | null;
+    }>`
+      SELECT public_key AS "publicKey", encryption_public_key AS "encryptionPublicKey"
+      FROM workjet_mailbox_peer_revocations
+      WHERE source_workspace_id = ${input.workspaceId}
+        AND source_environment_id = ${input.environmentId}
+    `.pipe(
+      Effect.map((rows) =>
+        rows.some(
+          (row) =>
+            row.publicKey === input.publicKey ||
+            (input.encryptionPublicKey !== undefined &&
+              row.encryptionPublicKey === input.encryptionPublicKey),
+        ),
+      ),
+    );
+
+  /**
    * The verdict on one envelope's identity claim. `accepted` carries the level
    * the pin now stands at, so the caller can count sealed-but-unbound peers
    * separately from bound ones; every refusal carries the bounded code that
@@ -1017,6 +1091,14 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     readonly nowMillis: number;
   }) {
     const level: WorkjetMeshPeerBinding = input.bound ? "self-signed" : "tofu";
+
+    // BEFORE the pin is read, let alone written. A revoked key is refused
+    // whatever state the pin table is in, so the re-pin window a revocation
+    // opens can only ever be filled by a key the operator did not revoke.
+    if (yield* keyRevoked(input)) {
+      return { _tag: "refused", reason: "key-revoked" } as const;
+    }
+
     const pinned = yield* readPeerKeys(input);
 
     if (pinned !== undefined) {
@@ -1563,10 +1645,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       if (verdict._tag === "refused") {
         // A downgrade is an attack on the binding, the two key conflicts are
         // attacks on continuity. They are audited alike and counted apart.
-        return yield* refuseBinding(
-          verdict.reason,
-          verdict.reason === "binding-downgrade" ? "keyBinding" : "keyContinuity",
-        );
+        return yield* refuseBinding(verdict.reason, rejectionKindOfBindingRefusal(verdict.reason));
       }
       bump(verdict.binding === "self-signed" ? "bindingVerified" : "bindingAbsent");
 

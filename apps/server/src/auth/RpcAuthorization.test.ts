@@ -3,6 +3,7 @@ import {
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  ORCHESTRATION_WS_METHODS,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -92,6 +93,23 @@ describe("RPC authorization scopes", () => {
     // an operate scope.
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshOverview)).toBe(
       AuthOrchestrationReadScope,
+    );
+  });
+
+  it("requires an operate scope to revoke a mesh peer, never the roster's read scope", () => {
+    // Revocation DESTROYS the trust-on-first-use pin every later envelope from
+    // that address is judged against, and reopens the address to a fresh pin.
+    // If a read-only session could do it, the roster's read scope would be
+    // enough to clear a pin an impersonator then races to replace — the exact
+    // revoke-as-attack path. It carries the same scope as starting a turn.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshRevokePeer)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshRevokePeer)).not.toBe(
+      requiredScopeForRpcMethod(WS_METHODS.workjetMeshRoster),
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshRevokePeer)).toBe(
+      requiredScopeForRpcMethod(ORCHESTRATION_WS_METHODS.dispatchCommand),
     );
   });
 

@@ -11,6 +11,7 @@ import {
   WorkjetMailboxTimestamp,
   WorkjetMeshPeerBinding,
   WorkjetMeshWorkspaceId,
+  type WorkjetMeshRevokePeerOutcome,
   WorkjetHandoffId,
   WorkjetRoutingEnvelope,
   WorkjetThreadHandoff,
@@ -913,6 +914,26 @@ export interface WorkjetMailboxStoreShape {
     localEnvironmentId: EnvironmentId,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetMeshDelegationCountRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * REVOKE one peer's pinned keys: tombstone them (migration 053) and delete
+   * the pin, in one transaction.
+   *
+   * The order matters and the transaction is not optional. Deleting the pin
+   * first would leave a window in which the address is unpinned and its old key
+   * is not yet tombstoned — precisely the window an attacker holding the
+   * revoked key needs to re-pin it. Writing the tombstone first and committing
+   * both together closes it: after this call the address accepts a NEW key and
+   * refuses the revoked one, and there is no instant at which it does neither.
+   *
+   * Idempotent: revoking an address with no pin is `unknown-peer`, not an
+   * error, and revoking the same key twice replaces its tombstone rather than
+   * failing. Returns no key material.
+   */
+  readonly revokeMeshPeer: (
+    peer: { readonly workspaceId: WorkjetMeshWorkspaceId; readonly environmentId: EnvironmentId },
+    revokedAtMillis: number,
+  ) => Effect.Effect<WorkjetMeshRevokePeerOutcome, WorkjetMailboxStoreError>;
 
   /**
    * Record a handoff this machine RECEIVED. Idempotent on the sender-chosen
@@ -2449,6 +2470,53 @@ export const make = Effect.gen(function* () {
       );
     });
 
+  const revokeMeshPeer: WorkjetMailboxStoreShape["revokeMeshPeer"] = (peer, revokedAtMillis) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const pinned = yield* sql<{
+            readonly publicKey: string;
+            readonly encryptionPublicKey: string | null;
+          }>`
+            SELECT public_key AS "publicKey", encryption_public_key AS "encryptionPublicKey"
+            FROM workjet_mailbox_peer_keys
+            WHERE source_workspace_id = ${peer.workspaceId}
+              AND source_environment_id = ${peer.environmentId}
+          `;
+          const row = pinned[0];
+          if (row === undefined) {
+            // No pin to destroy. Reported honestly instead of as a success, so
+            // an operator who mistyped an address is not told a binding was
+            // removed. Nothing is tombstoned: tombstoning a key this machine
+            // never pinned would refuse a peer on nothing but a typo.
+            return "unknown-peer" as const;
+          }
+
+          // TOMBSTONE FIRST, DELETE SECOND, both inside this transaction. The
+          // revoked key must never be re-pinnable, and the instant between the
+          // two writes is exactly the window an attacker holding it would use.
+          // `INSERT OR REPLACE` keeps a repeat revocation of the same key
+          // idempotent while leaving an EARLIER generation's tombstone intact —
+          // the primary key includes the key itself.
+          yield* sql`
+            INSERT OR REPLACE INTO workjet_mailbox_peer_revocations
+              (source_workspace_id, source_environment_id, public_key, encryption_public_key,
+               revoked_at_ms)
+            VALUES (${peer.workspaceId}, ${peer.environmentId}, ${row.publicKey},
+                    ${row.encryptionPublicKey}, ${revokedAtMillis})
+          `;
+          yield* sql`
+            DELETE FROM workjet_mailbox_peer_keys
+            WHERE source_workspace_id = ${peer.workspaceId}
+              AND source_environment_id = ${peer.environmentId}
+          `;
+          return "revoked" as const;
+        }),
+      )
+      .pipe(
+        Effect.mapError(sqlFailure("WorkjetMailboxStore.revokeMeshPeer:transaction")),
+      ) as Effect.Effect<WorkjetMeshRevokePeerOutcome, WorkjetMailboxStoreError>;
+
   const decodeReceivedHandoff = (row: unknown, rowId: string) =>
     decodeReceivedHandoffDbRow(row).pipe(
       Effect.mapError(
@@ -2616,6 +2684,7 @@ export const make = Effect.gen(function* () {
     listMeshPeers,
     listMeshEnvelopeContact,
     listMeshDelegationCounts,
+    revokeMeshPeer,
     upsertReceivedHandoff,
     listReceivedHandoffs,
     getReceivedHandoff,

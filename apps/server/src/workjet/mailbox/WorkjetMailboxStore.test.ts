@@ -1509,6 +1509,113 @@ it.effect("surfaces an undecodable peer pin row as a typed corrupt-row error", (
   }).pipe(Effect.provide(testLayer)),
 );
 
+// ===============================
+// Peer revocation (migration 053)
+// ===============================
+// Revocation is the ONE mesh-trust write, and it has to do two opposing things
+// at once: reopen the address so a legitimately rotated peer can be re-pinned,
+// and permanently close the door on the key it destroyed. These pin both, plus
+// the transactional ordering that keeps the second from having a gap.
+
+const readRevocations = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  return yield* sql<{
+    readonly sourceEnvironmentId: string;
+    readonly publicKey: string;
+    readonly encryptionPublicKey: string | null;
+    readonly revokedAtMillis: number;
+  }>`
+    SELECT source_environment_id AS "sourceEnvironmentId", public_key AS "publicKey",
+           encryption_public_key AS "encryptionPublicKey", revoked_at_ms AS "revokedAtMillis"
+    FROM workjet_mailbox_peer_revocations
+    ORDER BY public_key ASC
+  `;
+});
+
+it.effect("revokes a pinned peer by tombstoning its keys and deleting the pin", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    yield* pinPeer({
+      environmentId: "environment-rotated",
+      firstSeenAtMillis: 1_000,
+      encryptionPublicKey: "encryption-key-for-tests",
+    });
+    yield* pinPeer({ environmentId: "environment-untouched", firstSeenAtMillis: 2_000 });
+
+    const outcome = yield* store.revokeMeshPeer(
+      { workspaceId: WORKSPACE, environmentId: EnvironmentId.make("environment-rotated") },
+      9_000,
+    );
+    assert.equal(outcome, "revoked");
+
+    // The pin is GONE, which is what lets the next verifying envelope pin the
+    // peer's NEW key — the whole point of the recovery path.
+    const page = yield* store.listMeshPeers(10);
+    assert.deepEqual(
+      page.peers.map((peer) => peer.environmentId),
+      ["environment-untouched"],
+    );
+
+    // BOTH keys are tombstoned. Tombstoning only the signing key would leave a
+    // compromised X25519 key re-pinnable beside a fresh signing key, and every
+    // future sealed reply would still be readable by whoever holds it.
+    const revocations = yield* readRevocations;
+    assert.equal(revocations.length, 1);
+    assert.equal(revocations[0]?.sourceEnvironmentId, "environment-rotated");
+    assert.equal(revocations[0]?.publicKey, "signing-key-for-tests");
+    assert.equal(revocations[0]?.encryptionPublicKey, "encryption-key-for-tests");
+    assert.equal(revocations[0]?.revokedAtMillis, 9_000);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("reports an unpinned address as unknown-peer and tombstones nothing", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* store.revokeMeshPeer(
+      { workspaceId: WORKSPACE, environmentId: EnvironmentId.make("environment-never-seen") },
+      9_000,
+    );
+
+    // Honest, and NOT an error: revocation is idempotent. But nothing may be
+    // tombstoned, because a tombstone written on a mistyped address would
+    // refuse a peer this machine never even pinned.
+    assert.equal(outcome, "unknown-peer");
+    assert.deepEqual(yield* readRevocations, []);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps every revoked key generation refused when an address is revoked twice", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const store = yield* WorkjetMailboxStore;
+    const peer = { workspaceId: WORKSPACE, environmentId: EnvironmentId.make("environment-twice") };
+
+    yield* pinPeer({ environmentId: "environment-twice", firstSeenAtMillis: 1_000 });
+    assert.equal(yield* store.revokeMeshPeer(peer, 9_000), "revoked");
+
+    // The peer re-pins with a NEW key, and the operator revokes that too.
+    yield* sql`
+      INSERT INTO workjet_mailbox_peer_keys
+        (source_workspace_id, source_environment_id, public_key, encryption_public_key,
+         first_seen_at_ms)
+      VALUES (${WORKSPACE}, ${"environment-twice"}, ${"signing-key-generation-2"}, NULL, 10_000)
+    `;
+    assert.equal(yield* store.revokeMeshPeer(peer, 11_000), "revoked");
+
+    // BOTH generations stay tombstoned. If revoking the second un-revoked the
+    // first, whoever holds the original key walks back in.
+    assert.deepEqual(
+      (yield* readRevocations).map((row) => row.publicKey),
+      ["signing-key-for-tests", "signing-key-generation-2"],
+    );
+
+    // And revoking again with nothing pinned is still not an error.
+    assert.equal(yield* store.revokeMeshPeer(peer, 12_000), "unknown-peer");
+    assert.equal((yield* readRevocations).length, 2);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 // =========================================================
 // Multi-computer overview reads (last-known contact + counts)
 // =========================================================

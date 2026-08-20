@@ -123,10 +123,26 @@ than a shared database or an untyped renderer bridge:
   evidence: `apps/server` has NO path to a Business OS command today —
   there is no MCP CLIENT in the repo, the mailbox transport's daemon
   treats payloads as opaque blobs by contract, and commands travel
-  renderer→IPC→guest. `WorkjetCrossModeCtoxPort` is the single typed
-  boundary and its only implementation refuses honestly; a real one needs
-  either the repo's first MCP client against the daemon's `business_os.*`
-  surface or a desktop-main implementation behind new IPC.
+  renderer→IPC→guest. BLOCKER RESOLVED 2026-08-20 (commit `88a509a74`):
+  `WorkjetCrossModeCtoxClient` is the repo's first outbound MCP client —
+  plain JSON-RPC 2.0 over `POST /mcp` on the daemon's existing loopback
+  listener, bearer token from `ctox secret get`, 10 s timeout, no retry,
+  256 KB bound, every response Schema-decoded, token and payload never
+  logged. Authority is REAL: the running daemon's published `instanceId` must
+  equal the caller's AND an `initialize` handshake must identify as
+  `ctox-business-os-mcp`; a mismatch never reaches the wire. Failure mapping
+  uses CTOX's own vocabulary (`confirmation_required` → awaiting-approval;
+  runtime/channel/sync/rate codes → unavailable; other typed refusals →
+  rejected; malformed → unavailable, never "landed"). LIVE-PROBED against the
+  running daemon: the handshake identifies, a token-less request 401s, and
+  the port answered true for the real instance id and false for an invented
+  one. Honest ceiling: CTOX exposes NO module-agnostic review/follow-up tool,
+  so all three operations ride the one generic `ctox.delegate_task` action
+  distinguished by `payload.operation`. The proof matrix's no-data-bridge
+  invariant was SHARPENED rather than relaxed for it: the command client is
+  the single sanctioned HTTP speaker and is held to a positive rule — every
+  request it builds targets `/mcp` — while Business OS data routes stay
+  forbidden everywhere, mutation-verified.
 - [x] Add a shared desktop link navigator and context-preserving mode switch;
       opening a link selects the correct mode, sidebar entry, and main surface
       without mounting both surfaces simultaneously. Done 2026-08-20 (commit

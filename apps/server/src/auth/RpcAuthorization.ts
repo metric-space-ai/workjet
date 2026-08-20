@@ -74,6 +74,14 @@ export const RPC_REQUIRED_SCOPES = {
   // Reassignment moves a pending delegation to a different LOCAL thread, so it
   // is the same class of write as an update and carries the same two checks.
   [WS_METHODS.workjetMailboxReassignDelegation]: AuthOrchestrationOperateScope,
+  // A handoff SENDS this thread's bounded context to another machine, and an
+  // accept CREATES a thread here and starts a turn on it. Both are writes and
+  // carry the same two checks as every other thread-scoped mailbox send. The
+  // inbox listing is a redacted read — ids, addresses, and bounded metadata,
+  // never the snapshot text — so it takes the read scope like the roster.
+  [WS_METHODS.workjetMailboxSendHandoff]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxAcceptHandoff]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxListHandoffs]: AuthOrchestrationReadScope,
   // The recipient roster is a redacted READ of peers this machine already
   // exchanged mail with: the same orchestration-read scope the audit stream and
   // the gateway status use. It writes nothing and carries no key material.

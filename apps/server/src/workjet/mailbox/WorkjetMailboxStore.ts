@@ -11,9 +11,12 @@ import {
   WorkjetMailboxTimestamp,
   WorkjetMeshPeerBinding,
   WorkjetMeshWorkspaceId,
+  WorkjetHandoffId,
   WorkjetRoutingEnvelope,
+  WorkjetThreadHandoff,
   WORKJET_TERMINAL_DELEGATION_STATES,
   EnvironmentId,
+  ThreadId,
   WORKJET_MESH_OVERVIEW_MAX_DELEGATION_BUCKETS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   type WorkjetDelegationRef,
@@ -202,6 +205,7 @@ export class WorkjetMailboxStoreCorruptRowError extends Schema.TaggedErrorClass<
       "workjet_delegations",
       "workjet_delegation_edges",
       "workjet_mailbox_peer_keys",
+      "workjet_thread_handoffs",
     ]),
     rowId: Schema.String,
     issue: Schema.String,
@@ -415,6 +419,32 @@ export type WorkjetDelegationEdgeInsertOutcome =
   | { readonly _tag: "inserted"; readonly edgeId: string }
   | { readonly _tag: "duplicate"; readonly edgeId: string };
 
+/**
+ * One handoff THIS machine received (migration 051).
+ *
+ * The canonical contract value is `handoff`; the two acceptance fields are the
+ * only mutable state a handoff has, and both are NULL until an accept lands.
+ * `acceptedThreadId` is the durable link from the handoff to the thread that
+ * continues it — and, through `handoff.sourceThread`, from that thread back to
+ * the thread the work came from.
+ */
+export interface WorkjetReceivedHandoffRecord {
+  readonly handoffId: WorkjetHandoffId;
+  readonly handoff: WorkjetThreadHandoff;
+  readonly receivedAtMillis: number;
+  readonly acceptedThreadId: ThreadId | null;
+  readonly acceptedAtMillis: number | null;
+}
+
+/**
+ * `duplicate` is the normal, non-error outcome of at-least-once transport: the
+ * same handoff arriving twice is one inbox row, exactly like a duplicate
+ * envelope is one inbox insert.
+ */
+export type WorkjetReceivedHandoffUpsertOutcome =
+  | { readonly _tag: "inserted"; readonly handoffId: WorkjetHandoffId }
+  | { readonly _tag: "duplicate"; readonly handoffId: WorkjetHandoffId };
+
 export interface WorkjetMailboxExpirySweep {
   readonly outboxDeadLettered: number;
   readonly inboxDropped: number;
@@ -458,6 +488,14 @@ const DelegationDbRow = Schema.Struct({
 const DelegationEdgeDbRow = Schema.Struct({
   edgeId: Schema.String,
   edge: Schema.fromJsonString(WorkjetDelegationEdge),
+});
+
+const ReceivedHandoffDbRow = Schema.Struct({
+  handoffId: WorkjetHandoffId,
+  handoff: Schema.fromJsonString(WorkjetThreadHandoff),
+  receivedAtMillis: Schema.Int,
+  acceptedThreadId: Schema.NullOr(ThreadId),
+  acceptedAtMillis: Schema.NullOr(Schema.Int),
 });
 
 /**
@@ -521,6 +559,8 @@ const decodeOutboxDbRow = Schema.decodeUnknownEffect(OutboxDbRow);
 const decodeInboxDbRow = Schema.decodeUnknownEffect(InboxDbRow);
 const decodeDelegationDbRow = Schema.decodeUnknownEffect(DelegationDbRow);
 const decodeDelegationEdgeDbRow = Schema.decodeUnknownEffect(DelegationEdgeDbRow);
+const decodeReceivedHandoffDbRow = Schema.decodeUnknownEffect(ReceivedHandoffDbRow);
+const encodeThreadHandoffJson = Schema.encodeEffect(Schema.fromJsonString(WorkjetThreadHandoff));
 
 /** The accounting columns added by migration 048. */
 const DelegationAccountingDbRow = Schema.Struct({
@@ -582,6 +622,14 @@ const DELEGATION_COLUMNS = `
 const DELEGATION_EDGE_COLUMNS = `
   edge_id AS "edgeId",
   edge_json AS "edge"
+`;
+
+const RECEIVED_HANDOFF_COLUMNS = `
+  handoff_id AS "handoffId",
+  handoff_json AS "handoff",
+  received_at_ms AS "receivedAtMillis",
+  accepted_thread_id AS "acceptedThreadId",
+  accepted_at_ms AS "acceptedAtMillis"
 `;
 
 // ===============================
@@ -865,6 +913,39 @@ export interface WorkjetMailboxStoreShape {
     localEnvironmentId: EnvironmentId,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetMeshDelegationCountRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * Record a handoff this machine RECEIVED. Idempotent on the sender-chosen
+   * handoff id, so a replayed envelope produces one inbox row and never a
+   * second continuation offer.
+   */
+  readonly upsertReceivedHandoff: (
+    handoff: WorkjetThreadHandoff,
+    receivedAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<WorkjetReceivedHandoffUpsertOutcome, WorkjetMailboxStoreError>;
+
+  /** Bounded inbox listing, newest arrival first. */
+  readonly listReceivedHandoffs: (
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetReceivedHandoffRecord>, WorkjetMailboxStoreError>;
+
+  readonly getReceivedHandoff: (
+    handoffId: WorkjetHandoffId,
+  ) => Effect.Effect<Option.Option<WorkjetReceivedHandoffRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * Claim a handoff for a NEW thread. The write is conditional on the backlink
+   * still being NULL, so "a handoff creates exactly one thread" holds even when
+   * two accepts race: the loser gets `invalid-state-transition`, not a second
+   * thread. Called BEFORE the thread exists would be wrong — the caller creates
+   * the thread first and claims with its id, so a failed claim leaves no row
+   * pointing at a thread that was never used.
+   */
+  readonly markReceivedHandoffAccepted: (
+    handoffId: WorkjetHandoffId,
+    threadId: ThreadId,
+    acceptedAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<WorkjetReceivedHandoffRecord, WorkjetMailboxStoreError>;
 }
 
 export class WorkjetMailboxStore extends Context.Service<
@@ -961,6 +1042,7 @@ export const make = Effect.gen(function* () {
       readonly envelopeId?: unknown;
       readonly delegationId?: unknown;
       readonly edgeId?: unknown;
+      readonly handoffId?: unknown;
       // A peer pin row is keyed by its source pair, not by an envelope id.
       readonly environmentId?: unknown;
     };
@@ -972,6 +1054,9 @@ export const make = Effect.gen(function* () {
     }
     if (typeof candidate.edgeId === "string") {
       return candidate.edgeId;
+    }
+    if (typeof candidate.handoffId === "string") {
+      return candidate.handoffId;
     }
     return typeof candidate.environmentId === "string" ? candidate.environmentId : "<unknown>";
   };
@@ -2364,6 +2449,139 @@ export const make = Effect.gen(function* () {
       );
     });
 
+  const decodeReceivedHandoff = (row: unknown, rowId: string) =>
+    decodeReceivedHandoffDbRow(row).pipe(
+      Effect.mapError(
+        (cause) =>
+          new WorkjetMailboxStoreCorruptRowError({
+            table: "workjet_thread_handoffs",
+            rowId,
+            issue: cause.issue._tag,
+          }),
+      ),
+      Effect.map(
+        (decoded): WorkjetReceivedHandoffRecord => ({
+          handoffId: decoded.handoffId,
+          handoff: decoded.handoff,
+          receivedAtMillis: decoded.receivedAtMillis,
+          acceptedThreadId: decoded.acceptedThreadId,
+          acceptedAtMillis: decoded.acceptedAtMillis,
+        }),
+      ),
+    );
+
+  const upsertReceivedHandoff: WorkjetMailboxStoreShape["upsertReceivedHandoff"] = (
+    handoff,
+    receivedAt,
+  ) =>
+    Effect.gen(function* () {
+      const handoffJson = yield* encodeThreadHandoffJson(handoff).pipe(
+        Effect.mapError(() => new WorkjetMailboxError({ reason: "malformed-envelope" })),
+      );
+      const createdAtMillis = yield* toEpochMillis(handoff.createdAt);
+      const expiresAtMillis = yield* toEpochMillis(handoff.expiresAt);
+      const receivedAtMillis = yield* toEpochMillis(receivedAt);
+
+      const inserted = yield* sql<{ readonly handoffId: string }>`
+        INSERT INTO workjet_thread_handoffs (
+          handoff_id,
+          envelope_id,
+          source_workspace_id,
+          source_environment_id,
+          source_thread_id,
+          handoff_json,
+          snapshot_digest,
+          created_at_ms,
+          expires_at_ms,
+          received_at_ms,
+          accepted_thread_id,
+          accepted_at_ms
+        )
+        VALUES (
+          ${handoff.handoffId},
+          ${handoff.envelopeId},
+          ${handoff.sourceThread.workspaceId},
+          ${handoff.sourceThread.environmentId},
+          ${handoff.sourceThread.threadId},
+          ${handoffJson},
+          ${handoff.contextSnapshot.digest},
+          ${createdAtMillis},
+          ${expiresAtMillis},
+          ${receivedAtMillis},
+          NULL,
+          NULL
+        )
+        ON CONFLICT (handoff_id) DO NOTHING
+        RETURNING handoff_id AS "handoffId"
+      `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.upsertReceivedHandoff:insert")));
+
+      return inserted.length > 0
+        ? ({ _tag: "inserted", handoffId: handoff.handoffId } as const)
+        : ({ _tag: "duplicate", handoffId: handoff.handoffId } as const);
+    });
+
+  const listReceivedHandoffs: WorkjetMailboxStoreShape["listReceivedHandoffs"] = (limit) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT ${RECEIVED_HANDOFF_COLUMNS}
+          FROM workjet_thread_handoffs
+          ORDER BY received_at_ms DESC, handoff_id ASC
+          LIMIT ?
+        `,
+          [limit],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listReceivedHandoffs:select")));
+      return yield* Effect.forEach(rows, (row) => decodeReceivedHandoff(row, rowIdOf(row)));
+    });
+
+  const getReceivedHandoff: WorkjetMailboxStoreShape["getReceivedHandoff"] = (handoffId) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT ${RECEIVED_HANDOFF_COLUMNS}
+          FROM workjet_thread_handoffs
+          WHERE handoff_id = ?
+        `,
+          [handoffId],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.getReceivedHandoff:select")));
+      const row = rows[0];
+      if (row === undefined) return Option.none<WorkjetReceivedHandoffRecord>();
+      return Option.some(yield* decodeReceivedHandoff(row, rowIdOf(row)));
+    });
+
+  const markReceivedHandoffAccepted: WorkjetMailboxStoreShape["markReceivedHandoffAccepted"] = (
+    handoffId,
+    threadId,
+    acceptedAt,
+  ) =>
+    Effect.gen(function* () {
+      const acceptedAtMillis = yield* toEpochMillis(acceptedAt);
+
+      // The `IS NULL` guard is the exactly-once claim. A second accept updates
+      // zero rows and is reported as an illegal transition, which is also the
+      // honest answer for a handoff that never arrived here.
+      const claimed = yield* sql<{ readonly handoffId: string }>`
+        UPDATE workjet_thread_handoffs
+        SET accepted_thread_id = ${threadId}, accepted_at_ms = ${acceptedAtMillis}
+        WHERE handoff_id = ${handoffId} AND accepted_thread_id IS NULL
+        RETURNING handoff_id AS "handoffId"
+      `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.markReceivedHandoffAccepted:update")));
+
+      if (claimed.length === 0) {
+        return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+      }
+
+      const record = yield* getReceivedHandoff(handoffId);
+      return yield* Option.match(record, {
+        onNone: () => Effect.fail(new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
+        onSome: (value) => Effect.succeed(value),
+      });
+    });
+
   return {
     enqueueOutbound,
     recordInboundEnvelope,
@@ -2398,6 +2616,10 @@ export const make = Effect.gen(function* () {
     listMeshPeers,
     listMeshEnvelopeContact,
     listMeshDelegationCounts,
+    upsertReceivedHandoff,
+    listReceivedHandoffs,
+    getReceivedHandoff,
+    markReceivedHandoffAccepted,
   } satisfies WorkjetMailboxStoreShape;
 });
 

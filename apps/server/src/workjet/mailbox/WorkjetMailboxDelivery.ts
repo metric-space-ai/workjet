@@ -1,12 +1,14 @@
 import {
   CommandId,
   EventId,
+  MessageId,
+  ThreadId,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
+  WorkjetHandoffId,
   WorkjetMailboxError,
   type EnvironmentId,
   type OrchestrationCommand,
-  type ThreadId,
   type WorkjetCompletionContract,
   type WorkjetDelegation,
   type WorkjetDelegationEdge,
@@ -21,8 +23,11 @@ import {
   type WorkjetMailboxTimestamp,
   type WorkjetMeshWorkspaceId,
   type WorkjetMessageBody,
+  type WorkjetArtifactReferences,
+  type WorkjetHandoffBranchRef,
   type WorkjetPromptSnapshotRef,
   type WorkjetRoutingEnvelope,
+  type WorkjetThreadHandoff,
   type WorkjetWorkerAddress,
   type WorkjetWorkerMessage,
 } from "@t3tools/contracts";
@@ -39,6 +44,7 @@ import { ProjectionSnapshotQuery } from "../../orchestration/Services/Projection
 import {
   WorkjetMailboxStore,
   type WorkjetDelegationRecord,
+  type WorkjetReceivedHandoffRecord,
   type WorkjetMailboxStoreError,
   type WorkjetMailboxStoreShape,
 } from "./WorkjetMailboxStore.ts";
@@ -91,6 +97,8 @@ export const WORKJET_MESSAGE_SENT_ACTIVITY_KIND = "workjet.message.sent";
 export const WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND = "workjet.message.received";
 export const WORKJET_DELEGATION_SENT_ACTIVITY_KIND = "workjet.delegation.sent";
 export const WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND = "workjet.delegation.received";
+export const WORKJET_HANDOFF_SENT_ACTIVITY_KIND = "workjet.handoff.sent";
+export const WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND = "workjet.handoff.accepted";
 
 // ===============================
 // Inputs and outcomes
@@ -234,6 +242,68 @@ export interface WorkjetMailboxReviewRequestOutcome {
   readonly edgeKind: "reviews";
 }
 
+
+// ===============================
+// Typed thread handoff
+// ===============================
+
+/**
+ * Send a handoff. The target is a MACHINE: a handoff has no target thread by
+ * construction, because the receiving side creates one. The context snapshot is
+ * a reference to bytes the CALLER already stored — the RPC layer composes and
+ * stores them so this service never has to know how a snapshot is written, in
+ * exact analogy to a delegation's prompt.
+ */
+export interface WorkjetMailboxSendHandoffInput {
+  readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
+  readonly targetEnvironmentId: EnvironmentId;
+  readonly contextSnapshot: WorkjetPromptSnapshotRef;
+  readonly branch?: WorkjetHandoffBranchRef;
+  readonly artifacts: WorkjetArtifactReferences;
+  readonly note?: string;
+  readonly ttlSeconds?: number;
+}
+
+/**
+ * A handoff's delivery outcome. It deliberately does NOT reuse
+ * {@link WorkjetMailboxSendOutcome}: that carries a
+ * {@link WorkjetDeliveryReceipt}, whose `acknowledgedBy` is a full worker
+ * address including a thread id. A handoff has no target thread, and inventing
+ * one to satisfy the receipt shape would put a fabricated address on the wire.
+ */
+export type WorkjetMailboxHandoffDeliveryOutcome =
+  | {
+      readonly _tag: "acknowledged";
+      readonly envelopeId: WorkjetEnvelopeId;
+      readonly disposition: WorkjetDeliveryDisposition;
+      readonly acknowledgedAt: WorkjetMailboxTimestamp;
+    }
+  | { readonly _tag: "queued"; readonly envelopeId: WorkjetEnvelopeId };
+
+export interface WorkjetMailboxSendHandoffOutcome {
+  readonly delivery: WorkjetMailboxHandoffDeliveryOutcome;
+  readonly handoffId: WorkjetHandoffId;
+}
+
+/**
+ * Continue a received handoff HERE. `snapshotText` is the already-verified
+ * context the caller read out of the local snapshot store: this service seeds
+ * it as the new thread's first user message and never resolves a digest itself.
+ * `hostThreadId` is the LOCAL thread whose project and runtime settings the new
+ * thread inherits — a settings template and project anchor, not a parent.
+ */
+export interface WorkjetMailboxAcceptHandoffInput {
+  readonly handoffId: WorkjetHandoffId;
+  readonly hostThreadId: ThreadId;
+  readonly snapshotText: string;
+}
+
+export interface WorkjetMailboxAcceptHandoffOutcome {
+  readonly handoffId: WorkjetHandoffId;
+  readonly threadId: ThreadId;
+  readonly acceptedAt: WorkjetMailboxTimestamp;
+}
+
 export interface WorkjetMailboxDeliveryShape {
   readonly sendMessage: (
     invocation: WorkjetMailboxSenderScope,
@@ -259,6 +329,24 @@ export interface WorkjetMailboxDeliveryShape {
     invocation: WorkjetMailboxSenderScope,
     input: WorkjetMailboxUpdateDelegationInput,
   ) => Effect.Effect<WorkjetMailboxUpdateDelegationOutcome, WorkjetMailboxError>;
+
+  readonly sendHandoff: (
+    invocation: WorkjetMailboxSenderScope,
+    input: WorkjetMailboxSendHandoffInput,
+  ) => Effect.Effect<WorkjetMailboxSendHandoffOutcome, WorkjetMailboxError>;
+
+  /** The bounded inbox of handoffs THIS machine received, newest arrival first. */
+  readonly listReceivedHandoffs: (
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetReceivedHandoffRecord>, WorkjetMailboxError>;
+
+  readonly getReceivedHandoff: (
+    handoffId: WorkjetHandoffId,
+  ) => Effect.Effect<Option.Option<WorkjetReceivedHandoffRecord>, WorkjetMailboxError>;
+
+  readonly acceptHandoff: (
+    input: WorkjetMailboxAcceptHandoffInput,
+  ) => Effect.Effect<WorkjetMailboxAcceptHandoffOutcome, WorkjetMailboxError>;
 }
 
 export class WorkjetMailboxDelivery extends Context.Service<
@@ -1071,12 +1159,387 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     }
   });
 
+  // -----------------------------
+  // Typed thread handoff
+  // -----------------------------
+
+  const handoffIdEffect = sources.randomUUID.pipe(
+    Effect.map((uuid) => WorkjetHandoffId.make(`wjh-${uuid}`)),
+  );
+
+  /**
+   * Redacted handoff activity: ids, addresses, and the snapshot's SIZE. Never
+   * the snapshot text, never the operator note.
+   */
+  const handoffActivityPayload = (input: {
+    readonly envelopeId: WorkjetEnvelopeId;
+    readonly handoffId: WorkjetHandoffId;
+    readonly direction: "outbound" | "inbound";
+    readonly sourceThread: WorkjetWorkerAddress;
+    readonly targetWorkspaceId: WorkjetMeshWorkspaceId;
+    readonly targetEnvironmentId: EnvironmentId;
+    readonly acceptedThreadId?: ThreadId;
+    readonly snapshotByteLength: number;
+    readonly createdAt: WorkjetMailboxTimestamp;
+    readonly expiresAt: WorkjetMailboxTimestamp;
+  }) => ({
+    schemaVersion: 1 as const,
+    envelopeId: input.envelopeId,
+    handoffId: input.handoffId,
+    direction: input.direction,
+    sourceThread: {
+      workspaceId: input.sourceThread.workspaceId,
+      environmentId: input.sourceThread.environmentId,
+      threadId: input.sourceThread.threadId,
+    },
+    targetWorkspaceId: input.targetWorkspaceId,
+    targetEnvironmentId: input.targetEnvironmentId,
+    ...(input.acceptedThreadId !== undefined
+      ? { acceptedThreadId: input.acceptedThreadId }
+      : {}),
+    snapshotByteLength: input.snapshotByteLength,
+    createdAt: input.createdAt,
+    expiresAt: input.expiresAt,
+  });
+
+  const sendHandoff: WorkjetMailboxDeliveryShape["sendHandoff"] = Effect.fn(
+    "WorkjetMailboxDelivery.sendHandoff",
+  )(function* (invocation, input) {
+    const sourceThread: WorkjetWorkerAddress = {
+      schemaVersion: 1,
+      workspaceId: identity.workspaceId,
+      environmentId: invocation.environmentId,
+      threadId: invocation.threadId,
+    };
+    const sameEnvironment = invocation.environmentId === input.targetEnvironmentId;
+
+    const now = yield* sources.nowIso;
+    const expiresAt = yield* addSeconds(now, clampTtlSeconds(input.ttlSeconds));
+    const id = yield* envelopeId;
+    const handoffId = yield* handoffIdEffect;
+
+    const handoff: WorkjetThreadHandoff = {
+      schemaVersion: 1,
+      envelopeId: id,
+      handoffId,
+      sourceThread,
+      target: {
+        schemaVersion: 1,
+        workspaceId: input.targetWorkspaceId,
+        environmentId: input.targetEnvironmentId,
+      },
+      createdAt: now,
+      expiresAt,
+      contextSnapshot: input.contextSnapshot,
+      ...(input.branch !== undefined ? { branch: input.branch } : {}),
+      artifacts: input.artifacts,
+      ...(input.note !== undefined ? { note: input.note } : {}),
+    };
+
+    const payload = { _tag: "handoff", handoff } as const satisfies WorkjetMailboxPayload;
+    // The routing envelope's addresses are workspace/environment pairs, which is
+    // exactly what a handoff has; no thread id is invented to fill the shape.
+    const envelope = yield* identity.signRoutingEnvelope({
+      schemaVersion: 1,
+      envelopeId: id,
+      kind: "handoff",
+      sourceWorkspaceId: sourceThread.workspaceId,
+      sourceEnvironmentId: sourceThread.environmentId,
+      targetWorkspaceId: input.targetWorkspaceId,
+      targetEnvironmentId: input.targetEnvironmentId,
+      createdAt: now,
+      expiresAt,
+    });
+
+    const enqueued = yield* store
+      .enqueueOutbound(envelope, payload)
+      .pipe(Effect.mapError(boundStoreError));
+
+    if (enqueued._tag === "enqueued") {
+      yield* emit({
+        _tag: "envelope-enqueued",
+        occurredAt: now,
+        envelopeId: id,
+        source: auditAddress(sourceThread),
+        // A handoff has no target thread; the audit address reuses the SOURCE
+        // thread id rather than inventing a target one, and the envelope id is
+        // what actually identifies the traffic.
+        target: {
+          workspaceId: input.targetWorkspaceId,
+          environmentId: input.targetEnvironmentId,
+          threadId: sourceThread.threadId,
+        },
+      });
+    }
+
+    yield* appendActivity({
+      threadId: sourceThread.threadId,
+      kind: WORKJET_HANDOFF_SENT_ACTIVITY_KIND,
+      summary: sameEnvironment ? "Workjet handoff sent" : "Workjet handoff queued",
+      payload: handoffActivityPayload({
+        envelopeId: id,
+        handoffId,
+        direction: "outbound",
+        sourceThread,
+        targetWorkspaceId: input.targetWorkspaceId,
+        targetEnvironmentId: input.targetEnvironmentId,
+        snapshotByteLength: input.contextSnapshot.byteLength,
+        createdAt: now,
+        expiresAt,
+      }),
+      createdAt: now,
+    });
+
+    if (!sameEnvironment) {
+      return {
+        delivery: { _tag: "queued", envelopeId: id } as const,
+        handoffId,
+      } as const satisfies WorkjetMailboxSendHandoffOutcome;
+    }
+
+    // The same-environment fast path, obeying the same contracts and state
+    // machine as remote delivery: verify, record inbound, mark delivered, then
+    // record the handoff in the receiving table.
+    const verified = yield* identity.verifyRoutingEnvelope(envelope);
+    if (!verified) {
+      yield* emit({
+        _tag: "envelope-rejected",
+        occurredAt: now,
+        envelopeId: id,
+        reasonCode: "invalid-signature",
+      });
+      return yield* failure("invalid-signature");
+    }
+
+    const inbound = yield* store
+      .recordInboundEnvelope(envelope, payload, now)
+      .pipe(Effect.mapError(boundStoreError));
+
+    if (inbound._tag === "accepted-new") {
+      yield* store.markDelivered(id, now).pipe(Effect.mapError(boundStoreError));
+      // Idempotent on the handoff id, so a replay adds no second inbox entry.
+      yield* store
+        .upsertReceivedHandoff(handoff, now)
+        .pipe(Effect.mapError(boundStoreError));
+      yield* emit({
+        _tag: "envelope-delivered",
+        occurredAt: now,
+        envelopeId: id,
+        source: auditAddress(sourceThread),
+        target: {
+          workspaceId: input.targetWorkspaceId,
+          environmentId: input.targetEnvironmentId,
+          threadId: sourceThread.threadId,
+        },
+        disposition: inbound._tag,
+      });
+    } else if (inbound._tag === "expired") {
+      yield* emit({
+        _tag: "envelope-rejected",
+        occurredAt: now,
+        envelopeId: id,
+        reasonCode: "envelope-expired",
+      });
+    }
+
+    return {
+      delivery: {
+        _tag: "acknowledged",
+        envelopeId: id,
+        disposition: inbound._tag,
+        acknowledgedAt: now,
+      } as const,
+      handoffId,
+    } as const satisfies WorkjetMailboxSendHandoffOutcome;
+  });
+
+  const listReceivedHandoffs: WorkjetMailboxDeliveryShape["listReceivedHandoffs"] = (limit) =>
+    store.listReceivedHandoffs(limit).pipe(Effect.mapError(boundStoreError));
+
+  const getReceivedHandoff: WorkjetMailboxDeliveryShape["getReceivedHandoff"] = (handoffId) =>
+    store.getReceivedHandoff(handoffId).pipe(Effect.mapError(boundStoreError));
+
+  /**
+   * Continue a received handoff in a NEW local thread.
+   *
+   * Order of effects, and why: the thread is created FIRST and the exactly-once
+   * claim on the handoff row is taken SECOND.
+   *
+   * - Claiming first would need a thread id chosen before the thread exists; a
+   *   failed creation would then leave the handoff permanently marked accepted,
+   *   pointing at a thread nobody can open. That is the worse failure: it is
+   *   invisible and unrecoverable through the ordinary surface.
+   * - Creating first means a lost race (two accepts at once) produces one extra
+   *   brand-new thread, which this function immediately deletes — it owns that
+   *   thread, nothing else has referenced it yet, and the database's `WHERE
+   *   accepted_thread_id IS NULL` guard is what decides the winner. The
+   *   invariant the plan actually demands — a handoff yields EXACTLY ONE
+   *   continuing thread — is preserved by the store, not by request ordering.
+   */
+  const acceptHandoff: WorkjetMailboxDeliveryShape["acceptHandoff"] = Effect.fn(
+    "WorkjetMailboxDelivery.acceptHandoff",
+  )(function* (input) {
+    const record = yield* store
+      .getReceivedHandoff(input.handoffId)
+      .pipe(Effect.mapError(boundStoreError));
+    const handoffRecord = yield* Option.match(record, {
+      onNone: () => Effect.fail(failure("unknown-target")),
+      onSome: (value) => Effect.succeed(value),
+    });
+    // A handoff already continued somewhere is not continued a second time.
+    if (handoffRecord.acceptedThreadId !== null) {
+      return yield* failure("invalid-state-transition");
+    }
+
+    const host = yield* requireLocalTargetThread(input.hostThreadId);
+
+    const now = yield* sources.nowIso;
+    const threadId = ThreadId.make(yield* sources.randomUUID);
+    const handoff = handoffRecord.handoff;
+
+    const createCommand = {
+      type: "thread.create",
+      commandId: CommandId.make(yield* sources.randomUUID),
+      threadId,
+      projectId: host.projectId,
+      title: `Handoff: ${handoff.sourceThread.threadId}`,
+      modelSelection: host.modelSelection,
+      runtimeMode: host.runtimeMode,
+      interactionMode: host.interactionMode,
+      // A continued handoff is an ordinary standalone thread. It is deliberately
+      // NOT a `worker` of the host thread: the host supplies project and runtime
+      // settings, not authority, and a worker role would imply a parent that
+      // never dispatched it.
+      workjetConfig: {
+        schemaVersion: 1,
+        role: "standard",
+        parent: null,
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+      },
+      // No worktree and no branch checkout: the handed-over branch may not exist
+      // on this machine at all, and fetching it is an explicit operator action.
+      branch: null,
+      worktreePath: null,
+      createdAt: now,
+    } as const satisfies OrchestrationCommand;
+
+    const createExit = yield* Effect.exit(engine.dispatch(createCommand));
+    if (createExit._tag === "Failure") {
+      return yield* failure("mailbox-unavailable");
+    }
+
+    const deleteThread = Effect.gen(function* () {
+      yield* engine.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make(yield* sources.randomUUID),
+        threadId,
+      } as const satisfies OrchestrationCommand);
+    }).pipe(Effect.ignore);
+
+    // The snapshot IS the first user message: the new thread starts from the
+    // bounded continuation brief, with any harness or model the host supplies.
+    const turnExit = yield* Effect.exit(
+      Effect.gen(function* () {
+        yield* engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(yield* sources.randomUUID),
+          threadId,
+          message: {
+            messageId: MessageId.make(yield* sources.randomUUID),
+            role: "user",
+            text: input.snapshotText,
+            attachments: [],
+          },
+          runtimeMode: host.runtimeMode,
+          interactionMode: host.interactionMode,
+          createdAt: now,
+        } as const satisfies OrchestrationCommand);
+      }),
+    );
+    if (turnExit._tag === "Failure") {
+      yield* deleteThread;
+      return yield* failure("mailbox-unavailable");
+    }
+
+    const claimed = yield* Effect.exit(
+      store.markReceivedHandoffAccepted(input.handoffId, threadId, now),
+    );
+    if (claimed._tag === "Failure") {
+      // Another accept won, or the row vanished. The thread this call created is
+      // brand new and unreferenced, so removing it keeps "exactly one thread per
+      // handoff" true from the operator's point of view.
+      yield* deleteThread;
+      return yield* failure("invalid-state-transition");
+    }
+
+    // The durable backlink, on the NEW thread's own event stream: it names the
+    // source address, so the thread carries the link to the work it continues
+    // even for a reader who never queries the handoff table.
+    yield* appendActivity({
+      threadId,
+      kind: WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+      summary: "Workjet handoff continued here",
+      payload: handoffActivityPayload({
+        envelopeId: handoff.envelopeId,
+        handoffId: handoff.handoffId,
+        direction: "inbound",
+        sourceThread: handoff.sourceThread,
+        targetWorkspaceId: handoff.target.workspaceId,
+        targetEnvironmentId: handoff.target.environmentId,
+        acceptedThreadId: threadId,
+        snapshotByteLength: handoff.contextSnapshot.byteLength,
+        createdAt: handoff.createdAt,
+        expiresAt: handoff.expiresAt,
+      }),
+      createdAt: now,
+    });
+
+    // Tell the SOURCE thread its work was picked up — but only when it lives on
+    // this machine. For a source on another machine this server has no envelope
+    // kind to carry an acknowledgement, and appending to a thread id it does not
+    // own would write the activity onto the wrong thread. The acceptance stays
+    // durable on the handoff row either way.
+    // This server IS the handoff target, so "the source is local" is exactly
+    // "the handoff never crossed a machine boundary".
+    if (handoff.sourceThread.environmentId === handoff.target.environmentId) {
+      yield* appendActivity({
+        threadId: handoff.sourceThread.threadId,
+        kind: WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+        summary: "Workjet handoff continued on the target machine",
+        payload: handoffActivityPayload({
+          envelopeId: handoff.envelopeId,
+          handoffId: handoff.handoffId,
+          direction: "outbound",
+          sourceThread: handoff.sourceThread,
+          targetWorkspaceId: handoff.target.workspaceId,
+          targetEnvironmentId: handoff.target.environmentId,
+          acceptedThreadId: threadId,
+          snapshotByteLength: handoff.contextSnapshot.byteLength,
+          createdAt: handoff.createdAt,
+          expiresAt: handoff.expiresAt,
+        }),
+        createdAt: now,
+      });
+    }
+
+    return {
+      handoffId: input.handoffId,
+      threadId,
+      acceptedAt: now,
+    } as const satisfies WorkjetMailboxAcceptHandoffOutcome;
+  });
+
   return WorkjetMailboxDelivery.of({
     sendMessage,
     delegateTask,
     reply,
     requestReview,
     updateDelegation,
+    sendHandoff,
+    listReceivedHandoffs,
+    getReceivedHandoff,
+    acceptHandoff,
   });
 });
 

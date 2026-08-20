@@ -456,6 +456,26 @@ const makeWsRpcLayer = (
         // lives in `WorkjetDelegationExecutor.reassign`, not duplicated here —
         // and the reconciler picks the moved delegation up on its next cycle.
         reassign: workjetDelegationExecutor.reassign,
+        nowIso,
+        // A LOCAL configuration read and nothing more: does the source thread's
+        // repository have a primary remote at all. It never runs `git ls-remote`
+        // and never pushes — a handoff must not move code behind the operator's
+        // back — so the honest answer to "is the branch reachable there" stays
+        // the target's to discover. Any failure answers `false`, which
+        // understates rather than overstates reachability.
+        sourceRemoteConfigured: (threadId) =>
+          projectionSnapshotQuery.getThreadWorktreeCleanupContext(threadId).pipe(
+            Effect.flatMap((option) =>
+              Option.match(option, {
+                onNone: () => Effect.succeed(false),
+                onSome: (context) =>
+                  gitWorkflow
+                    .localStatus({ cwd: context.worktreePath ?? context.workspaceRoot })
+                    .pipe(Effect.map((status) => status.hasPrimaryRemote)),
+              }),
+            ),
+            Effect.orElseSucceed(() => false),
+          ),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1738,6 +1758,27 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.workjetMailboxReassignDelegation,
             workjetMailbox.reassignDelegation(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        // The typed thread handoff. The snapshot is composed and stored inside
+        // the handler from this server's own thread projection, so nothing a
+        // client sends can pin a snapshot the server never wrote.
+        [WS_METHODS.workjetMailboxSendHandoff]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxSendHandoff,
+            workjetMailbox.sendHandoff(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxListHandoffs]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxListHandoffs,
+            workjetMailbox.listHandoffs(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxAcceptHandoff]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxAcceptHandoff,
+            workjetMailbox.acceptHandoff(input),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
         // The recipient roster: this environment's own mesh address plus every

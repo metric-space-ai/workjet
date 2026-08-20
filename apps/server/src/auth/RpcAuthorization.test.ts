@@ -80,6 +80,20 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("separates reading the handoff inbox from sending or accepting a handoff", () => {
+    // Seeing that work was offered is a read; putting an envelope on another
+    // machine, or creating a thread and starting a turn on it, are not.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMailboxListHandoffs)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMailboxSendHandoff)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetMailboxAcceptHandoff)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("allows relay status reads without granting relay installation access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
       AuthRelayReadScope,

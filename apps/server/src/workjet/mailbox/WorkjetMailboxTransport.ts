@@ -1163,15 +1163,22 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     let markedOversized = false;
     let wire: Option.Option<{ readonly json: string; readonly sealed: boolean }>;
 
-    if (input.record.payload._tag === "delegation") {
-      const delegationPayload = input.record.payload;
-      const snapshotText = yield* snapshots
-        .get(delegationPayload.delegation.prompt.digest)
-        .pipe(Effect.option);
+    if (input.record.payload._tag === "delegation" || input.record.payload._tag === "handoff") {
+      // A handoff carries a CONTEXT snapshot where a delegation carries a
+      // PROMPT snapshot. Both are one content-addressed object pinned by digest
+      // on this machine, and both must arrive with their bytes or the receiver
+      // has a reference it cannot resolve — so they take the identical path,
+      // with the same ceiling, the same fallback marker, and the same counters.
+      const carrier = input.record.payload;
+      const digest =
+        carrier._tag === "delegation"
+          ? carrier.delegation.prompt.digest
+          : carrier.handoff.contextSnapshot.digest;
+      const snapshotText = yield* snapshots.get(digest).pipe(Effect.option);
 
       if (Option.isSome(snapshotText)) {
         const withBytes = {
-          ...delegationPayload,
+          ...carrier,
           snapshotBytes: snapshotText.value,
         } as const satisfies WorkjetMailboxPayload;
         const attached = yield* buildWire(withBytes);
@@ -1181,9 +1188,9 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
         } else {
           // The snapshot will not fit sealed. Fall back to reference-only plus
           // the marker, which the receiver surfaces as a bounded reason.
-          const { snapshotBytes: _dropped, ...refOnlyDelegation } = withBytes;
+          const { snapshotBytes: _dropped, ...refOnly } = withBytes;
           wire = yield* buildWire({
-            ...refOnlyDelegation,
+            ...refOnly,
             snapshotOversized: true,
           } as const satisfies WorkjetMailboxPayload);
           markedOversized = true;
@@ -1191,8 +1198,9 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       } else {
         // The bytes are not on this machine (a source-side gap; cross-machine
         // snapshot fetch is a later slice). Ship the reference exactly as before
-        // so the receiver's executor waits on `missingSnapshot`, unchanged.
-        wire = yield* buildWire(delegationPayload);
+        // so the receiver's executor waits on `missingSnapshot`, unchanged, and
+        // a handoff arrives listed as not-continuable rather than not at all.
+        wire = yield* buildWire(carrier);
       }
     } else {
       wire = yield* buildWire(input.record.payload);
@@ -1439,7 +1447,11 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       let payload = openedPayload;
       let storedSnapshot = false;
       let receivedOversized = false;
-      if (openedPayload._tag === "delegation") {
+      if (openedPayload._tag === "delegation" || openedPayload._tag === "handoff") {
+        const declaredDigest =
+          openedPayload._tag === "delegation"
+            ? openedPayload.delegation.prompt.digest
+            : openedPayload.handoff.contextSnapshot.digest;
         if (openedPayload.snapshotBytes !== undefined) {
           const stored = yield* snapshots.put(openedPayload.snapshotBytes).pipe(Effect.result);
           if (stored._tag === "Failure") {
@@ -1447,7 +1459,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
             // envelope is still on the daemon and the next cycle re-reads it.
             return { _tag: "deferred" } as const;
           }
-          if (stored.success.digest !== openedPayload.delegation.prompt.digest) {
+          if (stored.success.digest !== declaredDigest) {
             // The declared digest and the actual bytes disagree. The bytes are
             // worthless and a matching snapshot could only arrive under a
             // different envelope, so this one is consumed, never looped.
@@ -1458,8 +1470,12 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
           receivedOversized = true;
         }
         // Reference-only from here on, whichever branch ran, so the persisted
-        // envelope and delegation row match the local fast path exactly.
-        payload = { _tag: "delegation", delegation: openedPayload.delegation } as const;
+        // envelope, delegation row, and handoff row match the local fast path
+        // exactly.
+        payload =
+          openedPayload._tag === "delegation"
+            ? ({ _tag: "delegation", delegation: openedPayload.delegation } as const)
+            : ({ _tag: "handoff", handoff: openedPayload.handoff } as const);
       }
 
       const recorded = yield* store
@@ -1500,6 +1516,17 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
           upsert: true,
         }).pipe(Effect.result);
         if (applied._tag === "Failure") return { _tag: "deferred" } as const;
+      }
+
+      if (payload._tag === "handoff") {
+        // The receiving half of a handoff: one durable inbox row, keyed by the
+        // sender's handoff id, so a replay offers ONE continuation and not two.
+        // It is written through the same store the local fast path uses, so the
+        // two arrival routes cannot drift into two inbox shapes.
+        const recorded = yield* store
+          .upsertReceivedHandoff(payload.handoff, input.now)
+          .pipe(Effect.result);
+        if (recorded._tag === "Failure") return { _tag: "deferred" } as const;
       }
 
       return { _tag: "accepted" } as const;

@@ -1958,6 +1958,8 @@ it.effect("satisfies the mailbox RPC's reassignment port with its own guard", ()
       workspaceId: WORKSPACE,
       environmentId: LOCAL_ENVIRONMENT,
       reassign: executor.reassign,
+      nowIso: Effect.succeed("2026-08-19T12:00:00.000Z"),
+      sourceRemoteConfigured: () => Effect.succeed(false),
     });
 
     const result = yield* rpc.reassignDelegation({

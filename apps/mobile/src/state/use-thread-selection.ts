@@ -6,6 +6,7 @@ import {
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
+  DEFAULT_WORKJET_THREAD_CONFIG,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
@@ -67,6 +68,7 @@ function threadDetailToShell(
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   };
 }
 

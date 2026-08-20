@@ -926,9 +926,24 @@ failed | cancelled | expired`. Done in the same commit
       envelope A→B, envelope B→A, and an expiry tombstone all replicate
       (11.3 s; independently re-verified). Client auth satisfies the
       serving daemon's real signaling-partition and capability validators —
-      nothing serving-side was relaxed. Still open: a live (non-test)
-      two-machine run, and replacing the TOFU key exchange with the
-      room-derived identity binding.
+      nothing serving-side was relaxed. Trust binding resolved 2026-08-20
+      (commits `ce4ceb09f`…, migration 050): the room-derived MAC was
+      investigated and REJECTED as security theater — writing into the
+      replicated collection already requires the room secret, so a MAC keyed
+      on it proves nothing more. Instead a REAL live hole was found and
+      closed: `payload_json` was unsigned, so any room member could republish
+      an honest envelope with a substituted X25519 encryption key and read
+      every later sealed reply. Wrapper v3 adds a detached Ed25519
+      `keyBinding` over {envelope, addresses, both public keys}, verified
+      against the envelope's signer before any pin; downgrades are refused
+      (`binding-downgrade`) and audited (`mesh-peer-binding-rejected`); the
+      roster and send panel show the honest trust level (`tofu` |
+      `self-signed` — nothing shipped earns "room-bound"). REMAINING,
+      honestly: pure first-contact impersonation (attacker reaches an
+      environment id first with a key it holds) needs a CTOX-daemon device
+      attestation — out of Workjet's reach. Follow-up once the fleet emits
+      v3: refuse v1/v2 wrappers outright. Still open: a live (non-test)
+      two-machine run.
       Progress 2026-08-19: both sides are implemented. CTOX rc-branch commit
       `9518d2ae0` adds the replicated `workjet_mailbox_envelopes` collection
       (bounds/charset validation only, payload ceiling 200 000 B derived from

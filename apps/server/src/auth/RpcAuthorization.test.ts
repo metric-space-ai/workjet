@@ -80,6 +80,23 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("separates reading a cross-mode link from creating one or returning through it", () => {
+    // The two reads carry references and a redacted label; the two writes create
+    // a thread and cross an authority boundary.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeGetThreadLink)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeListLinks)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeOpenInCode)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeSubmit)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("separates reading the handoff inbox from sending or accepting a handoff", () => {
     // Seeing that work was offered is a read; putting an envelope on another
     // machine, or creating a thread and starting a turn on it, are not.

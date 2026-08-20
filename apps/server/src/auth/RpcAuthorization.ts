@@ -82,6 +82,17 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetMailboxSendHandoff]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetMailboxAcceptHandoff]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetMailboxListHandoffs]: AuthOrchestrationReadScope,
+  // The cross-mode workflow bridge. `openInCode` can CREATE a thread and start
+  // a turn on it, and `submit` sends a command across an authority boundary;
+  // both are writes and carry the same two checks as every other thread-scoped
+  // Workjet write — the transport scope here, and the caller-named thread plus
+  // the SERVER-verified CTOX authority inside the handler. The two reads return
+  // typed references and the bounded redacted title/subtitle only — never a
+  // Business OS record — so they take the read scope like the roster.
+  [WS_METHODS.workjetCrossModeOpenInCode]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetCrossModeSubmit]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetCrossModeGetThreadLink]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetCrossModeListLinks]: AuthOrchestrationReadScope,
   // The recipient roster is a redacted READ of peers this machine already
   // exchanged mail with: the same orchestration-read scope the audit stream and
   // the gateway status use. It writes nothing and carries no key material.

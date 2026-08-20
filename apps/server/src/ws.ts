@@ -77,6 +77,10 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as WorkjetCrossModeCtoxPort from "./workjet/crossmode/WorkjetCrossModeCtoxPort.ts";
+import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
+import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
+import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -370,6 +374,7 @@ const makeWsRpcLayer = (
   workjetMailboxIdentity: WorkjetMeshIdentity.WorkjetMeshIdentity["Service"],
   workjetMailboxStore: WorkjetMailboxStore.WorkjetMailboxStore["Service"],
   workjetDelegationExecutor: WorkjetDelegationExecutor.WorkjetDelegationExecutor["Service"],
+  workjetCrossModeLinkStore: WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -476,6 +481,33 @@ const makeWsRpcLayer = (
             ),
             Effect.orElseSucceed(() => false),
           ),
+      });
+      // The cross-mode workflow bridge. Same construction discipline as the
+      // mailbox above: a pure handler factory whose every capability is an
+      // injected port, so the authority rules it enforces are the ones its own
+      // tests state.
+      //
+      // The CTOX port is deliberately the UNAVAILABLE implementation. This
+      // server is an MCP *server* and has no MCP client; the only wire it has to
+      // a CTOX daemon is the mailbox loopback transport, which the daemon treats
+      // as opaque blobs and which therefore cannot carry a Business OS command.
+      // Business OS commands travel through the desktop today
+      // (`desktop:ctox-*` IPC → `CtoxGuestManager.executeJavaScript` into the
+      // guest), a path this process has no hop on. Wiring the honest
+      // "no channel" implementation means every cross-mode operation refuses
+      // with a bounded, accurate reason instead of inventing a data path; see
+      // `WorkjetCrossModeCtoxPort` for what a real implementation must satisfy.
+      const workjetCrossMode = WorkjetCrossModeRpc.makeWorkjetCrossModeRpcHandlers({
+        links: workjetCrossModeLinkStore,
+        ctox: WorkjetCrossModeCtoxPort.workjetCrossModeCtoxPortUnavailable,
+        query: projectionSnapshotQuery,
+        threads: yield* WorkjetCrossModeThreads.makeWorkjetCrossModeThreadPortWithSources({
+          randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
+          nowIso,
+        }),
+        environmentId: yield* serverEnvironment.getEnvironmentId,
+        nowIso,
+        randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1781,6 +1813,32 @@ const makeWsRpcLayer = (
             workjetMailbox.acceptHandoff(input),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
+
+        // The cross-mode workflow bridge. `openInCode` is the server half of
+        // `Delegate to Code` / `Open in Code`; `submit` is the server half of
+        // `Return to Business OS` and its result/review/follow-up operations.
+        [WS_METHODS.workjetCrossModeOpenInCode]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeOpenInCode,
+            workjetCrossMode.openInCode(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeGetThreadLink]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeGetThreadLink,
+            workjetCrossMode.getThreadLink(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeListLinks]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeListLinks,
+            workjetCrossMode.listLinks(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeSubmit]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetCrossModeSubmit, workjetCrossMode.submit(input), {
+            "rpc.aggregate": "workjet-crossmode",
+          }),
         // The recipient roster: this environment's own mesh address plus every
         // peer whose key it has pinned. Ids, a first-contact timestamp, and the
         // derived "can this be sealed" flag only — never key material, and
@@ -2555,6 +2613,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // provides the SAME layer reference to this route layer and to the merged
     // background loop, so Effect's layer memoization yields ONE executor.
     const workjetDelegationExecutor = yield* WorkjetDelegationExecutor.WorkjetDelegationExecutor;
+    // The durable cross-mode link table, resolved once for the whole server
+    // exactly like the mailbox store above: one link store shared by every
+    // WebSocket client, never one per connection.
+    const workjetCrossModeLinkStore = yield* WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -2584,6 +2646,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               workjetMeshIdentity,
               workjetMailboxStore,
               workjetDelegationExecutor,
+              workjetCrossModeLinkStore,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
@@ -2650,4 +2713,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
   // so building it here keeps the new roster read self-contained instead of
   // widening what the server's route graph has to hand this layer.
   Layer.provide(WorkjetMailboxStore.WorkjetMailboxStoreLive),
+  // The cross-mode link store is the same kind of stateless SQL facade over the
+  // ambient `SqlClient`, so it is built here for the same reason.
+  Layer.provide(WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStoreLive),
 );

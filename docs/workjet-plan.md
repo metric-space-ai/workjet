@@ -1168,16 +1168,41 @@ failure, remote version skew, and unauthorized cross-environment control.
 
 ## 9. Wave 6 — CTOX Desktop App identity
 
-- [ ] Change the user-facing desktop name, About panel, package metadata,
-      installer names, app icons, update channel, and release filenames to
-      `CTOX Desktop App` without renaming internal packages, storage keys,
-      bundle IDs, or protocol schemes in the same change.
+- [~] Change the user-facing desktop name, About panel, package metadata,
+  installer names, app icons, update channel, and release filenames to
+  `CTOX Desktop App` without renaming internal packages, storage keys,
+  bundle IDs, or protocol schemes in the same change.
+  Audited 2026-08-20: name/metadata/installer/icons/filenames done —
+  `apps/desktop/src/app/DesktopEnvironment.ts:86` (`APP_BASE_NAME =
+    "CTOX Desktop App"`, displayName `CTOX Desktop App (Alpha|Nightly)`),
+  `scripts/build-desktop-artifact.ts:2181-2183` (`productName`,
+  `artifactName: "CTOX-Desktop-App-${version}-${arch}.${ext}"`),
+  `assets/ctox/*` icons, `resolveDesktopWebAssetBrand` → `"ctox"`.
+  Remaining: the About-panel/update-channel audit sub-item below.
   - [x] Rebrand the current macOS arm64 package, executable, title, release
         filenames, and app icon to CTOX. The 17 August packaged Electron QA
         proves `CTOX Desktop App (Alpha)`, no rendered T3 wordmark, a CTOX
         `icon.icns`, and the final DMG/ZIP names.
-  - [ ] Finish the About-panel and update-channel identity audit on every
-        supported platform before closing the parent identity task.
+  - [~] Finish the About-panel and update-channel identity audit on every
+    supported platform before closing the parent identity task.
+    Audited 2026-08-20. What exists: `apps/desktop/src/app/
+    DesktopAppIdentity.ts:99-103` sets `setAboutPanelOptions`
+    (applicationName = `environment.displayName`, version = commit hash),
+    covered by `DesktopAppIdentity.test.ts:169`; the update channel
+    derives from the version (`scripts/build-desktop-artifact.ts:2115
+    resolveDesktopUpdateChannel`) and is surfaced in
+    `apps/web/src/components/settings/SettingsPanels.tsx:221-445`
+    (`AboutVersionSection`, Stable/Nightly) over
+    `apps/desktop/src/updates/DesktopUpdates.ts`.
+    EXACT REMAINING GAP: (a) the native About panel is reachable only on
+    macOS — `apps/desktop/src/window/DesktopApplicationMenu.ts:146`
+    (`{ role: "about" }`) sits inside the `platform === "darwin"` branch
+    and no Windows/Linux Help→About entry exists, so the CTOX identity is
+    unproven on those platforms; (b) the publish/update feed identity is
+    environment-derived only (`resolveGitHubPublishConfig`,
+    `T3CODE_DESKTOP_UPDATE_REPOSITORY` / `GITHUB_REPOSITORY` at
+    `scripts/build-desktop-artifact.ts:2090-2113`) with no test or
+    packaged check that a released CTOX build points at the CTOX feed.
 - [x] Introduce `ctox-desktop:` and `ctox-desktop-dev:` protocol schemes while
       keeping CTOX instance/invite protocols distinct. Done 2026-08-20
       (commits `f4d40317d`…`7914623a6`): registered at all four points
@@ -1189,8 +1214,19 @@ failure, remote version skew, and unauthorized cross-environment control.
       canonical form; `ctox:` is asserted untouched. The renderer still
       SERVES from t3code://app deliberately (flipping the origin would break
       DESKTOP_RENDERER_ORIGINS and every persisted partition).
-- [ ] Keep safe one-time migration support for existing T3 Code desktop links
-      and user data where useful.
+- [x] Keep safe one-time migration support for existing T3 Code desktop links
+      and user data where useful. Verified 2026-08-20. Links: `t3code` (and
+      `t3code-dev`) stay in `getDesktopDeepLinkSchemes`
+      (`apps/desktop/src/electron/desktopSchemes.ts:34`), are claimed
+      alongside the CTOX schemes in `DesktopAppIdentity.ts:116` and written
+      into the Linux handler entry for both families
+      (`DesktopLinuxUrlHandler.ts:100-120`); `DesktopDeepLink.ts:10` tags the
+      `legacy` family and `DesktopDeepLink.test.ts:22,39,111` proves a
+      `t3code://` link still parses and — because the renderer is served from
+      `t3code://app` — needs no redirect. User data: the one-time offer is
+      `apps/desktop/src/app/DesktopUserDataMigration.ts` +
+      `DesktopUserDataMigration.test.ts` with the first-launch dialog at
+      `apps/web/src/components/desktop/UserDataMigrationDialog.tsx`.
 - [x] Use a distinct CTOX Desktop App user-data directory; import legacy
       T3 Code/Workjet settings only
       through an explicit, tested migration. Done 2026-08-20: user-data dir
@@ -1213,12 +1249,35 @@ failure, remote version skew, and unauthorized cross-environment control.
       a synchronous FileSystem (`syncFileSystemLayer`) so it is macrotask-
       free pre-ready. LESSON: desktop main-process slices need a packaged
       launch smoke; fake-FS tests cannot catch pre-ready ordering.
-- [ ] Keep internal `@t3tools/*` package names where changing them adds only
-      upstream merge cost.
-- [ ] Update visible copy without rewriting unrelated historical comments,
-      storage keys, or contracts.
-- [ ] Add CTOX Desktop App brand assets only after the shell and behavior are
-      stable.
+- [x] Keep internal `@t3tools/*` package names where changing them adds only
+      upstream merge cost. Verified 2026-08-20: the root is still
+      `@t3tools/monorepo` and all 12 `@t3tools/*` workspace packages keep
+      their names (`apps/{desktop,web,marketing,mobile}/package.json`,
+      `packages/{client-runtime,contracts,shared,ssh,tailscale}/package.json`,
+      and the three mobile native packages); nothing was renamed. The only
+      non-`@t3tools` workspace names are the deliberately new
+      `@metric-space-ai/workjet-capabilities` and the upstream-derived
+      `effect-acp` / `effect-codex-app-server`.
+- [~] Update visible copy without rewriting unrelated historical comments,
+  storage keys, or contracts. Audited 2026-08-20: the shell chrome is
+  rebranded (window title from `environment.displayName`,
+  `DesktopWindow.ts:557,631`), but 76 `T3 Code` occurrences remain under
+  `apps/web/src`, of which these are user-visible in the packaged app:
+  `apps/web/src/components/SplashScreen.tsx:4-5` (splash aria-label and
+  image alt), `apps/web/src/components/RightPanelTabs.tsx:88`
+  ("only available in the T3 Code desktop app"),
+  `apps/web/src/components/desktop/SshPasswordPromptDialog.tsx:164`,
+  `apps/web/src/components/cloud/RelayClientInstallDialog.tsx:72-73`,
+  `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx:97`,
+  `apps/web/src/components/ChatView.tsx:6575`. The migration dialog's
+  "previous T3 Code profile" copy is a deliberate legacy reference.
+- [x] Add CTOX Desktop App brand assets only after the shell and behavior are
+      stable. Verified 2026-08-20: `assets/ctox/` carries
+      `ctox-app-icon.icns`, `ctox-app-icon.png`, `ctox-windows.ico`, and the
+      web favicon/apple-touch set; they are consumed by
+      `scripts/export-brand-icons.ts`, `scripts/apply-web-brand-assets.ts`,
+      and `DesktopAssets.ts` (`DesktopAssets.test.ts`), and the 17 August
+      packaged QA proved the CTOX `icon.icns` in the built app.
 - [x] Default a fresh CTOX Desktop App profile to the coherent dark shell while
       preserving explicit Light selection and the existing browser/system-theme
       behavior. Cover both the synchronous boot script and React theme hook;
@@ -1236,14 +1295,26 @@ CTOX project.
 
 ### Main-process services
 
-- [ ] Port the instance model, registry normalization, and source merge/sort.
+- [x] Port the instance model, registry normalization, and source merge/sort.
+      Verified 2026-08-20: all three sub-items are satisfied by the single
+      `apps/desktop/src/ctox/CtoxInstanceRegistry.ts` (1423 lines, one merge
+      over all four sources at `:678-700`), covered by
+      `CtoxInstanceRegistry.test.ts` (1072 lines).
   - [x] Add renderer-safe typed managed-instance contracts, bounded metadata,
         duplicate rejection, and deterministic ctox.dev sorting.
   - [x] Merge managed discovery with persisted invite and manual-pairing
         entries through one deterministic renderer-safe registry result; retain
         paired entries when the ctox.dev account is signed out or unavailable.
-  - [ ] Add local-daemon and SSH-managed entries to the same registry result;
+  - [x] Add local-daemon and SSH-managed entries to the same registry result;
         do not introduce a second renderer-side registry or discovery store.
+        Verified 2026-08-20: `CtoxInstanceRegistry.ts:34-51` imports both
+        sources, `:678-700` merges local daemons and SSH-managed instances
+        into the one deterministic registry result alongside managed and
+        paired entries, and `:660-662` extends the stable-identity switch with
+        `local_daemon` / `ssh_managed`. The renderer holds no registry of its
+        own: `apps/web/src/components/ctox/CtoxModeShell.tsx:185
+    groupCtoxInstances` only buckets the one result by source
+        (`CtoxModeShell.test.tsx:115,182,280`).
 - [x] Port ctox.dev login, logout, cookie clearing, session-package discovery,
       launch-token exchange, and managed-instance refresh.
   - [x] Port authenticated session-package discovery behind an injected
@@ -1257,7 +1328,11 @@ CTOX project.
   - [x] Port the in-guest managed-capability retry: a parameterless, isolated
         preload event revalidates entitlement and consumes a fresh one-time
         launch contract without exposing it to the renderer.
-- [ ] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
+- [~] Port local-daemon, SSH-managed, invite, and manual-pairing sources.
+  Audited 2026-08-20: invite/manual-pairing complete; local-daemon and
+  SSH-managed discovery plus launch exist. Remaining for the parent:
+  local-daemon lifecycle/ownership and SSH
+  attach/install/rotate/revoke (see the two sub-items).
   - [x] Port bounded invite and manual-pairing import, deterministic identity,
         expiry handling, duplicate updates, removal, and strict rejection of
         HTTP bridges or unsafe signaling URLs.
@@ -1267,7 +1342,33 @@ CTOX project.
   - [x] Bind paired entries to the verified bundled Business OS shell and its
         native WebRTC launch context; registry presence alone is not a launch
         or data-plane claim.
-  - [ ] Port local-daemon discovery, ownership, lifecycle, and launch.
+  - [~] Port local-daemon discovery, ownership, lifecycle, and launch.
+    Audited 2026-08-20. DONE — discovery:
+    `apps/desktop/src/ctox/CtoxLocalDaemonSource.ts` (read-only bounded
+    `instance.json` decode with `onExcessProperty: "error"`, loopback-only
+    health probe, instance cap, stale `running` claim downgraded to
+    `unknown`), 11 cases in `CtoxLocalDaemonSource.test.ts`. Stable
+    identity: `ctoxLocalDaemonInstanceId` derived from the descriptor path
+    below the state root (`CTOX_LOCAL_DAEMON_ID_PATTERN`), tested at
+    `CtoxLocalDaemonSource.test.ts:344`. LAUNCH:
+    `CtoxLocalDaemonLaunch.ts` mints a per-activation invite by running
+    `ctox business-os desktop invite` (`CTOX_BIN` then PATH), decodes it
+    with the registry's one invite decoder, and packs it into the shared
+    launch config with bounded reason codes and no CLI output logged;
+    7 cases in `CtoxLocalDaemonLaunch.test.ts` including binary
+    resolution, identity mismatch on a multi-daemon host, and a
+    `TestClock` timeout. Renderer path: launchable only while the daemon
+    answers (`CtoxModeShell.tsx:163-165`,
+    `CtoxModeShell.test.tsx:280,311`).
+    EXACT REMAINING GAP: (a) no daemon LIFECYCLE — nothing starts, stops,
+    installs, or restarts a local daemon; `CtoxLocalDaemonSource.ts:14`
+    states discovery "never spawns, installs, or mutates anything" and the
+    only spawn in the local path is `CTOX_INVITE_ARGUMENTS`
+    (`CtoxLocalDaemonLaunch.ts:105`). There is no local-daemon lifecycle
+    IPC in `apps/desktop/src/ipc/methods/ctox.ts`. (b) no OWNERSHIP check
+    — the descriptor is trusted from the state root with no file
+    owner/uid/permission verification (`grep -i owner` over
+    `CtoxLocalDaemonSource.ts` returns nothing).
   - [~] Port SSH-managed discovery, attach/install/rotate/revoke, and launch.
     Progress 2026-08-19 (commits `45e1129b9` and parent): discovery,
     credential-free configuration (`ssh-instances.json`), add/remove IPC,
@@ -1294,20 +1395,114 @@ CTOX project.
     kill children on scope close — the primitive owns that finalizer now.
     Still open: attach/install/rotate/revoke, and a live end-to-end run
     against a real remote host.
-- [ ] Reuse Workjet's Electron safe storage where possible; preserve platform
-      keychain guarantees for room, capability, sudo, and SSH secrets.
+    RE-AUDITED 2026-08-20 — the main-process launch is real and wired
+    (`CtoxSshManagedLaunch.ts`, 400 lines; `openSshLocalForward` in
+    `packages/ssh/src/localForward.ts`; consumed by
+    `CtoxGuestManager.ts:26,601,740`; 17 cases in
+    `CtoxSshManagedLaunch.test.ts` covering port extraction, rewrite,
+    `unsupported_signaling`, `forward_failed`, and forward teardown on a later
+    failure), and `CtoxElectronSessions.test.ts:147` gives a launchable
+    SSH-managed instance its own isolated partition. BUT THE RENDERER STILL
+    BLOCKS IT: `apps/web/src/components/ctox/CtoxModeShell.tsx:166-168`
+    returns `false` unconditionally for `ssh_managed` in
+    `canActivateCtoxInstance`, and `CTOX_SSH_LAUNCH_PENDING_HINT`
+    ("SSH tunnel support pending") is still shown — asserted by
+    `CtoxModeShell.test.tsx:212-218,275`. So SSH launch is unreachable from
+    the UI; unblocking it is a renderer + test change, not a main-process one.
+    Also still absent: attach/install/rotate/revoke in any layer — the only
+    SSH IPC is `addSshManagedInstance` / `removeSshManagedInstance`
+    (`apps/desktop/src/ipc/methods/ctox.ts:233,260`).
+- [~] Reuse Workjet's Electron safe storage where possible; preserve platform
+  keychain guarantees for room, capability, sudo, and SSH secrets.
+  Audited 2026-08-20: room/capability secrets are done (sub-item below);
+  the sudo/SSH/keychain-smoke sub-item is the only remaining work.
   - [x] Store pairing room/capability secrets separately from public instance
         metadata using Electron Safe Storage; fail closed for unavailable,
         Linux `basic_text`, and unknown Linux storage backends.
-  - [ ] Port the equivalent sudo and SSH credential handling and platform
-        keychain runtime smokes before claiming complete secret-storage parity.
-- [ ] Port host-key pinning and strict SSH command handling.
-- [ ] Port deep-link parsing with explicit user confirmation.
+  - [~] Port the equivalent sudo and SSH credential handling and platform
+    keychain runtime smokes before claiming complete secret-storage parity.
+    Audited 2026-08-20. WHAT EXISTS: SSH credential handling is
+    deliberately credential-free for CTOX — `ssh-instances.json` stores no
+    secret and authentication stays with the user's own OpenSSH setup
+    (`apps/desktop/src/ctox/CtoxSshManagedSource.ts:34-36`,
+    `packages/contracts/src/ctox.ts:220`); the separate interactive
+    password path is `apps/desktop/src/ssh/DesktopSshPasswordPrompts.ts`
+    (+ test) and is per-attempt, never persisted
+    (`apps/web/src/components/desktop/SshPasswordPromptDialog.tsx:164`).
+    The safe-storage layer is `apps/desktop/src/electron/
+    ElectronSafeStorage.ts` with the Linux backend guard in
+    `apps/desktop/src/linuxSecretStorage.ts` (+ test).
+    EXACT REMAINING GAP: (a) NO sudo credential handling for CTOX at all —
+    the only `sudo` in the desktop tree is
+    `apps/desktop/src/wsl/DesktopWslEnvironment.ts`, unrelated to CTOX
+    instances; (b) NO platform-keychain runtime smoke — nothing under
+    `scripts/` or `apps/desktop/src` exercises a real OS keychain
+    (`grep -rl keychain` over `scripts` + `apps/desktop/src` matches only
+    the comment in `app/DesktopUserDataMigration.ts`), so the plan's
+    "platform-keychain runtime smoke" parity-gate line is unmet.
+- [x] Port host-key pinning and strict SSH command handling. Verified
+      2026-08-20: pinning is OpenSSH's own `known_hosts` — `StrictHostKeyChecking`
+      is never weakened anywhere in the tree and `BatchMode=yes` aborts on an
+      unknown or changed key (`packages/ssh/src/command.ts:108`,
+      `packages/ssh/src/config.ts:232 readKnownHostsHostnames`,
+      `packages/ssh/src/localForward.ts:40-42`,
+      `apps/desktop/src/ctox/CtoxSshManagedSource.ts:34-36,274`,
+      `CtoxSshManagedLaunch.ts:33`). Strict command handling is argv-not-shell
+      with schema and POSIX single-quote guarding of host and state root,
+      remote output capped at 64 KiB; covered by
+      `CtoxSshManagedLaunch.test.ts:226` ("is a fixed script that bounds its
+      own output and honours CTOX_BIN") and `:238` ("POSIX-quotes a configured
+      state root so it cannot escape its argument"), plus
+      `CtoxSshManagedSource.test.ts`.
+- [~] Port deep-link parsing with explicit user confirmation. Audited
+  2026-08-20. PARSING EXISTS: `apps/desktop/src/app/DesktopDeepLink.ts`
+  (`parseDesktopDeepLink`, `isDesktopDeepLinkScheme`,
+  `resolveDesktopDeepLinkRedirect`) with 10 cases in
+  `DesktopDeepLink.test.ts`, including scheme-case normalization and the
+  assertion that `ctox://` is NOT a desktop deep link.
+  EXACT REMAINING GAP — two distinct deltas from the plan wording:
+  (a) NO USER CONFIRMATION. The one consumer is
+  `apps/desktop/src/window/DesktopWindow.ts:532-535`, which on
+  `will-navigate` silently calls `window.webContents.loadURL(redirect)`.
+  No dialog, no allowlist prompt, no per-link approval anywhere.
+  (b) NO OS-LEVEL INTAKE. `grep -rn "open-url" apps/desktop/src` returns
+  nothing, so a `ctox-desktop://` link opened from Finder/Explorer/a
+  browser never reaches the parser; the cold-start argv and macOS
+  `open-url` paths are unimplemented (`DesktopClerk.ts:142` handles
+  `second-instance` for Clerk only). Confirmation is therefore not merely
+  missing UI — the OS-originated link path it would guard does not exist.
 - [ ] Port support-bundle redaction and crash-report metadata without secrets.
-- [ ] Port permission denial, safe external navigation, launch-origin checks,
-      secret scrubbing, and HTTP data/resource guards.
-- [ ] Use Electron `WebContentsView`, matching Workjet's current guest-view
+      Verified open 2026-08-20: nothing exists — no support/diagnostic bundle
+      builder, no `crashReporter` call, and no crash-metadata surface anywhere
+      under `apps/`, `packages/`, or `scripts/` (case-insensitive search for
+      `support-bundle`, `diagnostics bundle`, `crashReporter`,
+      `setUploadToServer` returns zero implementation hits).
+- [x] Port permission denial, safe external navigation, launch-origin checks,
+      secret scrubbing, and HTTP data/resource guards. Verified 2026-08-20,
+      all five in place with tests. Permission denial: default-deny
+      `setPermissionRequestHandler` / `setPermissionCheckHandler` in
+      `apps/desktop/src/ctox/CtoxElectronSessions.ts:71-80`, covered by
+      `CtoxElectronSessions.test.ts:222` ("denies account permissions and
+      grants only exact instance permissions"). Safe external navigation:
+      `isSafeCtoxExternalUrl` (`CtoxGuestManager.ts:334`) gates both
+      `setWindowOpenHandler` (always `action: "deny"`) and `will-navigate`
+      (`:798-806`); `CtoxGuestManager.test.ts:1166-1167` rejects `file://` and
+      accepts `https://docs.ctox.dev/`. Launch-origin checks:
+      `isAllowedCtoxTopFrameNavigation` (`:342`) used at `:557` and `:803`,
+      tested at `CtoxGuestManager.test.ts:1158-1164`. Secret scrubbing:
+      `scrubSensitiveCtoxUrl` (`:398`) rewrites the guest history on
+      `did-finish-load` (`:815-825`). HTTP data/resource guards:
+      `installRequestGuard` (`:438`) + `isForbiddenCtoxDataRequest` (`:352`)
+      cancel `/api/business-os/*` outside the control allowlist, `/rxdb/*`
+      outside `/rxdb/dist/`, `/commands*`, and any cross-origin data resource;
+      8 assertions at `CtoxGuestManager.test.ts:1087-1145`.
+- [x] Use Electron `WebContentsView`, matching Workjet's current guest-view
       architecture, rather than the deprecated CTOX `BrowserView` API.
+      Verified 2026-08-20: `grep -rn "BrowserView" apps/desktop/src` returns
+      no matches; the single sandboxed `createGuestView`
+      (`CtoxGuestManager.ts:461`) constructs a `WebContentsView` and is the
+      only guest path for managed, paired, local-daemon, and SSH-managed
+      instances.
   - [x] Use a sandboxed `WebContentsView` for the managed ctox.dev guest path.
 - [x] Give each CTOX instance a stable isolated persistent session partition.
   - [x] Derive a collision-resistant Workjet-owned partition from the exact
@@ -1360,8 +1555,20 @@ CTOX project.
         packaged `process.resourcesPath` layouts.
   - [x] Require the exact pinned completion sentinel before the runtime serves
         a shell root, and send `Referrer-Policy: no-referrer` on every response.
-- [ ] Never implement Business OS collection, command, file, or status reads
-      over the Code/T3 HTTP server.
+- [x] Never implement Business OS collection, command, file, or status reads
+      over the Code/T3 HTTP server. Verified 2026-08-20 from both directions:
+      (a) `apps/server/src` contains no Business OS route — the 9
+      case-insensitive `business.os` hits are all Workjet-mailbox comments and
+      the `business_os` CTOX secret scope
+      (`workjet/mailbox/WorkjetMailboxTransport.ts:209,668-677`,
+      `WorkjetMeshIdentity.ts:245-253`), which is the CTOX daemon's own MCP
+      channel, not an HTTP data bridge; (b) the guest session actively cancels
+      such reads even if a shell attempted them
+      (`isForbiddenCtoxDataRequest`, `CtoxGuestManager.ts:352-395`, 8
+      assertions at `CtoxGuestManager.test.ts:1087-1145`); (c) the renderer
+      opens no alternate surface —
+      `CtoxModeShell.test.tsx:711` ("introduces no iframe, webview, or
+      alternate HTTP data surface").
 
 ### Business OS desktop-coherent theme
 
@@ -1393,7 +1600,14 @@ CTOX project.
       CTOX Desktop App and prove the standalone shell remains unchanged.
       `v0.1.0-rc.10` is published and pinned; dark plus theme projection are
       proven in the installed app. Light-scheme and pane-collapse proof in the
-      packaged app remain open.
+      packaged app remain open. Verified open 2026-08-20: the pin has since
+      moved to rc.11 (`apps/desktop/resources/ctox/
+    business-os-shell.manifest.json`, commit `1bdcbe311`), but the
+      light-scheme and three/two/one-pane packaged proofs are manual QA runs
+      with no artifact in this repo, so this stays open. KORREKTUR to the line
+      above: the pinned shell is now `v0.1.0-rc.12`
+      (`apps/desktop/resources/ctox/business-os-shell.manifest.json`,
+      sourceCommit `478883dfb`), not rc.10.
 
 ### Renderer
 
@@ -1406,33 +1620,96 @@ CTOX project.
 - [x] Preserve the T3 project/thread sidebar in Code mode.
 - [x] Add the persisted, Electron-only CTOX shell state with an explicit empty
       instance/main surface and no guest or alternate Business OS data path.
-- [ ] Render CTOX instance groups, status, role, source, and last-used state in
-      Business OS mode.
+- [x] Render CTOX instance groups, status, role, source, and last-used state in
+      Business OS mode. Verified 2026-08-20: all four source groups are
+      rendered from the one registry result by `groupCtoxInstances`
+      (`apps/web/src/components/ctox/CtoxModeShell.tsx:88-99,178-200`) with
+      exhaustive `SOURCE_LABELS` and `STATUS_LABELS` records typed over the
+      contract unions (`:94-110`); covered by `CtoxModeShell.test.tsx:115`
+      ("renders deterministic source groups and renderer-safe bounded
+      metadata"), `:182` (SSH), `:280` (local).
   - [x] Render the managed ctox.dev group with bounded status, role, source, and
         last-used metadata.
   - [x] Render separate deterministic Managed and Paired groups, including
         invite/manual source, role, expiry, removal, and non-launchable state.
-  - [ ] Render populated Local and SSH groups after their main-process sources
-        exist.
+  - [x] Render populated Local and SSH groups after their main-process sources
+        exist. Verified 2026-08-20: `SOURCE_GROUP_DEFINITIONS`
+        (`CtoxModeShell.tsx:90-91`) adds the `Local` and `SSH` groups and
+        `sourceGroupKey` (`:178-184`) routes `local_daemon` / `ssh_managed`
+        into them; `CtoxModeShell.test.tsx:280` proves running local daemons
+        render launchable and stopped ones inert, `:182` proves SSH rows
+        render reachable-but-not-launchable. NOTE (not a defect of this item,
+        but of the SSH launch item above): the SSH rows still carry
+        `CTOX_SSH_LAUNCH_PENDING_HINT` even though `CtoxSshManagedLaunch`
+        landed in the main process.
 - [x] Selecting a managed ctox.dev instance activates its native guest surface
       in the main region.
 - [x] Selecting a valid invite/manual-pairing instance activates the same guest
       surface through the local verified shell; expired, local, SSH, and forged
       entries remain non-launchable.
-- [ ] Show signed-out, needs-auth, unavailable, connecting, ready, and revoked
-      states explicitly.
-- [ ] Keep CTOX Business OS chat inside the Business OS surface; do not convert
-      it into a T3 thread.
-- [ ] Provide instance management and refresh actions without exposing secrets.
+- [x] Show signed-out, needs-auth, unavailable, connecting, ready, and revoked
+      states explicitly. Verified 2026-08-20 in
+      `apps/web/src/components/ctox/CtoxModeShell.tsx`: the two state unions
+      are `CtoxManagedState` (`:36` loading | ready | signed_out | failed) and
+      `CtoxConnectionState` (`:37` idle | connecting | ready | error |
+      revoked), rendered as explicit copy at `:1926-1929` (connecting / ready
+      / revoked), `:1551` and `:1669-1676` (signed-out sign-in surface),
+      `:1651` ("CTOX desktop services are unavailable.") and `:1042
+    unavailableHint` for per-instance unavailability; `needs_auth` is an
+      exhaustive `STATUS_LABELS` entry (`:104`, typed
+      `Record<CtoxManagedInstance["status"], string>` so the compiler forbids
+      dropping a state). Tests: `CtoxModeShell.test.tsx:332` (sign-in beside
+      paired results), `:362` (managed discovery failure), `:392` (legacy
+      managed-only inference), `:400` (only available/paired rows enabled),
+      `:504` (pending connecting activation), `:601` (activation to ready).
+- [x] Keep CTOX Business OS chat inside the Business OS surface; do not convert
+      it into a T3 thread. Verified 2026-08-20 structurally: the Business OS
+      surface is a single sandboxed guest `WebContentsView`
+      (`CtoxGuestManager.ts:461`) whose content is the pinned CTOX shell, and
+      no code path lifts guest chat into a Workjet thread — there is no
+      chat/thread bridge in `apps/desktop/src/ctox/` (the only guest→host IPC
+      channels are `REFRESH_MANAGED_LAUNCH_CHANNEL` and
+      `CTOX_APPLY_HOST_THEME_CHANNEL`), and the renderer opens no alternate
+      surface at all (`CtoxModeShell.test.tsx:711`: "introduces no iframe,
+      webview, or alternate HTTP data surface").
+- [~] Provide instance management and refresh actions without exposing secrets.
+  Audited 2026-08-20: the managed and paired sub-items are done; the
+  local-daemon/SSH lifecycle sub-item below is the remaining work.
   - [x] Provide managed login, logout, and refresh actions through typed IPC
         without exposing tenant IDs, partitions, cookies, or launch tokens.
   - [x] Provide invite/manual-pairing add and paired-instance removal through
         typed IPC; keep room/capability values out of discovery responses,
         renderer persistence, feedback copy, and launch URLs.
-  - [ ] Provide local-daemon and SSH-managed lifecycle actions with the same
-        renderer-secret boundary.
-- [ ] Ensure keyboard shortcuts and zoom target the active desktop surface
-      intentionally.
+  - [~] Provide local-daemon and SSH-managed lifecycle actions with the same
+    renderer-secret boundary. Audited 2026-08-20. DONE: SSH configure and
+    remove over typed IPC with a credential-free stored document —
+    `apps/desktop/src/ipc/methods/ctox.ts:233 addSshManagedInstance`,
+    `:260 removeSshManagedInstance`, renderer wrappers at
+    `CtoxModeShell.tsx:278-316,459-471`, tested by
+    `CtoxModeShell.test.tsx:226` ("offers an SSH tab in the add surface
+    that stores no credential").
+    EXACT REMAINING GAP: no local-daemon lifecycle action exists in any
+    layer (the IPC surface in `apps/desktop/src/ipc/methods/ctox.ts` is
+    refresh / login / logout / importInvite / importManualPairing /
+    removePairedInstance / addSshManagedInstance /
+    removeSshManagedInstance / activate / enterBusinessOsMode /
+    exitBusinessOsMode / deactivate / setGuestBounds / listApps / openApp
+    / setAppDocked / setHostTheme — no start, stop, install, attach,
+    rotate, or revoke), and no SSH attach/install/rotate/revoke action.
+- [~] Ensure keyboard shortcuts and zoom target the active desktop surface
+  intentionally. Audited 2026-08-20. WHAT EXISTS: zoom is a deliberate,
+  documented choice to always target the main window's own `webContents`
+  rather than a focused child view —
+  `apps/desktop/src/window/DesktopWindow.ts:93-98` (the comment states the
+  Electron `zoomIn`/`zoomOut` roles would zoom the focused embedded
+  `WebContentsView` instead) and `:858-866 zoomMain`, driven by the View
+  menu accelerators at
+  `apps/desktop/src/window/DesktopApplicationMenu.ts:200-208`; the
+  Cmd/Ctrl+W auto-repeat guard is `DesktopWindow.ts:547-553`.
+  EXACT REMAINING GAP: nothing is CTOX-surface aware. The zoom comment
+  reasons only about the preview view, no accelerator or shortcut is
+  routed to or suppressed for the active CTOX Business OS guest, and no
+  test asserts shortcut/zoom targeting while a guest is active.
 
 ### Parity gate before CTOX removal
 
@@ -1473,7 +1750,10 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
   - [ ] Run the paired packaged-app smoke against the operator-selected real
         CTOX instance. Temporary Workjet profiles and invite files stay under
         `/Volumes/tmp`, but the smoke must not override `CTOX_ROOT`,
-        `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance. - [x] Add the macOS-first packaged smoke runner and focused tests. It uses
+        `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance.
+        Verified open 2026-08-20: `scripts/ctox-packaged-smoke.ts` exists but
+        this is an operator-run packaged smoke with no recorded run artifact.
+  - [x] Add the macOS-first packaged smoke runner and focused tests. It uses
         only the typed CTOX desktop bridge, keeps the real CTOX instance
         roots intact, discovers changing `WebContentsView` CDP targets by
         capability, retains invite and peer secrets only in memory, and
@@ -1496,10 +1776,18 @@ OS` control and the safe paired-instance row, verify DOM-relative
         `business_module_catalog`, `ctox_runtime_settings`,
         `business_commands`, and `ctox_queue_tasks`. - [ ] Rebuild the packaged app with the mode lease and UI-driven smoke, then
         pass the real RC6 revoke/unrevoke/recovery run before closing this
-        gate.
-  - [ ] Capture the browser peer ID only from the live WebRTC signaling
-        handshake or another non-persistent runtime diagnostic, keep it out of
-        logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
+        gate. Verified open 2026-08-20: operator-run packaged smoke, no
+        artifact in this repo. The mode lease itself is implemented and tested
+        (`CtoxGuestManager.ts`, `CtoxGuestManager.test.ts`, 1169 lines) and
+        the pinned shell has since moved to `v0.1.0-rc.12`, so the run must be
+        redone against rc.12, not RC6.
+  - [~] Capture the browser peer ID only from the live WebRTC signaling
+    handshake or another non-persistent runtime diagnostic, keep it out of
+    logs/artifacts, and guarantee `peer unrevoke` before any later cleanup.
+    Audited 2026-08-20: both sub-items landed, but they landed in the CTOX
+    repository (commits `1e2808814`, `71b80c625`) and the parent still
+    requires the Workjet-side packaged smoke to consume that field. Out of
+    Workjet scope except for `scripts/ctox-packaged-smoke.ts`.
     - [x] Add a bounded CTOX advanced-status field for the browser's own live
           signaling peer ID, populated only after the `init.yourPeerId`
           handshake and never persisted or logged. The change is isolated in
@@ -1586,7 +1874,8 @@ OS` control and the safe paired-instance row, verify DOM-relative
           removed the disposable profile, and restored the installed service
           byte-for-byte with exactly one listener. The next repair must explain
           this live-connection behavior rather than attributing it to snapshot
-          drift.
+          drift. Verified open 2026-08-20 — CTOX repo (Rust
+          `WebRTCPeerSessionValidator`); nothing in Workjet can advance it.
     - [x] Apply only the four-file native validator delta to the dirty CTOX
           main checkout, re-run its gates there, and retain all unrelated user
           work unchanged. The current-source integration keeps startup
@@ -1601,7 +1890,14 @@ OS` control and the safe paired-instance row, verify DOM-relative
           executed the byte-identical linked artifact directly.
     - [ ] Pass the complete packaged healthy → revoke → unhealthy → unrevoke →
           healthy → remove/reimport sequence and verify guest detachment plus
-          Electron partition deletion.
+          Electron partition deletion. Verified open 2026-08-20: the Workjet
+          side is ready — guest detach/destroy on removal and the
+          instance-scoped partition wipe are implemented and unit-tested
+          (`apps/desktop/src/ctox/CtoxGuestManager.ts`,
+          `CtoxElectronSessions.test.ts:255` "clears storage and cache only in
+          the selected instance partition") and the driver exists
+          (`scripts/ctox-packaged-smoke.ts` + `.test.ts`) — but the run is
+          blocked on the CTOX-side validator item above.
     - [x] Wire the trusted Electron guest-host marker to the host-scoped
           Business OS desktop theme, link the inert stylesheet in production,
           and prove standalone Business OS remains visually unchanged.
@@ -1677,6 +1973,30 @@ is unavailable; adversarial self-review additionally caught and fixed cleanup
 being skipped after a partial registry removal and set the unrevoke barrier
 before an ambiguous native revoke result.
 
+### Wave 6/7 gap list (reconciliation audit, 2026-08-20)
+
+The true remaining Wave 6/7 implementation work, after ticking everything the
+code already satisfies. "CTOX?" marks work that needs the separate CTOX
+repository and is therefore out of Workjet scope.
+
+| #   | Gap                                                                                                                                                      | Scope (files)                                                                                                                                                                                                                                                                                                              | CTOX?                                           |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| 1   | Support-bundle redaction + crash-report metadata — nothing exists at all                                                                                 | new `apps/desktop/src/app/DesktopSupportBundle.ts` (+ test), a `crashReporter` call in `apps/desktop/src/main.ts`, an IPC method in `apps/desktop/src/ipc/methods/`, and a renderer entry point in `apps/web/src/components/settings/SettingsPanels.tsx` (there is already a `/settings/diagnostics` route to hang it off) | no                                              |
+| 2   | Deep-link user confirmation + OS-originated link intake                                                                                                  | `apps/desktop/src/window/DesktopWindow.ts:532-535` (add a confirmation gate), a new macOS `open-url` / cold-start-argv handler beside `apps/desktop/src/app/DesktopAppIdentity.ts`, plus renderer confirmation UI                                                                                                          | no                                              |
+| 3   | SSH launch is implemented in main but unreachable from the UI                                                                                            | `apps/web/src/components/ctox/CtoxModeShell.tsx:77-82,166-168` (drop `CTOX_SSH_LAUNCH_PENDING_HINT`, allow `ssh_managed`) and `CtoxModeShell.test.tsx:182-218,275`                                                                                                                                                         | no                                              |
+| 4   | SSH attach / install / rotate / revoke                                                                                                                   | `apps/desktop/src/ctox/CtoxSshManagedSource.ts`, a new `CtoxSshManagedLifecycle.ts`, `apps/desktop/src/ipc/methods/ctox.ts`, `packages/contracts/src/ctox.ts`, `CtoxModeShell.tsx`                                                                                                                                         | partly — needs matching remote `ctox` CLI verbs |
+| 5   | Local-daemon lifecycle (start/stop/install) and descriptor ownership check                                                                               | `apps/desktop/src/ctox/CtoxLocalDaemonSource.ts` (owner/uid check), a new lifecycle service, `apps/desktop/src/ipc/methods/ctox.ts`, `CtoxModeShell.tsx`                                                                                                                                                                   | partly — needs `ctox` daemon CLI verbs          |
+| 6   | Platform-keychain runtime smoke (parity-gate line, unmet)                                                                                                | new script under `scripts/`, exercising `apps/desktop/src/electron/ElectronSafeStorage.ts` and `apps/desktop/src/linuxSecretStorage.ts` on a real OS keychain                                                                                                                                                              | no                                              |
+| 7   | Sudo credential handling for CTOX instances                                                                                                              | none exists; decide whether CTOX Desktop App needs it at all before building it                                                                                                                                                                                                                                            | no (decision first)                             |
+| 8   | Keyboard/zoom targeting of the active CTOX guest surface                                                                                                 | `apps/desktop/src/window/DesktopWindow.ts:858-866`, `apps/desktop/src/window/DesktopApplicationMenu.ts:200-208`, needs guest-awareness from `apps/desktop/src/ctox/CtoxGuestManager.ts`                                                                                                                                    | no                                              |
+| 9   | About panel on Windows/Linux + a check that the release feed carries CTOX identity                                                                       | `apps/desktop/src/window/DesktopApplicationMenu.ts:146` (Help→About outside the darwin branch), `scripts/build-desktop-artifact.ts:2090-2113` (+ test)                                                                                                                                                                     | no                                              |
+| 10  | 76 remaining `T3 Code` strings in the renderer, incl. the splash screen                                                                                  | `apps/web/src/components/SplashScreen.tsx:4-5`, `RightPanelTabs.tsx:88`, `desktop/SshPasswordPromptDialog.tsx:164`, `cloud/RelayClientInstallDialog.tsx:72-73`, `clerk/MobileClientsUserProfilePage.tsx:97`, `ChatView.tsx:6575`                                                                                           | no                                              |
+| 11  | Packaged proofs: light scheme + three/two/one-pane layouts; paired smoke against a real instance; the healthy→revoke→unhealthy→unrevoke→healthy sequence | `scripts/ctox-packaged-smoke.ts` (driver exists); these are operator runs                                                                                                                                                                                                                                                  | blocked on CTOX item 12                         |
+| 12  | Rust `WebRTCPeerSessionValidator` still does not keep the packaged guest unhealthy after a durable revoke                                                | —                                                                                                                                                                                                                                                                                                                          | yes, CTOX only                                  |
+
+All of Wave 8 is CTOX-repository work: the legacy `src/apps/business-os-desktop`
+wrapper does not exist in Workjet and CTOX is not vendored here.
+
 ## 11. Wave 8 — retire the legacy CTOX Electron wrapper
 
 This wave happens in the separate CTOX repository and only after the CTOX
@@ -1686,17 +2006,41 @@ application.
 
 - [x] Start from a clean CTOX branch; do not mix or overwrite unrelated current
       CTOX working-tree changes.
-- [ ] Remove `src/apps/business-os-desktop`.
+      AUDIT NOTE 2026-08-20 — scope check for this whole wave: the legacy wrapper is
+      NOT present in the Workjet repository and is not vendored here. There is no
+      `src/apps/business-os-desktop` tree (the only `business-os-desktop` strings in
+      Workjet are the `ctox-business-os-desktop://pair` URL scheme and the
+      `x-ctox-desktop-client` header value in
+      `apps/desktop/src/ctox/{CtoxInstanceRegistry.ts:520,CtoxDevAuth.ts:23,
+CtoxManagedDiscovery.ts:12}`, all of which are wire contracts that must stay),
+      and `scripts/lib/reference-repos.ts` pins only `effect-smol` and
+      `alchemy-effect` — CTOX is not a reference repo. Every unchecked item below is
+      therefore CTOX-repository work that cannot be done or verified from Workjet.
+
+- [ ] Remove `src/apps/business-os-desktop`. Verified open 2026-08-20 — CTOX
+      repo only; the path does not exist in Workjet.
 - [ ] Remove its separate packaging/release workflow and download links.
+      Verified open 2026-08-20 — CTOX repo only.
 - [ ] Point optional desktop-client documentation to CTOX Desktop App without
-      presenting it as a CTOX runtime prerequisite.
+      presenting it as a CTOX runtime prerequisite. Verified open 2026-08-20 —
+      CTOX repo only.
 - [x] Keep the CTOX Business OS shell build and versioned shell artifact.
+      Still true 2026-08-20: Workjet consumes it as a pinned detached release
+      (`apps/desktop/resources/ctox/business-os-shell.manifest.json`,
+      `v0.1.0-rc.12`, sourceCommit `478883dfb`) through
+      `scripts/prepare-ctox-business-os-shell.ts` and
+      `scripts/lib/ctox-business-os-shell.ts` (+ test).
 - [ ] Keep CTOX daemon, Sync Engine, Business OS, MCP channel, provider adapter,
-      and Web Stack adapter.
+      and Web Stack adapter. Verified open 2026-08-20 — CTOX repo only
+      (a "keep" assertion Workjet cannot verify).
 - [ ] Update release smoke tests so CTOX validates the artifacts consumed by
       CTOX Desktop App instead of building another Electron application.
+      Verified open 2026-08-20 — CTOX repo only.
 - [ ] Verify local, managed, SSH, and invite workflows from CTOX Desktop App
-      against the new CTOX commit before merging the deletion.
+      against the new CTOX commit before merging the deletion. Verified open
+      2026-08-20 — blocked on the Workjet side too: the SSH workflow is not
+      reachable from the UI (`CtoxModeShell.tsx:166-168`) and no local-daemon
+      lifecycle exists, so this cannot pass yet regardless of the CTOX commit.
 
 ## 12. Security invariants
 

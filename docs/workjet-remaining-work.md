@@ -412,9 +412,15 @@ finishes. Scope estimates are rough and name the files.
     `logging_helpers_test.rs` pins that `commercial_mode` suppresses upstream
     capture. Mutation-verified: one call site flipped to `full_scoped` fails
     the guard with "selects full request logging at line(s) [2047]"; reverted.
-29. **Assert the provider/model picker stays enabled on orchestrator and worker
-    threads.** §8. The property holds structurally but nothing proves it. One
-    test file — **tiny**, and the cheapest open box in the plan.
+29. ~~**Assert the provider/model picker stays enabled on orchestrator and
+    worker threads.**~~ **DONE 2026-08-20, commit f530f207b.** §8. The seam is
+    `deriveLockedProvider` (`ChatView.logic.ts:387`); the guard in
+    `ChatView.logic.test.ts` runs standard, orchestrator and worker threads
+    through it across every situation that legitimately changes the answer and
+    requires all three to agree, plus a second assertion pinning the input
+    shape so a future role cannot make the picker role-aware unnoticed.
+    Mutation-verified: returning null for worker threads fails both, naming the
+    divergent role.
 
 ### Also implementable, but decide first
 

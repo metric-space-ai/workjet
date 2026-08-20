@@ -733,10 +733,11 @@ async fn boots_with_an_api_key_provider_as_default_and_never_serves_the_key() {
     write_secret(root.path(), "management", &[7_u8; 32]);
     write_secret(root.path(), "zai-1.api-key", API_KEY_VALUE.as_bytes());
 
-    let mut host =
-        workjet_provider_gateway_host::start(api_key_config(root.path(), "zai").validate().unwrap())
-            .await
-            .unwrap();
+    let mut host = workjet_provider_gateway_host::start(
+        api_key_config(root.path(), "zai").validate().unwrap(),
+    )
+    .await
+    .unwrap();
     let key = "07".repeat(32);
     let address = host.management_address();
     assert_eq!(host.readiness().phase, "ready");
@@ -778,10 +779,11 @@ async fn routes_only_the_configured_api_key_providers() {
     write_secret(root.path(), "management", &[7_u8; 32]);
     write_secret(root.path(), "xai-1.api-key", API_KEY_VALUE.as_bytes());
 
-    let mut host =
-        workjet_provider_gateway_host::start(api_key_config(root.path(), "xai").validate().unwrap())
-            .await
-            .unwrap();
+    let mut host = workjet_provider_gateway_host::start(
+        api_key_config(root.path(), "xai").validate().unwrap(),
+    )
+    .await
+    .unwrap();
     // A provider with no account configured is refused by the allow-list
     // router rather than falling through to another provider's credential.
     let refused = provider_post(

@@ -11,6 +11,7 @@ import { expect, vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({ WebContentsView: class {} }));
 
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
@@ -339,6 +340,16 @@ function makeGuestHarness() {
     Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, launches),
     Layer.succeed(ElectronWindow.ElectronWindow, electronWindow),
     Layer.succeed(ElectronShell.ElectronShell, electronShell),
+    // The manager reads the shipped host-theme stylesheet from the shell root;
+    // a scratch root simply has none, so injection stays inert in tests.
+    Layer.succeed(
+      DesktopEnvironment.DesktopEnvironment,
+      DesktopEnvironment.DesktopEnvironment.of({
+        isPackaged: false,
+        resourcesPath: "/nonexistent-resources",
+        rootDir: "/nonexistent-root",
+      } as DesktopEnvironment.DesktopEnvironment["Service"]),
+    ),
   );
   const layer = CtoxGuestManager.layer({ createView }).pipe(Layer.provide(dependencies));
   return {

@@ -1174,7 +1174,7 @@ failure, remote version skew, and unauthorized cross-environment control.
   bundle IDs, or protocol schemes in the same change.
   Audited 2026-08-20: name/metadata/installer/icons/filenames done —
   `apps/desktop/src/app/DesktopEnvironment.ts:86` (`APP_BASE_NAME =
-    "CTOX Desktop App"`, displayName `CTOX Desktop App (Alpha|Nightly)`),
+  "CTOX Desktop App"`, displayName `CTOX Desktop App (Alpha|Nightly)`),
   `scripts/build-desktop-artifact.ts:2181-2183` (`productName`,
   `artifactName: "CTOX-Desktop-App-${version}-${arch}.${ext}"`),
   `assets/ctox/*` icons, `resolveDesktopWebAssetBrand` → `"ctox"`.
@@ -1186,11 +1186,11 @@ failure, remote version skew, and unauthorized cross-environment control.
   - [~] Finish the About-panel and update-channel identity audit on every
     supported platform before closing the parent identity task.
     Audited 2026-08-20. What exists: `apps/desktop/src/app/
-    DesktopAppIdentity.ts:99-103` sets `setAboutPanelOptions`
+DesktopAppIdentity.ts:99-103` sets `setAboutPanelOptions`
     (applicationName = `environment.displayName`, version = commit hash),
     covered by `DesktopAppIdentity.test.ts:169`; the update channel
     derives from the version (`scripts/build-desktop-artifact.ts:2115
-    resolveDesktopUpdateChannel`) and is surfaced in
+resolveDesktopUpdateChannel`) and is surfaced in
     `apps/web/src/components/settings/SettingsPanels.tsx:221-445`
     (`AboutVersionSection`, Stable/Nightly) over
     `apps/desktop/src/updates/DesktopUpdates.ts`.
@@ -1313,7 +1313,7 @@ CTOX project.
         paired entries, and `:660-662` extends the stable-identity switch with
         `local_daemon` / `ssh_managed`. The renderer holds no registry of its
         own: `apps/web/src/components/ctox/CtoxModeShell.tsx:185
-    groupCtoxInstances` only buckets the one result by source
+groupCtoxInstances` only buckets the one result by source
         (`CtoxModeShell.test.tsx:115,182,280`).
 - [x] Port ctox.dev login, logout, cookie clearing, session-package discovery,
       launch-token exchange, and managed-instance refresh.
@@ -1402,13 +1402,10 @@ CTOX project.
     `CtoxSshManagedLaunch.test.ts` covering port extraction, rewrite,
     `unsupported_signaling`, `forward_failed`, and forward teardown on a later
     failure), and `CtoxElectronSessions.test.ts:147` gives a launchable
-    SSH-managed instance its own isolated partition. BUT THE RENDERER STILL
-    BLOCKS IT: `apps/web/src/components/ctox/CtoxModeShell.tsx:166-168`
-    returns `false` unconditionally for `ssh_managed` in
-    `canActivateCtoxInstance`, and `CTOX_SSH_LAUNCH_PENDING_HINT`
-    ("SSH tunnel support pending") is still shown — asserted by
-    `CtoxModeShell.test.tsx:212-218,275`. So SSH launch is unreachable from
-    the UI; unblocking it is a renderer + test change, not a main-process one.
+    SSH-managed instance its own isolated partition. Renderer unblocked
+    2026-08-20 (commit `8752fc9ae`): `canActivateCtoxInstance` now launches a
+    reachable `ssh_managed` row (offline stays inert with an honest hint);
+    the "pending" hint is gone from row and add-form.
     Also still absent: attach/install/rotate/revoke in any layer — the only
     SSH IPC is `addSshManagedInstance` / `removeSshManagedInstance`
     (`apps/desktop/src/ipc/methods/ctox.ts:233,260`).
@@ -1430,7 +1427,7 @@ CTOX project.
     (+ test) and is per-attempt, never persisted
     (`apps/web/src/components/desktop/SshPasswordPromptDialog.tsx:164`).
     The safe-storage layer is `apps/desktop/src/electron/
-    ElectronSafeStorage.ts` with the Linux backend guard in
+ElectronSafeStorage.ts` with the Linux backend guard in
     `apps/desktop/src/linuxSecretStorage.ts` (+ test).
     EXACT REMAINING GAP: (a) NO sudo credential handling for CTOX at all —
     the only `sudo` in the desktop tree is
@@ -1602,7 +1599,7 @@ CTOX project.
       proven in the installed app. Light-scheme and pane-collapse proof in the
       packaged app remain open. Verified open 2026-08-20: the pin has since
       moved to rc.11 (`apps/desktop/resources/ctox/
-    business-os-shell.manifest.json`, commit `1bdcbe311`), but the
+  business-os-shell.manifest.json`, commit `1bdcbe311`), but the
       light-scheme and three/two/one-pane packaged proofs are manual QA runs
       with no artifact in this repo, so this stays open. KORREKTUR to the line
       above: the pinned shell is now `v0.1.0-rc.12`
@@ -1655,7 +1652,7 @@ CTOX project.
       revoked), rendered as explicit copy at `:1926-1929` (connecting / ready
       / revoked), `:1551` and `:1669-1676` (signed-out sign-in surface),
       `:1651` ("CTOX desktop services are unavailable.") and `:1042
-    unavailableHint` for per-instance unavailability; `needs_auth` is an
+  unavailableHint` for per-instance unavailability; `needs_auth` is an
       exhaustive `STATUS_LABELS` entry (`:104`, typed
       `Record<CtoxManagedInstance["status"], string>` so the compiler forbids
       dropping a state). Tests: `CtoxModeShell.test.tsx:332` (sign-in beside

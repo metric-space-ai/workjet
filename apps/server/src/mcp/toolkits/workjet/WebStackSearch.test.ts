@@ -417,4 +417,62 @@ describe("WebStackSearch", () => {
       }
     }),
   );
+  // The 2 MiB stdout budget is a security control, not a tuning knob: it is what
+  // stops a hostile or runaway native process from streaming unbounded bytes
+  // into the server and onward into the model context.
+  //
+  // Both fixtures below are WELL-FORMED and contract-VALID search envelopes,
+  // padded to an exact byte count with JSON whitespace so the only thing under
+  // test is the byte budget. That matters: if the
+  // `totalBytes > WEB_STACK_RESPONSE_MAX_BYTES` guard is deleted, the
+  // over-budget document parses cleanly and its contents are returned to the
+  // caller — the test then fails on the real security regression, not on an
+  // incidental change of error code.
+  //
+  // The over-budget size is written as a literal instead of being derived from
+  // the constant, so RAISING the constant fails this test rather than silently
+  // moving the goalposts with it.
+  it.effect("refuses native search stdout over the declared byte budget", () =>
+    Effect.gen(function* () {
+      const DECLARED_BUDGET_BYTES = 2 * 1024 * 1024;
+      assert.equal(WebStackSearch.WEB_STACK_RESPONSE_MAX_BYTES, DECLARED_BUDGET_BYTES);
+      const canary = "OVER_BUDGET_NATIVE_SEARCH_PAYLOAD";
+
+      const paddedTo = (totalBytes: number, marker: string) => {
+        const body = jsonText({
+          ok: true,
+          tool: "ctox_web_search",
+          results: [{ title: marker, url: "https://example.test/", snippet: marker }],
+        });
+        const deficit = totalBytes - encoder.encode(body).length;
+        assert.isAtLeast(deficit, 0, "fixture skeleton already exceeds the target size");
+        const padded = `${body}${" ".repeat(deficit)}`;
+        assert.equal(encoder.encode(padded).length, totalBytes);
+        return padded;
+      };
+
+      const serviceWith = (stdout: string) =>
+        makeService({
+          handler: (_command, index) =>
+            index === 0 ? { stdout: WebStackSearch.WEB_STACK_SURFACE_VERSION } : { stdout },
+        });
+
+      // Exactly at the budget is still served: the guard is `>`, not `>=`.
+      const served = yield* (yield* search(
+        serviceWith(paddedTo(DECLARED_BUDGET_BYTES, "at-budget")).service,
+      )).search({ query: "budget" });
+      assert.equal(served.results.length, 1);
+      assert.equal(served.results[0]?.title, "at-budget");
+
+      // One byte over is refused, and no part of the payload is forwarded.
+      const error = yield* (yield* search(
+        serviceWith(paddedTo(DECLARED_BUDGET_BYTES + 1, canary)).service,
+      ))
+        .search({ query: "budget" })
+        .pipe(Effect.flip);
+      assert.equal(error.reason, "oversized-response");
+      assertCarriesNoSecret(error, canary);
+      assert.equal(error.message, "Web Search returned an invalid response.");
+    }),
+  );
 });

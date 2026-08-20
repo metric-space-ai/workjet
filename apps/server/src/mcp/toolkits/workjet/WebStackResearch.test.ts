@@ -567,4 +567,80 @@ describe("WebStackResearch", () => {
       assert.notInclude(jsonText(error), secret);
     });
   });
+  // The 2 MiB stdout budget is a security control, not a tuning knob: it is what
+  // stops a hostile or runaway native process from streaming unbounded bytes
+  // into the server and onward into the model context.
+  //
+  // Both fixtures below are WELL-FORMED and contract-VALID research envelopes,
+  // padded to an exact byte count with JSON whitespace so the only thing under
+  // test is the byte budget. That matters: if the
+  // `totalBytes > WEB_STACK_RESPONSE_MAX_BYTES` guard is deleted, the
+  // over-budget document parses cleanly and its contents are returned to the
+  // caller — the test then fails on the real security regression, not on an
+  // incidental change of error code.
+  //
+  // The over-budget size is written as a literal instead of being derived from
+  // the constant, so RAISING the constant fails this test rather than silently
+  // moving the goalposts with it.
+  it.effect("refuses native research stdout over the declared byte budget", () => {
+    const DECLARED_BUDGET_BYTES = 2 * 1024 * 1024;
+    const canary = "OVER_BUDGET_NATIVE_RESEARCH_PAYLOAD";
+
+    const paddedTo = (totalBytes: number, body: string) => {
+      const deficit = totalBytes - encoder.encode(body).length;
+      assert.isAtLeast(deficit, 0, "fixture skeleton already exceeds the target size");
+      const padded = `${body}${" ".repeat(deficit)}`;
+      assert.equal(encoder.encode(padded).length, totalBytes);
+      return padded;
+    };
+
+    const serviceWith = (stdout: string) =>
+      makeService({
+        handler: (command) => ({
+          stdout:
+            command.args[0] === "--research-surface-version"
+              ? WebStackResearch.WEB_STACK_RESEARCH_SURFACE_VERSION
+              : stdout,
+        }),
+      }).service;
+
+    return Effect.gen(function* () {
+      assert.equal(
+        NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
+        DECLARED_BUDGET_BYTES,
+        "the research toolkit shares the native response budget",
+      );
+
+      // Exactly at the budget is still served: the guard is `>`, not `>=`.
+      const served = yield* (yield* serviceWith(
+        paddedTo(DECLARED_BUDGET_BYTES, readResponse),
+      )).read({ url: "https://example.test/" });
+      assert.equal(served.finalUrl, readEnvelope.finalUrl);
+
+      // One byte over is refused, and no part of the payload is forwarded.
+      const marked = jsonText({ ...readEnvelope, title: canary });
+      const readError = yield* (yield* serviceWith(paddedTo(DECLARED_BUDGET_BYTES + 1, marked)))
+        .read({ url: "https://example.test/" })
+        .pipe(Effect.flip);
+      assert.equal(readError.reason, "oversized-response");
+      assert.notInclude(jsonText(readError), canary);
+      assert.equal(readError.message, "Web research returned an invalid response.");
+
+      // `deepResearch` shares parseResponse, so hold it to the same budget.
+      const researchError = yield* (yield* serviceWith(
+        paddedTo(DECLARED_BUDGET_BYTES + 1, jsonText({ ...researchEnvelope, query: canary })),
+      ))
+        .deepResearch({
+          query: "budget",
+          depth: "quick",
+          maxSources: 3,
+          excludeUrls: [],
+          includePapers: false,
+          includeAnnasArchive: false,
+        })
+        .pipe(Effect.flip);
+      assert.equal(researchError.reason, "oversized-response");
+      assert.notInclude(jsonText(researchError), canary);
+    });
+  });
 });

@@ -7,6 +7,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
+import * as NativeProcess from "./WebStackNativeProcess.ts";
 import * as WebStackBrowser from "./WebStackBrowser.ts";
 
 const encoder = new TextEncoder();
@@ -246,6 +247,75 @@ describe("WebStackBrowser", () => {
         .automate({ actions: [{ action: "observe" }] })
         .pipe(Effect.flip);
       assert.equal(error.reason, "malformed-response");
+    });
+  });
+  // The 2 MiB stdout budget is a security control, not a tuning knob: it is what
+  // stops a hostile or runaway native process from streaming unbounded bytes
+  // into the server and onward into the model context.
+  //
+  // Both fixtures below are WELL-FORMED and contract-VALID browser envelopes,
+  // padded to an exact byte count with JSON whitespace so the only thing under
+  // test is the byte budget. That matters: if the
+  // `totalBytes > WEB_STACK_RESPONSE_MAX_BYTES` guard is deleted, the
+  // over-budget document parses cleanly and its contents are returned to the
+  // caller — the test then fails on the real security regression, not on an
+  // incidental change of error code.
+  //
+  // The over-budget size is written as a literal instead of being derived from
+  // the constant, so RAISING the constant fails this test rather than silently
+  // moving the goalposts with it.
+  it.effect("refuses native browser stdout over the declared byte budget", () => {
+    const DECLARED_BUDGET_BYTES = 2 * 1024 * 1024;
+    const canary = "OVER_BUDGET_NATIVE_BROWSER_PAYLOAD";
+
+    const paddedTo = (totalBytes: number, marker: string) => {
+      const body = jsonText({
+        ok: true,
+        observations: [{ description: marker, url: "https://example.test/" }],
+      });
+      const deficit = totalBytes - encoder.encode(body).length;
+      assert.isAtLeast(deficit, 0, "fixture skeleton already exceeds the target size");
+      const padded = `${body}${" ".repeat(deficit)}`;
+      assert.equal(encoder.encode(padded).length, totalBytes);
+      return padded;
+    };
+
+    const serviceWith = (stdout: string) =>
+      makeService({
+        handler: (_command, index) => ({
+          stdout: index === 0 ? WebStackBrowser.WEB_STACK_BROWSER_SURFACE_VERSION : stdout,
+        }),
+      }).service;
+
+    return Effect.gen(function* () {
+      assert.equal(
+        NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
+        DECLARED_BUDGET_BYTES,
+        "the browser toolkit shares the native response budget",
+      );
+
+      // Exactly at the budget is still served: the guard is `>`, not `>=`.
+      const served = yield* (yield* serviceWith(
+        paddedTo(DECLARED_BUDGET_BYTES, "at-budget"),
+      )).automate({ actions: [{ action: "observe" }] });
+      assert.deepEqual(served.observations, [
+        { description: "at-budget", url: "https://example.test/" },
+      ]);
+
+      // One byte over is refused, and no part of the payload is forwarded.
+      const automateError = yield* (yield* serviceWith(paddedTo(DECLARED_BUDGET_BYTES + 1, canary)))
+        .automate({ actions: [{ action: "observe" }] })
+        .pipe(Effect.flip);
+      assert.equal(automateError.reason, "oversized-response");
+      assert.notInclude(jsonText(automateError), canary);
+      assert.equal(automateError.message, "Web Browser returned an invalid response.");
+
+      // `prepare` shares parseJsonResponse, so hold it to the same budget.
+      const prepareError = yield* (yield* serviceWith(paddedTo(DECLARED_BUDGET_BYTES + 1, canary)))
+        .prepare({})
+        .pipe(Effect.flip);
+      assert.equal(prepareError.reason, "oversized-response");
+      assert.notInclude(jsonText(prepareError), canary);
     });
   });
 });

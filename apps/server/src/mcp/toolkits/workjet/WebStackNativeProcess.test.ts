@@ -51,6 +51,83 @@ const makeSpawner = (handler: (command: CapturedCommand, index: number) => strin
   };
 };
 
+/**
+ * Spawns a child whose stdout is `chunkCount` chunks of `chunkBytes` each, so
+ * the bounded fold sees a stream it must stop accumulating part-way through
+ * rather than one already-materialized string.
+ */
+const makeStreamingSpawner = (chunkBytes: number, chunkCount: number) => {
+  const chunk = new Uint8Array(chunkBytes).fill(0x61);
+  const service = ChildProcessSpawner.make(() =>
+    Effect.sync(() =>
+      ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(1),
+        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+        isRunning: Effect.succeed(false),
+        kill: () => Effect.void,
+        unref: Effect.succeed(Effect.void),
+        stdin: Sink.drain,
+        stdout: Stream.fromIterable(Array.from({ length: chunkCount }, () => chunk)),
+        stderr: Stream.empty,
+        all: Stream.empty,
+        getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty,
+      }),
+    ),
+  );
+  return { layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, service) };
+};
+
+describe("WebStackNativeProcess stdout byte budget", () => {
+  // The budget is a security control, not a tuning knob: it is what keeps a
+  // hostile or runaway native process from streaming unbounded bytes into the
+  // server and onward into the model context. Pinning the literal makes raising
+  // it a deliberate, reviewed act rather than a one-character edit.
+  it("declares a 2 MiB response budget", () => {
+    assert.equal(NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES, 2 * 1024 * 1024);
+    assert.equal(NativeProcess.WEB_STACK_STDERR_MAX_BYTES, 64 * 1024);
+    assert.equal(NativeProcess.WEB_STACK_PROBE_MAX_BYTES, 256);
+  });
+
+  it.effect(
+    "stops buffering native stdout at the budget while still reporting its true size",
+    () => {
+      // 64 chunks of 1 MiB = 64 MiB offered against a 2 MiB budget.
+      const chunkBytes = 1024 * 1024;
+      const chunkCount = 64;
+      const spawner = makeStreamingSpawner(chunkBytes, chunkCount);
+      return Effect.gen(function* () {
+        const service = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const output = yield* NativeProcess.runCommand({
+          spawner: service,
+          executable: "/opt/workjet-web-stack",
+          args: ["search"],
+          maximumStdoutBytes: NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES,
+          timeout: Duration.seconds(5),
+          failure: (reason) => ({ reason }),
+        });
+
+        // Retained bytes are capped at budget + 1 — the single extra byte is what
+        // lets the caller notice the overflow at all. 64 MiB never lands in heap.
+        assert.equal(
+          output.stdout.bytes.length,
+          NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES + 1,
+          "the bounded collector must not accumulate past the budget",
+        );
+        // The reported size stays truthful, which is what the per-surface
+        // `oversized-response` checks compare against.
+        assert.equal(output.stdout.totalBytes, chunkBytes * chunkCount);
+        assert.isAbove(output.stdout.totalBytes, NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES);
+        // outputText only ever decodes the retained window.
+        assert.equal(
+          NativeProcess.outputText(output.stdout).length,
+          NativeProcess.WEB_STACK_RESPONSE_MAX_BYTES + 1,
+        );
+      }).pipe(Effect.provide(spawner.layer));
+    },
+  );
+});
+
 describe("WebStackNativeProcess", () => {
   it("orders cross-platform executable candidates without invoking a shell", () => {
     const candidates = NativeProcess.executableCandidates({

@@ -605,28 +605,44 @@ Tasks:
       credentials and state.
 - [ ] Remove the portable duplicate from CTOX only after its pinned dependency
       passes CTOX provider and Business OS tests.
-- [ ] Add release artifacts for macOS arm64/x64, Linux x64/arm64, and Windows
-      x64/arm64 as required by Workjet and CTOX packaging.
-      PIPELINE LANDED 2026-08-20, NO RELEASE TAGGED YET. The artifact contract
-      (six target triples, asset naming, detached manifest, sha256sums, tag
-      `provider-gateway-host-v*` which cannot collide with `release.yml`'s
-      `v*.*.*`) lives in `scripts/lib/provider-gateway-host-artifacts.ts`;
-      `scripts/provider-gateway-host-artifacts.ts` stages/collects/verifies/pins
-      and is exactly what `.github/workflows/provider-gateway-host-release.yml`
-      calls. Consumer side mirrors the CTOX-shell precedent:
-      `apps/desktop/resources/provider-gateway/host-release.pin.json` +
-      `apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts`
-      (packaged builds accept ONLY a digest-verified pinned artifact;
-      development falls back to the existing local build and says why).
-      VERIFIED LOCALLY: `aarch64-apple-darwin` (17 311 904 B, sha256
-      `bebddae6…95ec1`) and `x86_64-apple-darwin` (18 693 696 B, sha256
-      `db8d6ea2…6b7f9`) built and digest-checked; the other four triples cannot
-      be built on macOS and were NOT faked — only the workflow covers them. See
-      `docs/workjet-provider-gateway-host-artifacts.md` and its
-      `.local-builds.md` evidence file. STILL OPEN: tag the first release, then
-      replace the `unreleased` pin with the workflow's emitted pin — that is
-      what unblocks the CTOX pinned dependency and the portable-duplicate
-      removal above.
+- [~] Add release artifacts for macOS arm64/x64, Linux x64/arm64, and Windows
+  x64/arm64 as required by Workjet and CTOX packaging. Pipeline + contract
+  done 2026-08-20 (commits `34ba5de64`…): one source of truth for tag,
+  naming (`workjet-provider-gateway-host-<version>-<triple>`), the six
+  triples, a release manifest mirroring the CTOX-shell shape
+  (sourceCommit + per-artifact sha256) and a consumer pin whose URLs are
+  locked to this repo, so a tampered manifest cannot redirect anyone. The
+  release is all-or-nothing — `collect` refuses a manifest missing a
+  triple (verified). Desktop resolution order: env override, then a
+  digest-verified pinned artifact, else local build in development and a
+  HARD FAILURE when packaged. TWO targets genuinely built and verified
+  here with independently reproduced digests, byte-identical on rebuild
+  (aarch64/x86_64-apple-darwin); the four Linux/Windows triples are
+  workflow-only and NOT faked — the end-to-end collect/verify/pin run used
+  clearly labelled placeholders outside the repo whose digests appear
+  nowhere in it. Still open: running the workflow (needs a tag), the two
+  unverified ARM runner labels, and wiring the resolver into server
+  startup + packaging.
+  PIPELINE LANDED 2026-08-20, NO RELEASE TAGGED YET. The artifact contract
+  (six target triples, asset naming, detached manifest, sha256sums, tag
+  `provider-gateway-host-v*` which cannot collide with `release.yml`'s
+  `v*.*.*`) lives in `scripts/lib/provider-gateway-host-artifacts.ts`;
+  `scripts/provider-gateway-host-artifacts.ts` stages/collects/verifies/pins
+  and is exactly what `.github/workflows/provider-gateway-host-release.yml`
+  calls. Consumer side mirrors the CTOX-shell precedent:
+  `apps/desktop/resources/provider-gateway/host-release.pin.json` +
+  `apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts`
+  (packaged builds accept ONLY a digest-verified pinned artifact;
+  development falls back to the existing local build and says why).
+  VERIFIED LOCALLY: `aarch64-apple-darwin` (17 311 904 B, sha256
+  `bebddae6…95ec1`) and `x86_64-apple-darwin` (18 693 696 B, sha256
+  `db8d6ea2…6b7f9`) built and digest-checked; the other four triples cannot
+  be built on macOS and were NOT faked — only the workflow covers them. See
+  `docs/workjet-provider-gateway-host-artifacts.md` and its
+  `.local-builds.md` evidence file. STILL OPEN: tag the first release, then
+  replace the `unreleased` pin with the workflow's emitted pin — that is
+  what unblocks the CTOX pinned dependency and the portable-duplicate
+  removal above.
 
 Mandatory regression gates:
 
@@ -842,6 +858,26 @@ Goal: turn the stored role metadata into real local and remote orchestration.
         provider gateway, environment-scoped secure credentials, account
         pools, health/capacity, and model discovery. Do not reuse the existing
         Codex/Claude/Grok provider-driver list as the LLM provider catalog.
+        Pools, health and model discovery done 2026-08-20 (commits
+        `5bd652f55`, `0a358ba3b`) — each limited to what the host can actually
+        answer, verified against its source. Pools: the host has NO named pool
+        object, one per provider only, so the contract's `pools`/`routes` are
+        DEAD SCHEMA (nothing wrote them, nothing could honour them); exposed
+        instead are the host's real semantics — a single runtime-wide routing
+        strategy (Node was hardcoding round-robin, so `weight` had been inert),
+        priority-exclusive OAuth pools vs round-robin API-key pools, and
+        `weightHonored` only where the host reads it, so the UI shows no weight
+        field where it would do nothing. Health: endpoint phase and per-provider
+        counts are published and shown with honest ages; per-account cooldown,
+        rate-limit and capacity are `not-reported-by-host` — the host HAS that
+        state in an in-process store but publishes no route for it. Discovery:
+        the host's model catalog is a COMPILE-TIME list, not an upstream call,
+        and every model is labelled accordingly; zai and minimax have no
+        channel at all and say so rather than showing an empty list.
+        Environment scoping is PROVED on both sides (decode refuses foreign
+        scopes and traversal; two gateways side by side touch only their own
+        state). Real gap fixed: Node accepted a bare `.` secret name the host
+        refuses — that combination wrote a config the host would not start on.
         Progress 2026-08-18: the OAuth login pipeline is implemented end to
         end below the UI. The workjet gateway host exposes canonical
         management OAuth routes (begin `…/anthropic|codex|antigravity-auth-url`,

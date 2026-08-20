@@ -442,8 +442,19 @@ Tasks:
       (`driver-unsupported`). KNOWN FOLLOW-UP: a grok login session sends the
       user's real xAI JWT to the loopback gateway — the Rust host must
       substitute its own upstream credential, never forward that header.
-      Still open: composer model-selection → gateway route resolution, and a
-      live routed turn against a real gateway account.
+      Composer model-selection → route resolution done 2026-08-20 (commits
+      `c40a03f50`, `094550140`): pure `resolveWorkjetGatewayModelRoute`
+      (route patterns most-specific-first > pools > enabled-account catalog;
+      `route-ambiguous`/`model-ambiguous`/`model-unrouted` are typed and loud;
+      model-unspecified and empty-catalog deliberately skip), the resolved
+      provider travels as `X-CTOX-Provider` — the Rust host's ONLY
+      per-request selector — via `ANTHROPIC_CUSTOM_HEADERS` (claude, probe-
+      verified) and codex `-c …http_headers…` (probe-verified); grok/opencode
+      have NO header mechanism and skip resolution honestly. The LLM-routes
+      tab now renders the SAME resolver read-only per catalog model. Note:
+      nothing writes `pools`/`routes` yet (hand-edited config only), so the
+      account fallback is what runs in practice. Still open: a live routed
+      turn against a real gateway account (needs the user's first account).
       LIVE FINDINGS 2026-08-19 (user attempted the first real logins):
       (1) BOTH provider OAuth flows are rejected by the real IdPs — Anthropic:
       "Redirect URI http://127.0.0.1:<port>/management/oauth/anthropic/callback

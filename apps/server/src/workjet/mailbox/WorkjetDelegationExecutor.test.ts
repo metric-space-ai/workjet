@@ -51,6 +51,10 @@ import {
   WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS,
 } from "./WorkjetMailboxStore.ts";
 import type { WorkjetMailboxAuditEventInput } from "./WorkjetMailboxAuditEmitter.ts";
+import {
+  makeWorkjetMailboxRpcHandlers,
+  type WorkjetMailboxRpcDependencies,
+} from "./WorkjetMailboxRpc.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 import {
   snapshotRefForDigest,
@@ -268,6 +272,14 @@ interface Harness {
   readonly setThread: (next: OrchestrationThread | undefined) => void;
   readonly failNextTurnStarts: (count: number, error: { readonly _tag: string }) => void;
   readonly failThreadReads: (fail: boolean) => void;
+  /**
+   * Make the NEXT `count` outbound enqueues fail. `transient` is a SQL-shaped
+   * failure the reconciler must retry; `permanent` is the bounded mailbox
+   * reason it must stop retrying on.
+   */
+  readonly failNextEnqueues: (count: number, kind: "transient" | "permanent") => void;
+  /** Every `enqueueOutbound` call the executor made, failures included. */
+  readonly enqueueAttempts: () => number;
   readonly executor: Effect.Effect<
     WorkjetDelegationExecutorShape,
     never,
@@ -300,6 +312,9 @@ const makeHarness = (options?: {
   let turnStartFailures = 0;
   let turnStartError: { readonly _tag: string } = retryableEngineError;
   let threadReadsFail = false;
+  let enqueueFailures = 0;
+  let enqueueFailureKind: "transient" | "permanent" = "transient";
+  let enqueueCalls = 0;
   let nowIndex = 0;
   const nowValues = options?.nowValues ?? [NOW];
 
@@ -345,6 +360,11 @@ const makeHarness = (options?: {
     failThreadReads: (fail) => {
       threadReadsFail = fail;
     },
+    failNextEnqueues: (count, kind) => {
+      enqueueFailures = count;
+      enqueueFailureKind = kind;
+    },
+    enqueueAttempts: () => enqueueCalls,
     executor: Effect.gen(function* () {
       const base = makeWorkjetDelegationExecutorWithSources(sources).pipe(
         Effect.provideService(OrchestrationEngineService, engine),
@@ -352,13 +372,36 @@ const makeHarness = (options?: {
         Effect.provideService(WorkjetMeshIdentity, identityDouble),
       );
       const refusal = options?.refuseUsageCharge;
-      if (refusal === undefined) return yield* base;
       const real = yield* WorkjetMailboxStore;
-      const refusing = {
+      // The REAL store, with only the two seams a test needs: a refused usage
+      // charge and an outbound enqueue that fails. Everything durable — the
+      // transition table, the result column, the migration-049 markers — stays
+      // the production implementation.
+      const instrumented = {
         ...real,
-        recordDelegationUsage: () => Effect.fail(new WorkjetMailboxError({ reason: refusal })),
+        ...(refusal === undefined
+          ? {}
+          : {
+              recordDelegationUsage: () =>
+                Effect.fail(new WorkjetMailboxError({ reason: refusal })),
+            }),
+        enqueueOutbound: (
+          envelope: Parameters<WorkjetMailboxStore["Service"]["enqueueOutbound"]>[0],
+          payload: Parameters<WorkjetMailboxStore["Service"]["enqueueOutbound"]>[1],
+        ) => {
+          enqueueCalls += 1;
+          if (enqueueFailures > 0) {
+            enqueueFailures -= 1;
+            return enqueueFailureKind === "permanent"
+              ? Effect.fail(new WorkjetMailboxError({ reason: "malformed-envelope" }))
+              : // Shaped like the store's own SQL failure: NOT a bounded mailbox
+                // reason, so the reconciler must classify it as retryable.
+                Effect.fail(retryableEngineError as unknown as WorkjetMailboxError);
+          }
+          return real.enqueueOutbound(envelope, payload);
+        },
       } as unknown as WorkjetMailboxStore["Service"];
-      return yield* base.pipe(Effect.provideService(WorkjetMailboxStore, refusing));
+      return yield* base.pipe(Effect.provideService(WorkjetMailboxStore, instrumented));
     }),
   };
 };
@@ -1680,4 +1723,268 @@ it.effect("keeps a transition durable when the audit emitter throws (best-effort
     assert.equal(yield* stateOf(delegation), "running");
     assert.isTrue(harness.events.length >= 1);
   }).pipe(Effect.provide(testLayer("delegation-executor-audit-besteffort"))),
+);
+
+// ===============================
+// Cross-environment result REDELIVERY (migration 049 markers)
+// ===============================
+
+/** A cross-environment delegation whose dispatched turn has just completed. */
+const crossEnvironmentHarness = Effect.fn("test.crossEnvironmentHarness")(function* (id: string) {
+  const delegation = delegationFixture({
+    id,
+    digest: yield* storePrompt(PROMPT_TEXT),
+    state: "running",
+    sourceEnvironmentId: REMOTE_ENVIRONMENT,
+  });
+  return {
+    delegation,
+    harness: makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: `turn-${id}`,
+        turnState: "completed",
+      }),
+    }),
+  };
+});
+
+it.effect("retries a transiently failed result enqueue on the next cycle, exactly once", () =>
+  Effect.gen(function* () {
+    const { delegation, harness } = yield* crossEnvironmentHarness("redeliver");
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    yield* seed(delegation);
+    harness.failNextEnqueues(1, "transient");
+
+    // Cycle 1: the delegation is finalized and its result persisted, but the
+    // enqueue fails transiently — the old behaviour lost the return here.
+    const first = yield* executor.runCycle;
+    assert.equal(first.completed, 1);
+    assert.equal(first.resultsEnqueued, 0);
+    assert.equal(first.resultRedeliveries, 0);
+    assert.equal(first.resultReturnsAbandoned, 0);
+    assert.equal(harness.enqueueAttempts(), 1);
+    assert.isTrue(
+      Option.isNone(yield* store.getOutbound(delegationResultEnvelopeId(delegation.delegationId))),
+    );
+
+    // Cycle 2: the durable marker is still unset, so the redelivery scan finds
+    // the row and re-enqueues the SAME derived envelope.
+    const second = yield* executor.runCycle;
+    assert.equal(second.resultRedeliveries, 1);
+    assert.equal(second.resultsEnqueued, 1);
+    assert.equal(harness.enqueueAttempts(), 2);
+    const outbound = yield* store.getOutbound(delegationResultEnvelopeId(delegation.delegationId));
+    assert.isTrue(Option.isSome(outbound));
+    if (Option.isNone(outbound)) return;
+    assert.equal(outbound.value.envelope.kind, "result");
+    assert.equal(outbound.value.envelope.targetEnvironmentId, REMOTE_ENVIRONMENT);
+
+    // Cycle 3: the marker is set, so the row leaves the scan set for good.
+    const third = yield* executor.runCycle;
+    assert.equal(third.resultRedeliveries, 1);
+    assert.equal(third.resultsEnqueued, 1);
+    assert.equal(harness.enqueueAttempts(), 2);
+  }).pipe(Effect.provide(testLayer("delegation-executor-redeliver"))),
+);
+
+it.effect("abandons a result enqueue that fails permanently and stops retrying", () =>
+  Effect.gen(function* () {
+    const { delegation, harness } = yield* crossEnvironmentHarness("redeliver-perm");
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+    // A bounded mailbox reason: the same bytes would be rejected forever.
+    harness.failNextEnqueues(5, "permanent");
+
+    const first = yield* executor.runCycle;
+    assert.equal(first.completed, 1);
+    assert.equal(first.resultsEnqueued, 0);
+    assert.equal(first.resultReturnsAbandoned, 1);
+    assert.equal(harness.enqueueAttempts(), 1);
+
+    // Marked: no further attempt is ever made, and the delegation stays
+    // terminal with its durable result intact.
+    const second = yield* executor.runCycle;
+    assert.equal(second.resultReturnsAbandoned, 1);
+    assert.equal(second.resultRedeliveries, 0);
+    assert.equal(harness.enqueueAttempts(), 1);
+    assert.equal(yield* stateOf(delegation), "completed");
+    const store = yield* WorkjetMailboxStore;
+    assert.isTrue(Option.isSome(yield* store.getDelegationResult(delegation.delegationId)));
+  }).pipe(Effect.provide(testLayer("delegation-executor-redeliver-perm"))),
+);
+
+it.effect("never re-enqueues a result that already reached the outbox", () =>
+  Effect.gen(function* () {
+    const { delegation, harness } = yield* crossEnvironmentHarness("redeliver-once");
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const first = yield* executor.runCycle;
+    assert.equal(first.resultsEnqueued, 1);
+    assert.equal(harness.enqueueAttempts(), 1);
+
+    const second = yield* executor.runCycle;
+    assert.equal(second.resultsEnqueued, 1);
+    assert.equal(second.resultRedeliveries, 0);
+    assert.equal(second.resultReturnsAbandoned, 0);
+    assert.equal(harness.enqueueAttempts(), 1);
+  }).pipe(Effect.provide(testLayer("delegation-executor-redeliver-once"))),
+);
+
+it.effect("marks a locally returned result so the cross-environment scan skips it", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "redeliver-local",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-redeliver-local",
+        turnState: "completed",
+      }),
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    const first = yield* executor.runCycle;
+    assert.equal(first.resultsReturned, 1);
+
+    // A same-environment return has no outbound envelope; the marker keeps the
+    // row out of the retry scan instead of enqueuing one for a local source.
+    const second = yield* executor.runCycle;
+    assert.equal(second.resultsEnqueued, 0);
+    assert.equal(second.resultRedeliveries, 0);
+    assert.equal(harness.enqueueAttempts(), 0);
+  }).pipe(Effect.provide(testLayer("delegation-executor-redeliver-local"))),
+);
+
+// ===============================
+// Dead-letter reconciliation marker (each dead row exactly once)
+// ===============================
+
+it.effect("reconciles each dead outbox row exactly once, legacy rows included", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+
+    const deadLetter = Effect.fn("test.deadLetter")(function* (id: string) {
+      const delegation = yield* seed(
+        delegationFixture({
+          id,
+          digest,
+          state: "queued",
+          targetEnvironmentId: REMOTE_ENVIRONMENT,
+        }),
+      );
+      const envelope: WorkjetRoutingEnvelope = {
+        schemaVersion: 1,
+        envelopeId: delegation.envelopeId,
+        kind: "delegation",
+        sourceWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: LOCAL_ENVIRONMENT,
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: REMOTE_ENVIRONMENT,
+        createdAt: NOW,
+        expiresAt: EXPIRES,
+        signature: "c2lnbmF0dXJlLXN0dWI",
+      };
+      yield* store.enqueueOutbound(envelope, {
+        _tag: "delegation",
+        delegation,
+      } as const satisfies WorkjetMailboxPayload);
+      yield* Effect.forEach(
+        Array.from({ length: WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS }),
+        () => store.recordAttempt(delegation.envelopeId, NOW),
+        { discard: true },
+      );
+      return delegation;
+    });
+
+    const first = yield* deadLetter("recon-one");
+    const cycleOne = yield* executor.runCycle;
+    assert.equal(cycleOne.failures.deliveryDeadLettered, 1);
+    assert.equal(yield* stateOf(first), "failed");
+
+    // The dead row still exists, but is no longer in the scan set: the
+    // reconciler will never read it again.
+    assert.equal((yield* store.listOutboundByState("dead", 10)).length, 1);
+    assert.equal((yield* store.listUnreconciledOutboundByState("dead", 10)).length, 0);
+
+    // A row pinned before the marker existed is simply unmarked, so it still
+    // reconciles on the very next cycle.
+    const legacy = yield* deadLetter("recon-legacy");
+    const cycleTwo = yield* executor.runCycle;
+    assert.equal(cycleTwo.failures.deliveryDeadLettered, 2);
+    assert.equal(yield* stateOf(legacy), "failed");
+    assert.equal((yield* store.listUnreconciledOutboundByState("dead", 10)).length, 0);
+  }).pipe(Effect.provide(testLayer("delegation-executor-recon-marker"))),
+);
+
+// ===============================
+// The mailbox RPC's reassignment port IS the executor's
+// ===============================
+
+it.effect("satisfies the mailbox RPC's reassignment port with its own guard", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const delegation = yield* seed(
+      delegationFixture({ id: "rpc-reassign", digest, state: "delivered" }),
+    );
+    const reassignedThread = ThreadId.make("thread-reassigned");
+
+    // The WebSocket route builds exactly this: the RPC handlers with the LIVE
+    // executor's `reassign` as the port. No second store write, no duplicated
+    // environment guard.
+    const rpc = makeWorkjetMailboxRpcHandlers({
+      delivery: undefined as unknown as WorkjetMailboxRpcDependencies["delivery"],
+      snapshots: undefined as unknown as WorkjetMailboxRpcDependencies["snapshots"],
+      query: {
+        getThreadDetailById: () =>
+          Effect.succeed(
+            Option.some({
+              ...thread({ role: "orchestrator" }),
+              id: SOURCE_THREAD,
+            } as unknown as OrchestrationThread),
+          ),
+      },
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      reassign: executor.reassign,
+    });
+
+    const result = yield* rpc.reassignDelegation({
+      sourceThreadId: SOURCE_THREAD,
+      delegationId: delegation.delegationId,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: reassignedThread,
+    });
+
+    assert.equal(result.targetThreadId, reassignedThread);
+    assert.equal(result.state, "delivered");
+    // The durable row really moved, through the executor's store write.
+    const stored = yield* (yield* WorkjetMailboxStore).getDelegation(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+    assert.equal(stored.value.delegation.target.threadId, reassignedThread);
+
+    // The executor owns the foreign-environment refusal, so calling the port
+    // directly with a remote target is refused by the SAME guard.
+    const refused = yield* Effect.flip(
+      executor.reassign({
+        delegationId: delegation.delegationId,
+        newTarget: address(REMOTE_ENVIRONMENT, reassignedThread),
+      }),
+    );
+    assert.isTrue(isWorkjetMailboxError(refused));
+    if (!isWorkjetMailboxError(refused)) return;
+    assert.equal(refused.reason, "unknown-target");
+  }).pipe(Effect.provide(testLayer("delegation-executor-rpc-port"))),
 );

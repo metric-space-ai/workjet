@@ -81,6 +81,7 @@ import {
   isWorkjetMailboxError,
   WorkjetMailboxStore,
   type WorkjetDelegationRecord,
+  type WorkjetDelegationResultReturnRow,
   type WorkjetDelegationRowResult,
   type WorkjetMailboxStoreError,
   type WorkjetOutboxRecord,
@@ -236,6 +237,18 @@ export interface WorkjetDelegationExecutorStatus {
   readonly resultsReturned: number;
   /** Results enqueued as pending outbound for a CROSS-environment source. */
   readonly resultsEnqueued: number;
+  /**
+   * The subset of {@link resultsEnqueued} the REDELIVERY scan produced: results
+   * whose first enqueue failed transiently and which a later cycle re-enqueued
+   * from the durable row. Idempotent by the derived result envelope id.
+   */
+  readonly resultRedeliveries: number;
+  /**
+   * Results whose return was abandoned for a PERMANENT fault — an encode or
+   * signing rejection, or a delegation body this server can no longer decode.
+   * The result stays durable on the row; only the retry stops.
+   */
+  readonly resultReturnsAbandoned: number;
   /** `running` rows whose dispatched turn has not ended yet; left running. */
   readonly runningPending: number;
   /** `delivered` rows held back because their approval gate is still pending. */
@@ -501,6 +514,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let turnInterrupted = 0;
   let resultsReturned = 0;
   let resultsEnqueued = 0;
+  let resultRedeliveries = 0;
+  let resultReturnsAbandoned = 0;
   let runningPending = 0;
   let awaitingApproval = 0;
   let usageRecorded = 0;
@@ -531,6 +546,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     turnInterrupted,
     resultsReturned,
     resultsEnqueued,
+    resultRedeliveries,
+    resultReturnsAbandoned,
     runningPending,
     awaitingApproval,
     usageRecorded,
@@ -935,15 +952,83 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     });
 
   /**
-   * Return a finalized result to the delegation's SOURCE address.
+   * Outcome of returning one finalized result to its source.
+   *
+   * `deferred` is the only one that leaves the durable markers untouched, which
+   * is precisely what puts the row back in the redelivery scan's queue.
+   */
+  type ResultReturnOutcome = "returned" | "deferred" | "abandoned";
+
+  /** Stamp the durable marker; best-effort, exactly like the activity append. */
+  const markResultReturned = (delegationId: WorkjetDelegationId, now: string) =>
+    store
+      .markDelegationResultReturned(delegationId, now as WorkjetMailboxTimestamp)
+      .pipe(Effect.ignore);
+
+  const markResultReturnAbandoned = (delegationId: WorkjetDelegationId, now: string) =>
+    store
+      .markDelegationResultReturnFailed(delegationId, now as WorkjetMailboxTimestamp)
+      .pipe(Effect.ignore);
+
+  /**
+   * Enqueue a signed `result` envelope as pending outbound for a
+   * CROSS-environment source. The transport slice carries it; nothing here
+   * reaches another machine. The envelope id is derived from the delegation id,
+   * so the outbox deduplicates a repeated attempt into the same row — which is
+   * what makes the redelivery scan below safe to retry blindly.
+   */
+  const enqueueCrossEnvironmentResult = (input: {
+    readonly delegation: WorkjetDelegation;
+    readonly result: WorkjetDelegationResult;
+    readonly environmentId: EnvironmentId;
+    readonly now: string;
+  }): Effect.Effect<ResultReturnOutcome> =>
+    Effect.gen(function* () {
+      const source = input.delegation.source;
+      const createdAt = input.now as WorkjetMailboxTimestamp;
+      const expiresAt = addSeconds(
+        input.now,
+        WORKJET_DELEGATION_RESULT_TTL_SECONDS,
+      ) as WorkjetMailboxTimestamp;
+      const unsigned: WorkjetUnsignedRoutingEnvelope = {
+        schemaVersion: 1,
+        envelopeId: input.result.envelopeId,
+        kind: "result",
+        sourceWorkspaceId: identity.workspaceId,
+        sourceEnvironmentId: input.environmentId,
+        targetWorkspaceId: source.workspaceId,
+        targetEnvironmentId: source.environmentId,
+        createdAt,
+        expiresAt,
+      };
+      const payload = {
+        _tag: "result",
+        result: input.result,
+      } as const satisfies WorkjetMailboxPayload;
+
+      const attempted = yield* Effect.result(
+        identity
+          .signRoutingEnvelope(unsigned)
+          .pipe(Effect.flatMap((envelope) => store.enqueueOutbound(envelope, payload))),
+      );
+      if (attempted._tag === "Success") return "returned";
+      // A bounded mailbox reason is the PERMANENT face of this path: a signing
+      // rejection or a `malformed-envelope` encode failure re-derives the same
+      // bytes on every retry and fails identically. A SQL failure is the
+      // transient one, and is the whole reason the marker exists.
+      return isWorkjetMailboxError(attempted.failure) ? "abandoned" : "deferred";
+    });
+
+  /**
+   * Return a finalized result to the delegation's SOURCE address, and record
+   * durably that it was returned.
    *
    * Same environment: append a `workjet.delegation.result` activity on the
    * source thread, reusing the same best-effort append the started/refused
    * traces use. Cross environment: enqueue a signed `result` envelope as pending
-   * outbound — the transport slice carries it; nothing here reaches another
-   * machine. Counts each path; a cross-environment enqueue that fails
-   * transiently is left uncounted and retried by nothing in this slice (the
-   * result is already durable on the row for a later redelivery).
+   * outbound. Either way the migration-049 marker is stamped on success, so the
+   * redelivery scan holds exactly the returns that never landed — a transient
+   * enqueue failure is no longer a silent loss.
    */
   const deliverResult = (input: {
     readonly delegation: WorkjetDelegation;
@@ -967,43 +1052,26 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           createdAt: input.now,
         });
         resultsReturned += 1;
+        // A local return has no outbound envelope to redeliver, so the marker
+        // is what keeps the row out of the cross-environment retry scan.
+        yield* markResultReturned(delegation.delegationId, input.now);
         return;
       }
 
-      // Cross-environment: the plaintext result payload and a signed routing
-      // envelope of kind `result`, addressed FROM this (target) environment TO
-      // the source. The transport seals the payload at send time, exactly as it
-      // does for a cross-environment delegation.
-      const createdAt = input.now as WorkjetMailboxTimestamp;
-      const expiresAt = addSeconds(
-        input.now,
-        WORKJET_DELEGATION_RESULT_TTL_SECONDS,
-      ) as WorkjetMailboxTimestamp;
-      const unsigned: WorkjetUnsignedRoutingEnvelope = {
-        schemaVersion: 1,
-        envelopeId: input.result.envelopeId,
-        kind: "result",
-        sourceWorkspaceId: identity.workspaceId,
-        sourceEnvironmentId: input.environmentId,
-        targetWorkspaceId: source.workspaceId,
-        targetEnvironmentId: source.environmentId,
-        createdAt,
-        expiresAt,
-      };
-      const payload = {
-        _tag: "result",
-        result: input.result,
-      } as const satisfies WorkjetMailboxPayload;
-
-      const enqueued = yield* identity.signRoutingEnvelope(unsigned).pipe(
-        Effect.flatMap((envelope) => store.enqueueOutbound(envelope, payload)),
-        Effect.option,
-      );
-      if (Option.isSome(enqueued)) {
+      const outcome = yield* enqueueCrossEnvironmentResult(input);
+      if (outcome === "returned") {
         resultsEnqueued += 1;
-      } else {
-        yield* Effect.logWarning("Workjet delegation result enqueue deferred");
+        yield* markResultReturned(delegation.delegationId, input.now);
+        return;
       }
+      if (outcome === "abandoned") {
+        resultReturnsAbandoned += 1;
+        yield* markResultReturnAbandoned(delegation.delegationId, input.now);
+        yield* Effect.logWarning("Workjet delegation result enqueue abandoned");
+        return;
+      }
+      // Unmarked on purpose: the redelivery scan owns it from here.
+      yield* Effect.logWarning("Workjet delegation result enqueue deferred");
     });
 
   /**
@@ -1431,6 +1499,64 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         );
 
     /**
+     * Result REDELIVERY, before anything else finalizes a delegation in this
+     * cycle: a terminal delegation whose durable result was never handed to the
+     * outbox (its enqueue failed transiently on the cycle that produced it, or
+     * the process died between the finalize and the enqueue). Nothing used to
+     * re-read those rows — the result stayed on the row and the source was
+     * never told. The markers added by migration 049 make the set finite and
+     * the retry idempotent: the result envelope id is derived from the
+     * delegation id, so a duplicate enqueue collapses onto the same outbox row.
+     *
+     * Running FIRST also means a delegation finalized later in THIS cycle is
+     * never attempted twice in one pass.
+     */
+    for (const row of yield* store
+      .listDelegationsPendingResultReturn(WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
+      .pipe(
+        Effect.option,
+        Effect.map(Option.getOrElse(() => [] as ReadonlyArray<WorkjetDelegationResultReturnRow>)),
+      )) {
+      if (row._tag === "corrupt") {
+        // The stored delegation or result no longer decodes through this
+        // server's contract schema. The envelope can never be rebuilt, so the
+        // retry is abandoned rather than looped forever; the row keeps its
+        // durable result for a future version that can read it.
+        yield* Effect.logWarning("Workjet delegation result row unreadable by this server version");
+        yield* markResultReturnAbandoned(row.delegationId, now);
+        resultReturnsAbandoned += 1;
+        continue;
+      }
+      const delegation = row.record.delegation;
+      if (delegation.source.environmentId === environmentId) {
+        // A SAME-environment result was returned as a thread activity, which
+        // leaves no outbound envelope to redeliver. Rows finalized before this
+        // marker existed land here exactly once and are then stamped.
+        yield* markResultReturned(row.record.delegationId, now);
+        continue;
+      }
+      const outcome = yield* enqueueCrossEnvironmentResult({
+        delegation,
+        result: row.result,
+        environmentId,
+        now,
+      });
+      if (outcome === "returned") {
+        resultsEnqueued += 1;
+        resultRedeliveries += 1;
+        yield* markResultReturned(row.record.delegationId, now);
+        continue;
+      }
+      if (outcome === "abandoned") {
+        resultReturnsAbandoned += 1;
+        yield* markResultReturnAbandoned(row.record.delegationId, now);
+        yield* Effect.logWarning("Workjet delegation result redelivery abandoned");
+        continue;
+      }
+      yield* Effect.logWarning("Workjet delegation result redelivery deferred");
+    }
+
+    /**
      * `running` FIRST, and before any accept moves a fresh row into `running`:
      * this scan observes only delegations that were ALREADY running at cycle
      * start, so a turn dispatched later in this same cycle can never be mistaken
@@ -1576,27 +1702,50 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * `result` envelope means a completed delegation's report could not be
      * delivered, which must not reopen or re-fail the finished delegation.
      * Idempotent: a delegation already terminal is skipped.
+     *
+     * Each row is examined EXACTLY ONCE. The scan is restricted to rows without
+     * the migration-049 `reconciled_at_ms` marker and stamps every row it sees —
+     * including the ones it deliberately skips — because a dead envelope is
+     * never resurrected, so re-reading it on every ten-second cycle for the rest
+     * of the row's life buys nothing. A row pinned before the marker existed is
+     * unmarked, so it reconciles one last time (harmlessly: the check above is
+     * idempotent) and is then stamped.
      */
     for (const outbox of yield* store
-      .listOutboundByState("dead", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
+      .listUnreconciledOutboundByState("dead", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
       .pipe(
         Effect.option,
         Effect.map(Option.getOrElse(() => [] as ReadonlyArray<WorkjetOutboxRecord>)),
       )) {
-      if (outbox.payload._tag !== "delegation") continue;
+      // Stamped for every disposition below, so the row leaves the scan set
+      // whether it was reconciled, skipped as a `result` envelope, or found
+      // already terminal.
+      const markReconciled = store
+        .markOutboundReconciled(outbox.envelopeId, now as WorkjetMailboxTimestamp)
+        .pipe(Effect.ignore);
+      if (outbox.payload._tag !== "delegation") {
+        yield* markReconciled;
+        continue;
+      }
       const delegation = outbox.payload.delegation;
       const existing = yield* store
         .getDelegation(delegation.delegationId)
         .pipe(Effect.option, Effect.map(Option.flatten));
-      if (Option.isNone(existing) || existing.value.terminal) continue;
-      record(
-        yield* refuse({
-          record: existing.value,
-          reason: "delivery-dead-lettered",
-          threadId: delegation.source.threadId,
-          now,
-        }),
-      );
+      if (Option.isNone(existing) || existing.value.terminal) {
+        yield* markReconciled;
+        continue;
+      }
+      const outcome = yield* refuse({
+        record: existing.value,
+        reason: "delivery-dead-lettered",
+        threadId: delegation.source.threadId,
+        now,
+      });
+      record(outcome);
+      // A `transient` outcome means the delegation row moved underneath us, not
+      // that this dead envelope still needs reconciling: it is terminal either
+      // way, so the marker is stamped regardless.
+      yield* markReconciled;
     }
 
     cycles += 1;

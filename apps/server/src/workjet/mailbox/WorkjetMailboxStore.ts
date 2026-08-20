@@ -361,6 +361,24 @@ export type WorkjetDelegationRowResult =
   | { readonly _tag: "record"; readonly record: WorkjetDelegationRecord }
   | { readonly _tag: "corrupt"; readonly rowId: string };
 
+/**
+ * One row of the CROSS-ENVIRONMENT result-redelivery scan (migration 049): a
+ * terminal delegation that carries a persisted result whose return to the
+ * source has neither succeeded nor been abandoned.
+ *
+ * `corrupt` mirrors {@link WorkjetDelegationRowResult}: a stored delegation the
+ * current contract schema can no longer decode cannot have its result envelope
+ * rebuilt, so it is surfaced by id and the caller marks it permanently failed
+ * instead of re-reading it every cycle forever.
+ */
+export type WorkjetDelegationResultReturnRow =
+  | {
+      readonly _tag: "record";
+      readonly record: WorkjetDelegationRecord;
+      readonly result: WorkjetDelegationResult;
+    }
+  | { readonly _tag: "corrupt"; readonly delegationId: WorkjetDelegationId };
+
 /** Idempotent-insertion outcome for a delegation-graph edge. */
 export type WorkjetDelegationEdgeInsertOutcome =
   | { readonly _tag: "inserted"; readonly edgeId: string }
@@ -540,6 +558,27 @@ export interface WorkjetMailboxStoreShape {
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetOutboxRecord>, WorkjetMailboxStoreError>;
 
+  /**
+   * The same by-state scan restricted to rows the reconciler has NOT yet marked
+   * (`reconciled_at_ms IS NULL`, migration 049). A dead envelope is reconciled
+   * exactly once instead of being re-read on every ten-second cycle for as long
+   * as the row exists; a row pinned before the migration is simply unmarked, so
+   * it is reconciled one last time and then marked.
+   */
+  readonly listUnreconciledOutboundByState: (
+    state: WorkjetOutboxState,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetOutboxRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * Stamp an outbox row as reconciled. Returns `false` when the row is gone or
+   * was already marked, which makes a repeated call harmless.
+   */
+  readonly markOutboundReconciled: (
+    envelopeId: WorkjetEnvelopeId,
+    reconciledAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
+
   readonly getOutbound: (
     envelopeId: WorkjetEnvelopeId,
   ) => Effect.Effect<Option.Option<WorkjetOutboxRecord>, WorkjetMailboxStoreError>;
@@ -585,6 +624,38 @@ export interface WorkjetMailboxStoreShape {
   readonly getDelegationResult: (
     delegationId: WorkjetDelegationId,
   ) => Effect.Effect<Option.Option<WorkjetDelegationResult>, WorkjetMailboxStoreError>;
+
+  /**
+   * Terminal delegations whose persisted result was never successfully returned
+   * to the source: `result_json IS NOT NULL` with both migration-049 markers
+   * still NULL. This is the durable retry queue behind the reconciler's
+   * result-redelivery scan — without it a transient enqueue failure lost the
+   * return silently, because the result stayed on the row and nothing re-read
+   * it. Oldest first, bounded by `limit`.
+   */
+  readonly listDelegationsPendingResultReturn: (
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetDelegationResultReturnRow>, WorkjetMailboxStoreError>;
+
+  /**
+   * Stamp a delegation's result as RETURNED (enqueued outbound, or handed to the
+   * local source thread). Returns `false` when the row is gone or was already
+   * stamped, so the scan can never enqueue the same result twice.
+   */
+  readonly markDelegationResultReturned: (
+    delegationId: WorkjetDelegationId,
+    returnedAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
+
+  /**
+   * Stamp a delegation's result return as PERMANENTLY failed — an encode or
+   * signing rejection, or a delegation body this server can no longer decode.
+   * The durable result stays on the row; only the retry stops.
+   */
+  readonly markDelegationResultReturnFailed: (
+    delegationId: WorkjetDelegationId,
+    failedAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
 
   readonly listDelegationsByState: (
     state: WorkjetDelegationState,
@@ -999,6 +1070,45 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(rows, (row) => decodeOutbox(row, rowIdOf(row)));
     });
 
+  const listUnreconciledOutboundByState: WorkjetMailboxStoreShape["listUnreconciledOutboundByState"] =
+    (state, limit) =>
+      Effect.gen(function* () {
+        const rows = yield* sql
+          .unsafe(
+            `
+          SELECT ${OUTBOX_COLUMNS}
+          FROM workjet_mailbox_outbox
+          WHERE state = ?
+            AND reconciled_at_ms IS NULL
+          ORDER BY created_at_ms ASC, envelope_id ASC
+          LIMIT ?
+        `,
+            [state, limit],
+          )
+          .pipe(
+            Effect.mapError(
+              sqlFailure("WorkjetMailboxStore.listUnreconciledOutboundByState:select"),
+            ),
+          );
+        return yield* Effect.forEach(rows, (row) => decodeOutbox(row, rowIdOf(row)));
+      });
+
+  const markOutboundReconciled: WorkjetMailboxStoreShape["markOutboundReconciled"] = (
+    envelopeId,
+    reconciledAt,
+  ) =>
+    Effect.gen(function* () {
+      const reconciledAtMillis = yield* toEpochMillis(reconciledAt);
+      const updated = yield* sql<{ readonly envelopeId: string }>`
+        UPDATE workjet_mailbox_outbox
+        SET reconciled_at_ms = ${reconciledAtMillis}
+        WHERE envelope_id = ${envelopeId}
+          AND reconciled_at_ms IS NULL
+        RETURNING envelope_id AS "envelopeId"
+      `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.markOutboundReconciled:update")));
+      return updated.length > 0;
+    });
+
   const getOutbound: WorkjetMailboxStoreShape["getOutbound"] = (envelopeId) =>
     Effect.gen(function* () {
       const rows = yield* sql
@@ -1397,6 +1507,104 @@ export const make = Effect.gen(function* () {
       );
       return Option.some(result);
     });
+
+  const listDelegationsPendingResultReturn: WorkjetMailboxStoreShape["listDelegationsPendingResultReturn"] =
+    (limit) =>
+      Effect.gen(function* () {
+        const rows = yield* sql
+          .unsafe(
+            `
+          SELECT ${DELEGATION_COLUMNS}, result_json AS "resultJson"
+          FROM workjet_delegations
+          WHERE terminal = 1
+            AND result_json IS NOT NULL
+            AND result_enqueued_at_ms IS NULL
+            AND result_enqueue_failed_at_ms IS NULL
+          ORDER BY state_changed_at_ms ASC, delegation_id ASC
+          LIMIT ?
+        `,
+            [limit],
+          )
+          .pipe(
+            Effect.mapError(
+              sqlFailure("WorkjetMailboxStore.listDelegationsPendingResultReturn:select"),
+            ),
+          );
+        return yield* Effect.forEach(rows, (row) => {
+          const rowId = rowIdOf(row);
+          const resultJson = (row as { readonly resultJson?: unknown }).resultJson;
+          // Both the delegation body and the stored result must decode: the
+          // retry rebuilds a signed envelope from the former and carries the
+          // latter. Either failing is the same permanent, per-row fault the
+          // caller marks — never a reason to abort the batch.
+          return Effect.all({
+            record: decodeDelegation(row, rowId),
+            result:
+              typeof resultJson === "string"
+                ? decodeDelegationResultJson(resultJson).pipe(
+                    Effect.mapError(
+                      () =>
+                        new WorkjetMailboxStoreCorruptRowError({
+                          table: "workjet_delegations",
+                          rowId,
+                          issue: "result_json",
+                        }),
+                    ),
+                  )
+                : Effect.fail(
+                    new WorkjetMailboxStoreCorruptRowError({
+                      table: "workjet_delegations",
+                      rowId,
+                      issue: "result_json",
+                    }),
+                  ),
+          }).pipe(
+            Effect.map(({ record, result }) => ({ _tag: "record", record, result }) as const),
+            Effect.catch(() =>
+              Effect.succeed({
+                _tag: "corrupt",
+                delegationId: WorkjetDelegationId.make(rowId),
+              } as const),
+            ),
+          );
+        });
+      });
+
+  const markDelegationResultReturned: WorkjetMailboxStoreShape["markDelegationResultReturned"] = (
+    delegationId,
+    returnedAt,
+  ) =>
+    Effect.gen(function* () {
+      const returnedAtMillis = yield* toEpochMillis(returnedAt);
+      const updated = yield* sql<{ readonly delegationId: string }>`
+        UPDATE workjet_delegations
+        SET result_enqueued_at_ms = ${returnedAtMillis}
+        WHERE delegation_id = ${delegationId}
+          AND result_enqueued_at_ms IS NULL
+        RETURNING delegation_id AS "delegationId"
+      `.pipe(
+        Effect.mapError(sqlFailure("WorkjetMailboxStore.markDelegationResultReturned:update")),
+      );
+      return updated.length > 0;
+    });
+
+  const markDelegationResultReturnFailed: WorkjetMailboxStoreShape["markDelegationResultReturnFailed"] =
+    (delegationId, failedAt) =>
+      Effect.gen(function* () {
+        const failedAtMillis = yield* toEpochMillis(failedAt);
+        const updated = yield* sql<{ readonly delegationId: string }>`
+        UPDATE workjet_delegations
+        SET result_enqueue_failed_at_ms = ${failedAtMillis}
+        WHERE delegation_id = ${delegationId}
+          AND result_enqueue_failed_at_ms IS NULL
+        RETURNING delegation_id AS "delegationId"
+      `.pipe(
+          Effect.mapError(
+            sqlFailure("WorkjetMailboxStore.markDelegationResultReturnFailed:update"),
+          ),
+        );
+        return updated.length > 0;
+      });
 
   const listDelegationsByState: WorkjetMailboxStoreShape["listDelegationsByState"] = (
     state,
@@ -1931,6 +2139,8 @@ export const make = Effect.gen(function* () {
     getInbound,
     listPendingOutbound,
     listOutboundByState,
+    listUnreconciledOutboundByState,
+    markOutboundReconciled,
     getOutbound,
     markDelivered,
     recordAttempt,
@@ -1939,6 +2149,9 @@ export const make = Effect.gen(function* () {
     getDelegation,
     finalizeDelegationResult,
     getDelegationResult,
+    listDelegationsPendingResultReturn,
+    markDelegationResultReturned,
+    markDelegationResultReturnFailed,
     listDelegationsByState,
     listDelegationRowsByState,
     reassignDelegation,

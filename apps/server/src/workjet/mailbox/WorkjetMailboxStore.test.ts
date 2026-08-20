@@ -580,6 +580,85 @@ it.effect("finalizes a running delegation with its result and is idempotent", ()
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("queues an unreturned delegation result and stamps it exactly once", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const finalize = Effect.fn("test.finalize")(function* (suffix: string) {
+      const id = delegationId(suffix);
+      yield* store.upsertDelegation(
+        delegation({
+          id,
+          envelope: envelopeId(`${suffix}0`.slice(0, 8)),
+          state: "queued",
+          at: T0,
+          budgetExpiresAt: FAR_FUTURE,
+        }),
+      );
+      yield* store.transitionDelegationState(id, "queued", "delivered", T0);
+      yield* store.transitionDelegationState(id, "delivered", "accepted", T0);
+      yield* store.transitionDelegationState(id, "accepted", "running", T0);
+      yield* store.finalizeDelegationResult({
+        delegationId: id,
+        to: "completed",
+        result: delegationResult({ id, envelope: envelopeId("res-ret0"), outcome: "completed" }),
+        changedAt: T1,
+      });
+      return id;
+    });
+
+    // A delegation that never finalized carries no result, so it is not a
+    // pending RETURN — only finalized rows with a stored result qualify.
+    const unfinished = delegationId("ret-open");
+    yield* store.upsertDelegation(
+      delegation({
+        id: unfinished,
+        envelope: envelopeId("ret-open"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    const returned = yield* finalize("ret-done");
+    const abandoned = yield* finalize("ret-lost");
+
+    const pending = yield* store.listDelegationsPendingResultReturn(10);
+    assert.deepEqual(
+      pending.map((row) => (row._tag === "record" ? row.record.delegationId : row.delegationId)),
+      [returned, abandoned],
+    );
+
+    // Both markers remove a row from the queue, and each stamps exactly once.
+    assert.isTrue(yield* store.markDelegationResultReturned(returned, T2));
+    assert.isFalse(yield* store.markDelegationResultReturned(returned, T2));
+    assert.isTrue(yield* store.markDelegationResultReturnFailed(abandoned, T2));
+    assert.isFalse(yield* store.markDelegationResultReturnFailed(abandoned, T2));
+
+    assert.deepEqual([...(yield* store.listDelegationsPendingResultReturn(10))], []);
+    // The durable result itself is untouched by either marker.
+    assert.isTrue(Option.isSome(yield* store.getDelegationResult(abandoned)));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("drops a reconciled outbox row from the unreconciled scan only", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = envelopeId("recon001");
+    yield* store.enqueueOutbound(
+      routingEnvelope({ id, createdAt: T0, expiresAt: FAR_FUTURE }),
+      messagePayload(id, T0, FAR_FUTURE),
+    );
+
+    // A pending row is visible to both scans until it is marked.
+    assert.equal((yield* store.listUnreconciledOutboundByState("pending", 10)).length, 1);
+    assert.isTrue(yield* store.markOutboundReconciled(id, T1));
+    assert.isFalse(yield* store.markOutboundReconciled(id, T2));
+
+    assert.equal((yield* store.listUnreconciledOutboundByState("pending", 10)).length, 0);
+    // The row itself is untouched: only the reconciler's scan set shrinks.
+    assert.equal((yield* store.listOutboundByState("pending", 10)).length, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("refuses to finalize a delegation that is not running", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

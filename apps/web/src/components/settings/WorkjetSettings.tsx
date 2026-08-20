@@ -50,6 +50,7 @@ import {
   WorkjetComputerEditor,
 } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
+import { WorkjetGatewayModelRoutes } from "./WorkjetGatewayModelRoutes";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
@@ -935,6 +936,7 @@ export function WorkjetSettingsView({
               }
             />
           ))}
+          <WorkjetGatewayModelRoutes catalog={gateway.catalog ?? null} />
           {addingRoute || editingRoute ? (
             <div className="px-3 pt-2 sm:px-4">
               <WorkjetLlmRouteEditor

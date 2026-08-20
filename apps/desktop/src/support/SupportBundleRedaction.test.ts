@@ -65,7 +65,57 @@ const SECRET_CANARIES = [
     raw: "state 7Qk2Lm4Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwErTyUi9zQx4Lm2",
     forbidden: "7Qk2Lm4Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwErTyUi9zQx4Lm2",
   },
+  /**
+   * The four below close a gap this table itself had: the plan's invariant
+   * names "provider, pairing, capability, sudo, or SSH secrets", but only the
+   * first two had a canary, and the other three all leaked in full.
+   *
+   * The SSH cases are the interesting ones. An OpenSSH private-key body is
+   * mostly letters and `A` padding, so its DIGIT DENSITY sits below the
+   * generic entropy threshold — the heuristic that catches an opaque blob is
+   * anti-correlated with real key material and waved these straight through.
+   * They are caught by their fixed base64 magic instead, not by entropy.
+   */
+  {
+    name: "ssh private key block",
+    raw:
+      "-----BEGIN OPENSSH PRIVATE KEY-----\n" +
+      "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n" +
+      "-----END OPENSSH PRIVATE KEY-----",
+    forbidden: "b3BlbnNzaC1rZXktdjE",
+  },
+  {
+    name: "ssh private key body with no PEM markers",
+    raw: "identity b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+    forbidden: "b3BlbnNzaC1rZXktdjE",
+  },
+  {
+    name: "sudo password answered at a prompt",
+    raw: "[sudo] password for alice: Tr0ub4dor3xKlausW",
+    forbidden: "Tr0ub4dor3xKlausW",
+  },
+  {
+    name: "capability grant token in a compound key",
+    raw: "capabilityToken=cap_9zQx4Lm2Rt8Wv6Yb1Nc3Kd5",
+    forbidden: "cap_9zQx4Lm2Rt8Wv6Yb1Nc3Kd5",
+  },
 ] as const;
+
+/**
+ * The plan's invariant enumerates the secret KINDS that must never reach a
+ * bundle. Set equality against the canary table's own coverage labels makes a
+ * newly named kind fail here rather than silently shipping unguarded — the
+ * failure mode this table just had for sudo, SSH, and capability secrets.
+ */
+const DECLARED_SECRET_KINDS = ["provider", "pairing", "capability", "sudo", "ssh"] as const;
+
+const CANARY_KIND_COVERAGE: Readonly<Record<(typeof DECLARED_SECRET_KINDS)[number], string>> = {
+  provider: "provider api key",
+  pairing: "pairing password assignment",
+  capability: "capability grant token in a compound key",
+  sudo: "sudo password answered at a prompt",
+  ssh: "ssh private key block",
+};
 
 /**
  * A prompt has no recognizable shape, so the gate refuses prose by length
@@ -90,6 +140,22 @@ describe("SupportBundleRedaction gate", () => {
       );
     });
   }
+
+  it("carries a canary for every secret kind the plan's invariant names", () => {
+    const canaryNames = new Set(SECRET_CANARIES.map((canary) => canary.name));
+    for (const kind of DECLARED_SECRET_KINDS) {
+      const name = CANARY_KIND_COVERAGE[kind];
+      assert.isTrue(
+        canaryNames.has(name),
+        `secret kind "${kind}" claims coverage by a canary named "${name}", which no longer exists`,
+      );
+    }
+    assert.deepEqual(
+      Object.keys(CANARY_KIND_COVERAGE).sort(),
+      [...DECLARED_SECRET_KINDS].sort(),
+      "every declared secret kind must name the canary that covers it",
+    );
+  });
 
   it("holds its post-condition on every canary output", () => {
     for (const canary of SECRET_CANARIES) {

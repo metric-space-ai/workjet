@@ -122,9 +122,32 @@ const KNOWN_CREDENTIAL = new RegExp(
     "AKIA[0-9A-Z]{12,}",
     "AIza[0-9A-Za-z_-]{12,}",
     "eyJ[A-Za-z0-9_-]{8,}(?:\\.[A-Za-z0-9_-]+){1,2}",
+    // Private-key BODIES, by their fixed base64 magic. The generic entropy run
+    // cannot see these: an OpenSSH key body is mostly letters and `A` padding,
+    // so its digit density sits far BELOW the threshold — the heuristic is
+    // anti-correlated with exactly this shape. `b3BlbnNzaC1rZXktdjE` is
+    // base64("openssh-key-v1"); `MII` opens every base64 DER key and cert.
+    "b3BlbnNzaC1rZXktdjE[A-Za-z0-9+/=]*",
+    "MII[A-Za-z0-9+/=]{16,}",
   ].join("|"),
   "gu",
 );
+
+/**
+ * A PEM block, collapsed onto one line by the whitespace normalizer before the
+ * substitutions run. Matched whole — including a TRUNCATED block whose `END`
+ * marker never arrived, which is the usual shape in a log tail.
+ */
+const PEM_PRIVATE_KEY =
+  /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/gu;
+
+/**
+ * `[sudo] password for alice: hunter2` and bare `Password: hunter2`. The
+ * assignment rule below cannot see these: the keyword is separated from the
+ * `:` by " for <user>", and a typed password is usually far too short to reach
+ * the generic entropy threshold. Everything after the colon goes.
+ */
+const PASSWORD_PROMPT = /(?:\[sudo\]\s*)?\b(?:password|passphrase)\b(?:\s+for\s+\S+)?\s*:\s*\S+/giu;
 
 /**
  * Words whose assigned value is a credential, matched against `word = value`,
@@ -160,8 +183,16 @@ const SECRET_KEY_WORDS = [
   "client_secret",
 ];
 
+/**
+ * The keyword may be the TAIL of a compound identifier: `capabilityToken`,
+ * `sudoPassword`, `sshPassphrase`, `providerApiKey`. Without the prefix the
+ * word boundary falls inside the identifier (`…yToken` has no `\b` before
+ * `Token`), so every camel-cased secret name slipped through while the bare
+ * word was caught — which is why the list previously had to spell out
+ * `pairingtoken` by hand.
+ */
 const SECRET_ASSIGNMENT = new RegExp(
-  `\\b(?:${SECRET_KEY_WORDS.join("|")})\\b["']?\\s*[:=]\\s*["']?[^\\s"',;)\\]}]+`,
+  `\\b[A-Za-z0-9_]*(?:${SECRET_KEY_WORDS.join("|")})\\b["']?\\s*[:=]\\s*["']?[^\\s"',;)\\]}]+`,
   "giu",
 );
 
@@ -277,6 +308,10 @@ export function redactSupportText(
     working = working.split(home).join(SUPPORT_BUNDLE_PLACEHOLDERS.path);
   }
 
+  // Before the assignment rule: a PEM block's own body must not be picked
+  // apart by the narrower rules first.
+  working = working.replace(PEM_PRIVATE_KEY, SUPPORT_BUNDLE_PLACEHOLDERS.secret);
+  working = working.replace(PASSWORD_PROMPT, SUPPORT_BUNDLE_PLACEHOLDERS.secret);
   working = working.replace(AUTHORIZATION_HEADER, SUPPORT_BUNDLE_PLACEHOLDERS.authorization);
   working = working.replace(SECRET_ASSIGNMENT, (match) => {
     const separatorIndex = match.search(/[:=]/u);

@@ -1,0 +1,6 @@
+{
+  "schema": "workjet.provider-gateway-host.pin.v1",
+  "component": "workjet-provider-gateway-host",
+  "status": "unreleased",
+  "unreleasedReason": "No provider-gateway-host-v* release has been published yet. Tag one with .github/workflows/provider-gateway-host-release.yml, then regenerate this file with 'node scripts/provider-gateway-host-artifacts.ts pin'. Until then the desktop uses the development local-build path and packaged builds refuse to start a pinned host."
+}

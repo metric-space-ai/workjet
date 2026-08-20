@@ -31,3 +31,12 @@ zeroize = "1"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Release-artifact packaging only. `native/resource-monitor` is the precedent;
+# `panic = "abort"` is deliberately NOT adopted here because the host is a
+# long-lived multi-task tokio daemon whose per-task unwinding is load-bearing
+# behavior, and this profile must not change how the gateway behaves.
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true

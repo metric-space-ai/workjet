@@ -328,6 +328,8 @@ const stoppedProviderGatewayCatalog = {
   pools: [],
   routes: [],
   models: [],
+  routingStrategy: "round-robin",
+  providerPools: [],
 } as const;
 const providerGatewayTestLayer = Layer.succeed(
   ProviderGateway.ProviderGatewayService,
@@ -344,6 +346,11 @@ const providerGatewayTestLayer = Layer.succeed(
     oauthCancel: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     addApiKeyAccount: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    health: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    discoverModels: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    updateRouting: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
   }),
 );

@@ -464,6 +464,28 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
   Layer.provide(VcsProcess.layer),
 );
 
+/**
+ * The delegation reconciler, as ONE layer reference.
+ *
+ * It is both a background loop and the owner of the delegation REASSIGNMENT
+ * write, so the WebSocket route layer needs the very same service instance the
+ * loop runs on. Effect memoizes a layer by REFERENCE within one build, so this
+ * constant — not a second `WorkjetDelegationExecutor.layer.pipe(…)` expression —
+ * is what both consumers below are given, and exactly one executor (and one
+ * reconciler fiber) exists in the server.
+ */
+const WorkjetDelegationExecutorLive = WorkjetDelegationExecutor.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      WorkjetMailboxStoreLive,
+      WorkjetSnapshotStoreLive,
+      // The executor signs the `result` envelope it returns to a
+      // cross-environment source with this environment's key.
+      WorkjetMeshIdentity.layer,
+    ),
+  ),
+);
+
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
@@ -490,6 +512,9 @@ export const makeRoutesLayer = Layer.mergeAll(
       // The handler substitutes this server's own mesh workspace id whenever a
       // client omits the target one, which it cannot know.
       Layer.provide(WorkjetMeshIdentity.layer),
+      // `workjet_mailbox.reassign_delegation` calls the reconciler's own
+      // reassignment port rather than reimplementing its guard.
+      Layer.provide(WorkjetDelegationExecutorLive),
     ),
   ),
   McpHttpServer.layer.pipe(
@@ -533,17 +558,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // resumes whatever a previous process left behind. It sits beside the
   // transport for the same reason — it is a background loop, not a
   // request-scoped dependency.
-  WorkjetDelegationExecutor.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        WorkjetMailboxStoreLive,
-        WorkjetSnapshotStoreLive,
-        // The executor signs the `result` envelope it returns to a
-        // cross-environment source with this environment's key.
-        WorkjetMeshIdentity.layer,
-      ),
-    ),
-  ),
+  WorkjetDelegationExecutorLive,
 ).pipe(
   // One shared, server-lifetime redacted mailbox audit emitter. It is provided
   // ONCE here so the delivery, transport, and executor services and the

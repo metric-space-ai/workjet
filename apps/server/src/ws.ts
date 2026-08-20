@@ -56,7 +56,6 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
-  type WorkjetMailboxTimestamp,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
   WsRpcGroup,
@@ -76,6 +75,7 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
 import * as WorkjetMailboxRpc from "./workjet/mailbox/WorkjetMailboxRpc.ts";
@@ -367,6 +367,7 @@ const makeWsRpcLayer = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   workjetMailboxIdentity: WorkjetMeshIdentity.WorkjetMeshIdentity["Service"],
   workjetMailboxStore: WorkjetMailboxStore.WorkjetMailboxStore["Service"],
+  workjetDelegationExecutor: WorkjetDelegationExecutor.WorkjetDelegationExecutor["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -446,23 +447,13 @@ const makeWsRpcLayer = (
         query: projectionSnapshotQuery,
         workspaceId: workjetMailboxIdentity.workspaceId,
         environmentId: yield* serverEnvironment.getEnvironmentId,
-        // The reconciler's reassignment write, in the executor's own shape. The
-        // executor SERVICE is a background loop the WebSocket route layer does
-        // not depend on, so the port is satisfied here by the one store call
-        // `WorkjetDelegationExecutor.reassign` makes; the store keeps the
-        // `delivered`/`needs-input` invariant either way, and the reconciler
-        // picks the moved delegation up on its next cycle.
-        reassign: ({ delegationId, newTarget }) =>
-          DateTime.now.pipe(
-            Effect.map(DateTime.formatIso),
-            Effect.flatMap((now) =>
-              workjetMailboxStore.reassignDelegation(
-                delegationId,
-                newTarget,
-                now as WorkjetMailboxTimestamp,
-              ),
-            ),
-          ),
+        // The reconciler's OWN reassignment port. The executor is a
+        // server-lifetime service provided to this route layer (see
+        // `makeRoutesLayer`), so the WebSocket surface and the reconciler share
+        // one implementation of the guard — the foreign-environment refusal
+        // lives in `WorkjetDelegationExecutor.reassign`, not duplicated here —
+        // and the reconciler picks the moved delegation up on its next cycle.
+        reassign: workjetDelegationExecutor.reassign,
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -2475,6 +2466,13 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // directly. It is the same server-lifetime store the delivery service
     // writes through, resolved here once rather than per connection.
     const workjetMailboxStore = yield* WorkjetMailboxStore.WorkjetMailboxStore;
+    // The delegation reconciler. It is a background loop, but it also OWNS the
+    // reassignment write (guard included), so the client-facing RPC calls the
+    // same implementation instead of re-deriving it from the store. Resolved
+    // here once, exactly like the mailbox services above: `makeRoutesLayer`
+    // provides the SAME layer reference to this route layer and to the merged
+    // background loop, so Effect's layer memoization yields ONE executor.
+    const workjetDelegationExecutor = yield* WorkjetDelegationExecutor.WorkjetDelegationExecutor;
     const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -2503,6 +2501,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               previewAutomationBroker,
               workjetMeshIdentity,
               workjetMailboxStore,
+              workjetDelegationExecutor,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),

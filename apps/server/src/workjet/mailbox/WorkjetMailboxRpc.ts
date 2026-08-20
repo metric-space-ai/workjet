@@ -71,9 +71,9 @@ export interface WorkjetMailboxRpcDependencies {
   /**
    * The delegation reconciler's reassignment port, in the executor's own shape
    * ({@link WorkjetDelegationExecutorShape.reassign}). It is injected rather
-   * than resolved here because the reconciler is a background service that the
-   * WebSocket route layer does not (yet) depend on; the caller supplies either
-   * the live executor or the same store write it performs.
+   * than resolved here so this module stays a pure handler factory; every
+   * caller supplies the LIVE executor, which owns the foreign-environment guard
+   * and the store write — the reassignment is never re-derived per entrypoint.
    */
   readonly reassign: WorkjetDelegationExecutorShape["reassign"];
 }

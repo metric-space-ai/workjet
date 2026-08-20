@@ -3408,9 +3408,12 @@ was reverted. Audited 2026-08-20.
       unchanged (26 tests), so the extraction changed no redaction behaviour.
       SCOPE, recorded so it is not mistaken for coverage: the tracked-file gate
       does not scan `.repos/` (12,960 vendored third-party files that CI already
-      excludes from the checkout) and allows planted fixtures in exactly three
-      enumerated desktop support tests, each with a reason; a stale entry is an
-      error. `password-prompt` cannot scan a source tree in either direction — a
+      excludes from the checkout) and allows planted fixtures in exactly five
+      enumerated test files, each with a reason; a stale entry is an error. No
+      production source is allow-listed: the gate's first run against its own
+      branch reported an example key in a `secretShapes.ts` doc comment, which
+      was fixed by rewriting the comment rather than by excusing the file that
+      defines the rules. `password-prompt` cannot scan a source tree in either direction — a
       real typed password is eight low-entropy characters, indistinguishable
       from `password: Option<String>`.
       FINDING, not a violation of this line: the web app does persist two

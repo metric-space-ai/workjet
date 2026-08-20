@@ -67,10 +67,15 @@ export const SCAN_SCOPE_EXCLUSIONS: ReadonlyArray<{
  *
  * Enumerated rather than wildcarded on purpose. `**\/*.test.ts` would be one
  * line and would also excuse a real key pasted into any test in the repository;
- * these three files are the ones that plant fake credentials BY DESIGN, to
- * prove the redaction gate removes them. An entry that stops matching anything
- * is an error, so the list cannot rot into a set of holes nobody remembers
- * opening.
+ * these five files are the ones that plant fake credentials BY DESIGN, to prove
+ * a gate removes or reports them. An entry that stops matching anything is an
+ * error, so the list cannot rot into a set of holes nobody remembers opening.
+ *
+ * Note what is NOT here: no production source file. When this gate first ran
+ * against its own branch it reported `packages/shared/src/secretShapes.ts`,
+ * because a doc comment there spelled out an example key. That was fixed by
+ * rewriting the comment, not by adding a sixth entry — excusing the file that
+ * defines the rules would be the first hole.
  */
 export const TRACKED_SECRET_ALLOWLIST: ReadonlyArray<{
   readonly path: string;
@@ -94,6 +99,18 @@ export const TRACKED_SECRET_ALLOWLIST: ReadonlyArray<{
     shapes: ["known-credential"],
     reason:
       "Plants a fake `sk-ant-…` provider key in crash-report metadata and asserts it never reaches the uploaded extra fields.",
+  },
+  {
+    path: "scripts/check-tracked-secrets.test.ts",
+    shapes: ["known-credential", "pem-private-key"],
+    reason:
+      "This gate's own mutation proofs. A fake provider key and a fake OpenSSH block are what the tests feed to `scanTrackedFileText` to show the gate bites; a gate whose proof of biting had to be written around the gate would be proving nothing.",
+  },
+  {
+    path: "apps/web/src/browserStorageSecretCanary.test.ts",
+    shapes: ["known-credential"],
+    reason:
+      "The browser-storage canary's declared relay access token (a fake JWT) and the fake `sk-ant-…` its positive control drives through the real persistence path. Both must be literal: the canary asserts each declared value appears exactly once in the storage dump, which a computed value could not express.",
   },
 ];
 

@@ -173,10 +173,16 @@ export const AUTHORIZATION_HEADER =
 
 /**
  * The separators the prefixed shapes are built around. Stripped before the
- * entropy question is asked so `sk-ant-api03-9zQx4Lm2Rt8Wv6Yb1Nc3Kd5` is
- * measured as the one 33-character credential body it is, rather than as four
- * short fragments none of which reaches {@link ENTROPY_RUN_LENGTH}. Line
- * breaks count as separators too: a PEM body arrives wrapped at 64 columns.
+ * entropy question is asked, so a provider key of the form
+ * `sk` + `-ant-api03-` + a 21-character body is measured as the one
+ * 33-character credential it is, rather than as four short fragments none of
+ * which reaches {@link ENTROPY_RUN_LENGTH}. Line breaks count as separators
+ * too: a PEM body arrives wrapped at 64 columns.
+ *
+ * The example above is spelled out in pieces on purpose. This module is
+ * scanned by the gate it feeds (`scripts/check-tracked-secrets.ts`), and a
+ * literal key in a comment here would have to be excused by an allow-list
+ * entry — a hole in the one file that defines what a hole is.
  */
 const CREDENTIAL_BODY_SEPARATOR = /[-_.\s]+/gu;
 

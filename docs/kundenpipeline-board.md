@@ -14,6 +14,12 @@
   verify-chain.sh, verify-ui.mjs, README mit allen Umgebungsfallen).
   Der Guest-Key wird NICHT gespeichert, sondern bei Bedarf aus
   fleet_instances entschlüsselt.
+- ABSCHLUSSBEWEIS auf dem voll aktualisierten Guest, gefahren mit den
+  versionierten Skripten (tools/decision-hub/verify-chain.sh):
+  vorgang=kpl-v-dh-verify-1787247847-…, decision=kpl-e-zuord-…,
+  thread=thread_kundenpipeline_entscheidung_…,
+  assignee=michael.welsch@metric-space.ai, status=open → PASS.
+  Testdaten wurden vom Skript selbst wieder entfernt.
 
 ## Paket J (2026-08-20 mittags) — Kette bewiesen, Mailbox-Setup gefixt
 

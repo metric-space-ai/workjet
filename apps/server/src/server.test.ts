@@ -114,6 +114,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import { WorkjetGatewayOperationError } from "@t3tools/contracts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -335,6 +336,15 @@ const providerGatewayTestLayer = Layer.succeed(
     catalog: () => Effect.succeed(stoppedProviderGatewayCatalog),
     start: () => Effect.succeed(stoppedProviderGatewayStatus),
     stop: () => Effect.succeed(stoppedProviderGatewayStatus),
+    // The login and API-key surfaces are not exercised by these boot tests;
+    // they refuse with the gateway's own bounded reason so a test that starts
+    // reaching for them fails loudly instead of silently succeeding.
+    oauthStart: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    oauthPoll: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    oauthCancel: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    addApiKeyAccount: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
   }),
 );
 

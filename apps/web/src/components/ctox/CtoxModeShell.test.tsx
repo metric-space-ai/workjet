@@ -179,7 +179,7 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("httpDataProxy");
   });
 
-  it("renders SSH instances as reachable-but-not-launchable with an honest hint", () => {
+  it("renders reachable SSH instances as launchable and unreachable ones as inert", () => {
     const reachable = instance({
       id: "ssh:AAAAAAAAAAAAAAAAAAAAAA",
       source: "ssh_managed",
@@ -208,17 +208,17 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    // Reachability is reported honestly; launchability is not claimed at all.
-    expect(canActivateCtoxInstance(reachable)).toBe(false);
+    // A reachable SSH daemon is launchable (invite over SSH + forwarded
+    // signaling); an unreachable one is inert with an honest hint.
+    expect(canActivateCtoxInstance(reachable)).toBe(true);
     expect(canActivateCtoxInstance(unreachable)).toBe(false);
     expect(isRemovableCtoxInstance(reachable)).toBe(true);
     expect(markup).toContain('id="ctox-ssh-heading"');
     expect(markup).toContain("SSH CTOX instances");
     expect(markup).toContain("SSH managed\nAvailable · WebRTC unavailable");
     expect(markup).toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
-    expect(markup).toContain("This host is not reachable.");
-    // Both rows are inert, and both offer removal.
-    expect(markup.match(/cursor-not-allowed/gu)?.length).toBe(2);
+    // Only the unreachable row is inert; both offer removal.
+    expect(markup.match(/cursor-not-allowed/gu)?.length).toBe(1);
     expect(markup).toContain("Remove Build Box");
     expect(markup).toContain("Remove Quiet Box");
   });
@@ -272,7 +272,6 @@ describe("CTOX instance presentation", () => {
     expect(sshForm).toContain("SSH host or alias");
     expect(sshForm).toContain("CTOX state root on that host (optional)");
     expect(sshForm).toContain("No credential is stored here.");
-    expect(sshForm).toContain("CTOX_SSH_LAUNCH_PENDING_HINT");
     expect(sshForm).not.toContain('type="password"');
     expect(sshForm).not.toMatch(/secret|token|credential.{0,20}=/iu);
   });
@@ -446,7 +445,9 @@ describe("CTOX instance presentation", () => {
     expect(canActivateCtoxInstance(local)).toBe(true);
     expect(canActivateCtoxInstance(stoppedLocal)).toBe(false);
     expect(canActivateCtoxInstance({ ...local, status: "error" })).toBe(false);
-    expect(canActivateCtoxInstance(ssh)).toBe(false);
+    // A reachable SSH daemon launches like a local one; offline stays inert.
+    expect(canActivateCtoxInstance(ssh)).toBe(true);
+    expect(canActivateCtoxInstance({ ...ssh, status: "offline" })).toBe(false);
 
     const markup = renderToStaticMarkup(
       <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "ready", instances: [] }}>

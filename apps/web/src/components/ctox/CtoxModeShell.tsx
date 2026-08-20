@@ -78,8 +78,7 @@ export const CTOX_SSH_REMOVE_ERROR_MESSAGE = "SSH instance could not be removed.
  * remote daemon's signaling endpoints live on the remote loopback interface,
  * which the desktop cannot reach without an SSH port forward.
  */
-export const CTOX_SSH_LAUNCH_PENDING_HINT =
-  "SSH tunnel support pending: this instance cannot be launched yet.";
+export const CTOX_SSH_LAUNCH_PENDING_HINT = "This SSH host is not reachable right now.";
 
 const SOURCE_GROUP_DEFINITIONS: readonly {
   readonly key: CtoxSourceGroupKey;
@@ -163,9 +162,10 @@ export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean 
   // A local daemon is launchable exactly while it is answering: the main
   // process mints its pairing material from that daemon on every activation.
   if (instance.source === "local_daemon") return instance.status === "available";
-  // An SSH-managed instance is never launchable yet: see
-  // CTOX_SSH_LAUNCH_PENDING_HINT. Its row still reports reachability.
-  if (instance.source === "ssh_managed") return false;
+  // An SSH-managed instance is launchable while its remote daemon answers:
+  // the main process mints the invite over SSH and forwards the remote
+  // signaling ports to local loopback (CtoxSshManagedLaunch).
+  if (instance.source === "ssh_managed") return instance.status === "available";
   return isPairedCtoxInstance(instance) && instance.status === "paired";
 }
 
@@ -1042,9 +1042,7 @@ export function CtoxAppRailList({
 export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
   if (instance.source === "local_daemon") return "This local daemon is not running.";
   if (instance.source === "ssh_managed") {
-    return instance.status === "available"
-      ? CTOX_SSH_LAUNCH_PENDING_HINT
-      : `This host is not reachable. ${CTOX_SSH_LAUNCH_PENDING_HINT}`;
+    return instance.status === "available" ? undefined : CTOX_SSH_LAUNCH_PENDING_HINT;
   }
   return isPairedCtoxInstance(instance) ? "This pairing is not available." : undefined;
 }
@@ -1374,8 +1372,7 @@ export function PairingAddSurface({
             />
           </label>
           <p className="text-[11px] leading-snug text-sidebar-muted-foreground">
-            Uses your existing SSH configuration and keys. No credential is stored here.{" "}
-            {CTOX_SSH_LAUNCH_PENDING_HINT}
+            Uses your existing SSH configuration and keys. No credential is stored here.
           </p>
           <button
             type="submit"

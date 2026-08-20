@@ -60,6 +60,21 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("separates looking at the legacy import offer from answering it", () => {
+    // Inspecting resolves a decision and reads a file this server already owns.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetLegacyImportInspect)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    // Deciding patches `settings.workjet` and records a TERMINAL marker, so it
+    // must never be reachable with a read scope.
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetLegacyImportDecide)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetLegacyImportDecide)).toBe(
+      requiredScopeForRpcMethod(WS_METHODS.serverUpdateSettings),
+    );
+  });
+
   it("reads the mesh roster under orchestration read, never a mailbox write scope", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshRoster)).toBe(
       AuthOrchestrationReadScope,

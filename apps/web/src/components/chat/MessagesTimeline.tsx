@@ -1,10 +1,14 @@
 import {
+  type CtoxAppModuleId,
+  type CtoxManagedInstanceId,
   type EnvironmentId,
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type ThreadId,
   type TurnId,
+  type WorkjetBusinessOsObjectId,
+  type WorkjetBusinessOsObjectKind,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -194,6 +198,19 @@ interface TimelineRowSharedState {
         model: WorkjetCrossModeCardModel,
       ) => void | Promise<string | null>)
     | null;
+  /**
+   * Navigate to the Business OS counterpart of a link. Absent when the host
+   * wires no navigator, in which case the card names the counterpart in text
+   * rather than offering a button that goes nowhere.
+   */
+  onOpenBusinessOsObject:
+    | ((target: {
+        readonly instanceId: CtoxManagedInstanceId;
+        readonly moduleId: CtoxAppModuleId;
+        readonly objectKind: WorkjetBusinessOsObjectKind;
+        readonly objectId: WorkjetBusinessOsObjectId;
+      }) => void)
+    | null;
 }
 
 interface TimelineRowActivityState {
@@ -281,6 +298,12 @@ interface MessagesTimelineProps {
     action: WorkjetCrossModeAction,
     model: WorkjetCrossModeCardModel,
   ) => void | Promise<string | null>;
+  onOpenBusinessOsObject?: (target: {
+    readonly instanceId: CtoxManagedInstanceId;
+    readonly moduleId: CtoxAppModuleId;
+    readonly objectKind: WorkjetBusinessOsObjectKind;
+    readonly objectId: WorkjetBusinessOsObjectId;
+  }) => void;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -334,6 +357,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenThread,
   onWorkjetDelegationAction,
   onWorkjetCrossModeAction,
+  onOpenBusinessOsObject,
   workjetReassignThreads = EMPTY_WORKJET_REASSIGN_THREADS,
   listRef,
   timelineEntries,
@@ -602,6 +626,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onWorkjetDelegationAction: onWorkjetDelegationAction ?? null,
       workjetReassignThreads,
       onWorkjetCrossModeAction: onWorkjetCrossModeAction ?? null,
+      onOpenBusinessOsObject: onOpenBusinessOsObject ?? null,
     }),
     [
       timestampFormat,
@@ -622,6 +647,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onWorkjetDelegationAction,
       workjetReassignThreads,
       onWorkjetCrossModeAction,
+      onOpenBusinessOsObject,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2344,7 +2370,7 @@ const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
 const WorkjetCrossModeRow = memo(function WorkjetCrossModeRow(props: {
   model: NonNullable<TimelineWorkEntry["workjetCrossMode"]>;
 }) {
-  const { onWorkjetCrossModeAction } = use(TimelineRowCtx);
+  const { onWorkjetCrossModeAction, onOpenBusinessOsObject } = use(TimelineRowCtx);
   // The draft is owned here for the same reason the mailbox row owns its own:
   // the card stays a pure, controlled presentational component, and the durable
   // `workjet.crossmode.returned` activity re-renders the timeline through the
@@ -2375,7 +2401,10 @@ const WorkjetCrossModeRow = memo(function WorkjetCrossModeRow(props: {
           onCrossModeAction: dispatch,
         }
       : {};
-  return <WorkjetCrossModeLinkCard model={model} {...actionProps} />;
+  // Only offer the counterpart button when a navigator is wired; otherwise the
+  // card names the object in text rather than promising a jump it cannot make.
+  const navigationProps = onOpenBusinessOsObject !== null ? { onOpenBusinessOsObject } : {};
+  return <WorkjetCrossModeLinkCard model={model} {...actionProps} {...navigationProps} />;
 });
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {

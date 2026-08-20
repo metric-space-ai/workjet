@@ -1,5 +1,7 @@
 import {
   type ApprovalRequestId,
+  type CtoxAppModuleId,
+  type CtoxManagedInstanceId,
   DEFAULT_MODEL,
   DEFAULT_WORKJET_THREAD_CONFIG,
   defaultInstanceIdForDriver,
@@ -24,6 +26,8 @@ import {
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
+  type WorkjetBusinessOsObjectId,
+  type WorkjetBusinessOsObjectKind,
 } from "@t3tools/contracts";
 import {
   connectionStatusTitle,
@@ -274,6 +278,7 @@ import {
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
+import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import type {
   WorkjetDelegationAction,
@@ -1972,6 +1977,30 @@ function ChatViewContent(props: ChatViewProps) {
         : null;
     },
     [activeThreadEnvironmentId, activeThreadId, submitWorkjetCrossMode],
+  );
+  // "Return to Business OS": hand the counterpart to the cross-mode navigator,
+  // which tears the Code surface down before the guest mounts. This is the
+  // in-app path — an OS-delivered link still goes through the deep-link
+  // confirmation dialog first and only reaches the navigator after consent.
+  const navigateCrossMode = useCrossModeNavigator();
+  const onOpenBusinessOsObject = useCallback(
+    (target: {
+      readonly instanceId: CtoxManagedInstanceId;
+      readonly moduleId: CtoxAppModuleId;
+      readonly objectKind: WorkjetBusinessOsObjectKind;
+      readonly objectId: WorkjetBusinessOsObjectId;
+    }): void => {
+      void navigateCrossMode({
+        mode: "business-os",
+        ctoxInstanceId: target.instanceId,
+        businessOsObject: {
+          kind: target.objectKind,
+          id: target.objectId,
+          moduleId: target.moduleId,
+        },
+      });
+    },
+    [navigateCrossMode],
   );
   useEffect(() => {
     if (!activeServerThread || !activeThreadKey) return;
@@ -6807,6 +6836,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenThread={onOpenWorkjetPeerThread}
                 onWorkjetDelegationAction={onWorkjetDelegationAction}
                 onWorkjetCrossModeAction={onWorkjetCrossModeAction}
+                onOpenBusinessOsObject={onOpenBusinessOsObject}
                 workjetReassignThreads={workjetRecipientThreads}
                 key={activeThread.id}
                 isWorking={isWorking}

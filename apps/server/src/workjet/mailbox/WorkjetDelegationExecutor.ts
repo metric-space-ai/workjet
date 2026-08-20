@@ -165,6 +165,13 @@ export type WorkjetDelegationRefusalReason =
   | "target-thread-missing"
   | "target-thread-deleted"
   | "target-role-not-executable"
+  /**
+   * The target thread holds a capability its delegation's PARENT does not.
+   * Terminal, like the role refusal beside it: a thread's grants are not going
+   * to narrow while the row waits, and running it anyway would let a delegation
+   * chain acquire authority `WorkerDispatch` refuses to hand out at creation.
+   */
+  | "target-capability-escalation"
   | "engine-rejected"
   /**
    * The delegation's outbound envelope exhausted every delivery attempt and
@@ -185,6 +192,8 @@ export interface WorkjetDelegationExecutorFailures {
   readonly targetThreadMissing: number;
   readonly targetThreadDeleted: number;
   readonly targetRoleNotExecutable: number;
+  /** Delegations refused because the target outranked its parent's grants. */
+  readonly targetCapabilityEscalation: number;
   readonly engineRejected: number;
   /** Delegations failed because their outbound delivery dead-lettered. */
   readonly deliveryDeadLettered: number;
@@ -524,6 +533,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let targetThreadMissing = 0;
   let targetThreadDeleted = 0;
   let targetRoleNotExecutable = 0;
+  let targetCapabilityEscalation = 0;
   let engineRejected = 0;
   let deliveryDeadLettered = 0;
   let tokenBudgetExceeded = 0;
@@ -557,6 +567,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       targetThreadMissing,
       targetThreadDeleted,
       targetRoleNotExecutable,
+      targetCapabilityEscalation,
       engineRejected,
       deliveryDeadLettered,
       tokenBudgetExceeded,
@@ -809,8 +820,68 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     });
 
   /**
+   * The grants the delegation's PARENT holds, when this machine can know them.
+   *
+   * "Parent" is the authority the delegation descends from, and there are two
+   * shapes of it, checked in this order:
+   *
+   *  1. `delegation.parent` — a review/revise/follow-up chain. Its `owner` is
+   *     the address authoritative for that delegation, which is the parent
+   *     delegation's TARGET thread (see `buildResult`). A chain rooted on this
+   *     machine is checkable even when the envelope arrived from a peer.
+   *  2. `delegation.source` — the thread that delegated. Checkable whenever the
+   *     delegating thread lives here, i.e. every local delegation.
+   *
+   * `unknowable` is the honest third answer: a remote-rooted delegation's
+   * parent thread lives on another machine, and this server has no record of
+   * its grants. It could not verify a claim about them either — the delegation
+   * contract carries no capability field at all, so any such claim would be
+   * peer-supplied text. Refusing on ignorance would break legitimate remote
+   * delegation into every capability-bearing worker thread; the remote path's
+   * actual protection is that a peer cannot CHOOSE the target's capabilities,
+   * which are whatever the local operator already granted that thread.
+   */
+  const parentGrants = (input: {
+    readonly delegation: WorkjetDelegation;
+    readonly environmentId: EnvironmentId;
+  }): Effect.Effect<
+    | { readonly _tag: "grants"; readonly capabilityIds: ReadonlySet<string> }
+    | { readonly _tag: "unknowable" }
+    | { readonly _tag: "unreadable" }
+  > =>
+    Effect.gen(function* () {
+      const parentRef = input.delegation.parent;
+      const parentThreadId =
+        parentRef !== undefined && parentRef.owner.environmentId === input.environmentId
+          ? parentRef.owner.threadId
+          : input.delegation.source.environmentId === input.environmentId
+            ? input.delegation.source.threadId
+            : null;
+      if (parentThreadId === null) return { _tag: "unknowable" } as const;
+
+      const parentOption = yield* query.getThreadDetailById(parentThreadId).pipe(Effect.option);
+      // A projection hiccup is NOT evidence about grants. Retry rather than
+      // decide, exactly as the target read above does.
+      if (Option.isNone(parentOption)) return { _tag: "unreadable" } as const;
+
+      const parent = Option.getOrUndefined(parentOption.value);
+      // The parent thread is gone or deleted. FAIL CLOSED: with no authority on
+      // record, the empty set is the only defensible superset, so a target
+      // holding no capabilities still runs and one holding any is refused.
+      // Running under a parent that no longer exists is what this check is for.
+      if (parent === undefined || parent.deletedAt !== null) {
+        return { _tag: "grants", capabilityIds: new Set<string>() } as const;
+      }
+      return {
+        _tag: "grants",
+        capabilityIds: new Set<string>(parent.workjetConfig.enabledCapabilityIds),
+      } as const;
+    });
+
+  /**
    * Everything a row must satisfy before it may be accepted: local target,
-   * existing undeleted thread, executable role, and an idle thread.
+   * existing undeleted thread, executable role, no capability escalation over
+   * the parent, and an idle thread.
    */
   const resolveTarget = (input: {
     readonly record: WorkjetDelegationRecord;
@@ -862,6 +933,38 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           now: input.now,
         });
       }
+
+      // TARGET-SIDE CAPABILITY CHECK, beside the role check because they answer
+      // the two halves of the same question: WorkerDispatch already refuses a
+      // child whose requested capabilities exceed its parent's grants
+      // (`capability-escalation`), but that check runs at thread CREATION. A
+      // delegation targets a thread that already exists, so nothing re-asserted
+      // the invariant at execution time — a chain could put work into a thread
+      // holding a capability its parent never had.
+      //
+      // Defence in depth, verified as such rather than assumed: the delegation
+      // contract carries no capability field, remote-created threads are always
+      // built with `enabledCapabilityIds: []`
+      // (`WorkjetMailboxDelivery.ts`, `WorkjetCrossModeThreads.ts`), and only an
+      // orchestrator thread may create a delegation at all. So no peer and no
+      // worker can currently reach a widened target. This keeps that true if
+      // any of those three facts changes.
+      const grants = yield* parentGrants({ delegation, environmentId: input.environmentId });
+      if (grants._tag === "unreadable") return { _tag: "transient" } as const;
+      if (
+        grants._tag === "grants" &&
+        thread.workjetConfig.enabledCapabilityIds.some(
+          (capabilityId) => !grants.capabilityIds.has(capabilityId),
+        )
+      ) {
+        return yield* refuse({
+          record: input.record,
+          reason: "target-capability-escalation",
+          threadId: thread.id,
+          now: input.now,
+        });
+      }
+
       if (input.busyThreads.has(thread.id) || threadHasActiveTurn(thread)) {
         // THIS is the queue. The row stays `delivered`, and the scan order
         // (`stateChangedAt ASC`) replays it before any later delegation for the
@@ -1465,6 +1568,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
               break;
             case "target-role-not-executable":
               targetRoleNotExecutable += 1;
+              break;
+            case "target-capability-escalation":
+              targetCapabilityEscalation += 1;
               break;
             case "engine-rejected":
               engineRejected += 1;

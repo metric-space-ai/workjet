@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+// @effect-diagnostics preferSchemaOverJson:off -- the redaction canary must scan the RAW serialized event for a secret; encoding it through the schema is exactly what the canary is checking cannot be relied on.
 import { assert, it } from "@effect/vitest";
 import { EnvironmentId, WorkjetMeshWorkspaceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";

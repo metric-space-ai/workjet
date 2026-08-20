@@ -14,6 +14,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationThread,
   type WorkjetDelegation,
+  type WorkjetDelegationRef,
   type WorkjetDelegationState,
   type WorkjetMailboxPayload,
   type WorkjetMailboxTimestamp,
@@ -92,6 +93,8 @@ const delegationFixture = (input: {
   readonly requiresApproval?: boolean;
   readonly maxTokens?: number;
   readonly maxCostMicros?: number;
+  /** A review/revise chain link, whose `owner` is the parent's TARGET thread. */
+  readonly parent?: WorkjetDelegationRef;
 }): WorkjetDelegation => ({
   schemaVersion: 1,
   envelopeId: WorkjetEnvelopeId.make(`wjm-envelope-${input.id}-0000000000`),
@@ -131,19 +134,26 @@ const delegationFixture = (input: {
   state: input.state,
   stateChangedAt: input.stateChangedAt ?? NOW,
   depth: 0,
+  ...(input.parent === undefined ? {} : { parent: input.parent }),
 });
 
 const thread = (input?: {
   readonly role?: "standard" | "orchestrator" | "worker";
   readonly busy?: boolean;
   readonly deleted?: boolean;
+  readonly id?: ThreadId;
+  readonly capabilityIds?: ReadonlyArray<string>;
 }): OrchestrationThread =>
   ({
-    id: TARGET_THREAD,
+    id: input?.id ?? TARGET_THREAD,
     deletedAt: input?.deleted === true ? NOW : null,
     runtimeMode: "interactive",
     interactionMode: "chat",
-    workjetConfig: { schemaVersion: 1, role: input?.role ?? "worker", enabledCapabilityIds: [] },
+    workjetConfig: {
+      schemaVersion: 1,
+      role: input?.role ?? "worker",
+      enabledCapabilityIds: input?.capabilityIds ?? [],
+    },
     latestTurn:
       input?.busy === true
         ? { turnId: "turn-1", state: "running", requestedAt: NOW, startedAt: NOW }
@@ -270,8 +280,21 @@ interface Harness {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
   readonly events: ReadonlyArray<WorkjetMailboxAuditEventInput>;
   readonly setThread: (next: OrchestrationThread | undefined) => void;
+  /**
+   * Override the thread returned for ONE id. The default read answers with the
+   * same thread whatever id it is handed, which is enough for every test that
+   * only looks at the target; the parent-superset check reads a SECOND thread,
+   * so it needs the two to be distinguishable.
+   */
+  readonly setThreadById: (threadId: ThreadId, next: OrchestrationThread) => void;
   readonly failNextTurnStarts: (count: number, error: { readonly _tag: string }) => void;
   readonly failThreadReads: (fail: boolean) => void;
+  /**
+   * Fail the read for ONE thread id only. The parent-superset check reads a
+   * second thread AFTER the target read succeeds, so a blanket read failure
+   * never reaches it.
+   */
+  readonly failThreadReadFor: (threadId: ThreadId) => void;
   /**
    * Make the NEXT `count` outbound enqueues fail. `transient` is a SQL-shaped
    * failure the reconciler must retry; `permanent` is the bounded mailbox
@@ -309,6 +332,8 @@ const makeHarness = (options?: {
   const events: Array<WorkjetMailboxAuditEventInput> = [];
   let currentThread: OrchestrationThread | undefined =
     options && "initialThread" in options ? options.initialThread : thread();
+  const threadsById = new Map<string, OrchestrationThread>();
+  const unreadableThreadIds = new Set<string>();
   let turnStartFailures = 0;
   let turnStartError: { readonly _tag: string } = retryableEngineError;
   let threadReadsFail = false;
@@ -341,10 +366,15 @@ const makeHarness = (options?: {
   } as unknown as OrchestrationEngineService["Service"];
 
   const query = {
-    getThreadDetailById: () =>
-      threadReadsFail
-        ? Effect.fail({ _tag: "ProjectionRepositoryError" } as const)
-        : Effect.succeed(currentThread === undefined ? Option.none() : Option.some(currentThread)),
+    getThreadDetailById: (threadId: ThreadId) => {
+      if (threadReadsFail || unreadableThreadIds.has(threadId))
+        return Effect.fail({ _tag: "ProjectionRepositoryError" } as const);
+      const override = threadsById.get(threadId);
+      if (override !== undefined) return Effect.succeed(Option.some(override));
+      return Effect.succeed(
+        currentThread === undefined ? Option.none() : Option.some(currentThread),
+      );
+    },
   } as unknown as ProjectionSnapshotQuery["Service"];
 
   return {
@@ -353,12 +383,18 @@ const makeHarness = (options?: {
     setThread: (next) => {
       currentThread = next;
     },
+    setThreadById: (threadId, next) => {
+      threadsById.set(threadId, next);
+    },
     failNextTurnStarts: (count, error) => {
       turnStartFailures = count;
       turnStartError = error;
     },
     failThreadReads: (fail) => {
       threadReadsFail = fail;
+    },
+    failThreadReadFor: (threadId) => {
+      unreadableThreadIds.add(threadId);
     },
     failNextEnqueues: (count, kind) => {
       enqueueFailures = count;
@@ -582,6 +618,160 @@ it.effect("executes a standard-role target and refuses an orchestrator target", 
     assert.equal(turnStarts(harness.commands).length, 1);
     assert.include(activityKinds(harness.commands), WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND);
   }).pipe(Effect.provide(testLayer("delegation-executor-roles"))),
+);
+
+// ===============================
+// Target-side capability check
+// ===============================
+// `WorkerDispatch` refuses a child whose requested capabilities exceed its
+// parent's grants — but only at thread CREATION. A delegation targets a thread
+// that already exists, so without this the invariant simply stops applying the
+// moment a chain reaches an existing thread.
+
+it.effect("refuses a delegation whose target holds a capability its parent does not", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    // The delegating (parent) thread holds nothing. The target holds greppy.
+    harness.setThreadById(SOURCE_THREAD, thread({ id: SOURCE_THREAD, role: "orchestrator" }));
+
+    const escalating = yield* seed(
+      delegationFixture({ id: "escalate", digest, state: "delivered" }),
+    );
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.failures.targetCapabilityEscalation, 1);
+    assert.equal(status.executed, 0);
+    // Terminal, like the role refusal: a thread's grants will not narrow while
+    // the row waits, so looping would only postpone the same answer.
+    assert.equal(yield* stateOf(escalating), "failed");
+    assert.equal(turnStarts(harness.commands).length, 0);
+    assert.include(activityKinds(harness.commands), WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND);
+  }).pipe(Effect.provide(testLayer("delegation-executor-capability-refuse"))),
+);
+
+it.effect("executes a target whose capabilities are a SUBSET of the parent's", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    harness.setThreadById(
+      SOURCE_THREAD,
+      thread({ id: SOURCE_THREAD, role: "orchestrator", capabilityIds: ["greppy", "web-search"] }),
+    );
+
+    const allowed = yield* seed(delegationFixture({ id: "subset", digest, state: "delivered" }));
+
+    const status = yield* executor.runCycle;
+
+    // Narrower than the parent is the normal, correct case. A check that
+    // refused it would break every capability-bearing worker.
+    assert.equal(status.failures.targetCapabilityEscalation, 0);
+    assert.equal(status.executed, 1);
+    assert.equal(yield* stateOf(allowed), "running");
+  }).pipe(Effect.provide(testLayer("delegation-executor-capability-subset"))),
+);
+
+it.effect("takes the grants from the PARENT DELEGATION when the chain names one", () =>
+  Effect.gen(function* () {
+    const REVIEW_PARENT_THREAD = ThreadId.make("thread-review-parent");
+    const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+
+    // A review chain: the SOURCE thread is generous, but the delegation this
+    // one descends from ran under a thread that holds nothing. The chain link
+    // is the authority, or a review request would launder capabilities the
+    // reviewed work never had.
+    harness.setThreadById(
+      SOURCE_THREAD,
+      thread({ id: SOURCE_THREAD, role: "orchestrator", capabilityIds: ["greppy"] }),
+    );
+    harness.setThreadById(REVIEW_PARENT_THREAD, thread({ id: REVIEW_PARENT_THREAD }));
+
+    const chained = yield* seed(
+      delegationFixture({
+        id: "chained",
+        digest,
+        state: "delivered",
+        parent: {
+          schemaVersion: 1,
+          delegationId: WorkjetDelegationId.make("wjd-parent0000000000000000"),
+          owner: address(LOCAL_ENVIRONMENT, REVIEW_PARENT_THREAD),
+        },
+      }),
+    );
+
+    const status = yield* executor.runCycle;
+
+    assert.equal(status.failures.targetCapabilityEscalation, 1);
+    assert.equal(yield* stateOf(chained), "failed");
+  }).pipe(Effect.provide(testLayer("delegation-executor-capability-chain"))),
+);
+
+it.effect("fails closed when the parent thread is gone, and stays open when it is unreadable", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    // A DELETED parent leaves no authority on record. The empty set is the only
+    // defensible superset — running under a parent that no longer exists is
+    // exactly what this check is for.
+    harness.setThreadById(
+      SOURCE_THREAD,
+      thread({ id: SOURCE_THREAD, role: "orchestrator", deleted: true }),
+    );
+
+    const orphan = yield* seed(delegationFixture({ id: "orphan", digest, state: "delivered" }));
+    const closed = yield* executor.runCycle;
+    assert.equal(closed.failures.targetCapabilityEscalation, 1);
+    assert.equal(yield* stateOf(orphan), "failed");
+
+    // A projection HICCUP, by contrast, is not evidence about grants. It must
+    // retry rather than terminally refuse work on a read that may succeed next
+    // cycle.
+    const retried = yield* seed(delegationFixture({ id: "retried", digest, state: "delivered" }));
+    // Only the PARENT read fails. The target read still succeeds, so the guard
+    // is genuinely reached with an unreadable parent rather than short-circuited
+    // by the target read above it.
+    harness.setThreadById(SOURCE_THREAD, thread({ id: SOURCE_THREAD, role: "orchestrator" }));
+    harness.failThreadReadFor(SOURCE_THREAD);
+    const transient = yield* executor.runCycle;
+    // The counters are cumulative, so "no NEW refusal" is the claim: the
+    // unreadable parent added nothing to the fail-closed count above.
+    assert.equal(transient.failures.targetCapabilityEscalation, 1);
+    assert.equal(yield* stateOf(retried), "delivered");
+  }).pipe(Effect.provide(testLayer("delegation-executor-capability-orphan"))),
+);
+
+it.effect("cannot check a remote-rooted delegation, and says so by letting it run", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });
+    const executor = yield* harness.executor;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+
+    // The parent thread lives on another machine. This server holds no record
+    // of its grants and could not verify a claim about them — the delegation
+    // contract has no capability field, so any such claim would be
+    // peer-supplied text. The remote path's real protection is that a peer
+    // cannot CHOOSE the target's capabilities: they are whatever the local
+    // operator already granted that thread. Documented here so a future reader
+    // does not mistake this for an oversight.
+    const remote = yield* seed(
+      delegationFixture({
+        id: "remoteroot",
+        digest,
+        state: "delivered",
+        sourceEnvironmentId: EnvironmentId.make("environment-peer"),
+      }),
+    );
+
+    const status = yield* executor.runCycle;
+    assert.equal(status.failures.targetCapabilityEscalation, 0);
+    assert.equal(yield* stateOf(remote), "running");
+  }).pipe(Effect.provide(testLayer("delegation-executor-capability-remote"))),
 );
 
 // ===============================

@@ -404,9 +404,23 @@ fn annas_archive_search(
 
     let url = build_annas_archive_search_url_with_context(context, request, &base_url, page)?;
 
+    // SSRF guard. `CTOX_ANNAS_ARCHIVE_BASE_URL` is runtime configuration, so a
+    // hostile or merely misconfigured context otherwise points this fetch at
+    // loopback, RFC1918 space, or `169.254.169.254`, and the fetched HTML is
+    // parsed and handed back to the caller.
+    //
+    // HOST-REACHABILITY DECISION: the public default
+    // (`https://annas-archive.org`) and every public mirror keep working
+    // untouched. An operator who deliberately runs a mirror on an internal
+    // address must list that host in `CTOX_WEB_EGRESS_ALLOW` — the same
+    // exemption `web_search.rs` already grants a self-hosted SearXNG base.
+    crate::egress::assert_fetchable_url(url.as_str())?;
     let agent = ureq::AgentBuilder::new()
         .user_agent(&user_agent)
         .timeout(Duration::from_millis(timeout_ms))
+        .resolver(crate::egress::SsrfResolver::new(
+            crate::egress::allow_hosts_from_context(context),
+        ))
         .build();
 
     let response = agent
@@ -957,6 +971,14 @@ fn augment_results_with_open_access_pdfs(
     if results.is_empty() {
         return;
     }
+    // SSRF guard, resolved once on the calling thread: `CTOX_UNPAYWALL_BASE_URL`
+    // is runtime configuration, so without it a hostile or misconfigured context
+    // turns every DOI in the result set into a request to an internal address.
+    //
+    // HOST-REACHABILITY DECISION: the public default
+    // (`https://api.unpaywall.org/v2`) is unaffected; an internally hosted
+    // Unpaywall mirror must be listed in `CTOX_WEB_EGRESS_ALLOW`.
+    let allow_hosts = crate::egress::allow_hosts_from_context(context);
     let worker_count = results.len().min(4);
     let chunk_size = results.len().div_ceil(worker_count);
     std::thread::scope(|scope| {
@@ -964,11 +986,9 @@ fn augment_results_with_open_access_pdfs(
             let contact_email = &contact_email;
             let unpaywall_base = &unpaywall_base;
             let user_agent = &user_agent;
+            let allow_hosts = &allow_hosts;
             scope.spawn(move || {
-                let agent = ureq::AgentBuilder::new()
-                    .user_agent(user_agent)
-                    .timeout(Duration::from_millis(timeout_ms))
-                    .build();
+                let agent = build_unpaywall_agent(user_agent, timeout_ms, allow_hosts.clone());
                 for hit in chunk {
                     let Some(doi) = hit.doi.as_deref() else {
                         continue;
@@ -983,6 +1003,26 @@ fn augment_results_with_open_access_pdfs(
             });
         }
     });
+}
+
+/// Build the per-worker Unpaywall agent.
+///
+/// Extracted so a test can drive the EXACT agent the production augmentation
+/// path uses: [`resolve_unpaywall_oa_pdf`] deliberately swallows transport
+/// errors into `Ok(None)`, which would otherwise make an SSRF refusal
+/// indistinguishable from "this DOI has no open-access copy".
+fn build_unpaywall_agent(
+    user_agent: &str,
+    timeout_ms: u64,
+    allow_hosts: Vec<String>,
+) -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .user_agent(user_agent)
+        .timeout(Duration::from_millis(timeout_ms))
+        // SSRF guard: a resolved or redirected host must never reach an
+        // internal/loopback/metadata address.
+        .resolver(crate::egress::SsrfResolver::new(allow_hosts))
+        .build()
 }
 
 #[derive(Debug, Clone)]
@@ -1693,8 +1733,24 @@ fn encode_query(raw: &str) -> String {
 }
 
 fn fetch_json(context: WebStackContext<'_>, url: &str) -> Result<Value> {
+    // The most exposed of the three scholarly fetchers: `url` is whatever the
+    // caller assembled, and every academic backend base
+    // (`CTOX_CROSSREF_BASE_URL`, `CTOX_OPENALEX_BASE_URL`,
+    // `CTOX_SEMANTIC_SCHOLAR_BASE_URL`) flows into it from runtime
+    // configuration. It therefore gets BOTH layers of the guard: the scheme
+    // front door before any I/O, and the resolver on every hop.
+    //
+    // HOST-REACHABILITY DECISION: the public Crossref / OpenAlex / Semantic
+    // Scholar defaults are unaffected. Pointing a backend at an internal mirror
+    // stays possible, but only as a deliberate operator act via
+    // `CTOX_WEB_EGRESS_ALLOW`; a base URL alone is no longer enough to make
+    // CTOX dial internal address space.
+    crate::egress::assert_fetchable_url(url)?;
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(8))
+        .resolver(crate::egress::SsrfResolver::new(
+            crate::egress::allow_hosts_from_context(context),
+        ))
         .build();
     let contact =
         scholarly_contact_email(context).unwrap_or_else(|| "research@ctox.dev".to_string());
@@ -2160,6 +2216,14 @@ mod tests {
             "CTOX_ANNAS_ARCHIVE_BASE_URL",
             &format!("http://127.0.0.1:{port}"),
         );
+        // The SSRF resolver is installed on this agent; a loopback fixture is
+        // reachable only through the operator allow-list, exactly as in
+        // `web_search.rs`'s HTTP fixture tests.
+        write_runtime_kv(
+            &root.join("runtime/ctox.sqlite3"),
+            "CTOX_WEB_EGRESS_ALLOW",
+            "127.0.0.1",
+        );
 
         let request = ScholarlySearchRequest {
             query: "quantum entanglement".to_string(),
@@ -2261,6 +2325,7 @@ mod tests {
             &format!("http://127.0.0.1:{unpaywall_port}"),
         );
         write_runtime_kv(&db, "CTOX_UNPAYWALL_EMAIL", "ci@ctox.test");
+        write_runtime_kv(&db, "CTOX_WEB_EGRESS_ALLOW", "127.0.0.1");
 
         let request = ScholarlySearchRequest {
             query: "shannon information theory".to_string(),
@@ -2330,11 +2395,13 @@ mod tests {
         });
 
         let root = unique_test_root("mock-only-doi");
+        let db = root.join("runtime/ctox.sqlite3");
         write_runtime_kv(
-            &root.join("runtime/ctox.sqlite3"),
+            &db,
             "CTOX_ANNAS_ARCHIVE_BASE_URL",
             &format!("http://127.0.0.1:{port}"),
         );
+        write_runtime_kv(&db, "CTOX_WEB_EGRESS_ALLOW", "127.0.0.1");
 
         let request = ScholarlySearchRequest {
             query: "anything".to_string(),
@@ -2399,6 +2466,7 @@ mod tests {
             "CTOX_CROSSREF_BASE_URL",
             &format!("http://127.0.0.1:{port}"),
         );
+        write_runtime_kv(&db, "CTOX_WEB_EGRESS_ALLOW", "127.0.0.1");
         let request = ScholarlySearchRequest {
             query: "anything".to_string(),
             provider: Some(ScholarlySearchProvider::Crossref),
@@ -2426,11 +2494,13 @@ mod tests {
             write_http_response(&mut stream, &body, "application/json");
         });
         let root = unique_test_root("mock-crossref-only-doi");
+        let db = root.join("runtime/ctox.sqlite3");
         write_runtime_kv(
-            &root.join("runtime/ctox.sqlite3"),
+            &db,
             "CTOX_CROSSREF_BASE_URL",
             &format!("http://127.0.0.1:{port}"),
         );
+        write_runtime_kv(&db, "CTOX_WEB_EGRESS_ALLOW", "127.0.0.1");
         let request = ScholarlySearchRequest {
             query: "x".to_string(),
             provider: Some(ScholarlySearchProvider::Crossref),
@@ -2564,6 +2634,213 @@ mod tests {
         let error = openalex_work_by_id(&root, "not-a-work-id").unwrap_err();
         assert!(error.to_string().contains("invalid OpenAlex work id"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ----- SSRF egress guard: INSTALLED, not merely correct -----
+    //
+    // `egress.rs` proves the POLICY (`is_public_ip`, the resolver, the scheme
+    // check). These prove the policy is WIRED ONTO the three scholarly agents,
+    // which until now issued outbound requests without it. Every case is
+    // offline: a blocked address is refused inside the resolver before any
+    // socket is opened, and the reachable-host cases use the module's existing
+    // loopback `TcpListener` doubles.
+    //
+    // The "still reaches an allowed host" half of each pair lives in the
+    // pre-existing end-to-end tests above, which now allow-list `127.0.0.1`:
+    // `end_to_end_against_local_mock_http_server` (Anna's Archive),
+    // `end_to_end_resolves_open_access_pdf_via_unpaywall` (Unpaywall), and
+    // `crossref_runs_even_when_shadow_archive_search_is_disabled` (`fetch_json`).
+    // Same host, same port shape — allow-listed it works, unlisted it is
+    // refused below.
+
+    /// Destinations no scholarly agent may dial: loopback, the cloud-metadata
+    /// link-local address, and each RFC1918 block.
+    const BLOCKED_EGRESS_HOSTS: &[&str] = &[
+        "127.0.0.1",
+        "169.254.169.254",
+        "10.0.0.1",
+        "172.16.5.4",
+        "192.168.1.1",
+    ];
+
+    fn ssrf_test_root(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("ctox-scholarly-ssrf-{tag}-{}", std::process::id()))
+    }
+
+    fn doi_only_result(doi: &str) -> ScholarlyResult {
+        ScholarlyResult {
+            provider: "crossref".to_string(),
+            source_id: doi.to_string(),
+            detail_url: format!("https://doi.org/{doi}"),
+            title: "Guarded".to_string(),
+            authors: None,
+            publisher: None,
+            year: None,
+            language: None,
+            file_format: None,
+            file_size_label: None,
+            isbn: None,
+            doi: Some(doi.to_string()),
+            open_access_pdf: None,
+            open_access_license: None,
+            thumbnail_url: None,
+            snippet: None,
+            tags: Vec::new(),
+            reference_ids: Vec::new(),
+            rank: 1,
+        }
+    }
+
+    #[test]
+    fn annas_archive_refuses_loopback_link_local_and_private_bases() {
+        let root = ssrf_test_root("annas");
+        for host in BLOCKED_EGRESS_HOSTS {
+            let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([
+                ("CTOX_ANNAS_ARCHIVE_BASE_URL", format!("http://{host}:8080")),
+                ("CTOX_SCHOLARLY_TIMEOUT_MS", "500".to_string()),
+            ]);
+            let context = WebStackContext::new(&root, &store);
+            let request = ScholarlySearchRequest {
+                query: "anything".to_string(),
+                provider: Some(ScholarlySearchProvider::AnnasArchive),
+                ..Default::default()
+            };
+            let error = execute_scholarly_search_with_context(context, &request)
+                .expect_err(&format!("Anna's Archive base {host} must be refused"));
+            let rendered = format!("{error:#}");
+            assert!(
+                rendered.contains("egress blocked"),
+                "{host} must be refused by the SSRF resolver, got: {rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn annas_archive_refuses_non_http_bases_before_any_io() {
+        let root = ssrf_test_root("annas-scheme");
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([(
+            "CTOX_ANNAS_ARCHIVE_BASE_URL",
+            "file:///etc",
+        )]);
+        let context = WebStackContext::new(&root, &store);
+        let request = ScholarlySearchRequest {
+            query: "anything".to_string(),
+            provider: Some(ScholarlySearchProvider::AnnasArchive),
+            ..Default::default()
+        };
+        let error = execute_scholarly_search_with_context(context, &request)
+            .expect_err("a file:// base must never be fetched");
+        assert!(
+            format!("{error:#}").contains("non-http(s) scheme"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn unpaywall_agent_refuses_loopback_link_local_and_private_hosts() {
+        // `resolve_unpaywall_oa_pdf` folds every transport failure into
+        // `Ok(None)`, so the refusal is asserted on the agent the production
+        // augmentation path builds, via the shared constructor it calls.
+        let guarded = build_unpaywall_agent("ctox-test", 500, Vec::new());
+        for host in BLOCKED_EGRESS_HOSTS {
+            let error = guarded
+                .get(&format!("http://{host}:8080/v2/10.1/x"))
+                .call()
+                .expect_err(&format!("Unpaywall base {host} must be refused"));
+            assert!(
+                error.to_string().contains("egress blocked"),
+                "{host} must be refused by the SSRF resolver, got: {error}"
+            );
+        }
+
+        // The operator allow-list is the only way back in: the same loopback
+        // host now gets past the egress filter and fails on the ordinary
+        // "nothing is listening" path instead.
+        let allow_listed = build_unpaywall_agent("ctox-test", 500, vec!["127.0.0.1".to_string()]);
+        let error = allow_listed
+            .get("http://127.0.0.1:1/v2/10.1/x")
+            .call()
+            .expect_err("port 1 has no listener");
+        assert!(
+            !error.to_string().contains("egress blocked"),
+            "an allow-listed host must pass the egress filter, got: {error}"
+        );
+    }
+
+    #[test]
+    fn open_access_augmentation_never_opens_a_connection_to_unlisted_loopback() {
+        use std::net::TcpListener;
+        // Sharper than an error-string assertion: if the resolver were removed,
+        // the agent would actually connect to this listener, and the pending
+        // connection would be sitting in its accept backlog afterwards.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind unpaywall trap");
+        let port = listener.local_addr().expect("trap addr").port();
+
+        let root = ssrf_test_root("unpaywall-trap");
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([
+            (
+                "CTOX_UNPAYWALL_BASE_URL",
+                format!("http://127.0.0.1:{port}/v2"),
+            ),
+            ("CTOX_UNPAYWALL_EMAIL", "ci@ctox.test".to_string()),
+            ("CTOX_SCHOLARLY_TIMEOUT_MS", "500".to_string()),
+        ]);
+        let context = WebStackContext::new(&root, &store);
+        let mut results = vec![doi_only_result("10.1002/j.1538-7305.1948.tb01338.x")];
+        augment_results_with_open_access_pdfs(context, &mut results);
+
+        assert!(
+            results[0].open_access_pdf.is_none(),
+            "no OA PDF may be resolved through a blocked host"
+        );
+        listener
+            .set_nonblocking(true)
+            .expect("switch trap to non-blocking");
+        match listener.accept() {
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            other => panic!(
+                "the guarded Unpaywall agent must never open a loopback connection, got: {other:?}"
+            ),
+        }
+    }
+
+    #[test]
+    fn fetch_json_refuses_loopback_link_local_private_and_non_http_urls() {
+        let root = ssrf_test_root("fetch-json");
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::default();
+        let context = WebStackContext::new(&root, &store);
+        for host in BLOCKED_EGRESS_HOSTS {
+            let error = fetch_json(context, &format!("http://{host}:8080/works"))
+                .expect_err(&format!("fetch_json({host}) must be refused"));
+            let rendered = format!("{error:#}");
+            assert!(
+                rendered.contains("egress blocked"),
+                "{host} must be refused by the SSRF resolver, got: {rendered}"
+            );
+        }
+
+        // The scheme front door fires before any I/O at all.
+        for url in ["file:///etc/passwd", "ftp://example.com/x"] {
+            let error = fetch_json(context, url).expect_err("non-http scheme must be refused");
+            assert!(
+                format!("{error:#}").contains("non-http(s) scheme"),
+                "{url}: {error:#}"
+            );
+        }
+
+        // Allow-listed loopback passes the egress filter and fails only because
+        // nothing is listening on port 1.
+        let allow_store = crate::runtime_config::WorkjetRuntimeConfigStore::new([(
+            "CTOX_WEB_EGRESS_ALLOW",
+            "127.0.0.1",
+        )]);
+        let allowed = WebStackContext::new(&root, &allow_store);
+        let error =
+            fetch_json(allowed, "http://127.0.0.1:1/works").expect_err("port 1 has no listener");
+        assert!(
+            !format!("{error:#}").contains("egress blocked"),
+            "an allow-listed host must pass the egress filter, got: {error:#}"
+        );
     }
 
     #[test]

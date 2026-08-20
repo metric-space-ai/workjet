@@ -317,6 +317,85 @@ mod tests {
         assert!(allowed.resolve("127.0.0.1:80").is_ok());
     }
 
+    /// The crate sets no explicit `.redirects(n)`; the hop cap is `ureq`'s
+    /// default. That default IS a bound (5, `ureq-2.12.1/src/agent.rs:262`), but
+    /// nothing here proved it, so a dependency bump could raise or remove it
+    /// unnoticed while every other test stayed green. This pins the actual
+    /// observable behaviour of an agent built the way this crate builds them:
+    /// a redirect loop terminates, and it terminates after five requests.
+    #[test]
+    fn crate_shaped_agents_bound_the_redirect_chain_at_five_requests() {
+        use std::io::Read;
+        use std::io::Write;
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::atomic::Ordering;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind redirect loop server");
+        let port = listener.local_addr().expect("redirect server addr").port();
+        let url = format!("http://127.0.0.1:{port}/loop");
+        listener
+            .set_nonblocking(true)
+            .expect("non-blocking redirect server");
+
+        let requests = Arc::new(AtomicUsize::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let server_requests = Arc::clone(&requests);
+        let server_stop = Arc::clone(&stop);
+        let redirect_to = url.clone();
+        let server = std::thread::spawn(move || {
+            while !server_stop.load(Ordering::Relaxed) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).ok();
+                        stream
+                            .set_read_timeout(Some(Duration::from_millis(200)))
+                            .ok();
+                        let mut scratch = [0u8; 1024];
+                        let _ = stream.read(&mut scratch);
+                        server_requests.fetch_add(1, Ordering::Relaxed);
+                        let _ = stream.write_all(
+                            format!(
+                                "HTTP/1.1 302 Found\r\nLocation: {redirect_to}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            )
+                            .as_bytes(),
+                        );
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // Built exactly like the crate's fetchers, allow-listing the loopback
+        // fixture the way an operator allow-lists a self-hosted service.
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(5))
+            .resolver(SsrfResolver::new(vec!["127.0.0.1".to_string()]))
+            .build();
+        let error = agent
+            .get(&url)
+            .call()
+            .expect_err("an endless redirect loop must terminate");
+        stop.store(true, Ordering::Relaxed);
+        let _ = server.join();
+
+        assert!(
+            error.to_string().contains("reached max redirects (5)"),
+            "the hop cap must still be five: {error}"
+        );
+        assert_eq!(
+            requests.load(Ordering::Relaxed),
+            5,
+            "one initial request plus four followed hops, then the cap"
+        );
+    }
+
     #[test]
     fn host_helpers_normalize() {
         assert_eq!(

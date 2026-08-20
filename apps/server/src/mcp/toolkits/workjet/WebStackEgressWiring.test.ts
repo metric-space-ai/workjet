@@ -40,6 +40,12 @@ import { assert, describe, it } from "@effect/vitest";
  * fails this test instead of joining them unnoticed. Fixing one means deleting
  * its entry here — the test then requires it to stay fixed.
  *
+ * It is now EMPTY, and that is the point of the mechanism: the three
+ * `scholarly_search.rs` agents it enumerated on 2026-08-20
+ * (`annas_archive_search`, `augment_results_with_open_access_pdfs`,
+ * `fetch_json`) were fixed on 2026-08-20 and their entries deleted, so an empty
+ * list is now the asserted state and any regression fails here.
+ *
  * Mirrors the capability conformance gate's `HOST_POLICY_DIFFERENCES`: the
  * tolerated set is data this test owns, never an inference.
  */
@@ -54,38 +60,30 @@ const WEB_STACK_SRC = NodePath.join(repoRoot, "native/web-stack/src");
 const RESOLVER_INSTALL = ".resolver(crate::egress::SsrfResolver::new(";
 
 /**
- * Production agents that DO NOT install the SSRF resolver. Each entry is a real
- * defect with its reason, kept visible rather than silently tolerated.
+ * Production agents that DO NOT install the SSRF resolver. Each entry would be a
+ * real defect with its reason, kept visible rather than silently tolerated.
  *
- * All three fetch from bases supplied by the runtime `WebStackContext`
- * (`scholarly_contact_email`, the Anna's Archive base URL, the Unpaywall base),
- * so a hostile or merely misconfigured context reaches internal address space
- * with no second line of defence. They are recorded rather than fixed here
- * because changing Rust egress behaviour needs a full crate build and its own
- * decision about which configured hosts must stay reachable — the same
- * exemption `web_search.rs` already grants a self-hosted SearXNG base.
+ * EMPTY since 2026-08-20. The three `scholarly_search.rs` agents that used to
+ * live here now install `SsrfResolver` seeded from
+ * `crate::egress::allow_hosts_from_context` — the public Crossref / OpenAlex /
+ * Semantic Scholar / Unpaywall / Anna's Archive defaults are unaffected, and an
+ * internally hosted mirror must be named in `CTOX_WEB_EGRESS_ALLOW`, the same
+ * exemption `web_search.rs` grants a self-hosted SearXNG base. `fetch_json`,
+ * which takes a caller-supplied URL, additionally runs
+ * `crate::egress::assert_fetchable_url` before any I/O. Proved by
+ * `scholarly_search.rs` → `annas_archive_refuses_loopback_link_local_and_private_bases`,
+ * `unpaywall_agent_refuses_loopback_link_local_and_private_hosts`,
+ * `open_access_augmentation_never_opens_a_connection_to_unlisted_loopback`, and
+ * `fetch_json_refuses_loopback_link_local_private_and_non_http_urls`.
+ *
+ * Do not re-populate this list to make a red build green: an entry here is an
+ * admission that an agent can reach internal address space.
  */
 const KNOWN_UNRESOLVED_AGENTS: ReadonlyArray<{
   readonly file: string;
   readonly functionName: string;
   readonly reason: string;
-}> = [
-  {
-    file: "scholarly_search.rs",
-    functionName: "annas_archive_search",
-    reason: "Anna's Archive base URL comes from the runtime context and is fetched unguarded",
-  },
-  {
-    file: "scholarly_search.rs",
-    functionName: "augment_results_with_open_access_pdfs",
-    reason: "per-thread Unpaywall agent built without the resolver",
-  },
-  {
-    file: "scholarly_search.rs",
-    functionName: "fetch_json",
-    reason: "fetches an arbitrary caller-supplied URL with no resolver on the agent",
-  },
-];
+}> = [];
 
 interface AgentSite {
   readonly file: string;
@@ -196,11 +194,14 @@ describe("Web Stack SSRF wiring", () => {
   });
 
   it("keeps the resolver on the agents that carry model-directed traffic", () => {
-    // These four are the paths a model can point at an arbitrary host, so they
-    // are asserted BY NAME rather than only by the aggregate count above.
+    // These are the paths a model can point at an arbitrary host, so they are
+    // asserted BY NAME rather than only by the aggregate count above.
+    // `scholarly_search.rs` joined the list on 2026-08-20 when its three agents
+    // were fixed: `fetch_json` fetches a caller-assembled URL.
     const mustResolve = [
       "web_search.rs",
       "deep_research.rs",
+      "scholarly_search.rs",
       "sources/linkedin.rs",
       "sources/xing.rs",
     ];

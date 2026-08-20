@@ -1,5 +1,40 @@
 # Progress-Board · Decision Hub (vormals Kundenpipeline) + Brillen-Approval
 
+## Paket G (2026-08-20) — Rollout auf welsch + Kunden-App-Leak + Threads
+- KUNDEN-APP-LEAK (Owner-Fund): rem-dsgvo-document-writer, rem-foerder-explorer,
+  rem-foerdervorhaben-agent, rem-fozu-checker, rem-vertriebsmanagement lagen
+  im welsch App Store. Ursache doppelt: (1) c992d98c3 hatte nur .gitignore
+  ergänzt, Dateien blieben getrackt → in jedem Build; (2) install.sh
+  „Legacy-Migration" rsynct source installed-modules in den Tenant-State
+  JEDER Instanz. FIXES auf ctox main: 9957d3387 (git rm --cached) +
+  3e8d896b9 (Installer sät installed-modules NIE mehr). Auf welsch: Dirs
+  aus State+Releases gelöscht, Restart, Browser-verifiziert: App Store ohne
+  Leak-Apps ([] leer). „Matching"-App blieb übrig (aus altem v57f8ab8-Bundle,
+  gleicher Vektor) — OWNER: behalten oder löschen?
+- DECISION HUB LÄUFT AUF WELSCH (Browser-verifiziert, Screenshot
+  welsch-decisionhub.png an Owner): Modul nach installed-modules gesynct
+  (authoritative Quelle = ~/.local/state/.../kundenpipeline des LOKALEN
+  Rechners; experiments/ war veraltet → zurückgesynct), validate ok,
+  6 Grants role:admin × {read,write} × {vorgaenge,entscheidungen,projekte}
+  via capability_token dispatcht (claimed actor ohne Token wird vom Daemon
+  abgelehnt — Rezept: issue-capability → client_context.capability_token),
+  ctox.module.set_visible + refresh-catalog + Service-Restart.
+  Catalog-Sync im Browser dauert >1 min nach Frisch-Login (Verify wartet).
+- BACKEND AUF MAIN: cb408bc09 + 135860449 (decision_hub.rs, email_accounts,
+  Command-Arms, Projektions-Hook, mail/accounts-REST) — sauber aus dem
+  dirty Checkout extrahiert (service.rs: NUR der eine Hook-Hunk via
+  git apply --cached; +700 fremde Zeilen NICHT committet), cargo check grün.
+- THREADS-INTEGRATION (Owner-Anforderung): 239b1e1b5 — Entscheidungen
+  projizieren als approval-Threads in die Inbox (APP_RELEVANCE_SPECS +
+  title/owner_user_id/assigned_user_id am Decision-Record + dt. Status-
+  Mappings). Cargo-Check läuft (Task b99k5y5d8); danach push + Guest-Upgrade.
+- GUEST-UPGRADE 5 läuft (~/upgrade-dev5.log, Monitor bdzl7rs54): bringt
+  mail-accounts-Backend auf welsch → DANACH kann Owner sein Mail-Konto in
+  der Mail-App verbinden („Persönliches Konto verbinden"). Threads-Build
+  erfordert Upgrade 6 nach grünem Check.
+- Owner-Hinweis ausgesprochen: App lädt bei ihm nicht → Stale-IndexedDB-
+  Trap; Hard-Reload bzw. Site-Daten löschen. Produkt-Punkt Client-Migration.
+
 ## Paket F IN ARBEIT (2026-08-19 abends) — „nie wieder alte Version"
 - ROOT CAUSE Upgrade-Fehlschlag: `ctox upgrade --dev` → install.sh
   --rebuild → run_rebuild → build_ctox rief `resolve_cargo` UNGE­GUARDED

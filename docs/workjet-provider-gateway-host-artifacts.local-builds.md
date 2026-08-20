@@ -29,8 +29,9 @@ cargo build --locked --release \
 
 ## What was built and verified
 
-Both Apple targets were built from source at repository commit `34ba5de64`
-(`native/provider-gateway-workjet-host` 0.1.0) and staged under version `0.1.0`.
+Both Apple targets were built from `native/provider-gateway-workjet-host` 0.1.0
+and staged under version `0.1.0` — first at repository commit `34ba5de64`, then
+again at `3e6f56571`, with identical results.
 
 | Triple                 | Asset name                                                 | Bytes      | SHA-256                                                            |
 | ---------------------- | ---------------------------------------------------------- | ---------- | ------------------------------------------------------------------ |
@@ -49,6 +50,10 @@ Independent checks on those two files:
   refused an empty configuration, not an inert file.
 - Adding the release profile reduced the arm64 binary from 22 077 216 bytes to
   17 311 904 bytes (-21.6 %).
+- Both targets were rebuilt from scratch after `cargo fmt` reformatted
+  `src/runtime.rs`, and both reproduced **byte-identical digests**. The two
+  digests above are therefore stable across an independent build of the same
+  source on the same toolchain, not an artefact of one build directory.
 
 ## What was NOT built
 

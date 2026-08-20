@@ -1167,3 +1167,108 @@ export const WorkjetMeshRoster = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type WorkjetMeshRoster = typeof WorkjetMeshRoster.Type;
+
+// =========================================================
+// Global multi-computer activity overview (the "Machines" read)
+// =========================================================
+// docs/workjet-plan.md → "Cross-machine visibility: the desktop shows a global
+// multi-computer activity overview built on that replicated redacted
+// projection, including the last known state of currently offline machines."
+//
+// WHAT THIS IS BUILT FROM, and nothing else. The only thing that replicates
+// between machines is the CTOX-docked `workjet_mailbox_envelopes` collection,
+// and the daemon's loopback surface exposes exactly three routes
+// (publish / pending / consumed) — no room-member presence, no liveness. Event
+// replication was considered and REJECTED (handoff-snapshot model). So a
+// machine can only report what actually reached it:
+//
+//   - the peer pin table (identity, first contact, trust level),
+//   - its own inbox rows (an envelope this machine received FROM a peer),
+//   - its own outbox rows (an envelope this machine queued TO a peer),
+//   - its own delegation rows (cross-environment source/target).
+//
+// "Last known state of offline machines" therefore means LAST KNOWN CONTACT,
+// not a liveness verdict. There is deliberately NO online/offline field and no
+// `reachable` boolean: this server has no signal that could honestly back one,
+// and a stale "online" badge is worse than no badge. The client renders elapsed
+// time against {@link WorkjetMeshOverview.observedAt}, which is the SERVER's
+// clock at read time, so a skewed client cannot invent a negative age.
+
+/**
+ * Upper bound on the peers one overview read returns. Same bound as the roster:
+ * the overview is a dashboard for a personal machine mesh, not a directory.
+ */
+export const WORKJET_MESH_OVERVIEW_MAX_PEERS = WORKJET_MESH_ROSTER_MAX_PEERS;
+
+/**
+ * How many distinct delegation-state buckets one peer can report. There are
+ * exactly {@link WorkjetDelegationState} states, so a well-formed count list can
+ * never be longer than that; the bound makes a malformed one undecodable.
+ */
+export const WORKJET_MESH_OVERVIEW_MAX_DELEGATION_BUCKETS = 11;
+
+/** How many delegations with a peer sit in one lifecycle state. */
+export const WorkjetMeshDelegationStateCount = Schema.Struct({
+  state: WorkjetDelegationState,
+  count: NonNegativeInt,
+});
+export type WorkjetMeshDelegationStateCount = typeof WorkjetMeshDelegationStateCount.Type;
+
+const DelegationStateCounts = Schema.Array(WorkjetMeshDelegationStateCount).check(
+  Schema.isMaxLength(WORKJET_MESH_OVERVIEW_MAX_DELEGATION_BUCKETS),
+);
+
+/**
+ * One peer machine as this machine last knew it.
+ *
+ * Redaction discipline is the roster's: ids, timestamps, and derived counts.
+ * No payload material, no thread ids, no prompts, no key material — a peer row
+ * says THAT mail moved and WHEN, never what it said.
+ */
+export const WorkjetMeshOverviewPeer = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  workspaceId: WorkjetMeshWorkspaceId,
+  environmentId: EnvironmentId,
+  /** When this machine pinned the peer's key, i.e. first contact. */
+  firstSeenAt: WorkjetMailboxTimestamp,
+  /** True once the peer's encryption key is pinned, so a send can be sealed. */
+  sealedDeliveryReady: Schema.Boolean,
+  /** How strongly the peer's keys are bound to the environment id it claims. */
+  binding: WorkjetMeshPeerBinding,
+  /**
+   * When this machine last RECEIVED an envelope from the peer (max
+   * `received_at_ms` over its inbox rows). Absent when the pin exists but no
+   * inbound row survives — envelopes expire and are swept, so absence means
+   * "nothing on record", never "never happened".
+   */
+  lastInboundAt: Schema.optionalKey(WorkjetMailboxTimestamp),
+  /**
+   * When this machine last QUEUED an envelope to the peer (max `created_at_ms`
+   * over its outbox rows). This is a local enqueue fact, NOT proof the peer
+   * received anything — the UI must not phrase it as delivery.
+   */
+  lastOutboundAt: Schema.optionalKey(WorkjetMailboxTimestamp),
+  /** Delegations this machine sent TO the peer, bucketed by lifecycle state. */
+  delegationsSent: DelegationStateCounts,
+  /** Delegations this machine received FROM the peer, bucketed by state. */
+  delegationsReceived: DelegationStateCounts,
+});
+export type WorkjetMeshOverviewPeer = typeof WorkjetMeshOverviewPeer.Type;
+
+export const WorkjetMeshOverview = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  /** This machine, always first and always labeled local. */
+  local: WorkjetMeshRosterLocalEntry,
+  peers: Schema.Array(WorkjetMeshOverviewPeer).check(
+    Schema.isMaxLength(WORKJET_MESH_OVERVIEW_MAX_PEERS),
+  ),
+  /** True when the pin table holds more peers than the bound returns. */
+  truncated: Schema.Boolean,
+  /**
+   * The SERVER's clock when the overview was read. Every "x ago" the UI shows
+   * is elapsed time against this value, so a client with a skewed clock renders
+   * a stale age instead of a nonsensical one.
+   */
+  observedAt: WorkjetMailboxTimestamp,
+});
+export type WorkjetMeshOverview = typeof WorkjetMeshOverview.Type;

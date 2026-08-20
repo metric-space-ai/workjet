@@ -219,6 +219,7 @@ import {
   WorkjetMailboxSendMessageRpcResult,
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
+  WorkjetMeshOverview,
   WorkjetMeshRoster,
 } from "./workjetMailbox.ts";
 import { WorkjetMailboxAuditEvent } from "./workjetMailboxAudit.ts";
@@ -330,6 +331,9 @@ export const WS_METHODS = {
 
   // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
   workjetMeshRoster: "workjet.mesh.roster",
+  // ADDITIVE read: the global multi-computer activity overview. Same redacted
+  // projection as the roster, plus last-known contact and delegation counts.
+  workjetMeshOverview: "workjet.mesh.overview",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -680,6 +684,21 @@ export const WsWorkjetMailboxReassignDelegationRpc = Rpc.make(
 export const WsWorkjetMeshRosterRpc = Rpc.make(WS_METHODS.workjetMeshRoster, {
   payload: Schema.Struct({}),
   success: WorkjetMeshRoster,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * The global multi-computer activity overview: every peer machine this one has
+ * exchanged envelopes with, as this machine LAST KNEW it — identity, trust
+ * level, first contact, last inbound/outbound envelope timestamps, and
+ * delegation counts by lifecycle state. Ids, timestamps, and counts only.
+ *
+ * There is deliberately no liveness field; see `WorkjetMeshOverview` for why
+ * no honest one exists.
+ */
+export const WsWorkjetMeshOverviewRpc = Rpc.make(WS_METHODS.workjetMeshOverview, {
+  payload: Schema.Struct({}),
+  success: WorkjetMeshOverview,
   error: WorkjetMailboxRpcError,
 });
 
@@ -1242,6 +1261,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxUpdateDelegationRpc,
   WsWorkjetMailboxReassignDelegationRpc,
   WsWorkjetMeshRosterRpc,
+  WsWorkjetMeshOverviewRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

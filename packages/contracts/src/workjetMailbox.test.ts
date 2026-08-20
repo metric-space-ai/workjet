@@ -32,7 +32,9 @@ import {
   WorkjetMailboxTimestamp,
   WorkjetMailboxUpdateDelegationRpcInput,
   WorkjetMailboxUpdateDelegationRpcResult,
+  WORKJET_MESH_OVERVIEW_MAX_PEERS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
+  WorkjetMeshOverview,
   WorkjetMeshRoster,
   WorkjetReviewVerdict,
   WorkjetRoutingEnvelope,
@@ -1110,5 +1112,93 @@ describe("WorkjetMeshRoster", () => {
     expect(() =>
       decodeRoster(roster([{ ...peer("environment-peer"), firstSeenAt: "yesterday" }])),
     ).toThrow();
+  });
+});
+
+describe("WorkjetMeshOverview", () => {
+  const decodeOverview = Schema.decodeUnknownSync(WorkjetMeshOverview);
+  const overviewPeer = (environmentId: string, extra: Record<string, unknown> = {}) => ({
+    schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+    workspaceId: "workjet-mesh-peer",
+    environmentId,
+    firstSeenAt: "2026-08-18T10:00:00.000Z",
+    sealedDeliveryReady: true,
+    binding: "self-signed",
+    delegationsSent: [],
+    delegationsReceived: [],
+    ...extra,
+  });
+  const overview = (peers: ReadonlyArray<ReturnType<typeof overviewPeer>>) => ({
+    schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+    local: {
+      schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
+      workspaceId: "workjet-mesh-local",
+      environmentId: "environment-local",
+    },
+    peers,
+    truncated: false,
+    observedAt: "2026-08-19T09:00:00.000Z",
+  });
+
+  it("round-trips a peer with contact timestamps and delegation buckets", () => {
+    const value = overview([
+      overviewPeer("environment-peer", {
+        lastInboundAt: "2026-08-19T08:30:00.000Z",
+        lastOutboundAt: "2026-08-19T08:00:00.000Z",
+        delegationsSent: [{ state: "running", count: 2 }],
+        delegationsReceived: [{ state: "completed", count: 5 }],
+      }),
+    ]);
+    expect(decodeOverview(value)).toEqual(value);
+  });
+
+  it("accepts a pinned peer with NO contact on record", () => {
+    // The expiry sweep removes envelope rows; a pin without rows is honest, and
+    // the two timestamp keys must simply be absent rather than zeroed.
+    const value = overview([overviewPeer("environment-peer")]);
+    const decoded = decodeOverview(value);
+    expect(decoded).toEqual(value);
+    expect("lastInboundAt" in decoded.peers[0]!).toBe(false);
+    expect("lastOutboundAt" in decoded.peers[0]!).toBe(false);
+  });
+
+  it("accepts the honest empty overview of a machine with no peers", () => {
+    expect(decodeOverview(overview([]))).toEqual(overview([]));
+  });
+
+  it("strips a fabricated liveness field instead of carrying it", () => {
+    // The contract-level half of the no-liveness guarantee: even if a server or
+    // a fixture invents an `online` flag, decoding drops it, so no renderer can
+    // reach a liveness claim through this schema.
+    const value = overview([overviewPeer("environment-peer", { online: true })]);
+    const decoded = decodeOverview(value);
+    expect("online" in decoded.peers[0]!).toBe(false);
+    expect(JSON.stringify(decoded)).not.toContain("online");
+  });
+
+  it("refuses a negative delegation count", () => {
+    const value = overview([
+      overviewPeer("environment-peer", { delegationsSent: [{ state: "running", count: -1 }] }),
+    ]);
+    expect(() => decodeOverview(value)).toThrow();
+  });
+
+  it("refuses a delegation state the lifecycle does not have", () => {
+    const value = overview([
+      overviewPeer("environment-peer", { delegationsSent: [{ state: "sleeping", count: 1 }] }),
+    ]);
+    expect(() => decodeOverview(value)).toThrow();
+  });
+
+  it("rejects a peer list past the overview bound", () => {
+    const tooMany = Array.from({ length: WORKJET_MESH_OVERVIEW_MAX_PEERS + 1 }, (_unused, index) =>
+      overviewPeer(`environment-${index}`),
+    );
+    expect(() => decodeOverview(overview(tooMany))).toThrow();
+  });
+
+  it("requires the server observation instant, so ages are never client-relative", () => {
+    const { observedAt: _omitted, ...withoutObservedAt } = overview([]);
+    expect(() => decodeOverview(withoutObservedAt as never)).toThrow();
   });
 });

@@ -14,6 +14,7 @@ import {
   WorkjetRoutingEnvelope,
   WORKJET_TERMINAL_DELEGATION_STATES,
   EnvironmentId,
+  WORKJET_MESH_OVERVIEW_MAX_DELEGATION_BUCKETS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   type WorkjetDelegationRef,
   type WorkjetWorkerAddress,
@@ -282,6 +283,33 @@ export interface WorkjetMeshPeerPage {
   readonly truncated: boolean;
 }
 
+/**
+ * Last-known envelope contact with one peer environment, derived purely from
+ * THIS machine's own mailbox rows.
+ *
+ * `lastInboundAtMillis` is the newest `received_at_ms` of an inbox row whose
+ * routing envelope names the peer as source — an envelope this machine really
+ * received. `lastOutboundAtMillis` is the newest `created_at_ms` of an outbox
+ * row addressed to the peer — an envelope this machine really ENQUEUED, which
+ * is not the same as one the peer received, and must never be reported as
+ * delivery. Either may be `null`: the expiry sweep removes rows, so absence
+ * means "nothing on record", not "never happened".
+ */
+export interface WorkjetMeshEnvelopeContactRecord {
+  readonly environmentId: EnvironmentId;
+  readonly lastInboundAtMillis: number | null;
+  readonly lastOutboundAtMillis: number | null;
+}
+
+/** How many delegations with one peer environment sit in one lifecycle state. */
+export interface WorkjetMeshDelegationCountRecord {
+  readonly environmentId: EnvironmentId;
+  /** `sent` — the peer is the delegation TARGET; `received` — the peer is its SOURCE. */
+  readonly direction: "sent" | "received";
+  readonly state: WorkjetDelegationState;
+  readonly count: number;
+}
+
 export interface WorkjetDelegationAccounting {
   /** Cumulative tokens charged to the delegation. */
   readonly tokens: number;
@@ -462,6 +490,32 @@ const MESH_PEER_COLUMNS = `
   CASE WHEN encryption_public_key IS NULL THEN 0 ELSE 1 END AS "sealedDeliveryReady",
   key_binding AS "binding"
 `;
+
+/**
+ * One peer environment's last-known ENVELOPE contact, aggregated out of this
+ * machine's own inbox and outbox. Both timestamps are nullable: a pinned peer
+ * whose envelopes have all been swept by the expiry sweep still exists, and the
+ * honest answer is "nothing on record" rather than a fabricated zero.
+ */
+const MeshEnvelopeContactDbRow = Schema.Struct({
+  environmentId: EnvironmentId,
+  lastInboundAtMillis: Schema.NullOr(Schema.Int),
+  lastOutboundAtMillis: Schema.NullOr(Schema.Int),
+});
+const decodeMeshEnvelopeContactDbRow = Schema.decodeUnknownEffect(MeshEnvelopeContactDbRow);
+
+/**
+ * One (peer environment, direction, state) delegation bucket. `state` is decoded
+ * through the contract literal so a hand-edited column becomes a corrupt-row
+ * error instead of a state the UI would render raw.
+ */
+const MeshDelegationCountDbRow = Schema.Struct({
+  environmentId: EnvironmentId,
+  direction: Schema.Literals(["sent", "received"]),
+  state: WorkjetDelegationState,
+  count: Schema.Int,
+});
+const decodeMeshDelegationCountDbRow = Schema.decodeUnknownEffect(MeshDelegationCountDbRow);
 
 const decodeOutboxDbRow = Schema.decodeUnknownEffect(OutboxDbRow);
 const decodeInboxDbRow = Schema.decodeUnknownEffect(InboxDbRow);
@@ -785,6 +839,32 @@ export interface WorkjetMailboxStoreShape {
   readonly listMeshPeers: (
     limit: number,
   ) => Effect.Effect<WorkjetMeshPeerPage, WorkjetMailboxStoreError>;
+
+  /**
+   * Last-known envelope contact per PEER environment, aggregated over this
+   * machine's own inbox and outbox in one query, newest contact first, bounded
+   * by `limit` (clamped into `[1, WORKJET_MESH_ROSTER_MAX_PEERS]`).
+   *
+   * `localEnvironmentId` is excluded, so a same-environment local fast-path row
+   * can never appear as a "peer machine". This is a pure read; it decodes only
+   * the routing metadata SQL can extract (the source/target environment ids)
+   * and never touches a payload.
+   */
+  readonly listMeshEnvelopeContact: (
+    localEnvironmentId: EnvironmentId,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetMeshEnvelopeContactRecord>, WorkjetMailboxStoreError>;
+
+  /**
+   * Delegation counts bucketed by (peer environment, direction, lifecycle
+   * state), bounded by `limit`. `localEnvironmentId` is excluded on BOTH
+   * endpoints, so a purely local delegation contributes to neither direction.
+   * Ids and counts only — no prompt, scope, or result material.
+   */
+  readonly listMeshDelegationCounts: (
+    localEnvironmentId: EnvironmentId,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetMeshDelegationCountRecord>, WorkjetMailboxStoreError>;
 }
 
 export class WorkjetMailboxStore extends Context.Service<
@@ -2143,6 +2223,147 @@ export const make = Effect.gen(function* () {
       return { peers, truncated: rows.length > bounded } satisfies WorkjetMeshPeerPage;
     });
 
+  const boundedPeerLimit = (limit: number) =>
+    Math.min(
+      WORKJET_MESH_ROSTER_MAX_PEERS,
+      Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 1),
+    );
+
+  const listMeshEnvelopeContact: WorkjetMailboxStoreShape["listMeshEnvelopeContact"] = (
+    localEnvironmentId,
+    limit,
+  ) =>
+    Effect.gen(function* () {
+      const bounded = boundedPeerLimit(limit);
+      // The peer environment lives inside the stored routing envelope, not in a
+      // column: the mailbox tables key on the envelope id only (migration 042).
+      // `json_extract` reads exactly the two routing fields a forwarding peer is
+      // already allowed to see; no payload is touched. NOTE: there is no index
+      // on the extracted expression, so this is a scan of two bounded,
+      // expiry-swept tables — acceptable for a dashboard read, and deliberately
+      // not paid for with a migration this change is not allowed to add.
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT
+            environment_id AS "environmentId",
+            MAX(inbound_at_ms) AS "lastInboundAtMillis",
+            MAX(outbound_at_ms) AS "lastOutboundAtMillis",
+            MAX(any_at_ms) AS "lastContactAtMillis"
+          FROM (
+            SELECT
+              json_extract(routing_envelope_json, '$.sourceEnvironmentId') AS environment_id,
+              received_at_ms AS inbound_at_ms,
+              NULL AS outbound_at_ms,
+              received_at_ms AS any_at_ms
+            FROM workjet_mailbox_inbox
+            UNION ALL
+            SELECT
+              json_extract(routing_envelope_json, '$.targetEnvironmentId') AS environment_id,
+              NULL AS inbound_at_ms,
+              created_at_ms AS outbound_at_ms,
+              created_at_ms AS any_at_ms
+            FROM workjet_mailbox_outbox
+          )
+          WHERE environment_id IS NOT NULL AND environment_id <> ?
+          GROUP BY environment_id
+          ORDER BY 4 DESC, 1 ASC
+          LIMIT ?
+        `,
+          [localEnvironmentId, bounded],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listMeshEnvelopeContact:select")));
+
+      return yield* Effect.forEach(rows, (row) =>
+        decodeMeshEnvelopeContactDbRow(row).pipe(
+          Effect.mapError(
+            (cause) =>
+              // The aggregate spans inbox AND outbox; the inbox is the
+              // reported table because an undecodable environment id can only
+              // come from a stored routing envelope, which both tables hold in
+              // the identical shape.
+              new WorkjetMailboxStoreCorruptRowError({
+                table: "workjet_mailbox_inbox",
+                rowId: rowIdOf(row),
+                issue: cause.issue._tag,
+              }),
+          ),
+          Effect.map(
+            (decoded): WorkjetMeshEnvelopeContactRecord => ({
+              environmentId: decoded.environmentId,
+              lastInboundAtMillis: decoded.lastInboundAtMillis,
+              lastOutboundAtMillis: decoded.lastOutboundAtMillis,
+            }),
+          ),
+        ),
+      );
+    });
+
+  const listMeshDelegationCounts: WorkjetMailboxStoreShape["listMeshDelegationCounts"] = (
+    localEnvironmentId,
+    limit,
+  ) =>
+    Effect.gen(function* () {
+      // One peer can occupy at most every lifecycle state in both directions.
+      const bounded = Math.max(
+        1,
+        Math.min(
+          boundedPeerLimit(limit) * WORKJET_MESH_OVERVIEW_MAX_DELEGATION_BUCKETS * 2,
+          WORKJET_MESH_ROSTER_MAX_PEERS * WORKJET_MESH_OVERVIEW_MAX_DELEGATION_BUCKETS * 2,
+        ),
+      );
+      const rows = yield* sql
+        .unsafe(
+          `
+          SELECT
+            environment_id AS "environmentId",
+            direction AS "direction",
+            state AS "state",
+            COUNT(*) AS "count"
+          FROM (
+            SELECT
+              json_extract(delegation_json, '$.target.environmentId') AS environment_id,
+              'sent' AS direction,
+              state
+            FROM workjet_delegations
+            UNION ALL
+            SELECT
+              json_extract(delegation_json, '$.source.environmentId') AS environment_id,
+              'received' AS direction,
+              state
+            FROM workjet_delegations
+          )
+          WHERE environment_id IS NOT NULL AND environment_id <> ?
+          GROUP BY environment_id, direction, state
+          ORDER BY 1 ASC, 2 ASC, 3 ASC
+          LIMIT ?
+        `,
+          [localEnvironmentId, bounded],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listMeshDelegationCounts:select")));
+
+      return yield* Effect.forEach(rows, (row) =>
+        decodeMeshDelegationCountDbRow(row).pipe(
+          Effect.mapError(
+            (cause) =>
+              new WorkjetMailboxStoreCorruptRowError({
+                table: "workjet_delegations",
+                rowId: rowIdOf(row),
+                issue: cause.issue._tag,
+              }),
+          ),
+          Effect.map(
+            (decoded): WorkjetMeshDelegationCountRecord => ({
+              environmentId: decoded.environmentId,
+              direction: decoded.direction,
+              state: decoded.state,
+              count: decoded.count,
+            }),
+          ),
+        ),
+      );
+    });
+
   return {
     enqueueOutbound,
     recordInboundEnvelope,
@@ -2175,6 +2396,8 @@ export const make = Effect.gen(function* () {
     insertDelegationEdge,
     listDelegationEdges,
     listMeshPeers,
+    listMeshEnvelopeContact,
+    listMeshDelegationCounts,
   } satisfies WorkjetMailboxStoreShape;
 });
 

@@ -61,6 +61,15 @@ export const WORKJET_GATEWAY_CATALOG_STALE_TIME_MS = 5_000;
  */
 export const WORKJET_MESH_ROSTER_STALE_TIME_MS = 30_000;
 
+/**
+ * The multi-computer overview moves whenever an envelope or a delegation state
+ * does, which is far more often than the pin table changes, so it gets a much
+ * shorter freshness window than the roster. It is still a window, not a live
+ * feed: the read reports LAST KNOWN contact, and nothing about it is a liveness
+ * signal that a faster poll could make truer.
+ */
+export const WORKJET_MESH_OVERVIEW_STALE_TIME_MS = 5_000;
+
 export type ServerUpdateState =
   | { readonly status: "idle" }
   | {
@@ -788,6 +797,15 @@ export function createServerEnvironmentAtoms<R, E>(
     staleTimeMs: WORKJET_MESH_ROSTER_STALE_TIME_MS,
   });
 
+  // The global multi-computer activity overview. Same shape of read as the
+  // roster — bounded, redacted, no key material — one step wider: last-known
+  // envelope contact and delegation counts per peer machine.
+  const workjetMeshOverview = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:mesh:overview",
+    tag: WS_METHODS.workjetMeshOverview,
+    staleTimeMs: WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
+  });
+
   // Sending into another worker's mailbox is single-flighted per SOURCE THREAD,
   // not per environment: two orchestrator threads on one server are two
   // independent conversations, and a slow send from one must not swallow the
@@ -852,6 +870,7 @@ export function createServerEnvironmentAtoms<R, E>(
     updateDelegationWorkjetMailbox,
     reassignDelegationWorkjetMailbox,
     workjetMeshRoster,
+    workjetMeshOverview,
     workjetGatewayStatus,
     workjetGatewayCatalog,
     startWorkjetGateway,

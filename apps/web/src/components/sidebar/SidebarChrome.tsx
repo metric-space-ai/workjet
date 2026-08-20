@@ -2,6 +2,7 @@ import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
+  MonitorSmartphoneIcon,
   SettingsIcon,
 } from "lucide-react";
 import { memo, useCallback, type KeyboardEvent } from "react";
@@ -257,9 +258,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     select: (location) =>
       location.pathname === "/usage"
         ? "usage"
-        : location.pathname === "/pull-requests"
-          ? "pull-requests"
-          : null,
+        : location.pathname === "/machines"
+          ? "machines"
+          : location.pathname === "/pull-requests"
+            ? "pull-requests"
+            : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -287,6 +290,13 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     }
     void navigate({ to: "/usage" });
   }, [isMobile, navigate, setOpenMobile]);
+
+  // The multi-computer overview is a global read, so it belongs in this footer
+  // row beside Usage rather than anywhere thread-scoped.
+  const handleMachinesClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/machines" });
+  }, [closeMobileSidebar, navigate]);
 
   const handleBackClick = useCallback(() => {
     closeMobileSidebar();
@@ -351,6 +361,22 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
                   }
                 />
                 <TooltipPopup side="top">Usage</TooltipPopup>
+              </Tooltip>
+            </SidebarMenuItem>
+            <SidebarMenuItem className="shrink-0">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      aria-label="Machines"
+                      onClick={handleMachinesClick}
+                      size="icon"
+                    >
+                      <MonitorSmartphoneIcon />
+                    </SidebarMenuButton>
+                  }
+                />
+                <TooltipPopup side="top">Machines</TooltipPopup>
               </Tooltip>
             </SidebarMenuItem>
           </>

@@ -78,6 +78,11 @@ export const RPC_REQUIRED_SCOPES = {
   // exchanged mail with: the same orchestration-read scope the audit stream and
   // the gateway status use. It writes nothing and carries no key material.
   [WS_METHODS.workjetMeshRoster]: AuthOrchestrationReadScope,
+  // The multi-computer overview is the same redacted read one step wider: the
+  // roster fields plus last-known contact timestamps and delegation counts
+  // this server already holds. Still a pure read, still no key material, so it
+  // carries the roster's scope and never an operate scope.
+  [WS_METHODS.workjetMeshOverview]: AuthOrchestrationReadScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

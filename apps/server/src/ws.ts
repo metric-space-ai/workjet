@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -56,6 +57,7 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
+  WORKJET_MESH_OVERVIEW_MAX_PEERS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
   WsRpcGroup,
@@ -1758,6 +1760,45 @@ const makeWsRpcLayer = (
               // A store outage or an undecodable pin row is the bounded
               // "mailbox-unavailable" the other mailbox RPCs already use; the
               // cause never reaches the client.
+              Effect.mapError(() => new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
+            ),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        // The global multi-computer activity overview: the roster projection
+        // widened by the last envelope contact this machine has ON RECORD with
+        // each peer and its cross-environment delegation counts. Every value is
+        // derived from rows this server already owns; nothing new replicates,
+        // and there is still no liveness field, because the CTOX loopback
+        // surface (publish / pending / consumed) exposes no presence signal.
+        [WS_METHODS.workjetMeshOverview]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMeshOverview,
+            Effect.gen(function* () {
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              const page = yield* workjetMailboxStore.listMeshPeers(
+                WORKJET_MESH_OVERVIEW_MAX_PEERS,
+              );
+              const contact = yield* workjetMailboxStore.listMeshEnvelopeContact(
+                environmentId,
+                WORKJET_MESH_OVERVIEW_MAX_PEERS,
+              );
+              const delegationCounts = yield* workjetMailboxStore.listMeshDelegationCounts(
+                environmentId,
+                WORKJET_MESH_OVERVIEW_MAX_PEERS,
+              );
+              const observedAtMillis = yield* Clock.currentTimeMillis;
+              return WorkjetMeshIdentity.workjetMeshOverviewOf({
+                workspaceId: workjetMailboxIdentity.workspaceId,
+                environmentId,
+                page,
+                contact,
+                delegationCounts,
+                observedAtMillis,
+              });
+            }).pipe(
+              // Same bounded failure as the roster: a store outage or an
+              // undecodable row is "mailbox-unavailable"; the cause never
+              // reaches the client.
               Effect.mapError(() => new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
             ),
             { "rpc.aggregate": "workjet-mailbox" },

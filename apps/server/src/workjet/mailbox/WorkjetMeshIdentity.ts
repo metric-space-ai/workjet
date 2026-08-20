@@ -4,6 +4,9 @@ import {
   WorkjetMailboxError,
   WorkjetMeshWorkspaceId,
   type EnvironmentId,
+  type WorkjetMeshDelegationStateCount,
+  type WorkjetMeshOverview,
+  type WorkjetMeshOverviewPeer,
   type WorkjetMeshRoster,
   type WorkjetRoutingEnvelope,
 } from "@t3tools/contracts";
@@ -16,7 +19,11 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
-import type { WorkjetMeshPeerPage } from "./WorkjetMailboxStore.ts";
+import type {
+  WorkjetMeshDelegationCountRecord,
+  WorkjetMeshEnvelopeContactRecord,
+  WorkjetMeshPeerPage,
+} from "./WorkjetMailboxStore.ts";
 
 /**
  * The local mesh identity of THIS environment (docs/workjet-plan.md →
@@ -854,3 +861,92 @@ export const workjetMeshRosterOf = (input: {
   })),
   truncated: input.page.truncated,
 });
+
+/**
+ * Projects this environment's identity, the peers it has pinned, the last
+ * envelope contact it has ON RECORD with each, and its cross-environment
+ * delegation counts into the client-facing {@link WorkjetMeshOverview}
+ * (docs/workjet-plan.md → "the desktop shows a global multi-computer activity
+ * overview […] including the last known state of currently offline machines").
+ *
+ * Pure, for the same reason {@link workjetMeshRosterOf} is: the redaction
+ * discipline is then testable without a database, and no key material, thread
+ * id, prompt, or result is even in scope to leak.
+ *
+ * What "last known state" means here, precisely:
+ *
+ * - `lastInboundAt` — an envelope from that peer really landed in this
+ *   machine's inbox at that instant. It is the strongest cross-machine fact a
+ *   Workjet server holds, and it is a fact about the PAST.
+ * - `lastOutboundAt` — this machine enqueued an envelope addressed to that
+ *   peer at that instant. It says nothing about receipt.
+ * - Neither is liveness. The overview has no online/offline field, because the
+ *   CTOX daemon's loopback surface exposes publish/pending/consumed and no
+ *   presence route, and event replication was rejected. A machine that has been
+ *   powered off for a week and one that is online but idle produce the SAME
+ *   record here, and pretending otherwise would be a lie the mesh cannot back.
+ *
+ * A peer with no contact rows at all is still listed: the pin proves first
+ * contact happened, and the expiry sweep is allowed to have removed the rows.
+ * The two timestamp keys are then simply ABSENT rather than zeroed.
+ */
+export const workjetMeshOverviewOf = (input: {
+  readonly workspaceId: WorkjetMeshWorkspaceId;
+  readonly environmentId: EnvironmentId;
+  readonly page: WorkjetMeshPeerPage;
+  readonly contact: ReadonlyArray<WorkjetMeshEnvelopeContactRecord>;
+  readonly delegationCounts: ReadonlyArray<WorkjetMeshDelegationCountRecord>;
+  /** The SERVER's clock at read time; every client-side age is relative to it. */
+  readonly observedAtMillis: number;
+}): WorkjetMeshOverview => {
+  const contactByEnvironment = new Map(
+    input.contact.map((record) => [record.environmentId as string, record] as const),
+  );
+  const sentByEnvironment = new Map<string, Array<WorkjetMeshDelegationStateCount>>();
+  const receivedByEnvironment = new Map<string, Array<WorkjetMeshDelegationStateCount>>();
+  for (const record of input.delegationCounts) {
+    const target = record.direction === "sent" ? sentByEnvironment : receivedByEnvironment;
+    const key = record.environmentId as string;
+    const bucket = target.get(key);
+    const entry = { state: record.state, count: record.count };
+    if (bucket === undefined) target.set(key, [entry]);
+    else bucket.push(entry);
+  }
+
+  return {
+    schemaVersion: 1,
+    local: {
+      schemaVersion: 1,
+      workspaceId: input.workspaceId,
+      environmentId: input.environmentId,
+    },
+    peers: input.page.peers.map((peer): WorkjetMeshOverviewPeer => {
+      const key = peer.environmentId as string;
+      const contact = contactByEnvironment.get(key);
+      return {
+        schemaVersion: 1 as const,
+        workspaceId: peer.workspaceId,
+        environmentId: peer.environmentId,
+        firstSeenAt: DateTime.formatIso(DateTime.makeUnsafe(peer.firstSeenAtMillis)),
+        sealedDeliveryReady: peer.sealedDeliveryReady,
+        binding: peer.binding,
+        // `optionalKey`, so "nothing on record" is an absent key rather than a
+        // null a renderer could mistake for an epoch timestamp.
+        ...(contact?.lastInboundAtMillis === undefined || contact.lastInboundAtMillis === null
+          ? {}
+          : {
+              lastInboundAt: DateTime.formatIso(DateTime.makeUnsafe(contact.lastInboundAtMillis)),
+            }),
+        ...(contact?.lastOutboundAtMillis === undefined || contact.lastOutboundAtMillis === null
+          ? {}
+          : {
+              lastOutboundAt: DateTime.formatIso(DateTime.makeUnsafe(contact.lastOutboundAtMillis)),
+            }),
+        delegationsSent: sentByEnvironment.get(key) ?? [],
+        delegationsReceived: receivedByEnvironment.get(key) ?? [],
+      };
+    }),
+    truncated: input.page.truncated,
+    observedAt: DateTime.formatIso(DateTime.makeUnsafe(input.observedAtMillis)),
+  };
+};

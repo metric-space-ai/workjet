@@ -80,11 +80,18 @@ const SCHEMA_VERSION = WORKJET_LEGACY_IMPORT_SCHEMA_VERSION;
  * charset-bounded schemas, so it is cleaned here rather than risking an encode
  * failure that would take the whole offer down over one stray byte.
  */
-const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/g;
+const withoutControlCharacters = (value: string): string => {
+  let cleaned = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    cleaned += codeUnit <= 0x1f || codeUnit === 0x7f ? " " : value.charAt(index);
+  }
+  return cleaned;
+};
 
 const presentable = (value: string | null | undefined, maximum: number): string | null => {
   if (value === undefined || value === null) return null;
-  const cleaned = value.replace(CONTROL_CHARACTERS, " ").replace(/\s+/g, " ").trim();
+  const cleaned = withoutControlCharacters(value).replace(/\s+/g, " ").trim();
   if (cleaned.length === 0) return null;
   return cleaned.slice(0, maximum).trim();
 };

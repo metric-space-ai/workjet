@@ -25,6 +25,7 @@ import type {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
+import type { DesktopSupportBundleResult } from "./supportBundle.ts";
 import type { AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import type {
   ProjectListEntriesInput,
@@ -1116,6 +1117,16 @@ export interface DesktopBridge {
   acceptUserDataMigration?: () => Promise<void>;
   /** Records refusal. The offer is never shown again. */
   declineUserDataMigration?: () => Promise<void>;
+  /**
+   * Writes a redacted support bundle to disk and returns where it landed.
+   *
+   * Optional, and the renderer's feature flag for the whole surface: a build
+   * without this method has no support-bundle action. The bundle is NEVER
+   * uploaded — there is no companion send method, by design (see
+   * `SUPPORT_BUNDLE_UPLOAD_SUPPORTED`). Only the result crosses the bridge;
+   * the document itself stays on disk for the user to read first.
+   */
+  createSupportBundle?: () => Promise<DesktopSupportBundleResult>;
   /**
    * Drains the OS deep links the main process is holding. Draining is the
    * only way links leave the main process, so a link is delivered exactly

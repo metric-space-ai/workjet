@@ -25,6 +25,7 @@ import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopCrashReporting from "../support/DesktopCrashReporting.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
@@ -222,6 +223,7 @@ const bootstrap = Effect.gen(function* () {
 const startup = Effect.gen(function* () {
   const appIdentity = yield* DesktopAppIdentity.DesktopAppIdentity;
   const applicationMenu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+  const crashReporting = yield* DesktopCrashReporting.DesktopCrashReporting;
   const electronApp = yield* ElectronApp.ElectronApp;
   const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
   const linuxUrlHandler = yield* DesktopLinuxUrlHandler.DesktopLinuxUrlHandler;
@@ -259,6 +261,15 @@ const startup = Effect.gen(function* () {
   yield* electronApp.setPath("userData", userDataPath);
   yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
   yield* desktopSettings.load;
+  // Pre-ready on purpose: a crash between here and the first window is
+  // exactly the one a user cannot describe, and Electron only captures it if
+  // the reporter is already running. Nothing is uploaded — see
+  // DesktopCrashReporting for why that is a permanent property, not a
+  // default. This sits AFTER settings.load because the update channel is one
+  // of the six annotations, and both already run before `whenReady`; it adds
+  // no macrotask boundary that Clerk's pre-ready scheme registration
+  // (below) does not already tolerate.
+  yield* crashReporting.configure;
 
   if (linuxElectronOptions !== null) {
     yield* logStartupInfo("linux password store configured", {

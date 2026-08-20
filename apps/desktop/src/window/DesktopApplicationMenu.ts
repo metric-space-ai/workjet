@@ -10,7 +10,9 @@ import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopSupportBundle from "../support/DesktopSupportBundle.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -34,9 +36,11 @@ export class DesktopApplicationMenu extends Context.Service<
 >()("@t3tools/desktop/window/DesktopApplicationMenu") {}
 
 type DesktopApplicationMenuRuntimeServices =
+  | DesktopSupportBundle.DesktopSupportBundle
   | DesktopUpdates.DesktopUpdates
   | DesktopWindow.DesktopWindow
-  | ElectronDialog.ElectronDialog;
+  | ElectronDialog.ElectronDialog
+  | ElectronShell.ElectronShell;
 
 const { logInfo: logUpdaterInfo } = makeComponentLogger("desktop-updater");
 
@@ -107,6 +111,55 @@ const handleCheckForUpdatesMenuClick = Effect.fn("desktop.menu.handleCheckForUpd
   },
 );
 
+/**
+ * Builds a support bundle from the Help menu and TELLS THE USER THE PATH.
+ *
+ * The dialog is the delivery mechanism, not a courtesy: a bundle the user
+ * cannot find is a bundle they cannot inspect before sharing, and inspecting
+ * it is the whole safety story. "Copy Path" is offered because a path inside
+ * an application-support directory is not something anyone retypes.
+ *
+ * Nothing here sends anything. The message says so explicitly, so the user
+ * does not have to infer it from the absence of a progress bar.
+ */
+const createSupportBundleFromMenu = Effect.fn("desktop.menu.createSupportBundle")(function* () {
+  const supportBundle = yield* DesktopSupportBundle.DesktopSupportBundle;
+  const electronDialog = yield* ElectronDialog.ElectronDialog;
+  const electronShell = yield* ElectronShell.ElectronShell;
+
+  const result = yield* supportBundle.create.pipe(Effect.option);
+  if (Option.isNone(result)) {
+    yield* electronDialog.showMessageBox({
+      type: "warning",
+      title: "Support bundle failed",
+      message: "The support bundle could not be written.",
+      detail: "Check that the application state directory is writable, then try again.",
+      buttons: ["OK"],
+    });
+    return;
+  }
+
+  const { filePath, byteLength, redactedFieldCount, omittedFieldCount } = result.value;
+  const choice = yield* electronDialog.showMessageBox({
+    type: "info",
+    title: "Support bundle created",
+    message: "The support bundle was saved on this computer. Nothing was uploaded.",
+    detail: [
+      filePath,
+      "",
+      `${Math.max(1, Math.round(byteLength / 1024))} KB - ${redactedFieldCount} field(s) redacted, ${omittedFieldCount} omitted.`,
+      "Open the file and read it before sending it to anyone.",
+    ].join("\n"),
+    buttons: ["Copy Path", "OK"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+
+  if (choice.response === 0) {
+    yield* electronShell.copyText(filePath);
+  }
+});
+
 export const make = Effect.gen(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronMenu = yield* ElectronMenu.ElectronMenu;
@@ -147,6 +200,9 @@ export const make = Effect.gen(function* () {
     };
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
+    };
+    const createSupportBundleClick = () => {
+      runMenuEffect("create-support-bundle", createSupportBundleFromMenu());
     };
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
@@ -231,6 +287,11 @@ export const make = Effect.gen(function* () {
           {
             label: "Check for Updates...",
             click: checkForUpdatesClick,
+          },
+          { type: "separator" },
+          {
+            label: "Create Support Bundle...",
+            click: createSupportBundleClick,
           },
           ...(environment.platform === "darwin"
             ? []

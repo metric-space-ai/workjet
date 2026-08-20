@@ -15,6 +15,10 @@ import {
 } from "@t3tools/contracts";
 
 import {
+  parseWorkjetCrossModeActivity,
+  type WorkjetCrossModeCardModel,
+} from "./components/chat/WorkjetCrossModeLinkCard";
+import {
   parseWorkjetMailboxActivity,
   type WorkjetMailboxCardModel,
 } from "./components/chat/WorkjetMailboxActivityCard";
@@ -94,6 +98,14 @@ export interface WorkLogEntry {
    * redacted address and lifecycle metadata the activity payload holds.
    */
   workjetMailbox?: WorkjetMailboxCardModel;
+  /**
+   * Present on the two cross-mode bridge rows (`workjet.crossmode.linked` — the
+   * durable backlink to a Business OS work item — and
+   * `workjet.crossmode.returned`). The row renders as a compact link card; the
+   * model carries only the typed references, the operation, and the link's own
+   * bounded redacted title, never a Business OS record.
+   */
+  workjetCrossMode?: WorkjetCrossModeCardModel;
   /**
    * Present on agent-spawn CTA rows: one per workflow run or per-turn batch
    * of direct spawns. The row renders as a call-to-action ("Kicked off N
@@ -859,6 +871,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const workjetMailbox = parseWorkjetMailboxActivity(activity.kind, activity.payload);
   if (workjetMailbox) {
     entry.workjetMailbox = workjetMailbox;
+  }
+  const workjetCrossMode = parseWorkjetCrossModeActivity(activity.kind, activity.payload);
+  if (workjetCrossMode) {
+    entry.workjetCrossMode = workjetCrossMode;
   }
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);

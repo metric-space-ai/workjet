@@ -80,6 +80,17 @@ export const WORKJET_MESH_OVERVIEW_STALE_TIME_MS = 5_000;
  */
 export const WORKJET_HANDOFF_INBOX_STALE_TIME_MS = 10_000;
 
+/**
+ * How long a cross-mode link read stays fresh.
+ *
+ * A link is a durable, rarely changing fact — an object gets a Code thread once
+ * and keeps it — so the Code thread's backlink read may reuse a recently read
+ * answer instead of asking on every render. It is the same order as the roster
+ * for the same reason: both answer "what is related to what", not "what is
+ * happening now".
+ */
+export const WORKJET_CROSS_MODE_LINK_STALE_TIME_MS = 30_000;
+
 export type ServerUpdateState =
   | { readonly status: "idle" }
   | {
@@ -903,9 +914,57 @@ export function createServerEnvironmentAtoms<R, E>(
       }),
   });
 
+  // The cross-mode workflow bridge.
+  //
+  // The Code thread's BACKLINK read is keyed per thread, so a thread that
+  // carries no link keeps its own cached "no link" answer instead of sharing one
+  // with every other thread.
+  const workjetCrossModeThreadLink = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:crossmode:thread-link",
+    tag: WS_METHODS.workjetCrossModeGetThreadLink,
+    staleTimeMs: WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
+  });
+  const workjetCrossModeLinks = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:crossmode:links",
+    tag: WS_METHODS.workjetCrossModeListLinks,
+    staleTimeMs: WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
+  });
+  // `Delegate to Code` / `Open in Code` is single-flighted per ENVIRONMENT
+  // rather than per source thread: its input names a HOST thread, not a source,
+  // and the race that matters is two clicks on the same Business OS OBJECT — a
+  // race the server resolves by selecting rather than forking. Serialising per
+  // environment means the operator sees one answer instead of a thread being
+  // created and immediately deleted.
+  const openWorkjetCrossModeInCode = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:crossmode:open-in-code",
+    tag: WS_METHODS.workjetCrossModeOpenInCode,
+    concurrency: workjetGatewayConcurrency,
+  });
+  // A return is made FROM the link's own Code thread, so it shares the
+  // per-source-thread single flight the other thread-scoped writes use — keyed
+  // on `threadId`, which is what this input calls its source.
+  const submitWorkjetCrossMode = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:crossmode:submit",
+    tag: WS_METHODS.workjetCrossModeSubmit,
+    concurrency: {
+      mode: "singleFlight" as const,
+      key: ({
+        environmentId,
+        input,
+      }: {
+        readonly environmentId: EnvironmentId;
+        readonly input: { readonly threadId: string };
+      }) => `${environmentId}:${input.threadId}`,
+    },
+  });
+
   return {
     configValueAtom,
     updateStateAtom,
+    workjetCrossModeThreadLink,
+    workjetCrossModeLinks,
+    openWorkjetCrossModeInCode,
+    submitWorkjetCrossMode,
     sendWorkjetMailboxMessage,
     delegateWorkjetMailboxTask,
     replyWorkjetMailbox,

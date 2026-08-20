@@ -121,6 +121,13 @@ import {
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
 import {
+  EMPTY_CROSS_MODE_ACTION_STATE,
+  WorkjetCrossModeLinkCard,
+  type WorkjetCrossModeAction,
+  type WorkjetCrossModeActionState,
+  type WorkjetCrossModeCardModel,
+} from "./WorkjetCrossModeLinkCard";
+import {
   EMPTY_DELEGATION_ACTION_STATE,
   WorkjetMailboxActivityCard,
   type WorkjetDelegationAction,
@@ -176,6 +183,17 @@ interface TimelineRowSharedState {
    * keeps "Reassign…" off the card.
    */
   workjetReassignThreads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+  /**
+   * Dispatch a cross-mode return (result / review request / follow-up) resolved
+   * from a link card. Absent when the host does not wire the bridge, in which
+   * case the link cards stay display-only.
+   */
+  onWorkjetCrossModeAction:
+    | ((
+        action: WorkjetCrossModeAction,
+        model: WorkjetCrossModeCardModel,
+      ) => void | Promise<string | null>)
+    | null;
 }
 
 interface TimelineRowActivityState {
@@ -255,6 +273,14 @@ interface MessagesTimelineProps {
    * hosts that do not wire it keep display-only cards.
    */
   workjetReassignThreads?: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+  /**
+   * Dispatch a cross-mode return from a timeline link card. Optional: when
+   * omitted the link cards render without the reverse-direction actions.
+   */
+  onWorkjetCrossModeAction?: (
+    action: WorkjetCrossModeAction,
+    model: WorkjetCrossModeCardModel,
+  ) => void | Promise<string | null>;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -307,6 +333,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenAgents = NOOP_OPEN_AGENTS,
   onOpenThread,
   onWorkjetDelegationAction,
+  onWorkjetCrossModeAction,
   workjetReassignThreads = EMPTY_WORKJET_REASSIGN_THREADS,
   listRef,
   timelineEntries,
@@ -574,6 +601,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenThread: onOpenThread ?? NOOP_OPEN_THREAD,
       onWorkjetDelegationAction: onWorkjetDelegationAction ?? null,
       workjetReassignThreads,
+      onWorkjetCrossModeAction: onWorkjetCrossModeAction ?? null,
     }),
     [
       timestampFormat,
@@ -593,6 +621,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenThread,
       onWorkjetDelegationAction,
       workjetReassignThreads,
+      onWorkjetCrossModeAction,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2312,15 +2341,55 @@ const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
   );
 });
 
+const WorkjetCrossModeRow = memo(function WorkjetCrossModeRow(props: {
+  model: NonNullable<TimelineWorkEntry["workjetCrossMode"]>;
+}) {
+  const { onWorkjetCrossModeAction } = use(TimelineRowCtx);
+  // The draft is owned here for the same reason the mailbox row owns its own:
+  // the card stays a pure, controlled presentational component, and the durable
+  // `workjet.crossmode.returned` activity re-renders the timeline through the
+  // ordinary thread subscription, so nothing optimistic lives here.
+  const [actionState, setActionState] = useState<WorkjetCrossModeActionState>(
+    EMPTY_CROSS_MODE_ACTION_STATE,
+  );
+  const model = props.model;
+  const dispatch = useCallback(
+    (action: WorkjetCrossModeAction) => {
+      const dispatched = onWorkjetCrossModeAction?.(action, model);
+      setActionState(EMPTY_CROSS_MODE_ACTION_STATE);
+      // A refusal is the ONE thing the durable re-render cannot deliver — the
+      // command never left this machine, so nothing changed to re-render.
+      if (!(dispatched instanceof Promise)) return;
+      void dispatched.then((error) => {
+        if (error === null) return;
+        setActionState((current) => ({ ...current, error }));
+      });
+    },
+    [onWorkjetCrossModeAction, model],
+  );
+  const actionProps =
+    onWorkjetCrossModeAction !== null && model.kind === "link"
+      ? {
+          actionState,
+          onActionStateChange: setActionState,
+          onCrossModeAction: dispatch,
+        }
+      : {};
+  return <WorkjetCrossModeLinkCard model={model} {...actionProps} />;
+});
+
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
-  // Before any hooks: spawn CTA rows and Workjet mailbox rows render their own
-  // component.
+  // Before any hooks: spawn CTA rows, Workjet mailbox rows, and cross-mode link
+  // rows render their own component.
   if (workEntry.workjetMailbox) {
     return <WorkjetMailboxRow model={workEntry.workjetMailbox} />;
+  }
+  if (workEntry.workjetCrossMode) {
+    return <WorkjetCrossModeRow model={workEntry.workjetCrossMode} />;
   }
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;

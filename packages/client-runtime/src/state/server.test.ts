@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  ThreadId,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
@@ -40,6 +41,7 @@ import {
   WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
   WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
+  WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
   WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
   WORKJET_MESH_ROSTER_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
@@ -255,6 +257,44 @@ describe("Workjet mesh roster client wiring", () => {
     // does. A shorter window is honest freshness, not a liveness signal.
     expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeGreaterThan(0);
     expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeLessThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+  });
+
+  it("keys the cross-mode backlink read per thread and keeps the two writes distinct", () => {
+    const server = rosterAtoms();
+    const environmentId = EnvironmentId.make("environment-1");
+    // A thread that carries no link must keep its own cached "no link" answer
+    // rather than sharing one with every other thread.
+    expect(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-1") },
+      }),
+    ).toBe(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-1") },
+      }),
+    );
+    expect(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-2") },
+      }),
+    ).not.toBe(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-1") },
+      }),
+    );
+    expect(server.openWorkjetCrossModeInCode).not.toBe(server.submitWorkjetCrossMode);
+  });
+
+  it("keeps a cross-mode link fresher for longer than the handoff inbox", () => {
+    // A link is a durable relation, not an arrival; it does not need the inbox's
+    // poll rate.
+    expect(WORKJET_CROSS_MODE_LINK_STALE_TIME_MS).toBeGreaterThan(
+      WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
+    );
   });
 
   it("polls the received-handoff inbox more eagerly than the recipient roster", () => {

@@ -266,6 +266,11 @@ import {
   type WorkjetSendDraft,
   type WorkjetSendOutcome,
 } from "./chat/WorkjetSendToWorkerPanel";
+import {
+  workjetCrossModeFailureMessage,
+  type WorkjetCrossModeAction,
+  type WorkjetCrossModeCardModel,
+} from "./chat/WorkjetCrossModeLinkCard";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1664,6 +1669,11 @@ function ChatViewContent(props: ChatViewProps) {
     serverEnvironment.acceptHandoffWorkjetMailbox,
     { reportFailure: false },
   );
+  // The cross-mode return. Like every other timeline-card write it reports its
+  // own refusal on the card, so the global failure toast stays off.
+  const submitWorkjetCrossMode = useAtomCommand(serverEnvironment.submitWorkjetCrossMode, {
+    reportFailure: false,
+  });
   // The mesh roster feeds the send-to-worker recipient picker; queried only
   // while an orchestrator thread is active so ordinary threads pay nothing.
   const workjetMeshRosterQuery = useEnvironmentQuery(
@@ -1921,6 +1931,47 @@ function ChatViewContent(props: ChatViewProps) {
       requestReviewWorkjetMailbox,
       updateDelegationWorkjetMailbox,
     ],
+  );
+  /**
+   * `Return to Business OS`: submit a result with evidence, request a review, or
+   * ask for a follow-up on the linked Business OS work item.
+   *
+   * The link id and the ACTIVE thread are the only things that travel — the CTOX
+   * instance, module, and object are read from the stored link on the server, so
+   * this client cannot redirect a submission at a different object even by
+   * mistake. Only a refusal is reported: a success writes a durable
+   * `workjet.crossmode.returned` activity that re-renders the timeline.
+   */
+  const onWorkjetCrossModeAction = useCallback(
+    async (
+      action: WorkjetCrossModeAction,
+      _model: WorkjetCrossModeCardModel,
+    ): Promise<string | null> => {
+      if (!activeThreadEnvironmentId || !activeThreadId) return null;
+      const result = await submitWorkjetCrossMode({
+        environmentId: activeThreadEnvironmentId,
+        input: {
+          linkId: action.linkId,
+          threadId: activeThreadId,
+          operation: action.kind,
+          evidence: {
+            schemaVersion: 1,
+            summary: action.summary,
+            artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+          },
+          ...(action.kind === "submit-result" ? { outcome: action.outcome } : {}),
+        },
+      });
+      return typeof result === "object" &&
+        result !== null &&
+        "_tag" in result &&
+        (result as { readonly _tag: string })._tag === "Failure"
+        ? isAtomCommandInterrupted(result as never)
+          ? null
+          : workjetCrossModeFailureMessage(squashAtomCommandFailure(result as never))
+        : null;
+    },
+    [activeThreadEnvironmentId, activeThreadId, submitWorkjetCrossMode],
   );
   useEffect(() => {
     if (!activeServerThread || !activeThreadKey) return;
@@ -6755,6 +6806,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenAgents={addAgentsSurface}
                 onOpenThread={onOpenWorkjetPeerThread}
                 onWorkjetDelegationAction={onWorkjetDelegationAction}
+                onWorkjetCrossModeAction={onWorkjetCrossModeAction}
                 workjetReassignThreads={workjetRecipientThreads}
                 key={activeThread.id}
                 isWorking={isWorking}

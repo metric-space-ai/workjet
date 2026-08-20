@@ -390,6 +390,14 @@ export class WorkjetMailboxTransport extends Context.Service<
  */
 const CtoxInstanceDescriptor = Schema.Struct({
   version: Schema.Number,
+  /**
+   * The daemon's own published identity, written by the running process (CTOX
+   * `src/core/service/instance_descriptor.rs`). Optional here because the field
+   * is not needed to *reach* the daemon — the mailbox transport ignores it — but
+   * it IS the only local fact that says WHICH CTOX instance this loopback
+   * listener belongs to, so the cross-mode port reads it to verify authority.
+   */
+  instanceId: Schema.optional(Schema.String),
   status: Schema.String,
   lastSeenAt: Schema.Number,
   healthUrl: Schema.optional(Schema.String),
@@ -400,6 +408,13 @@ const decodeDescriptor = Schema.decodeUnknownEffect(Schema.fromJsonString(CtoxIn
 export interface CtoxDaemonEndpoint {
   /** Base URL of the loopback MCP-channel listener, with no trailing slash. */
   readonly baseUrl: string;
+  /**
+   * The `instanceId` the running daemon published in its descriptor, when it
+   * published one. Absent for an older daemon that omits the field; a consumer
+   * that needs an identity must treat absence as "cannot vouch", never as a
+   * match.
+   */
+  readonly instanceId?: string;
 }
 
 /** `CTOX_STATE_ROOT`, else the documented default `~/.local/state/ctox`. */
@@ -656,9 +671,17 @@ export const resolveCtoxEndpointFromDescriptor = (options: {
       return { _tag: "idle", reason: "daemon-endpoint-unusable" } as const;
     }
     const baseUrl = ctoxBaseUrlFromHealthUrl(healthUrl);
+    const instanceId = descriptor.value.instanceId?.trim();
     return Option.match(baseUrl, {
       onNone: () => ({ _tag: "idle", reason: "daemon-endpoint-unusable" }) as const,
-      onSome: (url) => ({ _tag: "resolved", endpoint: { baseUrl: url } }) as const,
+      onSome: (url) =>
+        ({
+          _tag: "resolved",
+          endpoint: {
+            baseUrl: url,
+            ...(instanceId !== undefined && instanceId.length > 0 ? { instanceId } : {}),
+          },
+        }) as const,
     });
   });
 

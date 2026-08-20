@@ -22,44 +22,38 @@ import * as Layer from "effect/Layer";
  * bridge: authority verification, and the dispatch of a validated Business OS
  * command.
  *
- * WHY THIS IS A PORT AND NOT AN IMPLEMENTATION. What the T3 server can reach
- * today was established by reading the code, not assumed:
+ * WHY IT IS A PORT. Everything upstream of this interface — validation, the
+ * authority check, the durable link, thread creation, the activity trace, the
+ * approval mapping — is this server's own business and is tested against a
+ * double. Only the last hop touches another authority, and keeping that hop
+ * behind one two-method interface is what makes "a caller can never name an
+ * unverified instance" auditable by reading rather than by trust.
  *
- * - There is NO MCP client anywhere in this repository. `apps/server` mounts an
- *   MCP *server* (`apps/server/src/mcp/McpHttpServer.ts`) and exposes toolkits
- *   to agents; it never connects out to a CTOX daemon's `POST /mcp`. A search
- *   for `StdioClientTransport` / `SSEClientTransport` / `StreamableHTTPClient`
- *   over `apps/` and `packages/` returns nothing.
- * - The only outbound wire from `apps/server` to a CTOX daemon is the mailbox
- *   loopback transport (`../mailbox/WorkjetMailboxTransport.ts`), and it is
- *   explicitly opaque: the daemon "treats `envelope_json` and `payload_json` as
- *   OPAQUE bounded blobs — it never parses, verifies, or interprets them". A
- *   replication pipe cannot express a Business OS command, and widening it to
- *   carry one would be exactly the alternate data path the plan forbids.
- * - Business OS commands travel today through the DESKTOP:
- *   renderer → `desktop:ctox-*` IPC (`apps/desktop/src/ipc/channels.ts`) →
- *   `CtoxGuestManager.executeJavaScript` into the guest `WebContentsView` →
- *   `globalThis.CTOX_BUSINESS_OS_APP`. `apps/server` has no hop on that path,
- *   and `packages/contracts/src/ipc.ts` carries no desktop-main ↔ server channel
- *   for it.
+ * ITS IMPLEMENTATIONS.
  *
- * So the server half is implemented here in full — validation, authority check,
- * durable link, thread creation, activity trace, approval mapping — and the last
- * hop is this port. Its only implementation in this slice is
- * {@link WorkjetCrossModeCtoxPortUnavailable}, which verifies NO authority and
- * dispatches NOTHING. That is the honest state of the boundary: a cross-mode
- * link cannot be created until something can vouch for a CTOX instance, and a
- * `Return to Business OS` refuses with `ctox-command-unavailable` rather than
- * pretending it landed.
+ * - {@link WorkjetCrossModeCtoxPortUnavailable} verifies NO authority and
+ *   dispatches NOTHING. It is a real, correct implementation of "this server
+ *   has no validated CTOX command channel" — the honest state on a machine with
+ *   no local daemon — not a stub that pretends.
+ * - `WorkjetCrossModeCtoxClient` is the live one, a bounded JSON-RPC client over
+ *   the local daemon's `POST /mcp` surface on the same loopback origin and
+ *   behind the same bearer token `WorkjetMailboxTransport` already resolves from
+ *   `<CTOX_STATE_ROOT>/instance.json` and
+ *   `ctox secret get --scope business_os --name mcp_inbound_auth_token`. It
+ *   verifies an instance against the identity the running daemon publishes in
+ *   its own descriptor and dispatches through `business_os.execute_action`.
+ *   Because it re-resolves both the descriptor and the token on every call, it
+ *   degrades to exactly the unavailable behaviour when no daemon is running —
+ *   which is why `ws.ts` needs no "is CTOX installed" branch.
  *
- * The remaining step is a real implementation of THIS interface over the CTOX
- * daemon's typed `business_os.*` MCP surface (the daemon's loopback listener,
- * the same origin and bearer token `WorkjetMailboxTransport` already resolves
- * from `<CTOX_STATE_ROOT>/instance.json` and
- * `ctox secret get --scope business_os --name mcp_inbound_auth_token`) — or, if
- * the boundary is to stay in the desktop, a desktop-main implementation reached
- * over a new IPC channel. Either way the shape above is what it must satisfy,
- * and nothing upstream of it changes.
+ * There is deliberately no second data path. The mailbox loopback transport is
+ * explicitly opaque — the daemon "treats `envelope_json` and `payload_json` as
+ * OPAQUE bounded blobs" — so a replication pipe cannot express a Business OS
+ * command, and widening it to carry one would be the alternate data path the
+ * plan forbids. The desktop's own route (renderer → `desktop:ctox-*` IPC →
+ * `CtoxGuestManager.executeJavaScript` → `globalThis.CTOX_BUSINESS_OS_APP`)
+ * stays the desktop's; this server reaches CTOX only through the typed,
+ * policy-gated, audited MCP surface.
  */
 
 // ===============================

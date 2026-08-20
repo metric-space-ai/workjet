@@ -529,9 +529,12 @@ it.effect("reads a running descriptor and refuses a stale one", () =>
         nowMillis: Effect.succeed(NOW_MILLIS),
       });
 
+    // The daemon's published identity rides along with the endpoint. The
+    // mailbox transport ignores it; the cross-mode port verifies authority
+    // against it, so resolving it here keeps ONE descriptor reader.
     assert.deepEqual(yield* resolve(descriptor("running", NOW_MILLIS - 1_000)), {
       _tag: "resolved",
-      endpoint: { baseUrl: BASE_URL },
+      endpoint: { baseUrl: BASE_URL, instanceId: "ctox-local" },
     });
     assert.deepEqual(yield* resolve(descriptor("stopped", NOW_MILLIS)), {
       _tag: "idle",
@@ -547,6 +550,21 @@ it.effect("reads a running descriptor and refuses a stale one", () =>
       _tag: "idle",
       reason: "descriptor-unreadable",
     });
+
+    // An older daemon that publishes no identity is STILL a usable endpoint for
+    // the mailbox; the field is simply absent, so a consumer that needs an
+    // identity cannot mistake it for a match.
+    assert.deepEqual(
+      yield* resolve(
+        JSON.stringify({
+          version: 1,
+          status: "running",
+          lastSeenAt: NOW_MILLIS,
+          healthUrl: "http://127.0.0.1:8788/health",
+        }),
+      ),
+      { _tag: "resolved", endpoint: { baseUrl: BASE_URL } },
+    );
   }),
 );
 
@@ -2406,7 +2424,9 @@ group("WorkjetMailboxTransport thread handoff", (it) => {
         identity: Effect.succeed(local),
       });
 
-      assert.isTrue(Option.isNone(yield* snapshots.get(contextSnapshot.digest).pipe(Effect.option)));
+      assert.isTrue(
+        Option.isNone(yield* snapshots.get(contextSnapshot.digest).pipe(Effect.option)),
+      );
 
       const status = yield* transport.runCycle;
 

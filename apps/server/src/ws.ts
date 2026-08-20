@@ -70,6 +70,7 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
+import * as ProcessRunner from "./processRunner.ts";
 import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
@@ -77,7 +78,7 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as WorkjetCrossModeCtoxPort from "./workjet/crossmode/WorkjetCrossModeCtoxPort.ts";
+import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossModeCtoxClient.ts";
 import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
 import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
 import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
@@ -487,19 +488,28 @@ const makeWsRpcLayer = (
       // injected port, so the authority rules it enforces are the ones its own
       // tests state.
       //
-      // The CTOX port is deliberately the UNAVAILABLE implementation. This
-      // server is an MCP *server* and has no MCP client; the only wire it has to
-      // a CTOX daemon is the mailbox loopback transport, which the daemon treats
-      // as opaque blobs and which therefore cannot carry a Business OS command.
-      // Business OS commands travel through the desktop today
-      // (`desktop:ctox-*` IPC → `CtoxGuestManager.executeJavaScript` into the
-      // guest), a path this process has no hop on. Wiring the honest
-      // "no channel" implementation means every cross-mode operation refuses
-      // with a bounded, accurate reason instead of inventing a data path; see
-      // `WorkjetCrossModeCtoxPort` for what a real implementation must satisfy.
+      // The CTOX port is the REAL one: a bounded JSON-RPC client over the local
+      // daemon's `POST /mcp` surface, on the same loopback origin and behind the
+      // same bearer token the mailbox transport already resolves. It verifies an
+      // instance against the identity the running daemon publishes in its own
+      // descriptor and dispatches through `business_os.execute_action`.
+      //
+      // No "is CTOX installed" branch is needed here, and adding one would be a
+      // mistake: the client re-resolves the descriptor and the token on every
+      // call, so a machine with no daemon degrades to exactly
+      // `workjetCrossModeCtoxPortUnavailable` — verify answers `false`, dispatch
+      // refuses with `ctox-command-unavailable` — while a daemon installed or
+      // started later begins working without restarting this server.
       const workjetCrossMode = WorkjetCrossModeRpc.makeWorkjetCrossModeRpcHandlers({
         links: workjetCrossModeLinkStore,
-        ctox: WorkjetCrossModeCtoxPort.workjetCrossModeCtoxPortUnavailable,
+        // `ProcessRunner` is provided right here rather than added to this
+        // module's context: the port needs it only to shell out READ-ONLY to
+        // `ctox secret get`, it is a stateless wrapper over the
+        // `ChildProcessSpawner` this scope already has, and widening ws.ts's
+        // requirements would ripple into every caller that builds it.
+        ctox: yield* WorkjetCrossModeCtoxClient.makeWorkjetCrossModeCtoxPort().pipe(
+          Effect.provide(ProcessRunner.layer),
+        ),
         query: projectionSnapshotQuery,
         threads: yield* WorkjetCrossModeThreads.makeWorkjetCrossModeThreadPortWithSources({
           randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),

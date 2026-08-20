@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -10,6 +11,7 @@ import * as WebStackBrowser from "./WebStackBrowser.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const jsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 interface CapturedCommand {
   readonly command: string;
@@ -58,7 +60,7 @@ const makeSpawner = (handler: (command: CapturedCommand, index: number) => Handl
   };
 };
 
-const nativePrepare = JSON.stringify({
+const nativePrepare = jsonText({
   ok: true,
   ready: false,
   dependencyInstalled: true,
@@ -70,7 +72,7 @@ const nativePrepare = JSON.stringify({
   referenceDir: "/must/not/cross",
 });
 
-const nativeAutomation = JSON.stringify({
+const nativeAutomation = jsonText({
   ok: true,
   observations: [{ description: "Observed Example", url: "https://example.test/" }],
   logs: ["must not cross"],
@@ -195,11 +197,11 @@ describe("WebStackBrowser", () => {
     return Effect.gen(function* () {
       const mismatchError = yield* (yield* mismatch.service).prepare({}).pipe(Effect.flip);
       assert.equal(mismatchError.reason, "version-mismatch");
-      assert.notInclude(JSON.stringify(mismatchError), secret);
+      assert.notInclude(jsonText(mismatchError), secret);
 
       const exitError = yield* (yield* exited.service).prepare({}).pipe(Effect.flip);
       assert.equal(exitError.reason, "process-exit");
-      assert.notInclude(JSON.stringify(exitError), secret);
+      assert.notInclude(jsonText(exitError), secret);
     });
   });
 
@@ -217,7 +219,7 @@ describe("WebStackBrowser", () => {
         stdout:
           index === 0
             ? WebStackBrowser.WEB_STACK_BROWSER_SURFACE_VERSION
-            : JSON.stringify({ ok: true, observations: entries, logs: ["secret"] }),
+            : jsonText({ ok: true, observations: entries, logs: ["secret"] }),
       }),
     });
     const malformed = makeService({
@@ -225,7 +227,7 @@ describe("WebStackBrowser", () => {
         stdout:
           index === 0
             ? WebStackBrowser.WEB_STACK_BROWSER_SURFACE_VERSION
-            : JSON.stringify({ ok: true, observations: [{ description: 7 }] }),
+            : jsonText({ ok: true, observations: [{ description: 7 }] }),
       }),
     });
     return Effect.gen(function* () {
@@ -237,8 +239,8 @@ describe("WebStackBrowser", () => {
         Array.from(result.observations[0]?.description ?? "").length,
         WebStackBrowser.WEB_STACK_BROWSER_DESCRIPTION_MAX_CHARS,
       );
-      assert.notInclude(JSON.stringify(result), "/private/profile");
-      assert.notInclude(JSON.stringify(result), "secret");
+      assert.notInclude(jsonText(result), "/private/profile");
+      assert.notInclude(jsonText(result), "secret");
 
       const error = yield* (yield* malformed.service)
         .automate({ actions: [{ action: "observe" }] })

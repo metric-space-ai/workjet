@@ -16,6 +16,7 @@ import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts"
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -23,6 +24,8 @@ import * as WebStackBrowser from "./WebStackBrowser.ts";
 import * as WebStackResearch from "./WebStackResearch.ts";
 import * as WebStackSearch from "./WebStackSearch.ts";
 import * as WebStackTool from "./WebStackTool.ts";
+
+const jsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const client = McpSchema.McpServerClient.of({
   clientId: 1,
@@ -308,7 +311,7 @@ it.effect("calls Web Search without cwd and returns the exact manifest result", 
     expect(search).toHaveBeenCalledWith({ query: "Effect TypeScript" });
     expect(response.isError).toBe(false);
     expect(response.structuredContent).toEqual(result);
-    expect(response.content).toEqual([{ type: "text", text: JSON.stringify(result) }]);
+    expect(response.content).toEqual([{ type: "text", text: jsonText(result) }]);
   }).pipe(Effect.provide(makeTestLayer({ search })));
 });
 
@@ -338,7 +341,7 @@ it.effect("returns only a stable redacted reason for Web Search failures", () =>
       error: { _tag: "WebStackMcpSearchError", reason: "process-exit" },
     });
     expect(response.content).toEqual([{ type: "text", text: "Web Search failed." }]);
-    expect(JSON.stringify(response)).not.toContain(secret);
+    expect(jsonText(response)).not.toContain(secret);
   }).pipe(Effect.provide(makeTestLayer({ search: () => Effect.fail(error) })));
 });
 
@@ -555,7 +558,7 @@ it.effect(
       });
       expect(prepareResponse.structuredContent).toEqual(prepared);
       expect(automateResponse.structuredContent).toEqual(automated);
-      expect(automateResponse.content).toEqual([{ type: "text", text: JSON.stringify(automated) }]);
+      expect(automateResponse.content).toEqual([{ type: "text", text: jsonText(automated) }]);
     }).pipe(
       Effect.provide(
         makeTestLayer({ search: () => Effect.succeed({ results: [] }) }, { prepare, automate }),
@@ -770,7 +773,7 @@ it.effect("applies research defaults and returns successful structured evidence"
       includeAnnasArchive: false,
     });
     expect(readResponse.structuredContent).toEqual(readResult);
-    expect(readResponse.content).toEqual([{ type: "text", text: JSON.stringify(readResult) }]);
+    expect(readResponse.content).toEqual([{ type: "text", text: jsonText(readResult) }]);
     expect(researchResponse.structuredContent).toEqual(researchResult);
   }).pipe(
     Effect.provide(
@@ -810,7 +813,7 @@ it.effect("returns only a stable reason for native research failures", () => {
       },
     });
     expect(response.content).toEqual([{ type: "text", text: "Web research failed." }]);
-    expect(JSON.stringify(response)).not.toContain(secret);
+    expect(jsonText(response)).not.toContain(secret);
   }).pipe(
     Effect.provide(
       makeTestLayer({ search: () => Effect.succeed({ results: [] }) }, undefined, {

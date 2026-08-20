@@ -6,6 +6,7 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Schema from "effect/Schema";
 
 import {
   __testing,
@@ -23,6 +24,7 @@ import {
 } from "./GreppyRuntime.ts";
 
 const encoder = new TextEncoder();
+const jsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const completeSentinel = `${GREPPY_RUNTIME_PIN.version}\n${GREPPY_RUNTIME_PIN.sourceSha256}\n`;
 const versionResult = result({ stdout: `greppy ${GREPPY_RUNTIME_PIN.version}\n` });
 const searchHelpResult = result({ stdout: "--root --json --limit --max-bytes" });
@@ -42,7 +44,7 @@ function result(input?: Partial<RuntimeCommandResult>): RuntimeCommandResult {
 }
 
 const healthyStatus = (overrides?: Record<string, unknown>) =>
-  JSON.stringify({
+  jsonText({
     command: "index-status",
     status: "ok",
     healthy: true,
@@ -246,7 +248,7 @@ function installRun(command: RuntimeCommand, _index: number, fake: FakeRuntime) 
     const root = `${command.args[3]}/${GREPPY_RUNTIME_PIN.archivePrefix.slice(0, -1)}`;
     fake.files.set(
       `${root}/${GREPPY_RUNTIME_PIN.modelManifestPath}`,
-      JSON.stringify({
+      jsonText({
         hf_host: "https://huggingface.co",
         revision: "main",
         assets: GREPPY_MODEL_ASSETS.map((asset) => ({
@@ -352,7 +354,7 @@ describe("GreppyRuntime resolution", () => {
         version: "0.3.1",
         installSupported: true,
       });
-      assert.notInclude(JSON.stringify(snapshot), secret);
+      assert.notInclude(jsonText(snapshot), secret);
 
       const installError = yield* runtime.install().pipe(Effect.flip);
       assert.equal(installError.reason, "override-invalid");
@@ -430,9 +432,9 @@ describe("GreppyRuntime resolution", () => {
         reason: "install-failed",
       },
     );
-    assert.notInclude(JSON.stringify(sanitized), "secret");
-    assert.notInclude(JSON.stringify(sanitized), "/private");
-    assert.notInclude(JSON.stringify(sanitized), "https://");
+    assert.notInclude(jsonText(sanitized), "secret");
+    assert.notInclude(jsonText(sanitized), "/private");
+    assert.notInclude(jsonText(sanitized), "https://");
   });
 
   it.effect("reports unsupported host pairs without guessing a binary", () =>
@@ -701,13 +703,14 @@ describe("GreppyRuntime source install policy", () => {
       const runtime = make({ stateDir: "/state", platform: fake.platform });
       const first = yield* runtime.install().pipe(Effect.forkChild);
       const second = yield* runtime.install().pipe(Effect.forkChild);
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            const poll = () => (sourceDownloads === 1 ? resolve() : setTimeout(poll, 0));
-            poll();
-          }),
-      );
+      // Hand the runtime back to the forked fibers until the first install has
+      // reached its source download. `Effect.sleep` cannot be used here: this is
+      // an `it.effect` test on the TestClock, and nothing would ever advance it.
+      yield* Effect.whileLoop({
+        while: () => sourceDownloads === 0,
+        body: () => Effect.yieldNow,
+        step: () => {},
+      });
       assert.equal(sourceDownloads, 1);
       release();
       yield* Fiber.join(first);
@@ -836,26 +839,19 @@ describe("GreppyRuntime workspace readiness", () => {
       const second = yield* runtime
         .ensureWorkspace("/harness/codex/thread-a")
         .pipe(Effect.forkChild);
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            const poll = () =>
-              fake.commands.some(
-                (command) =>
-                  command.args[0] === "index" && command.args[1]?.startsWith("/canonical") === true,
-              )
-                ? resolve()
-                : setTimeout(poll, 0);
-            poll();
-          }),
-      );
-      assert.equal(
+      const indexCommandCount = () =>
         fake.commands.filter(
           (command) =>
             command.args[0] === "index" && command.args[1]?.startsWith("/canonical") === true,
-        ).length,
-        1,
-      );
+        ).length;
+      // As above: yield to the forked fibers rather than sleeping, because
+      // `it.effect` runs on the TestClock and no fiber here advances it.
+      yield* Effect.whileLoop({
+        while: () => indexCommandCount() === 0,
+        body: () => Effect.yieldNow,
+        step: () => {},
+      });
+      assert.equal(indexCommandCount(), 1);
       release();
       const [one, two] = yield* Effect.all([Fiber.join(first), Fiber.join(second)]);
       assert.equal(one.storeDir, "/t3-state/greppy");

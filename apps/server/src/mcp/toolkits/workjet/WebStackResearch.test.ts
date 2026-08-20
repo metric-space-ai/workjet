@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -11,9 +12,10 @@ import * as WebStackResearch from "./WebStackResearch.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const jsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const nativeOutput = (value: unknown): NativeProcess.ProcessOutput => {
-  const bytes = encoder.encode(JSON.stringify(value));
+  const bytes = encoder.encode(jsonText(value));
   return { stdout: { bytes, totalBytes: bytes.length }, stderrBytes: 0, exitCode: 0 };
 };
 
@@ -127,7 +129,7 @@ const readEnvelope = {
     ],
   },
 } as const;
-const readResponse = JSON.stringify(readEnvelope);
+const readResponse = jsonText(readEnvelope);
 
 const researchCounts = {
   planned_search_queries: 4,
@@ -212,7 +214,7 @@ const researchEnvelope = {
   workspacePersisted: true,
   workspaceId: "research-0123456789abcdef",
 } as const;
-const researchResponse = JSON.stringify(researchEnvelope);
+const researchResponse = jsonText(researchEnvelope);
 
 const makeService = (input?: {
   readonly stateDir?: string;
@@ -443,8 +445,8 @@ describe("WebStackResearch", () => {
         "deepResearch",
       );
 
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - asserts the complete projected native JSON boundary is redacted.
-      assert.notInclude(JSON.stringify([read, research]), secret);
+      // Asserts the complete projected native JSON boundary is redacted.
+      assert.notInclude(jsonText([read, research]), secret);
       assert.notProperty(read, "path");
       assert.notProperty(read.responseMetadata!, "body");
       assert.notProperty(research.verifiedSources[0]!, "responseBody");
@@ -538,7 +540,7 @@ describe("WebStackResearch", () => {
         .read({ url: `https://example.test/${secret}` })
         .pipe(Effect.flip);
       assert.equal(exitError.reason, "process-exit");
-      assert.notInclude(JSON.stringify(exitError), secret);
+      assert.notInclude(jsonText(exitError), secret);
 
       const oversizedError = yield* (yield* oversized.service)
         .read({ url: "https://example.test/" })
@@ -554,7 +556,7 @@ describe("WebStackResearch", () => {
         stdout:
           command.args[0] === "--research-surface-version"
             ? WebStackResearch.WEB_STACK_RESEARCH_SURFACE_VERSION
-            : JSON.stringify({ ok: true, operation: "wrong", path: secret, body: secret }),
+            : jsonText({ ok: true, operation: "wrong", path: secret, body: secret }),
       }),
     });
     return Effect.gen(function* () {
@@ -562,7 +564,7 @@ describe("WebStackResearch", () => {
         .read({ url: "https://example.test/" })
         .pipe(Effect.flip);
       assert.equal(error.reason, "malformed-response");
-      assert.notInclude(JSON.stringify(error), secret);
+      assert.notInclude(jsonText(error), secret);
     });
   });
 });

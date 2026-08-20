@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -12,6 +13,7 @@ import * as WebStackSearch from "./WebStackSearch.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const jsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 interface CapturedCommand {
   readonly command: string;
@@ -74,7 +76,7 @@ function makeSpawner(handler: (command: CapturedCommand, index: number) => Handl
 }
 
 const nativeResponse = (results: ReadonlyArray<Record<string, unknown>> = []) =>
-  JSON.stringify({ ok: true, tool: "ctox_web_search", results });
+  jsonText({ ok: true, tool: "ctox_web_search", results });
 
 function makeService(input?: {
   readonly stateDir?: string;
@@ -113,7 +115,7 @@ function makeService(input?: {
 }
 
 function assertCarriesNoSecret(value: unknown, secret: string): void {
-  assert.notInclude(JSON.stringify(value), secret);
+  assert.notInclude(jsonText(value), secret);
   if (value instanceof Error) assert.notInclude(value.message, secret);
 }
 
@@ -322,12 +324,12 @@ describe("WebStackSearch", () => {
       const malformed = [
         "null",
         "[]",
-        JSON.stringify({ ok: false, results: [] }),
-        JSON.stringify({ ok: true }),
-        JSON.stringify({ ok: true, results: [null] }),
-        JSON.stringify({ ok: true, results: [{ title: 7, url: "https://x", snippet: "x" }] }),
-        JSON.stringify({ ok: true, results: [{ title: "x", url: "", snippet: "x" }] }),
-        JSON.stringify({ ok: true, results: [{ title: "x", url: "https://x", snippet: null }] }),
+        jsonText({ ok: false, results: [] }),
+        jsonText({ ok: true }),
+        jsonText({ ok: true, results: [null] }),
+        jsonText({ ok: true, results: [{ title: 7, url: "https://x", snippet: "x" }] }),
+        jsonText({ ok: true, results: [{ title: "x", url: "", snippet: "x" }] }),
+        jsonText({ ok: true, results: [{ title: "x", url: "https://x", snippet: null }] }),
       ];
 
       for (const stdout of malformed) {

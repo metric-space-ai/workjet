@@ -445,7 +445,7 @@ const successResult = (structuredContent: unknown): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
     isError: false,
     structuredContent,
-    // @effect-diagnostics-next-line preferSchemaOverJson:off -- MCP text mirrors the validated structured result.
+    // MCP text mirrors the validated structured result.
     content: [{ type: "text", text: JSON.stringify(structuredContent) }],
   });
 

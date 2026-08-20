@@ -13,39 +13,48 @@
 // Cloudflare/Turnstile check is allowed to settle by waiting + reload; an
 // interactive CAPTCHA is NEVER solved — the probe then reports blocked.
 
-import { chromium } from 'playwright';
+import { chromium } from "playwright";
 
-const TARGET = 'companyhouse.de';
-const HOME = 'https://www.companyhouse.de/';
+const TARGET = "companyhouse.de";
+const HOME = "https://www.companyhouse.de/";
 const NAV_GAP_MS = 2200;
 
-const company = (process.argv[2] || '').trim();
+const company = (process.argv[2] || "").trim();
 if (!company) {
-  console.log(JSON.stringify({ target: TARGET, input: '', reason: 'missing company CLI argument' }));
+  console.log(
+    JSON.stringify({ target: TARGET, input: "", reason: "missing company CLI argument" }),
+  );
   process.exit(1);
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function normalizedIdentity(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
 async function challengePresent(page) {
-  const title = await page.title().catch(() => '');
-  const text = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+  const title = await page.title().catch(() => "");
+  const text = await page
+    .locator("body")
+    .innerText({ timeout: 3000 })
+    .catch(() => "");
   const corpus = `${title} ${text}`.toLowerCase();
-  return /cloudflare|cf-chl-|cf-mitigated|challenge-platform|turnstile|sicherheits(?:ü|u)berpr(?:ü|u)fung|noch einen schritt|nur einen moment|just a moment|captcha|verify (?:that )?you are human|nat(?:ü|u)rlichen zugriff|access denied|request blocked|wurden gesperrt|zugriff.{0,40}gesperrt/.test(corpus);
+  return /cloudflare|cf-chl-|cf-mitigated|challenge-platform|turnstile|sicherheits(?:ü|u)berpr(?:ü|u)fung|noch einen schritt|nur einen moment|just a moment|captcha|verify (?:that )?you are human|nat(?:ü|u)rlichen zugriff|access denied|request blocked|wurden gesperrt|zugriff.{0,40}gesperrt/.test(
+    corpus,
+  );
 }
 
 async function dismissConsent(page) {
   const button = page
-    .getByRole('button', { name: /^(alle akzeptieren|akzeptieren|accept all|zustimmen|einverstanden)$/i })
+    .getByRole("button", {
+      name: /^(alle akzeptieren|akzeptieren|accept all|zustimmen|einverstanden)$/i,
+    })
     .first();
   if (await button.isVisible({ timeout: 1500 }).catch(() => false)) {
     await button.click({ timeout: 3000 }).catch(() => {});
@@ -63,7 +72,7 @@ async function settlePassiveChallenge(page) {
     if (!(await challengePresent(page))) return true;
     await page.waitForTimeout(2000);
   }
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => null);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => null);
   const retryDeadline = Date.now() + 15000;
   while (Date.now() < retryDeadline) {
     if (!(await challengePresent(page))) return true;
@@ -81,12 +90,14 @@ async function main() {
   const userAgent = version
     ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`
     : undefined;
-  const context = await browser.newContext({ locale: 'de-DE', userAgent });
+  const context = await browser.newContext({ locale: "de-DE", userAgent });
   const page = await context.newPage();
 
   const fields = {};
   const addField = (key, value, sourceUrl) => {
-    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    const clean = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (clean) fields[key] = { value: clean, source_url: sourceUrl };
   };
 
@@ -96,13 +107,13 @@ async function main() {
     //    route is dead (404/403); search results live under
     //    `/Suche/<query>` where spaces MUST be `+` — a `%20`-encoded path
     //    trips the Cloudflare WAF into a hard 403 block page.
-    const searchUrl = `${HOME}Suche/${encodeURIComponent(company).replace(/%20/g, '+')}`;
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const searchUrl = `${HOME}Suche/${encodeURIComponent(company).replace(/%20/g, "+")}`;
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(2500);
     await dismissConsent(page);
     if (await challengePresent(page)) {
       if (!(await settlePassiveChallenge(page))) {
-        reason = 'blocked: cloudflare/captcha interstitial persisted without interaction';
+        reason = "blocked: cloudflare/captcha interstitial persisted without interaction";
       }
     }
 
@@ -110,51 +121,78 @@ async function main() {
     let profileUrl = null;
     if (!reason) {
       const expected = normalizedIdentity(company);
-      profileUrl = await page.locator('a[href]').evaluateAll((anchors, expectedValue) => {
-        const normalize = (value) => String(value || '')
-          .normalize('NFKD').replace(/\p{M}/gu, '')
-          .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-        const best = anchors.map((anchor) => {
-          try {
-            const url = new URL(anchor.href, document.baseURI);
-            const host = url.hostname.toLowerCase().replace(/\.$/, '');
-            const segments = url.pathname.split('/').filter(Boolean);
-            const text = normalize(anchor.textContent);
-            // Live finding (29.07.2026): company profiles moved from
-            // `/<Firma>-<Ort>` to `/<Firma>-<Ort>/<Register>` (e.g.
-            // `/BNT-Chemicals-GmbH-Bitterfeld-Wolfen/HRB-15222`).
-            const first = (segments[0] || '').toLowerCase();
-            const nonProfile = ['login', 'register', 'suche', 'search', 'impressum', 'agb',
-              'datenschutz', 'faq', 'preise', 'kontakt', 's', 'l', 'person', 'personen'];
-            const profilePath = segments.length >= 1 && segments.length <= 2
-              && !nonProfile.includes(first);
-            return {
-              href: url.href,
-              exact: text === expectedValue,
-              matching: text.length > 0 && (text.includes(expectedValue) || expectedValue.includes(text)),
-              providerOwned: url.protocol === 'https:'
-                && (host === 'companyhouse.de' || host.endsWith('.companyhouse.de'))
-                && profilePath,
-            };
-          } catch {
-            return null;
-          }
-        }).filter((item) => item && item.providerOwned && item.matching)
-          .sort((a, b) => Number(b.exact) - Number(a.exact))[0];
-        return best ? best.href : null;
-      }, expected).catch(() => null);
-      if (!profileUrl) reason = 'no provider-owned profile link matched the company on the search page';
+      profileUrl = await page
+        .locator("a[href]")
+        .evaluateAll((anchors, expectedValue) => {
+          const normalize = (value) =>
+            String(value || "")
+              .normalize("NFKD")
+              .replace(/\p{M}/gu, "")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, " ")
+              .trim();
+          const best = anchors
+            .map((anchor) => {
+              try {
+                const url = new URL(anchor.href, document.baseURI);
+                const host = url.hostname.toLowerCase().replace(/\.$/, "");
+                const segments = url.pathname.split("/").filter(Boolean);
+                const text = normalize(anchor.textContent);
+                // Live finding (29.07.2026): company profiles moved from
+                // `/<Firma>-<Ort>` to `/<Firma>-<Ort>/<Register>` (e.g.
+                // `/BNT-Chemicals-GmbH-Bitterfeld-Wolfen/HRB-15222`).
+                const first = (segments[0] || "").toLowerCase();
+                const nonProfile = [
+                  "login",
+                  "register",
+                  "suche",
+                  "search",
+                  "impressum",
+                  "agb",
+                  "datenschutz",
+                  "faq",
+                  "preise",
+                  "kontakt",
+                  "s",
+                  "l",
+                  "person",
+                  "personen",
+                ];
+                const profilePath =
+                  segments.length >= 1 && segments.length <= 2 && !nonProfile.includes(first);
+                return {
+                  href: url.href,
+                  exact: text === expectedValue,
+                  matching:
+                    text.length > 0 &&
+                    (text.includes(expectedValue) || expectedValue.includes(text)),
+                  providerOwned:
+                    url.protocol === "https:" &&
+                    (host === "companyhouse.de" || host.endsWith(".companyhouse.de")) &&
+                    profilePath,
+                };
+              } catch {
+                return null;
+              }
+            })
+            .filter((item) => item && item.providerOwned && item.matching)
+            .sort((a, b) => Number(b.exact) - Number(a.exact))[0];
+          return best ? best.href : null;
+        }, expected)
+        .catch(() => null);
+      if (!profileUrl)
+        reason = "no provider-owned profile link matched the company on the search page";
     }
 
     // 4) Profile page extraction.
     if (!reason) {
       await sleep(NAV_GAP_MS);
-      await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForTimeout(2500);
       await dismissConsent(page);
       if (await challengePresent(page)) {
         if (!(await settlePassiveChallenge(page))) {
-          reason = 'blocked: cloudflare/captcha interstitial persisted on the profile page';
+          reason = "blocked: cloudflare/captcha interstitial persisted on the profile page";
         }
       }
     }
@@ -162,54 +200,62 @@ async function main() {
     if (!reason) {
       const sourceUrl = page.url();
       const profile = await page.evaluate(() => {
-        const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim() || null;
-        const heading = clean(document.querySelector('h1')?.textContent);
+        const clean = (value) =>
+          String(value || "")
+            .replace(/\s+/g, " ")
+            .trim() || null;
+        const heading = clean(document.querySelector("h1")?.textContent);
         const locationIcon = document.querySelector('[class*="ch-ico-location"]');
         const address = clean(
-          locationIcon?.closest('div')?.querySelector('p')?.textContent
-            || locationIcon?.parentElement?.nextElementSibling?.textContent,
+          locationIcon?.closest("div")?.querySelector("p")?.textContent ||
+            locationIcon?.parentElement?.nextElementSibling?.textContent,
         );
         const detail = (label) => {
           const headers = Array.from(document.querySelectorAll('[class*="tile-table-header"]'));
           const header = headers.find((node) => clean(node.textContent) === label);
           if (!header) return null;
           const row = header.parentElement;
-          return clean(row?.querySelector('[class*="mb-3"]')?.textContent
-            || header.nextElementSibling?.textContent);
+          return clean(
+            row?.querySelector('[class*="mb-3"]')?.textContent ||
+              header.nextElementSibling?.textContent,
+          );
         };
         return {
           heading,
           address,
-          telephone: detail('Telefonnummer'),
-          email: detail('E-Mail'),
-          website: detail('Webseite'),
+          telephone: detail("Telefonnummer"),
+          email: detail("E-Mail"),
+          website: detail("Webseite"),
         };
       });
 
-      addField('firma_name', profile.heading, sourceUrl);
+      addField("firma_name", profile.heading, sourceUrl);
       if (profile.address) {
         const match = profile.address.match(/^(.+?),\s*(\d{5})\s+(.+)$/u);
         if (match) {
-          addField('firma_anschrift', match[1], sourceUrl);
-          addField('firma_plz', match[2], sourceUrl);
-          addField('firma_ort', match[3], sourceUrl);
+          addField("firma_anschrift", match[1], sourceUrl);
+          addField("firma_plz", match[2], sourceUrl);
+          addField("firma_ort", match[3], sourceUrl);
         } else {
-          addField('firma_anschrift', profile.address, sourceUrl);
+          addField("firma_anschrift", profile.address, sourceUrl);
         }
       }
-      addField('firma_telefon', profile.telephone, sourceUrl);
-      addField('firma_email', profile.email, sourceUrl);
-      addField('firma_domain', profile.website, sourceUrl);
+      addField("firma_telefon", profile.telephone, sourceUrl);
+      addField("firma_email", profile.email, sourceUrl);
+      addField("firma_domain", profile.website, sourceUrl);
 
       // Identity guard: the extracted name must match the requested company.
       const expected = normalizedIdentity(company);
       const got = normalizedIdentity(fields.firma_name?.value);
-      if (Object.keys(fields).length > 0 && (!got || !(got.includes(expected) || expected.includes(got)))) {
+      if (
+        Object.keys(fields).length > 0 &&
+        (!got || !(got.includes(expected) || expected.includes(got)))
+      ) {
         reason = `identity mismatch: profile heading "${fields.firma_name?.value}" does not match "${company}"`;
         for (const key of Object.keys(fields)) delete fields[key];
       }
       if (!reason && Object.keys(fields).length === 0) {
-        reason = 'portal drift: profile page loaded but no known selectors matched';
+        reason = "portal drift: profile page loaded but no known selectors matched";
       }
     }
   } catch (error) {

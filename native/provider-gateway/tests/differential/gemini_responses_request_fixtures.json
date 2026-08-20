@@ -3,27 +3,30 @@
     "name": "gemini-simple-string",
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
-    "input": {"input":"hello"}
+    "input": { "input": "hello" }
   },
   {
     "name": "gemini-system-media-generation",
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "instructions":"Be precise.",
-      "input":[
-        {"role":"developer","content":[{"type":"input_text","text":"Use evidence."}]},
-        {"role":"user","content":[
-          {"type":"input_text","text":"inspect"},
-          {"type":"input_image","image_url":"data:image/png;base64,aW1n"},
-          {"type":"input_audio","format":"mp3","data":"YXVkaW8="}
-        ]}
+      "instructions": "Be precise.",
+      "input": [
+        { "role": "developer", "content": [{ "type": "input_text", "text": "Use evidence." }] },
+        {
+          "role": "user",
+          "content": [
+            { "type": "input_text", "text": "inspect" },
+            { "type": "input_image", "image_url": "data:image/png;base64,aW1n" },
+            { "type": "input_audio", "format": "mp3", "data": "YXVkaW8=" }
+          ]
+        }
       ],
-      "max_output_tokens":42,
-      "temperature":0.5,
-      "top_p":0.9,
-      "stop_sequences":["END","STOP"],
-      "reasoning":{"effort":"auto"}
+      "max_output_tokens": 42,
+      "temperature": 0.5,
+      "top_p": 0.9,
+      "stop_sequences": ["END", "STOP"],
+      "reasoning": { "effort": "auto" }
     }
   },
   {
@@ -31,13 +34,16 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":[
-        {"role":"user","content":[
-          {"type":"input_text","text":"question"},
-          {"type":"output_text","text":"historical answer"},
-          {"type":"input_text","text":"follow-up"}
-        ]},
-        {"role":"assistant","content":"unsigned prefill"}
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "input_text", "text": "question" },
+            { "type": "output_text", "text": "historical answer" },
+            { "type": "input_text", "text": "follow-up" }
+          ]
+        },
+        { "role": "assistant", "content": "unsigned prefill" }
       ]
     }
   },
@@ -46,10 +52,30 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":"return JSON",
-      "tools":[{"type":"function","name":"1 read file","description":"Read","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}],
-      "text":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"]}}},
-      "reasoning":{"effort":"high"}
+      "input": "return JSON",
+      "tools": [
+        {
+          "type": "function",
+          "name": "1 read file",
+          "description": "Read",
+          "parameters": {
+            "type": "object",
+            "properties": { "path": { "type": "string" } },
+            "required": ["path"]
+          }
+        }
+      ],
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "properties": { "ok": { "type": "boolean" } },
+            "required": ["ok"]
+          }
+        }
+      },
+      "reasoning": { "effort": "high" }
     }
   },
   {
@@ -57,11 +83,11 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":[
-        {"type":"function_call","call_id":"call-a","name":"first","arguments":"{\"x\":1}"},
-        {"type":"function_call","call_id":"call-b","name":"second","arguments":"{}"},
-        {"type":"function_call_output","call_id":"call-b","output":"plain"},
-        {"type":"function_call_output","call_id":"call-a","output":"{\"ok\":true}"}
+      "input": [
+        { "type": "function_call", "call_id": "call-a", "name": "first", "arguments": "{\"x\":1}" },
+        { "type": "function_call", "call_id": "call-b", "name": "second", "arguments": "{}" },
+        { "type": "function_call_output", "call_id": "call-b", "output": "plain" },
+        { "type": "function_call_output", "call_id": "call-a", "output": "{\"ok\":true}" }
       ]
     }
   },
@@ -70,10 +96,10 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":[
-        {"type":"reasoning","summary":[{"type":"summary_text","text":"consider"}]},
-        {"type":"function_call","call_id":"call-run","name":"run","arguments":"{}"},
-        {"type":"function_call_output","call_id":"call-run","output":"done"}
+      "input": [
+        { "type": "reasoning", "summary": [{ "type": "summary_text", "text": "consider" }] },
+        { "type": "function_call", "call_id": "call-run", "name": "run", "arguments": "{}" },
+        { "type": "function_call_output", "call_id": "call-run", "output": "done" }
       ]
     }
   },
@@ -82,10 +108,14 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"reasoning","encrypted_content":"EjQKMgEMOdbHO0Gd+c9Mxk4ELwPGbpCEcp2mFfYYLix2UVtBH3fL8GECc4+JITVnHF4qZDsA","summary":[]},
-        {"type":"function_call","call_id":"call-native","name":"run","arguments":"{}"},
-        {"type":"function_call_output","call_id":"call-native","output":"ok"}
+      "input": [
+        {
+          "type": "reasoning",
+          "encrypted_content": "EjQKMgEMOdbHO0Gd+c9Mxk4ELwPGbpCEcp2mFfYYLix2UVtBH3fL8GECc4+JITVnHF4qZDsA",
+          "summary": []
+        },
+        { "type": "function_call", "call_id": "call-native", "name": "run", "arguments": "{}" },
+        { "type": "function_call_output", "call_id": "call-native", "output": "ok" }
       ]
     }
   },
@@ -94,9 +124,17 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:next:text:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]}
+      "input": [
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:next:text:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [{ "type": "output_text", "text": "answer" }]
+        }
       ]
     }
   },
@@ -105,10 +143,14 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:next:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call","call_id":"call-carrier","name":"run","arguments":"{}"},
-        {"type":"function_call_output","call_id":"call-carrier","output":"ok"}
+      "input": [
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:next:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call", "call_id": "call-carrier", "name": "run", "arguments": "{}" },
+        { "type": "function_call_output", "call_id": "call-carrier", "output": "ok" }
       ]
     }
   },
@@ -117,9 +159,14 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:previous:text:not-base64!","summary":[],"_cpa_reasoning_direction":"next"},
-        {"type":"message","role":"user","content":[{"type":"input_text","text":"safe"}]}
+      "input": [
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:previous:text:not-base64!",
+          "summary": [],
+          "_cpa_reasoning_direction": "next"
+        },
+        { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "safe" }] }
       ]
     }
   },
@@ -128,10 +175,14 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"function_call","call_id":"call-prev","name":"run","arguments":"{}"},
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:previous:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call_output","call_id":"call-prev","output":"ok"}
+      "input": [
+        { "type": "function_call", "call_id": "call-prev", "name": "run", "arguments": "{}" },
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:previous:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call_output", "call_id": "call-prev", "output": "ok" }
       ]
     }
   },
@@ -140,10 +191,14 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":[
-        {"type":"function_call","call_id":"call-raw-prev","name":"run","arguments":"{}"},
-        {"type":"reasoning","encrypted_content":"EjQKMgEMOdbHO0Gd+c9Mxk4ELwPGbpCEcp2mFfYYLix2UVtBH3fL8GECc4+JITVnHF4qZDsA","summary":[]},
-        {"type":"function_call_output","call_id":"call-raw-prev","output":"ok"}
+      "input": [
+        { "type": "function_call", "call_id": "call-raw-prev", "name": "run", "arguments": "{}" },
+        {
+          "type": "reasoning",
+          "encrypted_content": "EjQKMgEMOdbHO0Gd+c9Mxk4ELwPGbpCEcp2mFfYYLix2UVtBH3fL8GECc4+JITVnHF4qZDsA",
+          "summary": []
+        },
+        { "type": "function_call_output", "call_id": "call-raw-prev", "output": "ok" }
       ]
     }
   },
@@ -152,10 +207,18 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"message","role":"assistant","content":[{"type":"output_text","text":"signed answer"}]},
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:previous:text:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]}
+      "input": [
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [{ "type": "output_text", "text": "signed answer" }]
+        },
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:previous:text:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "next" }] }
       ]
     }
   },
@@ -164,9 +227,13 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:standalone:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call","call_id":"call-standalone","name":"run","arguments":"{}"}
+      "input": [
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:standalone:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call", "call_id": "call-standalone", "name": "run", "arguments": "{}" }
       ]
     }
   },
@@ -175,12 +242,25 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":"clean schema",
-      "tools":[{"type":"function","name":"search","parameters":{
-        "$schema":"draft","$id":"root","$comment":"drop","title":"Search","type":"object",
-        "properties":{"country":{"type":"string","title":"Country"},"$id":{"type":"string"}},
-        "required":["country","$id","stale"]
-      }}]
+      "input": "clean schema",
+      "tools": [
+        {
+          "type": "function",
+          "name": "search",
+          "parameters": {
+            "$schema": "draft",
+            "$id": "root",
+            "$comment": "drop",
+            "title": "Search",
+            "type": "object",
+            "properties": {
+              "country": { "type": "string", "title": "Country" },
+              "$id": { "type": "string" }
+            },
+            "required": ["country", "$id", "stale"]
+          }
+        }
+      ]
     }
   },
   {
@@ -188,11 +268,27 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":"clean enum",
-      "tools":[{"type":"function","name":"rank","parameters":{
-        "type":"object","additionalProperties":false,"x-root":"drop",
-        "properties":{"priority":{"type":"integer","enum":[0,1,2],"minimum":0,"format":"int32","x-note":"drop"}}
-      }}]
+      "input": "clean enum",
+      "tools": [
+        {
+          "type": "function",
+          "name": "rank",
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "x-root": "drop",
+            "properties": {
+              "priority": {
+                "type": "integer",
+                "enum": [0, 1, 2],
+                "minimum": 0,
+                "format": "int32",
+                "x-note": "drop"
+              }
+            }
+          }
+        }
+      ]
     }
   },
   {
@@ -200,13 +296,28 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":"clean union",
-      "tools":[{"type":"function","name":"choose","parameters":{
-        "type":"object","properties":{
-          "choice":{"description":"pick","oneOf":[{"type":"string"},{"type":"object","properties":{"id":{"type":"string"}}},{"type":"null"}]},
-          "maybe":{"type":["string","null"]}
-        },"required":["choice","maybe"]
-      }}]
+      "input": "clean union",
+      "tools": [
+        {
+          "type": "function",
+          "name": "choose",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "choice": {
+                "description": "pick",
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "object", "properties": { "id": { "type": "string" } } },
+                  { "type": "null" }
+                ]
+              },
+              "maybe": { "type": ["string", "null"] }
+            },
+            "required": ["choice", "maybe"]
+          }
+        }
+      ]
     }
   },
   {
@@ -214,13 +325,23 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":"clean composition",
-      "tools":[{"type":"function","name":"compose","parameters":{
-        "type":"object","allOf":[
-          {"properties":{"name":{"type":"string"}},"required":["name"]},
-          {"properties":{"nested":{"$ref":"#/$defs/Nested","description":"old"}},"required":["nested"]}
-        ]
-      }}]
+      "input": "clean composition",
+      "tools": [
+        {
+          "type": "function",
+          "name": "compose",
+          "parameters": {
+            "type": "object",
+            "allOf": [
+              { "properties": { "name": { "type": "string" } }, "required": ["name"] },
+              {
+                "properties": { "nested": { "$ref": "#/$defs/Nested", "description": "old" } },
+                "required": ["nested"]
+              }
+            ]
+          }
+        }
+      ]
     }
   },
   {
@@ -228,12 +349,32 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":"clean placeholders",
-      "tools":[{"type":"function","name":"placeholder","parameters":{
-        "type":"object","properties":{"_":{"type":"boolean"}},"required":["_"]
-      }},{"type":"function","name":"reason","parameters":{
-        "type":"object","properties":{"reason":{"type":"string","description":"Brief explanation of why you are calling this tool"}},"required":["reason"]
-      }}]
+      "input": "clean placeholders",
+      "tools": [
+        {
+          "type": "function",
+          "name": "placeholder",
+          "parameters": {
+            "type": "object",
+            "properties": { "_": { "type": "boolean" } },
+            "required": ["_"]
+          }
+        },
+        {
+          "type": "function",
+          "name": "reason",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "description": "Brief explanation of why you are calling this tool"
+              }
+            },
+            "required": ["reason"]
+          }
+        }
+      ]
     }
   },
   {
@@ -241,12 +382,37 @@
     "operation": "responses_request_to_gemini",
     "model": "gemini-3.6-flash-high",
     "input": {
-      "input":[
-        {"type":"function_call","call_id":"history","name":"write","arguments":"{\"title\":\"kept\",\"format\":\"markdown\",\"default\":\"x\",\"const\":\"c\",\"x-custom\":\"keep\"}"},
-        {"type":"function_call_output","call_id":"history","output":"ok"}
+      "input": [
+        {
+          "type": "function_call",
+          "call_id": "history",
+          "name": "write",
+          "arguments": "{\"title\":\"kept\",\"format\":\"markdown\",\"default\":\"x\",\"const\":\"c\",\"x-custom\":\"keep\"}"
+        },
+        { "type": "function_call_output", "call_id": "history", "output": "ok" }
       ],
-      "tools":[{"type":"function","name":"write","parameters":{"type":"object","title":"drop","properties":{"title":{"type":"string"}},"required":["title"]}}],
-      "text":{"format":{"type":"json_schema","schema":{"type":"object","title":"response-kept","properties":{"value":{"type":"string","format":"uri"}}}}}
+      "tools": [
+        {
+          "type": "function",
+          "name": "write",
+          "parameters": {
+            "type": "object",
+            "title": "drop",
+            "properties": { "title": { "type": "string" } },
+            "required": ["title"]
+          }
+        }
+      ],
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "title": "response-kept",
+            "properties": { "value": { "type": "string", "format": "uri" } }
+          }
+        }
+      }
     }
   },
   {
@@ -254,13 +420,21 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"function_call","call_id":"post-a","name":"a","arguments":"{}"},
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:previous:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call","call_id":"post-b","name":"b","arguments":"{}"},
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:previous:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call_output","call_id":"post-a","output":"a-ok"},
-        {"type":"function_call_output","call_id":"post-b","output":"b-ok"}
+      "input": [
+        { "type": "function_call", "call_id": "post-a", "name": "a", "arguments": "{}" },
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:previous:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call", "call_id": "post-b", "name": "b", "arguments": "{}" },
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:previous:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call_output", "call_id": "post-a", "output": "a-ok" },
+        { "type": "function_call_output", "call_id": "post-b", "output": "b-ok" }
       ]
     }
   },
@@ -269,13 +443,21 @@
     "operation": "responses_request_to_gemini",
     "model": "alias-without-provider-name",
     "input": {
-      "input":[
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:next:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call","call_id":"lead-a","name":"a","arguments":"{}"},
-        {"type":"reasoning","encrypted_content":"cpa-gemini-responses-carrier-v1:next:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB","summary":[]},
-        {"type":"function_call","call_id":"lead-b","name":"b","arguments":"{}"},
-        {"type":"function_call_output","call_id":"lead-a","output":"a-ok"},
-        {"type":"function_call_output","call_id":"lead-b","output":"b-ok"}
+      "input": [
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:next:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call", "call_id": "lead-a", "name": "a", "arguments": "{}" },
+        {
+          "type": "reasoning",
+          "encrypted_content": "cpa-gemini-responses-carrier-v1:next:function:RWpRS01nRU1PZGJITzBHZCtjOU14azRFTHdQR2JwQ0VjcDJtRmZZWUxpeDJVVnRCSDNmTDhHRUNjNCtKSVRWbkhGNHFaRHNB",
+          "summary": []
+        },
+        { "type": "function_call", "call_id": "lead-b", "name": "b", "arguments": "{}" },
+        { "type": "function_call_output", "call_id": "lead-a", "output": "a-ok" },
+        { "type": "function_call_output", "call_id": "lead-b", "output": "b-ok" }
       ]
     }
   }

@@ -60,7 +60,10 @@
       "description": "Default headless Chromium emits UA containing HeadlessChrome/<ver>",
       "probe_predicate": "/HeadlessChrome/.test(navigator.userAgent)",
       "fix_strategy": "Set explicit userAgent context option AND --user-agent= Chromium launch arg in both runners (Page+Worker coverage).",
-      "patch_files": ["tools/web-stack/src/browser.rs", "tools/web-stack/assets/google_browser_runner.mjs"]
+      "patch_files": [
+        "tools/web-stack/src/browser.rs",
+        "tools/web-stack/assets/google_browser_runner.mjs"
+      ]
     },
     {
       "vector_id": "navigator-webdriver-exists",
@@ -123,7 +126,11 @@
       "description": "Sec-CH-UA HTTP headers and navigator.userAgentData.brands leak HeadlessChrome",
       "probe_predicate": "navigator.userAgentData.brands[*].brand === 'HeadlessChrome'",
       "fix_strategy": "Set extraHTTPHeaders for Sec-CH-UA/Mobile/Platform AND mock navigator.userAgentData with Chrome 146 brand triple and getHighEntropyValues",
-      "patch_files": ["tools/web-stack/src/browser.rs", "tools/web-stack/assets/google_browser_runner.mjs", "tools/web-stack/assets/stealth_init.js"]
+      "patch_files": [
+        "tools/web-stack/src/browser.rs",
+        "tools/web-stack/assets/google_browser_runner.mjs",
+        "tools/web-stack/assets/stealth_init.js"
+      ]
     },
     {
       "vector_id": "service-worker-ua-leak",
@@ -132,7 +139,10 @@
       "description": "Page-level CDP setUserAgentOverride does NOT reach Service Worker contexts; SW reports HeadlessChrome",
       "probe_predicate": "serviceWorkerNavigator.userAgent !== pageNavigator.userAgent",
       "fix_strategy": "Pass --user-agent=<UA> as Chromium launch arg (browser-process-global, covers Workers)",
-      "patch_files": ["tools/web-stack/src/browser.rs", "tools/web-stack/assets/google_browser_runner.mjs"]
+      "patch_files": [
+        "tools/web-stack/src/browser.rs",
+        "tools/web-stack/assets/google_browser_runner.mjs"
+      ]
     },
     {
       "vector_id": "worker-locale-mismatch",

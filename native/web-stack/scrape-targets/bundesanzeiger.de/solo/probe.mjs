@@ -21,17 +21,24 @@ const SEARCH_URL = "https://www.bundesanzeiger.de/pub/de/suche?0";
 const NAV_TIMEOUT_MS = 45_000;
 const POLITENESS_MS = 2_200;
 
-const BLOCKED_RE = /schutzma(?:ß|ss)nahme|sicherheitsabfrage|cf-chl-|turnstile|captcha|verify (?:that )?you are human|access denied|request blocked|zugriff verweigert|zu viele anfragen/i;
+const BLOCKED_RE =
+  /schutzma(?:ß|ss)nahme|sicherheitsabfrage|cf-chl-|turnstile|captcha|verify (?:that )?you are human|access denied|request blocked|zugriff verweigert|zu viele anfragen/i;
 
 function fail(reason, extra = {}) {
-  process.stdout.write(JSON.stringify({
-    target: TARGET,
-    input: process.argv[2] || null,
-    fetched_at: new Date().toISOString(),
-    fields: {},
-    reason,
-    ...extra,
-  }, null, 2));
+  process.stdout.write(
+    JSON.stringify(
+      {
+        target: TARGET,
+        input: process.argv[2] || null,
+        fetched_at: new Date().toISOString(),
+        fields: {},
+        reason,
+        ...extra,
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(1);
 }
 
@@ -57,8 +64,14 @@ async function main() {
     await page.waitForTimeout(POLITENESS_MS);
 
     // --- challenge / block detection on first load -----------------------
-    const initialText = await page.locator("body").innerText().catch(() => "");
-    if (BLOCKED_RE.test(initialText) || /schutzma(?:ß|ss)nahme|to_nlp_start/i.test(await page.title().catch(() => ""))) {
+    const initialText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+    if (
+      BLOCKED_RE.test(initialText) ||
+      /schutzma(?:ß|ss)nahme|to_nlp_start/i.test(await page.title().catch(() => ""))
+    ) {
       fail("blocked: visible access challenge on first load");
     }
 
@@ -77,14 +90,14 @@ async function main() {
 
     // --- search form ------------------------------------------------------
     const searchInput = page.locator('input[name="fulltext"]');
-    if (await searchInput.count() !== 1) {
+    if ((await searchInput.count()) !== 1) {
       fail("drift: fulltext search input not found on search page");
     }
     let onResults = false;
     for (let attempt = 0; attempt < 2 && !onResults; attempt += 1) {
       await searchInput.fill(company);
       const searchButton = page.locator('input[name="search-button"][value="Suchen"]');
-      if (await searchButton.count() === 1) {
+      if ((await searchButton.count()) === 1) {
         await searchButton.click();
       } else {
         await searchInput.press("Enter");
@@ -95,7 +108,10 @@ async function main() {
         .then(() => true)
         .catch(() => false);
       if (!onResults) {
-        const text = await page.locator("body").innerText().catch(() => "");
+        const text = await page
+          .locator("body")
+          .innerText()
+          .catch(() => "");
         if (BLOCKED_RE.test(text)) fail("blocked: access challenge after search submit");
         if (/keine passenden Daten gefunden/i.test(text)) {
           fail("no_results: portal returned zero hits for the company");
@@ -113,23 +129,35 @@ async function main() {
     const result = await page.evaluate(() => {
       const container = document.querySelector(".result_container");
       const rows = container
-        ? [...container.querySelectorAll(":scope > .row")].map((row) => {
-            if (row.classList.contains("result_header")
-                || row.classList.contains("concern_list")
-                || row.classList.contains("subsidiary_list")) return null;
-            const first = row.querySelector(":scope > .col-md-3 .first");
-            if (!first) return null;
-            const lines = first.innerText.split("\n").map((part) => part.trim()).filter(Boolean);
-            const infoLink = row.querySelector(":scope > .col-md-5 .info > a");
-            return {
-              name: lines[0] || "",
-              city: lines[1] || "",
-              section: (row.querySelector(":scope > .col-md-2 .part")?.innerText || "").replace(/\s+/g, " ").trim(),
-              information: (infoLink?.innerText || "").replace(/\s+/g, " ").trim(),
-              href: infoLink?.href || "",
-              date: (row.querySelector(":scope > .col-md-2 .date")?.innerText || "").replace(/\s+/g, " ").trim(),
-            };
-          }).filter((entry) => entry && entry.name)
+        ? [...container.querySelectorAll(":scope > .row")]
+            .map((row) => {
+              if (
+                row.classList.contains("result_header") ||
+                row.classList.contains("concern_list") ||
+                row.classList.contains("subsidiary_list")
+              )
+                return null;
+              const first = row.querySelector(":scope > .col-md-3 .first");
+              if (!first) return null;
+              const lines = first.innerText
+                .split("\n")
+                .map((part) => part.trim())
+                .filter(Boolean);
+              const infoLink = row.querySelector(":scope > .col-md-5 .info > a");
+              return {
+                name: lines[0] || "",
+                city: lines[1] || "",
+                section: (row.querySelector(":scope > .col-md-2 .part")?.innerText || "")
+                  .replace(/\s+/g, " ")
+                  .trim(),
+                information: (infoLink?.innerText || "").replace(/\s+/g, " ").trim(),
+                href: infoLink?.href || "",
+                date: (row.querySelector(":scope > .col-md-2 .date")?.innerText || "")
+                  .replace(/\s+/g, " ")
+                  .trim(),
+              };
+            })
+            .filter((entry) => entry && entry.name)
         : [];
       return { url: location.href, title: document.title, rows };
     });
@@ -156,15 +184,23 @@ async function main() {
     // parties co-occur with the company name). The results table is the
     // only precise public source, so the probe reports exactly what it says.
 
-    const nonEmpty = Object.values(fields).filter((field) => String(field.value || "").trim()).length;
+    const nonEmpty = Object.values(fields).filter((field) =>
+      String(field.value || "").trim(),
+    ).length;
     if (nonEmpty < 2) fail("extraction_empty: parsed rows carried no usable fields");
 
-    process.stdout.write(JSON.stringify({
-      target: TARGET,
-      input: company,
-      fetched_at: new Date().toISOString(),
-      fields,
-    }, null, 2));
+    process.stdout.write(
+      JSON.stringify(
+        {
+          target: TARGET,
+          input: company,
+          fetched_at: new Date().toISOString(),
+          fields,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   } finally {
     await browser.close();

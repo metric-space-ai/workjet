@@ -80,7 +80,13 @@ describe("formatting helpers", () => {
 describe("buildWorkjetHandoffRows", () => {
   it("offers continuation only when the context is readable here", () => {
     const rows = buildWorkjetHandoffRows({
-      handoffs: [handoff(), handoff({ handoffId: "wjh-missing" as WorkjetReceivedHandoff["handoffId"], snapshotAvailable: false })],
+      handoffs: [
+        handoff(),
+        handoff({
+          handoffId: "wjh-missing" as WorkjetReceivedHandoff["handoffId"],
+          snapshotAvailable: false,
+        }),
+      ],
       busyHandoffId: null,
     });
     expect(rows[0]?.continueState).toBe("ready");

@@ -14,13 +14,7 @@
           }
         }
       ],
-      "command": [
-        "web",
-        "search",
-        "--query",
-        "ctox bench synthetic evidence",
-        "--include-sources"
-      ],
+      "command": ["web", "search", "--query", "ctox bench synthetic evidence", "--include-sources"],
       "assertions": [
         {
           "path": "ok",

@@ -47,28 +47,28 @@ changes update Track B only.
 
 ## Frozen historical 1,000-point semantic ledger
 
-| Capability | Points | Status |
-|---|---:|---|
-| Translator SDK: formats, contracts, registry, hooks, pipeline | 50 | complete; 6 parity tests |
-| Raw-JSON/SSE compatibility substrate | 45 | complete; 8 focused tests |
-| Protocol-neutral request/response/event contracts | 55 | complete; 1 contract test |
-| OpenAI Responses family | 75 | complete for Responses→Claude vertical pair |
-| Anthropic Messages family | 75 | complete for Claude→Responses vertical pair |
-| OpenAI Chat Completions family | 60 | complete; Claude, Gemini, Antigravity and Codex vertical pairs |
-| Gemini family | 60 | complete; native request, non-stream and stream response |
-| Interactions family | 45 | complete; request, non-stream and stream in both directions |
-| Codex subscription auth and executor | 80 | complete; OAuth, pooled non-stream/stream executor, server handler and exact local token count |
-| Claude subscription auth and executor | 65 | complete; refresh, request, fingerprint, replay and persisted outcomes |
-| Other subscription auth/executors | 65 | complete for bounded Antigravity auth, non-stream and native stream execution |
-| Multi-account scheduling, cooldown and retry | 65 | complete; persisted outcomes plus upstream-parity routing strategies |
-| HTTP/SSE server surface | 55 | complete; explicit Claude/Codex/Antigravity Responses dispatch with incremental SSE |
-| CTOX typed config, SQLite and secret-store adaptation | 45 | complete; typed factories plus revisioned provider-independent host topology |
-| Pi/Claude/Codex harness integration | 40 | complete; explicit Codex subscription and default CTOX-inherit both pass real Pi turns |
-| Management/control API | 30 | complete; authenticated catalog/status plus transactional redacted runtime mutation |
-| Safe replacement for Go/cgo plugin host | 25 | complete; bounded registered child calls over Unix sockets/Windows named pipes |
-| Observability, redaction and policy | 25 | complete; production Error-only logging and root-scoped telemetry |
-| Upstream sync, differential conformance and release gates | 40 | complete; 14 Claude + 12 Antigravity + 8 replay + 16 Interactions + 11 Codex-token + 10 Management-model + 1 plugin-schema parity fixtures + 1 named delta |
-| **Total** | **1,000** | |
+| Capability                                                    |    Points | Status                                                                                                                                                     |
+| ------------------------------------------------------------- | --------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Translator SDK: formats, contracts, registry, hooks, pipeline |        50 | complete; 6 parity tests                                                                                                                                   |
+| Raw-JSON/SSE compatibility substrate                          |        45 | complete; 8 focused tests                                                                                                                                  |
+| Protocol-neutral request/response/event contracts             |        55 | complete; 1 contract test                                                                                                                                  |
+| OpenAI Responses family                                       |        75 | complete for Responses→Claude vertical pair                                                                                                                |
+| Anthropic Messages family                                     |        75 | complete for Claude→Responses vertical pair                                                                                                                |
+| OpenAI Chat Completions family                                |        60 | complete; Claude, Gemini, Antigravity and Codex vertical pairs                                                                                             |
+| Gemini family                                                 |        60 | complete; native request, non-stream and stream response                                                                                                   |
+| Interactions family                                           |        45 | complete; request, non-stream and stream in both directions                                                                                                |
+| Codex subscription auth and executor                          |        80 | complete; OAuth, pooled non-stream/stream executor, server handler and exact local token count                                                             |
+| Claude subscription auth and executor                         |        65 | complete; refresh, request, fingerprint, replay and persisted outcomes                                                                                     |
+| Other subscription auth/executors                             |        65 | complete for bounded Antigravity auth, non-stream and native stream execution                                                                              |
+| Multi-account scheduling, cooldown and retry                  |        65 | complete; persisted outcomes plus upstream-parity routing strategies                                                                                       |
+| HTTP/SSE server surface                                       |        55 | complete; explicit Claude/Codex/Antigravity Responses dispatch with incremental SSE                                                                        |
+| CTOX typed config, SQLite and secret-store adaptation         |        45 | complete; typed factories plus revisioned provider-independent host topology                                                                               |
+| Pi/Claude/Codex harness integration                           |        40 | complete; explicit Codex subscription and default CTOX-inherit both pass real Pi turns                                                                     |
+| Management/control API                                        |        30 | complete; authenticated catalog/status plus transactional redacted runtime mutation                                                                        |
+| Safe replacement for Go/cgo plugin host                       |        25 | complete; bounded registered child calls over Unix sockets/Windows named pipes                                                                             |
+| Observability, redaction and policy                           |        25 | complete; production Error-only logging and root-scoped telemetry                                                                                          |
+| Upstream sync, differential conformance and release gates     |        40 | complete; 14 Claude + 12 Antigravity + 8 replay + 16 Interactions + 11 Codex-token + 10 Management-model + 1 plugin-schema parity fixtures + 1 named delta |
+| **Total**                                                     | **1,000** |                                                                                                                                                            |
 
 Project governance and the build skeleton are required work but deliberately
 carry no semantic port points.
@@ -3825,7 +3825,7 @@ Strategy adaptation after worker 18h:
   three-hour TTL, exact deletion, group/all clearing, the 50-byte minimum and
   Gemini's cache-miss sentinel.
 - Cache-enabled Claude request conversion first resolves `(model group,
-  thinking text)` cache hits, then accepts only a sufficiently long client
+thinking text)` cache hits, then accepts only a sufficiently long client
   signature carrying the matching `group#signature` prefix. An unprefixed or
   cross-group client signature is not treated as a cache replacement.
 - The executor-facing Claude policy now distinguishes prefix-only legacy
@@ -4339,7 +4339,7 @@ Strategy adaptation after worker 18q:
   empty-hint failures and advances to the next target. Exhaustion clears stale
   capability authority and returns a redacted typed error.
 - A default-feature TCP loopback proves the real native HTTP request is `POST
-  {}` with exact path, JSON content type, Antigravity user agent and bearer
+{}` with exact path, JSON content type, Antigravity user agent and bearer
   authorization. No process proxy environment is consulted by the injected
   transport.
 - Two transport-state tests cover fallback order, configured target behavior,
@@ -5090,7 +5090,7 @@ Forensic findings after worker 18af:
 3. **Compressed-size limits do not stop decompression bombs.** The listener's
    2-MiB wire-body limit is insufficient without an independent decoded limit.
 4. **Normalization consumes the encoding header.** Retaining `Content-Encoding:
-   zstd` beside decoded bytes would create double-decoding bugs in logging,
+zstd` beside decoded bytes would create double-decoding bugs in logging,
    middleware or a later transport adapter.
 5. **Errors are redacted at the parser boundary.** Decoder internals and codec
    library messages do not enter the HTTP response; clients receive one fixed
@@ -7353,6 +7353,7 @@ Strategy adaptation after workers 18ck–18cn:
 
   It uses the configured local upstream checkout only as immutable Git input
   and writes every candidate workspace beneath a temporary directory.
+
 - The review validator compares module, change kind, source kind and required
   action exactly with the generated delta. Its ten required gates must be
   present by name and true; omitting a gate or relabeling a Go change as
@@ -9288,7 +9289,7 @@ serial modules without overriding test-internal parallelism.
 ### Worker 18ha — Candidate inventory reconciliation
 
 - The candidate generator dropped every added path because `select(length >
-  0)` inside the `old_upstream` object value suppressed the entire jq record
+0)` inside the `old_upstream` object value suppressed the entire jq record
   for an empty old path. The fixed representation uses explicit `null` and a
   fail-closed conservation invariant requires raw Git records, normalized rows
   and emitted JSON changes to have identical counts.

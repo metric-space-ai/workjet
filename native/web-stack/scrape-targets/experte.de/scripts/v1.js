@@ -77,16 +77,23 @@ function normalized(value) {
 }
 
 function isPortalOrLoginTitle(title) {
-  const text = String(title || "").replace(/\s+/g, " ").trim();
+  const text = String(title || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!text) return false;
-  return /\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(text)
-    || /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(text);
+  return (
+    /\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(
+      text,
+    ) || /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(text)
+  );
 }
 
 function isAllowedUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST;
+    return (
+      url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST
+    );
   } catch (_err) {
     return false;
   }
@@ -94,7 +101,9 @@ function isAllowedUrl(value) {
 
 function hasBlockedDetection(page) {
   const markers = Array.isArray(page?.detection?.markers) ? page.detection.markers.join(" ") : "";
-  return /captcha|cloudflare|challenge|turnstile|access[_ -]?denied|request[_ -]?blocked|rate[_ -]?limit/i.test(markers);
+  return /captcha|cloudflare|challenge|turnstile|access[_ -]?denied|request[_ -]?blocked|rate[_ -]?limit/i.test(
+    markers,
+  );
 }
 
 function isBlockedPage(page) {
@@ -102,7 +111,9 @@ function isBlockedPage(page) {
   // `evidence` is the provider verdict row ("… | Gültig") and must not
   // participate in block classification.
   const corpus = normalized([page?.title, page?.body, page?.body_head].filter(Boolean).join(" "));
-  return /captcha|cloudflare|verify you are human|access denied|zugriff verweigert|sicherheitsuberprufung/.test(corpus);
+  return /captcha|cloudflare|verify you are human|access denied|zugriff verweigert|sicherheitsuberprufung/.test(
+    corpus,
+  );
 }
 
 // CTOX browser-automation attaches ambient `detection.markers` (often just
@@ -220,28 +231,42 @@ function validateEmail(email) {
 }
 
 function recordUnlockSignal(url, markers) {
-  return runCtox([
-    "web", "unlock", "signals", "record",
-    "--source", "scrape-target:experte.de",
-    "--url", isAllowedUrl(url) ? url : START_URL,
-    "--evidence", JSON.stringify({
-      source_id: SOURCE_ID,
-      detection: "access_challenge",
-      markers: [...new Set((markers || []).map(String))].slice(0, 12),
-      secret_value_in_payload: false,
-    }),
-  ], undefined, 20_000);
+  return runCtox(
+    [
+      "web",
+      "unlock",
+      "signals",
+      "record",
+      "--source",
+      "scrape-target:experte.de",
+      "--url",
+      isAllowedUrl(url) ? url : START_URL,
+      "--evidence",
+      JSON.stringify({
+        source_id: SOURCE_ID,
+        detection: "access_challenge",
+        markers: [...new Set((markers || []).map(String))].slice(0, 12),
+        secret_value_in_payload: false,
+      }),
+    ],
+    undefined,
+    20_000,
+  );
 }
 
 function main() {
   const input = readInput();
-  const email = String(input.email || "").trim().toLowerCase();
+  const email = String(input.email || "")
+    .trim()
+    .toLowerCase();
   if (!email) {
-    process.stdout.write(JSON.stringify({
-      records: [],
-      failure_mode: "portal_drift",
-      detail: "CTOX_SCRAPE_INPUT_JSON.email missing",
-    }));
+    process.stdout.write(
+      JSON.stringify({
+        records: [],
+        failure_mode: "portal_drift",
+        detail: "CTOX_SCRAPE_INPUT_JSON.email missing",
+      }),
+    );
     return;
   }
 
@@ -251,46 +276,56 @@ function main() {
       isAllowedUrl(validation?.url) ? validation.url : START_URL,
       validation?.detection?.markers || ["access_challenge"],
     );
-    process.stdout.write(JSON.stringify({
-      records: [],
-      failure_mode: "blocked",
-      detail: "experte.de access challenge recorded by CTOX browser automation for web-unlock",
-    }));
+    process.stdout.write(
+      JSON.stringify({
+        records: [],
+        failure_mode: "blocked",
+        detail: "experte.de access challenge recorded by CTOX browser automation for web-unlock",
+      }),
+    );
     return;
   }
 
   // Identity + origin gate: only conclusive provider evidence for the exact
   // requested address, rendered on the provider's own origin (never a
   // portal/login landing), is accepted.
-  const accepted = validation?.ok
-    && validation?.email === email
-    && CONCLUSIVE_STATUSES.has(validation?.status)
-    && isAllowedUrl(validation?.url)
-    && !isPortalOrLoginTitle(validation?.title);
+  const accepted =
+    validation?.ok &&
+    validation?.email === email &&
+    CONCLUSIVE_STATUSES.has(validation?.status) &&
+    isAllowedUrl(validation?.url) &&
+    !isPortalOrLoginTitle(validation?.title);
   if (accepted) {
     const sourceUrl = new URL(validation.url).href;
-    process.stdout.write(JSON.stringify({
-      records: [{
-        field: "person_email_validation",
-        value: validation.status,
-        confidence: validation.status === "unknown" ? "medium" : "high",
-        source_url: sourceUrl,
-        note: `EXPERTE.de verdict: ${String(validation.evidence || `${email} ${validation.status}`).slice(0, 300)}`,
-      }],
-    }));
+    process.stdout.write(
+      JSON.stringify({
+        records: [
+          {
+            field: "person_email_validation",
+            value: validation.status,
+            confidence: validation.status === "unknown" ? "medium" : "high",
+            source_url: sourceUrl,
+            note: `EXPERTE.de verdict: ${String(validation.evidence || `${email} ${validation.status}`).slice(0, 300)}`,
+          },
+        ],
+      }),
+    );
     return;
   }
 
   const reason = String(validation?.reason || "");
-  const drift = reason.startsWith("selector_drift")
-    || reason.startsWith("verdict_unparseable");
-  process.stdout.write(JSON.stringify({
-    records: [],
-    failure_mode: drift ? "portal_drift" : "temporary_unreachable",
-    detail: reason
-      || (validation?.ok === false ? "experte.de browser automation failed before provider evidence was available"
-        : "experte.de did not return conclusive provider evidence"),
-  }));
+  const drift = reason.startsWith("selector_drift") || reason.startsWith("verdict_unparseable");
+  process.stdout.write(
+    JSON.stringify({
+      records: [],
+      failure_mode: drift ? "portal_drift" : "temporary_unreachable",
+      detail:
+        reason ||
+        (validation?.ok === false
+          ? "experte.de browser automation failed before provider evidence was available"
+          : "experte.de did not return conclusive provider evidence"),
+    }),
+  );
 }
 
 if (require.main === module) {

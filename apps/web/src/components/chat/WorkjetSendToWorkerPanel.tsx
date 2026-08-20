@@ -545,20 +545,20 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
         {draft.recipientMode === "thread" ? (
           // A handoff to THIS machine needs no thread: the machine creates one.
           handoffTab ? null : (
-          <select
-            aria-label="Recipient thread"
-            disabled={disabled}
-            className={fieldClass}
-            value={draft.targetThreadId}
-            onChange={(event) => patch({ targetThreadId: event.target.value })}
-          >
-            <option value="">Select a thread…</option>
-            {threads.map((thread) => (
-              <option key={thread.threadId} value={thread.threadId}>
-                {thread.title}
-              </option>
-            ))}
-          </select>
+            <select
+              aria-label="Recipient thread"
+              disabled={disabled}
+              className={fieldClass}
+              value={draft.targetThreadId}
+              onChange={(event) => patch({ targetThreadId: event.target.value })}
+            >
+              <option value="">Select a thread…</option>
+              {threads.map((thread) => (
+                <option key={thread.threadId} value={thread.threadId}>
+                  {thread.title}
+                </option>
+              ))}
+            </select>
           )
         ) : (
           <>

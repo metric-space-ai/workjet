@@ -2,8 +2,12 @@
   "_fixture": "original synthetic Workjet optional-field data; ids are invented",
   "users": {
     "items": [
-      {"id":"synthetic_optional_001","permalink":"https://www.xing.com/profile/Synthetic_Optional1","professional_experience":{"primary_company":{}}},
-      {"id":"synthetic_optional_002","display_name":"Skipped Fixture"}
+      {
+        "id": "synthetic_optional_001",
+        "permalink": "https://www.xing.com/profile/Synthetic_Optional1",
+        "professional_experience": { "primary_company": {} }
+      },
+      { "id": "synthetic_optional_002", "display_name": "Skipped Fixture" }
     ],
     "total": 2
   }

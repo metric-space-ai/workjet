@@ -8,10 +8,7 @@
     "Avery Fixture retained the required marker.",
     "Optional synthetic note may be absent."
   ],
-  "required_patterns": [
-    "required marker",
-    "Synthetic Reference 0001 complete"
-  ],
+  "required_patterns": ["required marker", "Synthetic Reference 0001 complete"],
   "ordered_phrases": [
     "Workjet Optional Line Contract",
     "Avery Fixture",
@@ -19,9 +16,7 @@
   ],
   "same_line_groups": [],
   "separate_line_groups": [],
-  "forbidden_patterns": [
-    "Unexpected Required Footer"
-  ],
+  "forbidden_patterns": ["Unexpected Required Footer"],
   "allowed_missing_lines": 1,
   "synthetic_text": "Workjet Optional Line Contract\nAvery Fixture retained the required marker.\nSynthetic Reference 0001 complete."
 }

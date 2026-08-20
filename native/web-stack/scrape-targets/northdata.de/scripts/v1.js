@@ -85,14 +85,19 @@ function normalized(value) {
 const LEGAL_TOKENS = new Set(["ag", "gmbh", "kg", "mbh", "se", "und"]);
 
 function identityTokens(company) {
-  return normalized(company).split(/\s+/).filter((token) => token.length >= 3 && !LEGAL_TOKENS.has(token));
+  return normalized(company)
+    .split(/\s+/)
+    .filter((token) => token.length >= 3 && !LEGAL_TOKENS.has(token));
 }
 
 function identityMatches(company, corpus) {
   const tokens = identityTokens(company);
   const haystack = normalized(corpus);
   if (tokens.length === 0 || !haystack) return false;
-  return tokens.filter((token) => haystack.includes(token)).length >= Math.max(1, Math.ceil(tokens.length * 0.75));
+  return (
+    tokens.filter((token) => haystack.includes(token)).length >=
+    Math.max(1, Math.ceil(tokens.length * 0.75))
+  );
 }
 
 function legalForm(value) {
@@ -112,7 +117,9 @@ function legalFormMatches(company, title) {
 function isAllowedUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST;
+    return (
+      url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST
+    );
   } catch (_err) {
     return false;
   }
@@ -120,8 +127,26 @@ function isAllowedUrl(value) {
 
 function searchHits(company, country) {
   const variants = [
-    ["web", "search", "--query", company, "--source", SOURCE_ID, "--domain", ALLOWED_HOST, "--include-sources"],
-    ["web", "search", "--query", `site:${ALLOWED_HOST} ${company}`, "--domain", ALLOWED_HOST, "--include-sources"],
+    [
+      "web",
+      "search",
+      "--query",
+      company,
+      "--source",
+      SOURCE_ID,
+      "--domain",
+      ALLOWED_HOST,
+      "--include-sources",
+    ],
+    [
+      "web",
+      "search",
+      "--query",
+      `site:${ALLOWED_HOST} ${company}`,
+      "--domain",
+      ALLOWED_HOST,
+      "--include-sources",
+    ],
   ];
   const hits = [];
   for (const args of variants) {
@@ -153,10 +178,14 @@ function browserCapturePage(url) {
   const outDir = mkdtempSync(path.join(captureRoot, "northdata-browser-capture-"));
   try {
     const args = [
-      "web", "browser-capture",
-      "--url", url,
-      "--out-dir", outDir,
-      "--timeout-ms", String(NAVIGATION_TIMEOUT_MS),
+      "web",
+      "browser-capture",
+      "--url",
+      url,
+      "--out-dir",
+      outDir,
+      "--timeout-ms",
+      String(NAVIGATION_TIMEOUT_MS),
     ];
     let payload;
     try {
@@ -164,7 +193,7 @@ function browserCapturePage(url) {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 32 * 1024 * 1024,
-        timeout: (NAVIGATION_TIMEOUT_MS * 2) + 20_000,
+        timeout: NAVIGATION_TIMEOUT_MS * 2 + 20_000,
       });
       payload = JSON.parse(out);
     } catch (err) {
@@ -175,9 +204,8 @@ function browserCapturePage(url) {
       };
     }
 
-    const markerMap = payload?.markers && typeof payload.markers === "object"
-      ? payload.markers
-      : {};
+    const markerMap =
+      payload?.markers && typeof payload.markers === "object" ? payload.markers : {};
     const markers = Object.entries(markerMap)
       .filter(([, detected]) => detected === true)
       .map(([marker]) => marker);
@@ -412,10 +440,16 @@ function browserPage(url, company, sessionId = null) {
 
 function recordUnlockSignal(url, markers) {
   return runCtox([
-    "web", "unlock", "signals", "record",
-    "--source", "scrape-target:northdata.de",
-    "--url", isAllowedUrl(url) ? url : "https://www.northdata.de/",
-    "--evidence", JSON.stringify({
+    "web",
+    "unlock",
+    "signals",
+    "record",
+    "--source",
+    "scrape-target:northdata.de",
+    "--url",
+    isAllowedUrl(url) ? url : "https://www.northdata.de/",
+    "--evidence",
+    JSON.stringify({
       source_id: "northdata.de",
       detection: "access_challenge",
       markers: [...new Set((markers || []).map(String))].slice(0, 12),
@@ -426,16 +460,29 @@ function recordUnlockSignal(url, markers) {
 
 function isBlockedPage(page) {
   const markers = Array.isArray(page?.detection?.markers) ? page.detection.markers.join(" ") : "";
-  const corpus = normalized([
-    page?.title, page?.body_text, page?.page_text_excerpt, page?.raw_html_excerpt,
-    page?.raw_html, page?.html, markers,
-  ].filter(Boolean).join(" "));
-  return /captcha|cloudflare|challenge|turnstile|verify you are human|access denied|request blocked|too many requests|wurden gesperrt|sicherheitsuberprufung/.test(corpus);
+  const corpus = normalized(
+    [
+      page?.title,
+      page?.body_text,
+      page?.page_text_excerpt,
+      page?.raw_html_excerpt,
+      page?.raw_html,
+      page?.html,
+      markers,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return /captcha|cloudflare|challenge|turnstile|verify you are human|access denied|request blocked|too many requests|wurden gesperrt|sicherheitsuberprufung/.test(
+    corpus,
+  );
 }
 
 function hasBlockedDetection(page) {
   const markers = Array.isArray(page?.detection?.markers) ? page.detection.markers.join(" ") : "";
-  return /captcha|cloudflare|challenge|turnstile|access[_ -]?denied|request[_ -]?blocked|rate[_ -]?limit/i.test(markers);
+  return /captcha|cloudflare|challenge|turnstile|access[_ -]?denied|request[_ -]?blocked|rate[_ -]?limit/i.test(
+    markers,
+  );
 }
 
 function htmlToText(value) {
@@ -470,10 +517,7 @@ function tagAttribute(tag, name) {
 }
 
 function declaredCanonicalUrls(page) {
-  const candidates = [
-    page?.canonical_url,
-    page?.profile?.canonical_url,
-  ];
+  const candidates = [page?.canonical_url, page?.profile?.canonical_url];
   const html = String(page?.raw_html_excerpt || page?.raw_html || page?.html || "");
   for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
     const rel = normalized(tagAttribute(match[0], "rel"));
@@ -488,56 +532,82 @@ function declaredCanonicalUrls(page) {
 }
 
 function verifiedProfileUrl(company, page) {
-  const declared = declaredCanonicalUrls(page)
-    .find((url) => requestedPathMatches(company, url));
+  const declared = declaredCanonicalUrls(page).find((url) => requestedPathMatches(company, url));
   if (declared) return new URL(declared).href;
   return requestedPathMatches(company, page?.url) ? new URL(page.url).href : null;
 }
 
 function publishedIdentityName(company, country, page) {
   if (!verifiedProfileUrl(company, page)) return null;
-  const corpus = htmlToText([
-    page?.body_text, page?.page_text_excerpt, page?.raw_html_excerpt,
-    page?.raw_html, page?.html,
-  ].filter(Boolean).join(" "));
+  const corpus = htmlToText(
+    [page?.body_text, page?.page_text_excerpt, page?.raw_html_excerpt, page?.raw_html, page?.html]
+      .filter(Boolean)
+      .join(" "),
+  );
   if (!corpus) return null;
 
-  const companyPattern = String(company || "").trim().split(/\s+/)
+  const companyPattern = String(company || "")
+    .trim()
+    .split(/\s+/)
     .map((part) => part.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"))
     .join("\\s+");
   if (!companyPattern) return null;
   const countryNames = { DE: "Deutschland", AT: "Österreich", CH: "Schweiz" };
-  const countryPattern = countryNames[String(country || "").toUpperCase()]
-    || "(?:Deutschland|Österreich|Schweiz)";
-  const match = corpus.match(new RegExp(`\\bals\\s+(${companyPattern})\\s+in\\s+${countryPattern}\\b`, "iu"));
+  const countryPattern =
+    countryNames[String(country || "").toUpperCase()] || "(?:Deutschland|Österreich|Schweiz)";
+  const match = corpus.match(
+    new RegExp(`\\bals\\s+(${companyPattern})\\s+in\\s+${countryPattern}\\b`, "iu"),
+  );
   return match ? match[1].replace(/\s+/g, " ").trim() : null;
 }
 
 function pageMatchesCompany(company, page, country = "") {
-  const title = String(page?.title || "").replace(/\s+/g, " ").trim();
-  if (/\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(title)
-      || /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(title)) {
+  const title = String(page?.title || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    /\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(
+      title,
+    ) ||
+    /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(title)
+  ) {
     return false;
   }
-  if (/^suche nach\b/i.test(title) || /^search for\b/i.test(title) || isBlockedPage(page)) return false;
+  if (/^suche nach\b/i.test(title) || /^search for\b/i.test(title) || isBlockedPage(page))
+    return false;
   const finalUrl = page?.url;
   if (!isAllowedUrl(finalUrl)) return false;
-  const corpus = [page?.title, page?.summary, page?.body_text, page?.page_text_excerpt,
-    page?.raw_html_excerpt, page?.raw_html, page?.html, page?.profile?.heading, page?.profile?.name,
-    page?.profile?.address].filter(Boolean).join(" ");
+  const corpus = [
+    page?.title,
+    page?.summary,
+    page?.body_text,
+    page?.page_text_excerpt,
+    page?.raw_html_excerpt,
+    page?.raw_html,
+    page?.html,
+    page?.profile?.heading,
+    page?.profile?.name,
+    page?.profile?.address,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const sourceHtml = page?.raw_html_excerpt || page?.raw_html || page?.html || "";
-  const profileIdentity = page?.profile?.name || page?.profile?.heading || parseHeading(sourceHtml) || title;
-  const exactProfile = Boolean(verifiedProfileUrl(company, page))
-    && identityMatches(company, profileIdentity)
-    && legalFormMatches(company, profileIdentity)
-    && identityMatches(company, corpus);
+  const profileIdentity =
+    page?.profile?.name || page?.profile?.heading || parseHeading(sourceHtml) || title;
+  const exactProfile =
+    Boolean(verifiedProfileUrl(company, page)) &&
+    identityMatches(company, profileIdentity) &&
+    legalFormMatches(company, profileIdentity) &&
+    identityMatches(company, corpus);
   return exactProfile || publishedIdentityName(company, country, page) !== null;
 }
 
 function recordsFromBrowserProfile(page, sourceUrl = page?.url) {
   const records = [];
   const push = (field, value, confidence, note) => {
-    const clean = String(value || "").replace(/\s+/g, " ").trim();
+    const clean = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (clean) records.push({ field, value: clean, confidence, source_url: sourceUrl, note });
   };
   push("firma_name", page?.profile?.name, "high", "Northdata profile: Name");
@@ -564,16 +634,17 @@ function recordsFromProviderFields(page, sourceUrl = null) {
   if (page?.extracted_fields?.source_id !== SOURCE_ID) return [];
   const pageUrl = String(sourceUrl || page?.canonical_url || page?.final_url || page?.url || "");
   if (!isAllowedUrl(pageUrl)) return [];
-  const allowedEvidenceUrls = new Set([
-    pageUrl,
-    page?.url,
-    page?.canonical_url,
-    page?.final_url,
-  ].filter(isAllowedUrl).map((url) => new URL(url).href));
+  const allowedEvidenceUrls = new Set(
+    [pageUrl, page?.url, page?.canonical_url, page?.final_url]
+      .filter(isAllowedUrl)
+      .map((url) => new URL(url).href),
+  );
   const records = [];
   for (const record of page.extracted_fields.fields || []) {
     const sourceUrl = String(record?.source_url || "");
-    const value = String(record?.value || "").replace(/\s+/g, " ").trim();
+    const value = String(record?.value || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!PROVIDER_FIELD_KEYS.has(record?.field) || !value || !isAllowedUrl(sourceUrl)) continue;
     if (!allowedEvidenceUrls.has(new URL(sourceUrl).href)) continue;
     records.push({
@@ -583,7 +654,9 @@ function recordsFromProviderFields(page, sourceUrl = null) {
         ? record.confidence
         : "medium",
       source_url: pageUrl,
-      note: String(record.note || "Northdata provider extraction").replace(/\s+/g, " ").trim(),
+      note: String(record.note || "Northdata provider extraction")
+        .replace(/\s+/g, " ")
+        .trim(),
     });
   }
   return records;
@@ -598,22 +671,27 @@ function recordsForPage(page, company, country) {
     recordsFromProviderFields(page, sourceUrl),
     page?.profile?.name ? recordsFromBrowserProfile(page, sourceUrl) : [],
   ];
-  const profileRecords = candidates.find((records) => records.some((record) =>
-    record.field === "firma_name"
-      && identityMatches(company, record.value)
-      && legalFormMatches(company, record.value)
-  ));
+  const profileRecords = candidates.find((records) =>
+    records.some(
+      (record) =>
+        record.field === "firma_name" &&
+        identityMatches(company, record.value) &&
+        legalFormMatches(company, record.value),
+    ),
+  );
   if (profileRecords) return profileRecords;
 
   const publishedName = publishedIdentityName(company, country, page);
   if (!publishedName) return [];
-  return [{
-    field: "firma_name",
-    value: publishedName,
-    confidence: "high",
-    source_url: sourceUrl,
-    note: `Northdata publication: exact company identity in ${country || "DACH"}`,
-  }];
+  return [
+    {
+      field: "firma_name",
+      value: publishedName,
+      confidence: "high",
+      source_url: sourceUrl,
+      note: `Northdata publication: exact company identity in ${country || "DACH"}`,
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +709,11 @@ function parseGeneralInfoItem(html, label) {
   for (const match of html.matchAll(headingRe)) {
     const classValue = match[1].match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2] || "";
     if (!classValue.split(/\s+/).some((token) => token.toLowerCase() === "ribbon")) continue;
-    ribbons.push({ index: match.index, end: match.index + match[0].length, label: htmlToText(match[2]) });
+    ribbons.push({
+      index: match.index,
+      end: match.index + match[0].length,
+      label: htmlToText(match[2]),
+    });
   }
   const ribbonIndex = ribbons.findIndex((ribbon) => normalized(ribbon.label) === normalized(label));
   if (ribbonIndex < 0) return null;
@@ -668,7 +750,10 @@ function parseHeading(html) {
 
 function parseAddressLine(line) {
   // "Grenzacherstrasse 124, 4058 Basel" → {street, plz, ort}
-  const parts = line.split(",").map((s) => s.trim()).filter(Boolean);
+  const parts = line
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (parts.length < 2) return { street: line, plz: null, ort: null };
   const street = parts[0];
   const last = parts[parts.length - 1];
@@ -710,14 +795,20 @@ function parseBizqPersons(html) {
       const data = JSON.parse(dataStr);
       const items = Array.isArray(data)
         ? data
-        : (Array.isArray(data?.event) ? data.event
-          : (Array.isArray(data?.items) ? data.items : []));
+        : Array.isArray(data?.event)
+          ? data.event
+          : Array.isArray(data?.items)
+            ? data.items
+            : [];
       for (const item of items) {
         if (!item || item.old === true) continue;
         if (item.type && item.type !== "p") continue;
-        const text = typeof item.text === "string" && item.text.trim()
-          ? item.text
-          : (typeof item.desc === "string" ? item.desc : "");
+        const text =
+          typeof item.text === "string" && item.text.trim()
+            ? item.text
+            : typeof item.desc === "string"
+              ? item.desc
+              : "";
         if (text.trim()) out.push(text.trim());
       }
     } catch (err) {
@@ -774,9 +865,11 @@ function isPositionToken(token) {
   if (!compact) return false;
   if (POSITION_TOKENS.has(compact)) return true;
   // Full role words contain lowercase letters; initials like "K." do not count.
-  return /[a-zäöü]/i.test(token)
-    && !/^[A-ZÄÖÜ]\.$/.test(token)
-    && /^(vorstand|geschafts|prokur|aufsicht|inhaber|verwaltungs|prasident)/.test(compact);
+  return (
+    /[a-zäöü]/i.test(token) &&
+    !/^[A-ZÄÖÜ]\.$/.test(token) &&
+    /^(vorstand|geschafts|prokur|aufsicht|inhaber|verwaltungs|prasident)/.test(compact)
+  );
 }
 
 function splitPersonClause(text) {
@@ -798,7 +891,9 @@ function splitPersonClause(text) {
   }
   if (splitIdx === 0) {
     // No explicit role token — require the legacy "Role First Last" shape.
-    const m = trimmed.match(/^([A-Za-zÄÖÜäöü\-\s.]+?)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+)*)$/);
+    const m = trimmed.match(
+      /^([A-Za-zÄÖÜäöü\-\s.]+?)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+)*)$/,
+    );
     if (!m) return null;
     return { position: expandPosition(m[1]), first: m[2].trim(), last: m[3].trim() };
   }
@@ -855,7 +950,8 @@ function extractRecords(url, html) {
   for (const clause of parseBizqPersons(html)) {
     const parsed = splitPersonClause(clause);
     if (!parsed) continue;
-    if (parsed.position) push("person_position", parsed.position, "medium", "bizq figure: position");
+    if (parsed.position)
+      push("person_position", parsed.position, "medium", "bizq figure: position");
     if (parsed.first) push("person_vorname", parsed.first, "medium", "bizq figure: first name");
     if (parsed.last) push("person_nachname", parsed.last, "medium", "bizq figure: last name");
     // First active clause is enough for an aggregated record set.
@@ -923,13 +1019,15 @@ function main() {
 
   if (blocked) recordUnlockSignal(blockedUrl, ["access_challenge"]);
 
-  process.stdout.write(JSON.stringify({
-    records: [],
-    failure_mode: blocked ? "blocked" : "temporary_unreachable",
-    detail: blocked
-      ? "Northdata challenge recorded by CTOX browser capture for web-unlock"
-      : "no origin- and identity-verified Northdata profile data",
-  }));
+  process.stdout.write(
+    JSON.stringify({
+      records: [],
+      failure_mode: blocked ? "blocked" : "temporary_unreachable",
+      detail: blocked
+        ? "Northdata challenge recorded by CTOX browser capture for web-unlock"
+        : "no origin- and identity-verified Northdata profile data",
+    }),
+  );
 }
 
 if (require.main === module) {

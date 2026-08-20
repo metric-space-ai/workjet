@@ -34,16 +34,16 @@ Verhalten.
 Große Ports brauchen mehrere getrennte Ledgers. Diese Achsen messen
 unterschiedliche Tatsachen und dürfen weder addiert noch still gemittelt werden.
 
-| Metrik | Zähler / Nenner | Beweist | Beweist ausdrücklich nicht |
-|---|---|---|---|
-| Datei-Inventar | klassifizierte / vollständige Upstream-Dateien | Jede Datei wurde gesehen | Ein Body ist implementiert |
-| Mechanische Closure | Dateien ohne Scaffold/Partial / alle Produktions- bzw. Testdateien | Marker und Zuordnung sind geschlossen | Semantische Parität oder grüne Gates |
-| Strikte Closure | evidenzgedeckte Dateien / alle Produktions- bzw. Testdateien | Jede Gutschrift ist durch zulässige Evidenz gedeckt | Ein neuer Upstream-Kandidat ist geprüft |
-| Semantischer Capability-Ledger | akzeptierte / eingefrorene Capability-Punkte | Vereinbarte Nutzerfähigkeiten funktionieren | Repository-weite Dateiparität |
-| Kandidatenreview | vollständig disponierte Delta-Pfade / alle Delta-Pfade | Der konkrete Upstream-Delta wurde einzeln geprüft | Globale Regressionfreiheit |
-| Promotion-Gates | attestierte / geforderte Gates | Die vollständige Kandidatenmatrix ist gelaufen | Dass der Pin bereits promoviert ist |
-| Baseline-Status | boolesch: akzeptierter Pin geprüft | Aktuelle freigegebene Basis ist belastbar | Kandidat ist freigegeben |
-| Promotion-Status | boolesch: Kandidat promoviert | Baseline wurde atomar weitergeschaltet | Zukünftige Upstream-Parität |
+| Metrik                         | Zähler / Nenner                                                    | Beweist                                             | Beweist ausdrücklich nicht              |
+| ------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------- | --------------------------------------- |
+| Datei-Inventar                 | klassifizierte / vollständige Upstream-Dateien                     | Jede Datei wurde gesehen                            | Ein Body ist implementiert              |
+| Mechanische Closure            | Dateien ohne Scaffold/Partial / alle Produktions- bzw. Testdateien | Marker und Zuordnung sind geschlossen               | Semantische Parität oder grüne Gates    |
+| Strikte Closure                | evidenzgedeckte Dateien / alle Produktions- bzw. Testdateien       | Jede Gutschrift ist durch zulässige Evidenz gedeckt | Ein neuer Upstream-Kandidat ist geprüft |
+| Semantischer Capability-Ledger | akzeptierte / eingefrorene Capability-Punkte                       | Vereinbarte Nutzerfähigkeiten funktionieren         | Repository-weite Dateiparität           |
+| Kandidatenreview               | vollständig disponierte Delta-Pfade / alle Delta-Pfade             | Der konkrete Upstream-Delta wurde einzeln geprüft   | Globale Regressionfreiheit              |
+| Promotion-Gates                | attestierte / geforderte Gates                                     | Die vollständige Kandidatenmatrix ist gelaufen      | Dass der Pin bereits promoviert ist     |
+| Baseline-Status                | boolesch: akzeptierter Pin geprüft                                 | Aktuelle freigegebene Basis ist belastbar           | Kandidat ist freigegeben                |
+| Promotion-Status               | boolesch: Kandidat promoviert                                      | Baseline wurde atomar weitergeschaltet              | Zukünftige Upstream-Parität             |
 
 ### Regeln für jede Fortschrittsanzeige
 
@@ -825,22 +825,22 @@ fügen dabei keine neue Compile-Evidenz hinzu.
 
 Für künftige Ports sollte das Projekt mindestens diese Artefakte führen:
 
-| Artefakt | Pflichtinhalt | Lebensdauer |
-|---|---|---|
-| `upstream-lock.json` | Repository, Commit, Datum, Policy | akzeptierte Baseline |
-| `port-map.json` | jeder Upstream-Pfad, Rust-Pfad, Status, Anchor | regenerierbar, geprüft |
-| `module-map.json` | Pfade→fachliche Porting Units/Owner | regenerierbar, geprüft |
-| `semantic-ledger.json/md` | eingefrorene Capabilities, Punkte, Acceptance | dauerhaft |
-| `mirror-closure.json` | mechanische und strikte Produktion/Test-Zähler | regenerierbar |
-| `upstream-delta.json` | vollständiger Kandidatendelta und Summen | je Kandidaten-Commit |
-| `upstream-review.json` | Disposition je Pfad, Gates, Evidenz | resumefähig, fail-closed |
-| `impact-summary.json` | Module, Dateiklassen, Aktionen | je Kandidaten-Commit |
-| `reconciliation.json` | alte/neue Hashes, stabile Replays, Remaps | nur bei Reparatur |
-| `product-integration.json` | Provider-/Consumer-Gates außerhalb des Ports | je Accepted Pin und Zielsystemrelease |
-| Gate-Logs | argv, Output, Status, Hash | je Kandidat/Receipt |
-| Promotion-Receipt | Delta, Review, Gates, Manifeste, Hashes | dauerhaft, immutable |
-| Dashboard | klar getrennte Metrikachsen und Status | regelmäßig generiert |
-| `PORTING.md` | Entscheidungen, Forensik, Strategieänderungen | dauerhaft |
+| Artefakt                   | Pflichtinhalt                                  | Lebensdauer                           |
+| -------------------------- | ---------------------------------------------- | ------------------------------------- |
+| `upstream-lock.json`       | Repository, Commit, Datum, Policy              | akzeptierte Baseline                  |
+| `port-map.json`            | jeder Upstream-Pfad, Rust-Pfad, Status, Anchor | regenerierbar, geprüft                |
+| `module-map.json`          | Pfade→fachliche Porting Units/Owner            | regenerierbar, geprüft                |
+| `semantic-ledger.json/md`  | eingefrorene Capabilities, Punkte, Acceptance  | dauerhaft                             |
+| `mirror-closure.json`      | mechanische und strikte Produktion/Test-Zähler | regenerierbar                         |
+| `upstream-delta.json`      | vollständiger Kandidatendelta und Summen       | je Kandidaten-Commit                  |
+| `upstream-review.json`     | Disposition je Pfad, Gates, Evidenz            | resumefähig, fail-closed              |
+| `impact-summary.json`      | Module, Dateiklassen, Aktionen                 | je Kandidaten-Commit                  |
+| `reconciliation.json`      | alte/neue Hashes, stabile Replays, Remaps      | nur bei Reparatur                     |
+| `product-integration.json` | Provider-/Consumer-Gates außerhalb des Ports   | je Accepted Pin und Zielsystemrelease |
+| Gate-Logs                  | argv, Output, Status, Hash                     | je Kandidat/Receipt                   |
+| Promotion-Receipt          | Delta, Review, Gates, Manifeste, Hashes        | dauerhaft, immutable                  |
+| Dashboard                  | klar getrennte Metrikachsen und Status         | regelmäßig generiert                  |
+| `PORTING.md`               | Entscheidungen, Forensik, Strategieänderungen  | dauerhaft                             |
 
 ### Mindestinvarianten für Generatoren
 

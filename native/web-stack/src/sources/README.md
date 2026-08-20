@@ -57,6 +57,7 @@ native/web-stack/fixtures/sources/<id>/<example>.{html|json|txt}
 `dnbhoovers.com`. Aliase erlaubt das Modul über `aliases()`.
 
 Niemals anfassen aus einem Source-Subagent:
+
 - [`mod.rs`](./mod.rs) — Trait und Registry sind Phase-0-Territorium.
 - `../web_search.rs`, `../surface.rs`, `../lib.rs` — Phase 3.
 - Andere `sources/<x>.rs` — andere Subagents arbeiten parallel.

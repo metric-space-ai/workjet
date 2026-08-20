@@ -57,9 +57,7 @@ function normalized(value) {
     .trim();
 }
 
-const LEGAL_TOKENS = new Set([
-  "ag", "co", "gmbh", "kg", "mbh", "og", "se", "und", "company",
-]);
+const LEGAL_TOKENS = new Set(["ag", "co", "gmbh", "kg", "mbh", "og", "se", "und", "company"]);
 
 function identityTokens(company) {
   return normalized(company)
@@ -103,23 +101,34 @@ function blockingMarkers(page) {
   const detection = Array.isArray(page?.detection?.markers)
     ? page.detection.markers.map(String)
     : [];
-  const corpus = normalized([
-    page?.title,
-    page?.body_text,
-    page?.page_text_excerpt,
-    page?.raw_html_excerpt,
-    page?.command_error,
-    detection.join(" "),
-  ].filter(Boolean).join(" "));
+  const corpus = normalized(
+    [
+      page?.title,
+      page?.body_text,
+      page?.page_text_excerpt,
+      page?.raw_html_excerpt,
+      page?.command_error,
+      detection.join(" "),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
   const markers = detection.filter((marker) =>
-    /captcha|cloudflare|challenge|human|access.?denied|blocked|rate.?limit|too.?many/i.test(marker)
+    /captcha|cloudflare|challenge|human|access.?denied|blocked|rate.?limit|too.?many/i.test(marker),
   );
   if ([401, 403, 429].includes(Number(page?.http_status))) {
     markers.push(`http-${page.http_status}`);
   }
   for (const phrase of [
-    "einen moment", "one moment please", "captcha", "cloudflare", "challenge",
-    "verify you are human", "access denied", "request blocked", "too many requests",
+    "einen moment",
+    "one moment please",
+    "captcha",
+    "cloudflare",
+    "challenge",
+    "verify you are human",
+    "access denied",
+    "request blocked",
+    "too many requests",
   ]) {
     if (corpus.includes(phrase)) markers.push(phrase.replace(/\s+/g, "-"));
   }
@@ -145,7 +154,9 @@ function pageCorpus(page) {
     page?.raw_html_excerpt,
     page?.raw_html,
     ...fieldValues,
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function validatedPage(company, page, fallbackUrl) {
@@ -159,17 +170,37 @@ function validatedPage(company, page, fallbackUrl) {
 
 function searchHits(company, country) {
   const variants = [
-    ["web", "search", "--query", company, "--source", SOURCE_ID, "--domain", ALLOWED_HOST, "--include-sources"],
-    ["web", "search", "--query", `site:${ALLOWED_HOST} ${company}`, "--domain", ALLOWED_HOST, "--include-sources"],
+    [
+      "web",
+      "search",
+      "--query",
+      company,
+      "--source",
+      SOURCE_ID,
+      "--domain",
+      ALLOWED_HOST,
+      "--include-sources",
+    ],
+    [
+      "web",
+      "search",
+      "--query",
+      `site:${ALLOWED_HOST} ${company}`,
+      "--domain",
+      ALLOWED_HOST,
+      "--include-sources",
+    ],
   ];
   const hits = [];
   for (const args of variants) {
     if (country) args.push("--country", country);
     const payload = runCtox(args);
     for (const hit of payload?.results || []) {
-      if (isAllowedUrl(hit?.url)
-          && identityMatches(company, hit?.title)
-          && legalFormMatches(company, hit?.title)) {
+      if (
+        isAllowedUrl(hit?.url) &&
+        identityMatches(company, hit?.title) &&
+        legalFormMatches(company, hit?.title)
+      ) {
         hits.push(hit.url);
       }
     }
@@ -199,7 +230,12 @@ function readPage(url, country) {
 
 function titleFromHtml(html) {
   const match = String(html || "").match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
-  return match ? match[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+  return match
+    ? match[1]
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : "";
 }
 
 function captureBodyText(html) {
@@ -209,13 +245,17 @@ function captureBodyText(html) {
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<br\b[^>]*>/gi, "\n")
-    .replace(/<\/(?:p|div|li|tr|td|th|dd|dt|h[1-6]|section|article|header|footer|ul|ol|table)>/gi, "\n")
+    .replace(
+      /<\/(?:p|div|li|tr|td|th|dd|dt|h[1-6]|section|article|header|footer|ul|ol|table)>/gi,
+      "\n",
+    )
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'");
-  return text.split("\n")
+  return text
+    .split("\n")
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join("\n");
@@ -238,10 +278,14 @@ function browserCapturePage(url) {
   const outDir = mkdtempSync(path.join(captureRoot, "firmenabc-browser-capture-"));
   try {
     const args = [
-      "web", "browser-capture",
-      "--url", url,
-      "--out-dir", outDir,
-      "--timeout-ms", String(BROWSER_TIMEOUT_MS),
+      "web",
+      "browser-capture",
+      "--url",
+      url,
+      "--out-dir",
+      outDir,
+      "--timeout-ms",
+      String(BROWSER_TIMEOUT_MS),
     ];
     let payload;
     try {
@@ -249,7 +293,7 @@ function browserCapturePage(url) {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 32 * 1024 * 1024,
-        timeout: (BROWSER_TIMEOUT_MS * 2) + 20_000,
+        timeout: BROWSER_TIMEOUT_MS * 2 + 20_000,
       });
       payload = JSON.parse(out);
     } catch (err) {
@@ -260,9 +304,8 @@ function browserCapturePage(url) {
       };
     }
 
-    const markerMap = payload?.markers && typeof payload.markers === "object"
-      ? payload.markers
-      : {};
+    const markerMap =
+      payload?.markers && typeof payload.markers === "object" ? payload.markers : {};
     const markers = Object.entries(markerMap)
       .filter(([, detected]) => detected === true)
       .map(([marker]) => marker);
@@ -386,7 +429,9 @@ function browserPage(url, unlockMode = false, sessionId = null) {
   const source = providerBrowserSource(url, unlockMode);
   if (!source) return null;
   const args = [
-    "web", "browser-automation", "--timeout-ms",
+    "web",
+    "browser-automation",
+    "--timeout-ms",
     String(unlockMode ? UNLOCK_TIMEOUT_MS : BROWSER_TIMEOUT_MS),
   ];
   const safeSessionId = browserSessionId(sessionId);
@@ -403,10 +448,16 @@ function browserPage(url, unlockMode = false, sessionId = null) {
 
 function recordUnlockSignal(url, markers) {
   return runCtox([
-    "web", "unlock", "signals", "record",
-    "--source", `scrape-target:${SOURCE_ID}`,
-    "--url", isAllowedUrl(url) ? url : `https://www.${ALLOWED_HOST}/`,
-    "--evidence", JSON.stringify({
+    "web",
+    "unlock",
+    "signals",
+    "record",
+    "--source",
+    `scrape-target:${SOURCE_ID}`,
+    "--url",
+    isAllowedUrl(url) ? url : `https://www.${ALLOWED_HOST}/`,
+    "--evidence",
+    JSON.stringify({
       source_id: SOURCE_ID,
       detection: "access_challenge",
       markers: [...new Set(markers.map(String))].slice(0, 12),
@@ -437,7 +488,8 @@ function organizationObjects(page) {
       for (const item of queue) {
         if (item?.["@graph"] && Array.isArray(item["@graph"])) queue.push(...item["@graph"]);
         const type = Array.isArray(item?.["@type"]) ? item["@type"] : [item?.["@type"]];
-        if (type.some((value) => /organization|localbusiness/i.test(String(value)))) values.push(item);
+        if (type.some((value) => /organization|localbusiness/i.test(String(value))))
+          values.push(item);
       }
     } catch (_err) {
       // Invalid third-party JSON-LD is ignored; no record is synthesized from it.
@@ -448,13 +500,22 @@ function organizationObjects(page) {
 
 function bodyProfile(page) {
   const text = String(page?.body_text || page?.page_text_excerpt || "");
-  const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
   const anchor = lines.findIndex((line) => normalized(line) === "informationen zur firmenstruktur");
   const profileLines = anchor >= 0 ? lines.slice(anchor + 1, anchor + 16) : [];
   const postalIndex = profileLines.findIndex((line) => /^\d{4}\s+\S/.test(line));
   const postal = postalIndex >= 0 ? profileLines[postalIndex].match(/^(\d{4})\s+(.+)$/) : null;
-  const titleName = String(page?.title || "").replace(/\s+in\s+[^|]+(?:\|.*)?$/i, "").trim();
-  const contact = (prefix) => profileLines.find((line) => line.startsWith(prefix))?.slice(prefix.length).trim();
+  const titleName = String(page?.title || "")
+    .replace(/\s+in\s+[^|]+(?:\|.*)?$/i, "")
+    .trim();
+  const contact = (prefix) =>
+    profileLines
+      .find((line) => line.startsWith(prefix))
+      ?.slice(prefix.length)
+      .trim();
   return {
     name: titleName,
     street: postalIndex > 0 ? profileLines[postalIndex - 1] : null,
@@ -471,7 +532,9 @@ function recordsFromPage(page) {
   const records = [];
   const seen = new Set();
   const push = (field, value, confidence, note) => {
-    const clean = String(value || "").replace(/\s+/g, " ").trim();
+    const clean = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!clean || seen.has(`${field}\u0000${clean}`)) return;
     seen.add(`${field}\u0000${clean}`);
     records.push({ field, value: clean, confidence, source_url: sourceUrl, note });
@@ -506,8 +569,15 @@ function recordsFromPage(page) {
   push("firma_email", body.email, "medium", "FirmenABC company profile");
   if (body.website) {
     try {
-      const absolute = /^https?:\/\//i.test(body.website) ? body.website : `https://${body.website}`;
-      push("firma_domain", new URL(absolute).hostname.replace(/^www\./, ""), "medium", "FirmenABC company profile");
+      const absolute = /^https?:\/\//i.test(body.website)
+        ? body.website
+        : `https://${body.website}`;
+      push(
+        "firma_domain",
+        new URL(absolute).hostname.replace(/^www\./, ""),
+        "medium",
+        "FirmenABC company profile",
+      );
     } catch (_err) {}
   }
   return records;
@@ -519,7 +589,9 @@ function main() {
   const country = String(input.country || "AT").trim() || "AT";
   const persistentSessionId = browserSessionId(input.browser_session_id || input.session_id);
   if (!company) {
-    process.stdout.write(JSON.stringify({ records: [], failure_mode: "portal_drift", detail: "company missing" }));
+    process.stdout.write(
+      JSON.stringify({ records: [], failure_mode: "portal_drift", detail: "company missing" }),
+    );
     return;
   }
 

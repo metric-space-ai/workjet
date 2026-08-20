@@ -31,9 +31,7 @@
         "internal/httpfetch/httpfetch.go",
         "internal/util/ssh_helper.go"
       ],
-      "tests": [
-        "internal/httpfetch/httpfetch_test.go"
-      ],
+      "tests": ["internal/httpfetch/httpfetch_test.go"],
       "reason": "Earlier checkpoints explicitly deferred or denied standalone strict credit despite later marker closure."
     },
     {
@@ -46,9 +44,7 @@
         "internal/config/parse.go",
         "sdk/config/config.go"
       ],
-      "tests": [
-        "internal/config/plugin_config_test.go"
-      ],
+      "tests": ["internal/config/plugin_config_test.go"],
       "reason": "The Config cluster was activated mechanically while strict credit remained limited to the already-complete sdk_config mirror; the SDK facade deliberately required injected authority."
     },
     {
@@ -64,9 +60,7 @@
     {
       "cluster": "large-service-integration",
       "production": [],
-      "tests": [
-        "sdk/cliproxy/service_executionregistry_test.go"
-      ],
+      "tests": ["sdk/cliproxy/service_executionregistry_test.go"],
       "reason": "The large Home subscriber/log-forwarder/selector-watcher integration mirror was promoted mechanically without later file-specific strict credit."
     },
     {

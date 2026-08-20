@@ -170,11 +170,11 @@ The Business OS shell PR (`metric-space-ai/ctox` #28,
 `codex/ctox-desktop-host-theme`) has been sitting on an owner decision phrased
 as "merge despite red CI?". That phrasing was too vague to decide. Measured:
 
-| Check                                        | PR #28  | `main`  |
-| -------------------------------------------- | ------- | ------- |
-| Business OS Desktop E2E (mac / linux / win)  | SUCCESS | —       |
-| Desktop extra check (linux)                  | SUCCESS | —       |
-| CTOX CLI check (all 5 targets)               | FAILURE | FAILURE |
+| Check                                       | PR #28  | `main`  |
+| ------------------------------------------- | ------- | ------- |
+| Business OS Desktop E2E (mac / linux / win) | SUCCESS | —       |
+| Desktop extra check (linux)                 | SUCCESS | —       |
+| CTOX CLI check (all 5 targets)              | FAILURE | FAILURE |
 
 The five failing CLI jobs fail with a byte-identical assertion on both
 branches:

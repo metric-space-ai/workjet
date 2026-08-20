@@ -5,7 +5,7 @@
     "model": "legacy-claude",
     "stream": true,
     "input": {
-      "messages": [{"role":"user","content":"hello"}],
+      "messages": [{ "role": "user", "content": "hello" }],
       "max_tokens": 123,
       "top_p": 0.75,
       "stop": ["END", "STOP"],
@@ -18,8 +18,8 @@
     "model": "legacy-claude",
     "input": {
       "messages": [
-        {"role":"system","content":"Be exact.","cache_control":{"type":"ephemeral"}},
-        {"role":"user","content":"question"}
+        { "role": "system", "content": "Be exact.", "cache_control": { "type": "ephemeral" } },
+        { "role": "user", "content": "question" }
       ]
     }
   },
@@ -29,8 +29,19 @@
     "model": "legacy-claude",
     "input": {
       "messages": [
-        {"role":"system","content":[{"type":"text","text":"A"},{"type":"text","text":"B"}],"cache_control":{"type":"ephemeral"}},
-        {"role":"user","content":[{"type":"text","text":"ask"}],"cache_control":{"type":"ephemeral"}}
+        {
+          "role": "system",
+          "content": [
+            { "type": "text", "text": "A" },
+            { "type": "text", "text": "B" }
+          ],
+          "cache_control": { "type": "ephemeral" }
+        },
+        {
+          "role": "user",
+          "content": [{ "type": "text", "text": "ask" }],
+          "cache_control": { "type": "ephemeral" }
+        }
       ]
     }
   },
@@ -39,12 +50,17 @@
     "operation": "chat_request_to_claude",
     "model": "legacy-claude",
     "input": {
-      "messages": [{"role":"user","content":[
-        {"type":"text","text":"inspect"},
-        {"type":"image_url","image_url":{"url":"data:image/png;base64,AA=="}},
-        {"type":"image_url","image_url":{"url":"https://example.invalid/image.png"}},
-        {"type":"file","file":{"file_data":"data:application/pdf;base64,UEZG"}}
-      ]}]
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "inspect" },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA==" } },
+            { "type": "image_url", "image_url": { "url": "https://example.invalid/image.png" } },
+            { "type": "file", "file": { "file_data": "data:application/pdf;base64,UEZG" } }
+          ]
+        }
+      ]
     }
   },
   {
@@ -52,12 +68,23 @@
     "operation": "chat_request_to_claude",
     "model": "legacy-claude",
     "input": {
-      "messages": [{"role":"user","content":"lookup"}],
-      "tools": [{"type":"function","cache_control":{"type":"ephemeral"},"function":{
-        "name":"lookup","description":"Lookup item",
-        "parameters":{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}
-      }}],
-      "tool_choice": {"type":"function","function":{"name":"lookup"}}
+      "messages": [{ "role": "user", "content": "lookup" }],
+      "tools": [
+        {
+          "type": "function",
+          "cache_control": { "type": "ephemeral" },
+          "function": {
+            "name": "lookup",
+            "description": "Lookup item",
+            "parameters": {
+              "type": "object",
+              "properties": { "id": { "type": "integer" } },
+              "required": ["id"]
+            }
+          }
+        }
+      ],
+      "tool_choice": { "type": "function", "function": { "name": "lookup" } }
     }
   },
   {
@@ -66,12 +93,28 @@
     "model": "legacy-claude",
     "input": {
       "messages": [
-        {"role":"assistant","content":"checking","tool_calls":[
-          {"id":"call:one","type":"function","function":{"name":"first","arguments":"{\"x\":1}"}},
-          {"id":"call-two","type":"function","function":{"name":"second","arguments":"[]"}}
-        ]},
-        {"role":"tool","tool_call_id":"call:one","content":"one"},
-        {"role":"tool","tool_call_id":"call-two","content":[{"type":"text","text":"two"}]}
+        {
+          "role": "assistant",
+          "content": "checking",
+          "tool_calls": [
+            {
+              "id": "call:one",
+              "type": "function",
+              "function": { "name": "first", "arguments": "{\"x\":1}" }
+            },
+            {
+              "id": "call-two",
+              "type": "function",
+              "function": { "name": "second", "arguments": "[]" }
+            }
+          ]
+        },
+        { "role": "tool", "tool_call_id": "call:one", "content": "one" },
+        {
+          "role": "tool",
+          "tool_call_id": "call-two",
+          "content": [{ "type": "text", "text": "two" }]
+        }
       ]
     }
   },
@@ -79,16 +122,16 @@
     "name": "chat-system-only-minimal-turn",
     "operation": "chat_request_to_claude",
     "model": "legacy-claude",
-    "input": {"messages":[{"role":"system","content":"Only system"}]}
+    "input": { "messages": [{ "role": "system", "content": "Only system" }] }
   },
   {
     "name": "chat-adaptive-reasoning",
     "operation": "chat_request_to_claude",
     "model": "claude-sonnet-4-6",
     "input": {
-      "reasoning_effort":"xhigh",
-      "messages":[{"role":"user","content":"think"}],
-      "tool_choice":"auto"
+      "reasoning_effort": "xhigh",
+      "messages": [{ "role": "user", "content": "think" }],
+      "tool_choice": "auto"
     }
   }
 ]

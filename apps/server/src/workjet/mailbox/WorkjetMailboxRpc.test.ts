@@ -185,7 +185,12 @@ const doubles = (
     target: { schemaVersion: 1, workspaceId: WORKSPACE_ID, environmentId: ENVIRONMENT_ID },
     createdAt: NOW,
     expiresAt: "2026-08-19T10:00:00.000Z",
-    contextSnapshot: { schemaVersion: 1, snapshotRef: SNAPSHOT_REF, digest: DIGEST, byteLength: 64 },
+    contextSnapshot: {
+      schemaVersion: 1,
+      snapshotRef: SNAPSHOT_REF,
+      digest: DIGEST,
+      byteLength: 64,
+    },
     artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
     note: "Continue the transport slice here.",
   };
@@ -955,7 +960,11 @@ it.effect("lists received handoffs with snapshot availability and never their te
     expect(row).not.toHaveProperty("snapshotBytes");
     // The listing carries a reference and a size; the snapshot TEXT never
     // leaves the server's store through this read.
-    expect(Object.values(row ?? {}).some((value) => typeof value === "string" && value.includes("Workjet thread handoff"))).toBe(false);
+    expect(
+      Object.values(row ?? {}).some(
+        (value) => typeof value === "string" && value.includes("Workjet thread handoff"),
+      ),
+    ).toBe(false);
   }),
 );
 

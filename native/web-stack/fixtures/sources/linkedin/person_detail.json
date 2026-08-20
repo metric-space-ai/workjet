@@ -6,7 +6,7 @@
   "lastName": "Fixture",
   "headline": "Fixture Operations Lead at Workjet Fixture Systems GmbH",
   "currentPositions": [
-    {"title": "Fixture Operations Lead", "companyName": "Workjet Fixture Systems GmbH"},
-    {"title": "Former Test Role", "companyName": "Workjet Example Holdings AG"}
+    { "title": "Fixture Operations Lead", "companyName": "Workjet Fixture Systems GmbH" },
+    { "title": "Former Test Role", "companyName": "Workjet Example Holdings AG" }
   ]
 }

@@ -38,7 +38,7 @@ export const DEFAULT_HUMAN_CONFIG = Object.freeze({
   // Keyboard
   typingDelayMs: 70,
   typingDelaySpreadMs: 40,
-  typingPauseChance: 0.10,
+  typingPauseChance: 0.1,
   typingPauseRangeMs: [400, 1000],
   keyHoldMs: [15, 35],
   shiftDownDelayMs: [30, 70],
@@ -60,7 +60,7 @@ export const DEFAULT_HUMAN_CONFIG = Object.freeze({
   scrollBurstChunkPx: [20, 40],
   scrollBurstStepMs: [8, 20],
   scrollBurstChunks: [3, 5],
-  scrollOvershootChance: 0.10,
+  scrollOvershootChance: 0.1,
   scrollOvershootPx: [40, 120],
   scrollSettleDelayMs: [100, 250],
   // Actionability
@@ -163,13 +163,13 @@ export async function humanMouseMove(page, from, to, options = {}) {
 
 export async function humanClickAt(page, xy, options = {}) {
   const cfg = { ...DEFAULT_HUMAN_CONFIG, ...options };
-  const kind = options.kind === 'input' ? 'input' : 'button';
-  const aim = kind === 'input' ? cfg.clickAimDelayInputMs : cfg.clickAimDelayButtonMs;
-  const hold = kind === 'input' ? cfg.clickHoldInputMs : cfg.clickHoldButtonMs;
+  const kind = options.kind === "input" ? "input" : "button";
+  const aim = kind === "input" ? cfg.clickAimDelayInputMs : cfg.clickAimDelayButtonMs;
+  const hold = kind === "input" ? cfg.clickHoldInputMs : cfg.clickHoldButtonMs;
   await sleep(randRange(aim));
-  await page.mouse.down({ button: 'left' });
+  await page.mouse.down({ button: "left" });
   await sleep(randRange(hold));
-  await page.mouse.up({ button: 'left' });
+  await page.mouse.up({ button: "left" });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,19 +177,42 @@ export async function humanClickAt(page, xy, options = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NEARBY_KEYS = {
-  a: ['s', 'q', 'w', 'z'], b: ['v', 'g', 'h', 'n'], c: ['x', 'd', 'f', 'v'],
-  d: ['s', 'e', 'r', 'f', 'c', 'x'], e: ['w', 's', 'd', 'r'], f: ['d', 'r', 't', 'g', 'v', 'c'],
-  g: ['f', 't', 'y', 'h', 'b', 'v'], h: ['g', 'y', 'u', 'j', 'n', 'b'],
-  i: ['u', 'j', 'k', 'o'], j: ['h', 'u', 'i', 'k', 'm', 'n'], k: ['j', 'i', 'o', 'l', 'm'],
-  l: ['k', 'o', 'p'], m: ['n', 'j', 'k'], n: ['b', 'h', 'j', 'm'],
-  o: ['i', 'k', 'l', 'p'], p: ['o', 'l'], q: ['w', 'a'], r: ['e', 'd', 'f', 't'],
-  s: ['a', 'w', 'e', 'd', 'x', 'z'], t: ['r', 'f', 'g', 'y'], u: ['y', 'h', 'j', 'i'],
-  v: ['c', 'f', 'g', 'b'], w: ['q', 'a', 's', 'e'], x: ['z', 's', 'd', 'c'],
-  y: ['t', 'g', 'h', 'u'], z: ['a', 's', 'x'],
-  '1': ['2', 'q'], '2': ['1', '3', 'q', 'w'], '3': ['2', '4', 'w', 'e'],
-  '4': ['3', '5', 'e', 'r'], '5': ['4', '6', 'r', 't'], '6': ['5', '7', 't', 'y'],
-  '7': ['6', '8', 'y', 'u'], '8': ['7', '9', 'u', 'i'], '9': ['8', '0', 'i', 'o'],
-  '0': ['9', 'o', 'p'],
+  a: ["s", "q", "w", "z"],
+  b: ["v", "g", "h", "n"],
+  c: ["x", "d", "f", "v"],
+  d: ["s", "e", "r", "f", "c", "x"],
+  e: ["w", "s", "d", "r"],
+  f: ["d", "r", "t", "g", "v", "c"],
+  g: ["f", "t", "y", "h", "b", "v"],
+  h: ["g", "y", "u", "j", "n", "b"],
+  i: ["u", "j", "k", "o"],
+  j: ["h", "u", "i", "k", "m", "n"],
+  k: ["j", "i", "o", "l", "m"],
+  l: ["k", "o", "p"],
+  m: ["n", "j", "k"],
+  n: ["b", "h", "j", "m"],
+  o: ["i", "k", "l", "p"],
+  p: ["o", "l"],
+  q: ["w", "a"],
+  r: ["e", "d", "f", "t"],
+  s: ["a", "w", "e", "d", "x", "z"],
+  t: ["r", "f", "g", "y"],
+  u: ["y", "h", "j", "i"],
+  v: ["c", "f", "g", "b"],
+  w: ["q", "a", "s", "e"],
+  x: ["z", "s", "d", "c"],
+  y: ["t", "g", "h", "u"],
+  z: ["a", "s", "x"],
+  1: ["2", "q"],
+  2: ["1", "3", "q", "w"],
+  3: ["2", "4", "w", "e"],
+  4: ["3", "5", "e", "r"],
+  5: ["4", "6", "r", "t"],
+  6: ["5", "7", "t", "y"],
+  7: ["6", "8", "y", "u"],
+  8: ["7", "9", "u", "i"],
+  9: ["8", "0", "i", "o"],
+  0: ["9", "o", "p"],
 };
 
 function nearbyKey(ch) {
@@ -211,7 +234,7 @@ function isPrintableSingleKey(ch) {
 export async function humanType(locator, text, options = {}) {
   const cfg = { ...DEFAULT_HUMAN_CONFIG, ...options };
   const page = locator.page ? locator.page() : options.page;
-  if (!page) throw new Error('humanType requires a locator or options.page');
+  if (!page) throw new Error("humanType requires a locator or options.page");
   await locator.focus();
 
   for (const ch of text) {
@@ -220,7 +243,7 @@ export async function humanType(locator, text, options = {}) {
       if (wrong) {
         await page.keyboard.press(wrong, { delay: randRange(cfg.keyHoldMs) });
         await sleep(randRange(cfg.mistypeDelayNoticeMs));
-        await page.keyboard.press('Backspace', { delay: randRange(cfg.keyHoldMs) });
+        await page.keyboard.press("Backspace", { delay: randRange(cfg.keyHoldMs) });
         await sleep(randRange(cfg.mistypeDelayCorrectMs));
       }
     }
@@ -309,10 +332,10 @@ export async function humanScroll(page, deltaY, options = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ACTIONABILITY_CHECKS = Object.freeze({
-  click: ['attached', 'visible', 'enabled', 'pointerEvents'],
-  hover: ['attached', 'visible', 'pointerEvents'],
-  input: ['attached', 'visible', 'enabled', 'editable', 'pointerEvents'],
-  focus: ['attached', 'visible', 'enabled'],
+  click: ["attached", "visible", "enabled", "pointerEvents"],
+  hover: ["attached", "visible", "pointerEvents"],
+  input: ["attached", "visible", "enabled", "editable", "pointerEvents"],
+  focus: ["attached", "visible", "enabled"],
 });
 
 async function backoffSleep(attempt, cfg) {
@@ -322,17 +345,17 @@ async function backoffSleep(attempt, cfg) {
 
 async function checkOnce(locator, check) {
   switch (check) {
-    case 'attached': {
+    case "attached": {
       const count = await locator.count();
       return count >= 1;
     }
-    case 'visible':
+    case "visible":
       return locator.isVisible();
-    case 'enabled':
+    case "enabled":
       return locator.isEnabled();
-    case 'editable':
+    case "editable":
       return locator.isEditable();
-    case 'pointerEvents': {
+    case "pointerEvents": {
       const box = await locator.boundingBox();
       if (!box) return false;
       const cx = box.x + box.width / 2;
@@ -374,7 +397,7 @@ export async function ensureActionable(locator, checks, options = {}) {
     await backoffSleep(attempt, cfg);
     attempt += 1;
   }
-  throw new Error(`ensureActionable: timed out for checks ${checks.join(',')}`);
+  throw new Error(`ensureActionable: timed out for checks ${checks.join(",")}`);
 }
 
 async function ensureStable(locator, options = {}) {
@@ -384,14 +407,19 @@ async function ensureStable(locator, options = {}) {
   while (Date.now() < deadline) {
     await sleep(100);
     const next = await locator.boundingBox();
-    if (prev && next &&
-        prev.x === next.x && prev.y === next.y &&
-        prev.width === next.width && prev.height === next.height) {
+    if (
+      prev &&
+      next &&
+      prev.x === next.x &&
+      prev.y === next.y &&
+      prev.width === next.width &&
+      prev.height === next.height
+    ) {
       return next;
     }
     prev = next;
   }
-  throw new Error('ensureStable: bounding box did not settle');
+  throw new Error("ensureStable: bounding box did not settle");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

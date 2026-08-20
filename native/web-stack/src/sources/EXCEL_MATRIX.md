@@ -10,14 +10,14 @@ genau diesem Dokument ab.
 
 ## Mode/Block-Mapping
 
-| Excel-Block                                | `ResearchMode`                  | Quellen befüllt? |
-| ------------------------------------------ | ------------------------------- | ---------------- |
-| Sheet `Nach-Recherche` / A. Vorhanden      | `HaveData`                      | nein (keine Recherche) |
-| Sheet `Nach-Recherche` / B. Bestand generell | `UpdateInventoryGeneral`      | nein (leere Spalten → leerer Plan pro Feld) |
-| Sheet `Nach-Recherche` / B 1. Änderung Person | `UpdatePerson`               | nur Person-Felder |
-| Sheet `Nach-Recherche` / B 2. Änderung Firmierung | `UpdateFirm`              | Firma + Person |
-| Sheet `Neu-Recherche` / A. Vorhanden       | n/a — Excel-Input               | nein |
-| Sheet `Neu-Recherche` / B. Neuer Bestand   | `NewRecord`                     | Firma + Person |
+| Excel-Block                                       | `ResearchMode`           | Quellen befüllt?                            |
+| ------------------------------------------------- | ------------------------ | ------------------------------------------- |
+| Sheet `Nach-Recherche` / A. Vorhanden             | `HaveData`               | nein (keine Recherche)                      |
+| Sheet `Nach-Recherche` / B. Bestand generell      | `UpdateInventoryGeneral` | nein (leere Spalten → leerer Plan pro Feld) |
+| Sheet `Nach-Recherche` / B 1. Änderung Person     | `UpdatePerson`           | nur Person-Felder                           |
+| Sheet `Nach-Recherche` / B 2. Änderung Firmierung | `UpdateFirm`             | Firma + Person                              |
+| Sheet `Neu-Recherche` / A. Vorhanden              | n/a — Excel-Input        | nein                                        |
+| Sheet `Neu-Recherche` / B. Neuer Bestand          | `NewRecord`              | Firma + Person                              |
 
 ## Normalisierte Quellen-IDs
 
@@ -28,21 +28,21 @@ sind **kein** Source-Modul — die deckt der existierende Web-Stack
 (`ctox web search`, `ctox web read`) über die generische Provider-Cascade
 und das Bemerkungs-Feld der Excel ("Online recherchieren") ab.
 
-| Excel-Token              | Source-ID            | Tier | Modul-Datei            |
-| ------------------------ | -------------------- | ---- | ---------------------- |
-| `www.bundesanzeiger.de`  | `bundesanzeiger.de`  | P    | `bundesanzeiger.rs`    |
-| `www.zefix.ch`           | `zefix.ch`           | P    | `zefix.rs`             |
-| `Handelsregister` (impliziert) | `handelsregister.de` | P | `handelsregister.rs`  |
-| `www.northdata.de`       | `northdata.de`       | S    | `northdata.rs`         |
-| `www.firmenabc.at`       | `firmenabc.at`       | S    | `firmenabc.rs`         |
-| `www.companyhouse.de`    | `companyhouse.de`    | S    | `companyhouse.rs`      |
-| `app.dnbhoovers.com`     | `dnbhoovers.com`     | C    | `dnbhoovers.rs`        |
-| `app.leadfeeder.com`     | `leadfeeder.com`     | C    | `leadfeeder.rs`        |
-| `www.linkedin.com`       | `linkedin.com`       | C    | `linkedin.rs`          |
-| `www.xing.com`           | `xing.com`           | C    | `xing.rs`              |
-| `Impressum`              | (generic web-read)   | —    | nicht modul-gestützt   |
-| `Unternehmensseite`      | (generic web-read)   | —    | nicht modul-gestützt   |
-| `Google`                 | (generic search)     | —    | nicht modul-gestützt   |
+| Excel-Token                    | Source-ID            | Tier | Modul-Datei          |
+| ------------------------------ | -------------------- | ---- | -------------------- |
+| `www.bundesanzeiger.de`        | `bundesanzeiger.de`  | P    | `bundesanzeiger.rs`  |
+| `www.zefix.ch`                 | `zefix.ch`           | P    | `zefix.rs`           |
+| `Handelsregister` (impliziert) | `handelsregister.de` | P    | `handelsregister.rs` |
+| `www.northdata.de`             | `northdata.de`       | S    | `northdata.rs`       |
+| `www.firmenabc.at`             | `firmenabc.at`       | S    | `firmenabc.rs`       |
+| `www.companyhouse.de`          | `companyhouse.de`    | S    | `companyhouse.rs`    |
+| `app.dnbhoovers.com`           | `dnbhoovers.com`     | C    | `dnbhoovers.rs`      |
+| `app.leadfeeder.com`           | `leadfeeder.com`     | C    | `leadfeeder.rs`      |
+| `www.linkedin.com`             | `linkedin.com`       | C    | `linkedin.rs`        |
+| `www.xing.com`                 | `xing.com`           | C    | `xing.rs`            |
+| `Impressum`                    | (generic web-read)   | —    | nicht modul-gestützt |
+| `Unternehmensseite`            | (generic web-read)   | —    | nicht modul-gestützt |
+| `Google`                       | (generic search)     | —    | nicht modul-gestützt |
 
 ## Matrix `(Mode, Country, FieldKey) → Source-Priority`
 
@@ -54,175 +54,184 @@ gilt die Excel-Ordnung. Discovery-Muster sind kursiv: sie laufen über
 ### Mode `UpdatePerson` (B 1 — nur Person-Felder)
 
 #### Deutschland
-| FieldKey            | Source-Priorität                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| `person_geschlecht` | `linkedin.com`, `xing.com`, *Unternehmensseite*                                    |
-| `person_titel`      | *Impressum*, `companyhouse.de`, *Unternehmensseite*                                |
-| `person_vorname`    | `northdata.de`, *Impressum*, *Unternehmensseite*                                   |
-| `person_nachname`   | `northdata.de`, *Impressum*, *Unternehmensseite*                                   |
-| `person_funktion`   | `linkedin.com`, `xing.com`, `dnbhoovers.com`                                       |
-| `person_position`   | *Impressum*, `northdata.de`, `dnbhoovers.com`, *Unternehmensseite*                 |
-| `person_email`      | `leadfeeder.com`                                                                   |
-| `person_linkedin`   | `linkedin.com`                                                                     |
-| `person_xing`       | `xing.com`                                                                         |
-| `person_telefon`    | *(keine Quelle in Excel — best effort via Impressum/Unternehmensseite, sonst leer)* |
+
+| FieldKey            | Source-Priorität                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `person_geschlecht` | `linkedin.com`, `xing.com`, _Unternehmensseite_                                     |
+| `person_titel`      | _Impressum_, `companyhouse.de`, _Unternehmensseite_                                 |
+| `person_vorname`    | `northdata.de`, _Impressum_, _Unternehmensseite_                                    |
+| `person_nachname`   | `northdata.de`, _Impressum_, _Unternehmensseite_                                    |
+| `person_funktion`   | `linkedin.com`, `xing.com`, `dnbhoovers.com`                                        |
+| `person_position`   | _Impressum_, `northdata.de`, `dnbhoovers.com`, _Unternehmensseite_                  |
+| `person_email`      | `leadfeeder.com`                                                                    |
+| `person_linkedin`   | `linkedin.com`                                                                      |
+| `person_xing`       | `xing.com`                                                                          |
+| `person_telefon`    | _(keine Quelle in Excel — best effort via Impressum/Unternehmensseite, sonst leer)_ |
 
 #### Österreich
-| FieldKey            | Source-Priorität                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `person_geschlecht` | `firmenabc.at`, `linkedin.com`, `xing.com`, *Unternehmensseite*                                                      |
-| `person_titel`      | `firmenabc.at`, *Impressum*, *Unternehmensseite*                                                                     |
-| `person_vorname`    | `northdata.de`, *Impressum*, `firmenabc.at`, `northdata.de`                                                          |
-| `person_nachname`   | `northdata.de`, *Impressum*, `firmenabc.at`                                                                          |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                                      |
-| `person_position`   | *Impressum*, `northdata.de`                                                                                          |
-| `person_email`      | `leadfeeder.com`                                                                                                     |
-| `person_linkedin`   | `linkedin.com`                                                                                                       |
-| `person_xing`       | `xing.com`                                                                                                           |
-| `person_telefon`    | *(keine Quelle in Excel)*                                                                                            |
+
+| FieldKey            | Source-Priorität                                                |
+| ------------------- | --------------------------------------------------------------- |
+| `person_geschlecht` | `firmenabc.at`, `linkedin.com`, `xing.com`, _Unternehmensseite_ |
+| `person_titel`      | `firmenabc.at`, _Impressum_, _Unternehmensseite_                |
+| `person_vorname`    | `northdata.de`, _Impressum_, `firmenabc.at`, `northdata.de`     |
+| `person_nachname`   | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com`                 |
+| `person_position`   | _Impressum_, `northdata.de`                                     |
+| `person_email`      | `leadfeeder.com`                                                |
+| `person_linkedin`   | `linkedin.com`                                                  |
+| `person_xing`       | `xing.com`                                                      |
+| `person_telefon`    | _(keine Quelle in Excel)_                                       |
 
 #### Schweiz
-| FieldKey            | Source-Priorität                                                                |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `person_geschlecht` | `linkedin.com`, `xing.com`, *Unternehmensseite*                                 |
-| `person_titel`      | *Unternehmensseite*, `linkedin.com`, `xing.com`                                 |
-| `person_vorname`    | `northdata.de`, *Unternehmensseite*                                             |
-| `person_nachname`   | `northdata.de`, *Unternehmensseite*                                             |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`                                 |
-| `person_position`   | *Unternehmensseite*, `northdata.de`                                             |
-| `person_email`      | `leadfeeder.com`                                                                |
-| `person_linkedin`   | `linkedin.com`                                                                  |
-| `person_xing`       | `xing.com`                                                                      |
-| `person_telefon`    | *(keine Quelle in Excel)*                                                       |
+
+| FieldKey            | Source-Priorität                                |
+| ------------------- | ----------------------------------------------- |
+| `person_geschlecht` | `linkedin.com`, `xing.com`, _Unternehmensseite_ |
+| `person_titel`      | _Unternehmensseite_, `linkedin.com`, `xing.com` |
+| `person_vorname`    | `northdata.de`, _Unternehmensseite_             |
+| `person_nachname`   | `northdata.de`, _Unternehmensseite_             |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com` |
+| `person_position`   | _Unternehmensseite_, `northdata.de`             |
+| `person_email`      | `leadfeeder.com`                                |
+| `person_linkedin`   | `linkedin.com`                                  |
+| `person_xing`       | `xing.com`                                      |
+| `person_telefon`    | _(keine Quelle in Excel)_                       |
 
 ### Mode `UpdateFirm` (B 2 — Firma + Person)
 
 #### Deutschland
-| FieldKey            | Source-Priorität                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| `firma_name`        | `northdata.de`, *Impressum*                                                                      |
-| `firma_anschrift`   | `northdata.de`, *Impressum*                                                                      |
-| `firma_plz`         | `northdata.de`, *Impressum*                                                                      |
-| `firma_ort`         | `northdata.de`, *Impressum*                                                                      |
-| `firma_email`       | *Impressum*, `leadfeeder.com`, `dnbhoovers.com`                                                  |
-| `firma_domain`      | *Google*, `dnbhoovers.com`, `leadfeeder.com`                                                     |
-| `firma_telefon`     | *Google Maps*, *Impressum*, *Unternehmensseite*                                                 |
-| `person_geschlecht` | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                  |
-| `person_titel`      | *Impressum*, `companyhouse.de`, *Unternehmensseite*                                              |
-| `person_vorname`    | *Impressum*, `northdata.de`, *Unternehmensseite*                                                 |
-| `person_nachname`   | *Impressum*, `northdata.de`, *Unternehmensseite*                                                 |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`, `dnbhoovers.com`                                |
-| `person_position`   | *Impressum*, `northdata.de`, `dnbhoovers.com`, *Unternehmensseite*                               |
-| `person_email`      | `leadfeeder.com`                                                                                 |
-| `person_linkedin`   | `linkedin.com`                                                                                   |
-| `person_xing`       | `xing.com`                                                                                       |
-| `wz_code`, `umsatz`, `mitarbeiter`, `crm_record_number` | *(in der Excel-B2-Person-Sektion ohne Quelle — werden nur in B/Neu recherchiert, s. u.)* |
+
+| FieldKey                                                | Source-Priorität                                                                         |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `firma_name`                                            | `northdata.de`, _Impressum_                                                              |
+| `firma_anschrift`                                       | `northdata.de`, _Impressum_                                                              |
+| `firma_plz`                                             | `northdata.de`, _Impressum_                                                              |
+| `firma_ort`                                             | `northdata.de`, _Impressum_                                                              |
+| `firma_email`                                           | _Impressum_, `leadfeeder.com`, `dnbhoovers.com`                                          |
+| `firma_domain`                                          | _Google_, `dnbhoovers.com`, `leadfeeder.com`                                             |
+| `firma_telefon`                                         | _Google Maps_, _Impressum_, _Unternehmensseite_                                          |
+| `person_geschlecht`                                     | _Unternehmensseite_, `linkedin.com`, `xing.com`                                          |
+| `person_titel`                                          | _Impressum_, `companyhouse.de`, _Unternehmensseite_                                      |
+| `person_vorname`                                        | _Impressum_, `northdata.de`, _Unternehmensseite_                                         |
+| `person_nachname`                                       | _Impressum_, `northdata.de`, _Unternehmensseite_                                         |
+| `person_funktion`                                       | _Unternehmensseite_, `linkedin.com`, `xing.com`, `dnbhoovers.com`                        |
+| `person_position`                                       | _Impressum_, `northdata.de`, `dnbhoovers.com`, _Unternehmensseite_                       |
+| `person_email`                                          | `leadfeeder.com`                                                                         |
+| `person_linkedin`                                       | `linkedin.com`                                                                           |
+| `person_xing`                                           | `xing.com`                                                                               |
+| `wz_code`, `umsatz`, `mitarbeiter`, `crm_record_number` | _(in der Excel-B2-Person-Sektion ohne Quelle — werden nur in B/Neu recherchiert, s. u.)_ |
 
 #### Österreich
-| FieldKey            | Source-Priorität                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `firma_name`        | `northdata.de`, *Impressum*, `firmenabc.at`                                                                               |
-| `firma_anschrift`   | `northdata.de`, *Impressum*, `firmenabc.at`                                                                               |
-| `firma_plz`         | `northdata.de`, *Impressum*, `firmenabc.at`                                                                               |
-| `firma_ort`         | `northdata.de`, *Impressum*, `firmenabc.at`                                                                               |
-| `firma_email`       | *Impressum*, `leadfeeder.com`, `firmenabc.at`                                                                             |
-| `firma_domain`      | `firmenabc.at`, *Google*                                                                                                  |
-| `person_geschlecht` | `firmenabc.at`, `linkedin.com`, `xing.com`, *Unternehmensseite*                                                           |
-| `person_titel`      | `firmenabc.at`, *Impressum*, *Unternehmensseite*                                                                          |
-| `person_vorname`    | *Impressum*, `firmenabc.at`, `northdata.de`                                                                               |
-| `person_nachname`   | *Impressum*, `firmenabc.at`, `northdata.de`                                                                               |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                                           |
-| `person_position`   | *Impressum*, `northdata.de`                                                                                               |
-| `person_email`      | `leadfeeder.com`                                                                                                          |
-| `person_linkedin`   | `linkedin.com`                                                                                                            |
-| `person_xing`       | `xing.com`                                                                                                                |
+
+| FieldKey            | Source-Priorität                                                |
+| ------------------- | --------------------------------------------------------------- |
+| `firma_name`        | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_anschrift`   | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_plz`         | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_ort`         | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_email`       | _Impressum_, `leadfeeder.com`, `firmenabc.at`                   |
+| `firma_domain`      | `firmenabc.at`, _Google_                                        |
+| `person_geschlecht` | `firmenabc.at`, `linkedin.com`, `xing.com`, _Unternehmensseite_ |
+| `person_titel`      | `firmenabc.at`, _Impressum_, _Unternehmensseite_                |
+| `person_vorname`    | _Impressum_, `firmenabc.at`, `northdata.de`                     |
+| `person_nachname`   | _Impressum_, `firmenabc.at`, `northdata.de`                     |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com`                 |
+| `person_position`   | _Impressum_, `northdata.de`                                     |
+| `person_email`      | `leadfeeder.com`                                                |
+| `person_linkedin`   | `linkedin.com`                                                  |
+| `person_xing`       | `xing.com`                                                      |
 
 #### Schweiz
-| FieldKey            | Source-Priorität                                                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `firma_name`        | `northdata.de`, *Unternehmensseite*, `zefix.ch`                                                                               |
-| `firma_anschrift`   | `northdata.de`, *Unternehmensseite*, `zefix.ch`                                                                               |
-| `firma_plz`         | `northdata.de`, *Unternehmensseite*, `zefix.ch`                                                                               |
-| `firma_ort`         | `northdata.de`, *Unternehmensseite*, `dnbhoovers.com`                                                                         |
-| `firma_email`       | *Unternehmensseite*, `leadfeeder.com`, `dnbhoovers.com`                                                                       |
-| `firma_domain`      | *Google*, `dnbhoovers.com`, `leadfeeder.com`                                                                                  |
-| `person_geschlecht` | `linkedin.com`, `xing.com`, *Unternehmensseite*                                                                               |
-| `person_titel`      | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                                               |
-| `person_vorname`    | *Unternehmensseite*, `northdata.de`                                                                                           |
-| `person_nachname`   | `northdata.de`, *Unternehmensseite*                                                                                           |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                                               |
-| `person_position`   | *Unternehmensseite*, `northdata.de`                                                                                           |
-| `person_email`      | `leadfeeder.com`                                                                                                              |
-| `person_linkedin`   | `linkedin.com`                                                                                                                |
-| `person_xing`       | `xing.com`                                                                                                                    |
+
+| FieldKey            | Source-Priorität                                        |
+| ------------------- | ------------------------------------------------------- |
+| `firma_name`        | `northdata.de`, _Unternehmensseite_, `zefix.ch`         |
+| `firma_anschrift`   | `northdata.de`, _Unternehmensseite_, `zefix.ch`         |
+| `firma_plz`         | `northdata.de`, _Unternehmensseite_, `zefix.ch`         |
+| `firma_ort`         | `northdata.de`, _Unternehmensseite_, `dnbhoovers.com`   |
+| `firma_email`       | _Unternehmensseite_, `leadfeeder.com`, `dnbhoovers.com` |
+| `firma_domain`      | _Google_, `dnbhoovers.com`, `leadfeeder.com`            |
+| `person_geschlecht` | `linkedin.com`, `xing.com`, _Unternehmensseite_         |
+| `person_titel`      | _Unternehmensseite_, `linkedin.com`, `xing.com`         |
+| `person_vorname`    | _Unternehmensseite_, `northdata.de`                     |
+| `person_nachname`   | `northdata.de`, _Unternehmensseite_                     |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com`         |
+| `person_position`   | _Unternehmensseite_, `northdata.de`                     |
+| `person_email`      | `leadfeeder.com`                                        |
+| `person_linkedin`   | `linkedin.com`                                          |
+| `person_xing`       | `xing.com`                                              |
 
 ### Mode `NewRecord` (Neu-Recherche B — Greenfield)
 
 #### Deutschland
-| FieldKey            | Source-Priorität                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------------- |
-| `firma_name`        | *Impressum*, `northdata.de`, `bundesanzeiger.de`, `dnbhoovers.com`                                |
-| `firma_anschrift`   | *Impressum*, `northdata.de`, `dnbhoovers.com`                                                     |
-| `firma_plz`         | *Impressum*, `northdata.de`, `dnbhoovers.com`                                                     |
-| `firma_ort`         | *Impressum*, `northdata.de`, `dnbhoovers.com`                                                     |
-| `firma_email`       | *Impressum*, `leadfeeder.com`, `dnbhoovers.com`                                                   |
-| `firma_domain`      | *Google*, `dnbhoovers.com`, `leadfeeder.com`                                                      |
-| `wz_code`           | `dnbhoovers.com`, `leadfeeder.com`                                                                |
-| `umsatz`            | `dnbhoovers.com`, `bundesanzeiger.de`, *Unternehmensseite*                                        |
-| `mitarbeiter`       | `dnbhoovers.com`, `leadfeeder.com`, *Unternehmensseite*                                           |
-| `person_geschlecht` | `linkedin.com`, `xing.com`, *Unternehmensseite*                                                   |
-| `person_titel`      | *Impressum*, `companyhouse.de`, *Unternehmensseite*                                               |
-| `person_vorname`    | *Impressum*, `northdata.de`, *Unternehmensseite*                                                  |
-| `person_nachname`   | *Impressum*, `northdata.de`, *Unternehmensseite*                                                  |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`, `dnbhoovers.com`                                 |
-| `person_position`   | *Impressum*, `northdata.de`, `dnbhoovers.com`, *Unternehmensseite*                                |
-| `person_email`      | `leadfeeder.com`                                                                                  |
-| `person_linkedin`   | `linkedin.com`                                                                                    |
-| `person_xing`       | `xing.com`                                                                                        |
+
+| FieldKey            | Source-Priorität                                                   |
+| ------------------- | ------------------------------------------------------------------ |
+| `firma_name`        | _Impressum_, `northdata.de`, `bundesanzeiger.de`, `dnbhoovers.com` |
+| `firma_anschrift`   | _Impressum_, `northdata.de`, `dnbhoovers.com`                      |
+| `firma_plz`         | _Impressum_, `northdata.de`, `dnbhoovers.com`                      |
+| `firma_ort`         | _Impressum_, `northdata.de`, `dnbhoovers.com`                      |
+| `firma_email`       | _Impressum_, `leadfeeder.com`, `dnbhoovers.com`                    |
+| `firma_domain`      | _Google_, `dnbhoovers.com`, `leadfeeder.com`                       |
+| `wz_code`           | `dnbhoovers.com`, `leadfeeder.com`                                 |
+| `umsatz`            | `dnbhoovers.com`, `bundesanzeiger.de`, _Unternehmensseite_         |
+| `mitarbeiter`       | `dnbhoovers.com`, `leadfeeder.com`, _Unternehmensseite_            |
+| `person_geschlecht` | `linkedin.com`, `xing.com`, _Unternehmensseite_                    |
+| `person_titel`      | _Impressum_, `companyhouse.de`, _Unternehmensseite_                |
+| `person_vorname`    | _Impressum_, `northdata.de`, _Unternehmensseite_                   |
+| `person_nachname`   | _Impressum_, `northdata.de`, _Unternehmensseite_                   |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com`, `dnbhoovers.com`  |
+| `person_position`   | _Impressum_, `northdata.de`, `dnbhoovers.com`, _Unternehmensseite_ |
+| `person_email`      | `leadfeeder.com`                                                   |
+| `person_linkedin`   | `linkedin.com`                                                     |
+| `person_xing`       | `xing.com`                                                         |
 
 #### Österreich
-| FieldKey            | Source-Priorität                                                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `firma_name`        | *Impressum*, `firmenabc.at`, `northdata.de`                                                                                   |
-| `firma_anschrift`   | `northdata.de`, *Impressum*, `firmenabc.at`                                                                                   |
-| `firma_plz`         | `northdata.de`, *Impressum*, `firmenabc.at`                                                                                   |
-| `firma_ort`         | `northdata.de`, *Impressum*, `firmenabc.at`                                                                                   |
-| `firma_email`       | *Impressum*, `leadfeeder.com`, `firmenabc.at`                                                                                 |
-| `firma_domain`      | `firmenabc.at`, *Google*                                                                                                      |
-| `wz_code`           | `dnbhoovers.com`, `leadfeeder.com`                                                                                            |
-| `umsatz`            | `dnbhoovers.com`, `leadfeeder.com`                                                                                            |
-| `mitarbeiter`       | `dnbhoovers.com`, `leadfeeder.com`                                                                                            |
-| `person_geschlecht` | `firmenabc.at`, `linkedin.com`, `xing.com`, *Unternehmensseite*                                                               |
-| `person_titel`      | `firmenabc.at`, *Impressum*, *Unternehmensseite*                                                                              |
-| `person_vorname`    | *Impressum*, `firmenabc.at`, `northdata.de`                                                                                   |
-| `person_nachname`   | *Impressum*, `firmenabc.at`, `northdata.de`                                                                                   |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                                               |
-| `person_position`   | *Impressum*, `northdata.de`                                                                                                   |
-| `person_email`      | `leadfeeder.com`                                                                                                              |
-| `person_linkedin`   | `linkedin.com`                                                                                                                |
-| `person_xing`       | `xing.com`                                                                                                                    |
+
+| FieldKey            | Source-Priorität                                                |
+| ------------------- | --------------------------------------------------------------- |
+| `firma_name`        | _Impressum_, `firmenabc.at`, `northdata.de`                     |
+| `firma_anschrift`   | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_plz`         | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_ort`         | `northdata.de`, _Impressum_, `firmenabc.at`                     |
+| `firma_email`       | _Impressum_, `leadfeeder.com`, `firmenabc.at`                   |
+| `firma_domain`      | `firmenabc.at`, _Google_                                        |
+| `wz_code`           | `dnbhoovers.com`, `leadfeeder.com`                              |
+| `umsatz`            | `dnbhoovers.com`, `leadfeeder.com`                              |
+| `mitarbeiter`       | `dnbhoovers.com`, `leadfeeder.com`                              |
+| `person_geschlecht` | `firmenabc.at`, `linkedin.com`, `xing.com`, _Unternehmensseite_ |
+| `person_titel`      | `firmenabc.at`, _Impressum_, _Unternehmensseite_                |
+| `person_vorname`    | _Impressum_, `firmenabc.at`, `northdata.de`                     |
+| `person_nachname`   | _Impressum_, `firmenabc.at`, `northdata.de`                     |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com`                 |
+| `person_position`   | _Impressum_, `northdata.de`                                     |
+| `person_email`      | `leadfeeder.com`                                                |
+| `person_linkedin`   | `linkedin.com`                                                  |
+| `person_xing`       | `xing.com`                                                      |
 
 #### Schweiz
-| FieldKey            | Source-Priorität                                                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `firma_name`        | *Unternehmensseite*, `northdata.de`, `zefix.ch`                                                                               |
-| `firma_anschrift`   | *Unternehmensseite*, `northdata.de`, `zefix.ch`                                                                               |
-| `firma_plz`         | `northdata.de`, *Unternehmensseite*, `zefix.ch`                                                                               |
-| `firma_ort`         | `northdata.de`, *Unternehmensseite*, `dnbhoovers.com`, `zefix.ch`                                                             |
-| `firma_email`       | *Unternehmensseite*, `leadfeeder.com`, `dnbhoovers.com`                                                                       |
-| `firma_domain`      | *Google*, `dnbhoovers.com`, `leadfeeder.com`                                                                                  |
-| `wz_code`           | `dnbhoovers.com`, `leadfeeder.com`                                                                                            |
-| `umsatz`            | `dnbhoovers.com`, *Unternehmensseite*                                                                                         |
-| `mitarbeiter`       | `dnbhoovers.com`, `leadfeeder.com`, *Unternehmensseite*                                                                       |
-| `person_geschlecht` | `linkedin.com`, `xing.com`, *Unternehmensseite*                                                                               |
-| `person_titel`      | *Unternehmensseite*, `linkedin.com`, `xing.com`                                                                               |
-| `person_vorname`    | *Unternehmensseite*, `northdata.de`, `zefix.ch`                                                                               |
-| `person_nachname`   | `northdata.de`, `zefix.ch`, *Unternehmensseite*                                                                               |
-| `person_funktion`   | *Unternehmensseite*, `linkedin.com`, `xing.com`, `zefix.ch`                                                                   |
-| `person_position`   | *Unternehmensseite*, `northdata.de`, `zefix.ch`                                                                               |
-| `person_email`      | `leadfeeder.com`                                                                                                              |
-| `person_linkedin`   | `linkedin.com`                                                                                                                |
-| `person_xing`       | `xing.com`                                                                                                                    |
+
+| FieldKey            | Source-Priorität                                                  |
+| ------------------- | ----------------------------------------------------------------- |
+| `firma_name`        | _Unternehmensseite_, `northdata.de`, `zefix.ch`                   |
+| `firma_anschrift`   | _Unternehmensseite_, `northdata.de`, `zefix.ch`                   |
+| `firma_plz`         | `northdata.de`, _Unternehmensseite_, `zefix.ch`                   |
+| `firma_ort`         | `northdata.de`, _Unternehmensseite_, `dnbhoovers.com`, `zefix.ch` |
+| `firma_email`       | _Unternehmensseite_, `leadfeeder.com`, `dnbhoovers.com`           |
+| `firma_domain`      | _Google_, `dnbhoovers.com`, `leadfeeder.com`                      |
+| `wz_code`           | `dnbhoovers.com`, `leadfeeder.com`                                |
+| `umsatz`            | `dnbhoovers.com`, _Unternehmensseite_                             |
+| `mitarbeiter`       | `dnbhoovers.com`, `leadfeeder.com`, _Unternehmensseite_           |
+| `person_geschlecht` | `linkedin.com`, `xing.com`, _Unternehmensseite_                   |
+| `person_titel`      | _Unternehmensseite_, `linkedin.com`, `xing.com`                   |
+| `person_vorname`    | _Unternehmensseite_, `northdata.de`, `zefix.ch`                   |
+| `person_nachname`   | `northdata.de`, `zefix.ch`, _Unternehmensseite_                   |
+| `person_funktion`   | _Unternehmensseite_, `linkedin.com`, `xing.com`, `zefix.ch`       |
+| `person_position`   | _Unternehmensseite_, `northdata.de`, `zefix.ch`                   |
+| `person_email`      | `leadfeeder.com`                                                  |
+| `person_linkedin`   | `linkedin.com`                                                    |
+| `person_xing`       | `xing.com`                                                        |
 
 ### Mode `HaveData` & `UpdateInventoryGeneral`
 
@@ -239,5 +248,5 @@ oder `UpdatePerson`.
   `dnbhoovers.com` und `bundesanzeiger.de` als zwei Einträge.
 - `www.northdata.de Unternehmensseite` (mehrfach in CH) → zwei Einträge.
 - `Person - Position* GF` (DE / B 1, Person) ist als `person_position`
-  geführt; das *-Suffix („nicht zu 100 %") überträgt sich in
+  geführt; das \*-Suffix („nicht zu 100 %") überträgt sich in
   `Confidence::Medium` als Default für diese Felder.

@@ -2,9 +2,33 @@
   "_fixture": "original synthetic Workjet API-shaped data; ids are invented",
   "users": {
     "items": [
-      {"id":"synthetic_001","display_name":"Avery Fixture","permalink":"https://www.xing.com/profile/Avery_Fixture1","professional_experience":{"primary_company":{"name":"Workjet Fixture Systems GmbH","title":"Fixture Operations Lead"}}},
-      {"id":"synthetic_002","display_name":"Riley Sample","permalink":"https://www.xing.com/profile/Riley_Sample2","professional_experience":{"primary_company":{"name":"Workjet Fixture Systems GmbH","title":"Test Analyst"}}},
-      {"id":"synthetic_003","display_name":"Casey Construct","permalink":"https://www.xing.com/profile/Casey_Construct3","professional_experience":{"primary_company":{"name":"Workjet Example Holdings AG","title":"Quality Designer"}}}
+      {
+        "id": "synthetic_001",
+        "display_name": "Avery Fixture",
+        "permalink": "https://www.xing.com/profile/Avery_Fixture1",
+        "professional_experience": {
+          "primary_company": {
+            "name": "Workjet Fixture Systems GmbH",
+            "title": "Fixture Operations Lead"
+          }
+        }
+      },
+      {
+        "id": "synthetic_002",
+        "display_name": "Riley Sample",
+        "permalink": "https://www.xing.com/profile/Riley_Sample2",
+        "professional_experience": {
+          "primary_company": { "name": "Workjet Fixture Systems GmbH", "title": "Test Analyst" }
+        }
+      },
+      {
+        "id": "synthetic_003",
+        "display_name": "Casey Construct",
+        "permalink": "https://www.xing.com/profile/Casey_Construct3",
+        "professional_experience": {
+          "primary_company": { "name": "Workjet Example Holdings AG", "title": "Quality Designer" }
+        }
+      }
     ],
     "total": 3
   }

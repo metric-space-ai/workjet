@@ -809,11 +809,7 @@
           "reportScaffold": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "recommendedSections",
-              "evaluationAxes",
-              "synthesisInstruction"
-            ],
+            "required": ["recommendedSections", "evaluationAxes", "synthesisInstruction"],
             "properties": {
               "recommendedSections": {
                 "type": "array",

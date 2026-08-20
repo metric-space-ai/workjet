@@ -13,9 +13,9 @@
     {
       "id": "synthetic-contact-002",
       "type": "contacts",
-      "attributes": {"name": "Riley Sample", "title": "Test Analyst", "email": "missing"}
+      "attributes": { "name": "Riley Sample", "title": "Test Analyst", "email": "missing" }
     }
   ],
-  "meta": {"total": 2, "page": 2, "per_page": 25},
-  "links": {"self": "https://api.leadfeeder.com/accounts/me/contacts?search=synthetic&page=2"}
+  "meta": { "total": 2, "page": 2, "per_page": 25 },
+  "links": { "self": "https://api.leadfeeder.com/accounts/me/contacts?search=synthetic&page=2" }
 }

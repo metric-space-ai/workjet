@@ -24,22 +24,60 @@ const SOURCE_ID = "google.de";
 const MAX_HITS = 5;
 
 const RECORD_FIELDS = new Set([
-  "firma_name", "firma_anschrift", "firma_plz", "firma_ort", "firma_email",
-  "firma_domain", "firma_telefon", "wz_code", "umsatz", "mitarbeiter",
-  "crm_record_number", "person_titel", "person_vorname", "person_nachname",
-  "person_funktion", "person_position", "person_email", "person_email_validation",
-  "person_telefon", "person_linkedin", "person_xing",
+  "firma_name",
+  "firma_anschrift",
+  "firma_plz",
+  "firma_ort",
+  "firma_email",
+  "firma_domain",
+  "firma_telefon",
+  "wz_code",
+  "umsatz",
+  "mitarbeiter",
+  "crm_record_number",
+  "person_titel",
+  "person_vorname",
+  "person_nachname",
+  "person_funktion",
+  "person_position",
+  "person_email",
+  "person_email_validation",
+  "person_telefon",
+  "person_linkedin",
+  "person_xing",
 ]);
 const CONFIDENCE_LEVELS = new Set(["low", "medium", "high", "user_provided"]);
 
 // Hosts that are directories/aggregators, never the company's own site.
 const DIRECTORY_HOST_PARTS = [
-  "google.", "linkedin.", "xing.", "facebook.", "instagram.", "youtube.",
-  "wikipedia.", "northdata.", "companyhouse.", "moneyhouse.", "firmenabc.",
-  "bundesanzeiger.", "handelsregister.", "firmenwissen.", "werkenntdenbesten.",
-  "11880.", "golocal.", "kennstdueinen.", "cylex.", "dastelefonbuch.",
-  "gelbeseiten.", "europages.", "kompass.", "indeed.", "stepstone.",
-  "kununu.", "glassdoor.", "partcommunity.",
+  "google.",
+  "linkedin.",
+  "xing.",
+  "facebook.",
+  "instagram.",
+  "youtube.",
+  "wikipedia.",
+  "northdata.",
+  "companyhouse.",
+  "moneyhouse.",
+  "firmenabc.",
+  "bundesanzeiger.",
+  "handelsregister.",
+  "firmenwissen.",
+  "werkenntdenbesten.",
+  "11880.",
+  "golocal.",
+  "kennstdueinen.",
+  "cylex.",
+  "dastelefonbuch.",
+  "gelbeseiten.",
+  "europages.",
+  "kompass.",
+  "indeed.",
+  "stepstone.",
+  "kununu.",
+  "glassdoor.",
+  "partcommunity.",
 ];
 
 function readInput() {
@@ -87,8 +125,21 @@ function normalized(value) {
 }
 
 const LEGAL_TOKENS = new Set([
-  "ag", "gmbh", "mbh", "se", "kg", "kgaa", "ohg", "ug", "ltd", "inc", "und",
-  "co", "company", "holding", "gruppe",
+  "ag",
+  "gmbh",
+  "mbh",
+  "se",
+  "kg",
+  "kgaa",
+  "ohg",
+  "ug",
+  "ltd",
+  "inc",
+  "und",
+  "co",
+  "company",
+  "holding",
+  "gruppe",
 ]);
 
 function identityTokens(company) {
@@ -105,10 +156,15 @@ function identityMatches(company, corpus) {
 }
 
 function isPortalOrLoginTitle(title) {
-  const text = String(title || "").replace(/\s+/g, " ").trim();
+  const text = String(title || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!text) return false;
-  return /\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(text)
-    || /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(text);
+  return (
+    /\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(
+      text,
+    ) || /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(text)
+  );
 }
 
 function safePublicHttpUrl(value) {
@@ -118,13 +174,15 @@ function safePublicHttpUrl(value) {
       return false;
     }
     const host = url.hostname.toLowerCase();
-    return Boolean(host)
-      && host !== "localhost"
-      && !host.endsWith(".localhost")
-      && !host.endsWith(".local")
-      && !/^(?:127\.|10\.|169\.254\.|192\.168\.)/.test(host)
-      && !/^172\.(?:1[6-9]|2\d|3[01])\./.test(host)
-      && host !== "::1";
+    return (
+      Boolean(host) &&
+      host !== "localhost" &&
+      !host.endsWith(".localhost") &&
+      !host.endsWith(".local") &&
+      !/^(?:127\.|10\.|169\.254\.|192\.168\.)/.test(host) &&
+      !/^172\.(?:1[6-9]|2\d|3[01])\./.test(host) &&
+      host !== "::1"
+    );
   } catch {
     return false;
   }
@@ -149,12 +207,7 @@ function isDirectoryHost(value) {
 // ---------------------------------------------------------------------------
 
 function searchGoogle(company, country) {
-  const args = [
-    "web", "search",
-    "--query", company,
-    "--source", SOURCE_ID,
-    "--include-sources",
-  ];
+  const args = ["web", "search", "--query", company, "--source", SOURCE_ID, "--include-sources"];
   if (country) args.push("--country", country);
   const payload = runCtox(args);
   const providers = [String(payload?.provider || "").toLowerCase()];
@@ -220,7 +273,9 @@ function runBrowserAutomation(name, source, timeoutMs = 60_000) {
     source,
     timeoutMs + 10_000,
   );
-  const markers = Array.isArray(payload?.detection?.markers) ? payload.detection.markers.map(String) : [];
+  const markers = Array.isArray(payload?.detection?.markers)
+    ? payload.detection.markers.map(String)
+    : [];
   if (!payload?.ok) return { ok: false, markers };
   return { ok: true, markers, result: payload.result || {} };
 }
@@ -262,15 +317,23 @@ return {
     source,
     50_000,
   );
-  return payload.ok ? { ...payload.result, markers: payload.markers } : { ok: false, markers: payload.markers };
+  return payload.ok
+    ? { ...payload.result, markers: payload.markers }
+    : { ok: false, markers: payload.markers };
 }
 
 function recordUnlockSignal(url, markers) {
   return runCtox([
-    "web", "unlock", "signals", "record",
-    "--source", "scrape-target:google.de",
-    "--url", safePublicHttpUrl(url) ? url : "https://www.google.de/",
-    "--evidence", JSON.stringify({
+    "web",
+    "unlock",
+    "signals",
+    "record",
+    "--source",
+    "scrape-target:google.de",
+    "--url",
+    safePublicHttpUrl(url) ? url : "https://www.google.de/",
+    "--evidence",
+    JSON.stringify({
       source_id: SOURCE_ID,
       detection: "access_challenge",
       markers: [...new Set((markers || []).map(String))].slice(0, 12),
@@ -281,9 +344,13 @@ function recordUnlockSignal(url, markers) {
 
 function looksChallenged(url, text, markers) {
   const markerText = (markers || []).join(" ");
-  return /\/sorry\//.test(String(url || ""))
-    || /unusual traffic|ungewöhnlicher Datenverkehr|not a robot|kein Roboter|automatisierte Anfragen/i.test(String(text || ""))
-    || /captcha|challenge|turnstile|access[_ -]?denied|rate[_ -]?limit/i.test(markerText);
+  return (
+    /\/sorry\//.test(String(url || "")) ||
+    /unusual traffic|ungewöhnlicher Datenverkehr|not a robot|kein Roboter|automatisierte Anfragen/i.test(
+      String(text || ""),
+    ) ||
+    /captcha|challenge|turnstile|access[_ -]?denied|rate[_ -]?limit/i.test(markerText)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -292,19 +359,28 @@ function looksChallenged(url, text, markers) {
 
 function appendRecord(records, record) {
   const field = String(record?.field || "").trim();
-  const value = String(record?.value || "").replace(/\s+/g, " ").trim();
+  const value = String(record?.value || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!RECORD_FIELDS.has(field) || !value) return;
   const sourceUrl = String(record?.source_url || "").trim();
   if (!safePublicHttpUrl(sourceUrl)) return;
   const confidence = String(record?.confidence || "medium").toLowerCase();
   if (!CONFIDENCE_LEVELS.has(confidence)) return;
-  if (records.some((item) => item.field === field && item.value === value && item.source_url === sourceUrl)) return;
+  if (
+    records.some(
+      (item) => item.field === field && item.value === value && item.source_url === sourceUrl,
+    )
+  )
+    return;
   records.push({
     field,
     value,
     confidence,
     source_url: sourceUrl,
-    note: String(record?.note || "CTOX web-stack google.de adapter").replace(/\s+/g, " ").trim(),
+    note: String(record?.note || "CTOX web-stack google.de adapter")
+      .replace(/\s+/g, " ")
+      .trim(),
   });
 }
 
@@ -371,13 +447,17 @@ function appendContactHeuristics(records, page, sourceUrl) {
 function main() {
   const input = readInput();
   const company = String(input.company || "").trim();
-  const country = String(input.country || "").trim().toUpperCase();
+  const country = String(input.country || "")
+    .trim()
+    .toUpperCase();
   if (!company) {
-    process.stdout.write(JSON.stringify({
-      records: [],
-      failure_mode: "portal_drift",
-      detail: "CTOX_SCRAPE_INPUT_JSON.company missing",
-    }));
+    process.stdout.write(
+      JSON.stringify({
+        records: [],
+        failure_mode: "portal_drift",
+        detail: "CTOX_SCRAPE_INPUT_JSON.company missing",
+      }),
+    );
     return;
   }
 
@@ -427,8 +507,11 @@ function main() {
   if (!serp.ok && !blocked && fixtureFallbackEnabled) {
     fallbackSearch = searchGoogle(company, country);
     for (const hit of fallbackSearch.results.slice(0, MAX_HITS)) pushCandidate(hit);
-    if (fallbackSearch.sourceFailures.some((failure) =>
-      ["blocked", "access_challenge"].includes(failure?.kind))) {
+    if (
+      fallbackSearch.sourceFailures.some((failure) =>
+        ["blocked", "access_challenge"].includes(failure?.kind),
+      )
+    ) {
       markBlocked("https://www.google.de/", ["access_challenge"]);
     }
   }
@@ -479,29 +562,36 @@ function main() {
     return;
   }
   if (blocked) {
-    recordUnlockSignal(blockedUrl, blockedMarkers.length > 0 ? blockedMarkers : ["access_challenge"]);
-    process.stdout.write(JSON.stringify({
-      records: [],
-      failure_mode: "blocked",
-      detail: "google.de access challenge prevented provider evidence",
-    }));
+    recordUnlockSignal(
+      blockedUrl,
+      blockedMarkers.length > 0 ? blockedMarkers : ["access_challenge"],
+    );
+    process.stdout.write(
+      JSON.stringify({
+        records: [],
+        failure_mode: "blocked",
+        detail: "google.de access challenge prevented provider evidence",
+      }),
+    );
     return;
   }
   const providerSerpResults = Array.isArray(serp.result?.results) ? serp.result.results : [];
   const selectorDrift = serp.ok && providerSerpResults.length === 0;
-  process.stdout.write(JSON.stringify({
-    records: [],
-    // Only a successfully loaded provider-owned SERP with no matching result
-    // elements is portal drift. A failed browser command plus a rejected
-    // foreign-provider fallback is transport unavailability, not a reason to
-    // enqueue script-repair work (and therefore not a core task-spawn path).
-    failure_mode: selectorDrift ? "portal_drift" : "temporary_unreachable",
-    detail: selectorDrift
-      ? "google.de loaded without challenge but no organic h3 results matched the selector"
-      : fallbackSearch.providerOk
-        ? "google.de returned no company-matched extractable records"
-        : "provider-owned google.de browser pass was unavailable; non-Google fallback results were rejected",
-  }));
+  process.stdout.write(
+    JSON.stringify({
+      records: [],
+      // Only a successfully loaded provider-owned SERP with no matching result
+      // elements is portal drift. A failed browser command plus a rejected
+      // foreign-provider fallback is transport unavailability, not a reason to
+      // enqueue script-repair work (and therefore not a core task-spawn path).
+      failure_mode: selectorDrift ? "portal_drift" : "temporary_unreachable",
+      detail: selectorDrift
+        ? "google.de loaded without challenge but no organic h3 results matched the selector"
+        : fallbackSearch.providerOk
+          ? "google.de returned no company-matched extractable records"
+          : "provider-owned google.de browser pass was unavailable; non-Google fallback results were rejected",
+    }),
+  );
 }
 
 if (require.main === module) {

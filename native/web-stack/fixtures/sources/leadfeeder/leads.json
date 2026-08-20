@@ -14,9 +14,9 @@
     {
       "id": "synthetic-lead-002",
       "type": "leads",
-      "attributes": {"name": "", "domain": "unused.invalid"}
+      "attributes": { "name": "", "domain": "unused.invalid" }
     }
   ],
-  "meta": {"total": 2, "page": 1, "per_page": 25},
-  "links": {"self": "https://api.leadfeeder.com/accounts/me/leads?company_name=synthetic"}
+  "meta": { "total": 2, "page": 1, "per_page": 25 },
+  "links": { "self": "https://api.leadfeeder.com/accounts/me/leads?company_name=synthetic" }
 }

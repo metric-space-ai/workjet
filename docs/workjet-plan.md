@@ -166,7 +166,7 @@ than a shared database or an untyped renderer bridge:
       AUDIT 2026-08-20 (final): TICKED. Re-verified in this tree —
       `apps/server/src/workjet/crossmode/WorkjetCrossModeCtoxClient.ts` exists
       with its port, store, RPC and proof matrix; `vp test run
-    src/workjet/crossmode/` in `apps/server` → 4 files, 52 tests, all green.
+  src/workjet/crossmode/` in `apps/server` → 4 files, 52 tests, all green.
       The blocker recorded above is resolved, so every clause this line names is
       implemented. HONEST CEILING kept visible rather than ticked away: all
       three operations ride the one generic `ctox.delegate_task` action
@@ -740,7 +740,7 @@ Tasks:
       catalog at every routed session start and carries the answer as the
       `X-CTOX-Provider` request header — the Rust host's only per-request
       selector — via `ANTHROPIC_CUSTOM_HEADERS` for Claude and `-c
-    …http_headers…` for Codex, both probe-verified. Ambiguity is loud and
+  …http_headers…` for Codex, both probe-verified. Ambiguity is loud and
       typed (`route-ambiguous`, `model-ambiguous`, `model-unrouted`), never a
       silent fall-back to the CLI's own credentials. Seven contract tests in
       `workjetGatewayRouting.test.ts` plus "lets an explicit route override
@@ -929,14 +929,14 @@ CTOX and the T3 harness adapter consume the same tagged package.
       or runtime directories.
       AUDIT 2026-08-20 (final): TICKED. Verified from three directions. (1)
       Nothing is tracked: `git ls-files` matching `chromium|chrome-|patchright|
-    playwright.*browser` returns only `native/web-stack/licenses/
-    Patchright-Apache-2.0.txt`, a licence text. (2) The runtime location is
+  playwright.*browser` returns only `native/web-stack/licenses/
+  Patchright-Apache-2.0.txt`, a licence text. (2) The runtime location is
       server-owned and outside the repository — `WebStackBrowser.ts:368` derives
       the root as `<ServerConfig.stateDir>/web-stack`, and the Chromium cache
       sits inside that reference dir (`playwright_browser_cache_dir`,
       `native/web-stack/src/browser.rs:1093`); `WebStackBrowser.test.ts:144-174`
       asserts both native subcommands receive `--root
-    /server-owned/state/web-stack`.
+  /server-owned/state/web-stack`.
       (3) The ignore policy covers the development locations: `/.deps`
       (`.gitignore:6`) and `/runtime/` (`:48`). Cross-checked against the ticked
       "No tracked dependency/build/runtime artifacts" measurement in section 15.
@@ -1357,7 +1357,7 @@ Schema.Boolean (default false), executableOverride? }`
       (`packages/contracts/src/rpc.ts:358-359`), handled at
       `apps/server/src/ws.ts:498`; the four modules
       `apps/server/src/workjet/legacy/{LegacyWorkjetConfig,LegacyWorkjetImport,
-    LegacyWorkjetImportRpc,LegacyWorkjetMapping}.ts` with 66 tests across
+  LegacyWorkjetImportRpc,LegacyWorkjetMapping}.ts` with 66 tests across
       their four `.test.ts` siblings; and the offer surface, which is wired —
       `useWorkjetLegacyImportSection` (`WorkjetSettings.tsx:1226`) renders
       `WorkjetLegacyImportSectionView` (`:1180`), with the settings-search entry
@@ -3535,7 +3535,7 @@ was reverted. Audited 2026-08-20.
       • CAN A PEER ESCALATE BY CLAIMING AN ENVIRONMENT ID IT DOES NOT OWN? Only
       at FIRST CONTACT, and that limit is now exactly as narrow as it was
       described. Trust-on-first-use pins `(workspaceId, environmentId) → both
-  public keys` on the first envelope that verifies, and any later different
+public keys` on the first envelope that verifies, and any later different
       key is refused, audited, and consumed
       (`acceptPeerKey`, `WorkjetMailboxTransport.ts:907-918`;
       `WorkjetMailboxTransport.test.ts` → "audits a conflicting re-pin attempt

@@ -179,16 +179,16 @@ scientific auto-discovery into a successful empty result.
 gate. Set `CTOX_WEB_SEARCH_PROVIDER` in CTOX's authoritative SQLite runtime
 config at `runtime/ctox-runtime.sqlite3` to pin a specific backend.
 
-| Provider | Notes |
-| --- | --- |
-| `auto` (default) | Google → Brave → DuckDuckGo → Bing cascade |
-| `brave` | Brave HTML scrape |
-| `bing` | Bing HTML scrape |
-| `duckduckgo` / `ddg` | DuckDuckGo HTML scrape (header-augmented to avoid the anomaly modal) |
-| `google` | Playwright-driven Google with stealth init script + EU consent dismissal. Needs `ctox web browser-prepare --install-reference --install-browser` once; state persists in `runtime/google_browser_state/`. |
-| `searxng` | Forwards to a user-hosted SearXNG instance set via `CTOX_WEB_SEARCH_SEARXNG_BASE_URL` |
-| `annas_archive` | Anna's Archive metadata only |
-| `mock` | Deterministic fixture provider for tests |
+| Provider             | Notes                                                                                                                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default)     | Google → Brave → DuckDuckGo → Bing cascade                                                                                                                                                                |
+| `brave`              | Brave HTML scrape                                                                                                                                                                                         |
+| `bing`               | Bing HTML scrape                                                                                                                                                                                          |
+| `duckduckgo` / `ddg` | DuckDuckGo HTML scrape (header-augmented to avoid the anomaly modal)                                                                                                                                      |
+| `google`             | Playwright-driven Google with stealth init script + EU consent dismissal. Needs `ctox web browser-prepare --install-reference --install-browser` once; state persists in `runtime/google_browser_state/`. |
+| `searxng`            | Forwards to a user-hosted SearXNG instance set via `CTOX_WEB_SEARCH_SEARXNG_BASE_URL`                                                                                                                     |
+| `annas_archive`      | Anna's Archive metadata only                                                                                                                                                                              |
+| `mock`               | Deterministic fixture provider for tests                                                                                                                                                                  |
 
 ### Google notes
 
@@ -205,18 +205,18 @@ cookie-bootstrap profile flow — Playwright owns the entire Google path.
 
 ### Runtime config keys
 
-| Key | Purpose |
-| --- | --- |
-| `CTOX_WEB_SEARCH_OPENAI_MODE` | `local_stack` / `ctox_primary` routes OpenAI `web_search` tool calls through CTOX; `openai` / `passthrough` forwards them upstream unchanged. |
-| `CTOX_WEB_SEARCH_PROVIDER` | `auto` (default), `brave`, `bing`, `duckduckgo`, `google`, `searxng`, `annas_archive`, or `mock`. |
-| `CTOX_WEB_SEARCH_SEARXNG_BASE_URL` | Required when `CTOX_WEB_SEARCH_PROVIDER=searxng`. |
-| `CTOX_WEB_SEARCH_LANGUAGE` / `CTOX_WEB_SEARCH_REGION` | Forwarded to providers as locale/`gl` hints. |
-| `CTOX_WEB_SEARCH_TIMEOUT_MS` | Per-request timeout for HTTP and Playwright paths (default 7000). |
-| `CTOX_WEB_SEARCH_MAX_PAGE_BYTES` | Maximum response size for ordinary evidence pages (default 2 MB). |
-| `CTOX_WEB_SEARCH_MAX_DATA_FILE_BYTES` | Maximum response size for recognized original data files stored in the hash-addressed artifact cache (default 256 MB). |
-| `CTOX_WEB_AUTO_PROVIDER_BUDGET` | Max providers tried per query in `auto` mode (default 4). |
-| `CTOX_WEB_BROWSER_REFERENCE_DIR` | Directory containing `node_modules/playwright`. Defaults to `runtime/browser/interactive-reference`. |
-| `CTOX_WEB_EGRESS_ALLOW` | Comma-separated host allow-list that bypasses the SSRF egress guard (for deliberately-internal endpoints, e.g. a self-hosted SearXNG). Empty by default. |
+| Key                                                   | Purpose                                                                                                                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CTOX_WEB_SEARCH_OPENAI_MODE`                         | `local_stack` / `ctox_primary` routes OpenAI `web_search` tool calls through CTOX; `openai` / `passthrough` forwards them upstream unchanged.            |
+| `CTOX_WEB_SEARCH_PROVIDER`                            | `auto` (default), `brave`, `bing`, `duckduckgo`, `google`, `searxng`, `annas_archive`, or `mock`.                                                        |
+| `CTOX_WEB_SEARCH_SEARXNG_BASE_URL`                    | Required when `CTOX_WEB_SEARCH_PROVIDER=searxng`.                                                                                                        |
+| `CTOX_WEB_SEARCH_LANGUAGE` / `CTOX_WEB_SEARCH_REGION` | Forwarded to providers as locale/`gl` hints.                                                                                                             |
+| `CTOX_WEB_SEARCH_TIMEOUT_MS`                          | Per-request timeout for HTTP and Playwright paths (default 7000).                                                                                        |
+| `CTOX_WEB_SEARCH_MAX_PAGE_BYTES`                      | Maximum response size for ordinary evidence pages (default 2 MB).                                                                                        |
+| `CTOX_WEB_SEARCH_MAX_DATA_FILE_BYTES`                 | Maximum response size for recognized original data files stored in the hash-addressed artifact cache (default 256 MB).                                   |
+| `CTOX_WEB_AUTO_PROVIDER_BUDGET`                       | Max providers tried per query in `auto` mode (default 4).                                                                                                |
+| `CTOX_WEB_BROWSER_REFERENCE_DIR`                      | Directory containing `node_modules/playwright`. Defaults to `runtime/browser/interactive-reference`.                                                     |
+| `CTOX_WEB_EGRESS_ALLOW`                               | Comma-separated host allow-list that bypasses the SSRF egress guard (for deliberately-internal endpoints, e.g. a self-hosted SearXNG). Empty by default. |
 
 These keys are read only from CTOX's authoritative local SQLite runtime config
 store at `runtime/ctox-runtime.sqlite3`, not from the consolidated core database

@@ -31,13 +31,15 @@ const rawInput = (process.argv[2] || "").trim();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fail(reason, fields) {
-  console.log(JSON.stringify({
-    target: TARGET,
-    input: rawInput,
-    fetched_at: new Date().toISOString(),
-    fields: fields || {},
-    reason,
-  }));
+  console.log(
+    JSON.stringify({
+      target: TARGET,
+      input: rawInput,
+      fetched_at: new Date().toISOString(),
+      fields: fields || {},
+      reason,
+    }),
+  );
   process.exit(reason.startsWith("usage") ? 2 : 1);
 }
 
@@ -78,14 +80,19 @@ function normalized(value) {
 const LEGAL_TOKENS = new Set(["ag", "gmbh", "kg", "mbh", "se", "und"]);
 
 function identityTokens(company) {
-  return normalized(company).split(/\s+/).filter((token) => token.length >= 3 && !LEGAL_TOKENS.has(token));
+  return normalized(company)
+    .split(/\s+/)
+    .filter((token) => token.length >= 3 && !LEGAL_TOKENS.has(token));
 }
 
 function identityMatches(company, corpus) {
   const tokens = identityTokens(company);
   const haystack = normalized(corpus);
   if (tokens.length === 0 || !haystack) return false;
-  return tokens.filter((token) => haystack.includes(token)).length >= Math.max(1, Math.ceil(tokens.length * 0.75));
+  return (
+    tokens.filter((token) => haystack.includes(token)).length >=
+    Math.max(1, Math.ceil(tokens.length * 0.75))
+  );
 }
 
 function legalForm(value) {
@@ -110,12 +117,31 @@ const CANDIDATE_POLITENESS_MS = 1500;
 // Berg" runs cfb.de, "Carbosulf Chemische Werke" runs carbosulf.de.
 // Measured 2026-07-31 against the live THESEN leads.
 const DOMAIN_FILLER_TOKENS = new Set([
-  "chemische", "chemisches", "chemischer", "chemisch", "chem",
-  "werke", "werk", "fabrik", "fabriken",
-  "laboratorium", "labor", "manufacturing",
-  "produktions", "produktion", "handelsges", "handelsgesellschaft",
-  "techn", "technische", "technischer", "technisches", "artikel",
-  "dr", "prof", "u", "und",
+  "chemische",
+  "chemisches",
+  "chemischer",
+  "chemisch",
+  "chem",
+  "werke",
+  "werk",
+  "fabrik",
+  "fabriken",
+  "laboratorium",
+  "labor",
+  "manufacturing",
+  "produktions",
+  "produktion",
+  "handelsges",
+  "handelsgesellschaft",
+  "techn",
+  "technische",
+  "technischer",
+  "technisches",
+  "artikel",
+  "dr",
+  "prof",
+  "u",
+  "und",
 ]);
 
 // Trailing place names qualify WHERE a plant sits; the domain belongs to the
@@ -127,9 +153,22 @@ const DOMAIN_FILLER_TOKENS = new Set([
 // decides whether the group's notice may stand in (for a GmbH plant under an
 // AG parent it must not — and does not).
 const DOMAIN_LOCATION_TOKENS = new Set([
-  "berlin", "hamburg", "muenchen", "koeln", "frankfurt", "stuttgart",
-  "duesseldorf", "dortmund", "essen", "leipzig", "bremen", "dresden",
-  "hannover", "nuernberg", "wien", "zuerich",
+  "berlin",
+  "hamburg",
+  "muenchen",
+  "koeln",
+  "frankfurt",
+  "stuttgart",
+  "duesseldorf",
+  "dortmund",
+  "essen",
+  "leipzig",
+  "bremen",
+  "dresden",
+  "hannover",
+  "nuernberg",
+  "wien",
+  "zuerich",
 ]);
 
 function candidateHostsFromCompany(company) {
@@ -138,10 +177,15 @@ function candidateHostsFromCompany(company) {
     .replace(/&\s*Co\.?/gi, " ")
     .replace(/\b(?:gmbh|mbh|kgaa|ag|se|kg|ohg|gbr|ug|ltd|llc|inc|co)\b\.?/gi, " ");
   const transliterated = withoutLegalForm
-    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
-    .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/Ä/g, "Ae")
+    .replace(/Ö/g, "Oe")
+    .replace(/Ü/g, "Ue")
     .replace(/ß/g, "ss");
-  const allWords = transliterated.toLowerCase()
+  const allWords = transliterated
+    .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .split(/\s+/)
@@ -185,11 +229,29 @@ function candidateHostsFromCompany(company) {
 
 function decodeEntities(value) {
   const named = {
-    amp: "&", quot: String.fromCharCode(34), apos: String.fromCharCode(39), nbsp: " ",
-    lt: "<", gt: ">",
-    auml: "ä", ouml: "ö", uuml: "ü", Auml: "Ä", Ouml: "Ö", Uuml: "Ü", szlig: "ß",
-    ndash: "–", mdash: "—", hellip: "…", copy: "©", reg: "®", eacute: "é",
-    agrave: "à", ccedil: "ç", bull: "•", middot: "·",
+    amp: "&",
+    quot: String.fromCharCode(34),
+    apos: String.fromCharCode(39),
+    nbsp: " ",
+    lt: "<",
+    gt: ">",
+    auml: "ä",
+    ouml: "ö",
+    uuml: "ü",
+    Auml: "Ä",
+    Ouml: "Ö",
+    Uuml: "Ü",
+    szlig: "ß",
+    ndash: "–",
+    mdash: "—",
+    hellip: "…",
+    copy: "©",
+    reg: "®",
+    eacute: "é",
+    agrave: "à",
+    ccedil: "ç",
+    bull: "•",
+    middot: "·",
   };
   return String(value || "")
     .replace(/&#(\d+);/g, (_m, code) => String.fromCodePoint(Number(code)))
@@ -203,11 +265,18 @@ function htmlToLines(html) {
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<(?:br|hr)\b[^>]*>/gi, "\n")
-    .replace(/<\/(?:p|div|li|tr|td|th|h[1-6]|section|article|header|footer|address|table|ul|ol|dl|dt|dd|blockquote|main|aside|figure|figcaption|option)>/gi, "\n")
-    .replace(/<(?:p|div|li|tr|h[1-6]|section|article|header|footer|address|table|ul|ol|dl|dt|dd|blockquote|main|aside|figure|figcaption)\b[^>]*>/gi, "\n")
+    .replace(
+      /<\/(?:p|div|li|tr|td|th|h[1-6]|section|article|header|footer|address|table|ul|ol|dl|dt|dd|blockquote|main|aside|figure|figcaption|option)>/gi,
+      "\n",
+    )
+    .replace(
+      /<(?:p|div|li|tr|h[1-6]|section|article|header|footer|address|table|ul|ol|dl|dt|dd|blockquote|main|aside|figure|figcaption)\b[^>]*>/gi,
+      "\n",
+    )
     .replace(/<[^>]+>/g, " ");
   text = decodeEntities(text);
-  return text.split(/\n+/)
+  return text
+    .split(/\n+/)
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
@@ -217,13 +286,17 @@ function htmlTitle(html) {
   return match ? decodeEntities(match[1]).replace(/\s+/g, " ").trim() : "";
 }
 
-const LEGAL_FORM_RE = /\b(?:gmbh|mbh|ag|se|kg|kgaa|ohg|gbr|ug|e\.\s?k\.|ltd|llc|inc|sarl|sàrl|bv|b\.v\.|nv|n\.v\.|oy|ab|aps|sro|s\.r\.o\.|d\.o\.o\.)\b/i;
+const LEGAL_FORM_RE =
+  /\b(?:gmbh|mbh|ag|se|kg|kgaa|ohg|gbr|ug|e\.\s?k\.|ltd|llc|inc|sarl|sàrl|bv|b\.v\.|nv|n\.v\.|oy|ab|aps|sro|s\.r\.o\.|d\.o\.o\.)\b/i;
 
-const GENERIC_LINE_RE = /^(?:impressum|imprint|angaben|anbieter|diensteanbieter|anbieterkennzeichnung|verantwortlich|verantwortliche|vertreten|inhaltlich|kontakt|contact|firma|company|unternehmen|betreiber|herausgeber|gemäß|gemaess|§|tmg|ddg|mstg|umsatzsteuer|handelsregister|register|aufsicht|geschäftsführung|geschaeftsfuehrung|vorstand|telefon|telefax|fax|e-?mail|internet|web|vertretungsberechtigt|sitz|ladungsfähige|ladungsfaehige|anschrift|adresse|address|postanschrift)\b/i;
+const GENERIC_LINE_RE =
+  /^(?:impressum|imprint|angaben|anbieter|diensteanbieter|anbieterkennzeichnung|verantwortlich|verantwortliche|vertreten|inhaltlich|kontakt|contact|firma|company|unternehmen|betreiber|herausgeber|gemäß|gemaess|§|tmg|ddg|mstg|umsatzsteuer|handelsregister|register|aufsicht|geschäftsführung|geschaeftsfuehrung|vorstand|telefon|telefax|fax|e-?mail|internet|web|vertretungsberechtigt|sitz|ladungsfähige|ladungsfaehige|anschrift|adresse|address|postanschrift)\b/i;
 
-const STREET_RE = /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß."()\/-]*(?:[ ][A-Za-zÄÖÜäöüß."()\/-]+){0,5}[ ]?\d+\s*[a-zA-Z]?\s*(?:[\/-]\s*\d+\s*[a-zA-Z]?)?$/;
+const STREET_RE =
+  /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß."()\/-]*(?:[ ][A-Za-zÄÖÜäöüß."()\/-]+){0,5}[ ]?\d+\s*[a-zA-Z]?\s*(?:[\/-]\s*\d+\s*[a-zA-Z]?)?$/;
 
-const PLZ_RE = /\b(?:[Dd]-|D )?(\d{5})[ ]([A-ZÄÖÜ][A-Za-zÄÖÜäöüß."-]*(?:[ ][A-Za-zÄÖÜäöüß."()-]+){0,3})/;
+const PLZ_RE =
+  /\b(?:[Dd]-|D )?(\d{5})[ ]([A-ZÄÖÜ][A-Za-zÄÖÜäöüß."-]*(?:[ ][A-Za-zÄÖÜäöüß."()-]+){0,3})/;
 
 const PHONE_LABEL_RE = /(?:telefon|tel\.?|phone|zentrale)\b\s*[:.]?\s*(\+?\d[\d\s().\/-]{5,22}\d)/i;
 
@@ -235,10 +308,12 @@ function looksLikeStreet(line) {
 }
 
 function cleanOrt(value) {
-  return String(value || "")
-    .replace(/[.,;:]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim() || null;
+  return (
+    String(value || "")
+      .replace(/[.,;:]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim() || null
+  );
 }
 
 function parseAddress(lines) {
@@ -246,13 +321,19 @@ function parseAddress(lines) {
     const line = lines[index];
     const match = line.match(PLZ_RE);
     if (!match) continue;
-    const beforePlz = line.slice(0, match.index).replace(/[,\s]+$/g, "").trim();
+    const beforePlz = line
+      .slice(0, match.index)
+      .replace(/[,\s]+$/g, "")
+      .trim();
     let street = null;
     if (beforePlz && looksLikeStreet(beforePlz)) {
       street = beforePlz;
     } else {
       for (let back = index - 1; back >= Math.max(0, index - 4); back -= 1) {
-        if (looksLikeStreet(lines[back])) { street = lines[back]; break; }
+        if (looksLikeStreet(lines[back])) {
+          street = lines[back];
+          break;
+        }
         if (PLZ_RE.test(lines[back])) break;
       }
     }
@@ -267,14 +348,22 @@ function parseAddress(lines) {
 function extractName(lines, address, title) {
   // 1. Nearest line above the address block that carries a legal form.
   if (address) {
-    for (let back = address.addressIndex - 1; back >= Math.max(0, address.addressIndex - 8); back -= 1) {
+    for (
+      let back = address.addressIndex - 1;
+      back >= Math.max(0, address.addressIndex - 8);
+      back -= 1
+    ) {
       const line = lines[back];
       if (LEGAL_FORM_RE.test(line) && line.length <= 120 && !GENERIC_LINE_RE.test(line)) {
         return line;
       }
     }
     // 2. The nearest usable line above the street, unless it is a generic label.
-    for (let back = address.addressIndex - 1; back >= Math.max(0, address.addressIndex - 4); back -= 1) {
+    for (
+      let back = address.addressIndex - 1;
+      back >= Math.max(0, address.addressIndex - 4);
+      back -= 1
+    ) {
       const line = lines[back];
       if (looksLikeStreet(line) || PLZ_RE.test(line)) continue;
       if (GENERIC_LINE_RE.test(line)) continue;
@@ -284,7 +373,11 @@ function extractName(lines, address, title) {
   // 3. Title segment carrying a legal form (e.g. Impressum - Beispiel GmbH).
   for (const part of String(title || "").split(/\s*[–—|-]\s*/)) {
     const candidate = part.trim();
-    if (LEGAL_FORM_RE.test(candidate) && !/impressum|imprint/i.test(candidate) && candidate.length <= 120) {
+    if (
+      LEGAL_FORM_RE.test(candidate) &&
+      !/impressum|imprint/i.test(candidate) &&
+      candidate.length <= 120
+    ) {
       return candidate;
     }
   }
@@ -301,7 +394,9 @@ function deobfuscateLine(line) {
 }
 
 function hostBase(host) {
-  const parts = String(host || "").split(".").filter(Boolean);
+  const parts = String(host || "")
+    .split(".")
+    .filter(Boolean);
   return parts.slice(-2).join(".");
 }
 
@@ -344,21 +439,26 @@ function extractEmails(windowLines, html, host) {
   const mailtoEmails = [];
   for (const match of String(html || "").matchAll(/href\s*=\s*["]mailto:([^">?]+)/gi)) {
     const email = decodeEntities(match[1]).trim().toLowerCase();
-    if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(email)) mailtoEmails.push(email);
+    if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(email))
+      mailtoEmails.push(email);
   }
   const text = [...new Set(textEmails)];
   const mailto = [...new Set(mailtoEmails)];
   // A company impressum states the company email on the company domain;
   // off-domain mailtos (agency credits) are never the firma_email.
-  return text.find((email) => emailMatchesHost(email, host))
-    || mailto.find((email) => emailMatchesHost(email, host))
-    || text[0]
-    || null;
+  return (
+    text.find((email) => emailMatchesHost(email, host)) ||
+    mailto.find((email) => emailMatchesHost(email, host)) ||
+    text[0] ||
+    null
+  );
 }
 
 function isBlockedText(lines, title) {
   const corpus = title + " " + lines.slice(0, 30).join(" ");
-  return /captcha|cloudflare|verify you are human|access denied|zugriff verweigert|sicherheitsüberprüfung|just a moment/i.test(corpus);
+  return /captcha|cloudflare|verify you are human|access denied|zugriff verweigert|sicherheitsüberprüfung|just a moment/i.test(
+    corpus,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -372,32 +472,56 @@ function isBlockedText(lines, title) {
 // The label may stand alone on its own line (|$) with the names on the
 // following lines: "Geschäftsführer" / "Dipl. Kfm. Roger Wintzen" — measured
 // on chemofast.com 2026-07-31.
-const PERSON_LABEL_RE = /^(geschäftsführer(?:in)?|geschäftsführung|vertreten\s+durch|vertretungsberechtigte?r?(?:\(r\))?|vorstand|vorstände|inhaber(?:in)?)(?:\s*:\s*|\s+|$)(.*)$/i;
+const PERSON_LABEL_RE =
+  /^(geschäftsführer(?:in)?|geschäftsführung|vertreten\s+durch|vertretungsberechtigte?r?(?:\(r\))?|vorstand|vorstände|inhaber(?:in)?)(?:\s*:\s*|\s+|$)(.*)$/i;
 
-const ROLE_PREFIX_RE = /^(geschäftsführer(?:in)?|geschäftsführung|vorstand|inhaber(?:in)?|prokurist(?:in)?)\s*:\s*(.*)$/i;
+const ROLE_PREFIX_RE =
+  /^(geschäftsführer(?:in)?|geschäftsführung|vorstand|inhaber(?:in)?|prokurist(?:in)?)\s*:\s*(.*)$/i;
 
-const ROLE_EXACT_RE = /^(?:geschäftsführer(?:in)?|geschäftsführung|vorstand|vorstandsmitglied|inhaber(?:in)?|prokurist(?:in)?|gesellschafter(?:in)?)$/i;
+const ROLE_EXACT_RE =
+  /^(?:geschäftsführer(?:in)?|geschäftsführung|vorstand|vorstandsmitglied|inhaber(?:in)?|prokurist(?:in)?|gesellschafter(?:in)?)$/i;
 
-const TITLE_PAREN_RE = /(?:dipl|dr|prof|mag|ing|kaufmann|kauffrau|betriebswirt|fachwirt|meister|techniker|ökonom|oekonom|med|rer|nat|jur|mba|msc|bsc|wirtschafts)/i;
+const TITLE_PAREN_RE =
+  /(?:dipl|dr|prof|mag|ing|kaufmann|kauffrau|betriebswirt|fachwirt|meister|techniker|ökonom|oekonom|med|rer|nat|jur|mba|msc|bsc|wirtschafts)/i;
 
-const TITLE_FIRST_RE = /^(?:prof\.?|pd|dr\.?|habil\.?|dipl\.?-[a-zäöü]+\.?|dipl\.?|mag\.?|ing\.?|kfm\.?|kffr\.?|mba|msc|m\.sc\.|bsc|b\.sc\.|ll\.?m\.?)$/i;
+const TITLE_FIRST_RE =
+  /^(?:prof\.?|pd|dr\.?|habil\.?|dipl\.?-[a-zäöü]+\.?|dipl\.?|mag\.?|ing\.?|kfm\.?|kffr\.?|mba|msc|m\.sc\.|bsc|b\.sc\.|ll\.?m\.?)$/i;
 
-const TITLE_CONT_RE = /^(?:med|rer|nat|jur|phil|dent|habil|techn|oec|pol|agr|ing|sc|kfm|kffr|kfr|kaufm)\.?$/i;
+const TITLE_CONT_RE =
+  /^(?:med|rer|nat|jur|phil|dent|habil|techn|oec|pol|agr|ing|sc|kfm|kffr|kfr|kaufm)\.?$/i;
 
-const NAME_PARTICLES = new Set(["von", "van", "de", "der", "den", "zu", "vom", "da", "di", "del", "la", "le", "ten"]);
+const NAME_PARTICLES = new Set([
+  "von",
+  "van",
+  "de",
+  "der",
+  "den",
+  "zu",
+  "vom",
+  "da",
+  "di",
+  "del",
+  "la",
+  "le",
+  "ten",
+]);
 
 // Lines that end a person list: structural labels of the legal notice, the
 // agency credit block, or another person label.
-const PERSON_STOP_RE = /(?:handelsregister|registereintrag|registergericht|registernummer|umsatzsteuer|ust\.?-?id|steuernummer|telefon|telefax|fax\b|e-?mail|homepage|amtsgericht|anschrift|postfach|impressum|datenschutz|kontakt|haftungs|urheber|bildquellen|quellenangaben|konzeption|design|umsetzung|programmierung|agentur|verantwortlich|redaktion|betreiber|anbieter|ladungsfähig|ladungsfaehig|öffnungszeiten|geschäftsführer|geschaeftsfuehrer|vorstand|inhaber|vertretungsberechtigt)/i;
+const PERSON_STOP_RE =
+  /(?:handelsregister|registereintrag|registergericht|registernummer|umsatzsteuer|ust\.?-?id|steuernummer|telefon|telefax|fax\b|e-?mail|homepage|amtsgericht|anschrift|postfach|impressum|datenschutz|kontakt|haftungs|urheber|bildquellen|quellenangaben|konzeption|design|umsetzung|programmierung|agentur|verantwortlich|redaktion|betreiber|anbieter|ladungsfähig|ladungsfaehig|öffnungszeiten|geschäftsführer|geschaeftsfuehrer|vorstand|inhaber|vertretungsberechtigt)/i;
 
 // A person label standing next to an agency credit ("Umsetzung", "Webdesign",
 // "Betreuende Agentur" …) names the agency's staff, not the company's.
-const AGENCY_CONTEXT_RE = /(?:konzeption|screendesign|webdesign|webentwicklung|gestaltung|programmierung|realisierung|umsetzung|betreuende\s+agentur|\bagentur\b|erstellt\s+(?:von|durch)|design\s+by|made\s+by|fotograf|bildquellen|quellenangaben|webmaster)/i;
+const AGENCY_CONTEXT_RE =
+  /(?:konzeption|screendesign|webdesign|webentwicklung|gestaltung|programmierung|realisierung|umsetzung|betreuende\s+agentur|\bagentur\b|erstellt\s+(?:von|durch)|design\s+by|made\s+by|fotograf|bildquellen|quellenangaben|webmaster)/i;
 
 function validNameTokens(tokens) {
   if (tokens.length < 2 || tokens.length > 5) return false;
-  return tokens.every((token) =>
-    /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'.-]*$/.test(token) || NAME_PARTICLES.has(token.toLowerCase()));
+  return tokens.every(
+    (token) =>
+      /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'.-]*$/.test(token) || NAME_PARTICLES.has(token.toLowerCase()),
+  );
 }
 
 // One segment -> one person. Titles stated on the page (leading "Dr."/"Prof."
@@ -405,16 +529,23 @@ function validNameTokens(tokens) {
 // parenthetical role word ("(Vorstand)") becomes person_funktion; anything
 // else in parentheses is a clause, not person data, and is dropped.
 function parsePerson(segment, funktion) {
-  let text = String(segment || "").replace(/\s+/g, " ").trim().replace(/[.,;:]+$/, "").trim();
+  let text = String(segment || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.,;:]+$/, "")
+    .trim();
   if (!text || LEGAL_FORM_RE.test(text)) return null;
   let titel = null;
   let role = null;
-  text = text.replace(/\(([^)]{1,50})\)/g, (_m, inner) => {
-    const content = inner.replace(/\s+/g, " ").trim();
-    if (ROLE_EXACT_RE.test(content)) role = content;
-    else if (TITLE_PAREN_RE.test(content)) titel = titel ? titel + " " + content : content;
-    return " ";
-  }).replace(/\s+/g, " ").trim();
+  text = text
+    .replace(/\(([^)]{1,50})\)/g, (_m, inner) => {
+      const content = inner.replace(/\s+/g, " ").trim();
+      if (ROLE_EXACT_RE.test(content)) role = content;
+      else if (TITLE_PAREN_RE.test(content)) titel = titel ? titel + " " + content : content;
+      return " ";
+    })
+    .replace(/\s+/g, " ")
+    .trim();
   const tokens = text.split(/\s+/).filter(Boolean);
   const leading = [];
   while (tokens.length > 2 && TITLE_FIRST_RE.test(tokens[0])) {
@@ -470,7 +601,9 @@ function personKey(person) {
 // belongs. The legal role it denotes is "Vertretungsberechtigt". Labels that
 // ARE roles ("Geschäftsführer", "Vorstand", "Inhaber") pass through unchanged.
 function normalizeRepresentativeLabel(label) {
-  const text = String(label || "").replace(/\s+/g, " ").trim();
+  const text = String(label || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (/^vertret(?:en\s+durch|ungsberechtigt\w*)/i.test(text)) return "Vertretungsberechtigt";
   return text;
 }
@@ -513,14 +646,20 @@ function extractImpressum(html, finalUrl) {
   if (isBlockedText(lines, title)) return { blocked: true, fields: {} };
 
   // Narrow to the region after the Impressum/Imprint heading when one exists.
-  const headingIndex = lines.findIndex((line) => /^(?:impressum|imprint|anbieterkennzeichnung)\b/i.test(line));
+  const headingIndex = lines.findIndex((line) =>
+    /^(?:impressum|imprint|anbieterkennzeichnung)\b/i.test(line),
+  );
   const region = headingIndex >= 0 ? lines.slice(headingIndex) : lines;
 
   const address = parseAddress(region);
   const name = extractName(region, address, title);
 
   let host = "";
-  try { host = new URL(finalUrl).hostname.replace(/^www\./, "").toLowerCase(); } catch (_err) { /* keep empty */ }
+  try {
+    host = new URL(finalUrl).hostname.replace(/^www\./, "").toLowerCase();
+  } catch (_err) {
+    /* keep empty */
+  }
 
   // Contact details belong to the address block: search a window around it
   // so credits/footers (agency phone, agency email) are never attributed
@@ -534,7 +673,9 @@ function extractImpressum(html, finalUrl) {
 
   const fields = {};
   const put = (key, value) => {
-    const clean = String(value || "").replace(/\s+/g, " ").trim();
+    const clean = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (clean) fields[key] = { value: clean, source_url: finalUrl };
   };
   put("firma_name", name);
@@ -566,7 +707,15 @@ async function goto(url) {
 }
 
 async function clickConsent() {
-  const patterns = [/alle akzeptieren/i, /akzeptieren/i, /zustimmen/i, /einverstanden/i, /^accept( all)?$/i, /verstanden/i, /^okay?$|^ok$/i];
+  const patterns = [
+    /alle akzeptieren/i,
+    /akzeptieren/i,
+    /zustimmen/i,
+    /einverstanden/i,
+    /^accept( all)?$/i,
+    /verstanden/i,
+    /^okay?$|^ok$/i,
+  ];
   for (const pattern of patterns) {
     const button = page.getByRole("button", { name: pattern }).first();
     if (await button.count()) {
@@ -638,19 +787,24 @@ async function locateImpressum(originUrl) {
     await sleep(2000);
     if (!response || !response.ok()) continue;
     await clickConsent();
-    const link = await page.evaluate(() => {
-      const anchors = Array.from(document.querySelectorAll("a[href]"));
-      const match = anchors.find((anchor) =>
-        /impressum|imprint/i.test(anchor.textContent || "")
-          || /impressum|imprint/i.test(anchor.getAttribute("href") || ""));
-      return match ? match.href : null;
-    }).catch(() => null);
+    const link = await page
+      .evaluate(() => {
+        const anchors = Array.from(document.querySelectorAll("a[href]"));
+        const match = anchors.find(
+          (anchor) =>
+            /impressum|imprint/i.test(anchor.textContent || "") ||
+            /impressum|imprint/i.test(anchor.getAttribute("href") || ""),
+        );
+        return match ? match.href : null;
+      })
+      .catch(() => null);
     if (!link) {
       reason = "no Impressum link found on " + variant;
       continue;
     }
     const target = new URL(link, variant);
-    const sameOrigin = target.hostname.replace(/^www\./, "") === new URL(variant).hostname.replace(/^www\./, "");
+    const sameOrigin =
+      target.hostname.replace(/^www\./, "") === new URL(variant).hostname.replace(/^www\./, "");
     if (!sameOrigin) {
       reason = "impressum link points off-origin: " + target.href;
       continue;
@@ -671,20 +825,26 @@ async function locateImpressum(originUrl) {
 }
 
 function printSuccess(result, extra) {
-  console.log(JSON.stringify({
-    target: TARGET,
-    input: rawInput,
-    fetched_at: new Date().toISOString(),
-    ...(extra || {}),
-    fields: result.fields,
-    persons: (result.persons || []).map((person) => ({
-      person_vorname: person.vorname,
-      person_nachname: person.nachname,
-      person_funktion: person.funktion,
-      ...(person.titel ? { person_titel: person.titel } : {}),
-      source_url: person.source_url,
-    })),
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        target: TARGET,
+        input: rawInput,
+        fetched_at: new Date().toISOString(),
+        ...(extra || {}),
+        fields: result.fields,
+        persons: (result.persons || []).map((person) => ({
+          person_vorname: person.vorname,
+          person_nachname: person.nachname,
+          person_funktion: person.funktion,
+          ...(person.titel ? { person_titel: person.titel } : {}),
+          source_url: person.source_url,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 
@@ -735,16 +895,23 @@ try {
     // Verification is unchanged from the adapter's gate: the notice on this
     // host must name the company with the same legal form. No "close
     // enough" — a wrong guess reports no domain rather than a plausible one.
-    if (!(
-      identityMatches(company, fields.firma_name.value)
-        && legalFormMatches(company, fields.firma_name.value)
-    )) {
+    if (
+      !(
+        identityMatches(company, fields.firma_name.value) &&
+        legalFormMatches(company, fields.firma_name.value)
+      )
+    ) {
       continue;
     }
     printSuccess(result, { verified_host: candidateHost });
   }
-  fail("domain discovery found no host whose impressum verifies "
-    + JSON.stringify(company) + " (tried: " + tried.join(", ") + ")");
+  fail(
+    "domain discovery found no host whose impressum verifies " +
+      JSON.stringify(company) +
+      " (tried: " +
+      tried.join(", ") +
+      ")",
+  );
 } finally {
   await browser.close().catch(() => null);
 }

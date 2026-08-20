@@ -107,10 +107,14 @@ describe("composeWorkjetHandoffSnapshot", () => {
   });
 
   it("cuts an over-long single message and reports that it did", () => {
-    const composition = compose([message(0, "x".repeat(WORKJET_HANDOFF_SNAPSHOT_MAX_MESSAGE_CHARS + 500))]);
+    const composition = compose([
+      message(0, "x".repeat(WORKJET_HANDOFF_SNAPSHOT_MAX_MESSAGE_CHARS + 500)),
+    ]);
     expect(composition.truncatedMessages).toBe(1);
     expect(composition.text).toContain("[message truncated for the handoff snapshot]");
-    expect(composition.text).not.toContain("x".repeat(WORKJET_HANDOFF_SNAPSHOT_MAX_MESSAGE_CHARS + 1));
+    expect(composition.text).not.toContain(
+      "x".repeat(WORKJET_HANDOFF_SNAPSHOT_MAX_MESSAGE_CHARS + 1),
+    );
   });
 
   it("stays under the transfer ceiling and reports dropping the oldest messages", () => {

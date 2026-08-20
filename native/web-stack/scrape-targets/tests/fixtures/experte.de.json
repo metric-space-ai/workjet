@@ -1,5 +1,10 @@
 {
-  "input": { "source_id": "experte.de", "company": "Example Manufacturing AG", "country": "DE", "email": "contact@example.test" },
+  "input": {
+    "source_id": "experte.de",
+    "company": "Example Manufacturing AG",
+    "country": "DE",
+    "email": "contact@example.test"
+  },
   "expected": { "person_email_validation": "invalid" },
   "browser": {
     "ok": true,

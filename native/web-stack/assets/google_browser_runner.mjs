@@ -30,33 +30,32 @@
 // adopted from CloakHQ/CloakBrowser (MIT) — only the open-source wrapper
 // rules, not the patched binary.
 
-import { chromium } from 'patchright';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { chromium } from "patchright";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const STEALTH_LAUNCH_ARGS = [
-  '--disable-blink-features=AutomationControlled',
-  '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
-  '--disable-site-isolation-trials',
-  '--no-first-run',
-  '--no-default-browser-check',
-  '--disable-background-networking',
-  '--disable-background-timer-throttling',
-  '--disable-backgrounding-occluded-windows',
-  '--disable-renderer-backgrounding',
-  '--disable-ipc-flooding-protection',
-  '--enable-features=NetworkService,NetworkServiceInProcess',
-  '--force-color-profile=srgb',
-  '--metrics-recording-only',
-  '--hide-scrollbars',
-  '--mute-audio',
+  "--disable-blink-features=AutomationControlled",
+  "--disable-features=IsolateOrigins,site-per-process,TranslateUI",
+  "--disable-site-isolation-trials",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--disable-background-networking",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-ipc-flooding-protection",
+  "--enable-features=NetworkService,NetworkServiceInProcess",
+  "--force-color-profile=srgb",
+  "--metrics-recording-only",
+  "--hide-scrollbars",
+  "--mute-audio",
 ];
-
 
 // JS-property evasions live in a sibling stealth_init.js, loaded below via
 // addInitScript({ path }). Patchright handles the structural CDP leaks;
 // stealth_init.js handles the userland navigator/window/WebGL surface.
-const STEALTH_INIT_PATH = new URL('./stealth_init.js', import.meta.url);
+const STEALTH_INIT_PATH = new URL("./stealth_init.js", import.meta.url);
 
 async function dismissConsent(page, log) {
   const selectors = [
@@ -86,45 +85,52 @@ async function dismissConsent(page, log) {
 async function extractResults(page, maxResults) {
   return await page.evaluate((max) => {
     const skipHost = (host) =>
-      host === 'www.google.com' ||
-      host === 'maps.google.com' ||
-      host === 'policies.google.com' ||
-      host === 'support.google.com' ||
-      host === 'accounts.google.com' ||
-      host === 'webcache.googleusercontent.com' ||
-      host === 'translate.google.com';
+      host === "www.google.com" ||
+      host === "maps.google.com" ||
+      host === "policies.google.com" ||
+      host === "support.google.com" ||
+      host === "accounts.google.com" ||
+      host === "webcache.googleusercontent.com" ||
+      host === "translate.google.com";
 
     const canonKey = (u) => `${u.protocol}//${u.host}${u.pathname}`;
 
-    const search = document.querySelector('div#search') || document;
-    const headings = search.querySelectorAll('h3');
+    const search = document.querySelector("div#search") || document;
+    const headings = search.querySelectorAll("h3");
     const out = [];
     const seen = new Set();
     for (const h3 of headings) {
-      const a = h3.closest('a[href]');
+      const a = h3.closest("a[href]");
       if (!a) continue;
-      let href = a.getAttribute('href') ?? '';
-      if (href.startsWith('/url?q=')) {
+      let href = a.getAttribute("href") ?? "";
+      if (href.startsWith("/url?q=")) {
         try {
-          href = new URL(href, location.origin).searchParams.get('q') || '';
+          href = new URL(href, location.origin).searchParams.get("q") || "";
         } catch {}
       }
-      if (!href.startsWith('http')) continue;
+      if (!href.startsWith("http")) continue;
       let url;
-      try { url = new URL(href); } catch { continue; }
+      try {
+        url = new URL(href);
+      } catch {
+        continue;
+      }
       if (skipHost(url.host)) continue;
       const key = canonKey(url);
       if (seen.has(key)) continue;
       seen.add(key);
-      const title = (h3.textContent || '').trim();
-      let block = a.closest('div[data-snhf], div.MjjYud, div.g, div.tF2Cxc, div[data-hveid]');
+      const title = (h3.textContent || "").trim();
+      let block = a.closest("div[data-snhf], div.MjjYud, div.g, div.tF2Cxc, div[data-hveid]");
       if (!block) block = a.parentElement?.parentElement ?? null;
-      let snippet = '';
+      let snippet = "";
       if (block) {
-        const txt = (block.textContent || '').replace(/\s+/g, ' ').trim();
+        const txt = (block.textContent || "").replace(/\s+/g, " ").trim();
         const titleIdx = txt.indexOf(title);
         const tail = titleIdx >= 0 ? txt.slice(titleIdx + title.length) : txt;
-        snippet = tail.replace(/^\s*[›·–|]\s*/, '').trim().slice(0, 300);
+        snippet = tail
+          .replace(/^\s*[›·–|]\s*/, "")
+          .trim()
+          .slice(0, 300);
       }
       out.push({
         title,
@@ -140,28 +146,28 @@ async function extractResults(page, maxResults) {
 async function readStdinJson() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 function defaultUserAgent() {
   switch (process.platform) {
-    case 'darwin':
-      return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
-    case 'win32':
-      return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
+    case "darwin":
+      return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+    case "win32":
+      return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
     default:
-      return 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
+      return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
   }
 }
 
 function defaultClientHints() {
   let platform = '"Linux"';
-  if (process.platform === 'darwin') platform = '"macOS"';
-  else if (process.platform === 'win32') platform = '"Windows"';
+  if (process.platform === "darwin") platform = '"macOS"';
+  else if (process.platform === "win32") platform = '"Windows"';
   return {
-    'Sec-CH-UA': '"Chromium";v="146", "Google Chrome";v="146", "Not.A/Brand";v="24"',
-    'Sec-CH-UA-Mobile': '?0',
-    'Sec-CH-UA-Platform': platform,
+    "Sec-CH-UA": '"Chromium";v="146", "Google Chrome";v="146", "Not.A/Brand";v="24"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": platform,
   };
 }
 
@@ -173,24 +179,24 @@ function defaultClientHints() {
   const timeoutMs = Math.min(Math.max(cfg.timeoutMs ?? 25000, 5000), 120000);
   fs.mkdirSync(cfg.stateDir, { recursive: true });
 
-  const language = cfg.language || 'de-DE';
-  const region = cfg.region || 'DE';
-  const acceptLanguageLang = language.split('-')[0].toLowerCase();
-  const langs = [language, acceptLanguageLang, 'en-US', 'en'];
+  const language = cfg.language || "de-DE";
+  const region = cfg.region || "DE";
+  const acceptLanguageLang = language.split("-")[0].toLowerCase();
+  const langs = [language, acceptLanguageLang, "en-US", "en"];
 
   const launchUserAgent = cfg.userAgent || defaultUserAgent();
-  const launchLang = (cfg.language || 'de-DE');
+  const launchLang = cfg.language || "de-DE";
   const ctx = await chromium.launchPersistentContext(cfg.stateDir, {
     headless: cfg.headless !== false,
     args: [...STEALTH_LAUNCH_ARGS, `--user-agent=${launchUserAgent}`, `--lang=${launchLang}`],
-    ignoreDefaultArgs: ['--enable-automation', '--enable-unsafe-swiftshader'],
+    ignoreDefaultArgs: ["--enable-automation", "--enable-unsafe-swiftshader"],
     locale: language,
-    timezoneId: cfg.timezoneId || 'Europe/Berlin',
-    colorScheme: 'dark',
+    timezoneId: cfg.timezoneId || "Europe/Berlin",
+    colorScheme: "dark",
     viewport: { width: 1920, height: 947 },
     userAgent: cfg.userAgent || defaultUserAgent(),
     extraHTTPHeaders: defaultClientHints(),
-    permissions: ['geolocation', 'notifications'],
+    permissions: ["geolocation", "notifications"],
     isMobile: false,
     hasTouch: false,
     javaScriptEnabled: true,
@@ -201,7 +207,7 @@ function defaultClientHints() {
   const page = await ctx.newPage();
   const outcome = {
     ok: false,
-    provider: 'playwright_google',
+    provider: "playwright_google",
     results: [],
     finalUrl: null,
     title: null,
@@ -213,11 +219,11 @@ function defaultClientHints() {
   try {
     const url = `https://www.google.com/search?q=${encodeURIComponent(cfg.query)}&hl=${acceptLanguageLang}&gl=${region}`;
     log.push(`navigating to ${url}`);
-    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-    log.push(`http=${resp ? resp.status() : 'null'} url=${page.url()}`);
+    const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    log.push(`http=${resp ? resp.status() : "null"} url=${page.url()}`);
 
     if (/\/sorry\/index/.test(page.url())) {
-      outcome.error = 'google CAPTCHA: /sorry/index';
+      outcome.error = "google CAPTCHA: /sorry/index";
       outcome.finalUrl = page.url();
     } else {
       await dismissConsent(page, log);
@@ -230,19 +236,21 @@ function defaultClientHints() {
       outcome.title = await page.title();
       outcome.results = await extractResults(page, maxResults);
       outcome.ok = outcome.results.length > 0;
-      if (!outcome.ok) outcome.error = 'no result anchors matched';
+      if (!outcome.ok) outcome.error = "no result anchors matched";
     }
   } catch (e) {
     outcome.error = e.message;
   } finally {
     outcome.elapsedMs = Date.now() - startedAt;
-    try { await ctx.close(); } catch {}
+    try {
+      await ctx.close();
+    } catch {}
   }
 
   process.stdout.write(JSON.stringify(outcome));
 })().catch((e) => {
   process.stdout.write(
-    JSON.stringify({ ok: false, error: e.message, stack: e.stack, provider: 'playwright_google' })
+    JSON.stringify({ ok: false, error: e.message, stack: e.stack, provider: "playwright_google" }),
   );
   process.exit(1);
 });

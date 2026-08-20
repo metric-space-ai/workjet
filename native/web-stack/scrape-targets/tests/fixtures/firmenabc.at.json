@@ -13,11 +13,13 @@
     "firma_domain": "beispiel.at"
   },
   "search": {
-    "results": [{
-      "title": "Beispiel Komponenten GmbH & Co KG in Wien",
-      "url": "https://www.firmenabc.at/beispiel-komponenten-gmbh-co-kg_XYZ",
-      "summary": "Firmenprofil"
-    }]
+    "results": [
+      {
+        "title": "Beispiel Komponenten GmbH & Co KG in Wien",
+        "url": "https://www.firmenabc.at/beispiel-komponenten-gmbh-co-kg_XYZ",
+        "summary": "Firmenprofil"
+      }
+    ]
   },
   "read": {
     "ok": false,

@@ -63,10 +63,7 @@
       ],
       "generationConfig": {
         "maxOutputTokens": 42,
-        "stopSequences": [
-          "END",
-          "STOP"
-        ],
+        "stopSequences": ["END", "STOP"],
         "temperature": 0.5,
         "thinkingConfig": {
           "thinkingBudget": -1
@@ -180,9 +177,7 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "ok"
-          ],
+          "required": ["ok"],
           "type": "object"
         },
         "responseMimeType": "application/json",
@@ -224,9 +219,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "path"
-                ],
+                "required": ["path"],
                 "type": "object"
               }
             }
@@ -812,10 +805,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "country",
-                  "$id"
-                ],
+                "required": ["country", "$id"],
                 "type": "object"
               }
             }
@@ -870,11 +860,7 @@
                 "properties": {
                   "priority": {
                     "description": "Allowed: 0, 1, 2 (format: int32)",
-                    "enum": [
-                      "0",
-                      "1",
-                      "2"
-                    ],
+                    "enum": ["0", "1", "2"],
                     "minimum": 0,
                     "type": "string"
                   }
@@ -944,9 +930,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "choice"
-                ],
+                "required": ["choice"],
                 "type": "object"
               }
             }
@@ -1006,10 +990,7 @@
                     "type": "object"
                   }
                 },
-                "required": [
-                  "name",
-                  "nested"
-                ],
+                "required": ["name", "nested"],
                 "type": "object"
               }
             }
@@ -1065,9 +1046,7 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "_"
-                ],
+                "required": ["_"],
                 "type": "object"
               }
             },
@@ -1081,9 +1060,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reason"
-                ],
+                "required": ["reason"],
                 "type": "object"
               }
             }
@@ -1177,9 +1154,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "title"
-                ],
+                "required": ["title"],
                 "type": "object"
               }
             }

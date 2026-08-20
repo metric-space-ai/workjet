@@ -13,17 +13,21 @@ const TARGET = "experte.de";
 const START_URL = "https://www.experte.de/email-pruefen";
 const MIN_NAV_GAP_MS = 2000;
 
-const email = String(process.argv[2] || "").trim().toLowerCase();
+const email = String(process.argv[2] || "")
+  .trim()
+  .toLowerCase();
 
 function fail(reason, extra = {}) {
-  process.stdout.write(JSON.stringify({
-    target: TARGET,
-    input: email,
-    fetched_at: new Date().toISOString(),
-    fields: {},
-    reason,
-    ...extra,
-  }) + "\n");
+  process.stdout.write(
+    JSON.stringify({
+      target: TARGET,
+      input: email,
+      fetched_at: new Date().toISOString(),
+      fields: {},
+      reason,
+      ...extra,
+    }) + "\n",
+  );
   process.exit(1);
 }
 
@@ -51,7 +55,10 @@ async function dismissConsent(page) {
   for (const locator of candidates) {
     try {
       const button = locator.first();
-      if (await button.count() && await button.isVisible({ timeout: 1500 }).catch(() => false)) {
+      if (
+        (await button.count()) &&
+        (await button.isVisible({ timeout: 1500 }).catch(() => false))
+      ) {
         await button.click({ timeout: 3000 });
         await page.waitForTimeout(800);
         return true;
@@ -87,7 +94,12 @@ try {
   }
   await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => null);
 
-  const bodyText = (await page.locator("body").innerText().catch(() => "")).slice(0, 6000);
+  const bodyText = (
+    await page
+      .locator("body")
+      .innerText()
+      .catch(() => "")
+  ).slice(0, 6000);
   if (/captcha|cloudflare|verify you are human|access denied|zugriff verweigert/i.test(bodyText)) {
     fail("blocked", { detail: "access challenge detected; not attempting to bypass" });
   }
@@ -106,7 +118,9 @@ try {
   }
   await field.fill(email);
 
-  const submit = page.locator('button.btn-primary:has-text("prüfen"), button:has-text("E-Mail prüfen")').first();
+  const submit = page
+    .locator('button.btn-primary:has-text("prüfen"), button:has-text("E-Mail prüfen")')
+    .first();
   if ((await submit.count()) < 1) {
     fail("selector_drift", { detail: "submit button not found on loaded page" });
   }
@@ -118,24 +132,36 @@ try {
   //   <table><thead><tr><th>E-Mail</th><th>Ergebnis</th>…</tr></thead>
   //   <tbody><tr><td>{email}</td><td class="font-bold text-green">Gültig</td>…
   // Wait until the row for OUR address shows a verdict word in its 2nd cell.
-  const rowReady = await page.waitForFunction((needle) => {
-    for (const row of Array.from(document.querySelectorAll("table tbody tr"))) {
-      const cells = Array.from(row.querySelectorAll("td"));
-      if (cells.length >= 2
-          && (cells[0].innerText || "").trim().toLowerCase() === needle
-          && /gültig|unbekannt|riskant|fehler/i.test((cells[1].innerText || "").trim())) {
-        return true;
-      }
-    }
-    return false;
-  }, email, { timeout: 60000 }).then(() => true).catch(() => false);
+  const rowReady = await page
+    .waitForFunction(
+      (needle) => {
+        for (const row of Array.from(document.querySelectorAll("table tbody tr"))) {
+          const cells = Array.from(row.querySelectorAll("td"));
+          if (
+            cells.length >= 2 &&
+            (cells[0].innerText || "").trim().toLowerCase() === needle &&
+            /gültig|unbekannt|riskant|fehler/i.test((cells[1].innerText || "").trim())
+          ) {
+            return true;
+          }
+        }
+        return false;
+      },
+      email,
+      { timeout: 60000 },
+    )
+    .then(() => true)
+    .catch(() => false);
   if (!rowReady) {
     fail("verdict_timeout", { detail: "no verdict row within 60s after submit" });
   }
 
   const rows = await page.evaluate(() =>
     Array.from(document.querySelectorAll("table tbody tr")).map((row) =>
-      Array.from(row.querySelectorAll("td")).map((cell) => (cell.innerText || "").replace(/\s+/g, " ").trim())),
+      Array.from(row.querySelectorAll("td")).map((cell) =>
+        (cell.innerText || "").replace(/\s+/g, " ").trim(),
+      ),
+    ),
   );
   const row = rows.find((cells) => cells.length >= 2 && cells[0].toLowerCase() === email);
   if (!row) {
@@ -143,10 +169,13 @@ try {
   }
   // Mind the substring trap: "Ungültig" contains "Gültig" — anchor at start.
   const verdictText = row[1];
-  const status = /^ungültig/i.test(verdictText) ? "invalid"
-    : /^gültig/i.test(verdictText) ? "valid"
-    : /unbekannt|riskant|catch[ -]?all|fehler/i.test(verdictText) ? "unknown"
-    : null;
+  const status = /^ungültig/i.test(verdictText)
+    ? "invalid"
+    : /^gültig/i.test(verdictText)
+      ? "valid"
+      : /unbekannt|riskant|catch[ -]?all|fehler/i.test(verdictText)
+        ? "unknown"
+        : null;
   if (!status) {
     fail("verdict_unparseable", {
       detail: `unrecognized verdict text: ${verdictText}`,
@@ -159,27 +188,33 @@ try {
   if (hostOf(sourceUrl) !== "experte.de") {
     fail("wrong_origin", { detail: `unexpected result origin: ${sourceUrl}` });
   }
-  process.stdout.write(JSON.stringify({
-    target: TARGET,
-    input: email,
-    fetched_at: new Date().toISOString(),
-    fields: {
-      person_email_validation: {
-        value: VERDICT_LABELS[status],
-        source_url: sourceUrl,
+  process.stdout.write(
+    JSON.stringify(
+      {
+        target: TARGET,
+        input: email,
+        fetched_at: new Date().toISOString(),
+        fields: {
+          person_email_validation: {
+            value: VERDICT_LABELS[status],
+            source_url: sourceUrl,
+          },
+          person_email: {
+            value: email,
+            source_url: sourceUrl,
+          },
+          firma_domain: {
+            value: email.split("@").pop(),
+            source_url: sourceUrl,
+          },
+        },
+        evidence: evidence.slice(0, 700),
+        page_title: await page.title().catch(() => ""),
       },
-      person_email: {
-        value: email,
-        source_url: sourceUrl,
-      },
-      firma_domain: {
-        value: email.split("@").pop(),
-        source_url: sourceUrl,
-      },
-    },
-    evidence: evidence.slice(0, 700),
-    page_title: await page.title().catch(() => ""),
-  }, null, 2) + "\n");
+      null,
+      2,
+    ) + "\n",
+  );
   process.exit(0);
 } catch (error) {
   fail("probe_error", { detail: String(error?.message || error).slice(0, 400) });

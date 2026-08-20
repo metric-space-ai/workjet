@@ -13,11 +13,13 @@
     "person_nachname": "Bruchez"
   },
   "search": {
-    "results": [{
-      "title": "Management Nests Sàrl - Le Châble VS",
-      "url": "https://www.moneyhouse.ch/de/company/nests-sarl-2272997971/management",
-      "summary": "Firmenprofil"
-    }]
+    "results": [
+      {
+        "title": "Management Nests Sàrl - Le Châble VS",
+        "url": "https://www.moneyhouse.ch/de/company/nests-sarl-2272997971/management",
+        "summary": "Firmenprofil"
+      }
+    ]
   },
   "read": {
     "ok": false,
@@ -36,7 +38,9 @@
         "postalCode": "1934",
         "locality": "Le Châble VS"
       },
-      "json_ld": ["{\"@context\":\"http://schema.org\",\"@type\":\"Organization\",\"legalName\":\"Nests Sàrl\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"Route de Montagnier 51\",\"postalCode\":\"1934\",\"addressLocality\":\"Le Châble VS\"}}"]
+      "json_ld": [
+        "{\"@context\":\"http://schema.org\",\"@type\":\"Organization\",\"legalName\":\"Nests Sàrl\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"Route de Montagnier 51\",\"postalCode\":\"1934\",\"addressLocality\":\"Le Châble VS\"}}"
+      ]
     },
     "detection": { "markers": [] }
   }

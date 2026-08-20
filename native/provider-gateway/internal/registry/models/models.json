@@ -43,12 +43,7 @@
         "min": 1024,
         "max": 128000,
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "max"]
       }
     },
     {
@@ -65,12 +60,7 @@
         "min": 1024,
         "max": 128000,
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "max"]
       }
     },
     {
@@ -87,13 +77,7 @@
         "min": 1024,
         "max": 128000,
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -110,13 +94,7 @@
         "min": 1024,
         "max": 128000,
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -132,13 +110,7 @@
       "thinking": {
         "zero_allowed": true,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -154,13 +126,7 @@
       "thinking": {
         "zero_allowed": true,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -177,13 +143,7 @@
         "min": 1024,
         "max": 128000,
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -364,10 +324,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -392,11 +349,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -421,10 +374,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "high"
-        ]
+        "levels": ["minimal", "high"]
       }
     },
     {
@@ -449,12 +399,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -479,10 +424,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "high"
-        ]
+        "levels": ["minimal", "high"]
       }
     },
     {
@@ -507,10 +449,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -535,12 +474,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -565,12 +499,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -595,12 +524,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     }
   ],
@@ -723,10 +647,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -751,12 +672,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -781,11 +697,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -810,11 +722,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -839,10 +747,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "high"
-        ]
+        "levels": ["minimal", "high"]
       }
     },
     {
@@ -867,12 +772,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -897,10 +797,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -913,9 +810,7 @@
       "name": "models/imagen-4.0-generate-001",
       "version": "4.0",
       "description": "Imagen 4.0 image generation model",
-      "supportedGenerationMethods": [
-        "predict"
-      ]
+      "supportedGenerationMethods": ["predict"]
     },
     {
       "id": "imagen-4.0-ultra-generate-001",
@@ -927,9 +822,7 @@
       "name": "models/imagen-4.0-ultra-generate-001",
       "version": "4.0",
       "description": "Imagen 4.0 Ultra high-quality image generation model",
-      "supportedGenerationMethods": [
-        "predict"
-      ]
+      "supportedGenerationMethods": ["predict"]
     },
     {
       "id": "imagen-3.0-generate-002",
@@ -941,9 +834,7 @@
       "name": "models/imagen-3.0-generate-002",
       "version": "3.0",
       "description": "Imagen 3.0 image generation model",
-      "supportedGenerationMethods": [
-        "predict"
-      ]
+      "supportedGenerationMethods": ["predict"]
     },
     {
       "id": "imagen-3.0-fast-generate-001",
@@ -955,9 +846,7 @@
       "name": "models/imagen-3.0-fast-generate-001",
       "version": "3.0",
       "description": "Imagen 3.0 fast image generation model",
-      "supportedGenerationMethods": [
-        "predict"
-      ]
+      "supportedGenerationMethods": ["predict"]
     },
     {
       "id": "imagen-4.0-fast-generate-001",
@@ -969,9 +858,7 @@
       "name": "models/imagen-4.0-fast-generate-001",
       "version": "4.0",
       "description": "Imagen 4.0 fast image generation model",
-      "supportedGenerationMethods": [
-        "predict"
-      ]
+      "supportedGenerationMethods": ["predict"]
     },
     {
       "id": "gemini-3.5-flash",
@@ -995,12 +882,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -1025,12 +907,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -1055,12 +932,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     }
   ],
@@ -1159,10 +1031,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -1187,11 +1056,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -1216,12 +1081,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -1246,12 +1106,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     }
   ],
@@ -1422,12 +1277,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -1544,12 +1394,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -1574,12 +1419,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -1604,12 +1444,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     }
   ],
@@ -1625,16 +1460,9 @@
       "description": "GPT-5.4 mini brings the strengths of GPT-5.4 to a faster, more efficient model designed for high-volume workloads.",
       "context_length": 400000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1648,16 +1476,9 @@
       "description": "Frontier model for complex coding, research, and real-world work.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1671,17 +1492,9 @@
       "description": "Balanced agentic coding model for everyday work.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -1695,17 +1508,9 @@
       "description": "Fast and affordable agentic coding model.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       },
       "config": {
         "override_header": {
@@ -1725,16 +1530,9 @@
       "description": "Automatic approval review model for Codex.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     }
   ],
@@ -1750,16 +1548,9 @@
       "description": "Stable version of GPT 5.4",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1773,16 +1564,9 @@
       "description": "GPT-5.4 mini brings the strengths of GPT-5.4 to a faster, more efficient model designed for high-volume workloads.",
       "context_length": 400000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1796,16 +1580,9 @@
       "description": "Frontier model for complex coding, research, and real-world work.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1819,17 +1596,9 @@
       "description": "Our most capable model yet. GPT-5.6 Sol can tackle complex code changes, dig into research, produce polished documents, and take on your most ambitious work. Sol is highly capable at lower reasoning efforts—try starting lower, then turn it up for harder jobs.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -1843,17 +1612,9 @@
       "description": "Balanced agentic coding model for everyday work.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -1867,17 +1628,9 @@
       "description": "Fast and affordable agentic coding model.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       },
       "config": {
         "override_header": {
@@ -1897,16 +1650,9 @@
       "description": "Automatic approval review model for Codex.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     }
   ],
@@ -1922,16 +1668,9 @@
       "description": "Ultra-fast coding model.",
       "context_length": 128000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1945,16 +1684,9 @@
       "description": "Stable version of GPT 5.4",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1968,16 +1700,9 @@
       "description": "GPT-5.4 mini brings the strengths of GPT-5.4 to a faster, more efficient model designed for high-volume workloads.",
       "context_length": 400000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -1991,16 +1716,9 @@
       "description": "Frontier model for complex coding, research, and real-world work.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -2014,17 +1732,9 @@
       "description": "Our most capable model yet. GPT-5.6 Sol can tackle complex code changes, dig into research, produce polished documents, and take on your most ambitious work. Sol is highly capable at lower reasoning efforts—try starting lower, then turn it up for harder jobs.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -2038,17 +1748,9 @@
       "description": "Balanced agentic coding model for everyday work.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -2062,17 +1764,9 @@
       "description": "Fast and affordable agentic coding model.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       },
       "config": {
         "override_header": {
@@ -2092,16 +1786,9 @@
       "description": "Automatic approval review model for Codex.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     }
   ],
@@ -2117,16 +1804,9 @@
       "description": "Ultra-fast coding model.",
       "context_length": 128000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -2140,16 +1820,9 @@
       "description": "Stable version of GPT 5.4",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -2163,16 +1836,9 @@
       "description": "GPT-5.4 mini brings the strengths of GPT-5.4 to a faster, more efficient model designed for high-volume workloads.",
       "context_length": 400000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -2186,16 +1852,9 @@
       "description": "Frontier model for complex coding, research, and real-world work.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     },
     {
@@ -2209,17 +1868,9 @@
       "description": "Our most capable model yet. GPT-5.6 Sol can tackle complex code changes, dig into research, produce polished documents, and take on your most ambitious work. Sol is highly capable at lower reasoning efforts—try starting lower, then turn it up for harder jobs.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -2233,17 +1884,9 @@
       "description": "Balanced agentic coding model for everyday work.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       }
     },
     {
@@ -2257,17 +1900,9 @@
       "description": "Fast and affordable agentic coding model.",
       "context_length": 372000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "levels": ["low", "medium", "high", "xhigh", "max"]
       },
       "config": {
         "override_header": {
@@ -2287,16 +1922,9 @@
       "description": "Automatic approval review model for Codex.",
       "context_length": 272000,
       "max_completion_tokens": 128000,
-      "supported_parameters": [
-        "tools"
-      ],
+      "supported_parameters": ["tools"],
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "levels": ["low", "medium", "high", "xhigh"]
       }
     }
   ],
@@ -2324,10 +1952,7 @@
       "max_completion_tokens": 32768,
       "thinking": {
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -2342,10 +1967,7 @@
       "max_completion_tokens": 32768,
       "thinking": {
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -2360,10 +1982,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": true,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -2378,10 +1997,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": false,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -2396,10 +2012,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": false,
-        "levels": [
-          "low",
-          "high"
-        ]
+        "levels": ["low", "high"]
       }
     },
     {
@@ -2414,11 +2027,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": false,
-        "levels": [
-          "low",
-          "high",
-          "max"
-        ]
+        "levels": ["low", "high", "max"]
       }
     },
     {
@@ -2433,11 +2042,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": false,
-        "levels": [
-          "low",
-          "high",
-          "max"
-        ]
+        "levels": ["low", "high", "max"]
       }
     }
   ],
@@ -2490,12 +2095,7 @@
         "min": 1,
         "max": 65535,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -2512,12 +2112,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -2534,12 +2129,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -2554,10 +2144,7 @@
         "min": 128,
         "max": 32768,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "high"
-        ]
+        "levels": ["minimal", "high"]
       }
     },
     {
@@ -2574,11 +2161,7 @@
         "min": 1,
         "max": 65535,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -2595,11 +2178,7 @@
         "min": 1,
         "max": 65535,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -2628,12 +2207,7 @@
         "max": 65535,
         "zero_allowed": true,
         "dynamic_allowed": true,
-        "levels": [
-          "minimal",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["minimal", "low", "medium", "high"]
       }
     },
     {
@@ -2650,11 +2224,7 @@
         "min": 1,
         "max": 65535,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -2671,11 +2241,7 @@
         "min": 1,
         "max": 65535,
         "dynamic_allowed": true,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     }
   ],
@@ -2705,11 +2271,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": false,
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -2725,12 +2287,7 @@
       "max_completion_tokens": 65536,
       "thinking": {
         "zero_allowed": true,
-        "levels": [
-          "none",
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["none", "low", "medium", "high"]
       }
     },
     {
@@ -2769,11 +2326,7 @@
       "context_length": 2000000,
       "max_completion_tokens": 65536,
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -2788,11 +2341,7 @@
       "context_length": 131072,
       "max_completion_tokens": 32768,
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {
@@ -2807,11 +2356,7 @@
       "context_length": 131072,
       "max_completion_tokens": 32768,
       "thinking": {
-        "levels": [
-          "low",
-          "medium",
-          "high"
-        ]
+        "levels": ["low", "medium", "high"]
       }
     },
     {

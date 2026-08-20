@@ -150,8 +150,7 @@ const failure = (reason: WorkjetMailboxError["reason"]) => new WorkjetMailboxErr
 const isGitBranchName = Schema.is(WorkjetGitBranchName);
 
 /** Epoch millis from a durable row back to the contract's ISO timestamp. */
-const isoOfMillis = (millis: number): string =>
-  DateTime.formatIso(DateTime.makeUnsafe(millis));
+const isoOfMillis = (millis: number): string => DateTime.formatIso(DateTime.makeUnsafe(millis));
 
 /**
  * Snapshot failures collapse onto the mailbox contract's bounded reasons, the
@@ -374,7 +373,6 @@ export const makeWorkjetMailboxRpcHandlers = (
     } as const;
   });
 
-
   // -----------------------------
   // Typed thread handoff
   // -----------------------------
@@ -501,9 +499,10 @@ export const makeWorkjetMailboxRpcHandlers = (
     Option.match(snapshotDigestForRef(record.handoff.contextSnapshot.snapshotRef), {
       onNone: () => Effect.succeed(false),
       onSome: (digest) =>
-        dependencies.snapshots
-          .stat(digest)
-          .pipe(Effect.map(Option.isSome), Effect.orElseSucceed(() => false)),
+        dependencies.snapshots.stat(digest).pipe(
+          Effect.map(Option.isSome),
+          Effect.orElseSucceed(() => false),
+        ),
     });
 
   const listHandoffs: WorkjetMailboxRpcHandlers["listHandoffs"] = Effect.fn(
@@ -584,4 +583,3 @@ export const makeWorkjetMailboxRpcHandlers = (
     acceptHandoff,
   };
 };
-

@@ -1828,9 +1828,9 @@ it.effect("refuses to claim a handoff this machine never received", () =>
       )
       .pipe(Effect.result);
     assert.equal(missing._tag, "Failure");
-    assert.isTrue(Option.isNone(yield* store.getReceivedHandoff(
-      WorkjetHandoffId.make("wjh-ffffffffffffffff"),
-    )));
+    assert.isTrue(
+      Option.isNone(yield* store.getReceivedHandoff(WorkjetHandoffId.make("wjh-ffffffffffffffff"))),
+    );
   }).pipe(Effect.provide(testLayer)),
 );
 

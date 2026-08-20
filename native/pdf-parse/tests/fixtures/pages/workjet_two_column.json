@@ -3,39 +3,15 @@
   "pdf": "synthetic-pdfs/workjet-two-column.pdf",
   "page": 2,
   "description": "Workjet synthetic two-column and table-line contract.",
-  "expected_lines": [
-    "Example Column A | Example Column B",
-    "Avery Fixture 14 | Riley Sample 27"
-  ],
-  "required_patterns": [
-    "Queue Alpha | Queue Beta",
-    "Totals 14 | Totals 27"
-  ],
-  "ordered_phrases": [
-    "Example Column A",
-    "Queue Alpha",
-    "Avery Fixture 14",
-    "Totals 14"
-  ],
+  "expected_lines": ["Example Column A | Example Column B", "Avery Fixture 14 | Riley Sample 27"],
+  "required_patterns": ["Queue Alpha | Queue Beta", "Totals 14 | Totals 27"],
+  "ordered_phrases": ["Example Column A", "Queue Alpha", "Avery Fixture 14", "Totals 14"],
   "same_line_groups": [
-    [
-      "Example Column A",
-      "Example Column B"
-    ],
-    [
-      "Avery Fixture 14",
-      "Riley Sample 27"
-    ]
+    ["Example Column A", "Example Column B"],
+    ["Avery Fixture 14", "Riley Sample 27"]
   ],
-  "separate_line_groups": [
-    [
-      "Queue Alpha",
-      "Totals 27"
-    ]
-  ],
-  "forbidden_patterns": [
-    "Merged Column Artifact"
-  ],
+  "separate_line_groups": [["Queue Alpha", "Totals 27"]],
+  "forbidden_patterns": ["Merged Column Artifact"],
   "allowed_missing_lines": 0,
   "synthetic_text": "Workjet Fixture Table\nExample Column A | Example Column B\nQueue Alpha | Queue Beta\nAvery Fixture 14 | Riley Sample 27\nTotals 14 | Totals 27\nSynthetic Reference 0001"
 }

@@ -12,11 +12,13 @@
     "firma_ort": "Musterstadt"
   },
   "search": {
-    "results": [{
-      "title": "Beispiel Maschinenbau SE, Musterstadt",
-      "url": "https://www.northdata.de/Beispiel+Maschinenbau+SE,+Musterstadt/Amtsgericht+Musterstadt+HRB+12345",
-      "summary": "Unternehmensprofil"
-    }]
+    "results": [
+      {
+        "title": "Beispiel Maschinenbau SE, Musterstadt",
+        "url": "https://www.northdata.de/Beispiel+Maschinenbau+SE,+Musterstadt/Amtsgericht+Musterstadt+HRB+12345",
+        "summary": "Unternehmensprofil"
+      }
+    ]
   },
   "read": {
     "ok": false,

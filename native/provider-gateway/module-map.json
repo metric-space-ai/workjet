@@ -17,9 +17,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "cmd/fetch_antigravity_models/main.go"
-      ],
+      "files": ["cmd/fetch_antigravity_models/main.go"],
       "status": "closed_live"
     },
     {
@@ -30,10 +28,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "cmd/fetch_codex_models/main.go",
-        "cmd/fetch_codex_models/main_test.go"
-      ],
+      "files": ["cmd/fetch_codex_models/main.go", "cmd/fetch_codex_models/main_test.go"],
       "status": "closed_live"
     },
     {
@@ -44,10 +39,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "cmd/server/main.go",
-        "cmd/server/main_test.go"
-      ],
+      "files": ["cmd/server/main.go", "cmd/server/main_test.go"],
       "status": "closed_live"
     },
     {
@@ -58,9 +50,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "cmd/validate_codex_models/main.go"
-      ],
+      "files": ["cmd/validate_codex_models/main.go"],
       "status": "closed_live"
     },
     {
@@ -71,9 +61,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "examples/custom-provider/main.go"
-      ],
+      "files": ["examples/custom-provider/main.go"],
       "status": "closed_live"
     },
     {
@@ -84,9 +72,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "examples/http-request/main.go"
-      ],
+      "files": ["examples/http-request/main.go"],
       "status": "closed_live"
     },
     {
@@ -149,9 +135,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "examples/translator/main.go"
-      ],
+      "files": ["examples/translator/main.go"],
       "status": "closed_live"
     },
     {
@@ -162,10 +146,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/access/config_access/provider.go",
-        "internal/access/reconcile.go"
-      ],
+      "files": ["internal/access/config_access/provider.go", "internal/access/reconcile.go"],
       "status": "closed_live"
     },
     {
@@ -324,9 +305,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/auth/models.go"
-      ],
+      "files": ["internal/auth/models.go"],
       "status": "closed_live"
     },
     {
@@ -337,9 +316,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/auth/empty/token.go"
-      ],
+      "files": ["internal/auth/empty/token.go"],
       "status": "closed_live"
     },
     {
@@ -366,10 +343,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/auth/vertex/keyutil.go",
-        "internal/auth/vertex/vertex_credentials.go"
-      ],
+      "files": ["internal/auth/vertex/keyutil.go", "internal/auth/vertex/vertex_credentials.go"],
       "status": "closed_live"
     },
     {
@@ -396,9 +370,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/browser/browser.go"
-      ],
+      "files": ["internal/browser/browser.go"],
       "status": "closed_live"
     },
     {
@@ -409,9 +381,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/buildinfo/buildinfo.go"
-      ],
+      "files": ["internal/buildinfo/buildinfo.go"],
       "status": "closed_live"
     },
     {
@@ -540,9 +510,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/constant/constant.go"
-      ],
+      "files": ["internal/constant/constant.go"],
       "status": "closed_live"
     },
     {
@@ -553,10 +521,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/credentialweight/weight.go",
-        "internal/credentialweight/weight_test.go"
-      ],
+      "files": ["internal/credentialweight/weight.go", "internal/credentialweight/weight_test.go"],
       "status": "closed_live"
     },
     {
@@ -591,10 +556,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/homeplugins/sync.go",
-        "internal/homeplugins/sync_test.go"
-      ],
+      "files": ["internal/homeplugins/sync.go", "internal/homeplugins/sync_test.go"],
       "status": "closed_live"
     },
     {
@@ -619,10 +581,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/httpfetch/httpfetch.go",
-        "internal/httpfetch/httpfetch_test.go"
-      ],
+      "files": ["internal/httpfetch/httpfetch.go", "internal/httpfetch/httpfetch_test.go"],
       "status": "closed_live"
     },
     {
@@ -633,10 +592,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/httpwire/ordered_conn.go",
-        "internal/httpwire/ordered_conn_test.go"
-      ],
+      "files": ["internal/httpwire/ordered_conn.go", "internal/httpwire/ordered_conn_test.go"],
       "status": "closed_live"
     },
     {
@@ -694,10 +650,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/managementasset/updater.go",
-        "internal/managementasset/updater_test.go"
-      ],
+      "files": ["internal/managementasset/updater.go", "internal/managementasset/updater_test.go"],
       "status": "closed_live"
     },
     {
@@ -1422,9 +1375,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/translator/init.go"
-      ],
+      "files": ["internal/translator/init.go"],
       "status": "closed_live"
     },
     {
@@ -1497,9 +1448,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/translator/request_benchmark_test.go"
-      ],
+      "files": ["internal/translator/request_benchmark_test.go"],
       "status": "closed_live"
     },
     {
@@ -1510,9 +1459,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "internal/translator/response_benchmark_test.go"
-      ],
+      "files": ["internal/translator/response_benchmark_test.go"],
       "status": "closed_live"
     },
     {
@@ -1523,9 +1470,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "internal/translator/translator/translator.go"
-      ],
+      "files": ["internal/translator/translator/translator.go"],
       "status": "closed_live"
     },
     {
@@ -1726,9 +1671,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/api/management.go"
-      ],
+      "files": ["sdk/api/management.go"],
       "status": "closed_live"
     },
     {
@@ -1739,9 +1682,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/api/options.go"
-      ],
+      "files": ["sdk/api/options.go"],
       "status": "closed_live"
     },
     {
@@ -1752,9 +1693,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/auth/antigravity.go"
-      ],
+      "files": ["sdk/auth/antigravity.go"],
       "status": "closed_live"
     },
     {
@@ -1765,9 +1704,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/auth/claude.go"
-      ],
+      "files": ["sdk/auth/claude.go"],
       "status": "closed_live"
     },
     {
@@ -1778,10 +1715,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/auth/codex.go",
-        "sdk/auth/codex_device.go"
-      ],
+      "files": ["sdk/auth/codex.go", "sdk/auth/codex_device.go"],
       "status": "closed_live"
     },
     {
@@ -1812,9 +1746,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/auth/kimi.go"
-      ],
+      "files": ["sdk/auth/kimi.go"],
       "status": "closed_live"
     },
     {
@@ -1825,10 +1757,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/auth/xai.go",
-        "sdk/auth/xai_test.go"
-      ],
+      "files": ["sdk/auth/xai.go", "sdk/auth/xai_test.go"],
       "status": "closed_live"
     },
     {
@@ -1839,9 +1768,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/antigravity_models.go"
-      ],
+      "files": ["sdk/cliproxy/antigravity_models.go"],
       "status": "closed_live"
     },
     {
@@ -1954,9 +1881,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/builder.go"
-      ],
+      "files": ["sdk/cliproxy/builder.go"],
       "status": "closed_live"
     },
     {
@@ -1967,9 +1892,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/builder_weight_validation_test.go"
-      ],
+      "files": ["sdk/cliproxy/builder_weight_validation_test.go"],
       "status": "closed_live"
     },
     {
@@ -1980,9 +1903,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/config_model_display_name_test.go"
-      ],
+      "files": ["sdk/cliproxy/config_model_display_name_test.go"],
       "status": "closed_live"
     },
     {
@@ -1993,9 +1914,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/config_model_max_context_length_test.go"
-      ],
+      "files": ["sdk/cliproxy/config_model_max_context_length_test.go"],
       "status": "closed_live"
     },
     {
@@ -2042,9 +1961,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/home_plugins.go"
-      ],
+      "files": ["sdk/cliproxy/home_plugins.go"],
       "status": "closed_live"
     },
     {
@@ -2055,9 +1972,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/home_plugins_test.go"
-      ],
+      "files": ["sdk/cliproxy/home_plugins_test.go"],
       "status": "closed_live"
     },
     {
@@ -2068,9 +1983,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/model_registry.go"
-      ],
+      "files": ["sdk/cliproxy/model_registry.go"],
       "status": "closed_live"
     },
     {
@@ -2081,9 +1994,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/openai_compat_config_models_test.go"
-      ],
+      "files": ["sdk/cliproxy/openai_compat_config_models_test.go"],
       "status": "closed_live"
     },
     {
@@ -2094,9 +2005,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/pipeline/context.go"
-      ],
+      "files": ["sdk/cliproxy/pipeline/context.go"],
       "status": "closed_live"
     },
     {
@@ -2107,9 +2016,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/pprof_server.go"
-      ],
+      "files": ["sdk/cliproxy/pprof_server.go"],
       "status": "closed_live"
     },
     {
@@ -2120,9 +2027,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/pprof_server_test.go"
-      ],
+      "files": ["sdk/cliproxy/pprof_server_test.go"],
       "status": "closed_live"
     },
     {
@@ -2133,9 +2038,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/providers.go"
-      ],
+      "files": ["sdk/cliproxy/providers.go"],
       "status": "closed_live"
     },
     {
@@ -2146,9 +2049,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/rtprovider.go"
-      ],
+      "files": ["sdk/cliproxy/rtprovider.go"],
       "status": "closed_live"
     },
     {
@@ -2159,9 +2060,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/rtprovider_test.go"
-      ],
+      "files": ["sdk/cliproxy/rtprovider_test.go"],
       "status": "closed_live"
     },
     {
@@ -2172,9 +2071,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service.go"
-      ],
+      "files": ["sdk/cliproxy/service.go"],
       "status": "closed_live"
     },
     {
@@ -2185,9 +2082,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_auth.go"
-      ],
+      "files": ["sdk/cliproxy/service_auth.go"],
       "status": "closed_live"
     },
     {
@@ -2198,9 +2093,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_codex_executor_binding_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_codex_executor_binding_test.go"],
       "status": "closed_live"
     },
     {
@@ -2211,9 +2104,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_codex_models_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_codex_models_test.go"],
       "status": "closed_live"
     },
     {
@@ -2224,9 +2115,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_config.go"
-      ],
+      "files": ["sdk/cliproxy/service_config.go"],
       "status": "closed_live"
     },
     {
@@ -2237,9 +2126,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_config_weight_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_config_weight_test.go"],
       "status": "closed_live"
     },
     {
@@ -2250,9 +2137,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_cooldown_store_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_cooldown_store_test.go"],
       "status": "closed_live"
     },
     {
@@ -2263,9 +2148,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_excluded_models_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_excluded_models_test.go"],
       "status": "closed_live"
     },
     {
@@ -2276,9 +2159,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_executionregistry_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_executionregistry_test.go"],
       "status": "closed_live"
     },
     {
@@ -2289,9 +2170,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_executor_registration_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_executor_registration_test.go"],
       "status": "closed_live"
     },
     {
@@ -2302,9 +2181,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_executors.go"
-      ],
+      "files": ["sdk/cliproxy/service_executors.go"],
       "status": "closed_live"
     },
     {
@@ -2315,9 +2192,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_home.go"
-      ],
+      "files": ["sdk/cliproxy/service_home.go"],
       "status": "closed_live"
     },
     {
@@ -2328,9 +2203,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_lifecycle.go"
-      ],
+      "files": ["sdk/cliproxy/service_lifecycle.go"],
       "status": "closed_live"
     },
     {
@@ -2341,9 +2214,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_models.go"
-      ],
+      "files": ["sdk/cliproxy/service_models.go"],
       "status": "closed_live"
     },
     {
@@ -2354,9 +2225,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_models_config_index_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_models_config_index_test.go"],
       "status": "closed_live"
     },
     {
@@ -2367,9 +2236,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_oauth_model_alias_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_oauth_model_alias_test.go"],
       "status": "closed_live"
     },
     {
@@ -2380,9 +2247,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_plugin_executor_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_plugin_executor_test.go"],
       "status": "closed_live"
     },
     {
@@ -2393,9 +2258,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_plugin_scheduler_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_plugin_scheduler_test.go"],
       "status": "closed_live"
     },
     {
@@ -2406,9 +2269,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_plugins.go"
-      ],
+      "files": ["sdk/cliproxy/service_plugins.go"],
       "status": "closed_live"
     },
     {
@@ -2419,9 +2280,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/service_stale_state_test.go"
-      ],
+      "files": ["sdk/cliproxy/service_stale_state_test.go"],
       "status": "closed_live"
     },
     {
@@ -2432,10 +2291,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/session/identity.go",
-        "sdk/cliproxy/session/identity_test.go"
-      ],
+      "files": ["sdk/cliproxy/session/identity.go", "sdk/cliproxy/session/identity_test.go"],
       "status": "closed_live"
     },
     {
@@ -2446,9 +2302,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/types.go"
-      ],
+      "files": ["sdk/cliproxy/types.go"],
       "status": "closed_live"
     },
     {
@@ -2475,9 +2329,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/cliproxy/watcher.go"
-      ],
+      "files": ["sdk/cliproxy/watcher.go"],
       "status": "closed_live"
     },
     {
@@ -2488,9 +2340,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/config/config.go"
-      ],
+      "files": ["sdk/config/config.go"],
       "status": "closed_live"
     },
     {
@@ -2501,9 +2351,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/logging/request_logger.go"
-      ],
+      "files": ["sdk/logging/request_logger.go"],
       "status": "closed_live"
     },
     {
@@ -2514,10 +2362,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/pluginabi/types.go",
-        "sdk/pluginabi/types_test.go"
-      ],
+      "files": ["sdk/pluginabi/types.go", "sdk/pluginabi/types_test.go"],
       "status": "closed_live"
     },
     {
@@ -2528,10 +2373,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/pluginapi/types.go",
-        "sdk/pluginapi/types_test.go"
-      ],
+      "files": ["sdk/pluginapi/types.go", "sdk/pluginapi/types_test.go"],
       "status": "closed_live"
     },
     {
@@ -2542,9 +2384,7 @@
       "production_partial": 0,
       "test_total": 0,
       "test_open": 0,
-      "files": [
-        "sdk/pluginhost/host.go"
-      ],
+      "files": ["sdk/pluginhost/host.go"],
       "status": "closed_live"
     },
     {
@@ -2555,10 +2395,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/pluginstore/pluginstore.go",
-        "sdk/pluginstore/pluginstore_test.go"
-      ],
+      "files": ["sdk/pluginstore/pluginstore.go", "sdk/pluginstore/pluginstore_test.go"],
       "status": "closed_live"
     },
     {
@@ -2569,10 +2406,7 @@
       "production_partial": 0,
       "test_total": 1,
       "test_open": 0,
-      "files": [
-        "sdk/proxyutil/proxy.go",
-        "sdk/proxyutil/proxy_test.go"
-      ],
+      "files": ["sdk/proxyutil/proxy.go", "sdk/proxyutil/proxy_test.go"],
       "status": "closed_live"
     },
     {

@@ -30,13 +30,15 @@
       "title": "Suchergebnis - Bundesanzeiger",
       "blocked": false,
       "results_page": true,
-      "entries": [{
-        "name": "Beispiel Maschinenbau SE",
-        "city": "Musterstadt",
-        "section": "Rechnungslegung",
-        "information": "Jahresabschluss",
-        "date": "01.01.2026"
-      }]
+      "entries": [
+        {
+          "name": "Beispiel Maschinenbau SE",
+          "city": "Musterstadt",
+          "section": "Rechnungslegung",
+          "information": "Jahresabschluss",
+          "date": "01.01.2026"
+        }
+      ]
     }
   }
 }

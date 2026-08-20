@@ -20,18 +20,37 @@ const PUBLIC_UNLOCK_TARGETS = [
 ];
 
 const FIELD_KEYS = new Set([
-  "firma_name", "firma_anschrift", "firma_plz", "firma_ort", "firma_email",
-  "firma_domain", "firma_telefon", "wz_code", "umsatz", "mitarbeiter",
-  "crm_record_number", "person_geschlecht", "person_titel", "person_vorname",
-  "person_nachname", "person_funktion", "person_position", "person_email",
-  "person_email_validation", "person_telefon", "person_linkedin", "person_xing",
+  "firma_name",
+  "firma_anschrift",
+  "firma_plz",
+  "firma_ort",
+  "firma_email",
+  "firma_domain",
+  "firma_telefon",
+  "wz_code",
+  "umsatz",
+  "mitarbeiter",
+  "crm_record_number",
+  "person_geschlecht",
+  "person_titel",
+  "person_vorname",
+  "person_nachname",
+  "person_funktion",
+  "person_position",
+  "person_email",
+  "person_email_validation",
+  "person_telefon",
+  "person_linkedin",
+  "person_xing",
 ]);
 
 function targetDirectories() {
   return readdirSync(targetsDir)
     .filter((name) => !name.startsWith("_") && name !== "tests")
     .filter((name) => statSync(path.join(targetsDir, name)).isDirectory())
-    .filter((name) => statSync(path.join(targetsDir, name, "target.json"), { throwIfNoEntry: false }))
+    .filter((name) =>
+      statSync(path.join(targetsDir, name, "target.json"), { throwIfNoEntry: false }),
+    )
     .sort();
 }
 
@@ -59,17 +78,24 @@ function executeFixture(targetName, fixturePath, mode, inputOverride) {
         CTOX_SCRAPE_FIXTURE: fixturePath,
         CTOX_SCRAPE_FIXTURE_MODE: mode,
         CTOX_SCRAPE_CALL_LOG: callLog,
-        CTOX_SCRAPE_INPUT_JSON: JSON.stringify(inputOverride === undefined ? fixture.input : inputOverride),
+        CTOX_SCRAPE_INPUT_JSON: JSON.stringify(
+          inputOverride === undefined ? fixture.input : inputOverride,
+        ),
         CTOX_SCRAPE_OUTPUT_DIR: outputDir,
       },
     });
     assert.equal(child.signal, null, `${targetName}/${mode} timed out`);
     assert.equal(child.status, 0, `${targetName}/${mode}: ${child.stderr || child.stdout}`);
-    assert.doesNotThrow(() => JSON.parse(child.stdout), `${targetName}/${mode} returned invalid JSON`);
+    assert.doesNotThrow(
+      () => JSON.parse(child.stdout),
+      `${targetName}/${mode} returned invalid JSON`,
+    );
     const calls = statSync(callLog, { throwIfNoEntry: false })
-      ? readFileSync(callLog, "utf8").trim().split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line).args)
+      ? readFileSync(callLog, "utf8")
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line).args)
       : [];
     return { result: JSON.parse(child.stdout), calls };
   } finally {
@@ -89,9 +115,10 @@ function flagValue(args, name) {
 function containsForbiddenSecretKey(value) {
   if (Array.isArray(value)) return value.some(containsForbiddenSecretKey);
   if (!value || typeof value !== "object") return false;
-  return Object.entries(value).some(([key, item]) =>
-    /^(?:password|passwd|token|api[_-]?key|secret_value|credential_value)$/i.test(key)
-      || containsForbiddenSecretKey(item)
+  return Object.entries(value).some(
+    ([key, item]) =>
+      /^(?:password|passwd|token|api[_-]?key|secret_value|credential_value)$/i.test(key) ||
+      containsForbiddenSecretKey(item),
   );
 }
 
@@ -124,14 +151,22 @@ test("all DACH research scrape targets pass production-like fixture gates", asyn
       assert.ok(Array.isArray(success.records), `${targetName} must emit records[]`);
       assert.ok(success.records.length > 0, `${targetName} fixture produced no records`);
       for (const record of success.records) {
-        assert.ok(FIELD_KEYS.has(record.field), `${targetName} emitted untyped field ${record.field}`);
+        assert.ok(
+          FIELD_KEYS.has(record.field),
+          `${targetName} emitted untyped field ${record.field}`,
+        );
         assert.ok(String(record.value || "").trim(), `${targetName}/${record.field} has no value`);
         assert.ok(["low", "medium", "high", "user_provided"].includes(record.confidence));
-        assert.doesNotThrow(() => new URL(record.source_url), `${targetName}/${record.field} has invalid source_url`);
+        assert.doesNotThrow(
+          () => new URL(record.source_url),
+          `${targetName}/${record.field} has invalid source_url`,
+        );
       }
       for (const [field, expectedValue] of Object.entries(fixture.expected)) {
         assert.ok(
-          success.records.some((record) => record.field === field && record.value === expectedValue),
+          success.records.some(
+            (record) => record.field === field && record.value === expectedValue,
+          ),
           `${targetName} missing ${field}=${expectedValue}: ${JSON.stringify(success.records)}`,
         );
       }
@@ -149,7 +184,11 @@ test("protected research adapters use secret references and Browser-App handoff"
     await t.test(targetName, () => {
       const fixturePath = path.join(fixturesDir, `${targetName}.json`);
       const fixture = loadJson(fixturePath);
-      assert.equal(containsForbiddenSecretKey(fixture), false, `${targetName} fixture contains a credential value`);
+      assert.equal(
+        containsForbiddenSecretKey(fixture),
+        false,
+        `${targetName} fixture contains a credential value`,
+      );
       assert.match(fixture.input.credential_ref, /^ctox-secret:\/\/credentials\/[A-Z0-9_]+$/);
 
       const { result, calls } = executeFixture(targetName, fixturePath, "auth_required");
@@ -164,17 +203,24 @@ test("protected research adapters use secret references and Browser-App handoff"
       assert.equal(reauthorization.login_url, fixture.login_url);
       for (const domain of fixture.browser_allowed_domains) {
         assert.ok(
-          reauthorization.allowed_domains.some((allowed) =>
-            domain === allowed || domain.endsWith(`.${allowed}`)),
+          reauthorization.allowed_domains.some(
+            (allowed) => domain === allowed || domain.endsWith(`.${allowed}`),
+          ),
           `${targetName} reauthorization allow-list ${JSON.stringify(reauthorization.allowed_domains)} does not cover ${domain}`,
         );
       }
       assert.equal(reauthorization.credential_ref, fixture.input.credential_ref);
       assert.equal(reauthorization.reason, "session_expired_or_invalid");
       assert.equal(reauthorization.secret_value_in_payload, false);
-      assert.equal(containsForbiddenSecretKey(result), false, `${targetName} result contains a credential value`);
+      assert.equal(
+        containsForbiddenSecretKey(result),
+        false,
+        `${targetName} result contains a credential value`,
+      );
 
-      const handoff = calls.find((args) => args[0] === "business-os" && args.includes("auth-assist-request"));
+      const handoff = calls.find(
+        (args) => args[0] === "business-os" && args.includes("auth-assist-request"),
+      );
       assert.ok(handoff, `${targetName} did not open a Browser-App authorization request`);
       assert.equal(flagValue(handoff, "--credential-ref"), fixture.input.credential_ref);
       assert.equal(flagValue(handoff, "--target-url"), fixture.login_url);
@@ -197,8 +243,10 @@ test("expired-session login landing stays distinguishable from genuine portal dr
       assert.deepEqual(result.records, []);
       assert.equal(result.reauthorization, undefined);
       assert.equal(result.browser_assist_requested, undefined);
-      assert.ok(!calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")),
-        `${targetName} emitted an auth handoff without a login landing`);
+      assert.ok(
+        !calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")),
+        `${targetName} emitted an auth handoff without a login landing`,
+      );
     });
   }
 });
@@ -209,10 +257,20 @@ test("public sources without credentials never emit auth handoffs", async (t) =>
       const fixturePath = path.join(fixturesDir, `${targetName}.json`);
       for (const mode of ["success", "blocked", "auth_required"]) {
         const { result, calls } = executeFixture(targetName, fixturePath, mode);
-        assert.equal(result.reauthorization, undefined, `${targetName}/${mode} emitted a reauthorization action`);
-        assert.notEqual(result.failure_mode, "authorization_required", `${targetName}/${mode} claimed reauthorization`);
-        assert.ok(!calls.some((args) => args[0] === "business-os" && args.includes("auth-assist")),
-          `${targetName}/${mode} opened an auth-assist handoff without a protected config`);
+        assert.equal(
+          result.reauthorization,
+          undefined,
+          `${targetName}/${mode} emitted a reauthorization action`,
+        );
+        assert.notEqual(
+          result.failure_mode,
+          "authorization_required",
+          `${targetName}/${mode} claimed reauthorization`,
+        );
+        assert.ok(
+          !calls.some((args) => args[0] === "business-os" && args.includes("auth-assist")),
+          `${targetName}/${mode} opened an auth-assist handoff without a protected config`,
+        );
       }
     });
   }
@@ -225,12 +283,18 @@ test("protected providers resume capture after secret-backed Browser-App login",
       const fixture = loadJson(fixturePath);
       const { result, calls } = executeFixture(targetName, fixturePath, "auth_recovery");
       for (const [field, expectedValue] of Object.entries(fixture.expected)) {
-        assert.ok(result.records.some((record) => record.field === field && record.value === expectedValue));
+        assert.ok(
+          result.records.some((record) => record.field === field && record.value === expectedValue),
+        );
       }
-      const login = calls.find((args) => args[0] === "business-os" && args.includes("auth-assist-login"));
+      const login = calls.find(
+        (args) => args[0] === "business-os" && args.includes("auth-assist-login"),
+      );
       assert.ok(login, `${targetName} did not run the native secret-backed login`);
       assert.equal(flagValue(login, "--credential-ref"), fixture.input.credential_ref);
-      const captures = calls.filter((args) => args[0] === "business-os" && args.includes("source-capture"));
+      const captures = calls.filter(
+        (args) => args[0] === "business-os" && args.includes("source-capture"),
+      );
       assert.equal(captures.length, 2);
       assert.match(flagValue(captures[1], "--session-id"), /^browser_session_fixture_/);
     });
@@ -242,10 +306,16 @@ test("protected captures retry transient provider failures after secret-backed l
   const fixturePath = path.join(fixturesDir, `${targetName}.json`);
   const fixture = loadJson(fixturePath);
   const { result, calls } = executeFixture(targetName, fixturePath, "capture_retry");
-  assert.ok(result.records.some((record) => record.field === "firma_name"
-    && record.value === fixture.expected.firma_name));
+  assert.ok(
+    result.records.some(
+      (record) => record.field === "firma_name" && record.value === fixture.expected.firma_name,
+    ),
+  );
   assert.ok(calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-login")));
-  assert.equal(calls.filter((args) => args[0] === "business-os" && args.includes("source-capture")).length, 2);
+  assert.equal(
+    calls.filter((args) => args[0] === "business-os" && args.includes("source-capture")).length,
+    2,
+  );
 });
 
 test("RocketReach keeps exact public provider evidence while protected fields await authorization", () => {
@@ -253,12 +323,17 @@ test("RocketReach keeps exact public provider evidence while protected fields aw
   const fixturePath = path.join(fixturesDir, `${targetName}.json`);
   const fixture = loadJson(fixturePath);
   const { result, calls } = executeFixture(targetName, fixturePath, "provider_page_blocked");
-  assert.ok(result.records.some((record) => record.field === "firma_name"
-    && record.value === fixture.expected.firma_name));
+  assert.ok(
+    result.records.some(
+      (record) => record.field === "firma_name" && record.value === fixture.expected.firma_name,
+    ),
+  );
   assert.equal(result.partial, true);
   assert.equal(result.protected_fields_require_authorization, true);
   assert.equal(result.browser_assist_requested, true);
-  assert.ok(calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")));
+  assert.ok(
+    calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")),
+  );
 });
 
 test("blocked protected adapters record Web-Unlock evidence and stay non-green", async (t) => {
@@ -269,13 +344,20 @@ test("blocked protected adapters record Web-Unlock evidence and stay non-green",
       assert.deepEqual(result.records, []);
       assert.equal(result.failure_mode, "blocked");
       assert.equal(result.browser_assist_requested, true);
-      const unlock = calls.find((args) => args[0] === "web" && args[1] === "unlock"
-        && args[2] === "signals" && args[3] === "record");
+      const unlock = calls.find(
+        (args) =>
+          args[0] === "web" &&
+          args[1] === "unlock" &&
+          args[2] === "signals" &&
+          args[3] === "record",
+      );
       assert.ok(unlock, `${targetName} did not record a Web-Unlock signal`);
       const evidence = JSON.parse(flagValue(unlock, "--evidence"));
       assert.equal(evidence.source_id, targetName);
       assert.equal(evidence.secret_value_in_payload, false);
-      assert.ok(calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")));
+      assert.ok(
+        calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")),
+      );
     });
   }
 });
@@ -288,7 +370,9 @@ test("blocked public adapters record Web-Unlock evidence and stay non-green", as
       assert.deepEqual(result.records, [], `${targetName} fabricated records while blocked`);
       assert.notEqual(result.failure_mode, "succeeded");
 
-      const unlock = calls.find((args) => args[0] === "web" && args.includes("unlock") && args.includes("record"));
+      const unlock = calls.find(
+        (args) => args[0] === "web" && args.includes("unlock") && args.includes("record"),
+      );
       assert.ok(unlock, `${targetName} did not record a Web-Unlock signal`);
       const evidence = JSON.parse(flagValue(unlock, "--evidence"));
       assert.equal(evidence.source_id, targetName);

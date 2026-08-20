@@ -110,9 +110,7 @@ function providerSearchUrl(company) {
     .filter(Boolean)
     .map((token) => encodeURIComponent(token))
     .join("+");
-  return encoded
-    ? `https://www.companyhouse.de/Suche/${encoded}`
-    : "https://www.companyhouse.de/";
+  return encoded ? `https://www.companyhouse.de/Suche/${encoded}` : "https://www.companyhouse.de/";
 }
 
 function providerBrowserSource(rawUrl, unlockMode = false, company = "") {
@@ -320,14 +318,20 @@ function browserRead(rawUrl, unlockMode = false, sessionId = null, company = "")
   if (!safeUrl) return null;
   const source = providerBrowserSource(safeUrl.href, unlockMode, company);
   const args = [
-    "web", "browser-automation", "--timeout-ms",
+    "web",
+    "browser-automation",
+    "--timeout-ms",
     String(unlockMode ? UNLOCK_TIMEOUT_MS : BROWSER_TIMEOUT_MS),
   ];
   const safeSessionId = browserSessionId(sessionId);
   if (safeSessionId) args.push("--session-id", safeSessionId);
   const payload = runCtox(args, source);
   const result = payload && payload.ok === true ? payload.result : null;
-  if (!result && Array.isArray(payload?.detection?.markers) && payload.detection.markers.length > 0) {
+  if (
+    !result &&
+    Array.isArray(payload?.detection?.markers) &&
+    payload.detection.markers.length > 0
+  ) {
     return {
       ok: false,
       url: safeUrl.href,
@@ -345,7 +349,9 @@ function browserRead(rawUrl, unlockMode = false, sessionId = null, company = "")
     page_text_excerpt: result.text || result.page_text_excerpt,
     raw_html: result.html || result.raw_html,
     provider_profile: result.provider_profile,
-    blocked: result.blocked === true || /(?:^|[-|:]\s*)(?:login|anmeldung|anmelden|portal)\b/i.test(String(result.title || "")),
+    blocked:
+      result.blocked === true ||
+      /(?:^|[-|:]\s*)(?:login|anmeldung|anmelden|portal)\b/i.test(String(result.title || "")),
     transport: "browser",
     detection: payload.detection,
     unlock_attempted: unlockMode,
@@ -354,18 +360,23 @@ function browserRead(rawUrl, unlockMode = false, sessionId = null, company = "")
 
 function blockingMarkers(page) {
   const markers = Array.isArray(page?.detection?.markers)
-    ? page.detection.markers.map(String).filter((marker) =>
-      /captcha|cloudflare|challenge|human|access.?denied|blocked|turnstile/i.test(marker))
+    ? page.detection.markers
+        .map(String)
+        .filter((marker) =>
+          /captcha|cloudflare|challenge|human|access.?denied|blocked|turnstile/i.test(marker),
+        )
     : [];
   const statusMatch = String(page?.ctox_error || "").match(/status code\s+(401|403|429)\b/i);
   if (statusMatch) markers.push(`http-${statusMatch[1]}`);
   if ([401, 403, 429].includes(Number(page?.http_status))) markers.push(`http-${page.http_status}`);
-  if (page?.blocked === true || isCloudflareBlock([
-    page?.title,
-    page?.page_text_excerpt,
-    page?.raw_html,
-    page?.ctox_error,
-  ].filter(Boolean).join(" "))) {
+  if (
+    page?.blocked === true ||
+    isCloudflareBlock(
+      [page?.title, page?.page_text_excerpt, page?.raw_html, page?.ctox_error]
+        .filter(Boolean)
+        .join(" "),
+    )
+  ) {
     markers.push("access_challenge");
   }
   return [...new Set(markers)];
@@ -401,9 +412,7 @@ function candidateHits(input, company, country) {
     .map((url) => ({ url: url.href }));
   if (explicit.length > 0) return explicit;
   const discovered = searchHits(company, country);
-  return discovered.length > 0
-    ? discovered
-    : [{ url: providerSearchUrl(company) }];
+  return discovered.length > 0 ? discovered : [{ url: providerSearchUrl(company) }];
 }
 
 function readPage(url, country) {
@@ -417,10 +426,16 @@ function readPage(url, country) {
 function recordUnlockSignal(url, markers) {
   const safeUrl = allowedSourceUrl(url);
   return runCtox([
-    "web", "unlock", "signals", "record",
-    "--source", "scrape-target:companyhouse.de",
-    "--url", safeUrl?.href || "https://www.companyhouse.de/",
-    "--evidence", JSON.stringify({
+    "web",
+    "unlock",
+    "signals",
+    "record",
+    "--source",
+    "scrape-target:companyhouse.de",
+    "--url",
+    safeUrl?.href || "https://www.companyhouse.de/",
+    "--evidence",
+    JSON.stringify({
       source_id: "companyhouse.de",
       detection: "access_challenge",
       markers: [...new Set((markers || []).map(String))].slice(0, 12),
@@ -430,14 +445,24 @@ function recordUnlockSignal(url, markers) {
 }
 
 function pageMatchesCompany(company, page) {
-  const title = String(page?.title || "").replace(/\s+/g, " ").trim();
-  if (/\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(title)
-      || /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(title)) {
+  const title = String(page?.title || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    /\b(?:log[ -]?in|sign[ -]?in|anmeld(?:en|ung)|authentication|authentifizierung|kundenportal|customer portal)\b/i.test(
+      title,
+    ) ||
+    /^(?:portal|startseite|home|willkommen)(?:\s*[-|:]\s*.*)?$/i.test(title)
+  ) {
     return false;
   }
   const legalForms = new Set(["ag", "gmbh", "mbh", "se", "kg", "kgaa", "ohg", "ug", "sa", "sarl"]);
-  const tokens = String(company || "").toLocaleLowerCase("de-DE").normalize("NFKD")
-    .replace(/\p{M}/gu, "").replace(/[^a-z0-9äöüß]+/gi, " ").split(/\s+/)
+  const tokens = String(company || "")
+    .toLocaleLowerCase("de-DE")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9äöüß]+/gi, " ")
+    .split(/\s+/)
     .filter((token) => token.length >= 3 && !legalForms.has(token));
   const corpus = [
     page?.title,
@@ -449,7 +474,11 @@ function pageMatchesCompany(company, page) {
     page?.raw_html,
     ...Object.values(page?.provider_profile || {}),
   ]
-    .filter(Boolean).join(" ").toLocaleLowerCase("de-DE").normalize("NFKD").replace(/\p{M}/gu, "");
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("de-DE")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "");
   return tokens.length > 0 && tokens.every((token) => corpus.includes(token));
 }
 
@@ -501,12 +530,15 @@ function isCompanyUrl(url) {
 
 function isCloudflareBlock(html) {
   if (!html) return false;
-  return /cloudflare|cf-chl-|cf-mitigated|challenge-platform|turnstile|sicherheits(?:ü|u)berpr(?:ü|u)fung|security verification|noch einen schritt|nur einen moment|just a moment|captcha|verify (?:that )?you are human|nat(?:ü|u)rlichen zugriff|access denied|request blocked|wurden gesperrt|zugriff.{0,40}gesperrt/i.test(html);
+  return /cloudflare|cf-chl-|cf-mitigated|challenge-platform|turnstile|sicherheits(?:ü|u)berpr(?:ü|u)fung|security verification|noch einen schritt|nur einen moment|just a moment|captcha|verify (?:that )?you are human|nat(?:ü|u)rlichen zugriff|access denied|request blocked|wurden gesperrt|zugriff.{0,40}gesperrt/i.test(
+    html,
+  );
 }
 
 function isBlockedFailure(page) {
-  return /\b(?:403|forbidden)\b|access denied|request blocked|zugriff.{0,40}gesperrt|wurden gesperrt/i
-    .test(String(page?.ctox_error || ""));
+  return /\b(?:403|forbidden)\b|access denied|request blocked|zugriff.{0,40}gesperrt|wurden gesperrt/i.test(
+    String(page?.ctox_error || ""),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -518,7 +550,10 @@ function isBlockedFailure(page) {
 function parseHeading(html) {
   const m = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   if (!m) return null;
-  return m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  return m[1]
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function htmlText(value) {
@@ -549,11 +584,13 @@ function parseProfileAddress(html) {
 
 function parseDetailValue(html, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = String(html || "").match(new RegExp(
-    `class=["'][^"']*tile-table-header[^"']*["'][^>]*>\\s*${escaped}\\s*<\\/div>`
-      + `[\\s\\S]{0,500}?<div[^>]*class=["'][^"']*mb-3[^"']*["'][^>]*>([\\s\\S]*?)<\\/div>`,
-    "iu",
-  ));
+  const match = String(html || "").match(
+    new RegExp(
+      `class=["'][^"']*tile-table-header[^"']*["'][^>]*>\\s*${escaped}\\s*<\\/div>` +
+        `[\\s\\S]{0,500}?<div[^>]*class=["'][^"']*mb-3[^"']*["'][^>]*>([\\s\\S]*?)<\\/div>`,
+      "iu",
+    ),
+  );
   return match ? htmlText(match[1]) : null;
 }
 
@@ -678,28 +715,13 @@ function extractRecords(url, html, providerProfile = null) {
     const parsed = parsePersonHeading(heading);
     if (parsed) {
       if (parsed.title) {
-        push(
-          "person_titel",
-          parsed.title,
-          "medium",
-          "companyhouse person <h1> title prefix",
-        );
+        push("person_titel", parsed.title, "medium", "companyhouse person <h1> title prefix");
       }
       if (parsed.first) {
-        push(
-          "person_vorname",
-          parsed.first,
-          "medium",
-          "companyhouse person <h1> first name",
-        );
+        push("person_vorname", parsed.first, "medium", "companyhouse person <h1> first name");
       }
       if (parsed.last) {
-        push(
-          "person_nachname",
-          parsed.last,
-          "medium",
-          "companyhouse person <h1> last name",
-        );
+        push("person_nachname", parsed.last, "medium", "companyhouse person <h1> last name");
       }
     }
   } else if (isCompanyUrl(canonicalUrl.href)) {
@@ -712,9 +734,24 @@ function extractRecords(url, html, providerProfile = null) {
       push("firma_plz", address.plz, "high", "companyhouse profile address");
       push("firma_ort", address.city, "high", "companyhouse profile address");
     }
-    push("firma_telefon", providerProfile?.telephone || parseDetailValue(html, "Telefonnummer"), "high", "companyhouse Details");
-    push("firma_email", providerProfile?.email || parseDetailValue(html, "E-Mail"), "high", "companyhouse Details");
-    push("firma_domain", providerProfile?.website || parseDetailValue(html, "Webseite"), "high", "companyhouse Details");
+    push(
+      "firma_telefon",
+      providerProfile?.telephone || parseDetailValue(html, "Telefonnummer"),
+      "high",
+      "companyhouse Details",
+    );
+    push(
+      "firma_email",
+      providerProfile?.email || parseDetailValue(html, "E-Mail"),
+      "high",
+      "companyhouse Details",
+    );
+    push(
+      "firma_domain",
+      providerProfile?.website || parseDetailValue(html, "Webseite"),
+      "high",
+      "companyhouse Details",
+    );
   }
   // Else: neither person nor company path (search hit, status page, …).
   // Empty records → drift loop will classify accordingly.
@@ -762,16 +799,21 @@ async function main() {
     const safeHit = allowedSourceUrl(hit.url);
     if (!safeHit) continue;
     let page = readPage(safeHit.href, country);
-    let html = page && page.ok
-      ? page.raw_html_excerpt || page.raw_html || page.page_text_excerpt || ""
-      : "";
+    let html =
+      page && page.ok ? page.raw_html_excerpt || page.raw_html || page.page_text_excerpt || "" : "";
     const hitMarkers = blockingMarkers(page);
     let usablePage = page && page.ok && html && !isCloudflareBlock(html) ? page : null;
     if (!usablePage && hitMarkers.length === 0) {
       const browser = browserRead(safeHit.href, false, null, company);
       hitMarkers.push(...blockingMarkers(browser));
       const browserHtml = browser?.raw_html || browser?.page_text_excerpt || "";
-      if (browser && browser.ok && browserHtml && !browser.blocked && !isCloudflareBlock(browserHtml)) {
+      if (
+        browser &&
+        browser.ok &&
+        browserHtml &&
+        !browser.blocked &&
+        !isCloudflareBlock(browserHtml)
+      ) {
         page = browser;
         html = browserHtml;
         usablePage = browser;
@@ -786,7 +828,13 @@ async function main() {
       const unlocked = browserRead(safeHit.href, true, null, company);
       hitMarkers.push(...blockingMarkers(unlocked));
       const unlockedHtml = unlocked?.raw_html || unlocked?.page_text_excerpt || "";
-      if (unlocked && unlocked.ok && unlockedHtml && !unlocked.blocked && !isCloudflareBlock(unlockedHtml)) {
+      if (
+        unlocked &&
+        unlocked.ok &&
+        unlockedHtml &&
+        !unlocked.blocked &&
+        !isCloudflareBlock(unlockedHtml)
+      ) {
         page = unlocked;
         html = unlockedHtml;
         usablePage = unlocked;
@@ -795,8 +843,13 @@ async function main() {
         const persistent = browserRead(safeHit.href, true, persistentSessionId, company);
         hitMarkers.push(...blockingMarkers(persistent));
         const persistentHtml = persistent?.raw_html || persistent?.page_text_excerpt || "";
-        if (persistent && persistent.ok && persistentHtml
-            && !persistent.blocked && !isCloudflareBlock(persistentHtml)) {
+        if (
+          persistent &&
+          persistent.ok &&
+          persistentHtml &&
+          !persistent.blocked &&
+          !isCloudflareBlock(persistentHtml)
+        ) {
           page = persistent;
           html = persistentHtml;
           usablePage = persistent;
@@ -810,7 +863,10 @@ async function main() {
     matchingPageSeen = true;
     const records = extractRecords(evidenceUrl.href, html, page.provider_profile);
     const names = records.filter((record) => record.field === "firma_name");
-    if (names.length > 0 && !names.some((record) => pageMatchesCompany(company, { raw_html: record.value }))) {
+    if (
+      names.length > 0 &&
+      !names.some((record) => pageMatchesCompany(company, { raw_html: record.value }))
+    ) {
       continue;
     }
     aggregated.push(...records);
@@ -820,15 +876,21 @@ async function main() {
     process.stdout.write(JSON.stringify({ records: aggregated }));
     return;
   }
-  process.stdout.write(JSON.stringify({
-    records: [],
-    failure_mode: blockedSeen ? "blocked" : matchingPageSeen ? "portal_drift" : "temporary_unreachable",
-    detail: blockedSeen
-      ? "companyhouse.de access challenge persisted after provider browser unlock retry"
-      : matchingPageSeen
-        ? "company-matching companyhouse.de evidence did not match known profile selectors"
-        : "companyhouse.de returned no readable evidence for the requested company",
-  }));
+  process.stdout.write(
+    JSON.stringify({
+      records: [],
+      failure_mode: blockedSeen
+        ? "blocked"
+        : matchingPageSeen
+          ? "portal_drift"
+          : "temporary_unreachable",
+      detail: blockedSeen
+        ? "companyhouse.de access challenge persisted after provider browser unlock retry"
+        : matchingPageSeen
+          ? "company-matching companyhouse.de evidence did not match known profile selectors"
+          : "companyhouse.de returned no readable evidence for the requested company",
+    }),
+  );
 }
 
 if (require.main === module) {

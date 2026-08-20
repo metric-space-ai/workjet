@@ -30,11 +30,13 @@
       "title": "Suchergebnis - Handelsregister",
       "blocked": false,
       "results_page": true,
-      "entries": [{
-        "name": "Beispiel Maschinenbau SE",
-        "city": "Musterstadt",
-        "registry": "Amtsgericht Musterstadt HRB 12345"
-      }]
+      "entries": [
+        {
+          "name": "Beispiel Maschinenbau SE",
+          "city": "Musterstadt",
+          "registry": "Amtsgericht Musterstadt HRB 12345"
+        }
+      ]
     }
   }
 }

@@ -59,10 +59,16 @@ function runCtox(args, input) {
 function recordUnlockSignal(url, markers) {
   const safeUrl = allowedSourceUrl(url);
   return runCtox([
-    "web", "unlock", "signals", "record",
-    "--source", "scrape-target:bundesanzeiger.de",
-    "--url", safeUrl?.href || SEARCH_URL,
-    "--evidence", JSON.stringify({
+    "web",
+    "unlock",
+    "signals",
+    "record",
+    "--source",
+    "scrape-target:bundesanzeiger.de",
+    "--url",
+    safeUrl?.href || SEARCH_URL,
+    "--evidence",
+    JSON.stringify({
       source_id: "bundesanzeiger.de",
       detection: "access_challenge",
       markers: [...new Set((markers || []).map(String))].slice(0, 12),
@@ -101,9 +107,10 @@ function entryMatchesCompany(company, entry) {
 }
 
 function selectMatchingEntry(company, entries) {
-  return (Array.isArray(entries) ? entries : []).find((entry) =>
-    entryMatchesCompany(company, entry),
-  ) || null;
+  return (
+    (Array.isArray(entries) ? entries : []).find((entry) => entryMatchesCompany(company, entry)) ||
+    null
+  );
 }
 
 function buildRecords(entry, sourceUrl) {
@@ -114,13 +121,15 @@ function buildRecords(entry, sourceUrl) {
   if (entry.information) noteParts.push(entry.information);
   if (entry.date) noteParts.push(`Veroeffentlicht: ${entry.date}`);
   const note = noteParts.join(" - ");
-  const records = [{
-    field: "firma_name",
-    value: entry.name,
-    confidence: "medium",
-    source_url: safeUrl.href,
-    note,
-  }];
+  const records = [
+    {
+      field: "firma_name",
+      value: entry.name,
+      confidence: "medium",
+      source_url: safeUrl.href,
+      note,
+    },
+  ];
   if (entry.city) {
     records.push({
       field: "firma_ort",
@@ -168,12 +177,14 @@ function classifyBrowserResult(company, result) {
   if (result.results_page === true) {
     return {
       records: [],
-      failure_mode: Array.isArray(result.entries) && result.entries.length > 0
-        ? "temporary_unreachable"
-        : "portal_drift",
-      detail: Array.isArray(result.entries) && result.entries.length > 0
-        ? "bundesanzeiger.de returned no exact company match"
-        : "bundesanzeiger.de result page did not match known result selectors",
+      failure_mode:
+        Array.isArray(result.entries) && result.entries.length > 0
+          ? "temporary_unreachable"
+          : "portal_drift",
+      detail:
+        Array.isArray(result.entries) && result.entries.length > 0
+          ? "bundesanzeiger.de returned no exact company match"
+          : "bundesanzeiger.de result page did not match known result selectors",
     };
   }
   return {
@@ -302,11 +313,13 @@ async function main() {
   const input = readInput();
   const company = String(input.company || "").trim();
   if (!company) {
-    process.stdout.write(JSON.stringify({
-      records: [],
-      failure_mode: "portal_drift",
-      detail: "CTOX_SCRAPE_INPUT_JSON.company missing",
-    }));
+    process.stdout.write(
+      JSON.stringify({
+        records: [],
+        failure_mode: "portal_drift",
+        detail: "CTOX_SCRAPE_INPUT_JSON.company missing",
+      }),
+    );
     return;
   }
   const browserResult = browserSearch(company);
@@ -319,11 +332,13 @@ async function main() {
 
 if (require.main === module) {
   main().catch((err) => {
-    process.stdout.write(JSON.stringify({
-      records: [],
-      failure_mode: "temporary_unreachable",
-      detail: `bundesanzeiger.de browser flow failed: ${err.message}`,
-    }));
+    process.stdout.write(
+      JSON.stringify({
+        records: [],
+        failure_mode: "temporary_unreachable",
+        detail: `bundesanzeiger.de browser flow failed: ${err.message}`,
+      }),
+    );
   });
 }
 

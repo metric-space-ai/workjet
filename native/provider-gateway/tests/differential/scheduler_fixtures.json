@@ -8,9 +8,9 @@
       "providers": ["gemini"],
       "picks": 3,
       "candidates": [
-        {"id":"low","provider":"gemini","priority":0},
-        {"id":"high-b","provider":"gemini","priority":10},
-        {"id":"high-a","provider":"gemini","priority":10}
+        { "id": "low", "provider": "gemini", "priority": 0 },
+        { "id": "high-b", "provider": "gemini", "priority": 10 },
+        { "id": "high-a", "provider": "gemini", "priority": 10 }
       ]
     }
   },
@@ -22,9 +22,9 @@
       "providers": ["gemini"],
       "picks": 10,
       "candidates": [
-        {"id":"a","provider":"gemini","weight":5},
-        {"id":"b","provider":"gemini","weight":3},
-        {"id":"c","provider":"gemini","weight":2}
+        { "id": "a", "provider": "gemini", "weight": 5 },
+        { "id": "b", "provider": "gemini", "weight": 3 },
+        { "id": "c", "provider": "gemini", "weight": 2 }
       ]
     }
   },
@@ -36,8 +36,8 @@
       "providers": ["gemini"],
       "picks": 2,
       "candidates": [
-        {"id":"excluded","provider":"gemini","priority":10,"weight":0},
-        {"id":"available","provider":"gemini","priority":0,"weight":1}
+        { "id": "excluded", "provider": "gemini", "priority": 10, "weight": 0 },
+        { "id": "available", "provider": "gemini", "priority": 0, "weight": 1 }
       ]
     }
   },
@@ -49,9 +49,9 @@
       "providers": ["gemini"],
       "picks": 3,
       "candidates": [
-        {"id":"b","provider":"gemini"},
-        {"id":"a","provider":"gemini"},
-        {"id":"c","provider":"gemini"}
+        { "id": "b", "provider": "gemini" },
+        { "id": "a", "provider": "gemini" },
+        { "id": "c", "provider": "gemini" }
       ]
     }
   },
@@ -64,9 +64,9 @@
       "prefer_websocket": true,
       "picks": 3,
       "candidates": [
-        {"id":"codex-http","provider":"codex","priority":10},
-        {"id":"codex-ws-a","provider":"codex","websocket":true},
-        {"id":"codex-ws-b","provider":"codex","websocket":true}
+        { "id": "codex-http", "provider": "codex", "priority": 10 },
+        { "id": "codex-ws-a", "provider": "codex", "websocket": true },
+        { "id": "codex-ws-b", "provider": "codex", "websocket": true }
       ]
     }
   },
@@ -80,8 +80,8 @@
       "pinned_auth_id": "codex-http",
       "picks": 2,
       "candidates": [
-        {"id":"codex-http","provider":"codex","priority":10},
-        {"id":"codex-ws","provider":"codex","websocket":true}
+        { "id": "codex-http", "provider": "codex", "priority": 10 },
+        { "id": "codex-ws", "provider": "codex", "websocket": true }
       ]
     }
   },
@@ -95,8 +95,8 @@
       "prefer_websocket": true,
       "picks": 2,
       "candidates": [
-        {"id":"codex-http","provider":"codex","priority":10},
-        {"id":"codex-ws","provider":"codex","websocket":true}
+        { "id": "codex-http", "provider": "codex", "priority": 10 },
+        { "id": "codex-ws", "provider": "codex", "websocket": true }
       ]
     }
   },
@@ -109,9 +109,9 @@
       "mixed": true,
       "picks": 4,
       "candidates": [
-        {"id":"gemini-a","provider":"gemini"},
-        {"id":"gemini-b","provider":"gemini"},
-        {"id":"claude-a","provider":"claude"}
+        { "id": "gemini-a", "provider": "gemini" },
+        { "id": "gemini-b", "provider": "gemini" },
+        { "id": "claude-a", "provider": "claude" }
       ]
     }
   },
@@ -124,9 +124,9 @@
       "mixed": true,
       "picks": 10,
       "candidates": [
-        {"id":"gemini-a","provider":"gemini","weight":5},
-        {"id":"claude-b","provider":"claude","weight":3},
-        {"id":"claude-c","provider":"claude","weight":2}
+        { "id": "gemini-a", "provider": "gemini", "weight": 5 },
+        { "id": "claude-b", "provider": "claude", "weight": 3 },
+        { "id": "claude-c", "provider": "claude", "weight": 2 }
       ]
     }
   },
@@ -139,8 +139,8 @@
       "picks": 4,
       "pick_models": ["gemini-3(high)", "gemini-3", "gemini-3(low)", "gemini-3"],
       "candidates": [
-        {"id":"a","provider":"gemini"},
-        {"id":"b","provider":"gemini"}
+        { "id": "a", "provider": "gemini" },
+        { "id": "b", "provider": "gemini" }
       ]
     }
   },
@@ -153,8 +153,8 @@
       "tried_auth_ids": ["a"],
       "picks": 2,
       "candidates": [
-        {"id":"a","provider":"gemini"},
-        {"id":"b","provider":"gemini"}
+        { "id": "a", "provider": "gemini" },
+        { "id": "b", "provider": "gemini" }
       ]
     }
   }

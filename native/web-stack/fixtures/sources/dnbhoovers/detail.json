@@ -4,19 +4,29 @@
     "duns": "000000001",
     "primaryName": "Workjet Fixture Systems GmbH",
     "industryCodes": [
-      {"code": "7372", "description": "Synthetic services", "typeDescription": "D&B Standard Industry Code", "priority": 1},
-      {"code": "6201", "description": "Fixture software development", "typeDescription": "NACE Revision 2", "priority": 2}
+      {
+        "code": "7372",
+        "description": "Synthetic services",
+        "typeDescription": "D&B Standard Industry Code",
+        "priority": 1
+      },
+      {
+        "code": "6201",
+        "description": "Fixture software development",
+        "typeDescription": "NACE Revision 2",
+        "priority": 2
+      }
     ],
     "financials": [
       {
-        "yearlyRevenue": [{"value": 5, "currency": "EUR"}],
+        "yearlyRevenue": [{ "value": 5, "currency": "EUR" }],
         "financialStatementToDate": "2023-12-31",
         "informationScopeDescription": "Individual"
       },
       {
         "yearlyRevenue": [
-          {"value": 14000000, "currency": "USD"},
-          {"value": 12345678, "currency": "EUR"}
+          { "value": 14000000, "currency": "USD" },
+          { "value": 12345678, "currency": "EUR" }
         ],
         "financialStatementToDate": "2024-12-31",
         "informationScopeDescription": "Consolidated"
@@ -27,9 +37,6 @@
       "informationScopeDescription": "Consolidated",
       "reliabilityDescription": "Synthetic"
     },
-    "email": [
-      {"address": ""},
-      {"address": "hello@fixture-systems.example"}
-    ]
+    "email": [{ "address": "" }, { "address": "hello@fixture-systems.example" }]
   }
 }

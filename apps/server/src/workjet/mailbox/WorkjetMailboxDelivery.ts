@@ -242,7 +242,6 @@ export interface WorkjetMailboxReviewRequestOutcome {
   readonly edgeKind: "reviews";
 }
 
-
 // ===============================
 // Typed thread handoff
 // ===============================
@@ -1194,9 +1193,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     },
     targetWorkspaceId: input.targetWorkspaceId,
     targetEnvironmentId: input.targetEnvironmentId,
-    ...(input.acceptedThreadId !== undefined
-      ? { acceptedThreadId: input.acceptedThreadId }
-      : {}),
+    ...(input.acceptedThreadId !== undefined ? { acceptedThreadId: input.acceptedThreadId } : {}),
     snapshotByteLength: input.snapshotByteLength,
     createdAt: input.createdAt,
     expiresAt: input.expiresAt,
@@ -1318,9 +1315,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     if (inbound._tag === "accepted-new") {
       yield* store.markDelivered(id, now).pipe(Effect.mapError(boundStoreError));
       // Idempotent on the handoff id, so a replay adds no second inbox entry.
-      yield* store
-        .upsertReceivedHandoff(handoff, now)
-        .pipe(Effect.mapError(boundStoreError));
+      yield* store.upsertReceivedHandoff(handoff, now).pipe(Effect.mapError(boundStoreError));
       yield* emit({
         _tag: "envelope-delivered",
         occurredAt: now,

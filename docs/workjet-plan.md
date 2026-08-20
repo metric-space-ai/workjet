@@ -166,7 +166,7 @@ than a shared database or an untyped renderer bridge:
       AUDIT 2026-08-20 (final): TICKED. Re-verified in this tree —
       `apps/server/src/workjet/crossmode/WorkjetCrossModeCtoxClient.ts` exists
       with its port, store, RPC and proof matrix; `vp test run
-  src/workjet/crossmode/` in `apps/server` → 4 files, 52 tests, all green.
+src/workjet/crossmode/` in `apps/server` → 4 files, 52 tests, all green.
       The blocker recorded above is resolved, so every clause this line names is
       implemented. HONEST CEILING kept visible rather than ticked away: all
       three operations ride the one generic `ctox.delegate_task` action
@@ -740,7 +740,7 @@ Tasks:
       catalog at every routed session start and carries the answer as the
       `X-CTOX-Provider` request header — the Rust host's only per-request
       selector — via `ANTHROPIC_CUSTOM_HEADERS` for Claude and `-c
-  …http_headers…` for Codex, both probe-verified. Ambiguity is loud and
+…http_headers…` for Codex, both probe-verified. Ambiguity is loud and
       typed (`route-ambiguous`, `model-ambiguous`, `model-unrouted`), never a
       silent fall-back to the CLI's own credentials. Seven contract tests in
       `workjetGatewayRouting.test.ts` plus "lets an explicit route override
@@ -904,39 +904,43 @@ CTOX and the T3 harness adapter consume the same tagged package.
       without removing legacy crate exports or CTOX CLI command names.
 - [ ] Preserve SSRF protection, redirect validation, size limits, untrusted
       content fencing, cache bounds, evidence receipts, and legal/ToS controls.
-      BUCKET 2026-08-20: IMPLEMENTABLE, with one embedded owner question.
-      Re-verified in this tree, matching the security-invariant audit in section
-      12: three production `ureq` agents in
-      `native/web-stack/src/scholarly_search.rs` (`:407`, `:968`, `:1696` —
-      `annas_archive_search`, `augment_results_with_open_access_pdfs`,
-      `fetch_json`) still do not install `SsrfResolver`, and they are enumerated
-      in `KNOWN_UNRESOLVED_AGENTS` in
-      `apps/server/src/mcp/toolkits/workjet/WebStackEgressWiring.test.ts:68` so
-      a NEW unguarded agent fails; there is still NO max-redirect limit anywhere
-      in the crate (`grep max_redirect` over `native/web-stack/src` is empty),
-      so the hop cap is whatever `ureq` defaults to. Untrusted-content fencing
-      and both size budgets ARE guarded and stay guarded.
-      NEXT: install the resolver on the three agents, add an explicit
-      redirect-hop cap next to it, and add the missing test for the TypeScript
-      stdout byte budget (`WebStackSearch.ts:90`, `WebStackBrowser.ts:275`,
-      `WebStackResearch.ts:421`). Scope: ~1 Rust file plus 3 TS test additions
-      and a full crate build — medium, because the crate build is the slow part.
-      OWNER (small, inside this work): `web_search.rs` already grants a
-      self-hosted SearXNG base, so installing the resolver requires deciding
-      which configured hosts must stay reachable. Getting that wrong breaks a
-      working configuration.
+      KORREKTUR 2026-08-20: the body of this line was written before the
+      section-12 audit closed its three reasons, and it stood here contradicting
+      that audit on the same day. It claimed three `scholarly_search.rs` agents
+      "still do not install `SsrfResolver`", that `KNOWN_UNRESOLVED_AGENTS`
+      enumerates them, and that there is "NO max-redirect limit anywhere in the
+      crate". None of that is true in this tree any more. Verified when the
+      section-12 box was ticked: all three agents install `SsrfResolver`
+      (`scholarly_search.rs:421`, `:1024`, `:1751`) with `assert_fetchable_url`
+      ahead of the caller-assembled URLs, `KNOWN_UNRESOLVED_AGENTS` in
+      `WebStackEgressWiring.test.ts:82-86` is the empty array, and
+      `egress.rs:327` →
+      `crate_shaped_agents_bound_the_redirect_chain_at_five_requests` pins the
+      hop cap. The stdout byte budget is now covered too (four mutation-verified
+      tests, see section 12). The embedded OWNER question is DECIDED and
+      recorded in section 12: an operator pointing a base URL at an internally
+      hosted mirror must name that host in `CTOX_WEB_EGRESS_ALLOW`.
+      STILL UNTICKED, and for a different reason than before: this line is wider
+      than the section-12 one. Section 12 covers SSRF, redirects, content size
+      and untrusted-content fencing, and all of those are now ticked there. The
+      three items unique to THIS line — cache bounds, evidence receipts, and
+      legal/ToS controls — were NOT examined and carry no verified evidence
+      here. Do not tick this box on the strength of section 12.
+      NEXT: audit exactly those three, then tick. Scope: read-only audit of the
+      crate's cache and receipt paths plus the ToS controls — small, and it
+      needs no crate build unless it turns up a real gap.
 - [x] Keep browser dependencies and downloaded browsers under ignored `.deps`
       or runtime directories.
       AUDIT 2026-08-20 (final): TICKED. Verified from three directions. (1)
       Nothing is tracked: `git ls-files` matching `chromium|chrome-|patchright|
-  playwright.*browser` returns only `native/web-stack/licenses/
-  Patchright-Apache-2.0.txt`, a licence text. (2) The runtime location is
+playwright.*browser` returns only `native/web-stack/licenses/
+Patchright-Apache-2.0.txt`, a licence text. (2) The runtime location is
       server-owned and outside the repository — `WebStackBrowser.ts:368` derives
       the root as `<ServerConfig.stateDir>/web-stack`, and the Chromium cache
       sits inside that reference dir (`playwright_browser_cache_dir`,
       `native/web-stack/src/browser.rs:1093`); `WebStackBrowser.test.ts:144-174`
       asserts both native subcommands receive `--root
-  /server-owned/state/web-stack`.
+/server-owned/state/web-stack`.
       (3) The ignore policy covers the development locations: `/.deps`
       (`.gitignore:6`) and `/runtime/` (`:48`). Cross-checked against the ticked
       "No tracked dependency/build/runtime artifacts" measurement in section 15.
@@ -1357,7 +1361,7 @@ Schema.Boolean (default false), executableOverride? }`
       (`packages/contracts/src/rpc.ts:358-359`), handled at
       `apps/server/src/ws.ts:498`; the four modules
       `apps/server/src/workjet/legacy/{LegacyWorkjetConfig,LegacyWorkjetImport,
-  LegacyWorkjetImportRpc,LegacyWorkjetMapping}.ts` with 66 tests across
+LegacyWorkjetImportRpc,LegacyWorkjetMapping}.ts` with 66 tests across
       their four `.test.ts` siblings; and the offer surface, which is wired —
       `useWorkjetLegacyImportSection` (`WorkjetSettings.tsx:1226`) renders
       `WorkjetLegacyImportSectionView` (`:1180`), with the settings-search entry
@@ -3431,7 +3435,7 @@ was reverted. Audited 2026-08-20.
       explicit entry in `CtoxModeShell`. No instance-switch deep-link route
       exists at all. Rewrite the line to describe OS-delivered links generally
       when this section is next revised.
-- [ ] Preserve Web Stack SSRF, redirect, content-size, and untrusted-content
+- [x] Preserve Web Stack SSRF, redirect, content-size, and untrusted-content
       defenses.
       Untrusted-content and content-size are guarded:
       `web_search.rs` → `model_facing_context_fences_untrusted_page_content`
@@ -3441,8 +3445,8 @@ was reverted. Audited 2026-08-20.
       capability response budget (`capability_contract.rs` →
       `public_search_projection_is_exact_and_honors_both_host_budgets`) cover
       size.
-      Unticked for one remaining reason. Two of the three reasons found on
-      2026-08-20 were CLOSED the same day:
+      TICKED 2026-08-20. All three reasons found on 2026-08-20 are now
+      closed:
       (1) CLOSED 2026-08-20. SSRF was INCOMPLETE, not merely untested: three
       production `ureq` agents in `native/web-stack/src/scholarly_search.rs`
       (`annas_archive_search`, `augment_results_with_open_access_pdfs`,
@@ -3485,19 +3489,49 @@ was reverted. Audited 2026-08-20.
       `annas_archive_search` / `build_unpaywall_agent` / `fetch_json`, and the
       six `sources/*.rs` `build_agent()` fns. Skipped here as behaviour-neutral
       churn across nine call sites.
-      (3) STILL OPEN: the TypeScript stdout byte budget (`WebStackSearch.ts:90`,
-      `WebStackBrowser.ts:275`, `WebStackResearch.ts:421`) has no test. This is
-      the only reason the box is still unticked.
-      NEWLY GUARDED in the meantime: that the SSRF policy is INSTALLED at all.
+      (3) CLOSED 2026-08-20. The TypeScript stdout byte budget
+      (`WebStackSearch.ts:93`, `WebStackBrowser.ts:278`,
+      `WebStackResearch.ts:424` — the line numbers moved by three when the
+      toolkits took their Effect-conformance fixes) now has tests. What existed
+      before only asserted that over-budget stdout produces the
+      `oversized-response` REASON, and it built its fixture as
+      `WEB_STACK_RESPONSE_MAX_BYTES + 1`, so raising the constant moved the
+      fixture with it and nothing failed. Four new tests, all mutation-verified:
+      `WebStackNativeProcess.test.ts` → "declares a 2 MiB response budget" pins
+      the literals, and "stops buffering native stdout at the budget while still
+      reporting its true size" drives 64 MiB of stdout through `runCommand` and
+      asserts the bounded collector retains at most budget + 1 bytes while
+      `totalBytes` still reports 64 MiB. Deleting the clamp in `collectBounded`
+      fails it with "expected 67108864 to equal 2097153"; NO test caught that
+      before, so unbounded buffering was reachable with the suite green.
+      `WebStackSearch.test.ts`, `WebStackBrowser.test.ts` (automate AND prepare)
+      and `WebStackResearch.test.ts` (read AND deepResearch) →
+      "refuses native <surface> stdout over the declared byte budget": a
+      contract-valid envelope padded with JSON whitespace to EXACTLY the budget
+      is still served (proving the guard is `>`, not `>=`), and the same
+      envelope at exactly budget + 1 is refused with no part of it reaching the
+      model-facing error. The over-budget fixtures are deliberately VALID JSON
+      and the sizes are literals, so deleting the guard does not merely change
+      an error code: the search test then fails because the call SUCCEEDS and
+      hands the canary `OVER_BUDGET_NATIVE_SEARCH_PAYLOAD` back to the caller.
+      Raising the constant to 4 MiB fails all four plus the pre-existing
+      `CapabilityConformanceGate.test.ts` → "holds the declared response-budget
+      difference to the real compiled-in values".
+      NEWLY GUARDED along the way: that the SSRF policy is INSTALLED at all.
       `egress.rs` proved the policy correct, but every HTTP fixture test
       allow-lists `127.0.0.1`, so deleting `.resolver(...)` from an agent left
       the entire Rust suite green. `WebStackEgressWiring.test.ts` now holds
       every production agent to installing it.
-      BUCKET 2026-08-20: IMPLEMENTABLE — the same work as the Wave 4 "Preserve
-      SSRF protection…" line, which now carries the scope estimate and the
-      embedded owner question about which configured hosts must stay reachable.
-      Do it once and tick both. Re-verified today: the three unresolved agents
-      and the absent redirect cap are unchanged.
+      KORREKTUR to the 2026-08-20 BUCKET note that stood here: it read
+      "Re-verified today: the three unresolved agents and the absent redirect
+      cap are unchanged", which already contradicted (1) and (2) above on the
+      same day. Re-verified again when this box was ticked:
+      `KNOWN_UNRESOLVED_AGENTS` in `WebStackEgressWiring.test.ts:82-86` is the
+      empty array, all three `scholarly_search.rs` agents install
+      `SsrfResolver` (`:421`, `:1024`, `:1751`) with `assert_fetchable_url`
+      ahead of the caller-assembled URLs (`:417`, `:1748`), and
+      `egress.rs:327` holds the redirect chain at five. The stale sentence is
+      removed rather than left to be re-read as current.
 - [x] Scope T3 MCP tools to the current session/thread and capability grants.
       Behaviour is covered (`McpInvocationContext.test.ts`,
       `WorkerTool.test.ts` and `MailboxTool.test.ts` → "denies direct calls for

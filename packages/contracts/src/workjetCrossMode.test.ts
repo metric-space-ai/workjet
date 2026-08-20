@@ -309,6 +309,7 @@ describe("cross-mode failures and activity kinds", () => {
       "unverified-authority",
       "unauthorized",
       "unknown-link",
+      "thread-already-linked",
       "link-expired",
       "approval-required",
       "ctox-command-unavailable",

@@ -272,6 +272,10 @@ export type WorkjetCrossModeLink = typeof WorkjetCrossModeLink.Type;
  *   from (missing, deleted, or not permitted). Deliberately undistinguished, the
  *   same discipline `WorkjetMailboxRpc` applies to a source thread.
  * - `unknown-link` — no link with that id, or the link does not name this thread.
+ * - `thread-already-linked` — the Code thread already carries a link to a
+ *   DIFFERENT Business OS object. One thread implements one object; the reverse
+ *   would make "Return to Business OS" ambiguous, so it is refused rather than
+ *   resolved by a guess.
  * - `link-expired` — the link carries an `expiresAt` already in the past.
  * - `approval-required` — the operation is gated and no approval has been
  *   granted yet; see {@link WorkjetCrossModeCommandApproval}.
@@ -286,6 +290,7 @@ export const WorkjetCrossModeErrorReason = Schema.Literals([
   "unverified-authority",
   "unauthorized",
   "unknown-link",
+  "thread-already-linked",
   "link-expired",
   "approval-required",
   "ctox-command-unavailable",
@@ -306,6 +311,8 @@ export class WorkjetCrossModeError extends Schema.TaggedErrorClass<WorkjetCrossM
         return "This thread may not be linked or acted from.";
       case "unknown-link":
         return "No such cross-mode link.";
+      case "thread-already-linked":
+        return "This thread already carries a link to a different Business OS object.";
       case "link-expired":
         return "This cross-mode link has expired.";
       case "approval-required":

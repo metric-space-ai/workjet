@@ -3079,19 +3079,178 @@ stack has 4 root commits (T3 plus three imported repositories), which breaks
 
 Every wave uses targeted tests while developing. Before a public Workjet beta:
 
-- [ ] Full contracts, server, client-runtime, web, and desktop typecheck.
-- [ ] Full relevant T3 test suites.
-- [ ] Provider-gateway Rust test, clippy, fmt, differential, and real-account
-      opt-in gates.
-- [ ] Web Stack Rust, fixture, SSRF, search, browser, and E2E gates.
-- [ ] Workjet orchestration restart, cancellation, duplicate, and remote tests.
-- [ ] CTOX WebRTC data-plane guard and Business OS launch tests.
-- [ ] Desktop managed/local/SSH/invite/session/keychain parity matrix.
+MEASURED 2026-08-20 at `f60f69674` (clean tree, so every failure below is
+PRE-EXISTING and none of it was caused by the measurement). Host: macOS
+Darwin 25.2.0 / Apple Silicon, Node v26.6.0, cargo 1.97.0, pnpm 11.10.0,
+checkout on `/Volumes/tmp`. Every verdict below is backed by a log under
+`/Volumes/tmp/workjet/logs/gate-<name>.log`; the mechanically re-runnable
+command list lives in `docs/workjet-release-gate-status.md`. Disk on
+`/Volumes/tmp`: 84 GiB free before, 74 GiB after (two macOS packages plus
+three cargo target dirs). `vp` is not on PATH — use `./node_modules/.bin/vp`.
+
+- [~] Full contracts, server, client-runtime, web, and desktop typecheck.
+  `./node_modules/.bin/vp run --filter <pkg> typecheck` per package:
+  contracts PASS (exit 0), client-runtime PASS, web PASS, desktop PASS,
+  server (`--filter t3`) FAIL exit 1 with exactly **57** `error TS` — the
+  documented pre-existing baseline, unchanged. The repo-wide CI form
+  `vp run -r --concurrency-limit 2 typecheck` FAILS (exit 1, 2:29) on two
+  tasks: `t3` (57) and `@t3tools/mobile` (**8** errors, all
+  "`workjetConfig` is missing" on `EnvironmentThreadShell` fixtures — the
+  contract made the field required without updating the mobile fixtures).
+  Mobile is not named in this gate line but is what makes CI's
+  `vpr typecheck` red. Logs: `gate-typecheck-contracts.log`,
+  `gate-typecheck-client-runtime.log`, `gate-typecheck-web.log`,
+  `gate-typecheck-desktop.log`, `gate-typecheck-server-cli.log`,
+  `gate-typecheck-mobile.log`, `gate-typecheck-all.log`.
+- [x] Full relevant T3 test suites. `./node_modules/.bin/vp run -r test` →
+      exit 0, 15/15 tasks, **950 test files (+2 skipped), 9 605 tests passed
+      (+7 skipped)**, 5:41. Log `gate-t3-full-test-rerun.log`. Caveat: the
+      same command run while a cargo build competed for CPU failed (exit 1) —
+      `scripts/lib/cli-external-packages.test.ts` hit its 60 000 ms timeout and
+      aborted web/mobile/desktop (`gate-t3-full-test.log`). Run it unloaded.
+- [~] Provider-gateway Rust test, clippy, fmt, differential, and real-account
+  opt-in gates. **test PASS**, run in `native/provider-gateway` with
+  `CARGO_TARGET_DIR=/Volumes/tmp/workjet/cargo-target-rg`:
+  `cargo test -p workjet-provider-gateway --no-fail-fast -- --test-threads=1`
+  → exit 0,
+  **2 553 passed, 0 failed, 3 ignored**. **clippy FAIL** (pre-existing):
+  `cargo clippy -p workjet-provider-gateway --all-targets -- -D warnings`
+  → exit 101, 1 error, `unnecessary_get_then_check` at
+  `internal/auth/codex/openai_auth_test.rs:121`. **fmt FAIL**
+  (pre-existing):
+  `cargo fmt --check --manifest-path native/provider-gateway/Cargo.toml`
+  → exit 1, 16 hunks in 4 files, all
+  introduced by `e9028a3ae`. **differential NOT-RUNNABLE-HERE**: the 26
+  `scripts/run_*_differential.sh` need the Go CLIProxyAPI upstream at
+  `$repo_dir/runtime/cliproxyapi-upstream`, and their `repo_dir` is
+  computed as `$crate_dir/../../../..` — two levels ABOVE the Workjet repo
+  root; neither that path nor `<repo>/runtime/` exists (Go itself is
+  installed). **real-account NOT-RUNNABLE-HERE**: needs live subscription
+  logins; no opt-in runner exists in the repo. Logs:
+  `gate-provider-gateway-test-serial.log`, `gate-provider-gateway-clippy.log`,
+  `gate-provider-gateway-fmt.log`. NOTE: under load
+  the four `--test plugin_supervisor` tests fail with `Err(Handshake)`
+  (child Unix-socket callback times out); green serially
+  (`gate-provider-gateway-plugin-supervisor-retry.log`).
+- [~] Web Stack Rust, fixture, SSRF, search, browser, and E2E gates.
+  **Rust/fixture/SSRF PASS**, run in `native/web-stack` with
+  `CARGO_TARGET_DIR=/Volumes/tmp/workjet/cargo-target-webstack`:
+  `cargo test --all-features --no-fail-fast -- --test-threads=1` → exit 0,
+  **463 passed, 0 failed, 23 ignored** (lib 454, `capability_contract` 2,
+  `scrape_target_fixtures` 6, one long integration test). SSRF is the 7
+  `src/egress.rs` tests plus `apps/server/.../WebStackEgressWiring.test.ts`.
+  `cargo fmt --check` and
+  `cargo clippy --all-targets --all-features -- -D warnings`
+  both PASS. **search/browser/E2E NOT-RUNNABLE-HERE**:
+  `scripts/test_web_search_e2e.sh` and `scripts/test_web_unlock_e2e.sh`
+  both require a built **`ctox`** binary at
+  `$ROOT/runtime/build/cargo-target/{debug,release}/ctox` (CTOX repo, not
+  vendored here), live network, and a patchright + Chromium runtime. Logs:
+  `gate-web-stack-test-serial.log`, `gate-web-stack-clippy-fmt.log`,
+  `gate-web-stack-test-retry3.log`. Three lib
+  tests are load-flaky (loopback fixture servers); green serially.
+- [x] Workjet orchestration restart, cancellation, duplicate, and remote tests.
+      `cd apps/server && ../../node_modules/.bin/vp test run src/workjet/` →
+      exit 0, **20 files, 384 tests**, 119.6 s.
+      Log `gate-workjet-orchestration.log`. (Supersedes the "32 files, 489
+      tests" figure recorded in section 8 — that count does not reproduce.)
+- [x] CTOX WebRTC data-plane guard and Business OS launch tests.
+      In `apps/desktop`:
+      `../../node_modules/.bin/vp test run src/ctox/ src/ipc/methods/ctox.test.ts`
+      → exit 0, **14 files, 195 tests**.
+      Log `gate-ctox-webrtc-businessos.log`.
+- [x] Desktop managed/local/SSH/invite/session/keychain parity matrix.
+      `./node_modules/.bin/vp run --filter @t3tools/desktop test` → exit 0,
+      **83 files, 816 tests**, 85.7 s. Log `gate-desktop-parity.log`.
 - [ ] Real end-to-end user stories for Code mode and CTOX mode.
-- [ ] Packaged macOS arm64 and x64 tests first; then Linux and Windows targets.
-- [ ] Signing, notarization, update, checksum, and provenance verification.
-- [ ] Fresh-install, upgrade, rollback, and legacy-settings import tests.
-- [ ] No tracked dependency/build/runtime artifacts.
+      **NO RUNNABLE GATE EXISTS.** `apps/web` declares a single vitest project
+      (`unit`); there is no Playwright/WebDriver harness and no scripted
+      version of either story below. Closest artefacts:
+      `apps/server/integration/OrchestrationEngineHarness.integration.ts`
+      (in-process, no UI) and `apps/desktop/scripts/smoke-test.mjs` (an 8 s
+      launch-and-grep). What must be built: a driver that boots the app
+      against a disposable state directory and asserts delivery receipts,
+      durable status, result return, cancellation, and restart recovery.
+- [~] Packaged macOS arm64 and x64 tests first; then Linux and Windows targets.
+  **macOS arm64 PASS**: `./node_modules/.bin/vp run dist:desktop:dmg:arm64`
+  → exit 0, 4:29, `release/CTOX-Desktop-App-0.0.33-arm64.dmg`
+  (282 703 523 B) + `.zip` (273 376 002 B) + blockmaps.
+  **macOS x64 PASS**: `dist:desktop:dmg:x64` → exit 0, 3:18, matching
+  `-x64` artifacts. Both UNSIGNED (no credentials here) and neither emits
+  a `latest-mac*.yml` update manifest locally — CI's "Collect release
+  assets" step does that. Prerequisite CI steps also PASS:
+  `vp run build:desktop` (exit 0, 28 s) plus the preload contract greps,
+  and `vp run --filter @t3tools/desktop smoke-test` (Electron launches,
+  "Desktop smoke test passed."). **Linux NOT-RUNNABLE-HERE**:
+  `dist:desktop:linux` AppImage from macOS needs a Linux container
+  toolchain that is not installed. **Windows NOT-RUNNABLE-HERE**:
+  `dist:desktop:win` needs NSIS plus the `wsl-prebuild/pty.node` artifact
+  from the release workflow's `build_wsl_node_pty` job. Logs
+  `gate-package-mac-{arm64,x64}.log`, `gate-desktop-build-smoke.log`.
+- [~] Signing, notarization, update, checksum, and provenance verification.
+  **Signing / notarization NOT-RUNNABLE-HERE**: no `CSC_LINK`,
+  `CSC_KEY_PASSWORD`, `APPLE_TEAM_ID`, `MACOS_PROVISIONING_PROFILE`, or
+  App Store Connect key locally. Proven on the artifact built above:
+  `codesign -dv` → "code object is not signed at all" (exit 1),
+  `spctl -a` → "rejected" (exit 3), `xcrun stapler validate` → "does not
+  have a ticket stapled to it" (`gate-signing-check.log`).
+  **Update/checksum FAIL — GATE-RUNNER BUG, not a product defect**:
+  `node scripts/release-smoke.ts` exits 1. Its fixed `workspaceFiles`
+  list omits `packages/workjet-capabilities/package.json`, so the temp-root
+  `vp install --lockfile-only` dies with
+  `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` — "In apps/server:
+  @metric-space-ai/workjet-capabilities@workspace:\* is in the dependencies but
+  no package named @metric-space-ai/workjet-capabilities is present in the
+  workspace". Reproduced by hand; the one-line fix is to add that
+  path. Underlying unit coverage is green:
+  `vp run --filter @t3tools/scripts test` → exit 0, 23 files, 304 tests,
+  including `merge-update-manifests.test.ts` and
+  `mock-update-server.test.ts`. **Provenance NOT-RUNNABLE-HERE**:
+  `apps/desktop/resources/provider-gateway/host-release.pin.json` is
+  `"status": "unreleased"`, so
+  `node scripts/provider-gateway-host-artifacts.ts verify --dir <dir>` has
+  nothing to verify. Logs: `gate-release-smoke.log`,
+  `gate-test-scripts.log`, `gate-gateway-host-artifact-verify.log`.
+- [~] Fresh-install, upgrade, rollback, and legacy-settings import tests.
+  **Legacy-settings import PASS**: the four
+  `apps/server/src/workjet/legacy/*.test.ts` files are green inside the
+  20-file/384-test run above. **Fresh-install / upgrade / rollback: NO
+  RUNNABLE GATE EXISTS.** Update _logic_ is unit-tested
+  (`apps/desktop/src/updates/*`, `ElectronUpdater.test.ts`,
+  `apps/web/src/components/desktopUpdate.*`) and
+  `scripts/mock-update-server.ts` exists, but nothing installs a packaged
+  build into a clean prefix, upgrades it, forces a rollback, and asserts
+  the settings store survives.
+- [x] No tracked dependency/build/runtime artifacts.
+      `git ls-files` filtered for `node_modules/`, `dist/`, `dist-electron/`,
+      `out/`, `target/`, `.vite-plus/`, `.venv/` → 0 hits; filtered for
+      `^runtime/` → 0 hits. Seven tracked binaries remain, all inherited from
+      upstream T3 mobile vendoring (`ab63ef1cd`): one `.tgz`, two
+      `libghostty-fat.a`, four `libghostty-vt.so`. Log
+      `gate-no-tracked-artifacts.log`.
+
+Adjacent gates measured at the same time, because CI runs them on the same
+commit:
+
+- [ ] CI `Check` step — `./node_modules/.bin/vp check` → FAIL exit 1,
+      **143 tracked files** unformatted (82 `native/web-stack`, 35
+      `native/provider-gateway`, 13 `experiments/kundenpipeline-module`, 5
+      `native/pdf-parse`, 5 `apps/server`, 2 `apps/web`, 1
+      `docs/kundenpipeline-board.md`). Fixable with `vp check --fix`.
+      Log `gate-vp-check.log`.
+- [x] resource-monitor —
+      `cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check`
+      and
+      `cargo test --locked --manifest-path native/resource-monitor/Cargo.toml`
+      → both exit 0, 15 tests. Log `gate-resource-monitor.log`.
+- [x] Licensing release gate (section 13) —
+      `node scripts/generate-release-notice.ts --check` and
+      `node scripts/check-capability-version-lock.ts --check` → both exit 0.
+      Log `gate-notice-capabilities.log`.
+- [x] `node --test .github/scripts/thread-transfer-report.test.cjs` → exit 0,
+      6/6 tests. **KORREKTUR**: this suite was believed broken since
+      2026-08-07; it is green at `f60f69674`.
+      Log `gate-thread-transfer-report.log`.
 
 Representative Code-mode E2E:
 

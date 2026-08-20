@@ -28,27 +28,31 @@ const environmentInput = {
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
-const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
-  metadata: Effect.die("unexpected metadata read"),
-  name: Effect.succeed("T3 Code"),
-  whenReady: Effect.void,
-  quit: Effect.void,
-  exit: () => Effect.void,
-  relaunch: () => Effect.void,
-  setPath: () => Effect.void,
-  setName: () => Effect.void,
-  setAboutPanelOptions: () => Effect.void,
-  setAppUserModelId: () => Effect.void,
-  getAppMetrics: Effect.succeed([]),
-  isDefaultProtocolClient: () => Effect.succeed(false),
-  setAsDefaultProtocolClient: () => Effect.succeed(true),
-  setDesktopName: () => Effect.void,
-  setDockIcon: () => Effect.void,
-  appendCommandLineSwitch: () => Effect.void,
-  onBeforeQuitForUpdate: () => Effect.void,
-  removeCommandLineSwitch: () => Effect.void,
-  on: () => Effect.void,
-} satisfies ElectronApp.ElectronApp["Service"]);
+const APP_NAME = "CTOX Desktop App";
+
+const makeElectronAppLayer = (aboutPanelShown: Deferred.Deferred<true>) =>
+  Layer.succeed(ElectronApp.ElectronApp, {
+    metadata: Effect.die("unexpected metadata read"),
+    name: Effect.succeed(APP_NAME),
+    whenReady: Effect.void,
+    quit: Effect.void,
+    exit: () => Effect.void,
+    relaunch: () => Effect.void,
+    setPath: () => Effect.void,
+    setName: () => Effect.void,
+    setAboutPanelOptions: () => Effect.void,
+    showAboutPanel: Deferred.succeed(aboutPanelShown, true as const).pipe(Effect.asVoid),
+    setAppUserModelId: () => Effect.void,
+    getAppMetrics: Effect.succeed([]),
+    isDefaultProtocolClient: () => Effect.succeed(false),
+    setAsDefaultProtocolClient: () => Effect.succeed(true),
+    setDesktopName: () => Effect.void,
+    setDockIcon: () => Effect.void,
+    appendCommandLineSwitch: () => Effect.void,
+    onBeforeQuitForUpdate: () => Effect.void,
+    removeCommandLineSwitch: () => Effect.void,
+    on: () => Effect.void,
+  } satisfies ElectronApp.ElectronApp["Service"]);
 
 const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
   pickFolder: () => Effect.succeed(Option.none()),
@@ -98,6 +102,7 @@ const makeElectronMenuLayer = (
 const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
+  aboutPanelShown: Deferred.Deferred<true>,
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -109,7 +114,7 @@ const configureMenu = (
         Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
         Layer.provideMerge(desktopUpdatesLayer),
         Layer.provideMerge(electronDialogLayer),
-        Layer.provideMerge(electronAppLayer),
+        Layer.provideMerge(makeElectronAppLayer(aboutPanelShown)),
         Layer.provideMerge(
           DesktopEnvironment.layer(environmentInput).pipe(
             Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
@@ -125,8 +130,9 @@ describe("DesktopApplicationMenu", () => {
       const selectedAction = yield* Deferred.make<string>();
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
 
-      yield* configureMenu(selectedAction, applicationMenuTemplate);
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
 
       const template = yield* Deferred.await(applicationMenuTemplate);
       const fileMenu = template.find((item) => item.label === "File");
@@ -154,8 +160,9 @@ describe("DesktopApplicationMenu", () => {
       const selectedAction = yield* Deferred.make<string>();
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
 
-      yield* configureMenu(selectedAction, applicationMenuTemplate);
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
 
       const template = yield* Deferred.await(applicationMenuTemplate);
       const viewMenu = template.find((item) => item.label === "View");
@@ -177,6 +184,39 @@ describe("DesktopApplicationMenu", () => {
 
       zoomIn.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "zoom-in");
+    }),
+  );
+
+  // macOS shows About through the { role: "about" } app-menu item, which only
+  // exists in the darwin branch. Windows and Linux have no app menu, so
+  // without this Help entry the packaged build has no way to reach the native
+  // About panel that carries the CTOX name, version, and commit hash.
+  it.effect("offers About in the Help menu on non-darwin platforms", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      assert.isUndefined(template.find((item) => item.label === APP_NAME));
+
+      const helpMenu = template.find((item) => item.role === "help");
+      assert.isDefined(helpMenu);
+      if (!Array.isArray(helpMenu.submenu)) {
+        throw new Error("Expected Help menu submenu to be an array.");
+      }
+
+      const aboutItem = helpMenu.submenu.find((item) => item.label === `About ${APP_NAME}`);
+      assert.isDefined(aboutItem);
+      if (typeof aboutItem.click !== "function") {
+        throw new Error("Expected About menu item to have a click handler.");
+      }
+
+      aboutItem.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.isTrue(yield* Deferred.await(aboutPanelShown));
     }),
   );
 });

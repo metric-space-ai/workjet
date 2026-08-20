@@ -28,6 +28,7 @@ describe("DesktopLifecycle", () => {
         setPath: () => Effect.void,
         setName: () => Effect.void,
         setAboutPanelOptions: () => Effect.void,
+        showAboutPanel: Effect.void,
         setAppUserModelId: () => Effect.void,
         getAppMetrics: Effect.succeed([]),
         isDefaultProtocolClient: () => Effect.succeed(false),

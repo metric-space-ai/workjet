@@ -268,6 +268,62 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
+  // The packaged update feed carries the product identity: a CTOX build must
+  // resolve to the CTOX repository, never to an inherited T3 Code feed. The
+  // slug is environment-derived by design, so the release pipeline MUST set
+  // T3CODE_DESKTOP_UPDATE_REPOSITORY to the CTOX `owner/repo` (or run in the
+  // CTOX repository, which supplies the same slug through the GitHub Actions
+  // GITHUB_REPOSITORY variable). With neither set there is deliberately no
+  // publish config at all, so an unconfigured local build ships without an
+  // update feed rather than silently pointing at somebody else's releases.
+  it.effect("points the desktop update feed at the configured CTOX repository", () =>
+    Effect.gen(function* () {
+      const withEnv = (env: Record<string, string>) =>
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
+
+      const ctoxConfig = yield* resolveGitHubPublishConfig("latest").pipe(
+        withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop" }),
+      );
+      assert.deepStrictEqual(ctoxConfig, {
+        provider: "github",
+        owner: "metric-space-ai",
+        repo: "ctox-desktop",
+        releaseType: "release",
+      });
+
+      // The explicit override wins over the ambient GitHub Actions slug, so a
+      // CTOX release built from another repository still publishes and
+      // updates against the CTOX feed.
+      const overriddenConfig = yield* resolveGitHubPublishConfig("nightly").pipe(
+        withEnv({
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop",
+          GITHUB_REPOSITORY: "pingdotgg/t3code",
+        }),
+      );
+      assert.deepStrictEqual(overriddenConfig, {
+        provider: "github",
+        owner: "metric-space-ai",
+        repo: "ctox-desktop",
+        releaseType: "prerelease",
+        channel: "nightly",
+      });
+
+      // No slug configured and malformed slugs both mean "no feed", not a
+      // fallback to some inherited repository.
+      assert.isUndefined(yield* resolveGitHubPublishConfig("latest").pipe(withEnv({})));
+      assert.isUndefined(
+        yield* resolveGitHubPublishConfig("latest").pipe(
+          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "   " }),
+        ),
+      );
+      assert.isUndefined(
+        yield* resolveGitHubPublishConfig("latest").pipe(
+          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop/extra" }),
+        ),
+      );
+    }),
+  );
+
   it("omits bundled workspace packages from staged desktop dependencies", () => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(

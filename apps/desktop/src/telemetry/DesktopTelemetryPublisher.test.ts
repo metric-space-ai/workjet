@@ -33,6 +33,7 @@ function makeElectronAppLayer(
     setPath: () => Effect.void,
     setName: () => Effect.void,
     setAboutPanelOptions: () => Effect.void,
+    showAboutPanel: Effect.void,
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.sync(() => {
       onMetricsRead();

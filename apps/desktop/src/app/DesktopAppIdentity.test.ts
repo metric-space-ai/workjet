@@ -53,6 +53,7 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
       Effect.sync(() => {
         calls.setAboutPanelOptions.push(options);
       }),
+    showAboutPanel: Effect.void,
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
     isDefaultProtocolClient: () => Effect.succeed(false),

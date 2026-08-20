@@ -1054,12 +1054,13 @@ describe("Workjet mailbox RPC contracts", () => {
 
 describe("WorkjetMeshRoster", () => {
   const decodeRoster = Schema.decodeUnknownSync(WorkjetMeshRoster);
-  const peer = (environmentId: string) => ({
+  const peer = (environmentId: string, binding = "self-signed") => ({
     schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
     workspaceId: "workjet-mesh-peer",
     environmentId,
     firstSeenAt: "2026-08-18T10:00:00.000Z",
     sealedDeliveryReady: true,
+    binding,
   });
   const roster = (peers: ReadonlyArray<ReturnType<typeof peer>>) => ({
     schemaVersion: WORKJET_MAILBOX_SCHEMA_VERSION,
@@ -1087,6 +1088,22 @@ describe("WorkjetMeshRoster", () => {
       peer(`environment-${index}`),
     );
     expect(() => decodeRoster(roster(tooMany))).toThrow();
+  });
+
+  it("carries both honest trust levels and refuses an invented one", () => {
+    for (const binding of ["tofu", "self-signed"]) {
+      const value = roster([peer("environment-peer", binding)]);
+      expect(decodeRoster(value)).toEqual(value);
+    }
+    // A level the mesh cannot actually establish must not be expressible: the
+    // whole point of the field is that the UI can trust what it says.
+    expect(() => decodeRoster(roster([peer("environment-peer", "room-bound")]))).toThrow();
+    expect(() => decodeRoster(roster([peer("environment-peer", "verified")]))).toThrow();
+  });
+
+  it("requires a peer to state its trust level rather than defaulting to one", () => {
+    const { binding: _omitted, ...withoutBinding } = peer("environment-peer");
+    expect(() => decodeRoster(roster([withoutBinding as never]))).toThrow();
   });
 
   it("rejects an unparseable first-contact timestamp", () => {

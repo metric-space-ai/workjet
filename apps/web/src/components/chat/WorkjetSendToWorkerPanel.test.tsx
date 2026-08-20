@@ -22,6 +22,7 @@ import {
   WORKJET_SEND_FIELD_ERROR_MESSAGES,
   formatWorkjetFirstContact,
   orderWorkjetRosterPeers,
+  workjetPeerTrustLabel,
   rememberWorkjetRemoteThreadId,
   selectWorkjetRosterPeer,
   workjetMailboxFailureMessage,
@@ -626,6 +627,38 @@ describe("WorkjetSendToWorkerPanelContent remote recipients", () => {
           .children,
       ),
     ).toContain("encryption key is pinned");
+  });
+
+  it("states each peer's trust level instead of implying they are all verified", () => {
+    // `sealedDeliveryReady` reads like an assurance about WHOSE machine this is
+    // and is not one, so the panel says the second thing separately.
+    const bound = textContent(
+      render({ draft: { ...remoteDraft, targetEnvironmentId: "environment-older" } }).props
+        .children,
+    );
+    expect(bound).toContain("signed for its own keys");
+    // Even the strongest level the mesh can establish is qualified: it does not
+    // say "verified", because first-contact impersonation remains open.
+    expect(bound).toContain("claimed this environment id first");
+    expect(bound).not.toContain("verified");
+
+    const tofuRoster: WorkjetMeshRoster = {
+      ...ROSTER,
+      peers: [rosterPeer("environment-tofu", "2026-08-02T09:00:00.000Z", true, "tofu")],
+    };
+    const unbound = textContent(
+      render({
+        draft: { ...remoteDraft, targetEnvironmentId: "environment-tofu" },
+        roster: tofuRoster,
+      }).props.children,
+    );
+    expect(unbound).toContain("without a signed key binding");
+    expect(unbound).toContain("CTOX room membership alone");
+  });
+
+  it("labels both trust levels without overclaiming either", () => {
+    expect(workjetPeerTrustLabel("tofu")).toContain("room membership alone");
+    expect(workjetPeerTrustLabel("self-signed")).toContain("no other machine in the room");
   });
 
   it("leaves the same-machine thread list untouched", () => {

@@ -1438,11 +1438,15 @@ it.effect("lists pinned peers oldest first without ever returning key material",
     );
     for (const peer of page.peers) {
       assert.deepEqual(Object.keys(peer).toSorted(), [
+        "binding",
         "environmentId",
         "firstSeenAtMillis",
         "sealedDeliveryReady",
         "workspaceId",
       ]);
+      // Rows inserted without a `key_binding` take migration 049's default,
+      // which is the honest label for how they were actually pinned.
+      assert.equal(peer.binding, "tofu");
       assert.equal(peer.workspaceId, WORKSPACE);
     }
   }).pipe(Effect.provide(testLayer)),

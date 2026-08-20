@@ -5,12 +5,14 @@ import * as Option from "effect/Option";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import {
+  canonicalKeyBindingBytes,
   canonicalRoutingEnvelopeBytes,
   makeWorkjetMeshIdentity,
   WORKJET_MESH_ENCRYPTION_KEY_SECRET,
   WORKJET_MESH_PRIVATE_KEY_SECRET,
   WORKJET_MESH_WORKSPACE_ID_PREFIX,
   WORKJET_MESH_WORKSPACE_ID_SECRET,
+  WORKJET_MESH_KEY_BINDING_DOMAIN,
   WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN,
   workjetMeshRosterOf,
   type WorkjetSealedPayloadBlob,
@@ -454,4 +456,134 @@ it("reports an empty roster for a machine that has pinned no peer yet", () => {
 
   assert.deepEqual(roster.peers, []);
   assert.equal(roster.local.environmentId, LOCAL_ENVIRONMENT);
+});
+
+// ===============================
+// Peer key binding
+// ===============================
+
+it.effect("signs a key binding over its OWN keys and cannot be told to sign others'", () =>
+  Effect.gen(function* () {
+    const identity = yield* identityFrom(makeMemorySecretStore().service);
+    const other = yield* identityFrom(makeMemorySecretStore().service);
+
+    const claim = {
+      envelopeId: "wjm-binding-0001",
+      sourceWorkspaceId: identity.workspaceId,
+      sourceEnvironmentId: "environment-local",
+    } as const;
+    const signature = yield* identity.signKeyBinding(claim);
+
+    // The signed claim is the one naming THIS environment's keys. There is no
+    // parameter for the keys precisely so a caller can never produce a binding
+    // asserting key material this environment does not hold.
+    assert.isTrue(
+      yield* identity.verifyKeyBinding(
+        {
+          ...claim,
+          senderSigningKey: identity.publicKey,
+          senderEncryptionKey: identity.encryptionPublicKey,
+        },
+        signature,
+      ),
+    );
+    assert.isFalse(
+      yield* identity.verifyKeyBinding(
+        {
+          ...claim,
+          senderSigningKey: identity.publicKey,
+          senderEncryptionKey: other.encryptionPublicKey,
+        },
+        signature,
+      ),
+    );
+  }),
+);
+
+it.effect("refuses a binding whose envelope id or claimed address was changed", () =>
+  Effect.gen(function* () {
+    const identity = yield* identityFrom(makeMemorySecretStore().service);
+    const claim = {
+      envelopeId: "wjm-binding-0002",
+      sourceWorkspaceId: identity.workspaceId,
+      sourceEnvironmentId: "environment-local",
+      senderSigningKey: identity.publicKey,
+      senderEncryptionKey: identity.encryptionPublicKey,
+    } as const;
+    const signature = yield* identity.signKeyBinding(claim);
+
+    assert.isTrue(yield* identity.verifyKeyBinding(claim, signature));
+    // Every field of the claim is load-bearing: without the envelope id one
+    // honest binding would authorise every later document, and without the
+    // source pair it could be re-pointed at another machine's mesh address.
+    assert.isFalse(
+      yield* identity.verifyKeyBinding({ ...claim, envelopeId: "wjm-binding-0003" }, signature),
+    );
+    assert.isFalse(
+      yield* identity.verifyKeyBinding(
+        { ...claim, sourceEnvironmentId: "environment-elsewhere" },
+        signature,
+      ),
+    );
+    assert.isFalse(
+      yield* identity.verifyKeyBinding(
+        { ...claim, sourceWorkspaceId: "workjet-mesh-elsewhere" },
+        signature,
+      ),
+    );
+  }),
+);
+
+it.effect("rejects a binding signed by anybody but the key named in the claim", () =>
+  Effect.gen(function* () {
+    const identity = yield* identityFrom(makeMemorySecretStore().service);
+    const attacker = yield* identityFrom(makeMemorySecretStore().service);
+
+    const claim = {
+      envelopeId: "wjm-binding-0004",
+      sourceWorkspaceId: identity.workspaceId,
+      sourceEnvironmentId: "environment-local",
+      senderSigningKey: identity.publicKey,
+      senderEncryptionKey: identity.encryptionPublicKey,
+    } as const;
+    // The attacker signs the honest peer's exact claim. It must not verify:
+    // otherwise anyone could vouch for anyone else's keys.
+    const forged = yield* attacker.sign(canonicalKeyBindingBytes(claim));
+    assert.isFalse(yield* identity.verifyKeyBinding(claim, forged));
+
+    // Malformed signatures are a `false`, never a throw.
+    assert.isFalse(yield* identity.verifyKeyBinding(claim, "not base64url!!"));
+    assert.isFalse(yield* identity.verifyKeyBinding(claim, ""));
+  }),
+);
+
+it("serializes a binding claim with a fixed domain, field order, and no key-order drift", () => {
+  const claim = {
+    envelopeId: "wjm-binding-0005",
+    sourceWorkspaceId: "workjet-mesh-peer",
+    sourceEnvironmentId: "environment-peer",
+    senderSigningKey: "signing-key",
+    senderEncryptionKey: "encryption-key",
+  } as const;
+  const text = new TextDecoder().decode(canonicalKeyBindingBytes(claim));
+
+  assert.isTrue(text.startsWith(`${WORKJET_MESH_KEY_BINDING_DOMAIN}\n`));
+  // The domain tag versions the serialization: a future field change must bump
+  // it rather than silently reinterpret signatures already in the wild.
+  assert.strictEqual(
+    text,
+    `${WORKJET_MESH_KEY_BINDING_DOMAIN}\n{"envelopeId":"wjm-binding-0005","sourceWorkspaceId":"workjet-mesh-peer","sourceEnvironmentId":"environment-peer","senderSigningKey":"signing-key","senderEncryptionKey":"encryption-key"}`,
+  );
+  // The literal fixes the key order, so an input object built the other way
+  // round produces byte-identical output on both ends of the wire.
+  const reordered = {
+    senderEncryptionKey: claim.senderEncryptionKey,
+    senderSigningKey: claim.senderSigningKey,
+    sourceEnvironmentId: claim.sourceEnvironmentId,
+    sourceWorkspaceId: claim.sourceWorkspaceId,
+    envelopeId: claim.envelopeId,
+  };
+  assert.deepEqual(canonicalKeyBindingBytes(reordered), canonicalKeyBindingBytes(claim));
+  // A binding signature is not usable as a routing-envelope signature.
+  assert.notStrictEqual(WORKJET_MESH_KEY_BINDING_DOMAIN, WORKJET_ROUTING_ENVELOPE_SIGNING_DOMAIN);
 });

@@ -99,6 +99,14 @@ const samples = {
     envelopeId,
     reasonCode: "publish-failed",
   },
+  "mesh-peer-binding-rejected": {
+    ...base,
+    _tag: "mesh-peer-binding-rejected",
+    envelopeId,
+    sourceWorkspaceId: "ctox-business-os:mesh-alpha",
+    sourceEnvironmentId: "environment-b",
+    reasonCode: "encryption-key-conflict",
+  },
 } as const;
 
 describe("WorkjetMailboxAuditEvent", () => {
@@ -109,8 +117,8 @@ describe("WorkjetMailboxAuditEvent", () => {
     }
   });
 
-  it("covers all nine observable lifecycle moments with a sample", () => {
-    expect(Object.keys(samples).length).toBe(9);
+  it("covers all ten observable lifecycle moments with a sample", () => {
+    expect(Object.keys(samples).length).toBe(10);
   });
 
   it("redaction canary: a would-be secret has no field to travel in and is dropped", () => {
@@ -167,11 +175,41 @@ describe("WorkjetMailboxNotification", () => {
       "envelope-enqueued",
       "envelope-delivered",
       "delegation-state-changed",
+      "mesh-peer-binding-rejected",
     ] as const;
     for (const tag of nonNotification) {
       const event = decode(samples[tag]);
       expect(isWorkjetMailboxNotificationEvent(event)).toBe(false);
       expect(toWorkjetMailboxNotification(event)).toBeNull();
     }
+  });
+});
+
+describe("mesh-peer-binding-rejected", () => {
+  it("accepts every bounded rejection code and refuses anything else", () => {
+    const sample = samples["mesh-peer-binding-rejected"];
+    for (const reasonCode of [
+      "signing-key-conflict",
+      "encryption-key-conflict",
+      "binding-invalid",
+      "binding-downgrade",
+    ]) {
+      expect(decode({ ...sample, reasonCode })).toMatchObject({ reasonCode });
+    }
+    // A free-form reason would be the one place a peer-supplied string could
+    // reach an audit log, so the vocabulary is closed.
+    expect(() => decode({ ...sample, reasonCode: "because the peer said so" })).toThrow();
+  });
+
+  it("carries the contested mesh address and no key material", () => {
+    const event = decode({
+      ...samples["mesh-peer-binding-rejected"],
+      publicKey: SECRET,
+      keyBinding: SECRET,
+    });
+    // The claimed source pair is the operator's signal — the keys never are,
+    // and there is no field for them, so an excess key is DROPPED on decode.
+    expect(event).toMatchObject({ sourceEnvironmentId: "environment-b" });
+    expect(JSON.stringify(encode(event))).not.toContain(SECRET);
   });
 });

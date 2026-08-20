@@ -40,7 +40,11 @@ import {
   type CtoxDaemonEndpoint,
   type WorkjetMailboxTransportSources,
 } from "./WorkjetMailboxTransport.ts";
-import { makeWorkjetMeshIdentity, WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
+import {
+  canonicalKeyBindingBytes,
+  makeWorkjetMeshIdentity,
+  WorkjetMeshIdentity,
+} from "./WorkjetMeshIdentity.ts";
 
 // ===============================
 // Fixtures
@@ -389,6 +393,23 @@ const remoteDocument = (input: {
   readonly publicKeyOverride?: string;
   /** Emit the pre-sealing v1 wrapper, as an un-upgraded peer still would. */
   readonly legacyV1?: boolean;
+  /** Emit the pre-binding v2 wrapper: both keys, no proof of who chose them. */
+  readonly legacyV2?: boolean;
+  /**
+   * The ENCRYPTION key the binding actually covers, when it must differ from
+   * the one advertised. That divergence is the substitution attack: a room
+   * member republishes an honest peer's envelope and its honest binding with
+   * its own encryption key swapped in.
+   */
+  readonly bindEncryptionKey?: string;
+  /** The envelope id the binding covers, for lifting a binding onto another. */
+  readonly bindEnvelopeId?: string;
+  /** The source environment id the binding covers, for a cross-address lift. */
+  readonly bindEnvironmentId?: string;
+  /** Who signs the binding. Defaults to the identity that signed the envelope. */
+  readonly bindingSigner?: WorkjetMeshIdentity["Service"];
+  /** Flip one character of the binding signature. */
+  readonly tamperBinding?: boolean;
   /** Seal the payload to this X25519 key instead of sending it in the clear. */
   readonly sealToKey?: string;
   /** Seal under a DIFFERENT envelope id, to exercise the AAD binding. */
@@ -412,27 +433,46 @@ const remoteDocument = (input: {
       : signed.signature;
     const envelope = { ...signed, signature };
 
+    const senderSigningKey = input.publicKeyOverride ?? input.identity.publicKey;
+    const senderEncryptionKey =
+      input.encryptionKeyOverride ?? input.identity.encryptionPublicKey;
+
+    const body =
+      input.sealToKey === undefined
+        ? { plain: input.payload, reason: "recipient-key-unknown" }
+        : {
+            sealed: yield* input.identity.sealTo(
+              input.sealToKey,
+              new TextEncoder().encode(JSON.stringify(input.payload)),
+              input.sealEnvelopeId ?? input.envelopeId,
+            ),
+          };
+
+    // The binding is built from the CLAIM the wrapper makes, so a default
+    // document carries a self-consistent one and every attack shape is a
+    // deliberate divergence between what is bound and what is advertised.
+    const bindingSignature = yield* (input.bindingSigner ?? input.identity).sign(
+      canonicalKeyBindingBytes({
+        envelopeId: input.bindEnvelopeId ?? input.envelopeId,
+        sourceWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: input.bindEnvironmentId ?? REMOTE_ENVIRONMENT,
+        senderSigningKey,
+        senderEncryptionKey: input.bindEncryptionKey ?? senderEncryptionKey,
+      }),
+    );
+    const keyBinding = input.tamperBinding
+      ? `${bindingSignature.startsWith("A") ? "B" : "A"}${bindingSignature.slice(1)}`
+      : bindingSignature;
+
     const wrapper = input.legacyV1
       ? {
           schemaVersion: 1,
-          senderPublicKey: input.publicKeyOverride ?? input.identity.publicKey,
+          senderPublicKey: senderSigningKey,
           payload: input.payload,
         }
-      : {
-          schemaVersion: 2,
-          senderSigningKey: input.publicKeyOverride ?? input.identity.publicKey,
-          senderEncryptionKey: input.encryptionKeyOverride ?? input.identity.encryptionPublicKey,
-          body:
-            input.sealToKey === undefined
-              ? { plain: input.payload, reason: "recipient-key-unknown" }
-              : {
-                  sealed: yield* input.identity.sealTo(
-                    input.sealToKey,
-                    new TextEncoder().encode(JSON.stringify(input.payload)),
-                    input.sealEnvelopeId ?? input.envelopeId,
-                  ),
-                },
-        };
+      : input.legacyV2
+        ? { schemaVersion: 2, senderSigningKey, senderEncryptionKey, body }
+        : { schemaVersion: 3, senderSigningKey, senderEncryptionKey, keyBinding, body };
 
     return {
       id: input.envelopeId as string,
@@ -604,17 +644,34 @@ group("WorkjetMailboxTransport push", (it) => {
       assert.strictEqual(document.target_environment_id, REMOTE_ENVIRONMENT);
       const wire = JSON.parse(document.envelope_json) as WorkjetRoutingEnvelope;
       assert.strictEqual(wire.signature, envelope.signature);
-      // A v2 wrapper carrying BOTH public keys. This peer is unknown, so the
-      // payload travels in the clear exactly once, with the reason on the wire.
+      // A v3 wrapper carrying BOTH public keys and the key binding that proves
+      // one holder chose both. This peer is unknown, so the payload travels in
+      // the clear exactly once, with the reason on the wire.
       const wrapper = JSON.parse(document.payload_json) as {
         schemaVersion: number;
         senderSigningKey: string;
         senderEncryptionKey: string;
+        keyBinding: string;
         body: { plain?: unknown; reason?: string };
       };
-      assert.strictEqual(wrapper.schemaVersion, 2);
+      assert.strictEqual(wrapper.schemaVersion, 3);
       assert.strictEqual(wrapper.senderSigningKey, identity.publicKey);
       assert.strictEqual(wrapper.senderEncryptionKey, identity.encryptionPublicKey);
+      // The binding is present even on the plaintext first-contact envelope:
+      // that envelope is exactly the one whose keys get pinned, so it is the
+      // one that most needs to prove who chose them.
+      assert.isTrue(
+        yield* identity.verifyKeyBinding(
+          {
+            envelopeId: id,
+            sourceWorkspaceId: envelope.sourceWorkspaceId,
+            sourceEnvironmentId: envelope.sourceEnvironmentId,
+            senderSigningKey: identity.publicKey,
+            senderEncryptionKey: identity.encryptionPublicKey,
+          },
+          wrapper.keyBinding,
+        ),
+      );
       assert.strictEqual(wrapper.body.reason, "recipient-key-unknown");
       assert.strictEqual(status.counters.plainFirstContact, 1);
       assert.strictEqual(status.counters.sealed, 0);
@@ -1765,6 +1822,461 @@ group("WorkjetMailboxTransport snapshot transfer", (it) => {
       const wrapper = publishedWrapper(daemon.calls);
       assert.strictEqual((wrapper.body.plain as { _tag: string })._tag, "message");
       assert.notProperty(wrapper.body.plain, "snapshotBytes");
+    }),
+  );
+});
+
+// ===============================
+// Peer key binding
+// ===============================
+
+/**
+ * The identity-binding half of the trust model (docs/workjet-plan.md → Wave 5
+ * security follow-up). Every test here is an attack shape or the accept path it
+ * bounds, and each one names the concrete capability an in-room attacker gains
+ * if the check regresses.
+ */
+group("WorkjetMailboxTransport peer key binding", (it) => {
+  /** Collects the redacted audit events one cycle emitted. */
+  const capturing = () => {
+    const events: Array<WorkjetMailboxAuditEventInput> = [];
+    return {
+      events,
+      sink: {
+        emit: (event: WorkjetMailboxAuditEventInput) => {
+          events.push(event);
+          return Effect.void;
+        },
+      },
+    };
+  };
+
+  const bindingRejections = (events: ReadonlyArray<WorkjetMailboxAuditEventInput>) =>
+    events.filter((event) => event._tag === "mesh-peer-binding-rejected");
+
+  it.effect("pins a peer as self-signed when its wrapper carries a valid binding", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("bind-ok-000001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.bindingVerified, 1);
+      assert.strictEqual(status.counters.bindingAbsent, 0);
+      assert.strictEqual(status.rejections.keyBinding, 0);
+      assert.isTrue(Option.isSome(yield* store.getInbound(id)));
+
+      // The trust level is DURABLE and reaches the roster, not just a counter.
+      const page = yield* store.listMeshPeers(10);
+      assert.strictEqual(page.peers.length, 1);
+      assert.strictEqual(page.peers[0]?.binding, "self-signed");
+      assert.isTrue(page.peers[0]?.sealedDeliveryReady);
+    }),
+  );
+
+  it.effect("pins a v2 peer as tofu and says so rather than implying it is bound", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("bind-v2-000001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        legacyV2: true,
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      // Accepting a migration-window peer is deliberate; MISLABELLING it would
+      // not be. The envelope lands, and the pin records what it really is.
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.counters.bindingAbsent, 1);
+      assert.strictEqual(status.counters.bindingVerified, 0);
+      assert.isTrue(Option.isSome(yield* store.getInbound(id)));
+      const page = yield* store.listMeshPeers(10);
+      assert.strictEqual(page.peers[0]?.binding, "tofu");
+    }),
+  );
+
+  it.effect(
+    "refuses a first-contact wrapper whose encryption key the signer never bound",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* WorkjetMailboxStore;
+        const peer = yield* makeIdentity(WORKSPACE);
+        const attacker = yield* makeIdentity(WORKSPACE);
+
+        // THE substitution attack. `payload_json` is covered by no signature,
+        // so a room member republishes the honest peer's envelope and its
+        // honest binding with its OWN encryption key advertised. Pinning that
+        // pair would seal every later reply to this peer to the attacker.
+        const id = envelopeId("bind-sub-00001");
+        const document = yield* remoteDocument({
+          identity: peer,
+          envelopeId: id,
+          kind: "message",
+          encryptionKeyOverride: attacker.encryptionPublicKey,
+          bindEncryptionKey: peer.encryptionPublicKey,
+          payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+        });
+
+        const captured = capturing();
+        const daemon = makeFakeDaemon({ seed: [document] });
+        const transport = yield* makeTransport({
+          client: daemon.client,
+          sources: { audit: captured.sink },
+        });
+
+        const status = yield* transport.runCycle;
+
+        assert.strictEqual(status.counters.accepted, 0);
+        assert.strictEqual(status.rejections.keyBinding, 1);
+        assert.strictEqual(status.rejections.keyContinuity, 0, "this is a binding failure");
+        assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+        // NOTHING was pinned: a refused claim must not leave a row behind that
+        // a second attempt could then match against.
+        assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 0);
+        // Poison is consumed, or every cycle re-reads it forever.
+        assert.deepEqual([...consumedIds(daemon.calls)], [id as string]);
+
+        const audited = bindingRejections(captured.events);
+        assert.strictEqual(audited.length, 1);
+        assert.deepInclude(audited[0], {
+          _tag: "mesh-peer-binding-rejected",
+          envelopeId: id,
+          sourceWorkspaceId: WORKSPACE,
+          sourceEnvironmentId: REMOTE_ENVIRONMENT,
+          reasonCode: "binding-invalid",
+        });
+        // Redaction: an audit event never carries key material.
+        const serialized = JSON.stringify(captured.events);
+        assert.notInclude(serialized, attacker.encryptionPublicKey);
+        assert.notInclude(serialized, peer.publicKey);
+      }),
+  );
+
+  it.effect("refuses a binding lifted from another envelope of the same peer", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // A genuine signature by the right key over the right keys — but for a
+      // DIFFERENT envelope. Without the envelope id in the claim, one honest
+      // binding would authorise every document an attacker cares to publish.
+      const id = envelopeId("bind-lift-0001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        bindEnvelopeId: "wjm-transport-bind-lift-0002",
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.keyBinding, 1);
+      assert.strictEqual(status.counters.accepted, 0);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.strictEqual(bindingRejections(captured.events).length, 1);
+    }),
+  );
+
+  it.effect("refuses a binding that names a different source environment", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // The mesh address is part of the claim, so a binding a peer signed for
+      // the environment id it really owns cannot be re-pointed at another one.
+      const id = envelopeId("bind-addr-0001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        bindEnvironmentId: "environment-somewhere-else",
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.keyBinding, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      assert.strictEqual(bindingRejections(captured.events).length, 1);
+    }),
+  );
+
+  it.effect("refuses a binding signed by a key other than the envelope's signer", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const attacker = yield* makeIdentity(WORKSPACE);
+
+      // Verification is against the key the ENVELOPE verified against, never
+      // against whatever key the binding would like to be checked with.
+      const id = envelopeId("bind-signer-001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        bindingSigner: attacker,
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.keyBinding, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+    }),
+  );
+
+  it.effect("refuses a tampered binding signature", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const id = envelopeId("bind-tamper-01");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        tamperBinding: true,
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.keyBinding, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+    }),
+  );
+
+  it.effect("refuses to downgrade a self-signed peer back to bare first-use trust", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const firstId = envelopeId("bind-down-0001");
+      const first = yield* remoteDocument({
+        identity: peer,
+        envelopeId: firstId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      // The SAME keys, the same signer, a valid envelope — with the binding
+      // simply stripped. If this were accepted, an attacker would strip the
+      // field and be back to the substitution the binding exists to stop.
+      const secondId = envelopeId("bind-down-0002");
+      const second = yield* remoteDocument({
+        identity: peer,
+        envelopeId: secondId,
+        kind: "message",
+        legacyV2: true,
+        payload: messagePayload({
+          envelopeId: secondId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [first, second] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1, "only the bound envelope lands");
+      assert.strictEqual(status.rejections.keyBinding, 1);
+      assert.isTrue(Option.isSome(yield* store.getInbound(firstId)));
+      assert.isTrue(Option.isNone(yield* store.getInbound(secondId)));
+      // The pin keeps the level it earned.
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers[0]?.binding, "self-signed");
+
+      const audited = bindingRejections(captured.events);
+      assert.strictEqual(audited.length, 1);
+      assert.deepInclude(audited[0], { reasonCode: "binding-downgrade" });
+    }),
+  );
+
+  it.effect("upgrades a tofu pin to self-signed when the same keys arrive bound", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      const firstId = envelopeId("bind-up-000001");
+      const first = yield* remoteDocument({
+        identity: peer,
+        envelopeId: firstId,
+        kind: "message",
+        legacyV2: true,
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const secondId = envelopeId("bind-up-000002");
+      const second = yield* remoteDocument({
+        identity: peer,
+        envelopeId: secondId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: secondId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const daemon = makeFakeDaemon({ seed: [first, second] });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      // Upgrading is safe in the way downgrading is not: identical key
+      // material, now with evidence attached. Both envelopes land.
+      assert.strictEqual(status.counters.accepted, 2);
+      assert.strictEqual(status.rejections.keyBinding, 0);
+      assert.strictEqual(status.counters.bindingAbsent, 1);
+      assert.strictEqual(status.counters.bindingVerified, 1);
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers[0]?.binding, "self-signed");
+    }),
+  );
+
+  it.effect("audits a conflicting re-pin attempt instead of only counting it", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const impostor = yield* makeIdentity(WORKSPACE);
+
+      const firstId = envelopeId("bind-conf-0001");
+      const first = yield* remoteDocument({
+        identity: peer,
+        envelopeId: firstId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: firstId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      // A different room member, holding a keypair it genuinely owns and
+      // signing a perfectly valid binding, claiming the SAME mesh address. The
+      // binding verifies; continuity is what refuses it.
+      const secondId = envelopeId("bind-conf-0002");
+      const second = yield* remoteDocument({
+        identity: impostor,
+        envelopeId: secondId,
+        kind: "message",
+        payload: messagePayload({
+          envelopeId: secondId,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [first, second] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.strictEqual(status.rejections.keyContinuity, 1);
+      assert.isTrue(Option.isNone(yield* store.getInbound(secondId)));
+
+      const audited = bindingRejections(captured.events);
+      assert.strictEqual(audited.length, 1);
+      assert.deepInclude(audited[0], {
+        reasonCode: "signing-key-conflict",
+        sourceEnvironmentId: REMOTE_ENVIRONMENT,
+      });
+      // The contested ADDRESS is the operator's signal; the keys are not.
+      assert.notInclude(JSON.stringify(captured.events), impostor.publicKey);
+    }),
+  );
+
+  it.effect("still refuses a forged signature before any binding is even looked at", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+
+      // Key POSSESSION on first contact: a peer cannot pin a signing key it
+      // does not hold, because the envelope is verified against that key first.
+      // A valid-looking binding does not rescue a broken signature.
+      const id = envelopeId("bind-forge-001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "message",
+        tamperSignature: true,
+        payload: messagePayload({ envelopeId: id, source: remoteAddress, target: localAddress }),
+      });
+
+      const captured = capturing();
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { audit: captured.sink },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.rejections.signature, 1);
+      assert.strictEqual(status.rejections.keyBinding, 0);
+      assert.strictEqual((yield* store.listMeshPeers(10)).peers.length, 0);
+      assert.isTrue(Option.isNone(yield* store.getInbound(id)));
+      // A signature failure is not a binding dispute and must not be audited
+      // as one, or the binding-rejection signal stops meaning anything.
+      assert.strictEqual(bindingRejections(captured.events).length, 0);
     }),
   );
 });

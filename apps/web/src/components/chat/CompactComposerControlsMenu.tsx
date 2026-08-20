@@ -16,6 +16,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
+  /** Workjet role radio group plus the settings item; omitted on a draft thread. */
+  workjetRoleMenuContent?: ReactNode;
   workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -38,6 +40,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
+        {props.workjetRoleMenuContent ? (
+          <>
+            {props.workjetRoleMenuContent}
             <MenuDivider />
           </>
         ) : null}

@@ -261,6 +261,12 @@ import {
   WORKJET_GREPPY_FAILURE_TOAST,
 } from "./chat/WorkjetCapabilityMenu";
 import {
+  executeWorkjetRoleChange,
+  WORKJET_ROLE_FAILURE_TOAST,
+  WORKJET_SETTINGS_ROUTE,
+  type WorkjetSelectableRole,
+} from "./chat/WorkjetRoleControl";
+import {
   buildWorkjetDelegateTaskInput,
   buildWorkjetSendHandoffInput,
   buildWorkjetSendMessageInput,
@@ -2009,7 +2015,11 @@ function ChatViewContent(props: ChatViewProps) {
       if (!current || current.busy) return currentByThreadKey;
       const serverCapabilityIds = activeServerThread.workjetConfig.enabledCapabilityIds;
       const optimisticCapabilityIds = current.config.enabledCapabilityIds;
+      // The role is compared too: a role change leaves the capability list
+      // untouched, so capability equality alone would drop the override before
+      // the projection carried the new role and flick the control back.
       const serverCaughtUp =
+        activeServerThread.workjetConfig.role === current.config.role &&
         serverCapabilityIds.length === optimisticCapabilityIds.length &&
         serverCapabilityIds.every(
           (capabilityId, index) => capabilityId === optimisticCapabilityIds[index],
@@ -3732,8 +3742,22 @@ function ChatViewContent(props: ChatViewProps) {
       workjetSendOutcome,
     ],
   );
-  const handleWorkjetGreppyEnabledChange = useCallback(
-    (enabled: boolean) => {
+  /**
+   * The one optimistic-with-revert runner every thread Workjet config edit goes
+   * through — the Greppy toggle and the `Code | Orchestrator` role alike. It
+   * owns the per-thread in-flight guard, the visible override and clearing that
+   * override once the change settles; the caller supplies only the transition.
+   */
+  const runWorkjetConfigChange = useCallback(
+    (
+      execute: (input: {
+        readonly currentConfig: WorkjetThreadConfig;
+        readonly dispatch: (
+          nextConfig: WorkjetThreadConfig,
+        ) => ReturnType<typeof setThreadWorkjetConfig>;
+        readonly setVisibleConfig: (config: WorkjetThreadConfig) => void;
+      }) => Promise<WorkjetThreadConfig>,
+    ) => {
       if (!activeServerThread || !activeThreadKey || !visibleWorkjetConfig) return;
       if (workjetToggleInFlightThreadKeysRef.current.has(activeThreadKey)) return;
 
@@ -3742,10 +3766,8 @@ function ChatViewContent(props: ChatViewProps) {
       workjetToggleInFlightThreadKeysRef.current.add(threadKey);
       void (async () => {
         try {
-          const retainedConfig = await executeWorkjetCapabilityToggle({
+          const retainedConfig = await execute({
             currentConfig,
-            capabilityId: GREPPY_CAPABILITY_ID,
-            enabled,
             dispatch: (nextConfig) =>
               setThreadWorkjetConfig({
                 environmentId: activeServerThread.environmentId,
@@ -3762,9 +3784,6 @@ function ChatViewContent(props: ChatViewProps) {
                   busy: config !== currentConfig,
                 },
               }));
-            },
-            notifyFailure: () => {
-              toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
             },
           });
           setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
@@ -3788,6 +3807,41 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeServerThread, activeThreadKey, setThreadWorkjetConfig, visibleWorkjetConfig],
   );
+  const handleWorkjetGreppyEnabledChange = useCallback(
+    (enabled: boolean) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetCapabilityToggle({
+          ...input,
+          capabilityId: GREPPY_CAPABILITY_ID,
+          enabled,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
+  const handleWorkjetRoleChange = useCallback(
+    (role: WorkjetSelectableRole) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetRoleChange({
+          ...input,
+          role,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_ROLE_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
+  // Settings → Workjet is the ONE configuration surface; the gear routes there
+  // instead of growing a second one in the composer. A plain push keeps the
+  // thread in history, so the settings screen's own back/Escape returns to it.
+  const handleOpenWorkjetSettings = useCallback(() => {
+    void navigate({ to: WORKJET_SETTINGS_ROUTE });
+  }, [navigate]);
   const createBrowserSurface = useCallback(() => {
     if (!activeThreadRef) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
@@ -6984,6 +7038,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            workjetRole={visibleWorkjetConfig?.role ?? null}
                             workjetGreppyEnabled={
                               visibleWorkjetConfig
                                 ? visibleWorkjetConfig.enabledCapabilityIds.includes(
@@ -7032,6 +7087,8 @@ function ChatViewContent(props: ChatViewProps) {
                             handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
                             onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
+                            onWorkjetRoleChange={handleWorkjetRoleChange}
+                            onOpenWorkjetSettings={handleOpenWorkjetSettings}
                             focusComposer={focusComposer}
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}

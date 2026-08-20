@@ -2891,50 +2891,148 @@ was reverted. Audited 2026-08-20.
       authority escalation. Require signed, end-to-end encrypted delegation
       envelopes, target-side capability checks, bounded payloads, expiry, and
       revocable environment credentials.
-      Verified open 2026-08-20. Two of the six required properties are covered
-      well — SIGNED (`WorkjetMeshIdentity.test.ts`,
-      `WorkjetMailboxTransport.test.ts` → "rejects and consumes a tampered
-      signature", plus key-binding verification) and END-TO-END ENCRYPTED
-      (ephemeral X25519 → HKDF → AES-256-GCM with the envelope id bound through
-      the AAD). The other four are not:
-      • TARGET-SIDE CAPABILITY CHECKS do not exist. Only a target ROLE check
-      does (`WorkjetDelegationExecutor.ts:857`). The parent-superset grant
-      check exists solely on the LOCAL path (`WorkerDispatch.ts:152-160`),
-      never on the remote one.
+      Re-audited 2026-08-20 after the first audit; A REAL HOLE WAS FOUND AND
+      FIXED and four properties are newly guarded. Remote work reaches a machine
+      through ONE door — `ingest` in `WorkjetMailboxTransport.ts` — and the three
+      questions that door has to answer now each have a test that fails if the
+      answer changes:
+      • CAN AN ENVELOPE NAMING ANOTHER ENVIRONMENT HAVE AN EFFECT HERE? No, at
+      two independent layers. Ingest refuses a `targetEnvironmentId` that is not
+      this machine before anything durable happens and before the sender is even
+      pinned (`WorkjetMailboxTransport.ts:1371-1376`); CTOX does not read the
+      envelope at all, so this is the only place that check exists on the wire
+      path. The executor refuses again at run time
+      (`WorkjetDelegationExecutor.ts:825-830`). Guarded by
+      `WorkjetMailboxTransport.test.ts` → "refuses a correctly signed envelope
+      that names another environment" and, for the executor, "skips a delegation
+      whose target thread lives in another environment".
+      • CAN A PEER ESCALATE BY CLAIMING AN ENVIRONMENT ID IT DOES NOT OWN? Only
+      at FIRST CONTACT, and that limit is now exactly as narrow as it was
+      described. Trust-on-first-use pins `(workspaceId, environmentId) → both
+    public keys` on the first envelope that verifies, and any later different
+      key is refused, audited, and consumed
+      (`acceptPeerKey`, `WorkjetMailboxTransport.ts:907-918`;
+      `WorkjetMailboxTransport.test.ts` → "audits a conflicting re-pin attempt
+      instead of only counting it", "refuses to downgrade a self-signed peer
+      back to bare first-use trust"). What the impersonator cannot do is choose
+      capabilities: a remote delegation targets an EXISTING local thread and
+      runs under that thread's own role and grants — the delegation contract
+      (`packages/contracts/src/workjetMailbox.ts:467-486`) carries no capability
+      field at all, which is why the missing parent-superset check on the remote
+      path is a missing defence in depth rather than an escalation vector.
+      • CAN A REMOTE MESSAGE REACH A THREAD WITHOUT SIGNATURE VERIFICATION? No,
+      and this is now structural rather than incidental.
+      `WorkjetRemoteDispatchWiring.test.ts` holds every declaration that calls
+      `recordInboundEnvelope` — the one durable write that turns wire bytes into
+      an accepted envelope — to also verifying the routing envelope, and pins the
+      call-site inventory (3 sites) plus the inventories of the two thread-visible
+      effects, so a NEW writer fails the gate instead of inheriting the guarantee
+      by proximity. Deleting either the remote or the local-fast-path check fails
+      it. Note the local fast path verifies too, even for an envelope this
+      process signed a moment earlier (`WorkjetMailboxDelivery.ts:608`, `:1303`).
+      HOLE FOUND AND FIXED — PAYLOAD ADDRESSES WERE UNAUTHENTICATED. The Ed25519
+      signature covers the routing envelope and the AES-GCM seal binds the
+      ciphertext to the envelope id, but NOTHING compared the addresses the
+      payload claims for itself with the ones the signature authenticates. A
+      pinned, perfectly authenticated peer could therefore deliver a delegation
+      whose `source` named a third environment — making this machine sign and
+      relay an unsolicited `result` envelope to it, a confused deputy under its
+      own trusted identity — or whose `source` named THIS environment, sending
+      the executor down its same-environment result path
+      (`WorkjetDelegationExecutor.ts:1043-1053`) to append an activity onto a
+      local thread the remote peer picked. `payloadMatchesEnvelope`
+      (`WorkjetMailboxTransport.ts`) now compares every address each payload
+      variant carries, plus the envelope id, and ingest refuses a mismatch as the
+      bounded `addressMismatch` rejection before the first durable write.
+      Guarded by four tests in `WorkjetMailboxTransport.test.ts` (claimed source
+      is a third environment; claimed source is this environment; a handoff
+      claiming a foreign target; a payload lifted onto another envelope id).
+      NEWLY GUARDED, from the first audit's list: EXPIRY now has its own test
+      plus the `<=` boundary ("refuses a validly signed but expired envelope
+      before it opens the seal", which also asserts the seal was never opened and
+      no pin was created; "treats the expiry instant itself as expired and one
+      millisecond later as live"). INBOUND BOUNDED PAYLOADS now have one: the
+      wrapper's sealed-field ceiling is enforced AND the constant itself is
+      pinned at 1 MiB ("refuses a sealed field beyond the wrapper's
+      one-mebibyte ceiling"), because the 200 000-byte wire ceiling is an
+      OUTBOUND check and buys the receiver nothing.
+      STILL OPEN, and why this stays unticked:
       • REVOCABLE ENVIRONMENT CREDENTIALS do not exist in this repository.
       There is no `revokePeer`, `forgetPeer`, or `rotateMeshKey`; key rotation
       is treated as a rejection, not a supported revocation path. Revocation
       is explicitly deferred to the CTOX daemon, outside this repo.
-      • BOUNDED PAYLOADS are enforced and tested OUTBOUND only (the 200 000-byte
-      wire ceiling); nothing asserts the receiver refuses an oversized wrapper
-      pushed at it, and the 1 MiB seal-field bound has no test.
-      • EXPIRY has one bundled assertion sharing a test with two unrelated
-      conditions; no test covers the boundary, or a validly-signed but expired
-      envelope being refused before unsealing.
+      • TARGET-SIDE CAPABILITY CHECKS still do not exist; only the target ROLE
+      check does (`WorkjetDelegationExecutor.ts:857`). See above for why this is
+      defence in depth and not a live escalation.
+      • The first-contact impersonation window is inherent to TOFU and is not
+      closed by anything in this repository.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
-      Verified open 2026-08-20. The second half holds and is guarded: bodies are
-      captured only on the error path (`response_writer_test.rs` →
+      Re-audited 2026-08-20. THREE TYPESCRIPT LEAKS WERE FOUND AND FIXED; the
+      Rust half is an owner decision recorded below.
+      Bodies are captured only on the error path (`response_writer_test.rs` →
       `error_only_success_does_not_call_disabled_logger`), management routes are
-      never request-logged, and the TypeScript ACP layer logs structure only
+      never request-logged, and the ACP native logging layer logs structure only
       (`AcpNativeLogging.test.ts` → "records bounded request and protocol
-      diagnostics without raw payloads", which feeds a canary through every
-      field and asserts it never appears).
-      The FIRST half is VIOLATED on one path. `HomeRequestLogPayload::new`
-      (`native/provider-gateway/internal/logging/request_logger_home.rs:35-43`)
-      builds its `headers` map with `clone_headers`, which filters only empty
-      names and applies NO masking — so while the `request_log` blob it ships
-      is redacted, the sibling `headers` field carries a raw
-      `Authorization: Bearer …` off-box to the home sink. This is
-      COUNTER-TESTED: `request_logger_home_test.rs` →
-      `bound_home_sink_replaces_local_request_log_output` asserts the raw token
-      IS present, so any fix breaks that test.
-      OWNER: decide whether the home sink is a trusted destination that may
-      receive unmasked credentials, or a leak to close. Not changed here —
-      flipping a deliberately pinned behaviour needs that decision first.
-      Also untested: that the host never selects `RequestLoggingPolicy::full`
-      (all seven call sites use `error_only_scoped`; switching one breaks no
-      test), that `sdk_config.request_log` defaults to `false`, and that
-      `commercial_mode` suppresses upstream capture.
+      diagnostics without raw payloads").
+      FIXED — THE DEFAULT PROTOCOL LOGGERS LOGGED THE WHOLE WIRE MESSAGE. Both
+      `packages/effect-acp/src/protocol.ts` and
+      `packages/effect-codex-app-server/src/protocol.ts` fell back to
+      `Effect.logDebug(...).pipe(Effect.annotateLogs({ event }))` when a caller
+      turned protocol logging on without supplying its own logger — and that
+      `event.payload` is the raw stdio line or the decoded RPC message, a
+      `session/prompt`'s params included. `AcpNativeLogging` always supplies a
+      logger, so nothing was leaking in production today, but the DEFAULT is
+      precisely what this invariant line names. Both now emit a structural
+      summary (type, size, allow-listed tag/method) that cannot carry content
+      whatever the peer sends. Guarded by "emits no payload content from the
+      default protocol logger" in each protocol suite: one sentinel is driven
+      through every stage in both directions and must appear nowhere, while the
+      structural fields must still be present, so emitting nothing does not pass.
+      FIXED — OPERATOR LAUNCH FLAGS IN A SPAN. `claude.query.extra_args_json`
+      serialized the whole `launchArgs` record, names AND values, into a span
+      attribute; every span attribute lands verbatim in
+      `<stateDir>/logs/server.trace.ndjson`, whose only bound is
+      `truncateTraceAttributes`, a 500-character CLAMP that redacts nothing. It
+      is now `claude.query.extra_arg_names`.
+      NEWLY GUARDED: `apps/server/src/provider/ProviderTraceRedaction.test.ts`
+      inventories every provider span attribute both ways, in the style of
+      `SUPPORT_BUNDLE_FIELD_INVENTORY` — an undeclared attribute fails, and a
+      declaration for an attribute that no longer exists fails too. It also
+      refuses any attribute named after request content or a credential (with an
+      explicit, justified exemption list rather than a weakened pattern) and any
+      attribute that serializes a structure without a declared justification.
+      OWNER DECISION — THE HOME SINK SHIPS A RAW BEARER TOKEN OFF-BOX.
+      `HomeRequestLogPayload::new`
+      (`native/provider-gateway/internal/logging/request_logger_home.rs:35-42`)
+      builds its `headers` map with `clone_headers`
+      (`request_logger_home.rs:55-61`), which filters only empty names and
+      applies NO masking. The `request_log` blob it ships alongside is redacted;
+      the sibling `headers` field is not, so a raw
+      `Authorization: Bearer …` leaves the machine for the home sink.
+      This behaviour is deliberately PINNED by a counter-test:
+      `native/provider-gateway/internal/logging/request_logger_home_test.rs:48`
+      → `bound_home_sink_replaces_local_request_log_output`, whose line 61
+      asserts `pushed[0].headers["Authorization"][0] == "Bearer secret"`. Any fix
+      breaks that test, which is why this is a decision and not a bug fix.
+      THE DECISION: is the home sink a trusted destination that may receive
+      unmasked provider credentials, or is this a leak to close? If it is a leak,
+      closing it means masking in `clone_headers` (or dropping the `headers`
+      field) AND rewriting the counter-test to assert the mask — the counter-test
+      is the record of the current answer, not an obstacle to be deleted quietly.
+      Deliberately not changed on 2026-08-20: `native/**` was out of scope and
+      flipping a pinned behaviour needs the owner first.
+      ALSO STILL UNTESTED (Rust side, unchanged): that the host never selects
+      `RequestLoggingPolicy::full` (all seven call sites use `error_only_scoped`;
+      switching one breaks no test), that `sdk_config.request_log` defaults to
+      `false`, and that `commercial_mode` suppresses upstream capture.
+      RESIDUAL (TypeScript side, recorded not fixed): the provider event NDJSON
+      at `<stateDir>/logs/provider/events.*.log` stores raw provider payloads by
+      design (`EventNdjsonLogger.ts:557-593`), and `server.trace.ndjson` records
+      `Cause.pretty` of every failed span (`packages/shared/src/observability.ts`
+      → `formatTraceExit`), which is how an error `detail` such as
+      `opencodeRuntime.ts:69-83`'s serialized HTTP error body reaches disk. Both
+      are local files rather than off-box traffic, and both are larger decisions
+      than this line's wording.
 
 ## 13. Licensing policy and release gate
 

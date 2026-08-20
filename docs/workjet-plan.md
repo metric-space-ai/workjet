@@ -3346,7 +3346,7 @@ was reverted. Audited 2026-08-20.
       `CtoxInstanceRegistry.test.ts` → "rejects expired, bridged, oversized,
       malformed-room, and dangerous URL inputs"; previously only a synthetic
       nested `http_bridge` key was covered.
-- [ ] No raw provider, pairing, capability, sudo, or SSH secrets in Git,
+- [x] No raw provider, pairing, capability, sudo, or SSH secrets in Git,
       browser storage, thread events, instance registries, logs, crash reports, or
       support bundles.
       KORREKTUR 2026-08-20 — this was VIOLATED, not merely unguarded, and is
@@ -3381,6 +3381,46 @@ was reverted. Audited 2026-08-20.
       asserts no secret shape reaches `localStorage`/IndexedDB. Scope: one new
       script plus one renderer test — small, and it is the cheapest way to close
       a security invariant on this list.
+      TICKED 2026-08-20 — both remaining sinks now have a guard, and the note
+      above enumerated no other reason.
+      GIT: `scripts/check-tracked-secrets.ts` walks `git ls-files` and fails on
+      committed secret material; `scripts/release-smoke.ts` runs it first, so it
+      executes in CI's existing Release Smoke job. It exits 0 on the current
+      tree over 4,766 tracked text files, and mutation-verified: a
+      `sk-ant-api03-…` planted in `README.md` failed it with exit 1 naming
+      `README.md:110 [known-credential]`, and the tree was restored.
+      BROWSER STORAGE: `apps/web/src/browserStorageSecretCanary.test.ts` drives
+      the shipping `connectionStorageLayer` (IndexedDB catalog: targets,
+      profiles, credentials, relay DPoP tokens, plus the cached `ServerConfig`
+      that carries `providers`) and both `localStorage` writers, then scans the
+      whole dump. Only the browser ENGINE is emulated. Mutation-verified: a
+      `ghp_…` planted on the connection label came back out of storage and
+      failed the canary; a permanent positive control keeps that property.
+      NO SECOND TABLE. The shape definitions moved out of
+      `SupportBundleRedaction.ts` into `packages/shared/src/secretShapes.ts`,
+      which all three consumers import. Each shape now declares, with a reason,
+      whether a source-tree scan and the storage canary may use it — the
+      tracked-file gate runs three of six (a residue heuristic tuned for one
+      short bundle field matches every Git hash and lockfile digest in a
+      repository), the canary runs four. Set equality in
+      `scripts/check-tracked-secrets.test.ts` makes a new shape impossible to
+      add without deciding both. `SupportBundleRedaction.test.ts` still passes
+      unchanged (26 tests), so the extraction changed no redaction behaviour.
+      SCOPE, recorded so it is not mistaken for coverage: the tracked-file gate
+      does not scan `.repos/` (12,960 vendored third-party files that CI already
+      excludes from the checkout) and allows planted fixtures in exactly three
+      enumerated desktop support tests, each with a reason; a stale entry is an
+      error. `password-prompt` cannot scan a source tree in either direction — a
+      real typed password is eight low-entropy characters, indistinguishable
+      from `password: Option<String>`.
+      FINDING, not a violation of this line: the web app does persist two
+      credentials in IndexedDB — its own connection bearer token
+      (`CredentialStore`) and the relay DPoP access token (`TokenStore`). Both
+      are the browser's own session credentials, not any of the five kinds this
+      line names, which stay in the owning runtime's secret store per
+      `docs/internals/workjet-architecture.md`. The canary declares them by name
+      with a reason and asserts each appears EXACTLY ONCE, so a copy into a
+      second store fails the test.
 - [x] Separate Electron session partitions for CTOX instances.
       `CtoxElectronSessions.test.ts` proves deterministic per-instance
       partitions for managed, invited, manually paired, and SSH-managed

@@ -865,7 +865,7 @@ follow-up, and the superseded "Open" list on the provider-account surface.
     tests, incl. "upgrades a persisted v1 configuration to v2 while
     carrying route ids over"). PARTIAL — provider capacity: the only
     capacity field is a PRESENCE FLAG, `WorkjetGatewayHealth.capacity:
-    "reported" | "not-reported-by-host"` (`workjet.ts:588-592`, `:632`),
+"reported" | "not-reported-by-host"` (`workjet.ts:588-592`, `:632`),
     hardcoded to `not-reported-by-host` by
     `apps/server/src/providerGateway/ProviderGatewayService.ts:1123-1124`
     because the Rust host publishes no route for it; there is no capacity
@@ -958,7 +958,12 @@ follow-up, and the superseded "Open" list on the provider-account surface.
     `5bd652f55`, `0a358ba3b`) — each limited to what the host can actually
     answer, verified against its source. Pools: the host has NO named pool
     object, one per provider only, so the contract's `pools`/`routes` are
-    DEAD SCHEMA (nothing wrote them, nothing could honour them); exposed
+    not honoured BY THE HOST — `rustHostConfiguration` omits them, and no UI
+    writes them (KORREKTUR to an earlier wording here that called them
+    "dead schema": that was wrong. The composer's route resolver landed
+    hours earlier and DOES honour them on the hot path at every routed
+    session start, failing typed on ambiguity — see the correction note
+    above); exposed
     instead are the host's real semantics — a single runtime-wide routing
     strategy (Node was hardcoding round-robin, so `weight` had been inert),
     priority-exclusive OAuth pools vs round-robin API-key pools, and
@@ -1012,7 +1017,7 @@ follow-up, and the superseded "Open" list on the provider-account surface.
         during worker validation and dispatch.
         Verified open 2026-08-20: availability is still a hand-toggled static
         boolean — `WorkjetHarnessConfiguration = { harness, available:
-    Schema.Boolean (default false), executableOverride? }`
+Schema.Boolean (default false), executableOverride? }`
         (`packages/contracts/src/workjet.ts:50-55`), flipped by a Switch in
         `apps/web/src/components/settings/WorkjetComputerEditor.tsx:246-254`
         under the copy "Declare what is available on this existing
@@ -1192,7 +1197,7 @@ follow-up, and the superseded "Open" list on the provider-account surface.
   check, `thread.workjet-config.set` being a wholly separate case. Workers
   keep an explicit per-worker combination:
   `apps/server/src/workjet/WorkerDispatch.ts:162` (`input.modelSelection ??
-    parent.modelSelection`) applied to both create and turn-start, proven by
+  parent.modelSelection`) applied to both create and turn-start, proven by
   `WorkerDispatch.test.ts` "accepts a capability subset and canonical model
   override including options". Remaining delta: no test asserts the
   PICKER itself stays rendered and enabled on an orchestrator or worker
@@ -1568,7 +1573,7 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       even with two delivered delegations", with "treats both a running latest
       turn and a live session as an active turn" defining busy; ordering per
       delegation — `listDelegationRowsByState` scans `ORDER BY
-    state_changed_at_ms ASC, delegation_id ASC`
+  state_changed_at_ms ASC, delegation_id ASC`
       (`WorkjetMailboxStore.ts:1816`) and the cycle scans `running` before any
       accept moves a fresh row into `running`. Bounded at 32 rows per state per
       cycle, 10 s cadence, 60 s cycle timeout, with a resilient per-row scan so

@@ -1803,21 +1803,30 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   not supported — the tests "rejects and consumes an envelope whose sender
   key rotated" and "…whose ENCRYPTION key rotated" pin the refusal, and no
   re-pin path exists.
+  CORRECTION 2026-08-20: item (4) is CLOSED. Those two tests still pin the
+  refusal — correctly, because an unannounced key change is still an
+  impersonation attempt — but the refusal is no longer a dead end. An operator
+  revocation (`workjet.mesh.revokePeer`, migration 053) destroys the pin so the
+  next verifying envelope re-pins the NEW key, while tombstoning the old keys so
+  they can never come back. See the remote-dispatch security invariant for the
+  full argument that revocation is not itself an attack, and
+  `WorkjetMailboxTransport.test.ts` → "re-pins a rotated peer's NEW key once an
+  operator revokes the old pin" for the end-to-end proof.
   BUCKET 2026-08-20: SPLIT.
   BLOCKED-ON-REALITY: the live two-machine run. NEEDS: a second physical machine
   with its own CTOX daemon, paired into the same room. Every transport test in
   this repository drives a fake daemon `HttpClient` stub, and the cited
   two-daemon CTOX test is two processes on one host — neither substitutes.
-  IMPLEMENTABLE, three separate pieces: (a) inbound thread-activity traces —
+  IMPLEMENTABLE, two pieces left: (a) inbound thread-activity traces —
   same work as item (a) on the persistence line above, do it once; (b) in-cycle
   cursor following — `next_cursor` is decoded at
   `WorkjetMailboxTransport.ts:595` and then dropped, so a backlog drains one
   50-envelope page per 10 s cycle; feeding it back into the same cycle is a
-  small loop change in `pull` (`:1581-1636`); (c) a key-ROTATION re-pin path —
-  rotation is currently a refusal with no way back, which also blocks the
-  "revocable environment credentials" clause of the remote-dispatch security
-  invariant. Scope: (b) ~1 file, small; (c) ~1 migration plus a re-pin RPC and
-  its UI confirmation, medium.
+  small loop change in `pull` (`:1581-1636`). Scope: (b) ~1 file, small.
+  DONE 2026-08-20: the third piece, a key-ROTATION re-pin path, landed as
+  migration 053 + `workjet.mesh.revokePeer` + the Machines-page confirmation,
+  and with it the "revocable environment credentials" clause of the
+  remote-dispatch security invariant.
 - [~] Add the typed thread-handoff contract and flow (immutable prompt/context
   snapshot, bounded artifact references, pushed or sync-bundled Git branch,
   durable source-thread link); the target machine continues in a new
@@ -3663,31 +3672,71 @@ public keys` on the first envelope that verifies, and any later different
       pinned at 1 MiB ("refuses a sealed field beyond the wrapper's
       one-mebibyte ceiling"), because the 200 000-byte wire ceiling is an
       OUTBOUND check and buys the receiver nothing.
+      CLOSED 2026-08-20, two of the three STILL OPEN bullets:
+      • REVOCABLE ENVIRONMENT CREDENTIALS now exist. Migration 053 adds
+      `workjet_mailbox_peer_revocations`, and `workjet.mesh.revokePeer`
+      (`WorkjetMeshRevocationRpc.ts`) destroys one peer's pin in a single
+      store transaction that TOMBSTONES both keys and then DELETES the pin.
+      The two halves are deliberately opposed: deleting the pin is what lets a
+      legitimately rotated peer be re-pinned by the next envelope that
+      verifies, and the tombstone is what keeps the REVOKED key from filling
+      that same window — `acceptPeerKey` checks the tombstones BEFORE it reads
+      or writes a pin and refuses with the new `key-revoked` code, counted in
+      its own `keyRevoked` rejection bucket and audited as
+      `mesh-peer-binding-rejected`.
+      WHY REVOCATION IS NOT ITSELF THE ATTACK, which is the question this
+      capability has to answer: revocation is not on the wire at all. No
+      envelope kind, no payload field, and no CTOX daemon loopback route can
+      trigger it; the only caller is the authenticated RPC socket, and the
+      scope table gives that method `orchestration:operate` — never the
+      roster's read scope (`RpcAuthorization.test.ts` → "requires an operate
+      scope to revoke a mesh peer, never the roster's read scope"). A caller
+      who already holds `orchestration:operate` can start turns on local
+      threads outright, so revocation grants it NO authority it did not
+      already have; that, rather than operator care, is why exposing it is
+      safe. Every revocation emits `mesh-peer-revoked`, and the Machines page
+      routes it through a confirmation that states both what is destroyed and
+      that the address becomes re-pinnable.
+      Guarded end to end in `WorkjetMailboxTransport.test.ts`: "re-pins a
+      rotated peer's NEW key once an operator revokes the old pin", "refuses
+      the REVOKED key forever, so replaying it cannot undo the revocation",
+      "refuses a revoked ENCRYPTION key even when it arrives under a fresh
+      signer", "leaves an unrelated peer's pin untouched when one address is
+      revoked"; plus the store's "never leaves a tombstone behind when the pin
+      could not be deleted", which fails the DELETE half and requires the
+      tombstone to roll back with it.
+      • TARGET-SIDE CAPABILITY CHECKS now exist, beside the target ROLE check
+      in `WorkjetDelegationExecutor.resolveTarget`. The executor resolves the
+      delegation's parent — the `parent` delegation ref when its owner is this
+      environment, otherwise the delegating SOURCE thread — and refuses
+      terminally with `target-capability-escalation` when the target thread
+      holds a grant the parent does not. It fails CLOSED on a deleted parent
+      (no authority on record) and retries on an unreadable projection (not
+      evidence about grants).
+      The "defence in depth, not a live escalation" characterisation above was
+      re-verified rather than assumed, and it HOLDS. Three independent facts:
+      the delegation contract carries no capability field
+      (`packages/contracts/src/workjetMailbox.ts`), every remote-created thread
+      is built with `enabledCapabilityIds: []`
+      (`WorkjetMailboxDelivery.ts:1413`, `WorkjetCrossModeThreads.ts:66`), and
+      the only writer of a non-empty grant set is `WorkerDispatch`, which is
+      orchestrator-gated and already enforces the parent superset at CREATION
+      (`WorkerDispatch.ts:157`). So no peer and no worker can reach a widened
+      target today. What the executor check adds is that the invariant survives
+      any one of those three facts changing.
+      HONEST LIMIT: a delegation whose parent thread lives on ANOTHER machine
+      is `unknowable` and runs unchecked. This server holds no record of that
+      thread's grants and could not verify a claim about them either, since the
+      contract has no field to carry one; the remote path's real protection
+      remains that a peer cannot CHOOSE the target's capabilities. Pinned by
+      "cannot check a remote-rooted delegation, and says so by letting it run".
       STILL OPEN, and why this stays unticked:
-      • REVOCABLE ENVIRONMENT CREDENTIALS do not exist in this repository.
-      There is no `revokePeer`, `forgetPeer`, or `rotateMeshKey`; key rotation
-      is treated as a rejection, not a supported revocation path. Revocation
-      is explicitly deferred to the CTOX daemon, outside this repo.
-      • TARGET-SIDE CAPABILITY CHECKS still do not exist; only the target ROLE
-      check does (`WorkjetDelegationExecutor.ts:857`). See above for why this is
-      defence in depth and not a live escalation.
       • The first-contact impersonation window is inherent to TOFU and is not
       closed by anything in this repository.
-      BUCKET 2026-08-20: SPLIT. The audit above stands unchanged; only the three
-      STILL OPEN bullets need bucketing.
-      IMPLEMENTABLE: target-side capability checks — add a parent-superset check
-      on the remote path beside the existing target ROLE check
-      (`WorkjetDelegationExecutor.ts:857`); defence in depth, ~1 file plus a
-      test, small.
-      IMPLEMENTABLE, larger: the Workjet half of revocable environment
-      credentials — `revokePeer` / `forgetPeer` / a key re-pin path. This is the
-      same missing machinery as the key-ROTATION gap on the replication line in
-      section 8; build it once. ~1 migration, 1 RPC, 1 UI confirmation plus
-      tests, medium.
-      BLOCKED-ON-REALITY: the first-contact TOFU impersonation window. NEEDS:
-      CTOX daemon device attestation — a change in the separate
-      `metric-space-ai/ctox` repository. It is inherent to TOFU and nothing in
-      Workjet closes it.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY, one bullet left. The first-contact
+      TOFU impersonation window NEEDS CTOX daemon device attestation — a change
+      in the separate `metric-space-ai/ctox` repository. Nothing in Workjet
+      closes it.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
       Re-audited 2026-08-20. THREE TYPESCRIPT LEAKS WERE FOUND AND FIXED; the
       Rust half is an owner decision recorded below.

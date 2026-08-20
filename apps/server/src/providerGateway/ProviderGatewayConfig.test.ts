@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   decodeProviderGatewayConfiguration,
   gatewayCatalog,
+  providerPools,
   rustHostConfiguration,
 } from "./ProviderGatewayConfig.ts";
 
@@ -166,6 +167,171 @@ describe("ProviderGatewayConfig", () => {
       const rendered = JSON.stringify(host);
       expect(rendered).toContain("account-zai-primary-api-key");
       expect(rendered).not.toContain("sk-");
+    });
+  });
+
+  describe("environment-scoped credentials", () => {
+    /**
+     * The gateway's credentials belong to the environment whose secret store
+     * holds them. Two things keep them there, and both are asserted here
+     * because "scoped" is otherwise an assumption: a reference may only name
+     * the gateway's own scope, and its name may not walk out of the secret
+     * directory. Together they mean the only file a gateway configuration can
+     * ever resolve is `<this environment's secretsDir>/workjet-provider-gateway.<name>.bin`.
+     */
+    it("refuses a reference to another scope or outside the secret directory", () => {
+      for (const name of [
+        "..",
+        ".",
+        "../../other-environment/secrets/claude.access",
+        "..%2fescape",
+        "sub/dir",
+        "back\\slash",
+        "space here",
+      ]) {
+        const input = validConfiguration();
+        Object.assign(input.accounts[0]!, { accessTokenSecret: secret(name) });
+        expect(decodeProviderGatewayConfiguration(input), name).toBeUndefined();
+      }
+      for (const scope of ["provider-settings", "workjet-provider-gateway ", "", "../"]) {
+        const input = validConfiguration();
+        Object.assign(input.accounts[0]!, {
+          accessTokenSecret: { scope, name: "codex.access" },
+        });
+        expect(decodeProviderGatewayConfiguration(input), scope).toBeUndefined();
+      }
+    });
+
+    it("renders each environment's own secret root and never another environment's", () => {
+      const decoded = decodeProviderGatewayConfiguration(validConfiguration())!;
+      const first = rustHostConfiguration(decoded, "/environments/alpha/secrets") as {
+        secretRoot: string;
+      };
+      const second = rustHostConfiguration(decoded, "/environments/beta/secrets") as {
+        secretRoot: string;
+      };
+      expect(first.secretRoot).toBe("/environments/alpha/secrets");
+      expect(second.secretRoot).toBe("/environments/beta/secrets");
+      expect(JSON.stringify(first)).not.toContain("/environments/beta/");
+      expect(JSON.stringify(second)).not.toContain("/environments/alpha/");
+    });
+  });
+
+  describe("pools", () => {
+    const poolConfiguration = (
+      accounts: ReadonlyArray<{
+        readonly id: string;
+        readonly provider: string;
+        readonly enabled?: boolean;
+        readonly priority?: number;
+        readonly weight?: number;
+      }>,
+      routingStrategy?: string,
+    ) => ({
+      schemaVersion: 1,
+      defaultProvider: accounts[0]?.provider ?? "claude",
+      accounts: accounts.map((account) => ({
+        id: account.id,
+        label: account.id,
+        provider: account.provider,
+        enabled: account.enabled ?? true,
+        priority: account.priority ?? 0,
+        weight: account.weight ?? 1,
+        models: [],
+        ...(account.provider === "zai"
+          ? { apiKeySecret: secret(`${account.id}-api-key`) }
+          : {
+              accessTokenSecret: secret(`${account.id}.access`),
+              refreshTokenSecret: secret(`${account.id}.refresh`),
+            }),
+      })),
+      pools: [],
+      routes: [],
+      ...(routingStrategy === undefined ? {} : { routingStrategy }),
+    });
+
+    it("defaults to the host's own strategy and refuses one the host does not implement", () => {
+      const decoded = decodeProviderGatewayConfiguration(
+        poolConfiguration([{ id: "claude-a", provider: "claude" }]),
+      )!;
+      expect(decoded.routingStrategy).toBe("round-robin");
+      expect(
+        decodeProviderGatewayConfiguration(
+          poolConfiguration([{ id: "claude-a", provider: "claude" }], "least-loaded"),
+        ),
+      ).toBeUndefined();
+    });
+
+    it("passes the configured strategy through to the host runtime", () => {
+      const decoded = decodeProviderGatewayConfiguration(
+        poolConfiguration([{ id: "claude-a", provider: "claude" }], "weighted-round-robin"),
+      )!;
+      const host = rustHostConfiguration(decoded, "/secrets") as {
+        runtime: { routing_strategy: string };
+      };
+      expect(host.runtime.routing_strategy).toBe("weighted-round-robin");
+    });
+
+    it("holds back lower-priority OAuth members, because the host's scheduler does", () => {
+      const decoded = decodeProviderGatewayConfiguration(
+        poolConfiguration([
+          { id: "claude-a", provider: "claude", priority: 7 },
+          { id: "claude-b", provider: "claude", priority: 0 },
+          { id: "claude-c", provider: "claude", priority: 7, enabled: false },
+        ]),
+      )!;
+      const [pool] = providerPools(decoded);
+      expect(pool?.provider).toBe("claude");
+      expect(pool?.priorityExclusive).toBe(true);
+      expect(pool?.members.map((member) => [member.accountId, member.selectable])).toEqual([
+        ["claude-a", true],
+        ["claude-b", false],
+        ["claude-c", false],
+      ]);
+    });
+
+    it("honours weight only under the weighted strategy and never for an API-key pool", () => {
+      const roundRobin = decodeProviderGatewayConfiguration(
+        poolConfiguration([{ id: "claude-a", provider: "claude" }]),
+      )!;
+      expect(providerPools(roundRobin)[0]?.weightHonored).toBe(false);
+
+      const weighted = decodeProviderGatewayConfiguration(
+        poolConfiguration([{ id: "claude-a", provider: "claude" }], "weighted-round-robin"),
+      )!;
+      expect(providerPools(weighted)[0]?.weightHonored).toBe(true);
+
+      // `ApiKeyAccountPool` reads neither the strategy nor the weight, and it
+      // keeps lower-priority accounts in the rotation.
+      const apiKey = decodeProviderGatewayConfiguration(
+        poolConfiguration(
+          [
+            { id: "zai-a", provider: "zai", priority: 5 },
+            { id: "zai-b", provider: "zai", priority: 0 },
+          ],
+          "weighted-round-robin",
+        ),
+      )!;
+      const [pool] = providerPools(apiKey);
+      expect(pool?.weightHonored).toBe(false);
+      expect(pool?.priorityExclusive).toBe(false);
+      expect(pool?.members.every((member) => member.selectable)).toBe(true);
+    });
+
+    it("puts the derived pools and the strategy on the catalog", () => {
+      const decoded = decodeProviderGatewayConfiguration(
+        poolConfiguration(
+          [
+            { id: "claude-a", provider: "claude" },
+            { id: "zai-a", provider: "zai" },
+          ],
+          "fill-first",
+        ),
+      )!;
+      const catalog = gatewayCatalog(decoded);
+      expect(catalog.routingStrategy).toBe("fill-first");
+      expect(catalog.providerPools.map((pool) => pool.provider)).toEqual(["claude", "zai"]);
+      expect(catalog.providerPools.every((pool) => pool.strategy === "fill-first")).toBe(true);
     });
   });
 });

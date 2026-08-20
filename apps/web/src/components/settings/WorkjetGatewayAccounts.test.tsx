@@ -13,6 +13,7 @@ import {
   maskGatewayCredentialSuffix,
   maskGatewayOauthState,
   WorkjetGatewayAccountsSectionView,
+  gatewayAccountRotationLabel,
   workjetGatewayAccountsByProvider,
   workjetGatewayFailureDescription,
   workjetGatewayOauthSessionInvalidMessage,
@@ -379,5 +380,30 @@ describe("WorkjetGatewayAccounts · API-key providers", () => {
 
   it("keeps the key input bounded exactly like the contract", () => {
     expect(WORKJET_GATEWAY_API_KEY_MAX_INPUT_LENGTH).toBe(WORKJET_GATEWAY_API_KEY_MAX_LENGTH);
+  });
+
+  /**
+   * "Enabled" on an account the gateway is holding back behind a higher
+   * priority is a false claim, so the row reports the pool's live eligibility
+   * whenever the catalog carries one.
+   */
+  it("reports pool eligibility per account, and falls back only when no pool exists", () => {
+    const [claude, codex] = CATALOG.accounts;
+    expect(gatewayAccountRotationLabel(CATALOG, claude!)).toBe("In rotation");
+    // No pool for codex in this catalog: nothing is asserted about it.
+    expect(gatewayAccountRotationLabel(CATALOG, codex!)).toBeNull();
+    expect(gatewayAccountRotationLabel(null, claude!)).toBeNull();
+
+    const heldBack = {
+      ...CATALOG,
+      providerPools: [
+        {
+          ...CATALOG.providerPools[0]!,
+          members: [{ ...CATALOG.providerPools[0]!.members[0]!, selectable: false }],
+        },
+      ],
+    };
+    expect(gatewayAccountRotationLabel(heldBack, claude!)).toBe("Held back by priority");
+    expect(render({ catalog: heldBack })).toContain("Held back by priority");
   });
 });

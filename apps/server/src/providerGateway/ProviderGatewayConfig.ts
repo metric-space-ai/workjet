@@ -185,7 +185,16 @@ const provider = (value: unknown): WorkjetGatewayProvider | undefined =>
 const secretReference = (value: unknown): GatewaySecretReference | undefined => {
   if (!isRecord(value) || value.scope !== GATEWAY_SECRET_SCOPE) return undefined;
   const name = text(value.name);
-  if (name === undefined || name.includes("..") || !/^[A-Za-z0-9._-]+$/.test(name)) {
+  // The same predicate the Rust host applies (`reference_allowed`): a bare `.`
+  // is refused there too, so accepting it here would only write a
+  // configuration the host then refuses to start on.
+  if (
+    name === undefined ||
+    name === "." ||
+    name === ".." ||
+    name.includes("..") ||
+    !/^[A-Za-z0-9._-]+$/.test(name)
+  ) {
     return undefined;
   }
   return { scope: GATEWAY_SECRET_SCOPE, name };

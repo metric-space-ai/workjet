@@ -1,4 +1,4 @@
-import { WorkjetGatewayOperationError } from "@t3tools/contracts";
+import { WorkjetGatewayAccountId, WorkjetGatewayOperationError } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -124,6 +124,7 @@ const readyHarness = () => {
   };
   return {
     platform,
+    process,
     exit,
     kills,
     writes,
@@ -544,6 +545,433 @@ describe("ProviderGatewayService · API-key accounts", () => {
       expect(failure.reason).toBe("invalid-configuration");
       expect(harness.storedSecrets.size).toBe(0);
       expect(harness.writes).toEqual([]);
+    }
+  });
+});
+
+/**
+ * Pool editing, health, and model discovery. The management responder here
+ * answers exactly what the Rust host answers — including the 404 it returns
+ * for a channel it has no catalog for — so a test cannot pass against a
+ * capability the host does not have.
+ */
+describe("ProviderGatewayService pools, health, and models", () => {
+  const poolConfiguration = JSON.stringify({
+    schemaVersion: 1,
+    defaultProvider: "claude",
+    routingStrategy: "round-robin",
+    accounts: [
+      {
+        id: "claude-a",
+        label: "Claude A",
+        provider: "claude",
+        enabled: true,
+        priority: 0,
+        weight: 1,
+        models: ["claude-configured-only"],
+        accessTokenSecret: { scope: "workjet-provider-gateway", name: "a.access" },
+        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "a.refresh" },
+      },
+      {
+        id: "claude-b",
+        label: "Claude B",
+        provider: "claude",
+        enabled: true,
+        priority: 0,
+        weight: 1,
+        models: [],
+        accessTokenSecret: { scope: "workjet-provider-gateway", name: "b.access" },
+        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "b.refresh" },
+      },
+      {
+        id: "zai-a",
+        label: "Z.ai A",
+        provider: "zai",
+        enabled: true,
+        priority: 0,
+        weight: 1,
+        models: ["glm-5.3"],
+        apiKeySecret: { scope: "workjet-provider-gateway", name: "zai.key" },
+      },
+    ],
+    pools: [],
+    routes: [],
+  });
+
+  const RUNTIME_STATUS = {
+    schema: "workjet.provider-gateway.runtime-status.v1",
+    main_responses_gateway: { phase: "ready", listen_addr: "127.0.0.1:41000" },
+    codex_subscription_gateway: { phase: "ready", listen_addr: "127.0.0.1:41000" },
+    management_gateway: { phase: "ready", listen_addr: "127.0.0.1:41001" },
+    active_provider: "claude",
+  };
+
+  const RUNTIME_SUMMARY = {
+    schema: "workjet.provider-gateway.runtime-summary.v1",
+    revision: 1,
+    default_provider: "claude",
+    providers: [
+      {
+        provider: "claude",
+        account_count: 2,
+        enabled_account_count: 2,
+        models: ["claude-configured-only"],
+      },
+      { provider: "zai", account_count: 1, enabled_account_count: 1, models: ["glm-5.3"] },
+    ],
+  };
+
+  const poolHarness = (options: { readonly now?: number } = {}) => {
+    const base = readyHarness();
+    const writes: Array<string> = [];
+    const routes: Array<string> = [];
+    let stored = poolConfiguration;
+    const platform: ProviderGatewayPlatform = {
+      ...base.platform,
+      now: () => options.now ?? 1_700_000_000_000,
+      readText: async (path) => {
+        if (path.endsWith("provider-gateway.json")) return stored;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      writePrivateText: async (path, content) => {
+        writes.push(content);
+        if (path.endsWith("provider-gateway.json")) stored = content;
+      },
+      managementGet: async (_endpoint, route) => {
+        routes.push(route);
+        if (route.endsWith("runtime-status")) return RUNTIME_STATUS;
+        if (route.endsWith("runtime-config")) return RUNTIME_SUMMARY;
+        if (route.endsWith("model-definitions/claude")) {
+          return {
+            channel: "claude",
+            models: [
+              { id: "claude-opus-4", display_name: "Claude Opus 4" },
+              { id: "claude-haiku-4-5" },
+            ],
+          };
+        }
+        // The host has no zai channel: it answers 400/404, which the adapter
+        // surfaces as a thrown request.
+        throw new Error("unavailable");
+      },
+    };
+    return { platform, writes, routes, configuration: () => stored };
+  };
+
+  const runPools = <A, E>(
+    harness: ReturnType<typeof poolHarness>,
+    use: (gateway: ProviderGatewayServiceShape) => Effect.Effect<A, E>,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gateway = yield* make({ platform: harness.platform, executable: "/gateway-host" });
+        yield* gateway.start();
+        return yield* use(gateway);
+      }),
+    ).pipe(
+      Effect.provideService(ServerConfig.ServerConfig, testConfig),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, testSecrets),
+      Effect.runPromise,
+    );
+
+  it("reports provider health from the host and refuses to invent per-account health", async () => {
+    const harness = poolHarness({ now: 1_700_000_012_000 });
+    const health = await runPools(harness, (gateway) => gateway.health());
+    expect(health.observedAtMs).toBe(1_700_000_012_000);
+    expect(health.activeProvider).toBe("claude");
+    expect(health.providers).toEqual([
+      {
+        provider: "claude",
+        accountCount: 2,
+        enabledAccountCount: 2,
+        modelIds: ["claude-configured-only"],
+        phase: "ready",
+      },
+      {
+        provider: "zai",
+        accountCount: 1,
+        enabledAccountCount: 1,
+        modelIds: ["glm-5.3"],
+        phase: "ready",
+      },
+    ]);
+    // The host publishes no cooldown, rate-limit, or capacity figure at all.
+    expect(health.accountHealth).toBe("not-reported-by-host");
+    expect(health.capacity).toBe("not-reported-by-host");
+  });
+
+  it("fails health loudly when the host answers something that is not its own schema", async () => {
+    const harness = poolHarness();
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      managementGet: async (_endpoint, route) =>
+        route.endsWith("runtime-status") ? RUNTIME_STATUS : { schema: "someone.else.v1" },
+    };
+    const failure = await Effect.scoped(
+      Effect.gen(function* () {
+        const gateway = yield* make({ platform, executable: "/gateway-host" });
+        yield* gateway.start().pipe(Effect.orElseSucceed(() => undefined));
+        return yield* gateway.health().pipe(Effect.flip);
+      }),
+    ).pipe(
+      Effect.provideService(ServerConfig.ServerConfig, testConfig),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, testSecrets),
+      Effect.runPromise,
+    );
+    expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
+  });
+
+  it("labels catalog models and configured models apart, and says when a provider has no catalog", async () => {
+    const harness = poolHarness();
+    const discovery = await runPools(harness, (gateway) => gateway.discoverModels());
+    const claude = discovery.providers.find((entry) => entry.provider === "claude");
+    expect(claude?.channel).toBe("claude");
+    expect(claude?.catalogAvailable).toBe(true);
+    expect(claude?.models).toEqual([
+      { id: "claude-opus-4", displayName: "Claude Opus 4", source: "gateway-catalog" },
+      { id: "claude-haiku-4-5", displayName: "claude-haiku-4-5", source: "gateway-catalog" },
+      {
+        id: "claude-configured-only",
+        displayName: "claude-configured-only",
+        source: "account-configuration",
+      },
+    ]);
+
+    // The host has no zai channel, so the surface must say so rather than
+    // present the configured list as a gateway answer.
+    const zai = discovery.providers.find((entry) => entry.provider === "zai");
+    expect(zai?.channel).toBeNull();
+    expect(zai?.catalogAvailable).toBe(false);
+    expect(zai?.models).toEqual([
+      { id: "glm-5.3", displayName: "glm-5.3", source: "account-configuration" },
+    ]);
+    // A provider with no channel must not have been asked for one.
+    expect(harness.routes.some((route) => route.includes("model-definitions/zai"))).toBe(false);
+  });
+
+  it("persists a strategy and membership edit and returns the pools it produced", async () => {
+    const harness = poolHarness();
+    const result = await runPools(harness, (gateway) =>
+      gateway.updateRouting({
+        strategy: "weighted-round-robin",
+        accounts: [
+          {
+            accountId: WorkjetGatewayAccountId.make("claude-a"),
+            enabled: true,
+            priority: 5,
+            weight: 9,
+          },
+          {
+            accountId: WorkjetGatewayAccountId.make("claude-b"),
+            enabled: true,
+            priority: 0,
+            weight: 3,
+          },
+        ],
+      }),
+    );
+    const document = JSON.parse(harness.configuration()) as {
+      routingStrategy: string;
+      accounts: ReadonlyArray<{ id: string; priority: number; weight: number }>;
+    };
+    expect(document.routingStrategy).toBe("weighted-round-robin");
+    expect(document.accounts.find((entry) => entry.id === "claude-a")).toMatchObject({
+      priority: 5,
+      weight: 9,
+    });
+    const claudePool = result.catalog.providerPools.find((pool) => pool.provider === "claude");
+    expect(claudePool?.strategy).toBe("weighted-round-robin");
+    expect(claudePool?.weightHonored).toBe(true);
+    // Priority still gates before weight, exactly as the host's scheduler does.
+    expect(claudePool?.members.map((member) => [member.accountId, member.selectable])).toEqual([
+      ["claude-a", true],
+      ["claude-b", false],
+    ]);
+    // The host runtime document carries the new strategy, not the old default.
+    expect(
+      harness.writes.some((entry) => entry.includes('"routing_strategy":"weighted-round-robin"')),
+    ).toBe(true);
+  });
+
+  it("refuses an edit naming an account the configuration does not have", async () => {
+    const harness = poolHarness();
+    const failure = await runPools(harness, (gateway) =>
+      gateway
+        .updateRouting({
+          strategy: "round-robin",
+          accounts: [
+            {
+              accountId: WorkjetGatewayAccountId.make("claude-ghost"),
+              enabled: true,
+              priority: 0,
+              weight: 1,
+            },
+          ],
+        })
+        .pipe(Effect.flip),
+    );
+    expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
+    expect(failure.reason).toBe("invalid-configuration");
+    expect(JSON.parse(harness.configuration())).toMatchObject({ routingStrategy: "round-robin" });
+  });
+
+  it("refuses an edit that would leave the default provider with no enabled account", async () => {
+    const harness = poolHarness();
+    const failure = await runPools(harness, (gateway) =>
+      gateway
+        .updateRouting({
+          strategy: "round-robin",
+          accounts: [
+            {
+              accountId: WorkjetGatewayAccountId.make("claude-a"),
+              enabled: false,
+              priority: 0,
+              weight: 1,
+            },
+            {
+              accountId: WorkjetGatewayAccountId.make("claude-b"),
+              enabled: false,
+              priority: 0,
+              weight: 1,
+            },
+          ],
+        })
+        .pipe(Effect.flip),
+    );
+    expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
+    // The edit was not applied: the host would have refused to start on it.
+    // (`start()` itself persists the allocated provider port, so the document
+    // is compared by content rather than byte-for-byte.)
+    const document = JSON.parse(harness.configuration()) as {
+      accounts: ReadonlyArray<{ id: string; enabled: boolean }>;
+    };
+    expect(document.accounts.every((account) => account.enabled)).toBe(true);
+  });
+});
+
+/**
+ * Environment-scoped credentials. Each environment runs its own server with
+ * its own `stateDir`/`secretsDir`, so this asserts that a gateway reads and
+ * writes only inside the environment that owns it, and that the host it spawns
+ * is pointed at that environment's secret root and no other.
+ */
+describe("ProviderGatewayService environment scoping", () => {
+  const environmentConfiguration = (id: string) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      defaultProvider: "claude",
+      accounts: [
+        {
+          id: `claude-${id}`,
+          label: `Claude ${id}`,
+          provider: "claude",
+          enabled: true,
+          priority: 0,
+          weight: 1,
+          models: [],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: `${id}.access` },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: `${id}.refresh` },
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+
+  const environmentHarness = (id: string) => {
+    const base = readyHarness();
+    const reads: Array<string> = [];
+    const writes: Array<{ readonly path: string; readonly content: string }> = [];
+    const secretReads: Array<string> = [];
+    const platform: ProviderGatewayPlatform = {
+      ...base.platform,
+      // The shared harness pins the runtime path to the default state
+      // directory; this suite is precisely about a different one.
+      spawn: (_executable, args) => {
+        expect(args).toEqual(["--config", `/environments/${id}/provider-gateway-runtime.json`]);
+        return base.process;
+      },
+      readText: async (path) => {
+        reads.push(path);
+        if (path.endsWith("provider-gateway.json")) return environmentConfiguration(id);
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      writePrivateText: async (path, content) => {
+        writes.push({ path, content });
+      },
+      managementGet: async (_endpoint, route) =>
+        route.endsWith("runtime-status")
+          ? { schema: "workjet.provider-gateway.runtime-status.v1" }
+          : { schema: "workjet.provider-gateway.runtime-summary.v1" },
+    };
+    const secrets = ServerSecretStore.ServerSecretStore.of({
+      get: (name: string) =>
+        Effect.sync(() => {
+          secretReads.push(name);
+          return Option.some(new TextEncoder().encode(`${id}-secret`));
+        }),
+      set: () => Effect.void,
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
+      remove: () => Effect.void,
+    });
+    const config = ServerConfig.make({
+      stateDir: `/environments/${id}`,
+      secretsDir: `/environments/${id}/secrets`,
+    } as ServerConfig.ServerConfig["Service"]);
+    return { platform, secrets, config, reads, writes, secretReads };
+  };
+
+  const runEnvironment = (harness: ReturnType<typeof environmentHarness>) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gateway = yield* make({ platform: harness.platform, executable: "/gateway-host" });
+        yield* gateway.start();
+        return yield* gateway.catalog();
+      }),
+    ).pipe(
+      Effect.provideService(ServerConfig.ServerConfig, harness.config),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, harness.secrets),
+      Effect.runPromise,
+    );
+
+  it("keeps every path, secret, and account inside the environment that owns it", async () => {
+    const alpha = environmentHarness("alpha");
+    const beta = environmentHarness("beta");
+    const [alphaCatalog, betaCatalog] = await Promise.all([
+      runEnvironment(alpha),
+      runEnvironment(beta),
+    ]);
+
+    // Each gateway saw only its own accounts.
+    expect(alphaCatalog.accounts.map((account) => account.id)).toEqual(["claude-alpha"]);
+    expect(betaCatalog.accounts.map((account) => account.id)).toEqual(["claude-beta"]);
+
+    for (const [own, other, harness] of [
+      ["alpha", "beta", alpha],
+      ["beta", "alpha", beta],
+    ] as const) {
+      // Every file it touched is under its own state directory.
+      const paths = [...harness.reads, ...harness.writes.map((entry) => entry.path)];
+      expect(paths.length).toBeGreaterThan(0);
+      for (const path of paths) {
+        expect(path.startsWith(`/environments/${own}/`), path).toBe(true);
+        expect(path).not.toContain(`/environments/${other}/`);
+      }
+      // Every secret it resolved is a gateway-scoped name from its own store.
+      expect(harness.secretReads.length).toBeGreaterThan(0);
+      for (const name of harness.secretReads) {
+        expect(name.startsWith("workjet-provider-gateway."), name).toBe(true);
+      }
+      // The host it spawns is pointed at its own secret root, and the rendered
+      // document mentions no other environment anywhere.
+      const hostDocument = harness.writes.find((entry) =>
+        entry.content.includes("workjet.provider-gateway-host.v1"),
+      );
+      expect(hostDocument).toBeDefined();
+      const rendered = JSON.parse(hostDocument!.content) as { secretRoot: string };
+      expect(rendered.secretRoot).toBe(`/environments/${own}/secrets`);
+      expect(hostDocument!.content).not.toContain(`/environments/${other}`);
+      expect(hostDocument!.content).not.toContain(`claude-${other}`);
     }
   });
 });

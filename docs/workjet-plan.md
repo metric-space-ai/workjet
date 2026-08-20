@@ -102,12 +102,33 @@ than a shared database or an untyped renderer bridge:
 - [ ] Add `Return to Business OS`, result/evidence submission, review request,
       and follow-up actions to linked Code threads through validated CTOX MCP
       commands and the existing approval model.
-- [ ] Add a shared desktop link navigator and context-preserving mode switch;
+- [x] Add a shared desktop link navigator and context-preserving mode switch;
       opening a link selects the correct mode, sidebar entry, and main surface
-      without mounting both surfaces simultaneously.
-- [ ] Add unified, redacted notifications and pending-approval indicators that
-      route the user to the owning mode while keeping payload data in the
-      owning authority.
+      without mounting both surfaces simultaneously. Done 2026-08-20 (commit
+      `3e30612ba`): `apps/web/src/crossMode/` — a dependency-injected
+      `navigateToCrossModeTarget` returning an ordered step journal, plus the
+      real-deps hook and a one-shot handoff slot (the shell provider does not
+      exist at the instant the mode flips). The non-obvious hazard is handled:
+      the Business OS surface is a main-process `WebContentsView`, so React
+      unmount does NOT remove it — teardown is AWAITED and a navigation whose
+      teardown does not confirm returns `blocked/teardown-failed` instead of
+      hiding a live native view under the Code shell. Ordering is asserted
+      three ways (real call order, a probe proving the handoff slot is null at
+      teardown, and a static source assertion that the shell's surface choice
+      stays ONE ternary so a refactor cannot mount both). Context restore:
+      one bounded address-only slot per mode.
+- [~] Add unified, redacted notifications and pending-approval indicators that
+  route the user to the owning mode while keeping payload data in the
+  owning authority. Model + rendering done 2026-08-20 (commit
+  `3e30612ba`): three bounded kinds (link-created, approval-pending,
+  result-submitted) COMPOSED from ids and codes — no field a payload could
+  travel in, with canaries asserting the exact allowed key set and that
+  free text cannot pose as an id or outcome code; rows never navigate
+  themselves, the click hands the target to the navigator. Honest
+  three-way empty state (not asked / asked-nothing / n waiting).
+  Deliberately NOT mounted yet: nothing publishes into the store until the
+  cross-mode link RPCs land, and a panel that can only say "no activity"
+  would be a worse lie than showing nothing.
 - [ ] Prove local, remote, offline, revoked-access, stale-link, and deleted-
       counterpart behavior without a shared database or a Business OS HTTP
       data bridge.
@@ -1599,7 +1620,7 @@ ElectronSafeStorage.ts` with the Linux backend guard in
       proven in the installed app. Light-scheme and pane-collapse proof in the
       packaged app remain open. Verified open 2026-08-20: the pin has since
       moved to rc.11 (`apps/desktop/resources/ctox/
-  business-os-shell.manifest.json`, commit `1bdcbe311`), but the
+business-os-shell.manifest.json`, commit `1bdcbe311`), but the
       light-scheme and three/two/one-pane packaged proofs are manual QA runs
       with no artifact in this repo, so this stays open. KORREKTUR to the line
       above: the pinned shell is now `v0.1.0-rc.12`
@@ -1652,7 +1673,7 @@ ElectronSafeStorage.ts` with the Linux backend guard in
       revoked), rendered as explicit copy at `:1926-1929` (connecting / ready
       / revoked), `:1551` and `:1669-1676` (signed-out sign-in surface),
       `:1651` ("CTOX desktop services are unavailable.") and `:1042
-  unavailableHint` for per-instance unavailability; `needs_auth` is an
+unavailableHint` for per-instance unavailability; `needs_auth` is an
       exhaustive `STATUS_LABELS` entry (`:104`, typed
       `Record<CtoxManagedInstance["status"], string>` so the compiler forbids
       dropping a state). Tests: `CtoxModeShell.test.tsx:332` (sign-in beside

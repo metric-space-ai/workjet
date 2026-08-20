@@ -44,6 +44,7 @@ import {
   WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
   WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
   WORKJET_MESH_ROSTER_STALE_TIME_MS,
+  WORKJET_LEGACY_IMPORT_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   matchesServerUpdateReadyEvent,
@@ -140,6 +141,46 @@ describe("Workjet provider gateway client wiring", () => {
     // The catalog is a separate read, so it must never collapse onto the status atom.
     expect(server.workjetGatewayCatalog({ environmentId: first, input: {} })).not.toBe(
       server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
+  });
+});
+
+describe("Workjet legacy import client wiring", () => {
+  const legacyImportAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("keys the offer read per environment: the decision is per machine", () => {
+    const server = legacyImportAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetLegacyImport({ environmentId: first, input: {} })).toBe(
+      server.workjetLegacyImport({ environmentId: first, input: {} }),
+    );
+    // Two servers are two machines with two legacy documents and two markers.
+    expect(server.workjetLegacyImport({ environmentId: second, input: {} })).not.toBe(
+      server.workjetLegacyImport({ environmentId: first, input: {} }),
+    );
+  });
+
+  it("keeps answering the offer a distinct, labelled command", () => {
+    const server = legacyImportAtoms();
+    expect(server.decideWorkjetLegacyImport.label).toBe(
+      "environment-data:workjet:legacy-import:decide",
+    );
+    expect(server.decideWorkjetLegacyImport).not.toBe(server.updateSettings);
+  });
+
+  it("caches the offer far longer than any live read, because it changes once", () => {
+    expect(WORKJET_LEGACY_IMPORT_STALE_TIME_MS).toBeGreaterThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+    expect(WORKJET_LEGACY_IMPORT_STALE_TIME_MS).toBeGreaterThan(
+      WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
     );
   });
 });

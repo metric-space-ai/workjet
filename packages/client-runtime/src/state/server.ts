@@ -102,6 +102,17 @@ export const WORKJET_HANDOFF_INBOX_STALE_TIME_MS = 10_000;
  */
 export const WORKJET_CROSS_MODE_LINK_STALE_TIME_MS = 30_000;
 
+/**
+ * How long the legacy-import offer stays fresh.
+ *
+ * The longest window of the set, and deliberately so: the answer is a decision
+ * about a file that is never rewritten, and it changes at most ONCE in this
+ * environment's life — when the operator accepts or declines. The command that
+ * causes that change refreshes the read itself, so nothing here has to poll for
+ * it.
+ */
+export const WORKJET_LEGACY_IMPORT_STALE_TIME_MS = 300_000;
+
 export type ServerUpdateState =
   | { readonly status: "idle" }
   | {
@@ -840,6 +851,35 @@ export function createServerEnvironmentAtoms<R, E>(
     onSuccess: refreshWorkjetGateway,
   });
 
+  // The one-shot legacy Swift configuration import.
+  //
+  // A read and a terminal write, both keyed per ENVIRONMENT because that is
+  // what the decision is about: the legacy document lives on the machine each
+  // server runs on, and the import lands in that server's own settings.
+  const workjetLegacyImport = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:legacy-import:inspect",
+    tag: WS_METHODS.workjetLegacyImportInspect,
+    staleTimeMs: WORKJET_LEGACY_IMPORT_STALE_TIME_MS,
+  });
+  // Answering the offer patches `settings.workjet` and records a TERMINAL
+  // marker, so it is single-flighted per environment — two concurrent answers
+  // are exactly the race the server refuses. On success only the OFFER is
+  // refreshed, because it is now a recorded decision; the patched settings
+  // arrive on their own through the server's config stream, exactly as they do
+  // for every other settings write.
+  const decideWorkjetLegacyImport = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:legacy-import:decide",
+    tag: WS_METHODS.workjetLegacyImportDecide,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(workjetLegacyImport({ environmentId, input: {} }));
+      }),
+  });
+
   // The recipient roster the composer picks from: a bounded, redacted read of
   // the peers this machine has already exchanged mail with. It is a read, not a
   // send, so it is a query atom family beside the gateway reads rather than one
@@ -1019,6 +1059,8 @@ export function createServerEnvironmentAtoms<R, E>(
     cancelWorkjetGatewayOauth,
     addWorkjetGatewayApiKeyAccount,
     updateWorkjetGatewayRouting,
+    workjetLegacyImport,
+    decideWorkjetLegacyImport,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {

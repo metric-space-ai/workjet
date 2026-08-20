@@ -1,8 +1,23 @@
 # CTOX Desktop App — implementation plan
 
-Status date: 2026-08-17
+Status date: 2026-08-20 (whole-document reconciliation audit)
 
-Checklist progress: 57.8% (`192/332` complete, `140` open).
+Checklist progress: 79.3% (`280/353` complete, `73` open).
+
+**Read [`docs/workjet-remaining-work.md`](workjet-remaining-work.md) first.** It
+is the handover: every one of the 73 open boxes, grouped into the four buckets
+this document now tags in place — DONE is not listed there, BLOCKED-ON-OWNER
+carries the exact decision and its consequence, BLOCKED-ON-REALITY names the
+physical prerequisite, and IMPLEMENTABLE carries a one-line scope estimate. This
+plan stays the evidence store the list cites; the list stays short enough to be
+read in one sitting.
+
+Every open box below now carries a tag added on 2026-08-20: `OWNER:` (a decision
+is required), `NEEDS:` (a machine, credential, or CTOX-repository change is
+required), `NEXT:` (buildable here, with a scope estimate), or a `BUCKET` /
+`SPLIT` line when a single box spans more than one. A tick is never given on
+plausibility — only against named files and a covering test — and a claim found
+to be false is marked `KORREKTUR` in place rather than deleted.
 
 Current repository: `metric-space-ai/workjet`
 
@@ -113,36 +128,51 @@ than a shared database or an untyped renderer bridge:
   context and the durable backlink, or SELECTS the existing linked thread
   (the server decides created|selected, not the caller). Remaining: the
   invoking button lives in the CTOX Business OS UI, i.e. the CTOX repo.
-- [~] Add `Return to Business OS`, result/evidence submission, review request,
-  and follow-up actions to linked Code threads through validated CTOX MCP
-  commands and the existing approval model. Done 2026-08-20 (commits
-  `e47a643ab` + the navigator wire): the link card carries the three
-  operations and reuses the existing `WorkjetDelegationApprovalState`
-  rather than a parallel enum; "Return to Business OS" now routes through
-  the cross-mode navigator (teardown-before-mount). HONEST BLOCKER, with
-  evidence: `apps/server` has NO path to a Business OS command today —
-  there is no MCP CLIENT in the repo, the mailbox transport's daemon
-  treats payloads as opaque blobs by contract, and commands travel
-  renderer→IPC→guest. BLOCKER RESOLVED 2026-08-20 (commit `88a509a74`):
-  `WorkjetCrossModeCtoxClient` is the repo's first outbound MCP client —
-  plain JSON-RPC 2.0 over `POST /mcp` on the daemon's existing loopback
-  listener, bearer token from `ctox secret get`, 10 s timeout, no retry,
-  256 KB bound, every response Schema-decoded, token and payload never
-  logged. Authority is REAL: the running daemon's published `instanceId` must
-  equal the caller's AND an `initialize` handshake must identify as
-  `ctox-business-os-mcp`; a mismatch never reaches the wire. Failure mapping
-  uses CTOX's own vocabulary (`confirmation_required` → awaiting-approval;
-  runtime/channel/sync/rate codes → unavailable; other typed refusals →
-  rejected; malformed → unavailable, never "landed"). LIVE-PROBED against the
-  running daemon: the handshake identifies, a token-less request 401s, and
-  the port answered true for the real instance id and false for an invented
-  one. Honest ceiling: CTOX exposes NO module-agnostic review/follow-up tool,
-  so all three operations ride the one generic `ctox.delegate_task` action
-  distinguished by `payload.operation`. The proof matrix's no-data-bridge
-  invariant was SHARPENED rather than relaxed for it: the command client is
-  the single sanctioned HTTP speaker and is held to a positive rule — every
-  request it builds targets `/mcp` — while Business OS data routes stay
-  forbidden everywhere, mutation-verified.
+  BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+  `metric-space-ai/ctox` repository. Re-verified here — the Workjet half is
+  complete and green (`apps/server/src/workjet/crossmode/`, 4 files / 52 tests
+  pass), and nothing in this repository can render a button inside the Business
+  OS guest, whose source is the pinned CTOX shell.
+- [x] Add `Return to Business OS`, result/evidence submission, review request,
+      and follow-up actions to linked Code threads through validated CTOX MCP
+      commands and the existing approval model. Done 2026-08-20 (commits
+      `e47a643ab` + the navigator wire): the link card carries the three
+      operations and reuses the existing `WorkjetDelegationApprovalState`
+      rather than a parallel enum; "Return to Business OS" now routes through
+      the cross-mode navigator (teardown-before-mount). HONEST BLOCKER, with
+      evidence: `apps/server` has NO path to a Business OS command today —
+      there is no MCP CLIENT in the repo, the mailbox transport's daemon
+      treats payloads as opaque blobs by contract, and commands travel
+      renderer→IPC→guest. BLOCKER RESOLVED 2026-08-20 (commit `88a509a74`):
+      `WorkjetCrossModeCtoxClient` is the repo's first outbound MCP client —
+      plain JSON-RPC 2.0 over `POST /mcp` on the daemon's existing loopback
+      listener, bearer token from `ctox secret get`, 10 s timeout, no retry,
+      256 KB bound, every response Schema-decoded, token and payload never
+      logged. Authority is REAL: the running daemon's published `instanceId` must
+      equal the caller's AND an `initialize` handshake must identify as
+      `ctox-business-os-mcp`; a mismatch never reaches the wire. Failure mapping
+      uses CTOX's own vocabulary (`confirmation_required` → awaiting-approval;
+      runtime/channel/sync/rate codes → unavailable; other typed refusals →
+      rejected; malformed → unavailable, never "landed"). LIVE-PROBED against the
+      running daemon: the handshake identifies, a token-less request 401s, and
+      the port answered true for the real instance id and false for an invented
+      one. Honest ceiling: CTOX exposes NO module-agnostic review/follow-up tool,
+      so all three operations ride the one generic `ctox.delegate_task` action
+      distinguished by `payload.operation`. The proof matrix's no-data-bridge
+      invariant was SHARPENED rather than relaxed for it: the command client is
+      the single sanctioned HTTP speaker and is held to a positive rule — every
+      request it builds targets `/mcp` — while Business OS data routes stay
+      forbidden everywhere, mutation-verified.
+      AUDIT 2026-08-20 (final): TICKED. Re-verified in this tree —
+      `apps/server/src/workjet/crossmode/WorkjetCrossModeCtoxClient.ts` exists
+      with its port, store, RPC and proof matrix; `vp test run
+    src/workjet/crossmode/` in `apps/server` → 4 files, 52 tests, all green.
+      The blocker recorded above is resolved, so every clause this line names is
+      implemented. HONEST CEILING kept visible rather than ticked away: all
+      three operations ride the one generic `ctox.delegate_task` action
+      distinguished by `payload.operation`, because CTOX exposes no
+      module-agnostic review/follow-up tool. Widening that is a CTOX-repo
+      change, tracked as its own line rather than as a debt on this one.
 - [x] Add a shared desktop link navigator and context-preserving mode switch;
       opening a link selects the correct mode, sidebar entry, and main surface
       without mounting both surfaces simultaneously. Done 2026-08-20 (commit
@@ -170,6 +200,15 @@ than a shared database or an untyped renderer bridge:
   Deliberately NOT mounted yet: nothing publishes into the store until the
   cross-mode link RPCs land, and a panel that can only say "no activity"
   would be a worse lie than showing nothing.
+  BUCKET 2026-08-20: IMPLEMENTABLE, and the DELTA HAS SHRUNK. The stated
+  precondition — "nothing publishes into the store until the cross-mode link
+  RPCs land" — no longer holds: those RPCs landed (commits `6ff86928c`,
+  `6bb947285`, `e47a643ab`, `88a509a74`). Re-verified: nothing outside
+  `apps/web/src/crossMode/` references `CrossModeNotifications` or
+  `crossModeNotificationStore`, so the panel is still unmounted and nothing
+  publishes. NEXT: mount `CrossModeNotifications.tsx` in the shell chrome and
+  publish the three kinds from the cross-mode RPC results — ~2 files touched
+  plus one mounting test, small.
 - [x] Prove local, remote, offline, revoked-access, stale-link, and deleted-
       counterpart behavior without a shared database or a Business OS HTTP
       data bridge. Done 2026-08-20 (commit `aaafe6ed2`): all six behaviours
@@ -211,6 +250,16 @@ than a shared database or an untyped renderer bridge:
 - [ ] Rename/move that repository to `metric-space-ai/ctox-desktop-app` and set
       the package, application, installer, updater, and release identity to
       `CTOX Desktop App` before public distribution.
+      BUCKET 2026-08-20: BLOCKED-ON-OWNER. OWNER: decide whether to rename
+      `metric-space-ai/workjet` to `metric-space-ai/ctox-desktop-app` now or
+      keep the current name through the first public distribution. Consequence:
+      the rename must happen BEFORE the first public binary, because the desktop
+      updater feed is derived from the repository (`resolveGitHubPublishConfig`,
+      `scripts/build-desktop-artifact.ts:2090-2113`) — renaming afterwards
+      strands every installed updater. It also moves every remote URL, CI
+      reference and agent branch remote in the same pass. The product-identity
+      half is already done (Wave 6): product name, installer names, icons and
+      artifact filenames all say `CTOX Desktop App`.
 - [x] Keep `origin` on the current `metric-space-ai/workjet` repository and
       `upstream` on
       `pingdotgg/t3code`.
@@ -223,9 +272,20 @@ than a shared database or an untyped renderer bridge:
 - [x] Add a source provenance and license inventory for T3, CTOX Desktop,
       CLIProxyAPI, Greppy, and the Web Stack in
       `docs/workjet-source-provenance.md`.
-- [ ] Keep upstream-compatible T3 changes in narrow commits. Do not perform a
+- [x] Keep upstream-compatible T3 changes in narrow commits. Do not perform a
       repository-wide internal rename from `t3code` to `workjet` unless required
       for a public product identifier.
+      AUDIT 2026-08-20 (final): TICKED as an INVARIANT VERIFIED HELD, not as a
+      deliverable. No repository-wide `t3code` → `workjet` rename was performed:
+      `t3code` still appears in 244 tracked files, all 12 `@t3tools/*` workspace
+      package names are unchanged (verified in `package.json`,
+      `apps/*/package.json`, `packages/*/package.json`), and the bundle id
+      `com.t3tools.t3code` is intact. The narrow-commit half is MEASURED, not
+      asserted: 90.2% of the change surface is added files (1900 added / 206
+      modified / 1 deleted / 0 renamed across 2107 paths) and only 25 of the 206
+      modified T3 core files conflict against 172 upstream commits — see the two
+      ticked measurement lines in section 14. Re-check this line whenever a
+      public product identifier forces a rename.
 
 Only source, tests, migrations, required configuration, lockfiles, provenance,
 and documentation belong in Git.
@@ -389,6 +449,11 @@ both modes.
   silently resolving another. Business OS side needs the CTOX repo: a
   settings surface rendering `CapabilityAvailabilityView[]` plus an MCP
   control method to read those views and write instance activation.
+  BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+  `metric-space-ai/ctox` repository — a Business OS settings surface rendering
+  `CapabilityAvailabilityView[]` plus an MCP control method to read those views
+  and write instance activation. The Code half named above is complete and stays
+  ticked by its own sub-evidence; nothing further is buildable here.
 
 ### First capabilities
 
@@ -440,13 +505,32 @@ both modes.
         and all 43 Node fixture tests.
 - [ ] `web-stack-browser`: browser prepare/automation surface with explicit
       permissions.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. Everything this line names is
+      implemented and ticked in the sub-item above; the ONLY open clause is the
+      real installed-browser E2E. NEEDS: a built `ctox` binary (CTOX repo, not
+      vendored here), live network, and a patchright + Chromium runtime —
+      `scripts/test_web_search_e2e.sh` and `scripts/test_web_unlock_e2e.sh` look
+      for `$ROOT/runtime/build/cargo-target/{debug,release}/ctox`, which this
+      repository never produces. See the measured verdict in section 15. An
+      IMPLEMENTABLE alternative exists and is recorded there: build a
+      Workjet-owned CLI entry point (`native/web-stack` already declares
+      `[[bin]] workjet-web-stack`) and retarget the two scripts at it.
   - [x] Ship the Workjet/T3 structured prepare and automation surface through
         the existing per-session MCP server. Commits `a4d294f3f` and
         `f9b972167` pass 39 focused TypeScript tests, both package typechecks,
         strict Rust Clippy, 450 Rust tests with 23 ignored, seven native
         boundary tests, and all 43 Web Stack fixture tests. Real installed-
         browser E2E remains open.
-- [ ] Add room for later capabilities without changing thread-role contracts.
+- [x] Add room for later capabilities without changing thread-role contracts.
+      AUDIT 2026-08-20 (final): TICKED, with decisive rather than plausible
+      evidence. Capability identity and thread ROLE are separate axes and the
+      separation was exercised for real: commit `f6476900d` added the third
+      capability id `web-stack-browser` and changed exactly ONE line of
+      `packages/contracts/src/workjet.ts` — the `WorkjetCapabilityId` literal at
+      `:16`. `WorkjetThreadRole` (`:13`) and the worker-requires-a-parent rule
+      were untouched by that commit, and `enabledCapabilityIds` (`:392`) is a
+      plain array of that id type. Adding a fourth capability is the same
+      one-line edit plus its manifest.
 
 ## 6. Wave 3 — move the CLIProxyAPI Rust port
 
@@ -488,8 +572,23 @@ Tasks:
       provider-gateway names while retaining compatibility aliases for migration.
 - [x] Preserve origin and per-file license headers.
 - [x] Keep provider-neutral Track A separate from host adapters.
-- [ ] Move or recreate the conformance fixtures, differential runner, port map,
+- [x] Move or recreate the conformance fixtures, differential runner, port map,
       and porting ledger.
+      AUDIT 2026-08-20 (final): TICKED — all four artifacts came across with the
+      crate and are present in this tree. Conformance fixtures:
+      `native/provider-gateway/tests/differential/*.json` plus the six suites in
+      `native/provider-gateway/test/`. Differential runner: 28
+      `native/provider-gateway/scripts/run_*_differential.sh`. Port map:
+      `native/provider-gateway/port-map.json` (schema
+      `ctox.cliproxyapi.port-map.v1`, upstream `a88197f8…`, 617 production / 442
+      test Go files accounted for). Porting ledger:
+      `native/provider-gateway/PORTING.md` plus `RUST_PORTING_PLAYBOOK.md`,
+      `UPSTREAM.md`, `module-map.json`, `upstream-delta.json`,
+      `upstream-lock.json`, `strict-credit-audit.json`. SEPARATE from this line,
+      and NOT laundered into it: the differential runner cannot EXECUTE here —
+      its `repo_dir` resolves two levels above the Workjet repo root and it
+      needs the Go CLIProxyAPI upstream. That is a release gate, tracked in
+      section 15.
 - [x] Remove the imported built-in Antigravity OAuth client credentials from
       the current portable source and require one typed, zeroizing,
       host-injected credential object for login and refresh.
@@ -510,7 +609,7 @@ Tasks:
         unrelated existing server transfer-budget test still times out after
         120 seconds (124/125 other server tests pass) and remains a regression
         backlog item, not a host-adapter acceptance gap.
-- [ ] Routing design (2026-08-18, ready to implement): provider sessions are
+- [x] Routing design (2026-08-18, ready to implement): provider sessions are
       routed through the gateway by injecting harness base-URL and API-key
       environment variables through the EXISTING per-instance
       `ProviderInstanceEnvironment` merge point (`mergeProviderInstanceEnvironment`
@@ -596,15 +695,80 @@ Tasks:
       checked 1h ago") and the page dispatches a fresh provider probe on open
       (30 s cooldown, never for read-only sessions). Behavior change worth
       knowing: the gateway section follows the page's device switcher.
-- [ ] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
+      AUDIT 2026-08-20 (final): TICKED. This entry is a design note whose design
+      is now implemented in full, and keeping it unchecked misreported the state
+      of M3. Re-verified in this tree:
+      `apps/server/src/provider/ProviderGatewayRouting.ts` declares
+      `GATEWAY_ROUTABLE_DRIVERS = ["claudeAgent", "codex", "grok", "opencode"]`
+      (`:121`) and exports `resolveGatewayRoutedEnvironment` (`:417`), which all
+      four drivers call at session start — `ClaudeDriver.ts:162`,
+      `CodexDriver.ts:174`, `GrokDriver.ts:125`, `OpenCodeDriver.ts:167`. All
+      three prerequisites this note listed are met (stable port, server-minted
+      key, per-harness env mapping verified against the real binaries), and
+      composer model selection resolves to a gateway route at `:396`. Eleven
+      tests in `ProviderGatewayRouting.test.ts`. The one residue — a live routed
+      turn against a real gateway account — is recorded as NEEDS on the two
+      deliverable lines below, not left implying the design is unbuilt.
+- [x] Route Codex, Claude Code, Grok, and other T3 provider drivers to the one
       Workjet/T3 gateway runtime.
-- [ ] Preserve direct provider/model selection in the composer; selection
+      AUDIT 2026-08-20 (final): TICKED. THE LINE WAS STALE — routing landed on
+      2026-08-19/20 and this box was never moved. Verified in this tree:
+      `resolveGatewayRoutedEnvironment`
+      (`apps/server/src/provider/ProviderGatewayRouting.ts:417`) is called at
+      session start by all four routable drivers (`ClaudeDriver.ts:162`,
+      `CodexDriver.ts:174`, `GrokDriver.ts:125`, `OpenCodeDriver.ts:167`)
+      against the ONE per-environment gateway runtime;
+      `GATEWAY_ROUTABLE_DRIVERS` (`:121`) is the declared set and a test pins it
+      ("treats only the drivers with a verified mechanism as routable"). Eleven
+      tests in `ProviderGatewayRouting.test.ts`. HONEST LIMITS, deliberately on
+      the record rather than hidden by the tick: routing is a per-instance
+      `routeViaGateway` opt-in, not the default; Cursor is refused
+      `driver-unsupported` because no verified base-URL mechanism exists for it;
+      an OpenCode instance with an external `serverUrl` is refused
+      `instance-unroutable` rather than silently unrouted.
+      NEEDS (BLOCKED-ON-REALITY, the one remaining proof): a real provider
+      subscription or API key configured on the gateway, so one executed
+      completion can be observed end to end. Today the proof stops at the
+      environment/argv layer against a test gateway layer.
+- [x] Preserve direct provider/model selection in the composer; selection
       chooses a gateway route/profile rather than bypassing the gateway.
+      AUDIT 2026-08-20 (final): TICKED. Also stale. Selection does not bypass
+      the gateway: `resolveGatewayProviderForModel`
+      (`apps/server/src/provider/ProviderGatewayRouting.ts:396`) runs the pure
+      `resolveWorkjetGatewayModelRoute`
+      (`packages/contracts/src/workjetGatewayRouting.ts:145`) over the gateway
+      catalog at every routed session start and carries the answer as the
+      `X-CTOX-Provider` request header — the Rust host's only per-request
+      selector — via `ANTHROPIC_CUSTOM_HEADERS` for Claude and `-c
+    …http_headers…` for Codex, both probe-verified. Ambiguity is loud and
+      typed (`route-ambiguous`, `model-ambiguous`, `model-unrouted`), never a
+      silent fall-back to the CLI's own credentials. Seven contract tests in
+      `workjetGatewayRouting.test.ts` plus "lets an explicit route override
+      which provider the model resolves to" in `ProviderGatewayRouting.test.ts`;
+      the same resolver renders read-only per catalog model in
+      `WorkjetGatewayModelRoutes.tsx`. Direct selection itself is untouched —
+      the picker takes no role or routing prop. Grok and OpenCode have no header
+      mechanism and skip resolution honestly rather than pretending to route a
+      model.
 - [ ] Add a CTOX dependency on a pinned Workjet provider-gateway release/tag.
+      BUCKET 2026-08-20: BLOCKED-ON-OWNER first, then BLOCKED-ON-REALITY.
+      OWNER: cut the first `provider-gateway-host-v*` release tag — there is nothing
+      to pin until one exists
+      (`apps/desktop/resources/provider-gateway/host-release.pin.json` reads
+      `"status": "unreleased"`). Consequence: this line, the two lines below, and
+      the provenance half of the section-15 signing gate all stay blocked until the
+      tag is cut. NEEDS after that: a change in the separate `metric-space-ai/ctox`
+      repository to depend on the pinned release.
 - [ ] Keep one gateway runtime inside every CTOX instance with CTOX-local
       credentials and state.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository. Workjet cannot place, configure, or
+      verify a runtime inside a CTOX instance from here.
 - [ ] Remove the portable duplicate from CTOX only after its pinned dependency
       passes CTOX provider and Business OS tests.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository, and it is gated on the pinned
+      dependency two lines above, which is gated on the release tag.
 - [~] Add release artifacts for macOS arm64/x64, Linux x64/arm64, and Windows
   x64/arm64 as required by Workjet and CTOX packaging. Pipeline + contract
   done 2026-08-20 (commits `34ba5de64`…): one source of truth for tag,
@@ -643,6 +807,23 @@ Tasks:
   replace the `unreleased` pin with the workflow's emitted pin — that is
   what unblocks the CTOX pinned dependency and the portable-duplicate
   removal above.
+  BUCKET 2026-08-20: BLOCKED-ON-OWNER, with one IMPLEMENTABLE residue.
+  OWNER: cut the first `provider-gateway-host-v*` tag so
+  `.github/workflows/provider-gateway-host-release.yml` runs and emits the real
+  pin. Consequence: until then the pin stays `"status": "unreleased"` (verified
+  in this tree), packaged builds refuse to start a pinned host by design, and
+  the CTOX pinned dependency plus the portable-duplicate removal above stay
+  blocked.
+  NEEDS (reality, separate): the two unverified ARM runner labels can only be
+  confirmed by an actual workflow run on GitHub's runners.
+  NEXT (implementable now, independent of the tag): wire the resolver into
+  startup and packaging. Verified open — `resolveProviderGatewayHostExecutable`
+  (`apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts:263`) has no
+  production call site (only `ProviderGatewayHostArtifact.test.ts`), and
+  `scripts/build-desktop-artifact.ts` contains no `provider-gateway` reference
+  at all, so nothing ships or resolves the host in a packaged build. Scope: one
+  call site in the desktop gateway startup path plus an extra-resource entry in
+  `scripts/build-desktop-artifact.ts` (+ its test) — small.
 
 Mandatory regression gates:
 
@@ -723,8 +904,42 @@ CTOX and the T3 harness adapter consume the same tagged package.
       without removing legacy crate exports or CTOX CLI command names.
 - [ ] Preserve SSRF protection, redirect validation, size limits, untrusted
       content fencing, cache bounds, evidence receipts, and legal/ToS controls.
-- [ ] Keep browser dependencies and downloaded browsers under ignored `.deps`
+      BUCKET 2026-08-20: IMPLEMENTABLE, with one embedded owner question.
+      Re-verified in this tree, matching the security-invariant audit in section
+      12: three production `ureq` agents in
+      `native/web-stack/src/scholarly_search.rs` (`:407`, `:968`, `:1696` —
+      `annas_archive_search`, `augment_results_with_open_access_pdfs`,
+      `fetch_json`) still do not install `SsrfResolver`, and they are enumerated
+      in `KNOWN_UNRESOLVED_AGENTS` in
+      `apps/server/src/mcp/toolkits/workjet/WebStackEgressWiring.test.ts:68` so
+      a NEW unguarded agent fails; there is still NO max-redirect limit anywhere
+      in the crate (`grep max_redirect` over `native/web-stack/src` is empty),
+      so the hop cap is whatever `ureq` defaults to. Untrusted-content fencing
+      and both size budgets ARE guarded and stay guarded.
+      NEXT: install the resolver on the three agents, add an explicit
+      redirect-hop cap next to it, and add the missing test for the TypeScript
+      stdout byte budget (`WebStackSearch.ts:90`, `WebStackBrowser.ts:275`,
+      `WebStackResearch.ts:421`). Scope: ~1 Rust file plus 3 TS test additions
+      and a full crate build — medium, because the crate build is the slow part.
+      OWNER (small, inside this work): `web_search.rs` already grants a
+      self-hosted SearXNG base, so installing the resolver requires deciding
+      which configured hosts must stay reachable. Getting that wrong breaks a
+      working configuration.
+- [x] Keep browser dependencies and downloaded browsers under ignored `.deps`
       or runtime directories.
+      AUDIT 2026-08-20 (final): TICKED. Verified from three directions. (1)
+      Nothing is tracked: `git ls-files` matching `chromium|chrome-|patchright|
+    playwright.*browser` returns only `native/web-stack/licenses/
+    Patchright-Apache-2.0.txt`, a licence text. (2) The runtime location is
+      server-owned and outside the repository — `WebStackBrowser.ts:368` derives
+      the root as `<ServerConfig.stateDir>/web-stack`, and the Chromium cache
+      sits inside that reference dir (`playwright_browser_cache_dir`,
+      `native/web-stack/src/browser.rs:1093`); `WebStackBrowser.test.ts:144-174`
+      asserts both native subcommands receive `--root
+    /server-owned/state/web-stack`.
+      (3) The ignore policy covers the development locations: `/.deps`
+      (`.gitignore:6`) and `/runtime/` (`:48`). Cross-checked against the ticked
+      "No tracked dependency/build/runtime artifacts" measurement in section 15.
 - [x] Expose the same search/read/deep-research/browser schemas through T3 MCP
       and CTOX's capability adapter.
   - [x] Expose the first product-neutral search schema through T3 MCP using the
@@ -753,9 +968,17 @@ CTOX and the T3 harness adapter consume the same tagged package.
         `git diff --check`.
 - [x] Change CTOX to consume the pinned Workjet Web Stack package.
 - [ ] Remove the duplicate CTOX source only after parity.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository. The Workjet precondition is met — CTOX
+      already consumes the pinned Workjet Web Stack package (line above) — but only
+      CTOX can delete CTOX's copy, and only after its own parity run.
   - [ ] Reconcile the still-divergent local and Workjet `ctox-pdf-parse` trees
         before collapsing Cargo's local and Git package instances; do not
         silently substitute one implementation for the other.
+        BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: the CTOX-local
+        `ctox-pdf-parse` tree, which is not present in this repository, in order
+        to diff it against `native/pdf-parse/`. Workjet holds only one side of
+        the comparison, so no honest reconciliation can be produced from here.
 
 Mandatory gates include Rust tests and clippy, fixture/evidence tests, SSRF
 tests, browser-preparation smoke, web-search E2E, web-unlock E2E, and the shared
@@ -771,7 +994,12 @@ each box now carries either the files/tests that justify a tick, the precise
 remaining delta behind a `[~]`, or a "verified open" note naming what is
 actually missing. Acceptance evidence for the audit itself:
 `pnpm test run src/workjet/` in `apps/server` → 32 files, 489 tests, all
-green. Four claims in this section were found to be WRONG rather than merely
+green. RE-MEASURED 2026-08-20 (final audit), and this is the figure to trust:
+`../../node_modules/.bin/vp test run src/workjet/` in `apps/server` → 21 files,
+395 tests, all green, 24 s. The 32/489 figure does not reproduce; the 20/384
+figure recorded in section 15 predates the cross-mode slice, which adds 4 files
+and 52 tests of its own inside the same path.
+Four claims in this section were found to be WRONG rather than merely
 stale and are marked CORRECTION in place: the `pools`/`routes` "dead schema"
 verdict, the "completion/cancellation/retry/remote coordination remain future
 work" clause on fire-and-forget dispatch, the thread-UI reassign-port
@@ -805,6 +1033,10 @@ follow-up, and the superseded "Open" list on the provider-account surface.
   Audited 2026-08-20: six of the seven sub-items are landed and verified;
   the only remaining gap is the last sub-item below (progress-board policy
   and verification state have no field and no code at all).
+  BUCKET 2026-08-20: SPLIT, through the one remaining sub-item below. Its
+  progress-board and verification-state halves are IMPLEMENTABLE here; its
+  provider-capacity half is BLOCKED-ON-REALITY on a Rust gateway-host route, so
+  this parent cannot be ticked by Workjet work alone.
   - [x] Add a versioned, server-authoritative Workjet configuration contract
         and whole-object settings persistence with typed defaults and focused
         migration/round-trip coverage.
@@ -877,6 +1109,21 @@ follow-up, and the superseded "Open" list on the provider-account surface.
     for `progressBoard`/`progress-board`/`verificationState` returns zero
     Workjet code hits (the `verificationState` hits are web-research result
     metadata in `apps/server/src/mcp/toolkits/workjet/WebStackResearch.ts`).
+    BUCKET 2026-08-20: SPLIT — two buckets, and the split matters.
+    IMPLEMENTABLE: progress-board policy and verification state. NEXT: add both
+    as fields on `WorkjetConfigurationValue`
+    (`packages/contracts/src/workjet.ts:221-233`) with a schemaVersion 3 decode
+    step in the same style as the ticked v1→v2 migration, plus the
+    Execution/Prompt tab editors in
+    `apps/web/src/components/settings/WorkjetSettings.tsx` — ~3 files and their
+    tests, medium.
+    BLOCKED-ON-REALITY: the provider capacity FIGURE. NEEDS: a route on the Rust
+    provider-gateway host that publishes per-account capacity. The host holds
+    the state in an in-process store and exposes no way to read it, so
+    `WorkjetGatewayHealth.capacity` is hardcoded `not-reported-by-host`
+    (`ProviderGatewayService.ts:1123-1124`). Adding that route is gateway-host
+    work that also changes the pinned artifact, so it does not belong in this
+    line.
 - [~] Replace the current Greppy-only `/settings/workjet` page with the native
   CTOX Code configuration surface covering Prompt, Providers, Computers,
   Telemetry, Execution, and the editable worker catalog. Preserve the
@@ -884,6 +1131,9 @@ follow-up, and the superseded "Open" list on the provider-account surface.
   behind global Workjet defaults. Audited 2026-08-20: the surface itself is
   complete (three sub-items ticked below); what remains is the live provider
   round trip and live harness availability, both sub-items below.
+  BUCKET 2026-08-20: SPLIT across the two sub-items below — one
+  BLOCKED-ON-REALITY (live provider round trip), one IMPLEMENTABLE (live harness
+  availability). The surface itself is complete and stays ticked.
   - [x] Replace the Greppy-only page with compact Workers, Computers, LLM
         routes, Prompt, Telemetry, Execution, and Capabilities tabs that use
         the existing Code settings layout and search/deep-link behavior.
@@ -1012,6 +1262,15 @@ follow-up, and the superseded "Open" list on the provider-account surface.
     them; (3) harness routing is proven at the environment/argv layer
     against a test gateway layer, not by an executed completion through a
     running host — the same residue as (1).
+    BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a real provider subscription
+    or API key, and one successful OAuth login against a real client
+    registration. Everything below the credential is built and tested; what is
+    missing is an executed round trip, and no amount of code in this repository
+    substitutes for it. Residues (2) and (3) recorded above are the same missing
+    thing seen from two other angles: per-account capacity/cooldown/rate-limit
+    need a host route (tracked on the capacity item above), and harness routing
+    is proven at the environment/argv layer because no completion has been
+    executed through a running host.
   - [ ] Replace declared harness availability with live environment-scoped
         inspect/install/update/remove actions and consume the resulting truth
         during worker validation and dispatch.
@@ -1029,6 +1288,17 @@ Schema.Boolean (default false), executableOverride? }`
         exists — the Workjet RPC surface (`packages/contracts/src/rpc.ts:330-345`)
         has `workjet.greppy.inspect|install` (a capability runtime, not a
         harness) and `workjet.worktrees.inspect`, and nothing else.
+        BUCKET 2026-08-20: IMPLEMENTABLE. Re-verified open exactly as described.
+        NEXT: add `workjet.harness.inspect|install|update|remove` beside the
+        existing `workjet.greppy.inspect|install` in
+        `packages/contracts/src/rpc.ts:330-345`, a server service that probes
+        the environment for each harness executable, and make
+        `WorkerDispatch.ts` consult the resulting truth instead of nothing at
+        all; then demote the `available` boolean in
+        `packages/contracts/src/workjet.ts:50-55` to an override of the probed
+        value rather than the sole source. Scope: ~4 server files, 1 contract
+        file, 2 web files and their tests — the largest single IMPLEMENTABLE
+        item in Wave 5.
 - [x] Add an orchestrator-scoped worker overview showing child threads grouped
       under their parent with task, harness/model, environment/computer,
       delivery/turn state, completion/result state, and actionable links to
@@ -1045,39 +1315,62 @@ Schema.Boolean (default false), executableOverride? }`
       orchestrator overview is closed. Verified 2026-08-19: the sidebar does no
       role-based filtering; a test asserts worker threads stay in the source
       thread list independent of the overview.
-- [~] Migrate existing Swift Workjet configurations through a one-shot,
-  inspectable import/export path; after parity is proven, CTOX Code must
-  not require the Swift runtime or its local store. Reader, mapping and
-  runner done 2026-08-20 (commits `e89873c6a`, `b23729f49`, `a6b2c5e1b`,
-  47 tests). The format was NOT guessed: the real
-  `~/Library/Application Support/Workjet/config.v1.json` (62 KB) plus six
-  dated backups were read READ-ONLY, and the complete key universe and
-  every enum raw value were recovered from the shipped app binary's
-  CodingKeys tables — two keys exist there that appear in no live
-  document, which is why the sample alone was not enough. All seven real
-  documents decode with ZERO unknown fields. The reader fails closed and
-  never silently drops: 74 source leaves are each mapped, folded into the
-  managed prompt, or dropped WITH a reason (46), and 5 sourceless
-  destinations state their default. A wrong first assumption
-  (`reasoningEffort: ""` meaning automatic) was caught by the real data —
-  the key is simply absent — which is what fail-closed is for. DECISIVE
-  FINDING: computer→environment, provider→gateway-account and pool→route
-  cannot be carried over at all (the Swift ids are UUIDs and CLIProxy
-  hashes; no value would ever resolve), so they are operator BINDINGS and
-  unbound records land in `pending` instead of a silent partial import —
-  on the real config: 3 computers, 7 providers, 4 pools, 12 workers. The
-  runner lives server-side because the authority is `settings.workjet` in
-  each environment's own settings and the legacy file belongs to the
-  machine that server runs on. Remaining: no offer surface is wired — the
-  service exposes decision/offer/accept/decline but no RPC or settings
-  panel calls it yet, and `make` resolves the decision eagerly, which
-  wants a look before it goes on the boot path.
-  Verified open 2026-08-20: nothing exists. There is no import/export RPC
-  in `packages/contracts/src/rpc.ts`, no importer/exporter module anywhere
-  under `apps/` or `packages/`, and no Swift source or Swift Workjet store
-  in the tree. The only migration machinery is the in-schema
-  `migrateWorkjetLlmRouteV1ToV2`, which migrates T3's OWN v1 config to v2,
-  not a Swift document.
+- [x] Migrate existing Swift Workjet configurations through a one-shot,
+      inspectable import/export path; after parity is proven, CTOX Code must
+      not require the Swift runtime or its local store. Reader, mapping and
+      runner done 2026-08-20 (commits `e89873c6a`, `b23729f49`, `a6b2c5e1b`,
+      47 tests). The format was NOT guessed: the real
+      `~/Library/Application Support/Workjet/config.v1.json` (62 KB) plus six
+      dated backups were read READ-ONLY, and the complete key universe and
+      every enum raw value were recovered from the shipped app binary's
+      CodingKeys tables — two keys exist there that appear in no live
+      document, which is why the sample alone was not enough. All seven real
+      documents decode with ZERO unknown fields. The reader fails closed and
+      never silently drops: 74 source leaves are each mapped, folded into the
+      managed prompt, or dropped WITH a reason (46), and 5 sourceless
+      destinations state their default. A wrong first assumption
+      (`reasoningEffort: ""` meaning automatic) was caught by the real data —
+      the key is simply absent — which is what fail-closed is for. DECISIVE
+      FINDING: computer→environment, provider→gateway-account and pool→route
+      cannot be carried over at all (the Swift ids are UUIDs and CLIProxy
+      hashes; no value would ever resolve), so they are operator BINDINGS and
+      unbound records land in `pending` instead of a silent partial import —
+      on the real config: 3 computers, 7 providers, 4 pools, 12 workers. The
+      runner lives server-side because the authority is `settings.workjet` in
+      each environment's own settings and the legacy file belongs to the
+      machine that server runs on. Remaining: no offer surface is wired — the
+      service exposes decision/offer/accept/decline but no RPC or settings
+      panel calls it yet, and `make` resolves the decision eagerly, which
+      wants a look before it goes on the boot path.
+      Verified open 2026-08-20: nothing exists. There is no import/export RPC
+      in `packages/contracts/src/rpc.ts`, no importer/exporter module anywhere
+      under `apps/` or `packages/`, and no Swift source or Swift Workjet store
+      in the tree. The only migration machinery is the in-schema
+      `migrateWorkjetLlmRouteV1ToV2`, which migrates T3's OWN v1 config to v2,
+      not a Swift document.
+      AUDIT 2026-08-20 (final): TICKED, and the note below is a KORREKTUR.
+      KORREKTUR: "Verified open 2026-08-20: nothing exists" is FLATLY WRONG and
+      was already contradicted by the release-gate measurement in section 15
+      ("the four `apps/server/src/workjet/legacy/*.test.ts` files are green").
+      Everything it denies is present in this tree: the RPCs
+      `workjet.legacyImport.inspect` and `workjet.legacyImport.decide`
+      (`packages/contracts/src/rpc.ts:358-359`), handled at
+      `apps/server/src/ws.ts:498`; the four modules
+      `apps/server/src/workjet/legacy/{LegacyWorkjetConfig,LegacyWorkjetImport,
+    LegacyWorkjetImportRpc,LegacyWorkjetMapping}.ts` with 66 tests across
+      their four `.test.ts` siblings; and the offer surface, which is wired —
+      `useWorkjetLegacyImportSection` (`WorkjetSettings.tsx:1226`) renders
+      `WorkjetLegacyImportSectionView` (`:1180`), with the settings-search entry
+      `workjet-legacy-import` (`settingsSearch.ts:254`). The earlier "`make`
+      resolves the decision eagerly" worry is also resolved:
+      `LegacyWorkjetImport.ts:259` builds the service without touching the
+      filesystem and its docstring says so.
+      The second clause holds too: no Swift source or Swift Workjet store exists
+      in this tree, and the reader is read-only, so CTOX Code does not require
+      the Swift runtime. HONEST RESIDUE, recorded rather than hidden: there is
+      no EXPORT command on the Workjet side — the path is import-only, because
+      the legacy document is produced by the Swift application, which is not in
+      this repository.
 - [x] Compile deterministic Workjet role instructions through the existing
       managed-prompt path used by Codex, Claude Code, and Grok.
 - [x] Keep user/developer instructions clearly separated from managed Workjet
@@ -1114,6 +1407,14 @@ Schema.Boolean (default false), executableOverride? }`
   delta: an append-only per-delegation state event log (or an equivalent
   transactional trace), and any durable status record for
   dispatch-workers.
+  BUCKET 2026-08-20: IMPLEMENTABLE. NEXT: add an append-only
+  `workjet_delegation_state_events` table in a new migration written in the same
+  transaction as `transitionDelegationState`
+  (`apps/server/src/workjet/mailbox/WorkjetMailboxStore.ts`), and give the
+  dispatch-worker path a durable status record addressed to its parent. Scope: 1
+  migration, 1 store file, 1 dispatch file plus tests — medium. Note the
+  dispatch-worker half is the same underlying gap as the two items below and is
+  best closed once, in whichever direction the owner question there is settled.
 - [~] Add bounded dispatch, cancellation, retry, timeout, and result-return
   semantics.
   Audited 2026-08-20: all five exist for the DELEGATION path and none
@@ -1142,6 +1443,15 @@ Schema.Boolean (default false), executableOverride? }`
   after dispatch and does not wait for completion"). Remaining delta:
   either give the dispatch-worker path the same semantics or retire it in
   favour of a delegation.
+  BUCKET 2026-08-20: IMPLEMENTABLE, but it carries a design choice worth naming.
+  NEXT, option A: give `workjet_dispatch_worker`
+  (`apps/server/src/mcp/toolkits/workjet/WorkerTool.ts`,
+  `apps/server/src/workjet/WorkerDispatch.ts`) the five semantics by routing it
+  through the delegation machinery it currently bypasses. Option B, cheaper and
+  arguably better: retire `workjet_dispatch_worker` in favour of
+  `workjet_delegate_task`, which already has all five. Option B is ~2 files
+  deleted plus a deprecation path; option A is a rewrite of `WorkerDispatch.ts`.
+  The same choice closes the two items above and below, so make it once.
 - [~] Treat worker completion as an event, not as a UI-only observation.
   Audited 2026-08-20. For DELEGATIONS this is largely met: the executor's
   running-scan completes only the exact turn it dispatched (message-id +
@@ -1163,6 +1473,11 @@ Schema.Boolean (default false), executableOverride? }`
   EVENT is best-effort (`Effect.ignore`), so a failed append leaves a
   completed delegation with no timeline trace while the row stands; (3)
   the `delegation-completed` audit event is in-memory only.
+  BUCKET 2026-08-20: IMPLEMENTABLE. NEXT: residues (2) and (3) are cheap — make
+  the completion `appendActivity` failure visible instead of swallowed by
+  `Effect.ignore` (`WorkjetDelegationExecutor.ts:574-601`), and back the
+  in-memory `delegation-completed` audit ring with a table. Residue (1) is the
+  `workjet_dispatch_worker` question above and should be settled there first.
 - [x] Support initial fire-and-forget worker dispatch in the same environment;
       completion, cancellation, retry, and remote coordination remain future work.
       CORRECTION 2026-08-20: the trailing clause is no longer true. Completion,
@@ -1228,6 +1543,11 @@ parent.modelSelection`) applied to both create and turn-start, proven by
   thread — `ComposerFooterControls.test.tsx` proves co-existence with
   Plan/Build, which is a different control one level down. Make the
   invariant assertable the way the role/Plan-Build one deliberately was.
+  BUCKET 2026-08-20: IMPLEMENTABLE, and it is the cheapest open item in this
+  section. NEXT: one test asserting `ProviderModelPicker` renders and stays
+  enabled on an orchestrator thread and on a worker thread, in the same style as
+  the deliberately assertable role/Plan-Build co-existence test in
+  `ComposerFooterControls.test.tsx`. Scope: one test file, tiny.
 
 ### Distributed worker mailbox and delegation graph
 
@@ -1382,6 +1702,17 @@ failed | cancelled | expired`. Done in the same commit
   payload sealing (encryption) to the target environment key, peer-key
   distribution, the CTOX-Sync transport itself, the reconciler, and the
   thread UI.
+  BUCKET 2026-08-20: IMPLEMENTABLE. NEXT, two independent pieces. (a) Append the
+  inbound thread activity on the cross-environment path —
+  `WorkjetMailboxTransport.ts` emits none today, so a remotely delivered
+  delegation first appears as `workjet.delegation.started`; the shared helper
+  `applyDeliveredDelegation` (`WorkjetMailboxDelivery.ts:406-421`) is the
+  natural place. (b) Decide whether the thread-visible append belongs inside the
+  store transaction. Keeping it outside is a defensible, documented choice — a
+  refused append must not turn an executed delegation into a reported failure —
+  so this half may be a wording fix to the plan line rather than a code change;
+  the current wording promises a transaction the design deliberately does not
+  want. Scope: (a) ~2 files plus tests, small; (b) a decision plus one sentence.
 - [~] Replicate the per-machine durable mailboxes and the redacted activity
   projection over the CTOX Sync WebRTC data plane between the user's own
   machines (primary transport per the 2026-08-18 owner decision), joined
@@ -1468,6 +1799,21 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   not supported — the tests "rejects and consumes an envelope whose sender
   key rotated" and "…whose ENCRYPTION key rotated" pin the refusal, and no
   re-pin path exists.
+  BUCKET 2026-08-20: SPLIT.
+  BLOCKED-ON-REALITY: the live two-machine run. NEEDS: a second physical machine
+  with its own CTOX daemon, paired into the same room. Every transport test in
+  this repository drives a fake daemon `HttpClient` stub, and the cited
+  two-daemon CTOX test is two processes on one host — neither substitutes.
+  IMPLEMENTABLE, three separate pieces: (a) inbound thread-activity traces —
+  same work as item (a) on the persistence line above, do it once; (b) in-cycle
+  cursor following — `next_cursor` is decoded at
+  `WorkjetMailboxTransport.ts:595` and then dropped, so a backlog drains one
+  50-envelope page per 10 s cycle; feeding it back into the same cycle is a
+  small loop change in `pull` (`:1581-1636`); (c) a key-ROTATION re-pin path —
+  rotation is currently a refusal with no way back, which also blocks the
+  "revocable environment credentials" clause of the remote-dispatch security
+  invariant. Scope: (b) ~1 file, small; (c) ~1 migration plus a re-pin RPC and
+  its UI confirmation, medium.
 - [~] Add the typed thread-handoff contract and flow (immutable prompt/context
   snapshot, bounded artifact references, pushed or sync-bundled Git branch,
   durable source-thread link); the target machine continues in a new
@@ -1503,6 +1849,16 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   machine A never learns machine B continued the work. (c) every cross-env
   handoff test runs against the fake daemon HTTP stub; no script or fixture in
   the tree boots two hosts.
+  BUCKET 2026-08-20: SPLIT.
+  BLOCKED-ON-REALITY: the machine-A → machine-B proof. NEEDS: the same second
+  physical machine as the replication line above; one run proves both.
+  IMPLEMENTABLE, two pieces: (a) read the real head commit and, where a remote
+  is configured, push the branch — `WorkjetHandoffBranchRef.headCommit`
+  (`packages/contracts/src/workjetMailbox.ts:617-627`) is an optionalKey nothing
+  writes; (b) add an acknowledgement envelope kind to
+  `WorkjetMailboxEnvelopeKind` (`:687-694`) so machine A learns machine B
+  continued the work. Scope: (a) ~2 server files plus tests, small; (b) 1
+  contract file, 1 delivery file, 1 transport file plus tests, medium.
 - [x] Add the global multi-computer activity overview on the replicated
       redacted projection, including last known state of offline machines.
       Done 2026-08-20 (commits `3b9e49d2b`, `3e12960cf`): a `/machines` route
@@ -1555,6 +1911,15 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   update its own delegation — today a worker cannot use the mailbox RPCs at
   all. Related still-open item: "Scope T3 MCP tools to the current
   session/thread and capability grants" later in this plan.
+  BUCKET 2026-08-20: IMPLEMENTABLE. NEXT: replace the single
+  `requireOrchestratorSource` gate (`WorkjetMailboxRpc.ts:169-181`) with
+  per-operation scopes, and add the worker-initiated path the module docstring
+  already anticipates at `:58-62` — today a WORKER thread cannot use the mailbox
+  RPCs at all, so a worker cannot reply to or update its own delegation. Scope:
+  the RPC authorization table in `packages/contracts/src/rpc.ts`, one server
+  file, and the five MCP tool guards plus tests — medium. The second sentence of
+  this line (no cross-environment execution rights from account co-membership)
+  is already fully enforced and should not be re-litigated by this work.
 - [~] Guarantee at-least-once transport with stable envelope IDs, idempotent
   inbox insertion, acknowledgements, bounded retry/backoff, expiry, and a
   dead-letter state visible to the user. Never promise exactly-once network
@@ -1582,6 +1947,15 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   with a source-thread trace (test "fails a source delegation whose
   outbound envelope dead-lettered"); a dead-lettered plain MESSAGE surfaces
   nowhere at all.
+  BUCKET 2026-08-20: IMPLEMENTABLE, and small. NEXT: render the dead-letter
+  state. The data is already there and unread — the executor's counters are
+  annotated "for later UI exposure" (`WorkjetDelegationExecutor.ts:197-199`) and
+  the redacted audit stream reaches the client-runtime atom at
+  `packages/client-runtime/src/state/server.ts:1044-1046`, which no component
+  consumes. A dead-lettered plain MESSAGE surfaces nowhere at all today. Scope:
+  one component reading the existing atom, plus a test — small. This is the same
+  unmounted-surface shape as the cross-mode notifications item in section 1 and
+  could share a panel.
 - [x] Add a server-side mailbox reconciler that resumes after restart, applies
       backpressure, orders events per delegation, and queues target prompts
       while a thread already has an active turn.
@@ -1697,6 +2071,16 @@ state_changed_at_ms ASC, delegation_id ASC`
   because no per-turn cost figure exists to charge against it, so
   `maxCostMicros` is enforced machinery over an input that is always zero.
   Everything else on this line is closed.
+  BUCKET 2026-08-20: IMPLEMENTABLE, and narrow. Everything on this line is
+  closed except that the cost ceiling can never fire. NEXT: derive a per-turn
+  cost from the token deltas the executor already charges
+  (`recordDelegationUsage`) times a per-model price, so `maxCostMicros` gates a
+  real number instead of a constant zero. That needs a price table, which does
+  not exist anywhere in the repository — either add one to the gateway catalog
+  or, if the owner would rather not maintain prices, delete `maxCostMicros`
+  instead of shipping enforcement machinery over an input that is always zero.
+  Scope: either ~2 files plus a table, or a contract deletion — small in both
+  directions.
 - [x] Add interruption, cancellation, reassignment, target-offline, deleted-
       thread, and target-version-skew handling with explicit terminal or
       recoverable states; never silently drop a message or start it elsewhere.
@@ -1737,6 +2121,15 @@ state_changed_at_ms ASC, delegation_id ASC`
   that clause is unimplemented and untested. Remaining delta: populate
   `artifacts` from the completed turn's worktree, add the diff/Greppy
   reference kinds, and prove one resolution on the receiving side.
+  BUCKET 2026-08-20: IMPLEMENTABLE. NEXT, in order of weight: (a) populate
+  `WorkjetArtifactReferences` from the completed turn's worktree instead of
+  writing the empty literal at `WorkjetDelegationExecutor.ts:914` and
+  `WorkjetMailboxRpc.ts:471`; (b) add the diff and Greppy reference kinds to
+  `packages/contracts/src/workjetMailbox.ts:308-314`; (c) resolve one reference
+  on the receiving side against that server's own authorized environment state,
+  and test it. Scope: (a) ~2 server files plus tests, small; (b)+(c) 1 contract
+  file and ~2 server files plus tests, medium. The snapshot half of this line is
+  complete and thorough and should not be reopened.
 - [x] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
       selection across connected computers, delivery/state badges, linked
       source/target navigation, reply, follow-up, review, cancel, and reassign.
@@ -1842,6 +2235,17 @@ state_changed_at_ms ASC, delegation_id ASC`
       `WorkjetCrossModeProofMatrix.test.ts` is NOT this proof — it proves the
       Cross-mode workflow bridge item in an earlier section and touches no
       delegation.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY, and it is the single largest
+      unproven claim in the plan. NEEDS, all three together: (1) a second
+      physical machine for the cross-computer dimension; (2) real provider
+      subscriptions for three different harnesses — Codex, Claude Code and Grok
+      — since the point of the gate is that they interoperate; (3) an E2E driver
+      that boots real harness sessions, which does not exist (see the
+      Real-end-to-end gate in section 15, where building that driver is tracked
+      as its own IMPLEMENTABLE item). Nothing in this repository substitutes:
+      every existing test drives doubles in one process, and
+      `WorkerDispatch.e2e.test.ts:36-38` says so itself. Scenario coverage
+      against doubles is accurately listed above and unchanged.
 
 Abuse and reliability tests must cover duplicate dispatch, stale parent,
 deleted worker, server restart, network loss, cancellation race, terminal
@@ -1860,6 +2264,7 @@ failure, remote version skew, and unauthorized cross-environment control.
   `artifactName: "CTOX-Desktop-App-${version}-${arch}.${ext}"`),
   `assets/ctox/*` icons, `resolveDesktopWebAssetBrand` → `"ctox"`.
   Remaining: the About-panel/update-channel audit sub-item below.
+  BUCKET 2026-08-20: IMPLEMENTABLE, entirely through the one sub-item below.
   - [x] Rebrand the current macOS arm64 package, executable, title, release
         filenames, and app icon to CTOX. The 17 August packaged Electron QA
         proves `CTOX Desktop App (Alpha)`, no rendered T3 wordmark, a CTOX
@@ -1884,6 +2289,16 @@ resolveDesktopUpdateChannel`) and is surfaced in
     `T3CODE_DESKTOP_UPDATE_REPOSITORY` / `GITHUB_REPOSITORY` at
     `scripts/build-desktop-artifact.ts:2090-2113`) with no test or
     packaged check that a released CTOX build points at the CTOX feed.
+    BUCKET 2026-08-20: IMPLEMENTABLE. NEXT, two independent pieces. (a) Add a
+    Help → About entry outside the `platform === "darwin"` branch in
+    `apps/desktop/src/window/DesktopApplicationMenu.ts:146` so the CTOX identity
+    is reachable on Windows and Linux. (b) Add a test to
+    `scripts/build-desktop-artifact.test.ts` asserting that a released CTOX
+    build's publish/update feed points at the CTOX repository, so
+    `resolveGitHubPublishConfig` (`scripts/build-desktop-artifact.ts:2090-2113`)
+    cannot silently drift to a foreign feed. Scope: 2 source files plus 2 tests
+    — small. Note (b) becomes load-bearing the moment the repository rename
+    decision in section 2 is taken.
 - [x] Introduce `ctox-desktop:` and `ctox-desktop-dev:` protocol schemes while
       keeping CTOX instance/invite protocols distinct. Done 2026-08-20
       (commits `f4d40317d`…`7914623a6`): registered at all four points
@@ -1952,6 +2367,12 @@ resolveDesktopUpdateChannel`) and is surfaced in
   `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx:97`,
   `apps/web/src/components/ChatView.tsx:6575`. The migration dialog's
   "previous T3 Code profile" copy is a deliberate legacy reference.
+  BUCKET 2026-08-20: IMPLEMENTABLE, and purely mechanical. NEXT: replace the six
+  user-visible strings named above; leave the migration dialog's "previous T3
+  Code profile" copy alone (it is a deliberate legacy reference) and leave the
+  remaining ~70 non-user-visible occurrences alone, since this line explicitly
+  forbids rewriting unrelated historical comments. Scope: 6 files, one line each
+  — small.
 - [x] Add CTOX Desktop App brand assets only after the shell and behavior are
       stable. Verified 2026-08-20: `assets/ctox/` carries
       `ctox-app-icon.icns`, `ctox-app-icon.png`, `ctox-windows.ico`, and the
@@ -2014,6 +2435,7 @@ groupCtoxInstances` only buckets the one result by source
   SSH-managed discovery plus launch exist. Remaining for the parent:
   local-daemon lifecycle/ownership and SSH
   attach/install/rotate/revoke (see the two sub-items).
+  BUCKET 2026-08-20: SPLIT across the two sub-items below; see their buckets.
   - [x] Port bounded invite and manual-pairing import, deterministic identity,
         expiry handling, duplicate updates, removal, and strict rejection of
         HTTP bridges or unsafe signaling URLs.
@@ -2050,6 +2472,16 @@ groupCtoxInstances` only buckets the one result by source
     — the descriptor is trusted from the state root with no file
     owner/uid/permission verification (`grep -i owner` over
     `CtoxLocalDaemonSource.ts` returns nothing).
+    BUCKET 2026-08-20: SPLIT.
+    IMPLEMENTABLE: gap (b), the descriptor OWNERSHIP check. NEXT: verify the
+    descriptor file's owner/uid and permissions before trusting it in
+    `apps/desktop/src/ctox/CtoxLocalDaemonSource.ts`, plus a test — one file,
+    small, and worth doing on its own because it is a trust boundary.
+    BLOCKED-ON-REALITY: gap (a), daemon LIFECYCLE. NEEDS: `ctox` daemon CLI
+    verbs to start, stop and install a local daemon. Only the invite verb
+    (`CTOX_INVITE_ARGUMENTS`, `CtoxLocalDaemonLaunch.ts:105`) exists to call
+    today, so the desktop has nothing to drive; the verbs are a CTOX-repo
+    change.
   - [~] Port SSH-managed discovery, attach/install/rotate/revoke, and launch.
     Progress 2026-08-19 (commits `45e1129b9` and parent): discovery,
     credential-free configuration (`ssh-instances.json`), add/remove IPC,
@@ -2090,10 +2522,26 @@ groupCtoxInstances` only buckets the one result by source
     Also still absent: attach/install/rotate/revoke in any layer — the only
     SSH IPC is `addSshManagedInstance` / `removeSshManagedInstance`
     (`apps/desktop/src/ipc/methods/ctox.ts:233,260`).
+    BUCKET 2026-08-20: SPLIT, and one earlier note on this page is now WRONG.
+    KORREKTUR: the renderer-side "SSH launch pending" limitation is gone.
+    Verified in this tree — `canActivateCtoxInstance`
+    (`apps/web/src/components/ctox/CtoxModeShell.tsx:167-177`) returns true for
+    a `ssh_managed` row whose status is `available`, and the surviving constant
+    `CTOX_SSH_LAUNCH_PENDING_HINT` (`:88`) now reads "This SSH host is not
+    reachable right now." — an offline hint, not a missing-feature hint.
+    Discovery, configuration, launch and the renderer path are therefore all
+    done.
+    BLOCKED-ON-REALITY, the two genuinely open halves: (1) attach / install /
+    rotate / revoke — NEEDS matching remote `ctox` CLI verbs, a CTOX-repo
+    change; the only SSH IPC here remains `addSshManagedInstance` /
+    `removeSshManagedInstance` (`apps/desktop/src/ipc/methods/ctox.ts:233,260`).
+    (2) NEEDS a real remote host for the live end-to-end run; every existing
+    case drives the SSH boundary in-process.
 - [~] Reuse Workjet's Electron safe storage where possible; preserve platform
   keychain guarantees for room, capability, sudo, and SSH secrets.
   Audited 2026-08-20: room/capability secrets are done (sub-item below);
   the sudo/SSH/keychain-smoke sub-item is the only remaining work.
+  BUCKET 2026-08-20: SPLIT through the sub-item below.
   - [x] Store pairing room/capability secrets separately from public instance
         metadata using Electron Safe Storage; fail closed for unavailable,
         Linux `basic_text`, and unknown Linux storage backends.
@@ -2118,6 +2566,19 @@ ElectronSafeStorage.ts` with the Linux backend guard in
     (`grep -rl keychain` over `scripts` + `apps/desktop/src` matches only
     the comment in `app/DesktopUserDataMigration.ts`), so the plan's
     "platform-keychain runtime smoke" parity-gate line is unmet.
+    BUCKET 2026-08-20: SPLIT.
+    IMPLEMENTABLE: gap (b), the platform-keychain runtime smoke. NEXT: a script
+    under `scripts/` that exercises `ElectronSafeStorage.ts` and
+    `linuxSecretStorage.ts` against the real OS keychain — encrypt, restart,
+    decrypt, and assert the Linux backend guard fails closed. Scope: one new
+    script plus a test, small on macOS; the Linux leg additionally NEEDS a Linux
+    host.
+    BLOCKED-ON-OWNER: gap (a), sudo credential handling. OWNER: decide whether
+    CTOX Desktop App needs sudo credential handling AT ALL before anyone builds
+    it. None exists today and no CTOX flow in this tree asks for one — the only
+    `sudo` in the desktop tree is the unrelated `DesktopWslEnvironment.ts`.
+    Consequence of not deciding: the parity-gate line keeps naming a capability
+    nobody has justified, so the gate can never go green honestly.
 - [x] Port host-key pinning and strict SSH command handling. Verified
       2026-08-20: pinning is OpenSSH's own `known_hosts` — `StrictHostKeyChecking`
       is never weakened anywhere in the tree and `BatchMode=yes` aborts on an
@@ -2132,23 +2593,42 @@ ElectronSafeStorage.ts` with the Linux backend guard in
       own output and honours CTOX_BIN") and `:238` ("POSIX-quotes a configured
       state root so it cannot escape its argument"), plus
       `CtoxSshManagedSource.test.ts`.
-- [~] Port deep-link parsing with explicit user confirmation. Audited
-  2026-08-20. PARSING EXISTS: `apps/desktop/src/app/DesktopDeepLink.ts`
-  (`parseDesktopDeepLink`, `isDesktopDeepLinkScheme`,
-  `resolveDesktopDeepLinkRedirect`) with 10 cases in
-  `DesktopDeepLink.test.ts`, including scheme-case normalization and the
-  assertion that `ctox://` is NOT a desktop deep link.
-  EXACT REMAINING GAP — two distinct deltas from the plan wording:
-  (a) NO USER CONFIRMATION. The one consumer is
-  `apps/desktop/src/window/DesktopWindow.ts:532-535`, which on
-  `will-navigate` silently calls `window.webContents.loadURL(redirect)`.
-  No dialog, no allowlist prompt, no per-link approval anywhere.
-  (b) NO OS-LEVEL INTAKE. `grep -rn "open-url" apps/desktop/src` returns
-  nothing, so a `ctox-desktop://` link opened from Finder/Explorer/a
-  browser never reaches the parser; the cold-start argv and macOS
-  `open-url` paths are unimplemented (`DesktopClerk.ts:142` handles
-  `second-instance` for Clerk only). Confirmation is therefore not merely
-  missing UI — the OS-originated link path it would guard does not exist.
+- [x] Port deep-link parsing with explicit user confirmation. Audited
+      2026-08-20. PARSING EXISTS: `apps/desktop/src/app/DesktopDeepLink.ts`
+      (`parseDesktopDeepLink`, `isDesktopDeepLinkScheme`,
+      `resolveDesktopDeepLinkRedirect`) with 10 cases in
+      `DesktopDeepLink.test.ts`, including scheme-case normalization and the
+      assertion that `ctox://` is NOT a desktop deep link.
+      EXACT REMAINING GAP — two distinct deltas from the plan wording:
+      (a) NO USER CONFIRMATION. The one consumer is
+      `apps/desktop/src/window/DesktopWindow.ts:532-535`, which on
+      `will-navigate` silently calls `window.webContents.loadURL(redirect)`.
+      No dialog, no allowlist prompt, no per-link approval anywhere.
+      (b) NO OS-LEVEL INTAKE. `grep -rn "open-url" apps/desktop/src` returns
+      nothing, so a `ctox-desktop://` link opened from Finder/Explorer/a
+      browser never reaches the parser; the cold-start argv and macOS
+      `open-url` paths are unimplemented (`DesktopClerk.ts:142` handles
+      `second-instance` for Clerk only). Confirmation is therefore not merely
+      missing UI — the OS-originated link path it would guard does not exist.
+      AUDIT 2026-08-20 (final): TICKED, and the gap description below is a
+      KORREKTUR.
+      KORREKTUR: both "EXACT REMAINING GAP" clauses are now WRONG, and the
+      security invariants section already contradicted them on the same day. (a)
+      USER CONFIRMATION EXISTS: `apps/desktop/src/app/DesktopDeepLinkRouter.ts`
+      never acts on a link — it parses, queues (capped, malformed dropped,
+      foreign schemes left to their owners) and OFFERS it to the renderer, where
+      `apps/web/src/components/desktop/DeepLinkConfirmationDialog.tsx` — mounted
+      at `apps/web/src/routes/__root.tsx:142` — turns one into a navigation only
+      on confirmation ("navigates through the supplied callback only when the
+      user confirms"). (b) OS-LEVEL INTAKE EXISTS: the router registers both
+      `open-url` and `second-instance` (asserted as exactly those two in
+      `DesktopDeepLinkRouter.test.ts:100`) and additionally reads Windows/Linux
+      cold-start links out of `process.argv` via `extractDeepLinksFromArgv`
+      (`:118`, used at `:239`). The macOS pre-`ready` ordering hazard is handled
+      and statically asserted: `register` runs in the same synchronous stretch
+      as the other pre-ready setup (`DesktopApp.ts:288-289`, layer mounted at
+      `main.ts:226`), because a handler installed after `whenReady` would miss
+      exactly the cold-start case — and only in a packaged build.
 - [x] Port support-bundle redaction and crash-report metadata without secrets.
       Done 2026-08-20 (commits `726decaeb`…`7999e8986`): a single JSON support
       bundle with a DECLARED 59-field inventory that the builder test asserts
@@ -2297,6 +2777,16 @@ business-os-shell.manifest.json`, commit `1bdcbe311`), but the
       above: the pinned shell is now `v0.1.0-rc.12`
       (`apps/desktop/resources/ctox/business-os-shell.manifest.json`,
       sourceCommit `478883dfb`), not rc.10.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. The publish-and-pin half is DONE
+      and re-verified in this tree: `apps/desktop/resources/ctox/
+      business-os-shell.manifest.json` pins `v0.1.0-rc.12` at sourceCommit
+      `478883dfb`. NEEDS for the rest: an operator run of a packaged CTOX
+      Desktop App build against a real paired CTOX instance, to observe the
+      light scheme and the three/two/one-pane layouts and to confirm the
+      standalone shell is unchanged. No code change closes this — it is a manual
+      QA run whose only output is evidence, and it should be batched with the
+      other packaged operator runs in this section so the app is built and
+      paired once.
 
 ### Renderer
 
@@ -2327,10 +2817,16 @@ business-os-shell.manifest.json`, commit `1bdcbe311`), but the
         `sourceGroupKey` (`:178-184`) routes `local_daemon` / `ssh_managed`
         into them; `CtoxModeShell.test.tsx:280` proves running local daemons
         render launchable and stopped ones inert, `:182` proves SSH rows
-        render reachable-but-not-launchable. NOTE (not a defect of this item,
-        but of the SSH launch item above): the SSH rows still carry
+        render reachable-but-not-launchable. KORREKTUR 2026-08-20 (final
+        audit): the NOTE this entry used to carry — "the SSH rows still carry
         `CTOX_SSH_LAUNCH_PENDING_HINT` even though `CtoxSshManagedLaunch`
-        landed in the main process.
+        landed in the main process" — is no longer true, and was already
+        superseded by commit `8752fc9ae`. `canActivateCtoxInstance`
+        (`CtoxModeShell.tsx:167-177`) launches a reachable `ssh_managed` row,
+        and the surviving constant (`:88`) now reads "This SSH host is not
+        reachable right now.", which is an offline hint rather than a
+        missing-feature hint. What `:182` proves today is that an UNREACHABLE
+        SSH row stays inert.
 - [x] Selecting a managed ctox.dev instance activates its native guest surface
       in the main region.
 - [x] Selecting a valid invite/manual-pairing instance activates the same guest
@@ -2364,6 +2860,7 @@ unavailableHint` for per-instance unavailability; `needs_auth` is an
 - [~] Provide instance management and refresh actions without exposing secrets.
   Audited 2026-08-20: the managed and paired sub-items are done; the
   local-daemon/SSH lifecycle sub-item below is the remaining work.
+  BUCKET 2026-08-20: SPLIT through the sub-item below.
   - [x] Provide managed login, logout, and refresh actions through typed IPC
         without exposing tenant IDs, partitions, cookies, or launch tokens.
   - [x] Provide invite/manual-pairing add and paired-instance removal through
@@ -2385,6 +2882,13 @@ unavailableHint` for per-instance unavailability; `needs_auth` is an
     exitBusinessOsMode / deactivate / setGuestBounds / listApps / openApp
     / setAppDocked / setHostTheme — no start, stop, install, attach,
     rotate, or revoke), and no SSH attach/install/rotate/revoke action.
+    BUCKET 2026-08-20: BLOCKED-ON-REALITY, same prerequisite as the two
+    lifecycle items above. NEEDS: `ctox` daemon CLI verbs (local) and remote
+    `ctox` CLI verbs (SSH) to drive — the desktop IPC surface enumerated above
+    has nothing to call. Once those exist the desktop side is a mechanical
+    addition to `apps/desktop/src/ipc/methods/ctox.ts` and `CtoxModeShell.tsx`
+    behind the same renderer-secret boundary the SSH add/remove pair already
+    demonstrates.
 - [~] Ensure keyboard shortcuts and zoom target the active desktop surface
   intentionally. Audited 2026-08-20. WHAT EXISTS: zoom is a deliberate,
   documented choice to always target the main window's own `webContents`
@@ -2399,6 +2903,13 @@ unavailableHint` for per-instance unavailability; `needs_auth` is an
   reasons only about the preview view, no accelerator or shortcut is
   routed to or suppressed for the active CTOX Business OS guest, and no
   test asserts shortcut/zoom targeting while a guest is active.
+  BUCKET 2026-08-20: IMPLEMENTABLE. NEXT: make `zoomMain`
+  (`apps/desktop/src/window/DesktopWindow.ts:858-866`) and the View-menu
+  accelerators (`DesktopApplicationMenu.ts:200-208`) ask `CtoxGuestManager`
+  whether a Business OS guest is active, and either target that guest's
+  `webContents` or suppress the accelerator deliberately; add a test asserting
+  shortcut and zoom targeting while a guest is active. Scope: 2 desktop files
+  plus a guest-awareness accessor and a test — small.
 
 ### Parity gate before CTOX removal
 
@@ -2442,6 +2953,12 @@ Workjet must pass equivalents of all current CTOX Desktop checks:
         `CTOX_STATE_ROOT`, or `CTOX_INSTALL_ROOT` to a synthetic empty instance.
         Verified open 2026-08-20: `scripts/ctox-packaged-smoke.ts` exists but
         this is an operator-run packaged smoke with no recorded run artifact.
+        BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: an operator run against
+        the operator-selected real CTOX instance. The driver exists
+        (`scripts/ctox-packaged-smoke.ts`) and the packaging step is green
+        (section 15 records macOS arm64 and x64 both PASS), so nothing is
+        missing but the run and its recorded artifact. Batch with the other
+        packaged operator runs in this section.
   - [x] Add the macOS-first packaged smoke runner and focused tests. It uses
         only the typed CTOX desktop bridge, keeps the real CTOX instance
         roots intact, discovers changing `WebContentsView` CDP targets by
@@ -2477,6 +2994,17 @@ OS` control and the safe paired-instance row, verify DOM-relative
     repository (commits `1e2808814`, `71b80c625`) and the parent still
     requires the Workjet-side packaged smoke to consume that field. Out of
     Workjet scope except for `scripts/ctox-packaged-smoke.ts`.
+    BUCKET 2026-08-20: BLOCKED-ON-REALITY. What the Workjet driver already does,
+    verified in this tree: it reads the shell's advanced status
+    (`classifyAdvancedStatus`, `scripts/ctox-packaged-smoke.ts:266`) and
+    requires a browser device before calling the guest healthy (`:1046`); it
+    scrubs `peer[_-]?id` alongside capability and room-password patterns from
+    every diagnostic it emits (`:415-425`); and it makes unrevoke a hard barrier
+    before any destructive cleanup (`transitionLifecycle`, `:377-383`, which
+    throws "peer must be successfully unrevoked before destructive cleanup").
+    NEEDS: the packaged operator run itself — the only thing that can show the
+    ephemeral peer ID was captured from a live handshake and never persisted.
+    Same run as the two items above.
     - [x] Add a bounded CTOX advanced-status field for the browser's own live
           signaling peer ID, populated only after the `init.yourPeerId`
           handshake and never persisted or logged. The change is isolated in
@@ -2565,6 +3093,11 @@ OS` control and the safe paired-instance row, verify DOM-relative
           this live-connection behavior rather than attributing it to snapshot
           drift. Verified open 2026-08-20 — CTOX repo (Rust
           `WebRTCPeerSessionValidator`); nothing in Workjet can advance it.
+          BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+          `metric-space-ai/ctox` repository — the validator is Rust in CTOX, and
+          this line's own note already records that its live behaviour is
+          unexplained. Nothing in Workjet can advance it, and it is the blocker
+          under the packaged revoke-sequence item below.
     - [x] Apply only the four-file native validator delta to the dirty CTOX
           main checkout, re-run its gates there, and retain all unrelated user
           work unchanged. The current-source integration keeps startup
@@ -2587,6 +3120,11 @@ OS` control and the safe paired-instance row, verify DOM-relative
           the selected instance partition") and the driver exists
           (`scripts/ctox-packaged-smoke.ts` + `.test.ts`) — but the run is
           blocked on the CTOX-side validator item above.
+          BUCKET 2026-08-20: BLOCKED-ON-REALITY, doubly. NEEDS: (1) the
+          CTOX-side validator item above, and (2) an operator run of the
+          packaged app against a real instance. The Workjet side is ready and
+          unit-tested as described. Note the sequence must be redone against the
+          currently pinned shell `v0.1.0-rc.12`, not RC6.
     - [x] Wire the trusted Electron guest-host marker to the host-scoped
           Business OS desktop theme, link the inert stylesheet in production,
           and prove standalone Business OS remains visually unchanged.
@@ -2668,20 +3206,30 @@ The true remaining Wave 6/7 implementation work, after ticking everything the
 code already satisfies. "CTOX?" marks work that needs the separate CTOX
 repository and is therefore out of Workjet scope.
 
-| #   | Gap                                                                                                                                                      | Scope (files)                                                                                                                                                                                                                                                                                                              | CTOX?                                           |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| 1   | Support-bundle redaction + crash-report metadata — nothing exists at all                                                                                 | new `apps/desktop/src/app/DesktopSupportBundle.ts` (+ test), a `crashReporter` call in `apps/desktop/src/main.ts`, an IPC method in `apps/desktop/src/ipc/methods/`, and a renderer entry point in `apps/web/src/components/settings/SettingsPanels.tsx` (there is already a `/settings/diagnostics` route to hang it off) | no                                              |
-| 2   | Deep-link user confirmation + OS-originated link intake                                                                                                  | `apps/desktop/src/window/DesktopWindow.ts:532-535` (add a confirmation gate), a new macOS `open-url` / cold-start-argv handler beside `apps/desktop/src/app/DesktopAppIdentity.ts`, plus renderer confirmation UI                                                                                                          | no                                              |
-| 3   | SSH launch is implemented in main but unreachable from the UI                                                                                            | `apps/web/src/components/ctox/CtoxModeShell.tsx:77-82,166-168` (drop `CTOX_SSH_LAUNCH_PENDING_HINT`, allow `ssh_managed`) and `CtoxModeShell.test.tsx:182-218,275`                                                                                                                                                         | no                                              |
-| 4   | SSH attach / install / rotate / revoke                                                                                                                   | `apps/desktop/src/ctox/CtoxSshManagedSource.ts`, a new `CtoxSshManagedLifecycle.ts`, `apps/desktop/src/ipc/methods/ctox.ts`, `packages/contracts/src/ctox.ts`, `CtoxModeShell.tsx`                                                                                                                                         | partly — needs matching remote `ctox` CLI verbs |
-| 5   | Local-daemon lifecycle (start/stop/install) and descriptor ownership check                                                                               | `apps/desktop/src/ctox/CtoxLocalDaemonSource.ts` (owner/uid check), a new lifecycle service, `apps/desktop/src/ipc/methods/ctox.ts`, `CtoxModeShell.tsx`                                                                                                                                                                   | partly — needs `ctox` daemon CLI verbs          |
-| 6   | Platform-keychain runtime smoke (parity-gate line, unmet)                                                                                                | new script under `scripts/`, exercising `apps/desktop/src/electron/ElectronSafeStorage.ts` and `apps/desktop/src/linuxSecretStorage.ts` on a real OS keychain                                                                                                                                                              | no                                              |
-| 7   | Sudo credential handling for CTOX instances                                                                                                              | none exists; decide whether CTOX Desktop App needs it at all before building it                                                                                                                                                                                                                                            | no (decision first)                             |
-| 8   | Keyboard/zoom targeting of the active CTOX guest surface                                                                                                 | `apps/desktop/src/window/DesktopWindow.ts:858-866`, `apps/desktop/src/window/DesktopApplicationMenu.ts:200-208`, needs guest-awareness from `apps/desktop/src/ctox/CtoxGuestManager.ts`                                                                                                                                    | no                                              |
-| 9   | About panel on Windows/Linux + a check that the release feed carries CTOX identity                                                                       | `apps/desktop/src/window/DesktopApplicationMenu.ts:146` (Help→About outside the darwin branch), `scripts/build-desktop-artifact.ts:2090-2113` (+ test)                                                                                                                                                                     | no                                              |
-| 10  | 76 remaining `T3 Code` strings in the renderer, incl. the splash screen                                                                                  | `apps/web/src/components/SplashScreen.tsx:4-5`, `RightPanelTabs.tsx:88`, `desktop/SshPasswordPromptDialog.tsx:164`, `cloud/RelayClientInstallDialog.tsx:72-73`, `clerk/MobileClientsUserProfilePage.tsx:97`, `ChatView.tsx:6575`                                                                                           | no                                              |
-| 11  | Packaged proofs: light scheme + three/two/one-pane layouts; paired smoke against a real instance; the healthy→revoke→unhealthy→unrevoke→healthy sequence | `scripts/ctox-packaged-smoke.ts` (driver exists); these are operator runs                                                                                                                                                                                                                                                  | blocked on CTOX item 12                         |
-| 12  | Rust `WebRTCPeerSessionValidator` still does not keep the packaged guest unhealthy after a durable revoke                                                | —                                                                                                                                                                                                                                                                                                                          | yes, CTOX only                                  |
+| #   | Gap                                                                                                                                                                                                                                                                                                        | Scope (files)                                                                                                                                                                                                                                                                                                              | CTOX?                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| 1   | ~~Support-bundle redaction + crash-report metadata~~ **CLOSED 2026-08-20** — `DesktopSupportBundle.ts` with a 59-field declared inventory, `SupportBundleRedaction.ts`, and local-only crash metadata (`uploadToServer: false`, no `submitURL`) all landed; see the ticked plan line above                 | new `apps/desktop/src/app/DesktopSupportBundle.ts` (+ test), a `crashReporter` call in `apps/desktop/src/main.ts`, an IPC method in `apps/desktop/src/ipc/methods/`, and a renderer entry point in `apps/web/src/components/settings/SettingsPanels.tsx` (there is already a `/settings/diagnostics` route to hang it off) | no                                              |
+| 2   | ~~Deep-link user confirmation + OS-originated link intake~~ **CLOSED 2026-08-20** — `DesktopDeepLinkRouter.ts` registers `open-url` + `second-instance` and reads cold-start argv; `DeepLinkConfirmationDialog.tsx` is mounted at `routes/__root.tsx:142` and is the only path from a link to a navigation | `apps/desktop/src/window/DesktopWindow.ts:532-535` (add a confirmation gate), a new macOS `open-url` / cold-start-argv handler beside `apps/desktop/src/app/DesktopAppIdentity.ts`, plus renderer confirmation UI                                                                                                          | no                                              |
+| 3   | ~~SSH launch is implemented in main but unreachable from the UI~~ **CLOSED 2026-08-20** (commit `8752fc9ae`) — `canActivateCtoxInstance` (`CtoxModeShell.tsx:167-177`) launches a reachable `ssh_managed` row; the surviving hint constant now means "not reachable right now"                             | `apps/web/src/components/ctox/CtoxModeShell.tsx:77-82,166-168` (drop `CTOX_SSH_LAUNCH_PENDING_HINT`, allow `ssh_managed`) and `CtoxModeShell.test.tsx:182-218,275`                                                                                                                                                         | no                                              |
+| 4   | SSH attach / install / rotate / revoke                                                                                                                                                                                                                                                                     | `apps/desktop/src/ctox/CtoxSshManagedSource.ts`, a new `CtoxSshManagedLifecycle.ts`, `apps/desktop/src/ipc/methods/ctox.ts`, `packages/contracts/src/ctox.ts`, `CtoxModeShell.tsx`                                                                                                                                         | partly — needs matching remote `ctox` CLI verbs |
+| 5   | Local-daemon lifecycle (start/stop/install) and descriptor ownership check                                                                                                                                                                                                                                 | `apps/desktop/src/ctox/CtoxLocalDaemonSource.ts` (owner/uid check), a new lifecycle service, `apps/desktop/src/ipc/methods/ctox.ts`, `CtoxModeShell.tsx`                                                                                                                                                                   | partly — needs `ctox` daemon CLI verbs          |
+| 6   | Platform-keychain runtime smoke (parity-gate line, unmet)                                                                                                                                                                                                                                                  | new script under `scripts/`, exercising `apps/desktop/src/electron/ElectronSafeStorage.ts` and `apps/desktop/src/linuxSecretStorage.ts` on a real OS keychain                                                                                                                                                              | no                                              |
+| 7   | Sudo credential handling for CTOX instances                                                                                                                                                                                                                                                                | none exists; decide whether CTOX Desktop App needs it at all before building it                                                                                                                                                                                                                                            | no (decision first)                             |
+| 8   | Keyboard/zoom targeting of the active CTOX guest surface                                                                                                                                                                                                                                                   | `apps/desktop/src/window/DesktopWindow.ts:858-866`, `apps/desktop/src/window/DesktopApplicationMenu.ts:200-208`, needs guest-awareness from `apps/desktop/src/ctox/CtoxGuestManager.ts`                                                                                                                                    | no                                              |
+| 9   | About panel on Windows/Linux + a check that the release feed carries CTOX identity                                                                                                                                                                                                                         | `apps/desktop/src/window/DesktopApplicationMenu.ts:146` (Help→About outside the darwin branch), `scripts/build-desktop-artifact.ts:2090-2113` (+ test)                                                                                                                                                                     | no                                              |
+| 10  | 76 remaining `T3 Code` strings in the renderer, incl. the splash screen                                                                                                                                                                                                                                    | `apps/web/src/components/SplashScreen.tsx:4-5`, `RightPanelTabs.tsx:88`, `desktop/SshPasswordPromptDialog.tsx:164`, `cloud/RelayClientInstallDialog.tsx:72-73`, `clerk/MobileClientsUserProfilePage.tsx:97`, `ChatView.tsx:6575`                                                                                           | no                                              |
+| 11  | Packaged proofs: light scheme + three/two/one-pane layouts; paired smoke against a real instance; the healthy→revoke→unhealthy→unrevoke→healthy sequence                                                                                                                                                   | `scripts/ctox-packaged-smoke.ts` (driver exists); these are operator runs                                                                                                                                                                                                                                                  | blocked on CTOX item 12                         |
+| 12  | Rust `WebRTCPeerSessionValidator` still does not keep the packaged guest unhealthy after a durable revoke                                                                                                                                                                                                  | —                                                                                                                                                                                                                                                                                                                          | yes, CTOX only                                  |
+
+KORREKTUR 2026-08-20 (final audit): rows 1-3 above were already closed when this
+table was written, or were closed within hours of it, and the table said
+otherwise. They are struck rather than deleted so the correction stays visible.
+Rows 4-12 were re-checked against this tree and still hold. Bucketing for the
+survivors, matching `docs/workjet-remaining-work.md`: rows 6, 8, 9, 10 and the
+ownership half of row 5 are IMPLEMENTABLE; rows 4 and 12 and the lifecycle half
+of row 5 are BLOCKED-ON-REALITY, because they need `ctox` CLI verbs or a
+CTOX-repository change; row 7 is BLOCKED-ON-OWNER; row 11 is BLOCKED-ON-REALITY
+on operator runs.
 
 All of Wave 8 is CTOX-repository work: the legacy `src/apps/business-os-desktop`
 wrapper does not exist in Workjet and CTOX is not vendored here.
@@ -2708,11 +3256,26 @@ CtoxManagedDiscovery.ts:12}`, all of which are wire contracts that must stay),
 
 - [ ] Remove `src/apps/business-os-desktop`. Verified open 2026-08-20 — CTOX
       repo only; the path does not exist in Workjet.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository to delete
+      `src/apps/business-os-desktop`. The path and the workflow do not exist in
+      Workjet and CTOX is not vendored here, so this cannot be done or verified
+      from this repository.
 - [ ] Remove its separate packaging/release workflow and download links.
       Verified open 2026-08-20 — CTOX repo only.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository to delete the legacy packaging/release
+      workflow and download links. The path and the workflow do not exist in
+      Workjet and CTOX is not vendored here, so this cannot be done or verified
+      from this repository.
 - [ ] Point optional desktop-client documentation to CTOX Desktop App without
       presenting it as a CTOX runtime prerequisite. Verified open 2026-08-20 —
       CTOX repo only.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository to repoint the optional desktop-client
+      documentation. The path and the workflow do not exist in Workjet and CTOX
+      is not vendored here, so this cannot be done or verified from this
+      repository.
 - [x] Keep the CTOX Business OS shell build and versioned shell artifact.
       Still true 2026-08-20: Workjet consumes it as a pinned detached release
       (`apps/desktop/resources/ctox/business-os-shell.manifest.json`,
@@ -2722,14 +3285,34 @@ CtoxManagedDiscovery.ts:12}`, all of which are wire contracts that must stay),
 - [ ] Keep CTOX daemon, Sync Engine, Business OS, MCP channel, provider adapter,
       and Web Stack adapter. Verified open 2026-08-20 — CTOX repo only
       (a "keep" assertion Workjet cannot verify).
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository to assert the keep-list, which only CTOX
+      can observe. The path and the workflow do not exist in Workjet and CTOX is
+      not vendored here, so this cannot be done or verified from this
+      repository.
 - [ ] Update release smoke tests so CTOX validates the artifacts consumed by
       CTOX Desktop App instead of building another Electron application.
       Verified open 2026-08-20 — CTOX repo only.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY. NEEDS: a change in the separate
+      `metric-space-ai/ctox` repository to rewrite the CTOX release smoke tests.
+      The path and the workflow do not exist in Workjet and CTOX is not vendored
+      here, so this cannot be done or verified from this repository.
 - [ ] Verify local, managed, SSH, and invite workflows from CTOX Desktop App
       against the new CTOX commit before merging the deletion. Verified open
       2026-08-20 — blocked on the Workjet side too: the SSH workflow is not
       reachable from the UI (`CtoxModeShell.tsx:166-168`) and no local-daemon
       lifecycle exists, so this cannot pass yet regardless of the CTOX commit.
+      BUCKET 2026-08-20: BLOCKED-ON-REALITY, and half the reason given below is
+      now WRONG.
+      KORREKTUR: "the SSH workflow is not reachable from the UI
+      (`CtoxModeShell.tsx:166-168`)" no longer holds. `canActivateCtoxInstance`
+      (`CtoxModeShell.tsx:167-177`) launches a reachable `ssh_managed` row; the
+      surviving hint constant means "not reachable right now", not "not
+      supported". Of the four workflows this line names, local / managed /
+      invite / SSH, only the local-daemon LIFECYCLE is still missing on the
+      Workjet side, and that is itself blocked on `ctox` daemon CLI verbs.
+      NEEDS: the CTOX-repo deletion commit to verify against, a real remote host
+      for the SSH leg, and a live CTOX instance for the managed and invite legs.
 
 ## 12. Security invariants
 
@@ -2785,6 +3368,15 @@ was reverted. Audited 2026-08-20.
       `CtoxInstanceRegistry.test.ts`, which asserts the room secret and
       capability token appear in neither the public document nor the persisted
       file.
+      BUCKET 2026-08-20: IMPLEMENTABLE. The KORREKTUR above stands and the three
+      fixed leaks stay fixed; what keeps this unticked is that two named sinks
+      have no guard. NEXT: (a) add a tracked-file secret-scanning gate — a
+      script over `git ls-files` with the same canary table the support bundle
+      already declares, run in CI, so GIT becomes a guarded sink; (b) add a
+      browser-storage canary that drives the renderer's persistence path and
+      asserts no secret shape reaches `localStorage`/IndexedDB. Scope: one new
+      script plus one renderer test — small, and it is the cheapest way to close
+      a security invariant on this list.
 - [x] Separate Electron session partitions for CTOX instances.
       `CtoxElectronSessions.test.ts` proves deterministic per-instance
       partitions for managed, invited, manually paired, and SSH-managed
@@ -2901,6 +3493,11 @@ was reverted. Audited 2026-08-20.
       allow-lists `127.0.0.1`, so deleting `.resolver(...)` from an agent left
       the entire Rust suite green. `WebStackEgressWiring.test.ts` now holds
       every production agent to installing it.
+      BUCKET 2026-08-20: IMPLEMENTABLE — the same work as the Wave 4 "Preserve
+      SSRF protection…" line, which now carries the scope estimate and the
+      embedded owner question about which configured hosts must stay reachable.
+      Do it once and tick both. Re-verified today: the three unresolved agents
+      and the absent redirect cap are unchanged.
 - [x] Scope T3 MCP tools to the current session/thread and capability grants.
       Behaviour is covered (`McpInvocationContext.test.ts`,
       `WorkerTool.test.ts` and `MailboxTool.test.ts` → "denies direct calls for
@@ -2995,6 +3592,21 @@ was reverted. Audited 2026-08-20.
       defence in depth and not a live escalation.
       • The first-contact impersonation window is inherent to TOFU and is not
       closed by anything in this repository.
+      BUCKET 2026-08-20: SPLIT. The audit above stands unchanged; only the three
+      STILL OPEN bullets need bucketing.
+      IMPLEMENTABLE: target-side capability checks — add a parent-superset check
+      on the remote path beside the existing target ROLE check
+      (`WorkjetDelegationExecutor.ts:857`); defence in depth, ~1 file plus a
+      test, small.
+      IMPLEMENTABLE, larger: the Workjet half of revocable environment
+      credentials — `revokePeer` / `forgetPeer` / a key re-pin path. This is the
+      same missing machinery as the key-ROTATION gap on the replication line in
+      section 8; build it once. ~1 migration, 1 RPC, 1 UI confirmation plus
+      tests, medium.
+      BLOCKED-ON-REALITY: the first-contact TOFU impersonation window. NEEDS:
+      CTOX daemon device attestation — a change in the separate
+      `metric-space-ai/ctox` repository. It is inherent to TOFU and nothing in
+      Workjet closes it.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
       Re-audited 2026-08-20. THREE TYPESCRIPT LEAKS WERE FOUND AND FIXED; the
       Rust half is an owner decision recorded below.
@@ -3062,6 +3674,25 @@ was reverted. Audited 2026-08-20.
       `opencodeRuntime.ts:69-83`'s serialized HTTP error body reaches disk. Both
       are local files rather than off-box traffic, and both are larger decisions
       than this line's wording.
+      BUCKET 2026-08-20: SPLIT, and the owner half is the one that matters.
+      BLOCKED-ON-OWNER: the home sink. OWNER: decide whether the home sink is a
+      trusted destination that may receive unmasked provider credentials, or
+      whether the raw `Authorization: Bearer …` in
+      `native/provider-gateway/internal/logging/request_logger_home.rs:35-42` is
+      a leak to close. Consequence: closing it means masking in `clone_headers`
+      (`:55-61`) or dropping the `headers` field AND rewriting the counter-test
+      `request_logger_home_test.rs:48` that currently PINS the unmasked value —
+      the counter-test is the record of the current answer, so a fix must change
+      the record deliberately, not delete it quietly. Until this is decided,
+      provider credentials leave the machine whenever the home sink is bound.
+      IMPLEMENTABLE, independent of that decision: the three untested Rust
+      properties named below — that the host never selects
+      `RequestLoggingPolicy::full` (all seven call sites use `error_only_scoped`
+      and switching one breaks no test), that `sdk_config.request_log` defaults
+      to `false`, and that `commercial_mode` suppresses upstream capture. ~1
+      Rust test file, small.
+      The two TypeScript RESIDUES recorded below are deliberately larger
+      decisions and stay recorded, not scheduled.
 
 ## 13. Licensing policy and release gate
 
@@ -3117,6 +3748,11 @@ generated notices remains a release gate.
   and reordering 485 commits does not pay for itself against 43 conflict
   hunks per upstream cycle. The additive-file shape below already delivers
   what the ordering was meant to buy.
+  BUCKET 2026-08-20: BLOCKED-ON-OWNER — this line cannot be resolved by work,
+  only by a decision, and that decision already has a card below ("OWNER:
+  confirm dropping the 'short, ordered patch stack' goal"). Keeping the line
+  unchecked while the measurement says it is unachievable-as-written is the
+  honest state; do not attempt to satisfy it.
 - [x] Prefer additive files and adapters over invasive rewrites of T3 core.
       **Verified 2026-08-20**: 1900 added / 206 modified / 1 deleted / 0 renamed
       across 2107 changed paths (90.2% additive). Of the 206 modified T3 core
@@ -3131,6 +3767,15 @@ generated notices remains a release gate.
       alongside the legacy `t3code` scheme, not in place of it.
 - [ ] Rebase or merge upstream at the end of every completed wave and run the
       affected regression suite.
+      BUCKET 2026-08-20: BLOCKED-ON-OWNER, transitively. OWNER: this line is
+      currently IMPOSSIBLE, not merely undone — `origin/main` of the fork is the
+      public T3 commit `6ae44b418` and the downstream stack has no ancestry to
+      upstream, so there is nothing to rebase or merge onto until the re-parent
+      reconnect decision below is taken. Consequence of deferring: the fork
+      stays permanently unmergeable to upstream and this line stays undoable.
+      Once the reconnect lands, the reconciliation is an ordinary three-way
+      merge whose exact cost is already measured (25 files, 43 hunks, 1
+      modify/delete).
 - [x] Track conflicts and recurring upstream hot spots in this document.
   - [x] **Reconnect technique chosen and proven on a scratch branch,
         2026-08-20**; execution on the real branch is still pending an owner
@@ -3171,10 +3816,36 @@ generated notices remains a release gate.
         Workjet section at the end of `apps/desktop/src/ipc/channels.ts`; and
         extraction of the Workjet turn-option threading out of
         `CodexSessionRuntime.ts` (5 of 43 hunks, guaranteed to repeat).
+        BUCKET 2026-08-20: IMPLEMENTABLE, and the best value-per-effort item in
+        this section. NEXT: exactly the three edits named — a trailing
+        `workjet*` barrel import in `ChatView.tsx`, `ChatComposer.tsx`,
+        `SidebarChrome.tsx` and `packages/contracts/src/settings.ts`; a marked
+        Workjet section at the end of `apps/desktop/src/ipc/channels.ts`; and
+        extraction of the Workjet turn-option threading out of
+        `CodexSessionRuntime.ts`. That is 5 of the measured 43 conflict hunks,
+        and they are guaranteed to repeat every upstream cycle. Scope: 6 files,
+        no behaviour change — small. Worth doing even if the reconnect decision
+        goes the other way, because the hunks recur on any merge attempt.
 - [ ] Contribute generally useful, non-Workjet-specific fixes upstream where
       practical.
-- [ ] Never commit `.deps`, build output, local databases, credentials, or
+      BUCKET 2026-08-20: BLOCKED-ON-OWNER. OWNER: decide whether to open
+      upstream pull requests against `pingdotgg/t3code` at all. Consequence: it
+      is not merely a matter of effort — with no ancestry to upstream, any
+      contribution must be hand-extracted as a fresh patch rather than
+      cherry-picked, so the cost depends entirely on the reconnect decision
+      above. Deciding "no" is a legitimate answer and should be recorded as one
+      rather than left as a permanently open line.
+- [x] Never commit `.deps`, build output, local databases, credentials, or
       generated agent worktrees.
+      AUDIT 2026-08-20 (final): TICKED as an INVARIANT VERIFIED HELD. Measured,
+      not asserted: `git ls-files` filtered for `node_modules/`, `dist/`,
+      `dist-electron/`, `out/`, `target/`, `.vite-plus/`, `.venv/` returns 0
+      hits, and `^runtime/` returns 0 hits (see the ticked artifact-hygiene gate
+      in section 15, log `gate-no-tracked-artifacts.log`). `/.deps` and
+      `/runtime/` are ignored (`.gitignore:6,48`). The seven tracked binaries in
+      the tree are inherited from upstream T3 mobile vendoring (`ab63ef1cd`),
+      not committed by this work. Re-check if the ignore policy is ever
+      narrowed.
 
 ### Upstream conflict hot spots (measured 2026-08-20, `beab6886f`)
 
@@ -3229,6 +3900,14 @@ three cargo target dirs). `vp` is not on PATH — use `./node_modules/.bin/vp`.
   `gate-typecheck-client-runtime.log`, `gate-typecheck-web.log`,
   `gate-typecheck-desktop.log`, `gate-typecheck-server-cli.log`,
   `gate-typecheck-mobile.log`, `gate-typecheck-all.log`.
+  RE-MEASURED 2026-08-20 (final audit): THE MOBILE HALF IS FIXED. Commit
+  `898b030ad` supplied the required Workjet thread config to the mobile
+  fixtures; `./node_modules/.bin/vp run --filter @t3tools/mobile typecheck` now
+  exits 0 with ZERO `error TS` (re-run independently for this audit). The `t3`
+  server package is unchanged at 57 pre-existing errors, so `vp run -r
+typecheck` is still red, but for one reason now instead of two.
+  BUCKET: IMPLEMENTABLE. NEXT: clear the 57 documented server diagnostics; they
+  are the whole of what stands between this gate and green.
 - [x] Full relevant T3 test suites. `./node_modules/.bin/vp run -r test` →
       exit 0, 15/15 tasks, **950 test files (+2 skipped), 9 605 tests passed
       (+7 skipped)**, 5:41. Log `gate-t3-full-test-rerun.log`. Caveat: the
@@ -3259,6 +3938,21 @@ three cargo target dirs). `vp` is not on PATH — use `./node_modules/.bin/vp`.
   the four `--test plugin_supervisor` tests fail with `Err(Handshake)`
   (child Unix-socket callback times out); green serially
   (`gate-provider-gateway-plugin-supervisor-retry.log`).
+  RE-MEASURED 2026-08-20 (final audit): BOTH FAILURES ARE FIXED. Commit
+  `c89c3366f` restored formatting and clippy cleanliness; re-run independently
+  for this audit, `cargo fmt --check --manifest-path
+native/provider-gateway/Cargo.toml` → exit 0, and `cargo clippy -p
+workjet-provider-gateway --all-targets -- -D warnings` (with
+  `CARGO_TARGET_DIR=/Volumes/tmp/workjet/cargo-target-rg`) → exit 0. test PASS
+  is unchanged.
+  BUCKET for the remainder: SPLIT.
+  IMPLEMENTABLE-OR-DROP: the differential gate. NEXT: either vendor/pin the Go
+  CLIProxyAPI upstream under `runtime/cliproxyapi-upstream` and fix the
+  `repo_dir` computation in the 26 `run_*_differential.sh` scripts (they were
+  written for the deeper CTOX layout), or drop the differential from the release
+  list — that is a small owner call inside implementable work.
+  BLOCKED-ON-REALITY: the real-account gate. NEEDS: live subscription logins;
+  the same missing credential as the provider round trip in section 8.
 - [~] Web Stack Rust, fixture, SSRF, search, browser, and E2E gates.
   **Rust/fixture/SSRF PASS**, run in `native/web-stack` with
   `CARGO_TARGET_DIR=/Volumes/tmp/workjet/cargo-target-webstack`:
@@ -3283,11 +3977,26 @@ cargo-target-ss`) → exit 0, **469 passed, 0 failed, 23 ignored** (lib 460,
   `gate-web-stack-test-serial.log`, `gate-web-stack-clippy-fmt.log`,
   `gate-web-stack-test-retry3.log`. Three lib
   tests are load-flaky (loopback fixture servers); green serially.
+  BUCKET 2026-08-20: SPLIT. Rust, fixture, SSRF, clippy and fmt all PASS and
+  stay passing.
+  BLOCKED-ON-REALITY as written: the search/browser/E2E scripts need a built
+  `ctox` binary, live network, and a patchright + Chromium runtime.
+  IMPLEMENTABLE alternative, and probably the right answer: build a
+  Workjet-owned CLI entry point — the crate already declares `[[bin]]
+workjet-web-stack` — and retarget `scripts/test_web_search_e2e.sh` and
+  `scripts/test_web_unlock_e2e.sh` at it, which removes the CTOX-binary
+  dependency entirely and leaves only the network and browser runtime. Scope: 2
+  shell scripts plus a bin entry point, small. Closing it also closes the
+  `web-stack-browser` E2E line in section 5.
 - [x] Workjet orchestration restart, cancellation, duplicate, and remote tests.
       `cd apps/server && ../../node_modules/.bin/vp test run src/workjet/` →
       exit 0, **20 files, 384 tests**, 119.6 s.
       Log `gate-workjet-orchestration.log`. (Supersedes the "32 files, 489
       tests" figure recorded in section 8 — that count does not reproduce.)
+      RE-MEASURED 2026-08-20 (final audit): 21 files, 395 tests, all green,
+      24 s. The growth over 20/384 is the cross-mode slice
+      (`src/workjet/crossmode/`, 4 files / 52 tests), which lands inside this
+      same path.
 - [x] CTOX WebRTC data-plane guard and Business OS launch tests.
       In `apps/desktop`:
       `../../node_modules/.bin/vp test run src/ctox/ src/ipc/methods/ctox.test.ts`
@@ -3305,6 +4014,17 @@ cargo-target-ss`) → exit 0, **469 passed, 0 failed, 23 ignored** (lib 460,
       launch-and-grep). What must be built: a driver that boots the app
       against a disposable state directory and asserts delivery receipts,
       durable status, result return, cancellation, and restart recovery.
+      BUCKET 2026-08-20: SPLIT.
+      IMPLEMENTABLE: the Code-mode story. NEXT: build the driver described below
+      — it boots the app against a disposable state directory and asserts
+      delivery receipts, durable status, result return, cancellation and restart
+      recovery. This is the single highest-value new artifact on the whole
+      remaining list, because it is also the missing third prerequisite of the
+      mixed-harness E2E in section 8. Scope: a new harness under `apps/web` or
+      `scripts/`, plus a vitest project or a Playwright/WebDriver dependency —
+      LARGE, and the only large greenfield item left.
+      BLOCKED-ON-REALITY: the CTOX-mode story. NEEDS a live ctox.dev sign-in and
+      a real instance; steps 1-3 and 8 cannot be scripted against nothing.
 - [~] Packaged macOS arm64 and x64 tests first; then Linux and Windows targets.
   **macOS arm64 PASS**: `./node_modules/.bin/vp run dist:desktop:dmg:arm64`
   → exit 0, 4:29, `release/CTOX-Desktop-App-0.0.33-arm64.dmg`
@@ -3321,6 +4041,12 @@ cargo-target-ss`) → exit 0, **469 passed, 0 failed, 23 ignored** (lib 460,
   `dist:desktop:win` needs NSIS plus the `wsl-prebuild/pty.node` artifact
   from the release workflow's `build_wsl_node_pty` job. Logs
   `gate-package-mac-{arm64,x64}.log`, `gate-desktop-build-smoke.log`.
+  BUCKET 2026-08-20: BLOCKED-ON-REALITY. macOS arm64 and x64 both PASS and that
+  half is done. NEEDS: a Linux host or container toolchain for
+  `dist:desktop:linux`, and a Windows host (NSIS plus the
+  `wsl-prebuild/pty.node` artifact from the release workflow's
+  `build_wsl_node_pty` job) for `dist:desktop:win`. Neither is a code gap; both
+  are machines this checkout does not have.
 - [~] Signing, notarization, update, checksum, and provenance verification.
   **Signing / notarization NOT-RUNNABLE-HERE**: no `CSC_LINK`,
   `CSC_KEY_PASSWORD`, `APPLE_TEAM_ID`, `MACOS_PROVISIONING_PROFILE`, or
@@ -3345,6 +4071,21 @@ cargo-target-ss`) → exit 0, **469 passed, 0 failed, 23 ignored** (lib 460,
   `node scripts/provider-gateway-host-artifacts.ts verify --dir <dir>` has
   nothing to verify. Logs: `gate-release-smoke.log`,
   `gate-test-scripts.log`, `gate-gateway-host-artifact-verify.log`.
+  RE-MEASURED 2026-08-20 (final audit): THE UPDATE/CHECKSUM FAILURE IS FIXED.
+  Commit `0d4ef346e` added `packages/workjet-capabilities/package.json` to
+  `release-smoke.ts`'s workspace list; re-run independently for this audit,
+  `node scripts/release-smoke.ts` → exit 0, "Release smoke checks passed."
+  (remember the documented trap: `vp` must be on PATH, so run it with
+  `PATH="$PWD/node_modules/.bin:$PATH"`).
+  BUCKET for the remainder: SPLIT.
+  BLOCKED-ON-REALITY: signing and notarization. NEEDS Apple signing credentials
+  — `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_TEAM_ID`,
+  `MACOS_PROVISIONING_PROFILE` and an App Store Connect key. The negative
+  evidence above (`codesign -dv`, `spctl -a`, `stapler validate` all rejecting
+  the unsigned artifact) is the correct current state, not a defect.
+  BLOCKED-ON-OWNER: provenance. It has nothing to verify until the first
+  `provider-gateway-host-v*` tag is cut — the same owner card as the release
+  artifacts line in section 6.
 - [~] Fresh-install, upgrade, rollback, and legacy-settings import tests.
   **Legacy-settings import PASS**: the four
   `apps/server/src/workjet/legacy/*.test.ts` files are green inside the
@@ -3355,6 +4096,13 @@ cargo-target-ss`) → exit 0, **469 passed, 0 failed, 23 ignored** (lib 460,
   `scripts/mock-update-server.ts` exists, but nothing installs a packaged
   build into a clean prefix, upgrades it, forces a rollback, and asserts
   the settings store survives.
+  BUCKET 2026-08-20: IMPLEMENTABLE. The legacy-settings-import leg PASSES and is
+  done. NEXT for the other three: a harness that installs a packaged build into
+  a clean prefix, points it at the existing `scripts/mock-update-server.ts`,
+  applies an update, forces a rollback, and asserts the settings store survives
+  each step. The pieces all exist — packaging is green on macOS, the update
+  logic is unit-tested, and the mock server is written; what is missing is the
+  harness that composes them. Scope: one new script plus its test — medium.
 - [x] No tracked dependency/build/runtime artifacts.
       `git ls-files` filtered for `node_modules/`, `dist/`, `dist-electron/`,
       `out/`, `target/`, `.vite-plus/`, `.venv/` → 0 hits; filtered for
@@ -3372,6 +4120,18 @@ commit:
       `native/pdf-parse`, 5 `apps/server`, 2 `apps/web`, 1
       `docs/kundenpipeline-board.md`). Fixable with `vp check --fix`.
       Log `gate-vp-check.log`.
+      RE-MEASURED 2026-08-20 (final audit): still FAIL, now **144** tracked
+      files (82 `native/web-stack`, 35 `native/provider-gateway`, 13
+      `experiments/kundenpipeline-module`, 5 `native/pdf-parse`, 5
+      `apps/server`, 2 `docs`, 2 `apps/web`). `docs/workjet-plan.md` is itself
+      one of the two `docs` offenders and remains unformatted after this audit,
+      deliberately: `vp check --fix` reindents every list-continuation line in a
+      3600-line document and would bury the audit diff.
+      BUCKET: IMPLEMENTABLE, and it is one command. NEXT:
+      `./node_modules/.bin/vp check --fix`, reviewed and landed as its own
+      formatting-only commit so the diff is inspectable. Scope: 144 files, zero
+      behaviour change — do it in isolation, never mixed with a behavioural
+      change.
 - [x] resource-monitor —
       `cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check`
       and
@@ -3493,6 +4253,13 @@ CTOX Desktop App is complete only when all of the following are true:
 3. [ ] Finish the `Code | Business OS` product-mode shell and prove through a
        packaged UI-driven smoke that the native guest can exist only inside the
        selected Business OS main surface.
+       BUCKET 2026-08-20: BLOCKED-ON-REALITY. The mode lease itself is
+       implemented and tested (`CtoxGuestManager.ts`,
+       `CtoxGuestManager.test.ts`, 1169 lines, `not_active` outside the mode and
+       guest destruction before lease release).
+       NEEDS: the packaged UI-driven operator run against a real instance — the
+       same run as items 11 and 12 of the Wave 6/7 gap table and the packaged
+       smokes in section 10. Batch them.
 4. [x] Port ctox.dev instance discovery and session isolation into typed Electron
        services.
    - [x] Land typed renderer contracts, session-package discovery, redacted
@@ -3510,9 +4277,22 @@ CTOX Desktop App is complete only when all of the following are true:
         it into ignored `.deps/`, and package only the checksum-verified artifact.
 11. [x] Launch invite/manual-pairing entries through that shell using only the
         native packed `ctox_config` WebRTC context.
-12. [ ] Run the packaged Electron paired-guest smoke against a real native CTOX
+12. [x] Run the packaged Electron paired-guest smoke against a real native CTOX
         peer and verify ready/revoked transitions plus the now-implemented
         partition cleanup in packaged runtime behavior.
+        AUDIT 2026-08-20 (final): TICKED. Every sub-item below is complete and
+        the run itself PASSED on 2026-08-18 against the live local instance —
+        all phases green including persistent `peer_revoked`, healthy recovery
+        after unrevoke, pairing removal, and partition deletion (see the
+        detailed sub-item below). TWO RESIDUES kept visible rather than ticked
+        away, both tracked elsewhere so this queue item does not have to stay
+        open for them: (1) the passing run used a CTOX build from the unmerged
+        branch `codex/ctox-rc7-active-revocation` — merging it into CTOX main is
+        an owner card, listed in `docs/workjet-remaining-work.md`; (2) the
+        pinned shell has since moved to `v0.1.0-rc.12`, so the fuller revoke
+        sequence wants re-running at rc.12, which is the packaged-sequence item
+        in section 10 and is separately blocked on the CTOX-side
+        `WebRTCPeerSessionValidator`.
     - [x] Add the app-level packaged Workjet state and Electron `userData`
           override beneath an explicit `/Volumes/tmp` root without changing
           `HOME`.
@@ -3584,10 +4364,27 @@ CTOX Desktop App is complete only when all of the following are true:
           lock plus `--frozen-lockfile` staging install).
 13. [ ] Port local-daemon and SSH-managed sources after the paired shell path is
         green, retaining one registry and one renderer-secret boundary.
+        BUCKET 2026-08-20: mostly DONE, remainder BLOCKED-ON-REALITY. Both
+        sources are ported, merged into the ONE registry
+        (`CtoxInstanceRegistry.ts:678-700`), and both launch — including SSH
+        from the sidebar since commit `8752fc9ae`. NEEDS for the rest: `ctox`
+        daemon CLI verbs (local lifecycle) and remote `ctox` CLI verbs (SSH
+        attach/install/rotate/revoke), both CTOX-repo changes. See the two Wave
+        7 sub-items for the exact deltas.
 14. [ ] Complete the durable local mailbox/delegation state machine, then add
         the authenticated coordination relay and mixed-harness cross-computer
         messaging, prompt delegation, result, follow-up, and review/revision
         flows specified in Wave 5.
+        BUCKET 2026-08-20: mostly DONE, remainder BLOCKED-ON-REALITY. The
+        durable local mailbox/delegation state machine is complete, and the
+        authenticated coordination path plus cross-machine delegation, result
+        return, follow-up and review/revision flows all landed (see Wave 5 and
+        its mailbox subsection).
+        NEEDS for what is left: a second physical machine for the cross-computer
+        run and real provider subscriptions for three harnesses for the
+        mixed-harness leg — the "Prove the protocol with same-server and
+        cross-computer mixed-harness E2E" item in Wave 5, which is the honest
+        remaining scope of this queue line.
 15. [x] Add the configurable per-environment temporary worktree storage root,
         prove new Code and orchestrated worker worktrees land on an operator-
         selected `/Volumes/tmp` root, and prove existing active worktrees plus

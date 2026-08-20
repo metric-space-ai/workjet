@@ -3385,10 +3385,14 @@ was reverted. Audited 2026-08-20.
       above enumerated no other reason.
       GIT: `scripts/check-tracked-secrets.ts` walks `git ls-files` and fails on
       committed secret material; `scripts/release-smoke.ts` runs it first, so it
-      executes in CI's existing Release Smoke job. It exits 0 on the current
-      tree over 4,766 tracked text files, and mutation-verified: a
-      `sk-ant-api03-…` planted in `README.md` failed it with exit 1 naming
-      `README.md:110 [known-credential]`, and the tree was restored.
+      executes in CI's existing Release Smoke job — `node scripts/release-smoke.ts`
+      → exit 0, "Release smoke checks passed.", with the gate as its first line.
+      The gate exits 0 on the current tree over 4,770 tracked text files, and is
+      mutation-verified twice: a `sk-ant-api03-…` planted in `README.md` failed
+      it with exit 1 naming `README.md:110 [known-credential]`, and an OpenSSH
+      block planted in `docs/internals/ci.md` failed it naming
+      `docs/internals/ci.md:27 [pem-private-key]`. Both were restored and the
+      gate returned to exit 0.
       BROWSER STORAGE: `apps/web/src/browserStorageSecretCanary.test.ts` drives
       the shipping `connectionStorageLayer` (IndexedDB catalog: targets,
       profiles, credentials, relay DPoP tokens, plus the cached `ServerConfig`

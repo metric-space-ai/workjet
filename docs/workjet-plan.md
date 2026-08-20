@@ -963,11 +963,23 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       real two-instance replication proof, inbound thread-activity traces,
       in-cycle cursor following for >50 backlogs, payload sealing, and the
       key-rotation path.
-- [ ] Add the typed thread-handoff contract and flow (immutable prompt/context
-      snapshot, bounded artifact references, pushed or sync-bundled Git branch,
-      durable source-thread link); the target machine continues in a new
-      thread with any harness/LLM. Prove a real machine-A → machine-B handoff
-      including a worker worktree branch.
+- [~] Add the typed thread-handoff contract and flow (immutable prompt/context
+  snapshot, bounded artifact references, pushed or sync-bundled Git branch,
+  durable source-thread link); the target machine continues in a new
+  thread with any harness/LLM. Prove a real machine-A → machine-B handoff
+  including a worker worktree branch. Flow done 2026-08-20 (7 commits
+  `b92a24ba3`…`28c75b65b`, migration 051): server-composed bounded
+  snapshot (header + operator note + newest-first byte-bounded message
+  tail, 40 msgs/8k chars/256KiB, no events/tools/paths), send RPC
+  (orchestrator-source), transport shares the delegation snapshot-bytes
+  path, received handoffs recorded idempotently, list RPC + accept RPC
+  (creates ONE standalone thread seeded with the snapshot, race-safe
+  claim, durable backlink + accepted activity), composer "Hand off" tab +
+  received-handoff inbox beside the worker overview. Honest gaps: branch
+  ref carries branch+remoteConfigured only (no headCommit read yet, no
+  push — never silent); cross-env acceptance notification has no envelope
+  kind yet; the REAL machine-A→machine-B proof needs the live two-machine
+  mesh run.
 - [x] Add the global multi-computer activity overview on the replicated
       redacted projection, including last known state of offline machines.
       Done 2026-08-20 (commits `3b9e49d2b`, `3e12960cf`): a `/machines` route

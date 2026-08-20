@@ -8,6 +8,7 @@ use super::request_logger::{
 use super::request_logger_format::{
     infer_upstream_transport, write_api_section, write_request_info_at, write_response_section,
 };
+use crate::internal::util::mask_sensitive_header_value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io;
@@ -35,7 +36,7 @@ pub struct HomeRequestLogPayload {
 impl HomeRequestLogPayload {
     pub fn new(record: &RequestLogRecord, request_log: Vec<u8>) -> Self {
         Self {
-            headers: clone_headers(&record.request_headers),
+            headers: mask_headers_for_home_sink(&record.request_headers),
             request_id: record.request_id.trim().to_owned(),
             request_log,
         }
@@ -57,6 +58,33 @@ pub fn clone_headers(headers: &BTreeMap<String, Vec<String>>) -> BTreeMap<String
         .iter()
         .filter(|(name, _)| !name.trim().is_empty())
         .map(|(name, values)| (name.clone(), values.clone()))
+        .collect()
+}
+
+/// Headers on their way OFF-BOX to the home sink.
+///
+/// `clone_headers` is the in-process copy and stays verbatim: the local record
+/// still needs the real values. This is the egress boundary, where a provider
+/// credential must not leave the machine in the clear. It applies the
+/// gateway's shared header rule rather than a second list, so `Authorization`
+/// and every api-key/token/secret header mask exactly as they do in the
+/// request-log blob shipped alongside.
+#[must_use]
+pub fn mask_headers_for_home_sink(
+    headers: &BTreeMap<String, Vec<String>>,
+) -> BTreeMap<String, Vec<String>> {
+    headers
+        .iter()
+        .filter(|(name, _)| !name.trim().is_empty())
+        .map(|(name, values)| {
+            let masked = values
+                .iter()
+                .map(|value| {
+                    String::from_utf8_lossy(&mask_sensitive_header_value(name, value)).into_owned()
+                })
+                .collect();
+            (name.clone(), masked)
+        })
         .collect()
 }
 
@@ -234,7 +262,7 @@ impl StreamingLogWriter for HomeStreamingLogWriter {
             true,
         )?;
         self.sink.push_request_log(&HomeRequestLogPayload {
-            headers: clone_headers(&self.request_headers),
+            headers: mask_headers_for_home_sink(&self.request_headers),
             request_id: self.request_id.clone(),
             request_log: content,
         })?;

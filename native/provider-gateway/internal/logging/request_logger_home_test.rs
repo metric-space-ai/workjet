@@ -58,7 +58,18 @@ fn bound_home_sink_replaces_local_request_log_output() {
     let pushed = sink.pushed.lock().unwrap();
     assert_eq!(pushed.len(), 1);
     assert_eq!(pushed[0].request_id, "req-1");
-    assert_eq!(pushed[0].headers["Authorization"][0], "Bearer secret");
+    // The home sink is OFF-BOX. This assertion used to pin the opposite —
+    // `"Bearer secret"` verbatim — which recorded a real leak as intended
+    // behaviour. The owner decided on 2026-08-20 to close it, so the record
+    // now says what the code must do, not what it used to do.
+    assert_eq!(pushed[0].headers["Authorization"][0], "Bearer se...et");
+    // Masking the one header is not enough: prove the credential is absent
+    // from the whole payload, so a future field cannot reintroduce it.
+    let serialized = serde_json::to_string(&pushed[0]).expect("payload serializes");
+    assert!(
+        !serialized.contains("Bearer secret"),
+        "the raw credential must not leave the machine; payload was {serialized}"
+    );
     assert!(!pushed[0].request_log.is_empty());
 }
 

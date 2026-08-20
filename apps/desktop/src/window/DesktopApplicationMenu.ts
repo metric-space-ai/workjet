@@ -111,7 +111,6 @@ export const make = Effect.gen(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronMenu = yield* ElectronMenu.ElectronMenu;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const appName = yield* electronApp.name;
   const context = yield* Effect.context<DesktopApplicationMenuRuntimeServices>();
   const runPromise = Effect.runPromiseWith(context);
 
@@ -132,6 +131,10 @@ export const make = Effect.gen(function* () {
   };
 
   const configure = Effect.gen(function* () {
+    // Read the name here, not at layer construction: DesktopAppIdentity
+    // configures the CTOX app name and About panel after this service is
+    // acquired, so an early read would label the menu with Electron's default.
+    const appName = yield* electronApp.name;
     const checkForUpdatesClick = () => {
       runMenuEffect("check-for-updates", handleCheckForUpdatesMenuClick(appName));
     };

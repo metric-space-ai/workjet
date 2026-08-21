@@ -410,11 +410,20 @@ finishes. Scope estimates are rough and name the files.
     deciding that the app may RUN THIRD-PARTY INSTALLERS on the operator's
     host — a security and UX decision, not a missing handler. OWNER.
 
-    STILL OPEN and buildable: `workjet.harness.inspect` (attempted and
-    reverted — exposing it made `ChildProcessSpawner` a requirement of the ws
-    layer and produced 182 inference errors in the bin composition; it needs
-    deliberate layer work, not a guess), the web editors, and the dispatch call
-    site — the scope correction below explains why the last is the big half.
+    **`workjet.harness.inspect` DONE 2026-08-20, commit dacb49c84**, READ scope
+    with a test pinning that. It probes the harnesses named by the configured
+    worker PROFILES, so the answer covers what this server would dispatch to. A
+    failed settings read yields no harnesses, which the dispatch gate then
+    refuses — an unreadable configuration refuses everything rather than
+    reporting a host it never inspected.
+    KORREKTUR: an earlier note here blamed 182 inference errors on a missing
+    ws-layer dependency. That was a misdiagnosis. Isolating instead of guessing
+    showed the spawner alone typechecks clean and a constant handler typechecks
+    clean; the cause was `serverSettings.getSettings` carrying a
+    `ServerSettingsError` the RPC did not declare. No layer work was needed.
+
+    STILL OPEN: the web editors, and the dispatch call site — the scope
+    correction below explains why the last is the big half.
 
     **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
     availability at all" understates it. `WorkerDispatch.ts` contains ZERO

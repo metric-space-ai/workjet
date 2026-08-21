@@ -327,6 +327,72 @@ const GreppyRuntimeSnapshotBaseFields = {
   version: Schema.Literal("0.3.1"),
 } as const;
 
+/**
+ * LIVE harness availability, probed on the host, replacing a hand-toggled
+ * boolean.
+ *
+ * `WorkjetHarnessConfiguration.available` is a value an operator ticks in
+ * settings. It is a STATEMENT OF INTENT and nothing verifies it, so a worker
+ * profile can name a harness whose executable was never installed, moved, or
+ * was removed after the box was ticked — and the failure only appears when a
+ * delegation is already running. These types carry what the host actually
+ * found instead.
+ *
+ * The reason vocabulary is closed and small on purpose. It answers "why can I
+ * not use this" in terms an operator can act on, and it deliberately does NOT
+ * carry the probe's stderr: a failing executable's output is untrusted text
+ * from a third-party binary, and putting it on a typed contract would make
+ * every consumer a place it could surface.
+ */
+export const WorkjetHarnessAvailabilityReason = Schema.Literals([
+  /** Nothing resolvable at the configured path or on PATH. */
+  "executable-not-found",
+  /** Found, but not executable by this process. */
+  "not-executable",
+  /** Ran, but did not answer within the probe budget. */
+  "timeout",
+  /** Ran and failed, or answered something unrecognizable. */
+  "probe-failed",
+  /** This host cannot run this harness at all (wrong OS/arch). */
+  "unsupported-host",
+]);
+export type WorkjetHarnessAvailabilityReason = typeof WorkjetHarnessAvailabilityReason.Type;
+
+export const WorkjetHarnessAvailability = Schema.Union([
+  Schema.Struct({
+    harness: WorkjetHarness,
+    availability: Schema.Literal("available"),
+    /** Where the probe resolved it, for an operator diagnosing a wrong pick. */
+    executablePath: TrimmedNonEmptyString,
+    /**
+     * Absent when the harness answered but published no parsable version. A
+     * harness that works is still usable without one, so this must not be
+     * required — demanding it would report a working harness as broken.
+     */
+    version: Schema.optionalKey(TrimmedNonEmptyString),
+  }),
+  Schema.Struct({
+    harness: WorkjetHarness,
+    availability: Schema.Literal("unavailable"),
+    reason: WorkjetHarnessAvailabilityReason,
+  }),
+]);
+export type WorkjetHarnessAvailability = typeof WorkjetHarnessAvailability.Type;
+
+/**
+ * One probe pass over every configured harness on one computer.
+ *
+ * `probedAt` is on the SNAPSHOT rather than per entry: they are probed
+ * together, and a per-entry timestamp would invite treating one entry as
+ * fresher than another when it is not.
+ */
+export const WorkjetHarnessAvailabilitySnapshot = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  probedAt: TrimmedNonEmptyString,
+  harnesses: Schema.Array(WorkjetHarnessAvailability).check(Schema.isMaxLength(32)),
+});
+export type WorkjetHarnessAvailabilitySnapshot = typeof WorkjetHarnessAvailabilitySnapshot.Type;
+
 export const GreppyRuntimeSnapshot = Schema.Union([
   Schema.Struct({
     ...GreppyRuntimeSnapshotBaseFields,

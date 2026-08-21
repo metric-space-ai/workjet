@@ -410,9 +410,14 @@ finishes. Scope estimates are rough and name the files.
     known `headCommit` must survive alongside `remoteConfigured: false`.
     `isWorkjetGitCommitHash` was added to contracts so a non-hash rev-parse
     answer is refused rather than branded. Mutation-verified.
+    **ACKNOWLEDGEMENT HALF DONE 2026-08-20, commit b4928e946.** `handoff-ack`
+    is a first-class payload kind carrying `continuedThreadId` — "acknowledged"
+    without a destination is not actionable — with `declined` as a real
+    outcome rather than a transport error. Bounded by construction, pinned by a
+    test that drives excess keys through the decoder. Mutation-verified.
     STILL OPEN: (a) PUSH where a remote is configured — an explicit operator
     action a handoff must never perform implicitly, so it needs a decision on
-    who triggers it, not just code; (b) the acknowledgement envelope kind.
+    who triggers it, not just code.
     NOTE: (a) is also what blocks the `branch` half of item 13, since
     `WorkjetGitBranchRef.delivery` cannot be stated truthfully until something
     actually delivers.

@@ -53,6 +53,7 @@ import {
   type OrchestrationThread,
   type ThreadId,
   type WorkjetMailboxBudgetKind,
+  type WorkjetGitCommitHash,
   type WorkjetDelegation,
   type WorkjetDelegationId,
   type WorkjetDelegationResult,
@@ -314,6 +315,18 @@ export interface WorkjetDelegationExecutorSources {
    * {@link WorkjetMailboxAuditEmitter}.
    */
   readonly audit?: WorkjetMailboxAuditSink;
+
+  /**
+   * The head commit of a target worktree, or `None` when it cannot be read —
+   * no repository, a detached or empty worktree, a git failure.
+   *
+   * Optional and best-effort: a result must be reportable from a thread with
+   * no repository at all, so an absent port and an unreadable worktree both
+   * mean "no commit reference", never a failed delegation.
+   */
+  readonly resolveHeadCommit?: (
+    worktreePath: string,
+  ) => Effect.Effect<Option.Option<WorkjetGitCommitHash>>;
 }
 
 // ===============================
@@ -975,12 +988,39 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     });
 
   /**
+   * `undefined` for every reason a commit might be unavailable: no worktree on
+   * the thread, no port injected, git unreadable, or a defect inside the port.
+   * The delegation has already run by the time this is called, so nothing here
+   * may turn a finished turn into a failure.
+   */
+  const readHeadCommit = (
+    // `undefined` as well as `null`: a projection that predates the column, or
+    // a thread shape that simply omits it, must mean "no worktree" too rather
+    // than reaching the port with nothing to look at.
+    worktreePath: string | null | undefined,
+  ): Effect.Effect<WorkjetGitCommitHash | undefined> =>
+    worktreePath === null || worktreePath === undefined || sources.resolveHeadCommit === undefined
+      ? Effect.succeed(undefined)
+      : sources.resolveHeadCommit(worktreePath).pipe(
+          Effect.map(Option.getOrUndefined),
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        );
+
+  /**
    * The bounded result reported back to the source. Summary is a fixed bounded
-   * label — never prompt, path, or output material — and artifact references are
-   * left EMPTY in this slice: a {@link WorkjetGitBranchRef} requires a head
-   * commit the thread detail does not cheaply expose, so populating a branch
-   * would mean fabricating one. The digest of the work lives on the branch the
-   * target worktree already carries; a later slice can lift it into `artifacts`.
+   * label — never prompt, path, or output material.
+   *
+   * `artifacts` carries the target worktree's HEAD COMMIT when one can be
+   * read, and nothing else. A commit hash is a fact about where the work
+   * landed and is true regardless of how the source might later obtain it.
+   *
+   * There is deliberately still no `branch` ref, and that is not an oversight:
+   * {@link WorkjetGitBranchRef} REQUIRES a `delivery` of `pushed` or
+   * `sync-bundled`, and this executor neither pushes nor bundles. Emitting
+   * either value here would assert a delivery that did not happen and send the
+   * source looking for a branch it cannot fetch — worse than reporting
+   * nothing. Populating `branch` is therefore blocked on the push half (item
+   * 14), not on reading the commit.
    */
   const buildResult = (input: {
     readonly delegation: WorkjetDelegation;
@@ -991,6 +1031,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     readonly interrupted?: boolean;
     /** A failure caused by a budget ceiling rather than by the turn itself. */
     readonly budgetKind?: WorkjetMailboxBudgetKind;
+    /** The target worktree's head commit, when it could be read. */
+    readonly headCommit?: WorkjetGitCommitHash | undefined;
   }): WorkjetDelegationResult => ({
     schemaVersion: 1,
     envelopeId: input.envelopeId,
@@ -1014,7 +1056,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
             : input.interrupted === true
               ? "Delegation turn was interrupted."
               : "Delegation turn ended without success.",
-    artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+    artifacts: {
+      schemaVersion: 1,
+      commitHashes: input.headCommit === undefined ? [] : [input.headCommit],
+      paths: [],
+    },
   });
 
   /**
@@ -1456,11 +1502,15 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       // distinct from a turn the target ended in error. The contract outcome is
       // still `failed`; the reason rides the result summary and the counters.
       const interrupted = latest.state === "interrupted";
+      // Best-effort: a thread with no worktree, or a worktree git cannot read,
+      // reports no commit rather than failing a delegation that already ran.
+      const headCommit = yield* readHeadCommit(thread.worktreePath);
       const result = buildResult({
         delegation,
         outcome,
         envelopeId: delegationResultEnvelopeId(delegation.delegationId),
         now: input.now,
+        ...(headCommit === undefined ? {} : { headCommit }),
         interrupted,
       });
 

@@ -13,6 +13,7 @@ import {
   WorkjetRepositoryPath,
   type OrchestrationCommand,
   type OrchestrationThread,
+  type WorkjetGitCommitHash,
   type WorkjetDelegation,
   type WorkjetDelegationRef,
   type WorkjetDelegationState,
@@ -143,6 +144,7 @@ const thread = (input?: {
   readonly deleted?: boolean;
   readonly id?: ThreadId;
   readonly capabilityIds?: ReadonlyArray<string>;
+  readonly worktreePath?: string;
 }): OrchestrationThread =>
   ({
     id: input?.id ?? TARGET_THREAD,
@@ -159,6 +161,7 @@ const thread = (input?: {
         ? { turnId: "turn-1", state: "running", requestedAt: NOW, startedAt: NOW }
         : null,
     session: null,
+    ...(input?.worktreePath === undefined ? {} : { worktreePath: input.worktreePath }),
   }) as unknown as OrchestrationThread;
 
 /**
@@ -228,9 +231,10 @@ const endedTurnThread = (input: {
   readonly latestTurnId?: string;
   readonly activeTurnId?: string | null;
   readonly activities?: ReadonlyArray<unknown>;
+  readonly worktreePath?: string;
 }): OrchestrationThread =>
   ({
-    ...thread(),
+    ...thread(input.worktreePath === undefined ? undefined : { worktreePath: input.worktreePath }),
     activities: input.activities ?? [],
     messages: [
       {
@@ -327,6 +331,11 @@ const makeHarness = (options?: {
    * to exercise the cost branch of the ceiling handling.
    */
   readonly refuseUsageCharge?: "token-budget-exceeded" | "cost-budget-exceeded";
+  /**
+   * Head commit the injected port reports, or the literal "explodes" to make
+   * the port die — a delegation that already ran must survive either.
+   */
+  readonly headCommit?: string;
 }): Harness => {
   const commands: Array<OrchestrationCommand> = [];
   const events: Array<WorkjetMailboxAuditEventInput> = [];
@@ -352,6 +361,14 @@ const makeHarness = (options?: {
         return options?.failAudit ? Effect.die("audit emitter exploded") : Effect.void;
       },
     },
+    ...(options?.headCommit === undefined
+      ? {}
+      : {
+          resolveHeadCommit: () =>
+            options.headCommit === "explodes"
+              ? Effect.die("git is unavailable")
+              : Effect.succeed(Option.some(options.headCommit as WorkjetGitCommitHash)),
+        }),
   };
 
   const engine = {
@@ -1086,6 +1103,79 @@ it.effect("completes a running delegation whose dispatched turn ended and return
     assert.deepEqual([...stored.value.artifacts.commitHashes], []);
     assert.deepEqual([...stored.value.artifacts.paths], []);
   }).pipe(Effect.provide(testLayer("delegation-executor-result-completed"))),
+);
+
+it.effect("reports the target worktree's head commit as an artifact reference", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "headcommit",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-headcommit",
+        turnState: "completed",
+        worktreePath: "/tmp/target-worktree",
+      }),
+      headCommit: "a1b2c3d4e5f6789",
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    yield* executor.runCycle;
+
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+
+    assert.deepEqual([...stored.value.artifacts.commitHashes], ["a1b2c3d4e5f6789"]);
+    // Still NO branch ref: WorkjetGitBranchRef REQUIRES a `delivery`, and this
+    // executor neither pushes nor bundles, so naming one would send the source
+    // after a branch it cannot fetch.
+    assert.isUndefined(stored.value.artifacts.branch);
+    assert.deepEqual([...stored.value.artifacts.paths], []);
+  }).pipe(Effect.provide(testLayer("delegation-executor-headcommit"))),
+);
+
+it.effect("still completes when the head commit cannot be read", () =>
+  Effect.gen(function* () {
+    // A thread with no worktree, and a port that dies outright. The turn has
+    // already run by then, so neither may turn a finished delegation into a
+    // failure — the result simply carries no commit.
+    const store = yield* WorkjetMailboxStore;
+    for (const [id, worktreePath, headCommit] of [
+      ["nocommitA", undefined, "a1b2c3d4e5f6789"],
+      ["nocommitB", "/tmp/target-worktree", "explodes"],
+    ] as const) {
+      const delegation = delegationFixture({
+        id,
+        digest: yield* storePrompt(PROMPT_TEXT),
+        state: "running",
+      });
+      const harness = makeHarness({
+        initialThread: endedTurnThread({
+          delegationId: delegation.delegationId,
+          turnId: `turn-${id}`,
+          turnState: "completed",
+          ...(worktreePath === undefined ? {} : { worktreePath }),
+        }),
+        headCommit,
+      });
+      const executor = yield* harness.executor;
+      yield* seed(delegation);
+
+      yield* executor.runCycle;
+
+      assert.equal(yield* stateOf(delegation), "completed", `${id} still completes`);
+      const stored = yield* store.getDelegationResult(delegation.delegationId);
+      assert.isTrue(Option.isSome(stored));
+      if (Option.isNone(stored)) return;
+      assert.deepEqual([...stored.value.artifacts.commitHashes], [], `${id} reports no commit`);
+    }
+  }).pipe(Effect.provide(testLayer("delegation-executor-nocommit"))),
 );
 
 it.effect("fails a running delegation whose dispatched turn ended in error", () =>

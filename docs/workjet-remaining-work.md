@@ -300,16 +300,19 @@ finishes. Scope estimates are rough and name the files.
    harness. _This is also the missing third prerequisite of the mixed-harness
    E2E._ New harness under `apps/web` or `scripts/` plus a browser-driver
    dependency — **large**, and the only large greenfield item left.
-2. **Web Stack SSRF, redirect cap, and the untested stdout budget.** §7 and §12
-   — one piece of work that ticks two boxes, one of them a security invariant.
-   Install `SsrfResolver` on the three unresolved `ureq` agents in
-   `native/web-stack/src/scholarly_search.rs` (`:407`, `:968`, `:1696`), add an
-   explicit redirect-hop cap (there is none in the crate at all today, so the cap
-   is whatever `ureq` defaults to), and add the missing test for the TypeScript
-   stdout byte budget. ~1 Rust file, 3 TS test additions, a full crate build —
-   **medium**. Contains one small decision: `web_search.rs` already grants a
-   self-hosted SearXNG base, so you must choose which configured hosts stay
-   reachable.
+2. ~~**Web Stack SSRF, redirect cap, and the untested stdout budget.**~~
+   **ALREADY DONE — verified 2026-08-20 by running it.** §7 and §12.
+   `SsrfResolver` is installed on all three `scholarly_search.rs` agents
+   (`:421`, `:1024`, `:1751`). The redirect cap was resolved with a KORREKTUR
+   rather than a new setting: the crate deliberately sets no `.redirects(n)`,
+   and `crate_shaped_agents_bound_the_redirect_chain_at_five_requests`
+   (`egress.rs`) pins the OBSERVABLE behaviour instead — an endless redirect
+   loop terminates after exactly five requests — so a dependency bump that
+   raised or removed the default would fail a test. The stdout budget test
+   exists in three surfaces ("refuses native research/search/browser stdout
+   over the declared byte budget"). Ran the egress suite: 8/8 green including
+   the redirect bound.
+
 3. **Secret-scanning gate over tracked files, plus a browser-storage canary.**
    §12 — closes the two unguarded sinks that keep the "no raw secrets" invariant
    unticked. A script over `git ls-files` reusing the canary table the support

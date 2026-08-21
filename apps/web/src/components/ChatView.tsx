@@ -315,6 +315,8 @@ import {
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { WorkjetHandoffInbox, WorkjetWorkerOverview } from "./workjetSurfaces";
+import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
+import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
@@ -1972,10 +1974,35 @@ function ChatViewContent(props: ChatViewProps) {
           ...(action.kind === "submit-result" ? { outcome: action.outcome } : {}),
         },
       });
-      return typeof result === "object" &&
+      const failed =
+        typeof result === "object" &&
         result !== null &&
         "_tag" in result &&
-        (result as { readonly _tag: string })._tag === "Failure"
+        (result as { readonly _tag: string })._tag === "Failure";
+
+      // Raise the moment only on SUCCESS. A notification for a submission the
+      // server refused would point the user at work that was never reported,
+      // which is worse than no notification at all.
+      if (!failed && action.kind === "submit-result") {
+        publishCrossModeResultSubmitted({
+          linkId: action.linkId,
+          // Always "submitted", and the two vocabularies are why. The action's
+          // completed/failed/cancelled describes the WORK; the notification's
+          // submitted/accepted/rejected describes the LINK. Code can only
+          // report that it submitted — accepting or rejecting is the
+          // counterpart's verdict, and claiming it here would put this side's
+          // opinion in the other authority's mouth.
+          outcome: "submitted",
+          occurredAt: new Date().toISOString(),
+          target: {
+            mode: "code",
+            environmentId: activeThreadEnvironmentId,
+            threadId: activeThreadId,
+          },
+        });
+      }
+
+      return failed
         ? isAtomCommandInterrupted(result as never)
           ? null
           : workjetCrossModeFailureMessage(squashAtomCommandFailure(result as never))
@@ -6869,6 +6896,14 @@ function ChatViewContent(props: ChatViewProps) {
             }
           />
         ) : null}
+        {/*
+          Cross-mode activity: links minted into Code and results reported back
+          out of it. Unlike the two surfaces above it is NOT orchestrator-only —
+          a cross-mode link can be raised on any thread — and it renders its own
+          empty state, so it is mounted unconditionally and holds no state of
+          its own (mounting it twice is harmless, per its own doc).
+        */}
+        <CrossModeNotificationCenter />
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Chat column */}

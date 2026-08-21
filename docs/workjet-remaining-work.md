@@ -433,10 +433,18 @@ finishes. Scope estimates are rough and name the files.
     `ElectronSafeStorage.ts` and `linuxSecretStorage.ts` against the real OS
     keychain — encrypt, restart, decrypt, and assert the Linux backend guard
     fails closed. **Small on macOS**; the Linux leg needs a Linux host.
-24. **Keyboard and zoom targeting of the active CTOX guest.** §10. Make `zoomMain`
-    (`DesktopWindow.ts:858-866`) and the View-menu accelerators ask
-    `CtoxGuestManager` whether a guest is active, and either target it or suppress
-    the accelerator deliberately. 2 files plus a test — **small**.
+24. ~~**Keyboard and zoom targeting of the active CTOX guest.**~~ **ZOOM DONE
+    2026-08-20, commit 10bb6a022; the keyboard half remains.** §10. `zoomMain`
+    now targets a mounted guest and records the choice on its span. It reads
+    the window's own content view instead of taking `CtoxGuestManager`, which
+    would drag eight dependencies into every window test for one boolean; the
+    sole-caller assumption that makes it sound is pinned by a source-walking
+    guard in `CtoxGuestManager.test.ts`. Note zoomMain had NO
+    DesktopWindow-level test before this — the fake window had no zoom methods,
+    so all 27 passed without ever calling it. Mutation-verified.
+    STILL OPEN: the other View-menu accelerators. They route through
+    `DesktopApplicationMenu.ts:208`, and each needs the same decision — target
+    the guest, or suppress deliberately.
 25. ~~**Local-daemon descriptor ownership check.**~~ **DONE 2026-08-20, commit
     7a9015033.** §10. `checkCtoxDescriptorTrust`
     (`CtoxLocalDaemonSource.ts`) runs before the descriptor is parsed and

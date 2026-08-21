@@ -220,7 +220,7 @@ export function decisionIcons(decision, copy = {}, detail = DETAIL_KURZ) {
     wert: "detail",
     label: detail >= DETAIL_MEHR ? "Kurzfassung" : "Mehr Details",
   });
-  icons.push({ glyph: "SPÄTER", wert: "vertagt", label: copy.action_snooze || "Auf später" });
+  icons.push({ glyph: "SPÄT", wert: "vertagt", label: copy.action_snooze || "Auf später" });
   return icons;
 }
 

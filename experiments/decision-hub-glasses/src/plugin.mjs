@@ -32,6 +32,8 @@ export function createDecisionHubPlugin({
       detail: state.detail,
     });
 
+  let lastFocus = null;
+
   async function paint() {
     const view = currentView();
     onPaint(view);
@@ -39,10 +41,20 @@ export function createDecisionHubPlugin({
     if (!started) {
       const result = await sdk.createStartUpPageContainer(viewToPageContainer(view));
       // 0 = Erfolg; alles andere ist ein echter Fehler und darf nicht als
-      // "läuft schon" durchgehen.
-      if (result !== 0 && result?.code !== 0)
+      // "laeuft schon" durchgehen.
+      if (result !== 0 && result?.code !== 0) {
         throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
+      }
       started = true;
+      lastFocus = view.focusIcon;
+      return;
+    }
+    // Wandert der Fokus, aendert sich der STIL der Aktionskaestchen (Rahmen,
+    // Helligkeit) — das traegt textContainerUpgrade nicht, dafuer muss die
+    // Seite neu aufgebaut werden. Sonst bliebe der Fokus unsichtbar.
+    if (view.focusIcon !== lastFocus) {
+      await sdk.rebuildPageContainer(viewToPageContainer(view));
+      lastFocus = view.focusIcon;
       return;
     }
     for (const update of viewToTextUpdates(view)) await sdk.textContainerUpgrade(update);

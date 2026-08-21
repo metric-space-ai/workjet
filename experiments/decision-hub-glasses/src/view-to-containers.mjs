@@ -26,7 +26,7 @@ const LINE_H = 26;
 const DIM = 2;
 const BRIGHT = 4;
 
-export const CONTAINER = { TABS: 1, BODY: 2, ICONS: 3 };
+export const CONTAINER = { TABS: 1, BODY: 2, ACTION_BASE: 10 };
 
 // Die Brille scrollt den Eingabe-Container SELBST — Scroll-Ereignisse kommen
 // nicht als Fokuswechsel zurueck (am Geraet beobachtet: die einzeilige
@@ -48,7 +48,12 @@ export function menuAction(itemID) {
 /** Reiterzeile: aktiver Reiter in eckigen Klammern, weil der Text-Container
  *  keine Inversdarstellung kennt. */
 export function tabsLine(tabs, width = 52) {
-  const parts = tabs.map((tab) => (tab.active ? `[${tab.label}]` : ` ${tab.label} `));
+  // Echte Reiterleiste: aktiver Reiter in Klammern, die uebrigen durch einen
+  // Trenner abgesetzt — sonst verschwimmt sie zu einem Wortsalat.
+  const parts = tabs.map((tab, i) => {
+    const text = tab.active ? `[${tab.label}]` : ` ${tab.label} `;
+    return i === 0 ? text : `·${text}`;
+  });
   let line = parts.join("");
   if (line.length <= width) return line;
   // Um den aktiven Reiter herum beschneiden, damit er sichtbar bleibt.
@@ -81,11 +86,52 @@ export function iconsLine(view) {
  * Ansichtsmodell → Container-Nutzlast für createStartUpPageContainer bzw.
  * rebuildPageContainer. Reines Objekt, damit es ohne Brille testbar bleibt.
  */
+// Gestaltung: die Brille kann mehr als Fliesstext. TextContainerProperty hat
+// borderWidth/borderRadius/paddingLength und je Container eine eigene
+// Helligkeit (0..4). Jede Aktion bekommt deshalb ein eigenes Kaestchen; die
+// fokussierte wird umrandet und hell, der Rest bleibt gedaempft.
+const ACTION_GAP = 6;
+const CHAR_W = 9.2; // am Simulator gemessen
+
+export function actionBoxes(view, y, height) {
+  const count = view.icons.length || 1;
+  const usable = DISPLAY_W - PAD_X * 2;
+  const width = Math.floor((usable - ACTION_GAP * (count - 1)) / count);
+  return view.icons.map((icon, i) => {
+    const focused = i === view.focusIcon;
+    const label = icon.glyph;
+    // Text im Kaestchen zentrieren: der Container kennt keine Ausrichtung,
+    // also mit Leerzeichen ausgleichen.
+    const inner = Math.max(1, Math.floor((width - 8) / CHAR_W));
+    const pad = Math.max(0, Math.floor((inner - label.length) / 2));
+    return {
+      containerID: CONTAINER.ACTION_BASE + i,
+      containerName: `action-${icon.wert}`,
+      xPosition: PAD_X + i * (width + ACTION_GAP),
+      yPosition: y,
+      width,
+      height,
+      content: `${' '.repeat(pad)}${label}`,
+      textColor: focused ? BRIGHT : DIM,
+      borderWidth: focused ? 2 : 1,
+      // Ohne borderColor zeichnet die Brille nur eine Kante — am Simulator
+      // gesehen. 0..15 sind die Gruenstufen des Rahmens.
+      borderColor: focused ? 15 : 6,
+      borderRadius: 6,
+      paddingLength: 4,
+      isEventCapture: 0,
+      zOrderIndex: 3 + i,
+    };
+  });
+}
+
 export function viewToPageContainer(view) {
+  const actionH = 30;
   const bodyHeight = BODY_LINES * LINE_H + 10;
-  const iconY = TAB_H + bodyHeight;
+  const actionY = DISPLAY_H - actionH;
+  const actions = actionBoxes(view, actionY, actionH);
   return {
-    containerTotalNum: 3,
+    containerTotalNum: 2 + actions.length,
     textObject: [
       {
         containerID: CONTAINER.TABS,
@@ -96,6 +142,7 @@ export function viewToPageContainer(view) {
         height: TAB_H,
         content: headerLine(view),
         textColor: view.focusIcon >= 0 ? DIM : BRIGHT,
+        borderWidth: 0,
         isEventCapture: 0,
         zOrderIndex: 0,
       },
@@ -114,19 +161,13 @@ export function viewToPageContainer(view) {
         isEventCapture: 1,
         zOrderIndex: 1,
       },
-      {
-        containerID: CONTAINER.ICONS,
-        containerName: 'icons',
-        xPosition: PAD_X,
-        yPosition: iconY,
-        width: DISPLAY_W - PAD_X * 2,
-        height: DISPLAY_H - iconY,
-        content: iconsLine(view),
-        textColor: view.focusIcon >= 0 ? BRIGHT : DIM,
-        isEventCapture: 0,
-        zOrderIndex: 2,
-      },
+      ...actions,
     ],
+    // Zusaetzlich das native Aktionsmenue: solange der Druck aufs Kaestchen am
+    // Geraet nicht bestaetigt ist, gibt es so IMMER einen Weg zur Entscheidung.
+    menuObject: {
+      menuItems: view.icons.map((icon, i) => ({ itemID: i + 1, itemName: icon.label || icon.glyph })),
+    },
   };
 }
 
@@ -143,6 +184,5 @@ export function viewToTextUpdates(view) {
   return [
     { containerID: CONTAINER.TABS, content: headerLine(view) },
     { containerID: CONTAINER.BODY, content: bodyText(view) },
-    { containerID: CONTAINER.ICONS, content: iconsLine(view) },
   ];
 }

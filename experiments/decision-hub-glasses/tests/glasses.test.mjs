@@ -42,7 +42,11 @@ function view(overrides = {}) {
 
 test("page fits the SDK container budget", () => {
   const page = viewToPageContainer(view());
-  assert.equal(page.containerTotalNum, 3);
+  // Kopf + Text + ein Kaestchen je Aktion; das SDK erlaubt hoechstens 8 Text-
+  // Container und 1..12 insgesamt.
+  assert.equal(page.containerTotalNum, page.textObject.length);
+  assert.ok(page.textObject.length <= 8, `max 8 text containers, got ${page.textObject.length}`);
+  assert.ok(page.containerTotalNum >= 1 && page.containerTotalNum <= 12);
   assert.ok(page.textObject.length <= 8, "max 8 text containers");
   assert.ok(page.containerTotalNum >= 1 && page.containerTotalNum <= 12);
 });
@@ -117,11 +121,19 @@ test("press in the text does nothing", () => {
 });
 
 test("focused action is marked and every action is offered", () => {
+  const page = viewToPageContainer({ ...view(), focusIcon: 0 });
+  const boxes = page.textObject.filter((c) => c.containerName.startsWith("action-"));
+  assert.equal(boxes.length, 5, "every action gets its own box");
+  assert.ok(boxes[0].borderWidth > boxes[1].borderWidth, "the focused box is outlined");
+  assert.ok(boxes[0].textColor > boxes[1].textColor, "and brighter than the rest");
+  for (const box of boxes) {
+    assert.ok(box.xPosition + box.width <= 576, `${box.containerName} exceeds the display`);
+  }
   const line = iconsLine({ ...view(), focusIcon: 0 });
   // Die Brillenschrift hat kein ✓/✔/✗/✘/✎/◷ (am Simulator verifiziert),
   // deshalb Woerter plus das vorhandene Caret ▶.
   assert.ok(line.includes("▶OK"), `focus caret missing in: ${line}`);
-  for (const label of ["OK", "NEIN", "KORR", "MEHR", "SPÄTER"]) {
+  for (const label of ["OK", "NEIN", "KORR", "MEHR", "SPÄT"]) {
     assert.ok(line.includes(label), `missing ${label}`);
   }
   for (const missing of ["✓", "✔", "✗", "✘", "✎", "◷"]) {

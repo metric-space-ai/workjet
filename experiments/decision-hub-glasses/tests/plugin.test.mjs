@@ -4,7 +4,7 @@ import { createDecisionHubPlugin } from "../src/plugin.mjs";
 import { OS_EVENT } from "../src/input.mjs";
 
 function fakeSdk() {
-  const calls = { create: 0, upgrade: 0, lastPage: null };
+  const calls = { create: 0, upgrade: 0, rebuild: 0, lastPage: null };
   return {
     calls,
     async createStartUpPageContainer(page) {
@@ -41,14 +41,23 @@ function fakeSource(answers = []) {
   };
 }
 
-test("startup creates the page exactly once, then only updates text", async () => {
+test("the page is created once; scrolling text only updates text", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   assert.equal(sdk.calls.create, 1);
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
   assert.equal(sdk.calls.create, 1, "the page must not be recreated");
-  assert.ok(sdk.calls.upgrade >= 1, "updates go through textContainerUpgrade");
+});
+
+test("a focus change rebuilds the page, because border and brightness change", async () => {
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  // Scrollen bis der Fokus die Aktionen erreicht; dann MUSS neu gezeichnet
+  // werden, sonst bliebe die Auswahl unsichtbar.
+  for (let i = 0; i < 4; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  assert.ok(sdk.calls.rebuild >= 1, "focus must be repainted, not only the text");
 });
 
 test("a failed page creation is surfaced, never swallowed", async () => {

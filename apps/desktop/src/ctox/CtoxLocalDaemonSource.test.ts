@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { vi } from "vite-plus/test";
@@ -10,6 +11,7 @@ import { vi } from "vite-plus/test";
 vi.mock("electron", () => ({}));
 
 import {
+  checkCtoxDescriptorTrust,
   ctoxLocalDaemonInstanceId,
   discoverCtoxLocalDaemonInstances,
   normalizeCtoxLocalDaemonHealthUrl,
@@ -74,6 +76,86 @@ function withStateRoot<A>(
 }
 
 describe("CtoxLocalDaemonSource", () => {
+  describe("descriptor ownership is a trust boundary", () => {
+    // The descriptor names a health URL and instance id the launch path acts
+    // on, and it sits at a predictable path. Deciding its SHAPE is not the
+    // same as deciding who wrote it.
+    const info = (overrides: Partial<FileSystem.File.Info>): FileSystem.File.Info =>
+      ({
+        type: "File",
+        uid: Option.some(501),
+        gid: Option.some(20),
+        mode: 0o644,
+        ...overrides,
+      }) as FileSystem.File.Info;
+
+    it("accepts a regular file owned by this process and not writable by others", () => {
+      assert.isUndefined(
+        checkCtoxDescriptorTrust({ info: info({}), processUid: Option.some(501) }),
+      );
+    });
+
+    it("refuses a descriptor owned by another account", () => {
+      assert.strictEqual(
+        checkCtoxDescriptorTrust({
+          info: info({ uid: Option.some(502) }),
+          processUid: Option.some(501),
+        }),
+        "foreign-owner",
+      );
+    });
+
+    it("refuses a group- or world-writable descriptor", () => {
+      for (const mode of [0o664, 0o666, 0o622]) {
+        assert.strictEqual(
+          checkCtoxDescriptorTrust({ info: info({ mode }), processUid: Option.some(501) }),
+          "writable-by-others",
+          `mode ${mode.toString(8)} must be refused`,
+        );
+      }
+      // The owner's own write bit is not the problem and must still pass.
+      assert.isUndefined(
+        checkCtoxDescriptorTrust({ info: info({ mode: 0o600 }), processUid: Option.some(501) }),
+      );
+    });
+
+    it("refuses anything that is not a regular file", () => {
+      assert.strictEqual(
+        checkCtoxDescriptorTrust({
+          info: info({ type: "Directory" }),
+          processUid: Option.some(501),
+        }),
+        "not-a-regular-file",
+      );
+    });
+
+    it("skips the ownership half where the platform reports no uid", () => {
+      // Windows. The POSIX bits are meaningless there, so faking a verdict
+      // would be worse than declaring the gap.
+      assert.isUndefined(
+        checkCtoxDescriptorTrust({
+          info: info({ uid: Option.none(), mode: 0o666 }),
+          processUid: Option.none(),
+        }),
+      );
+    });
+
+    it.effect("does not discover a descriptor owned by another account", () =>
+      withStateRoot([{ path: "instance.json", contents: descriptor("foreign") }], ({ discover }) =>
+        Effect.gen(function* () {
+          // Same tree, same bytes — only the owner differs from this process.
+          const mine = yield* discover();
+          assert.lengthOf(mine, 1, "the fixture is discoverable when we own it");
+
+          const theirs = yield* discover({
+            processUid: Option.some((mine.length > 0 ? 0 : 0) + 999_001),
+          });
+          assert.lengthOf(theirs, 0, "a foreign-owned descriptor must not be discovered");
+        }),
+      ),
+    );
+  });
+
   it.effect("discovers the root and per-instance descriptors below the default state root", () =>
     withStateRoot(
       [

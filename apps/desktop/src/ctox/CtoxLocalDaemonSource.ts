@@ -5,6 +5,7 @@ import type { CtoxManagedInstance } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -128,6 +129,11 @@ export interface CtoxLocalDaemonDiscoveryOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly nowEpochMs?: () => number;
   /**
+   * This process's uid, for the descriptor ownership check. Defaults to
+   * `process.getuid()`, and to `Option.none()` where the platform has none.
+   */
+  readonly processUid?: Option.Option<number>;
+  /**
    * Omitted disables health probing; discovery then relies on the descriptor.
    * A concrete probe is injected the same way CtoxDevAuth injects its Electron
    * session fetch, so this module never reaches for a global HTTP client.
@@ -226,14 +232,65 @@ function descriptorDisplayName(
   return descriptor.instanceId;
 }
 
+/**
+ * Why the descriptor is a trust boundary, and what this rejects.
+ *
+ * The descriptor names a health URL and an instance id that the launch path
+ * then acts on. It is read from a predictable path below the user's state
+ * root, so anything that can write there chooses which daemon this app talks
+ * to. Decoding it strictly bounds the SHAPE; it says nothing about who put it
+ * there. Two properties are checked before the bytes are parsed at all:
+ *
+ *  - it is a REGULAR file owned by this process's own uid. A descriptor owned
+ *    by another account is refused rather than trusted;
+ *  - it is not group- or world-writable, so an account that merely shares a
+ *    group cannot swap the daemon out from under us.
+ *
+ * On a platform that does not report a uid (`Option.none()`, i.e. Windows) the
+ * ownership half cannot be evaluated and is skipped rather than faked; the
+ * POSIX permission bits are meaningless there too. This is a deliberate gap,
+ * not an oversight — Windows needs an ACL check, which is its own work.
+ */
+const GROUP_AND_WORLD_WRITABLE = 0o022;
+
+export type CtoxDescriptorTrustRefusal =
+  | "not-a-regular-file"
+  | "foreign-owner"
+  | "writable-by-others";
+
+export function checkCtoxDescriptorTrust(input: {
+  readonly info: FileSystem.File.Info;
+  /** `Option.none()` on platforms that do not report a uid. */
+  readonly processUid: Option.Option<number>;
+}): CtoxDescriptorTrustRefusal | undefined {
+  if (input.info.type !== "File") return "not-a-regular-file";
+  if (Option.isSome(input.processUid) && Option.isSome(input.info.uid)) {
+    if (input.info.uid.value !== input.processUid.value) return "foreign-owner";
+    if ((input.info.mode & GROUP_AND_WORLD_WRITABLE) !== 0) return "writable-by-others";
+  }
+  return undefined;
+}
+
 function readDescriptor(
   fileSystem: FileSystem.FileSystem,
   descriptorPath: string,
+  processUid: Option.Option<number>,
 ): Effect.Effect<LocalDaemonDescriptor | undefined> {
-  return fileSystem.readFileString(descriptorPath).pipe(
-    Effect.flatMap(decodeCtoxDaemonDescriptor),
-    Effect.orElseSucceed((): LocalDaemonDescriptor | undefined => undefined),
-  );
+  return Effect.gen(function* () {
+    const info = yield* fileSystem.stat(descriptorPath);
+    const refusal = checkCtoxDescriptorTrust({ info, processUid });
+    if (refusal !== undefined) {
+      // An untrusted descriptor is "not discovered" — the same outcome as a
+      // malformed one, so a hostile file cannot be told apart from a broken
+      // one by watching behaviour. The reason is logged, never surfaced.
+      yield* Effect.logDebug("CTOX daemon descriptor refused").pipe(
+        Effect.annotateLogs({ descriptorPath, refusal }),
+      );
+      return undefined;
+    }
+    const raw = yield* fileSystem.readFileString(descriptorPath);
+    return yield* decodeCtoxDaemonDescriptor(raw);
+  }).pipe(Effect.orElseSucceed((): LocalDaemonDescriptor | undefined => undefined));
 }
 
 function descriptorPaths(
@@ -314,13 +371,19 @@ export const discoverCtoxLocalDaemonInstances = Effect.fn(
     options.nowEpochMs === undefined
       ? yield* DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
       : options.nowEpochMs();
+  const processUid =
+    options.processUid === undefined
+      ? typeof process.getuid === "function"
+        ? Option.some(process.getuid())
+        : Option.none()
+      : options.processUid;
   const candidates = yield* descriptorPaths(fileSystem, path, stateRoot);
   const discovered: CtoxLocalDaemonInstance[] = [];
   const seenInstanceIds = new Set<string>();
 
   for (const descriptorPath of candidates) {
     if (discovered.length >= MAX_LOCAL_INSTANCES) break;
-    const descriptor = yield* readDescriptor(fileSystem, descriptorPath);
+    const descriptor = yield* readDescriptor(fileSystem, descriptorPath, processUid);
     if (descriptor === undefined || seenInstanceIds.has(descriptor.instanceId)) continue;
     seenInstanceIds.add(descriptor.instanceId);
 

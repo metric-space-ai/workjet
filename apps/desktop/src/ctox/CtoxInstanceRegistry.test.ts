@@ -105,12 +105,29 @@ function makeMemoryFileSystem(): MemoryFileSystem {
   const failRenameTo = new Set<string>();
   const failRenameOnAttempt = new Map<string, number>();
   const renameAttempts = new Map<string, number>();
+  const stubUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  const stubGid = typeof process.getgid === "function" ? process.getgid() : undefined;
   const service = FileSystem.makeNoop({
     makeDirectory: () => Effect.void,
     readFileString: (path) =>
       files.has(path)
         ? Effect.succeed(files.get(path) ?? "")
         : Effect.fail(fileError("readFileString", path)),
+    // Local-daemon discovery stats a descriptor before reading it, to refuse
+    // one owned by another account or writable by others. This stub reports a
+    // plainly trustworthy file so these tests keep exercising the registry
+    // rather than the ownership check, which has its own tests in
+    // CtoxLocalDaemonSource.test.ts.
+    stat: (path) =>
+      files.has(path)
+        ? Effect.succeed({
+            type: "File",
+            uid: stubUid === undefined ? Option.none() : Option.some(stubUid),
+            gid: stubGid === undefined ? Option.none() : Option.some(stubGid),
+            mode: 0o600,
+            size: FileSystem.Size(files.get(path)?.length ?? 0),
+          } as unknown as FileSystem.File.Info)
+        : Effect.fail(fileError("stat", path)),
     writeFileString: (path, contents) => Effect.sync(() => void files.set(path, contents)),
     rename: (oldPath, newPath) =>
       Effect.suspend(() => {

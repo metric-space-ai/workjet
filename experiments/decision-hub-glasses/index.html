@@ -7,20 +7,13 @@
     <link rel="stylesheet" href="/src/phone.css" />
   </head>
   <body>
-    <!-- Die Brille bekommt SDK-Container, nicht dieses DOM. Hier steht die
-         Handy-Oberflaeche: derselbe Vorgang, aber fuer Farbe und Touch. -->
+    <!-- Die Brille bekommt SDK-Container, nicht dieses DOM. Auf dem Handy wird
+         die CTOX-Verbindung eingerichtet und geregelt, was die Brille zeigt. -->
     <header class="dh-bar">
       <span class="dh-dot" data-dh-dot></span>
       <span class="dh-bar-text" data-dh-status>startet …</span>
     </header>
     <main class="dh-main" data-dh-view></main>
-    <nav class="dh-actions" aria-label="Entscheidung">
-      <button type="button" class="dh-btn dh-btn--yes" data-dh-act="annehmen">Annehmen</button>
-      <button type="button" class="dh-btn dh-btn--no" data-dh-act="ablehnen">Ablehnen</button>
-      <button type="button" class="dh-btn" data-dh-act="korrektur">Korrektur</button>
-      <button type="button" class="dh-btn" data-dh-act="vertagt">Später</button>
-    </nav>
-    <p class="dh-hint" data-dh-hint></p>
     <script type="module" src="/src/main.mjs"></script>
   </body>
 </html>

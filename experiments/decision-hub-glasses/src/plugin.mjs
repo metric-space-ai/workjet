@@ -10,7 +10,7 @@ import { viewToPageContainer, viewToTextUpdates } from './view-to-containers.mjs
 import { reduce } from './input.mjs';
 import { menuAction } from './view-to-containers.mjs';
 
-export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPaint = () => {} }) {
+export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPaint = () => {}, filter = () => true }) {
   const state = { scroll: 0, focusIcon: -1, index: 0 };
   let decisions = [];
   let vorgaenge = new Map();
@@ -43,7 +43,9 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
 
   async function refresh() {
     const data = await source.load();
-    decisions = data.decisions || [];
+    // Der Filter kommt aus den Handy-Einstellungen: die Brille zeigt nur,
+    // was der Besitzer unterwegs sehen will.
+    decisions = (data.decisions || []).filter(filter);
     vorgaenge = new Map((data.vorgaenge || []).map((v) => [v.id, v]));
     if (state.index >= decisions.length) {
       state.index = 0;
@@ -124,6 +126,22 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
         index: Math.min(state.index, Math.max(0, decisions.length - 1)),
         vorgangOf: (d) => vorgaenge.get(d?.vorgang_id),
       };
+    },
+    /** Sichtprobe: zeigt, dass die Kette bis auf die Brille traegt. */
+    async showTestCard() {
+      const now = new Date().toLocaleTimeString('de-DE');
+      decisions = [{
+        id: 'testkarte',
+        vorgang_id: 'testkarte',
+        typ: 'zuordnung',
+        titel: 'Testkarte',
+        status: 'offen',
+        zeilen_json: ['» TESTKARTE', `Gesendet um ${now}.`, 'Wenn du das liest, traegt die Kette.'],
+      }];
+      vorgaenge = new Map([['testkarte', { id: 'testkarte', kunde_name: 'Test' }]]);
+      state.index = 0;
+      state.scroll = 0;
+      await paint();
     },
     async select(index) {
       state.index = index;

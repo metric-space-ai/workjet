@@ -7,8 +7,9 @@ import {
   EvenAppMethod,
 } from '@evenrealities/even_hub_sdk';
 import { createDecisionHubPlugin } from './plugin.mjs';
-import { renderPhone } from './phone-view.mjs';
+import { renderSettings } from './phone-view.mjs';
 import { createSource } from './source.mjs';
+import { loadSettings, saveSettings, activeInstance, parseInvite, instanceFrom, passesFilter } from './settings.mjs';
 import { osEventFrom, menuItemFrom } from './event-decode.mjs';
 
 const $ = (sel) => document.querySelector(sel);
@@ -20,10 +21,6 @@ function status(text, state = 'warn') {
   if (dot) dot.dataset.state = state;
 }
 
-function hint(text) {
-  const el = $('[data-dh-hint]');
-  if (el) el.textContent = text;
-}
 
 /** Das SDK spricht ueber `callEvenApp`; hier die Aufrufe, die wir nutzen. */
 function sdkFromBridge(bridge) {
@@ -38,36 +35,89 @@ function sdkFromBridge(bridge) {
 }
 
 let plugin = null;
+let settings = loadSettings();
+const health = { lastSync: null, lastError: null };
 
-/** Handy-Oberflaeche neu zeichnen — eigenstaendig, kein Brillen-Spiegel. */
-function renderApp(busy = false) {
+function renderApp() {
   const root = $('[data-dh-view]');
-  if (!root || !plugin) return;
-  const snapshot = plugin.snapshot();
-  renderPhone(root, {
-    decisions: snapshot.decisions,
-    index: snapshot.index,
-    vorgangOf: snapshot.vorgangOf,
-    busy,
-    onSelect: (i) => plugin.select(i),
+  if (!root) return;
+  const snapshot = plugin?.snapshot?.() || { decisions: [], index: 0, vorgangOf: () => null };
+  const current = snapshot.decisions[snapshot.index];
+  renderSettings(root, {
+    settings,
+    decisions: snapshot.decisions.length,
+    currentTitle: current ? current.titel || current.id : null,
+    status: health,
+    onSettings: (patch) => {
+      settings = saveSettings({ ...settings, ...patch });
+      renderApp();
+      plugin?.refresh();
+    },
+    onConnect: (raw) => connect(raw),
+    onDisconnect: (id) => {
+      settings = saveSettings({
+        ...settings,
+        instances: settings.instances.filter((i) => i.id !== id),
+        activeInstanceId: null,
+      });
+      status('getrennt', 'warn');
+      renderApp();
+    },
+    onTest: () => testConnection(),
+    onTestCard: () => plugin?.showTestCard?.(),
   });
-  for (const button of document.querySelectorAll('[data-dh-act]')) {
-    button.disabled = busy || snapshot.decisions.length === 0;
+}
+
+/** Einladung annehmen — ohne Passwort, der Token steckt in der Einladung. */
+async function connect(raw) {
+  const invite = parseInvite(raw);
+  if (!invite) {
+    health.lastError = 'Einladung nicht lesbar';
+    status('Einladung nicht lesbar', 'error');
+    renderApp();
+    return;
   }
+  const instance = instanceFrom(invite);
+  settings = saveSettings({
+    ...settings,
+    instances: [...settings.instances.filter((i) => i.id !== instance.id), instance],
+    activeInstanceId: instance.id,
+  });
+  status(`verbunden mit ${instance.name}`, 'ok');
+  renderApp();
+  await testConnection();
+}
+
+async function testConnection() {
+  const instance = activeInstance(settings);
+  if (!instance) return;
+  try {
+    const source = createSource({ endpoint: instance.baseUrl, token: instance.token });
+    const data = await source.load();
+    health.lastSync = new Date().toLocaleTimeString('de-DE');
+    health.lastError = null;
+    status(`${(data.decisions || []).length} offene Entscheidungen`, 'ok');
+  } catch (error) {
+    health.lastError = error.message;
+    status(`Verbindung fehlgeschlagen: ${error.message}`, 'error');
+  }
+  renderApp();
 }
 
 async function main() {
   const bridge = await waitForEvenAppBridge();
   // Die Instanz liefert die Karten; die Fixture greift nur, solange kein
   // Endpunkt konfiguriert ist (Simulator, Erststart).
+  const instance = activeInstance(settings);
   const source = createSource({
-    endpoint: import.meta.env?.VITE_DECISION_HUB_ENDPOINT || null,
-    token: import.meta.env?.VITE_DECISION_HUB_TOKEN || null,
+    endpoint: instance?.baseUrl || import.meta.env?.VITE_DECISION_HUB_ENDPOINT || null,
+    token: instance?.token || import.meta.env?.VITE_DECISION_HUB_TOKEN || null,
   });
   plugin = createDecisionHubPlugin({
     sdk: sdkFromBridge(bridge),
     source,
     onPaint: () => renderApp(),
+    filter: (decision) => passesFilter(decision, settings),
     onError: (error) => {
       console.error('[decision-hub]', error?.stack || error?.message || String(error));
       status(`Fehler: ${error?.message || error}`, 'error');
@@ -86,13 +136,7 @@ async function main() {
   });
 
   // Handy-Bedienung: dieselben Aktionen wie im Brillenmenue.
-  for (const button of document.querySelectorAll('[data-dh-act]')) {
-    button.addEventListener('click', async () => {
-      renderApp(true);
-      await plugin.act(button.dataset.dhAct);
-      renderApp();
-    });
-  }
+
 
   await plugin.start();
   const count = plugin.state.count;
@@ -100,13 +144,13 @@ async function main() {
     count === 1 ? '1 offene Entscheidung' : `${count} offene Entscheidungen`,
     count > 0 ? 'ok' : 'warn',
   );
-  hint(
-    source.kind === 'instance'
-      ? 'Quelle: eigene Instanz'
-      : 'Quelle: Demo-Daten — noch keine Instanz konfiguriert',
-  );
+  if (source.kind !== 'instance') {
+    status('Demo-Daten — noch keine CTOX-Instanz verbunden', 'warn');
+  }
+  health.lastSync = new Date().toLocaleTimeString('de-DE');
+  renderApp();
   // Neue Vorgänge nachladen; die Instanz entscheidet, was offen ist.
-  setInterval(() => plugin.refresh(), 30000);
+  setInterval(() => plugin.refresh(), Math.max(10, settings.refreshSeconds) * 1000);
 }
 
 main().catch((error) => {

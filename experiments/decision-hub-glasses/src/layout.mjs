@@ -1,32 +1,35 @@
-// Seitenaufbau der Entscheidungsvorlage auf der Brille.
+// Seitenaufbau der Entscheidungsvorlage — an der Gestaltung des Geraete-
+// Dashboards ausgerichtet: links eine schmale Statusspalte, rechts ein
+// gerahmtes Panel mit dem Inhalt, dazwischen eine gepunktete Positionsleiste,
+// unten die Entscheidungs-Icons.
 //
-//   ┌───────────────────────────────────────────┐
-//   │ Reiter der anstehenden Entscheidungen     │  Kopf (Text)
-//   ├──────────────────────────────────────┬────┤
-//   │ Rubrik als Karte: MAIL / ANTWORT /   │ ▮  │  Inhalt (Text) + Leiste
-//   │ ARBEITSPAKET …                       │ ▯  │  (Bild, gezeichnet)
-//   │ Ein Scroll = naechste Rubrik.        │ ▯  │
-//   │ Druck = vollstaendige Fassung, dann  │ ↘  │  Leiste muendet unten …
-//   ├──────────────────────────────────────┴────┤
-//   │  ✓    ✗    ✎    ⌄    ◷                    │  … in die Entscheidungs-Icons
-//   └───────────────────────────────────────────┘  (Bild, gezeichnet)
+//   REM Capital        ·   ┌─────────────────────────────┐
+//   TRIAGE             ·   │ MAIL                        │
+//   2/5                ▌   │ Guten Morgen, seit heute …  │
+//                      ·   │                             │
+//                      ·   └─────────────────────────────┘
+//   ✓    ✗    ✎    ◷
 
-import { DISPLAY_W, DISPLAY_H, BODY_LINES } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
+import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { renderActionBar, bitmapPayload } from './icons.mjs';
-import { renderRail } from './rail.mjs';
+import { renderDots } from './dots.mjs';
 
-const PAD_X = 12;
-const HEAD_H = 26;
-const ACTION_H = 46;
-const RAIL_W = 26;
+const PAD = 10;
+const COL_W = 150;          // Statusspalte links
+const DOTS_W = 14;          // gepunktete Leiste
+const ACTION_H = 44;
 const LINE_H = 26;
+const PANEL_X = PAD + COL_W + DOTS_W;
+const PANEL_W = DISPLAY_W - PANEL_X - PAD;
+const PANEL_Y = 6;
+const PANEL_H = DISPLAY_H - ACTION_H - PANEL_Y - 4;
 
 export const CONTAINER = {
-  HEAD: 1,
-  TITLE: 3,
-  BODY: 2,
-  RAIL: 20,
+  STATUS: 1,
+  PANEL_TITLE: 2,
+  PANEL_BODY: 3,
+  DOTS: 20,
   ACTION_L: 21,
   ACTION_R: 22,
 };
@@ -36,41 +39,46 @@ const DIM = 2;
 
 export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
 
-/** Wie viele Zeilen passen in den Inhaltsbereich? */
-export const CONTENT_LINES = Math.floor((DISPLAY_H - HEAD_H - ACTION_H - 6) / LINE_H);
+/** Zeilen im Panel — Titel belegt die erste. */
+export const CONTENT_LINES = Math.floor((PANEL_H - 14) / LINE_H) - 1;
 
-/** Kopfzeile: Reiter der anstehenden Entscheidungen, aktiver hervorgehoben. */
-export function headLine(nav) {
-  const parts = nav.tabs.map((tab, i) =>
-    i === nav.tabIndex ? `▐${tab}▌` : ` ${tab} `,
-  );
-  const line = parts.join('');
-  return line.length <= 52 ? line : `${line.slice(0, 49)}...`;
+// Zeichen je Zeile im Panel — am Simulator gemessen: rund 9,2 px je Zeichen.
+export const PANEL_CHARS = Math.floor((PANEL_W - 24) / 9.2);
+
+/** Linke Spalte: wer, was, wo — knapp, wie die Statusspalte im Dashboard. */
+export function statusLines(nav) {
+  const section = nav.sections[nav.sectionIndex];
+  const lines = [nav.tabs[nav.tabIndex] || ''];
+  if (nav.typ) lines.push(nav.typ);
+  lines.push('');
+  lines.push(`${nav.sectionIndex + 1}/${Math.max(1, nav.sections.length)}`);
+  if (nav.tabs.length > 1) lines.push(`Vorgang ${nav.tabIndex + 1}/${nav.tabs.length}`);
+  if (section && nav.level === LEVEL.RUBRIK && section.zeilen.length > CONTENT_LINES) {
+    lines.push('', 'Druck öffnet');
+  }
+  return lines;
 }
 
-/** Kopf der Rubrik-Karte: Titel und — falls mehr folgt — der Hinweis darauf. */
+/** Panel-Titel: Rubrik, im Detail mit Seitenzahl. */
 export function titleLine(nav) {
   const section = nav.sections[nav.sectionIndex];
   if (!section) return '';
   if (nav.level === LEVEL.DETAIL) {
     const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
-    return pages > 1 ? `${section.titel}   ${page + 1}/${pages}` : section.titel;
+    return pages > 1 ? `${section.titel}  ${page + 1}/${pages}` : section.titel;
   }
-  const mehr = section.zeilen.length > CONTENT_LINES - 1;
-  return mehr ? `${section.titel}   ⌄ Druck öffnet` : section.titel;
+  return section.titel;
 }
 
-/** Inhalt: in der Rubrik-Ebene die Kurzfassung, in der Detail-Ebene die Seite. */
+/** Panel-Inhalt. */
 export function contentLines(nav) {
   const section = nav.sections[nav.sectionIndex];
   if (!section) return ['Keine Inhalte.'];
-  const lines = nav.level === LEVEL.DETAIL
-    ? pageOf(section, nav.page, CONTENT_LINES - 1).zeilen
-    : section.zeilen.slice(0, CONTENT_LINES - 1);
-  return lines;
+  return nav.level === LEVEL.DETAIL
+    ? pageOf(section, nav.page, CONTENT_LINES).zeilen
+    : section.zeilen.slice(0, CONTENT_LINES);
 }
 
-/** Segmente der Seitenleiste: Rubriken bzw. Seiten der offenen Rubrik. */
 export function railState(nav) {
   const section = nav.sections[nav.sectionIndex];
   if (nav.level === LEVEL.DETAIL && section) {
@@ -80,68 +88,65 @@ export function railState(nav) {
   return { count: nav.sections.length, active: nav.sectionIndex };
 }
 
-/**
- * Kompletter Seitenaufbau.
- * @param {object} nav { tabs, tabIndex, sections, sectionIndex, page, level,
- *                       icons, focusIcon, detail }
- */
 export function buildPage(nav) {
-  const contentW = DISPLAY_W - PAD_X * 2 - RAIL_W;
-  const contentY = HEAD_H;
-  const contentH = DISPLAY_H - HEAD_H - ACTION_H;
-  const rail = railState(nav);
-
+  const focused = nav.focusIcon >= 0;
   return {
     containerTotalNum: 6,
     textObject: [
       {
-        containerID: CONTAINER.HEAD,
-        containerName: 'head',
-        xPosition: PAD_X,
-        yPosition: 0,
-        width: DISPLAY_W - PAD_X * 2,
-        height: HEAD_H,
-        content: headLine(nav),
-        textColor: nav.focusIcon >= 0 ? DIM : BRIGHT,
+        containerID: CONTAINER.STATUS,
+        containerName: 'status',
+        xPosition: PAD,
+        yPosition: PANEL_Y + 6,
+        width: COL_W,
+        height: PANEL_H,
+        content: statusLines(nav).join('\n'),
+        textColor: focused ? DIM : BRIGHT,
         isEventCapture: 0,
         zOrderIndex: 0,
       },
       {
-        containerID: CONTAINER.TITLE,
-        containerName: 'title',
-        xPosition: PAD_X,
-        yPosition: contentY,
-        width: contentW,
-        height: LINE_H,
+        // Das gerahmte Panel — Rahmen und Radius kommen vom Container selbst,
+        // wie im Dashboard. Der Titel sitzt in der ersten Zeile.
+        containerID: CONTAINER.PANEL_TITLE,
+        containerName: 'panel-title',
+        xPosition: PANEL_X,
+        yPosition: PANEL_Y,
+        width: PANEL_W,
+        height: PANEL_H,
         content: titleLine(nav),
-        textColor: BRIGHT,
+        textColor: focused ? DIM : BRIGHT,
+        borderWidth: 1,
+        borderColor: focused ? 5 : 12,
+        borderRadius: 10,
+        paddingLength: 8,
         isEventCapture: 0,
-        zOrderIndex: 5,
+        zOrderIndex: 1,
       },
       {
-        // Eingabe-Container. Sein Inhalt passt IMMER in eine Seite — sonst
-        // scrollt die Brille ihn selbst und die Gesten erreichen die App nicht.
-        containerID: CONTAINER.BODY,
-        containerName: 'body',
-        xPosition: PAD_X,
-        yPosition: contentY + LINE_H,
-        width: contentW,
-        height: contentH - LINE_H,
+        // Eingabe-Container: Inhalt passt IMMER auf eine Seite, sonst scrollt
+        // die Brille ihn selbst und die Gesten erreichen die App nicht.
+        containerID: CONTAINER.PANEL_BODY,
+        containerName: 'panel-body',
+        xPosition: PANEL_X + 8,
+        yPosition: PANEL_Y + LINE_H + 6,
+        width: PANEL_W - 16,
+        height: PANEL_H - LINE_H - 14,
         content: contentLines(nav).join('\n'),
-        textColor: nav.focusIcon >= 0 ? DIM : BRIGHT,
+        textColor: focused ? DIM : BRIGHT,
         isEventCapture: 1,
-        zOrderIndex: 1,
+        zOrderIndex: 2,
       },
     ],
     imageObject: [
       {
-        containerID: CONTAINER.RAIL,
-        containerName: 'rail',
-        xPosition: DISPLAY_W - RAIL_W - 2,
-        yPosition: contentY,
-        width: RAIL_W,
-        height: Math.min(144, contentH),
-        zOrderIndex: 2,
+        containerID: CONTAINER.DOTS,
+        containerName: 'dots',
+        xPosition: PAD + COL_W,
+        yPosition: PANEL_Y,
+        width: DOTS_W,
+        height: Math.min(144, PANEL_H),
+        zOrderIndex: 3,
       },
       {
         containerID: CONTAINER.ACTION_L,
@@ -150,7 +155,7 @@ export function buildPage(nav) {
         yPosition: DISPLAY_H - ACTION_H,
         width: 288,
         height: ACTION_H,
-        zOrderIndex: 3,
+        zOrderIndex: 4,
       },
       {
         containerID: CONTAINER.ACTION_R,
@@ -159,20 +164,16 @@ export function buildPage(nav) {
         yPosition: DISPLAY_H - ACTION_H,
         width: 288,
         height: ACTION_H,
-        zOrderIndex: 4,
+        zOrderIndex: 5,
       },
     ],
-    // Fallback, solange der Druck aufs Icon am Geraet nicht bestaetigt ist.
     menuObject: {
       menuItems: nav.icons.map((icon, i) => ({ itemID: i + 1, itemName: icon.label || icon.wert })),
     },
   };
 }
 
-/** Die drei Bitmaps der Seite — Leiste und die beiden Haelften der Icon-Leiste. */
 export function buildBitmaps(nav) {
-  const contentH = DISPLAY_H - HEAD_H - ACTION_H;
-  const rail = railState(nav);
   const bar = renderActionBar({
     icons: nav.icons,
     focusIcon: nav.focusIcon,
@@ -180,13 +181,13 @@ export function buildBitmaps(nav) {
     height: ACTION_H,
     detail: nav.detail,
   });
-  // Die Icon-Leiste ist 576 breit, ein Bild darf hoechstens 288 — also zwei.
-  const left = sliceBitmap(bar, 0, 288);
-  const right = sliceBitmap(bar, 288, 288);
   return [
-    bitmapPayload(renderRail({ width: RAIL_W, height: Math.min(144, contentH), ...rail }), CONTAINER.RAIL),
-    bitmapPayload(left, CONTAINER.ACTION_L),
-    bitmapPayload(right, CONTAINER.ACTION_R),
+    bitmapPayload(
+      renderDots({ width: DOTS_W, height: Math.min(144, PANEL_H), ...railState(nav) }),
+      CONTAINER.DOTS,
+    ),
+    bitmapPayload(sliceBitmap(bar, 0, 288), CONTAINER.ACTION_L),
+    bitmapPayload(sliceBitmap(bar, 288, 288), CONTAINER.ACTION_R),
   ];
 }
 

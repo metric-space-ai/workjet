@@ -23,7 +23,7 @@ const TITEL = {
  * @param {object|null} vorgang
  * @param {string[]} erlaubt  Abschnitts-IDs aus den Handy-Einstellungen
  */
-export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'aufgabe', 'notizen']) {
+export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'aufgabe', 'notizen'], width = 52) {
   const out = [];
   const push = (id, zeilen) => {
     const gefiltert = (zeilen || []).filter((z) => z != null);
@@ -38,19 +38,19 @@ export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'auf
   };
 
   const mail = vorgang?.quelle_json?.body_clean;
-  push('mail', mail ? layoutText(mail) : null);
+  push('mail', mail ? layoutText(mail, width) : null);
 
   const triage = vorgang?.triage_json;
-  push('antwort', triage?.antwort_vorschlag ? layoutText(triage.antwort_vorschlag) : null);
+  push('antwort', triage?.antwort_vorschlag ? layoutText(triage.antwort_vorschlag, width) : null);
 
   if (triage?.aufgabe?.beschreibung) {
     const zeilen = [];
     if (triage.aufgabe.agent) zeilen.push(`→ ${triage.aufgabe.agent}`);
-    zeilen.push(...layoutText(triage.aufgabe.beschreibung));
+    zeilen.push(...layoutText(triage.aufgabe.beschreibung, width));
     push('aufgabe', zeilen);
   }
 
-  push('notizen', triage?.notizen ? layoutText(triage.notizen) : null);
+  push('notizen', triage?.notizen ? layoutText(triage.notizen, width) : null);
 
   for (const seite of decision?.detail_seiten_json || []) {
     const id = String(seite.titel || 'detail').toLowerCase();

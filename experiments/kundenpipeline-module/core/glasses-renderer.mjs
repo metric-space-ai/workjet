@@ -214,12 +214,8 @@ export function decisionIcons(decision, copy = {}, detail = DETAIL_KURZ) {
     wert: "korrektur",
     label: copy.action_correct || "Korrektur diktieren",
   });
-  // Ausklappen: von der Ultrakurzfassung auf die ausfuehrliche Fassung.
-  icons.push({
-    glyph: detail >= DETAIL_MEHR ? "KURZ" : "MEHR",
-    wert: "detail",
-    label: detail >= DETAIL_MEHR ? "Kurzfassung" : "Mehr Details",
-  });
+  // KEIN Ausklapp-Icon hier: aufgeklappt wird per Druck auf die Rubrik
+  // selbst. In der Entscheidungsleiste stehen nur Entscheidungen.
   icons.push({ glyph: "SPÄT", wert: "vertagt", label: copy.action_snooze || "Auf später" });
   return icons;
 }

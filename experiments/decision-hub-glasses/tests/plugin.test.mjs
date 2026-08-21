@@ -37,7 +37,7 @@ test("the page carries head, title, body, rail and the two icon halves", async (
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   const page = sdk.calls.lastPage;
-  assert.equal(page.textObject.length, 3, "head + title + body");
+  assert.equal(page.textObject.length, 3, "status column + panel title + panel body");
   assert.equal(page.imageObject.length, 3, "rail + two icon halves");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
 });
@@ -46,7 +46,7 @@ test("the body never overflows its container", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
-  const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "body");
+  const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "panel-body");
   assert.ok(body.content.split("\n").length <= CONTENT_LINES);
   assert.equal(body.isEventCapture, 1);
 });

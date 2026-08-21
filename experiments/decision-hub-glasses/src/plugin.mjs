@@ -6,7 +6,7 @@
 
 import { decisionIcons, tabLabel } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { buildPage, buildBitmaps, CONTENT_LINES, LEVEL } from './layout.mjs';
+import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, LEVEL } from './layout.mjs';
 import { navigate, initialNav } from './nav.mjs';
 
 export function createDecisionHubPlugin({
@@ -30,7 +30,7 @@ export function createDecisionHubPlugin({
   function currentNav() {
     const d = decision();
     if (!d) return null;
-    const sections = sectionsOf(d, vorgangOf(d), allowedSections);
+    const sections = sectionsOf(d, vorgangOf(d), allowedSections, PANEL_CHARS);
     return {
       ...nav,
       tabs: decisions.map((item) => tabLabel(item, vorgangOf(item))),
@@ -38,6 +38,7 @@ export function createDecisionHubPlugin({
       sections,
       icons: decisionIcons(d, {}, nav.level === LEVEL.DETAIL ? 1 : 0),
       detail: nav.level === LEVEL.DETAIL ? 1 : 0,
+      typ: (d.typ || '').toUpperCase(),
     };
   }
 

@@ -4,7 +4,7 @@
 // geprueft). Also werden sie als Bitmap gezeichnet — das ist auch der einzige
 // Weg zu einer Auswahl, die wie ein Bedienelement aussieht statt wie Text.
 
-import { createBitmap, fillRect, strokeRect, line, circle, toBmp, toBase64 } from './bitmap.mjs';
+import { createBitmap, fillRect, setPixel, toBmp, toBase64 } from './bitmap.mjs';
 
 const ON = 15;
 const OFF = 0;
@@ -55,36 +55,41 @@ function drawLess(bmp, x, y, s, level) {
   line(bmp, x + s * 0.5, y + s * 0.56, x + s * 0.8, y + s * 0.82, level, 3);
 }
 
-const GLYPHS = {
-  annehmen: drawCheck,
-  ablehnen: drawCross,
-  korrektur: drawPencil,
-  vertagt: drawClock,
-  detail: drawMore,
-  detail_kurz: drawLess,
+import { drawIcon, ICON_SIZE } from './pixel-icons.mjs';
+
+const NAME = {
+  annehmen: 'annehmen',
+  ablehnen: 'ablehnen',
+  korrektur: 'korrektur',
+  vertagt: 'vertagt',
+  detail: 'mehr',
 };
 
 /**
- * Die komplette Aktionsleiste als ein Bitmap. Die fokussierte Aktion wird
- * invertiert gezeichnet (gefuellte Flaeche, Icon ausgespart) — das ist die
- * Auswahl, die man auf einem monochromen Display sofort erkennt.
+ * Aktionsleiste im Stil des Geraete-Dashboards: keine Rahmen, keine Kaesten —
+ * nur die Icons mit viel Luft. Ausgewaehlt heisst gefuellte Flaeche mit
+ * ausgespartem Icon; das ist auf monochrom gruen sofort erkennbar.
  */
 export function renderActionBar({ icons, focusIcon, width, height, detail = 0 }) {
   const bmp = createBitmap(width, height);
   const count = icons.length || 1;
   const cell = Math.floor(width / count);
-  const size = Math.min(cell - 14, height - 10);
+  const scale = Math.max(1, Math.floor(Math.min(cell - 16, height - 12) / ICON_SIZE));
+  const size = ICON_SIZE * scale;
   icons.forEach((icon, i) => {
-    const x = i * cell;
     const focused = i === focusIcon;
+    const x = i * cell + Math.floor((cell - size) / 2);
+    const y = Math.floor((height - size) / 2);
     if (focused) {
-      fillRect(bmp, x + 2, 2, cell - 4, height - 4, ON);
-    } else {
-      strokeRect(bmp, x + 2, 2, cell - 4, height - 4, SOFT, 1);
+      // Gefuellte Flaeche mit weichen Ecken statt Rahmen.
+      const px = i * cell + 6;
+      const pw = cell - 12;
+      fillRect(bmp, px, 3, pw, height - 6, ON);
+      fillRect(bmp, px - 1, 5, 1, height - 10, ON);
+      fillRect(bmp, px + pw, 5, 1, height - 10, ON);
     }
-    const key = icon.wert === 'detail' && detail >= 1 ? 'detail_kurz' : icon.wert;
-    const draw = GLYPHS[key] || drawCheck;
-    draw(bmp, x + (cell - size) / 2, (height - size) / 2, size, focused ? OFF : ON);
+    const key = icon.wert === 'detail' && detail >= 1 ? 'kurz' : NAME[icon.wert] || 'annehmen';
+    drawIcon(bmp, key, x, y, scale, focused ? OFF : ON, setPixel);
   });
   return bmp;
 }

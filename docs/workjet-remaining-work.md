@@ -429,9 +429,12 @@ finishes. Scope estimates are rough and name the files.
     piece of work, two boxes. ~~2 shell scripts plus a bin entry point —
     **small**.~~
     **KORREKTUR 2026-08-20: not achievable as written; it needs a decision.**
-    Measured while starting it. The bin already exists AND is tested (its tests
+    Measured while starting it. The bin already exists, is tested (its tests
     live inside `src/bin/workjet-web-stack.rs`, which is why a filename search
-    misses them). The blocker is that the two surfaces are not
+    misses them), and WORKS — built with `--features full` and driven by hand,
+    `--surface-version` answers `workjet-web-stack-json-v1` and a real
+    `{"request":{"query":"x"}}` envelope returned live search hits. So the bin
+    is not what is missing. The blocker is that the two surfaces are not
     interchangeable:
 
     - the scripts (`native/web-stack/scripts/`, not `scripts/`) probe EACH

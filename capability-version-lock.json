@@ -87,7 +87,7 @@
         "artifactHash": {
           "enforcement": "cross-host",
           "code": "6dfb6d5426553702219e452f48113c89a7b97326333009003aa732ed6f7d7a32",
-          "ctox": "7d9239ffb3cb67de7ca4d8716439abe272fbb9e0e04285444ba02ab1a47a2594",
+          "ctox": "99465451d84794d3e021893732537234deebe871fd84b9a1754404b1fd724ebe",
           "codeSource": "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts",
           "ctoxSource": "native/web-stack/schema/web-stack-tools.v1.json",
           "reason": "Both hosts carry a byte-level copy of the capability contract artifact. The lock digests each copy independently, so a hand-edit to either one fails release assembly."
@@ -129,7 +129,7 @@
         "artifactHash": {
           "enforcement": "cross-host",
           "code": "6dfb6d5426553702219e452f48113c89a7b97326333009003aa732ed6f7d7a32",
-          "ctox": "7d9239ffb3cb67de7ca4d8716439abe272fbb9e0e04285444ba02ab1a47a2594",
+          "ctox": "99465451d84794d3e021893732537234deebe871fd84b9a1754404b1fd724ebe",
           "codeSource": "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts",
           "ctoxSource": "native/web-stack/schema/web-stack-tools.v1.json",
           "reason": "Both hosts carry a byte-level copy of the capability contract artifact. The lock digests each copy independently, so a hand-edit to either one fails release assembly."

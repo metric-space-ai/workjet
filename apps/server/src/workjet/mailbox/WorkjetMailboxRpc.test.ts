@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   ThreadId,
@@ -449,6 +449,8 @@ const handlers = (
     readonly handoffAccepted?: boolean;
     readonly snapshotMissing?: boolean;
     readonly remoteConfigured?: boolean;
+    /** The delegation's target thread, for the worker-ownership check. */
+    readonly delegationTarget?: ThreadId | "unknown";
   } = {},
 ) => {
   const { recorded, delivery, snapshots, reassign } = doubles(options);
@@ -468,6 +470,12 @@ const handlers = (
       // Injected so a content-addressed snapshot composes deterministically.
       nowIso: Effect.succeed(NOW),
       sourceRemoteConfigured: () => Effect.succeed(options.remoteConfigured ?? true),
+      delegationTargetThreadId: () =>
+        Effect.succeed(
+          options.delegationTarget === undefined || options.delegationTarget === "unknown"
+            ? Option.none()
+            : Option.some(options.delegationTarget),
+        ),
     }),
   };
 };
@@ -607,6 +615,7 @@ it.effect("maps an oversized prompt onto payload-too-large and never delegates",
       environmentId: ENVIRONMENT_ID,
       nowIso: Effect.succeed(NOW),
       sourceRemoteConfigured: () => Effect.succeed(false),
+      delegationTargetThreadId: () => Effect.succeed(Option.none()),
     });
 
     const error = yield* Effect.flip(rpc.delegateTask(delegateInput));
@@ -615,6 +624,79 @@ it.effect("maps an oversized prompt onto payload-too-large and never delegates",
     expect(recorded.delegations).toHaveLength(0);
   }),
 );
+
+describe("per-operation authorization", () => {
+  // Replacing one orchestrator-only gate with per-operation scopes must make
+  // the surface FINER, never wider. These pin both halves of that.
+
+  it.effect("lets a worker reply, review and update its OWN delegation", () =>
+    Effect.gen(function* () {
+      // Until now a worker could not use the mailbox at all, so the only way
+      // to answer the orchestrator that dispatched it was out of band.
+      const { handlers: rpc } = handlers("worker", { delegationTarget: SOURCE_THREAD_ID });
+
+      yield* rpc.reply(replyInput);
+      yield* rpc.updateDelegation(updateInput);
+    }),
+  );
+
+  it.effect("refuses a worker acting on a delegation that is not its own", () =>
+    Effect.gen(function* () {
+      // The delegation exists and targets a DIFFERENT thread. Without this
+      // check, opening these operations to workers would hand every worker
+      // authority over every delegation on the machine — strictly more power
+      // than the gate being replaced.
+      const { handlers: rpc } = handlers("worker", {
+        delegationTarget: ThreadId.make("thread-someone-else"),
+      });
+
+      const replyError = yield* Effect.flip(rpc.reply(replyInput));
+      expect(replyError.reason).toBe("unauthorized");
+
+      const updateError = yield* Effect.flip(rpc.updateDelegation(updateInput));
+      expect(updateError.reason).toBe("unauthorized");
+    }),
+  );
+
+  it.effect("denies a worker when the delegation cannot be resolved", () =>
+    Effect.gen(function* () {
+      // An unresolvable delegation must DENY, not allow: the alternative lets
+      // a worker act on something this server cannot vouch for, and lets it
+      // probe for which delegation ids exist.
+      const { handlers: rpc } = handlers("worker", { delegationTarget: "unknown" });
+
+      const error = yield* Effect.flip(rpc.reply(replyInput));
+      expect(error.reason).toBe("unauthorized");
+    }),
+  );
+
+  it.effect("keeps reassignment orchestrator-only even for the owning worker", () =>
+    Effect.gen(function* () {
+      // Reassignment moves a delegation to a different target. A worker doing
+      // that to its own delegation would hand away work it was given, which is
+      // an orchestration decision — so ownership does NOT unlock it.
+      const { handlers: rpc } = handlers("worker", { delegationTarget: SOURCE_THREAD_ID });
+
+      const error = yield* Effect.flip(
+        rpc.reassignDelegation({
+          sourceThreadId: SOURCE_THREAD_ID,
+          delegationId: DELEGATION_ID,
+          targetEnvironmentId: ENVIRONMENT_ID,
+          targetThreadId: SOURCE_THREAD_ID,
+        }),
+      );
+      expect(error.reason).toBe("unauthorized");
+    }),
+  );
+
+  it.effect("still refuses a standard thread on every operation", () =>
+    Effect.gen(function* () {
+      const { handlers: rpc } = handlers("standard", { delegationTarget: SOURCE_THREAD_ID });
+      const error = yield* Effect.flip(rpc.reply(replyInput));
+      expect(error.reason).toBe("unauthorized");
+    }),
+  );
+});
 
 it.effect("replies on a delegation thread with a server-derived source address", () =>
   Effect.gen(function* () {
@@ -718,9 +800,16 @@ it.effect("updates a delegation and returns the resulting state", () =>
   }),
 );
 
+// NOTE on the worker row: since per-operation scopes landed, a worker is no
+// longer refused for BEING a worker — it is refused because this harness
+// resolves no delegation target, so ownership cannot be established and the
+// check denies. The owning-worker case is allowed, and both directions are
+// covered in "per-operation authorization" above. The row stays because
+// "a worker with no provable claim is refused" is still the property that
+// matters here.
 for (const scenario of [
   { label: "a standard thread", role: "standard" as const, deletedAt: null },
-  { label: "a worker thread", role: "worker" as const, deletedAt: null },
+  { label: "a worker thread with no provable claim", role: "worker" as const, deletedAt: null },
   { label: "a deleted orchestrator thread", role: "orchestrator" as const, deletedAt: NOW },
   { label: "a thread that does not exist", role: "missing" as const, deletedAt: null },
 ]) {
@@ -747,6 +836,8 @@ for (const scenario of [
 
 it.effect("answers an unauthorized update with the bounded mailbox reason only", () =>
   Effect.gen(function* () {
+    // A worker whose ownership cannot be resolved: the reason must stay the
+    // bounded `unauthorized`, never leaking whether the delegation exists.
     const error = yield* Effect.flip(handlers("worker").handlers.updateDelegation(updateInput));
 
     expect(error).toBeInstanceOf(WorkjetMailboxError);

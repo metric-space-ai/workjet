@@ -2,6 +2,7 @@ import {
   WorkjetGitBranchName,
   WorkjetMailboxError,
   WORKJET_HANDOFF_LIST_MAX,
+  type WorkjetDelegationId,
   type EnvironmentId,
   type ThreadId,
   type WorkjetHandoffBranchRef,
@@ -107,6 +108,21 @@ export interface WorkjetMailboxRpcDependencies {
    * returns `false`, which understates rather than overstates reachability.
    */
   readonly sourceRemoteConfigured: (threadId: ThreadId) => Effect.Effect<boolean>;
+  /**
+   * The TARGET thread of a delegation, or `None` when it is unknown here.
+   *
+   * Used for exactly one thing: deciding whether a WORKER caller is acting on
+   * its OWN delegation. Opening these operations to workers without it would
+   * let any worker thread reply to, review, or transition ANY delegation on
+   * this machine, which is a strictly larger authority than the orchestrator
+   * gate it replaces. `None` therefore denies rather than allows.
+   *
+   * A port, like every other dependency here, so this file stays a pure
+   * handler factory with no service of its own.
+   */
+  readonly delegationTargetThreadId: (
+    delegationId: WorkjetDelegationId,
+  ) => Effect.Effect<Option.Option<ThreadId>>;
 }
 
 export interface WorkjetMailboxRpcHandlers {
@@ -165,22 +181,76 @@ const boundSnapshotError = (cause: { readonly _tag: string }): WorkjetMailboxErr
 export const makeWorkjetMailboxRpcHandlers = (
   dependencies: WorkjetMailboxRpcDependencies,
 ): WorkjetMailboxRpcHandlers => {
-  const requireOrchestratorSource = (threadId: ThreadId) =>
-    dependencies.query.getThreadDetailById(threadId).pipe(
+  /**
+   * Per-operation authorization, replacing a single orchestrator-only gate.
+   *
+   * Two roles can act, and they can act on DIFFERENT things:
+   *
+   *  - an orchestrator may address any delegation it owns the conversation
+   *    for, which is what it always could;
+   *  - a worker may act ONLY on the delegation whose target thread it is.
+   *
+   * That ownership check is the whole reason this is not just a widened role
+   * list. Letting workers call these operations without it would grant every
+   * worker thread authority over every delegation on the machine — a strictly
+   * larger power than the gate being replaced, in the name of making it
+   * finer-grained.
+   */
+  const requireSource = (input: {
+    readonly threadId: ThreadId;
+    readonly allow: ReadonlyArray<"orchestrator" | "worker">;
+  }) =>
+    dependencies.query.getThreadDetailById(input.threadId).pipe(
       Effect.mapError(() => failure("mailbox-unavailable")),
       Effect.flatMap((option) =>
         Option.match(option, {
           onNone: () => Effect.fail(failure("unauthorized")),
-          onSome: (thread) =>
-            thread.deletedAt !== null || thread.workjetConfig.role !== "orchestrator"
+          onSome: (thread) => {
+            const role = thread.workjetConfig.role;
+            return thread.deletedAt !== null ||
+              (role !== "orchestrator" && role !== "worker") ||
+              !input.allow.includes(role)
               ? Effect.fail(failure("unauthorized"))
               : Effect.succeed({
                   environmentId: dependencies.environmentId,
-                  threadId,
-                } as const),
+                  threadId: input.threadId,
+                  role,
+                } as const);
+          },
         }),
       ),
     );
+
+  const requireOrchestratorSource = (threadId: ThreadId) =>
+    requireSource({ threadId, allow: ["orchestrator"] }).pipe(
+      Effect.map(({ environmentId, threadId: id }) => ({ environmentId, threadId: id }) as const),
+    );
+
+  /**
+   * Orchestrator, or the worker that OWNS this delegation. An unknown
+   * delegation denies: the alternative is letting a worker probe for, or act
+   * on, delegations this machine cannot vouch for.
+   */
+  const requireDelegationParticipant = (input: {
+    readonly threadId: ThreadId;
+    readonly delegationId: WorkjetDelegationId;
+  }) =>
+    Effect.gen(function* () {
+      const source = yield* requireSource({
+        threadId: input.threadId,
+        allow: ["orchestrator", "worker"],
+      });
+      if (source.role === "orchestrator") {
+        return { environmentId: source.environmentId, threadId: source.threadId } as const;
+      }
+      const target = yield* dependencies
+        .delegationTargetThreadId(input.delegationId)
+        .pipe(Effect.catchCause(() => Effect.succeed(Option.none<ThreadId>())));
+      if (Option.isNone(target) || target.value !== input.threadId) {
+        return yield* Effect.fail(failure("unauthorized"));
+      }
+      return { environmentId: source.environmentId, threadId: source.threadId } as const;
+    });
 
   const normalizeBody = (body: WorkjetMessageBody): WorkjetMessageBody =>
     body._tag === "inline"
@@ -263,7 +333,13 @@ export const makeWorkjetMailboxRpcHandlers = (
 
   const reply: WorkjetMailboxRpcHandlers["reply"] = Effect.fn("WorkjetMailboxRpc.reply")(
     function* (input) {
-      const sender = yield* requireOrchestratorSource(input.sourceThreadId);
+      // A worker replying on its OWN delegation is the point of this path:
+      // until now a worker could not use the mailbox at all, so the only way
+      // to answer an orchestrator was out of band.
+      const sender = yield* requireDelegationParticipant({
+        threadId: input.sourceThreadId,
+        delegationId: input.delegationId,
+      });
       const outcome = yield* dependencies.delivery.reply(sender, {
         targetWorkspaceId: input.targetWorkspaceId ?? dependencies.workspaceId,
         targetEnvironmentId: input.targetEnvironmentId,
@@ -287,7 +363,12 @@ export const makeWorkjetMailboxRpcHandlers = (
   const requestReview: WorkjetMailboxRpcHandlers["requestReview"] = Effect.fn(
     "WorkjetMailboxRpc.requestReview",
   )(function* (input) {
-    const sender = yield* requireOrchestratorSource(input.sourceThreadId);
+    // The worker asks for review of the work it just did; that is the natural
+    // direction of this operation, and it was previously impossible.
+    const sender = yield* requireDelegationParticipant({
+      threadId: input.sourceThreadId,
+      delegationId: input.delegationId,
+    });
     const outcome = yield* dependencies.delivery.requestReview(sender, {
       targetWorkspaceId: input.targetWorkspaceId ?? dependencies.workspaceId,
       targetEnvironmentId: input.targetEnvironmentId,
@@ -317,10 +398,14 @@ export const makeWorkjetMailboxRpcHandlers = (
   const updateDelegation: WorkjetMailboxRpcHandlers["updateDelegation"] = Effect.fn(
     "WorkjetMailboxRpc.updateDelegation",
   )(function* (input) {
-    // The source thread must still be an orchestrator thread, even though an
-    // update carries no target address: it is the caller identity the delivery
-    // service records as the actor of the transition.
-    const actor = yield* requireOrchestratorSource(input.sourceThreadId);
+    // The caller identity the delivery service records as the actor of the
+    // transition. An update carries no target address, so the delegation id is
+    // the only thing tying a worker to what it may touch — which is exactly
+    // what the participant check reads.
+    const actor = yield* requireDelegationParticipant({
+      threadId: input.sourceThreadId,
+      delegationId: input.delegationId,
+    });
     const outcome = yield* dependencies.delivery.updateDelegation(actor, {
       delegationId: input.delegationId,
       update:
@@ -344,8 +429,10 @@ export const makeWorkjetMailboxRpcHandlers = (
   const reassignDelegation: WorkjetMailboxRpcHandlers["reassignDelegation"] = Effect.fn(
     "WorkjetMailboxRpc.reassignDelegation",
   )(function* (input) {
-    // Same two-step authorization as an update: transport scope first, then the
-    // caller-named SOURCE thread must still be a live orchestrator thread.
+    // ORCHESTRATOR ONLY, deliberately, unlike reply/requestReview/update.
+    // Reassignment moves a delegation to a different target; a worker doing
+    // that to its own delegation would be handing away work it was given,
+    // which is an orchestration decision and not the worker's to make.
     yield* requireOrchestratorSource(input.sourceThreadId);
     // A thread on another machine is not a destination this server can run, and
     // saying so costs nothing a caller could not already infer from its own

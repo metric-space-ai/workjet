@@ -487,6 +487,15 @@ const makeWsRpcLayer = (
             ),
             Effect.orElseSucceed(() => false),
           ),
+        // Reads the delegation's target thread so a WORKER caller can be shown
+        // to own the delegation it is acting on. Any failure answers `None`,
+        // which DENIES — the safe direction, since the alternative would let a
+        // worker act on a delegation this server cannot vouch for.
+        delegationTargetThreadId: (delegationId) =>
+          workjetMailboxStore.getDelegation(delegationId).pipe(
+            Effect.map(Option.map((record) => record.delegation.target.threadId)),
+            Effect.orElseSucceed(() => Option.none()),
+          ),
       });
       // The one-shot legacy Swift Workjet import. Same construction discipline:
       // a handler factory over injected ports. The runner itself is resolved

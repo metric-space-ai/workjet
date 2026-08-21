@@ -3,6 +3,7 @@ import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -28,6 +29,7 @@ import {
   type OrchestrationShellStreamItem,
   type OrchestrationThreadStreamItem,
   isWorkjetGitCommitHash,
+  type WorkjetHarness,
   WorkjetGitCommitHash,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
@@ -140,6 +142,7 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as WorkjetHarnessAvailability from "./workjet/WorkjetHarnessAvailability.ts";
 import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -395,6 +398,9 @@ const makeWsRpcLayer = (
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const gitVcsDriver = yield* GitVcsDriver.GitVcsDriver;
+      const harnessProbePort = WorkjetHarnessAvailability.makeChildProcessHarnessProbePort(
+        yield* ChildProcessSpawner.ChildProcessSpawner,
+      );
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -1782,6 +1788,41 @@ const makeWsRpcLayer = (
             greppyRuntime
               .install()
               .pipe(Effect.mapError(GreppyRuntime.toWorkjetGreppyOperationError)),
+            { "rpc.aggregate": "workjet" },
+          ),
+        // Probes the harnesses named by the configured worker profiles, so the
+        // answer covers what this server would actually dispatch to rather
+        // than the whole catalog. No configured profiles probes nothing, which
+        // is the honest answer to "which of your harnesses work" when none are
+        // configured.
+        // Probes the harnesses named by the configured worker profiles, so the
+        // answer covers what this server would actually dispatch to rather than
+        // the whole catalog.
+        [WS_METHODS.workjetHarnessInspect]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetHarnessInspect,
+            serverSettings.getSettings.pipe(
+              Effect.map((settings) =>
+                settings.workjet.workerProfiles.map((profile) => profile.harness),
+              ),
+              // A settings read that fails yields NO harnesses to probe, and
+              // that is the safe direction rather than a convenient one: the
+              // dispatch gate refuses any harness the snapshot does not list,
+              // so an unreadable configuration refuses everything instead of
+              // reporting a working host it could not actually inspect.
+              Effect.catch((cause) =>
+                Effect.logWarning("Failed to read worker profiles for the harness probe", {
+                  detail: cause.message,
+                }).pipe(Effect.as([] as ReadonlyArray<WorkjetHarness>)),
+              ),
+              Effect.flatMap((harnesses) =>
+                WorkjetHarnessAvailability.probeHarnessAvailability({
+                  port: harnessProbePort,
+                  harnesses,
+                  nowIso,
+                }),
+              ),
+            ),
             { "rpc.aggregate": "workjet" },
           ),
         [WS_METHODS.workjetWorktreesInspect]: ({ root }) =>

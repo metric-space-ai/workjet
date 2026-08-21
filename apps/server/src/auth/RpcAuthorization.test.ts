@@ -170,3 +170,12 @@ describe("RPC authorization scopes", () => {
     }
   });
 });
+
+describe("harness inspection scope", () => {
+  it("requires only a READ scope, because inspecting installs nothing", () => {
+    // The mutating counterparts are deliberately not declared at all — there
+    // is no harness installer in the app — so this must not quietly carry an
+    // operate scope in anticipation of them.
+    expect(RPC_REQUIRED_SCOPES[WS_METHODS.workjetHarnessInspect]).toBe(AuthOrchestrationReadScope);
+  });
+});

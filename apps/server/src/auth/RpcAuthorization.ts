@@ -52,6 +52,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetBackgroundPolicy]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGreppyInspect]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGreppyInstall]: AuthOrchestrationOperateScope,
+  // A pure read of what the host already has; the mutating counterparts are
+  // deliberately not declared (see the note beside the method name).
+  [WS_METHODS.workjetHarnessInspect]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetWorktreesInspect]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayCatalog]: AuthOrchestrationReadScope,

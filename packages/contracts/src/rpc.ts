@@ -192,6 +192,7 @@ import {
 import { VcsError } from "./vcs.ts";
 import {
   GreppyRuntimeSnapshot,
+  WorkjetHarnessAvailabilitySnapshot,
   WorkjetGatewayAddApiKeyAccountInput,
   WorkjetGatewayAddApiKeyAccountResult,
   WorkjetGatewayCatalog,
@@ -339,6 +340,18 @@ export const WS_METHODS = {
   workjetGreppyInspect: "workjet.greppy.inspect",
   workjetGreppyInstall: "workjet.greppy.install",
   workjetWorktreesInspect: "workjet.worktrees.inspect",
+  // Live harness availability, replacing the hand-toggled `available` flag on
+  // WorkjetHarnessConfiguration.
+  //
+  // INSPECT ONLY, deliberately. The plan also asks for install/update/remove,
+  // but there is no harness installer anywhere in the app: Greppy has one
+  // because it is a MANAGED, pinned binary this app downloads, while
+  // claude-code, codex-cli and the rest are third-party CLIs the operator
+  // installs themselves. Declaring three RPCs with nothing to call would ship
+  // a surface that always fails; building them means deciding that the app may
+  // run third-party installers on the operator's host, which is a security
+  // decision and not a missing handler.
+  workjetHarnessInspect: "workjet.harness.inspect",
 
   // Environment-scoped Workjet provider gateway authority
   workjetGatewayStatus: "workjet.providerGateway.status",
@@ -604,6 +617,12 @@ export const WsWorkjetGreppyInstallRpc = Rpc.make(WS_METHODS.workjetGreppyInstal
   payload: Schema.Struct({}),
   success: GreppyRuntimeSnapshot,
   error: WorkjetGreppyRpcError,
+});
+
+export const WsWorkjetHarnessInspectRpc = Rpc.make(WS_METHODS.workjetHarnessInspect, {
+  payload: Schema.Struct({}),
+  success: WorkjetHarnessAvailabilitySnapshot,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsWorkjetWorktreesInspectRpc = Rpc.make(WS_METHODS.workjetWorktreesInspect, {
@@ -1467,6 +1486,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
   WsWorkjetGreppyInspectRpc,
+  WsWorkjetHarnessInspectRpc,
   WsWorkjetGreppyInstallRpc,
   WsWorkjetWorktreesInspectRpc,
   WsWorkjetGatewayStatusRpc,

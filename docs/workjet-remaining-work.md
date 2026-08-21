@@ -400,8 +400,30 @@ finishes. Scope estimates are rough and name the files.
     value asserts a delivery that did not happen and sends the source after a
     branch it cannot fetch. A test pins `branch` as absent so a later change
     must face that decision instead of drifting into it.
-    STILL OPEN and unblocked: `paths`, the diff and Greppy reference kinds
-    (neither type exists), and reference resolution on the receiving side.
+    **DIFF REFERENCE DONE 2026-08-20, commit 57af1036d.**
+    `WorkjetDiffReference` is a revision RANGE, never diff text, so the
+    receiver resolves it against its own repository as the plan requires. Both
+    ends must be commit hashes — "HEAD", "main" and path-shaped revisions are
+    refused, since a symbolic revision resolves to something else on the
+    receiver. `diffs` is OPTIONAL where its siblings are required: making it
+    required turned six round-trip tests red, which is exactly what an older
+    sender's payload would do on a newer receiver. Mutation-verified.
+
+    **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
+    the server's ONLY Greppy surface is
+    `greppy search --root <cwd> --json … <task>`
+    (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
+    entry point to reference instead. Since the plan requires that "remote
+    servers resolve references against their own authorized environment
+    state", a Greppy reference must be RE-RUNNABLE, which means carrying that
+    free text. That would be the first prose channel in a contract whose stated
+    discipline is bounded ids and closed literals with no field a payload can
+    travel in. Either accept a bounded query field as a deliberate, documented
+    exception, or add a symbol-shaped Greppy entry point first and reference
+    that. Not a schema addition.
+
+    STILL OPEN and unblocked: `paths` population, and reference resolution on
+    the receiving side.
 14. **Handoff head commit and acknowledgement envelope.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new
     `sourceHeadCommit` port (GitVcsDriver.resolveCommit) fills the optionalKey

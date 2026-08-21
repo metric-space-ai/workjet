@@ -39,6 +39,7 @@ import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import { codexWorkjetTurnOptions } from "./CodexWorkjetTurnOptions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -397,9 +398,7 @@ export function buildTurnStartParams(input: {
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    ...(input.compiledManagedPrompt !== undefined
-      ? { compiledManagedPrompt: input.compiledManagedPrompt }
-      : {}),
+    ...codexWorkjetTurnOptions(input),
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -1780,9 +1779,7 @@ export const makeCodexSessionRuntime = (
             ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
             ...(input.effort ? { effort: input.effort } : {}),
             ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
-            ...(options.compiledManagedPrompt !== undefined
-              ? { compiledManagedPrompt: options.compiledManagedPrompt }
-              : {}),
+            ...codexWorkjetTurnOptions(options),
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

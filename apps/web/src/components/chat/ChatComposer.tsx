@@ -90,8 +90,11 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerFooterControls } from "./ComposerFooterControls";
-import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
-import { WorkjetRoleControl, type WorkjetSelectableRole } from "./WorkjetRoleControl";
+import {
+  WorkjetCapabilityMenu,
+  WorkjetRoleControl,
+  type WorkjetSelectableRole,
+} from "./workjetSurfaces";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";

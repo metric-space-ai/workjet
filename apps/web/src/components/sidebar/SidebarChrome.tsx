@@ -7,13 +7,12 @@ import {
 } from "lucide-react";
 import { memo, useCallback, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import type { WorkjetProductMode } from "@t3tools/contracts/settings";
 
 import { useCrossModeNavigator } from "../../crossMode/useCrossModeNavigator";
 import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
-import { resolveWorkjetProductMode } from "../../workjetProductMode";
+import { resolveWorkjetProductMode, type WorkjetProductMode } from "../../workjetProductMode";
 import ctoxMarkUrl from "../../../../../assets/ctox/ctox-app-icon.png";
 import {
   resolveEnvironmentIdentificationPillLabel,

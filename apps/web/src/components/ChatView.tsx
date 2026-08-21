@@ -314,8 +314,7 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
-import { WorkjetHandoffInbox } from "./WorkjetHandoffInbox";
-import { WorkjetWorkerOverview } from "./WorkjetWorkerOverview";
+import { WorkjetHandoffInbox, WorkjetWorkerOverview } from "./workjetSurfaces";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {

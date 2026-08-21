@@ -406,12 +406,17 @@ finishes. Scope estimates are rough and name the files.
     wiring. Re-scope as **medium**, and settle the producer before the mount.
     Item 17 (dead-letter state) has the same shape: its audit atom
     (`server.ts:1109`) is likewise read by no component.
-19. **Wire the gateway host artifact resolver into startup and packaging.** §6.
-    `resolveProviderGatewayHostExecutable` has no production call site, and
-    `scripts/build-desktop-artifact.ts` contains no `provider-gateway` reference
-    at all, so nothing ships or resolves the host in a packaged build. One call
-    site plus an extra-resource entry — **small**, and independent of the tag
-    decision.
+19. ~~**Wire the gateway host artifact resolver into startup and packaging.**~~
+    **DONE 2026-08-20, commit bfcda507d.** §6. The caller is the primary
+    backend's environment (`DesktopBackendConfiguration.ts`), which is where
+    the resolved path has to land — the server's own default is a state-dir
+    path a packaged build never populates. Only the primary backend gets it;
+    the WSL backend runs inside the distro where a host-side path means
+    nothing. Packaging includes the host only when a staged directory is
+    passed, so the wiring is inert until the release tag exists (decision 1)
+    and does not break packaged builds meanwhile. The resource-directory string
+    is pinned on both sides, since the scripts tsconfig cannot import
+    apps/desktop.
 20. ~~**Three cheap upstream conflict mitigations.**~~ **DONE 2026-08-20, commit
     adbf8b9e4.** §14. `CodexWorkjetTurnOptions.ts` now holds the fork's turn
     options behind one spread, so upstream's additions and Workjet's stop

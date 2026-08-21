@@ -31,8 +31,16 @@ export function navigate(nav, event, dims) {
         return { nav: next, action: null };
       }
       if (next.level === LEVEL.DETAIL) {
-        if (next.page < dims.pages - 1) next.page += 1;
-        else { next.level = LEVEL.RUBRIK; next.page = 0; } // Ende der Rubrik: zurueck in die Uebersicht
+        if (next.page < dims.pages - 1) {
+          next.page += 1;
+          return { nav: next, action: null };
+        }
+        // Ende der Langfassung: NICHT zurueck in die Kurzfassung, sondern
+        // weiter zur naechsten Seite — der Lesefluss bricht sonst ab.
+        next.level = LEVEL.RUBRIK;
+        next.page = 0;
+        if (next.sectionIndex < lastSection) next.sectionIndex += 1;
+        else next.focusIcon = 0;
         return { nav: next, action: null };
       }
       if (next.sectionIndex < lastSection) next.sectionIndex += 1;

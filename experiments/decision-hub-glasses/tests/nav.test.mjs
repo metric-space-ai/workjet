@@ -57,3 +57,38 @@ test('double press collapses an expanded rubric', () => {
   assert.equal(out.nav.level, LEVEL.RUBRIK);
   assert.deepEqual(out.action, { type: 'collapse' });
 });
+
+// Die Punkteleiste bildet die Seiten 1:1 ab — ein Punkt je Seite, der aktive
+// ist die aktuelle Seite. Alles andere ist eine Luege ueber die Position.
+test("the dot rail draws exactly one dot per page", async () => {
+  const { renderDots } = await import("../src/dots.mjs");
+  for (const count of [1, 2, 5, 9]) {
+    const bmp = renderDots({ width: 8, height: 140, count, active: 0 });
+    // helle Pixel (15) = aktiver Punkt, gedaempfte (6) = die uebrigen
+    const dim = new Set();
+    for (let y = 0; y < bmp.height; y += 1) {
+      for (let x = 0; x < bmp.width; x += 1) {
+        if (bmp.px[y * bmp.width + x] === 6) dim.add(y);
+      }
+    }
+    // jeder gedaempfte Punkt ist 2 px hoch
+    const dimDots = Math.round(dim.size / 2);
+    assert.equal(dimDots + 1, count, `count=${count}: erwartet ${count} Punkte, gezeichnet ${dimDots + 1}`);
+  }
+});
+
+// Druck und Doppeldruck kommen als sysEvent; bei CLICK fehlt eventType, weil
+// Protobuf die Null weglaesst. Ohne diese Regel loest kein Druck etwas aus.
+test("press and double press are decoded from sysEvent", async () => {
+  const { osEventFrom } = await import("../src/event-decode.mjs");
+  assert.equal(osEventFrom({ sysEvent: { eventSource: 1 } }), 0, "press");
+  assert.equal(osEventFrom({ sysEvent: { eventType: 3, eventSource: 1 } }), 3, "double press");
+  assert.equal(osEventFrom({ textEvent: { eventType: 2 } }), 2, "scroll stays a text event");
+});
+
+test("lifecycle and IMU reports are never gestures", async () => {
+  const { osEventFrom } = await import("../src/event-decode.mjs");
+  for (const type of [4, 5, 6, 7, 8]) {
+    assert.equal(osEventFrom({ sysEvent: { eventType: type, eventSource: 1 } }), null, `type ${type}`);
+  }
+});

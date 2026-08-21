@@ -13,7 +13,7 @@ import {
   instanceFrom,
   passesFilter,
 } from "./settings.mjs";
-import { osEventFrom, menuItemFrom } from "./event-decode.mjs";
+import { osEventFrom, imuFrom } from "./event-decode.mjs";
 
 const $ = (sel) => document.querySelector(sel);
 

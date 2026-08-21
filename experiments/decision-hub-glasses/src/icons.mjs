@@ -98,10 +98,13 @@ export function renderActionBar({ icons, focusIcon, width, height, detail = 0, c
 }
 
 /** Kanal-Icons links neben den Eintraegen — ohne Rahmen, nur das Zeichen. */
-export function renderChannelColumn({ width, height, pitch, channels, active }) {
+export function renderChannelColumn({ width, height, pitch, channels, active, rows }) {
   const bmp = createBitmap(width, height);
   channels.forEach((channel, i) => {
-    const y = i * pitch + Math.floor((pitch - ICON_SIZE) / 2);
+    // `rows` gibt die tatsaechliche Textzeile je Eintrag an: unter dem aktiven
+    // Eintrag steht die Icon-Leiste, alles darunter rutscht eine Zeile tiefer.
+    const rowIndex = rows ? rows[i] : i;
+    const y = rowIndex * pitch + Math.floor((pitch - ICON_SIZE) / 2);
     if (y + ICON_SIZE > height) return;
     const x = Math.floor((width - ICON_SIZE) / 2);
     drawIcon(bmp, channel, x, y, 1, i === active ? ON : 8, setPixel);

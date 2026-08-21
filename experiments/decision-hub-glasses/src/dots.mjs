@@ -7,18 +7,15 @@ export function renderDots({ width, height, count, active }) {
   const bmp = createBitmap(width, height);
   const segments = Math.max(1, count);
   const cx = Math.floor(width / 2) - 1;
-  // Wie in der Vorlage: eine gleichmaessige Punktreihe ueber die volle Hoehe,
-  // die aktuelle Position als laengerer, heller Block.
-  const pitch = 10;
-  const dots = Math.max(segments, Math.floor((height - 8) / pitch));
-  const top = Math.floor((height - (dots - 1) * pitch) / 2);
-  const activeDot = segments > 1
-    ? Math.round((active / (segments - 1)) * (dots - 1))
-    : Math.floor(dots / 2);
-  for (let i = 0; i < dots; i += 1) {
+  // EIN Punkt je Seite, 1:1 — keine synthetische Punktreihe, in die eine
+  // Position hineingerechnet wird. Die aktuelle Seite ist der helle Block.
+  const pitch = Math.max(8, Math.min(14, Math.floor((height - 12) / Math.max(1, segments))));
+  const spanH = (segments - 1) * pitch;
+  const top = Math.max(6, Math.floor((height - spanH) / 2));
+  for (let i = 0; i < segments; i += 1) {
     const y = top + i * pitch;
-    if (i === activeDot) {
-      fillRect(bmp, cx - 1, y - 4, 4, 12, 15);
+    if (i === active) {
+      fillRect(bmp, cx - 1, y - 3, 4, 10, 15);
     } else {
       fillRect(bmp, cx, y, 2, 2, 6);
     }

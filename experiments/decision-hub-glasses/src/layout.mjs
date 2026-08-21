@@ -31,10 +31,10 @@ const COL_W = 150;
 const LIST_Y = 8;
 export const MAX_ITEMS = 5;
 
-// Icon-Leiste unten links
-const BAR_H = 40;
+// Icon-Leiste: sie steht UNTER dem aktiven Eintrag, damit man nach den Icons
+// nahtlos auf dem naechsten Eintrag landet.
+const BAR_H = 30;
 const BAR_W = COL_W + CH_W;
-const BAR_Y = DISPLAY_H - BAR_H - 6;
 
 // Punkte fuer die Seitennavigation
 const DOTS_X = COL_X + CH_W + COL_W + 2;
@@ -60,8 +60,10 @@ const DIM = 2;
 
 export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
 
-export const CONTENT_LINES = Math.floor((BOX_H - 24) / LINE_H) - 1;
+export const CONTENT_LINES = Math.floor((BOX_H - 20) / LINE_H) - 2;
 export const PANEL_CHARS = Math.floor((BOX_W - 26) / CHAR_W);
+// Zeichen je Zeile inklusive Rahmen.
+export const BOX_CHARS = Math.floor(BOX_W / CHAR_W);
 const ITEM_CHARS = Math.floor((COL_W - 6) / CHAR_W);
 
 /** Rechtsbuendig auffuellen — das Muster der Werte in der Vorlage. */
@@ -81,41 +83,70 @@ export function visibleCases(nav) {
 /** Linke Spalte: eine Zeile je anstehender Entscheidung, ohne Rahmen. */
 export function itemLines(nav) {
   const { from, tabs } = visibleCases(nav);
-  return tabs.map((label, i) => {
+  const lines = [];
+  tabs.forEach((label, i) => {
     const active = from + i === nav.tabIndex;
-    const text = String(label).slice(0, ITEM_CHARS - 2);
-    return `${active ? '>' : ' '}${text}`;
+    lines.push(`${active ? '>' : ' '}${String(label).slice(0, ITEM_CHARS - 2)}`);
+    // Platz fuer die Icon-Leiste direkt unter dem aktiven Eintrag.
+    if (active) lines.push('');
   });
+  return lines;
 }
 
-export function titleLine(nav) {
+/** y-Position der Icon-Leiste: direkt unter dem aktiven Eintrag. */
+export function barY(nav) {
+  const { from, tabs } = visibleCases(nav);
+  const rowsBefore = Math.max(0, Math.min(nav.tabIndex - from, tabs.length - 1)) + 1;
+  return LIST_Y + rowsBefore * LINE_H + 2;
+}
+
+export function boxTitle(nav) {
   const section = nav.sections[nav.sectionIndex];
   if (nav.level === LEVEL.DETAIL && section) {
     const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
-    return pages > 1
-      ? row(section.titel, `${page + 1}/${pages}`, PANEL_CHARS)
-      : section.titel;
+    return pages > 1 ? `${section.titel} ${page + 1}/${pages}` : section.titel;
   }
-  return row(nav.betreff || 'ENTSCHEIDUNGSVORLAGE', nav.typ || '', PANEL_CHARS);
+  return section ? section.titel : (nav.betreff || '');
+}
+
+/**
+ * Die Box zeigt IMMER genau eine Seite: in der Uebersicht den Anfang der
+ * Rubrik, aufgeklappt die jeweilige Seite ihres Volltexts. Ein Scroll
+ * blaettert zur naechsten Rubrik, ein Druck klappt die aktuelle auf.
+ */
+/**
+ * Der Rahmen wird als Text gezeichnet, damit der Rubriktitel IN der oberen
+ * Kante sitzt und nicht wie Inhalt aussieht:
+ *
+ *   ╭─ MAIL ──────────────╮
+ *   │ Guten Morgen, …      │
+ *   ╰──────────────────────╯
+ *
+ * Die Rahmenzeichen sind am Simulator als vorhanden geprueft.
+ */
+export function framedBox(title, lines, width, height) {
+  // KEIN Textrahmen: die Geraetefont ist proportional, die rechte Kante
+  // franst aus (am Simulator gesehen). Den Rahmen zeichnet der Container,
+  // hier trennt nur eine Linie den Rubriktitel vom Inhalt — sonst liest sich
+  // die Kategorie wie Text.
+  // Das Rahmenzeichen ist breiter als ein Durchschnittszeichen; eine Linie
+  // ueber die volle Breite bricht um. Eine kurze Linie unter dem Titel
+  // trennt ohnehin klarer als ein Strich quer durch die Box.
+  const rule = '─'.repeat(Math.max(4, Math.min(16, Math.round(width * 0.35))));
+  return [title, rule, ...lines.slice(0, height)];
 }
 
 export function contentLines(nav) {
-  if (!nav.sections.length) return ['Keine Inhalte.'];
+  const section = nav.sections[nav.sectionIndex];
+  if (!section) return ['Keine Inhalte.'];
   if (nav.level === LEVEL.DETAIL) {
-    return pageOf(nav.sections[nav.sectionIndex], nav.page, CONTENT_LINES).zeilen;
+    return pageOf(section, nav.page, CONTENT_LINES).zeilen;
   }
-  // Uebersicht als Liste: Rubrik mit Umfang, darunter die Vorschau.
-  const out = [];
-  nav.sections.forEach((section, i) => {
-    if (out.length >= CONTENT_LINES) return;
-    const active = i === nav.sectionIndex && nav.focusIcon < 0;
-    out.push(row(`${active ? '>' : ' '} ${section.titel}`, `${section.zeilen.length}`, PANEL_CHARS));
-    const vorschau = (section.vorschau || '').trim();
-    if (vorschau && out.length < CONTENT_LINES) {
-      out.push(`   ${vorschau}`.slice(0, PANEL_CHARS));
-    }
-  });
-  return out.slice(0, CONTENT_LINES);
+  const lines = section.zeilen.slice(0, CONTENT_LINES);
+  if (section.zeilen.length > CONTENT_LINES) {
+    lines[lines.length - 1] = `${(lines[lines.length - 1] || '').slice(0, PANEL_CHARS - 4)} ...`;
+  }
+  return lines;
 }
 
 export function railState(nav) {
@@ -131,7 +162,7 @@ export function buildPage(nav) {
   const focused = nav.focusIcon >= 0;
   const items = itemLines(nav);
   return {
-    containerTotalNum: 6,
+    containerTotalNum: 5,
     textObject: [
       {
         containerID: CONTAINER.ITEMS,
@@ -146,35 +177,29 @@ export function buildPage(nav) {
         zOrderIndex: 0,
       },
       {
-        // Die Box — Rahmen ist die einzige Struktur, die der Guide vorsieht.
-        containerID: CONTAINER.BOX_TITLE,
-        containerName: 'box-title',
+        // Eine Box, ein Container: der Rahmen ist Text, damit der Titel in
+        // der oberen Kante sitzt. Zugleich der Eingabe-Container — sein
+        // Inhalt passt IMMER auf eine Seite, sonst scrollt ihn die Brille
+        // selbst und die Gesten erreichen die App nicht mehr.
+        containerID: CONTAINER.BOX_BODY,
+        containerName: 'box-body',
         xPosition: BOX_X,
         yPosition: BOX_Y,
         width: BOX_W,
         height: BOX_H,
-        content: titleLine(nav),
-        textColor: focused ? DIM : BRIGHT,
         borderWidth: 1,
         borderColor: focused ? 5 : 13,
         borderRadius: 10,
         paddingLength: 10,
-        isEventCapture: 0,
-        zOrderIndex: 1,
-      },
-      {
-        // Eingabe-Container: passt IMMER auf eine Seite, sonst scrollt die
-        // Brille ihn selbst und die Gesten erreichen die App nicht mehr.
-        containerID: CONTAINER.BOX_BODY,
-        containerName: 'box-body',
-        xPosition: BOX_X + 12,
-        yPosition: BOX_Y + LINE_H + 10,
-        width: BOX_W - 24,
-        height: BOX_H - LINE_H - 22,
-        content: contentLines(nav).join('\n'),
+        content: framedBox(
+          boxTitle(nav),
+          contentLines(nav),
+          BOX_CHARS,
+          CONTENT_LINES,
+        ).join('\n'),
         textColor: focused ? DIM : BRIGHT,
         isEventCapture: 1,
-        zOrderIndex: 2,
+        zOrderIndex: 1,
       },
     ],
     imageObject: [
@@ -184,7 +209,7 @@ export function buildPage(nav) {
         xPosition: COL_X,
         yPosition: LIST_Y,
         width: CH_W,
-        height: Math.min(144, MAX_ITEMS * LINE_H),
+        height: Math.min(144, (MAX_ITEMS + 1) * LINE_H),
         zOrderIndex: 3,
       },
       {
@@ -200,7 +225,7 @@ export function buildPage(nav) {
         containerID: CONTAINER.BAR,
         containerName: 'bar',
         xPosition: COL_X,
-        yPosition: BAR_Y,
+        yPosition: barY(nav),
         width: BAR_W,
         height: BAR_H,
         zOrderIndex: 5,
@@ -218,10 +243,13 @@ export function buildBitmaps(nav) {
     bitmapPayload(
       renderChannelColumn({
         width: CH_W,
-        height: Math.min(144, MAX_ITEMS * LINE_H),
+        height: Math.min(144, (MAX_ITEMS + 1) * LINE_H),
         pitch: LINE_H,
         channels: tabs.map((_, i) => nav.channels?.[from + i] || 'mail'),
         active: nav.tabIndex - from,
+        // Zeilenindex je Eintrag: nach dem aktiven schiebt die Icon-Leiste
+        // alles um eine Zeile nach unten.
+        rows: tabs.map((_, i) => i + (from + i > nav.tabIndex ? 1 : 0)),
       }),
       CONTAINER.CHANNELS,
     ),

@@ -37,7 +37,7 @@ test("the page carries the reading box and one item per rubric", async () => {
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   const page = sdk.calls.lastPage;
-  assert.equal(page.textObject.length, 3, "items column + box title + box body");
+  assert.equal(page.textObject.length, 2, "items column + reading box");
   assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
   assert.equal(page.imageObject.length, 3, "channel icons, nav dots and the icon bar");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
@@ -48,7 +48,8 @@ test("the body never overflows its container", async () => {
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "box-body");
-  assert.ok(body.content.split("\n").length <= CONTENT_LINES);
+  // Titel + Trennlinie + Inhalt
+  assert.ok(body.content.split("\n").length <= CONTENT_LINES + 2);
   assert.equal(body.isEventCapture, 1);
 });
 

@@ -526,26 +526,30 @@ finishes. Scope estimates are rough and name the files.
 
 17. **Dead-letter state in the UI.** §8. The data is already there and unread —
     the executor's counters are annotated "for later UI exposure" and the audit
-    stream reaches a client-runtime atom (`server.ts:1044-1046`) no component
-    renders. A dead-lettered plain _message_ surfaces nowhere today. **Small**,
-    and it could share a panel with item 18.
-18. **Mount the cross-mode notification panel.** §1. Model and rendering are done
-    and tested; nothing outside `apps/web/src/crossMode/` references them. The
-    precondition — that the cross-mode link RPCs land — has since been met.
-    ```2 files plus a mounting test — **small**.~~
-    **KORREKTUR 2026-08-20: the estimate is wrong and the item is not a mount.**
-    Measured while starting it: nothing anywhere calls
-    `crossModeNotificationStore.publish` outside its own tests, so the store is
-    never fed. Mounting `CrossModeNotificationCenter` alone renders a
-    permanently empty section. There is also no cross-mode SUBSCRIPTION rpc to
-    hook up — `rpc.ts` has `openInCode`, `getThreadLink`, `listLinks` and
-    `submit`, all request/response — so the three moments the model describes
-    (link created, approval waiting, result submitted) have to be raised
-    client-side at their call sites, and deciding where is a design choice, not
-    wiring. Re-scope as **medium**, and settle the producer before the mount.
-    Item 17 (dead-letter state) has the same shape: its audit atom
-    (`server.ts:1109`) is likewise read by no component.
-    ```
+    stream reaches a client-runtime atom (`server.ts:1109`) no component
+    renders. A dead-lettered plain _message_ surfaces nowhere today.
+    **STILL OPEN**, but the shared blocker is gone: item 18's panel is mounted
+    and fed, so a dead-letter entry now has a surface to appear on. What
+    remains is a producer for the audit atom, which — unlike cross-mode — DOES
+    have a subscription (`subscribeWorkjetMailboxAudit`), so this one really is
+    "read the atom and render", not a design question. **Small.**
+
+18. ~~**Mount the cross-mode notification panel.**~~ **DONE 2026-08-20, commit
+    b0060c11f.** §1. Model and rendering were done; nothing called `publish`,
+    so mounting alone would have rendered a permanently empty section — which
+    is why the original "~2 files plus a mounting test" estimate was wrong.
+    `crossModeNotificationProducer.ts` raises the two moments that have an
+    unambiguous Code-side trigger (`link-created`, `result-submitted`) at their
+    RPC call sites, since every cross-mode RPC is request/response and there is
+    no subscription to hook up. `outcome` is always "submitted": the action's
+    completed/failed/cancelled describes the WORK, the notification's
+    submitted/accepted/rejected the LINK, and accepting is the counterpart's
+    verdict to give. Mutation-verified.
+    **`approval-pending` is deliberately NOT raised** and a test pins that: an
+    approval starts waiting inside the owning mode — for a Business OS approval
+    that is not this process — and no local event fires when it does. It needs
+    a push channel or a Business OS-side producer.
+
 19. ~~**Wire the gateway host artifact resolver into startup and packaging.**~~
     **DONE 2026-08-20, commit bfcda507d.** §6. The caller is the primary
     backend's environment (`DesktopBackendConfiguration.ts`), which is where

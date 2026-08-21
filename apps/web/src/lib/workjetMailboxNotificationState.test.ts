@@ -3,6 +3,7 @@ import type { WorkjetMailboxAuditEvent } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  accumulateWorkjetMailboxNotification,
   selectWorkjetMailboxNotifications,
   selectWorkjetMailboxWarnings,
   WORKJET_MAILBOX_NOTIFICATION_LIMIT,
@@ -81,5 +82,65 @@ describe("workjet mailbox notifications", () => {
       selectWorkjetMailboxNotifications([deadLetter(1, "2026-08-20T10:00:00.000Z")]),
     );
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe("accumulating the stream", () => {
+  it("keeps earlier entries, because the atom yields only the latest value", () => {
+    // Without accumulation the surface shows exactly one notification —
+    // whichever arrived last — and a dead-letter vanishes the moment any other
+    // event follows it. That reads as the problem having resolved.
+    let list = accumulateWorkjetMailboxNotification([], deadLetter(1, "2026-08-20T10:00:00.000Z"));
+    list = accumulateWorkjetMailboxNotification(list, deadLetter(2, "2026-08-20T10:01:00.000Z"));
+
+    expect(list.map((entry) => entry.sequence)).toEqual([2, 1]);
+  });
+
+  it("returns the SAME array for a re-delivered event", () => {
+    // React rerenders on reference change; a reconnect that replays the stream
+    // must not rerender the thread view for events already shown.
+    const first = accumulateWorkjetMailboxNotification(
+      [],
+      deadLetter(1, "2026-08-20T10:00:00.000Z"),
+    );
+    const again = accumulateWorkjetMailboxNotification(
+      first,
+      deadLetter(1, "2026-08-20T10:00:00.000Z"),
+    );
+
+    expect(again).toBe(first);
+  });
+
+  it("returns the same array for an event outside the subset, and for null", () => {
+    const list = accumulateWorkjetMailboxNotification(
+      [],
+      deadLetter(1, "2026-08-20T10:00:00.000Z"),
+    );
+    const notNotifiable = {
+      _tag: "envelope-enqueued",
+      schemaVersion: 1,
+      sequence: 99,
+      occurredAt: "2026-08-20T10:00:00.000Z",
+      envelopeId: "env-99",
+    } as unknown as WorkjetMailboxAuditEvent;
+
+    expect(accumulateWorkjetMailboxNotification(list, notNotifiable)).toBe(list);
+    expect(accumulateWorkjetMailboxNotification(list, null)).toBe(list);
+  });
+
+  it("caps while accumulating, keeping the newest", () => {
+    let accumulated = accumulateWorkjetMailboxNotification(
+      [],
+      deadLetter(0, "2026-08-20T10:00:00.000Z"),
+    );
+    for (let index = 1; index <= WORKJET_MAILBOX_NOTIFICATION_LIMIT + 5; index += 1) {
+      accumulated = accumulateWorkjetMailboxNotification(
+        accumulated,
+        deadLetter(index, "2026-08-20T10:00:00.000Z"),
+      );
+    }
+
+    expect(accumulated).toHaveLength(WORKJET_MAILBOX_NOTIFICATION_LIMIT);
+    expect(accumulated[0]?.sequence).toBe(WORKJET_MAILBOX_NOTIFICATION_LIMIT + 5);
   });
 });

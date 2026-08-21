@@ -1,0 +1,17 @@
+{
+  "name": "decision-hub-glasses",
+  "version": "1.0.0",
+  "description": "Even Hub plugin: Decision Hub approvals on the Even Realities G2",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test tests/glasses.test.mjs tests/plugin.test.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.14"
+  },
+  "private": true
+}

@@ -124,6 +124,14 @@ export function boxTitle(nav) {
  *
  * Die Rahmenzeichen sind am Simulator als vorhanden geprueft.
  */
+/** Kopfzeile der Box: Rubrik links, Herkunft rechts. */
+export function boxHeader(nav, width) {
+  const links = boxTitle(nav);
+  const rechts = [nav.betreff, nav.typ].filter(Boolean).join(' · ');
+  if (!rechts) return links;
+  return row(links, rechts.slice(0, Math.max(0, width - links.length - 2)), width);
+}
+
 export function framedBox(title, lines, width, height) {
   // KEIN Textrahmen: die Geraetefont ist proportional, die rechte Kante
   // franst aus (am Simulator gesehen). Den Rahmen zeichnet der Container,
@@ -192,9 +200,9 @@ export function buildPage(nav) {
         borderRadius: 10,
         paddingLength: 10,
         content: framedBox(
-          boxTitle(nav),
+          boxHeader(nav, PANEL_CHARS),
           contentLines(nav),
-          BOX_CHARS,
+          PANEL_CHARS,
           CONTENT_LINES,
         ).join('\n'),
         textColor: focused ? DIM : BRIGHT,

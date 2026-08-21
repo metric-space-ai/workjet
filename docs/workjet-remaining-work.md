@@ -17,7 +17,11 @@ box in the plan changes bucket, move its row here in the same commit.
 
 ## Where the project stands
 
-`280/353` boxes complete (79.3%), `73` open. Each open box is counted once,
+`282/353` boxes complete (79.9%), `71` open. **Updated 2026-08-20 (evening)**:
+the original audit figure was `280/353`. Since then decision 3 was resolved and
+closed in code, implementable items 28 and 29 were built and mutation-verified,
+and a new decision 11 was opened by resolving decision 3 — so the owner count
+is unchanged at ten open decisions, not nine. Each open box is counted once,
 under **the last thing that has to happen before it can be ticked** — so a box
 that needs a decision _and_ a second machine counts as BLOCKED-ON-REALITY, and a
 box with buildable work inside it still counts as blocked if something else gates
@@ -25,15 +29,17 @@ the tick.
 
 | Bucket                 | Boxes | What it means                                                                 |
 | ---------------------- | ----- | ----------------------------------------------------------------------------- |
-| **DONE**               | 280   | Ticked against named files and a covering test. 12 were ticked by this audit. |
+| **DONE**               | 282   | Ticked against named files and a covering test. 12 by the audit, 2 since.     |
 | **BLOCKED-ON-OWNER**   | 11    | A person must decide. No amount of engineering moves these.                   |
 | **BLOCKED-ON-REALITY** | 40    | A second machine, another OS, real credentials, or a CTOX-repository change.  |
-| **IMPLEMENTABLE**      | 22    | Nothing gates them but effort.                                                |
+| **IMPLEMENTABLE**      | 20    | Nothing gates them but effort.                                                |
 
 Two different units appear below and they do not match on purpose. There are
 **11 owner-gated boxes but only 10 distinct decisions**, because one decision
-(cutting the gateway-host release tag) gates three boxes. And there are **22
-implementable-dominant boxes but 29 discrete buildable pieces of work**, because
+(cutting the gateway-host release tag) gates three boxes. Decision 3 was
+resolved on 2026-08-20 and decision 11 was opened by that resolution, so the
+count of distinct open decisions is still ten. And there are **20
+implementable-dominant boxes but 27 discrete buildable pieces of work**, because
 seven of them live inside boxes whose tick is gated by something else — the
 Code-mode E2E driver, the differential-runner fix, the descriptor ownership
 check, the macOS keychain smoke, the target-side capability check, the peer
@@ -77,20 +83,29 @@ remote URL, CI reference and agent branch remote in one pass. The
 product-identity half is already done — name, installers, icons and artifact
 filenames all say `CTOX Desktop App`.
 
-### 3. The home sink ships a raw bearer token off-box
+### 3. ~~The home sink ships a raw bearer token off-box~~ — DECIDED 2026-08-20
 
-Plan §12 (redact provider traffic). **Decision:** is the home sink a trusted
-destination that may receive unmasked provider credentials, or is this a leak to
-close? `HomeRequestLogPayload::new`
-(`native/provider-gateway/internal/logging/request_logger_home.rs:35-42`) builds
-its `headers` map with `clone_headers` (`:55-61`), which applies no masking, so
-a raw `Authorization: Bearer …` leaves the machine whenever the sink is bound.
-**Consequence:** the behaviour is _pinned_ by a counter-test
-(`request_logger_home_test.rs:48`) that asserts the unmasked value. Any fix
-breaks that test, which is exactly why this is a decision: the counter-test is
-the record of the current answer, and closing the leak means rewriting the
-record deliberately, not deleting it quietly. This is the only open security
-invariant that is a decision rather than work.
+**RESOLVED.** The owner decided the home sink is NOT a trusted destination for
+unmasked provider credentials, and the leak is closed (commit `cb38dfc45`).
+Masking happens at the egress boundary only — the two sites that build the
+off-box payload — reusing the gateway's existing `mask_sensitive_header_value`
+rather than a second list, so the header masks exactly as the blob shipped
+beside it and the two cannot drift apart. The in-process `clone_headers` copies
+stay verbatim because the local record still needs the real values.
+
+The counter-test was rewritten, not deleted: it asserts the mask, records in a
+comment that it previously pinned the opposite, and adds a stronger check —
+the raw credential must appear nowhere in the serialized payload, so a new
+field cannot reintroduce the leak past a header-shaped guard.
+Mutation-verified: reverting one egress site fails it with
+`left: "Bearer secret"` / `right: "Bearer se...et"`.
+
+**Plan §12 is still not ticked, for a different reason.** With this decision
+made and items 28-29 built, what now blocks the tick is the residual named in
+the plan: the provider event NDJSON at `<stateDir>/logs/provider/events.*.log`
+stores raw provider payloads BY DESIGN (`EventNdjsonLogger.ts:557-593`), which
+contradicts the line's plain wording, and nothing fails if that changes. That
+is a NEW owner question, carried as decision 11 below.
 
 ### 4. Execute the upstream re-parent reconnect
 
@@ -153,6 +168,27 @@ and now resolve two levels above the Workjet repo root), or drop the differentia
 from the release list. **Consequence:** it is currently listed as a release gate
 that has never run and cannot run — the smallest of these decisions, but it
 keeps a release gate permanently red.
+
+### 11. Do local raw-payload logs fall inside "never log request bodies"?
+
+**Opened 2026-08-20**, when decision 3 was resolved and items 28-29 were built.
+Plan §12 (redact provider traffic) is now blocked only by this. **Decision:**
+the line says "never log request bodies by default", but two local sinks store
+raw content on purpose and nothing fails if that changes:
+
+- the provider event NDJSON at `<stateDir>/logs/provider/events.*.log` stores
+  raw provider payloads by design (`EventNdjsonLogger.ts:557-593`);
+- `server.trace.ndjson` records `Cause.pretty` of every failed span
+  (`packages/shared/src/observability.ts` → `formatTraceExit`), which is how an
+  error `detail` such as `opencodeRuntime.ts:69-83`'s serialized HTTP error body
+  reaches disk.
+
+Both are local files rather than off-box traffic, which is why the earlier audit
+recorded them as residues rather than leaks. **Consequence:** if they are inside
+the intent, §12 can be ticked once that reading is written down and the two are
+named as deliberate exceptions. If they are outside it, they need bounding and a
+guard first, and that is real work, not a note. Until either happens the
+invariant stays unticked with everything else about it already done.
 
 ---
 

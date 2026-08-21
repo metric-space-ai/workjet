@@ -175,6 +175,13 @@ export const WORKJET_TRANSPORT_PUSH_LIMIT = 50;
 /** Envelopes pulled per cycle. Stays under CTOX's 200-entry page ceiling. */
 export const WORKJET_TRANSPORT_PULL_LIMIT = 50;
 
+/**
+ * How many pages one cycle may drain before yielding. A backlog should clear
+ * fast, but an unbounded loop would let a busy sender hold the cycle open and
+ * starve publishing, so the drain is bounded and simply resumes next cycle.
+ */
+export const WORKJET_TRANSPORT_PULL_MAX_PAGES_PER_CYCLE = 20;
+
 /** CTOX refuses more than 200 envelope ids in one `consumed` call. */
 const CONSUMED_BATCH_LIMIT = 200;
 
@@ -1787,55 +1794,75 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     readonly now: WorkjetMailboxTimestamp;
   }) {
     const nowMillis = millisOf(input.now);
-    const url = new URL(`${input.endpoint.baseUrl}/workjet/mailbox/pending`);
-    url.searchParams.set("environment_id", localEnvironmentId);
-    url.searchParams.set("limit", String(WORKJET_TRANSPORT_PULL_LIMIT));
 
-    const raw = yield* call({
-      endpoint: input.endpoint,
-      token: input.token,
-      request: HttpClientRequest.get(url.toString()),
-    });
-    if (Option.isNone(raw)) return;
+    // Follow `next_cursor` WITHIN one cycle. Draining only a single page per
+    // cycle meant a backlog cleared at 50 envelopes per cycle interval, so a
+    // sender that outran one page could never be caught up with.
+    let cursor: string | null = null;
+    let pagesThisCycle = 0;
 
-    const page = yield* decodePendingPage(raw.value).pipe(Effect.option);
-    if (Option.isNone(page)) return;
+    while (pagesThisCycle < WORKJET_TRANSPORT_PULL_MAX_PAGES_PER_CYCLE) {
+      const url = new URL(`${input.endpoint.baseUrl}/workjet/mailbox/pending`);
+      url.searchParams.set("environment_id", localEnvironmentId);
+      url.searchParams.set("limit", String(WORKJET_TRANSPORT_PULL_LIMIT));
+      if (cursor !== null) url.searchParams.set("after", cursor);
 
-    lastPullAtMillis = nowMillis;
-    const consumable: Array<string> = [];
-
-    for (const document of page.value.envelopes) {
-      bump("pulled");
-      const outcome = yield* ingest({ document, now: input.now, nowMillis });
-      switch (outcome._tag) {
-        case "accepted":
-          bump("accepted");
-          consumable.push(document.id);
-          break;
-        case "duplicate":
-          // A replay is consumed WITHOUT re-running any effect: at-least-once
-          // transport, exactly-once delegation effects by deduplication.
-          bump("inboundDuplicates");
-          consumable.push(document.id);
-          break;
-        case "rejected":
-          // Poison envelopes are consumed too, or every cycle would re-read the
-          // same unusable document forever.
-          reject(outcome.kind);
-          consumable.push(document.id);
-          break;
-        case "deferred":
-          bump("deferred");
-          break;
-      }
-    }
-
-    if (consumable.length > 0) {
-      yield* markConsumed({
+      const raw = yield* call({
         endpoint: input.endpoint,
         token: input.token,
-        envelopeIds: consumable,
+        request: HttpClientRequest.get(url.toString()),
       });
+      if (Option.isNone(raw)) return;
+
+      const page = yield* decodePendingPage(raw.value).pipe(Effect.option);
+      if (Option.isNone(page)) return;
+
+      pagesThisCycle += 1;
+      lastPullAtMillis = nowMillis;
+      const consumable: Array<string> = [];
+
+      for (const document of page.value.envelopes) {
+        bump("pulled");
+        const outcome = yield* ingest({ document, now: input.now, nowMillis });
+        switch (outcome._tag) {
+          case "accepted":
+            bump("accepted");
+            consumable.push(document.id);
+            break;
+          case "duplicate":
+            // A replay is consumed WITHOUT re-running any effect: at-least-once
+            // transport, exactly-once delegation effects by deduplication.
+            bump("inboundDuplicates");
+            consumable.push(document.id);
+            break;
+          case "rejected":
+            // Poison envelopes are consumed too, or every cycle would re-read
+            // the same unusable document forever.
+            reject(outcome.kind);
+            consumable.push(document.id);
+            break;
+          case "deferred":
+            bump("deferred");
+            break;
+        }
+      }
+
+      if (consumable.length > 0) {
+        yield* markConsumed({
+          endpoint: input.endpoint,
+          token: input.token,
+          envelopeIds: consumable,
+        });
+      }
+
+      // Stop unless the daemon both says there is more AND hands back a
+      // cursor. Following `has_more` without a cursor would re-read page one
+      // forever, which is worse than draining slowly.
+      const nextCursor = page.value.next_cursor ?? null;
+      if (page.value.has_more !== true || nextCursor === null) return;
+      // A page that advances nothing cannot make progress either.
+      if (nextCursor === cursor) return;
+      cursor = nextCursor;
     }
   });
 

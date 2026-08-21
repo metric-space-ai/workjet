@@ -211,6 +211,8 @@ interface DaemonCall {
 const makeFakeDaemon = (options?: {
   readonly publishStatus?: number;
   readonly seed?: ReadonlyArray<DaemonDocument>;
+  /** Page `pending` like the real daemon instead of answering everything. */
+  readonly pageSize?: number;
 }) => {
   const documents = new Map<string, DaemonDocument>();
   const consumed = new Map<string, Set<string>>();
@@ -223,13 +225,31 @@ const makeFakeDaemon = (options?: {
     return { ok: true, id: body.id, duplicate, tombstoned: false };
   };
 
-  const pending = (environmentId: string) => {
-    const envelopes = [...documents.values()].filter(
+  const pending = (environmentId: string, after: string | null) => {
+    const all = [...documents.values()].filter(
       (document) =>
         document.target_environment_id === environmentId &&
         !(consumed.get(document.id)?.has(environmentId) ?? false),
     );
-    return { ok: true, environment_id: environmentId, envelopes, count: envelopes.length };
+    // Without `pageSize` the daemon answers everything at once, which is what
+    // every pre-existing test expects. With it, it pages like the real one:
+    // an opaque `after` cursor plus `has_more`.
+    const pageSize = options?.pageSize;
+    if (pageSize === undefined) {
+      return { ok: true, environment_id: environmentId, envelopes: all, count: all.length };
+    }
+    const start = after === null ? 0 : all.findIndex((document) => document.id === after) + 1;
+    const envelopes = all.slice(start, start + pageSize);
+    const last = envelopes.at(-1);
+    const hasMore = start + envelopes.length < all.length;
+    return {
+      ok: true,
+      environment_id: environmentId,
+      envelopes,
+      count: envelopes.length,
+      has_more: hasMore,
+      next_cursor: hasMore && last !== undefined ? last.id : null,
+    };
   };
 
   const markConsumed = (environmentId: string, ids: ReadonlyArray<string>) => {
@@ -270,7 +290,10 @@ const makeFakeDaemon = (options?: {
         return answer(200, publish(body as DaemonDocument));
       }
       if (url.pathname === "/workjet/mailbox/pending") {
-        return answer(200, pending(url.searchParams.get("environment_id") ?? ""));
+        return answer(
+          200,
+          pending(url.searchParams.get("environment_id") ?? "", url.searchParams.get("after")),
+        );
       }
       if (url.pathname === "/workjet/mailbox/consumed") {
         const parsed = body as { environment_id: string; envelope_ids: ReadonlyArray<string> };
@@ -923,6 +946,63 @@ group("WorkjetMailboxTransport pull", (it) => {
       assert.include(
         callAt(daemon.calls, "/workjet/mailbox/pending").query,
         `environment_id=${LOCAL_ENVIRONMENT}`,
+      );
+    }),
+  );
+
+  it.effect("drains a multi-page backlog inside ONE cycle by following next_cursor", () =>
+    Effect.gen(function* () {
+      const peer = yield* makeIdentity(WORKSPACE);
+      // Five envelopes behind a two-per-page daemon: three pages, and the old
+      // one-page-per-cycle behaviour would have needed three cycles.
+      const ids = ["backlog-1", "backlog-2", "backlog-3", "backlog-4", "backlog-5"];
+      const seed = [];
+      for (const raw of ids) {
+        const id = envelopeId(raw);
+        seed.push(
+          yield* remoteDocument({
+            identity: peer,
+            envelopeId: id,
+            kind: "delegation",
+            payload: delegationPayload({
+              envelopeId: id,
+              delegationId: delegationId(raw),
+              source: remoteAddress,
+              target: localAddress,
+            }),
+          }),
+        );
+      }
+      const daemon = makeFakeDaemon({ seed, pageSize: 2 });
+      const transport = yield* makeTransport({ client: daemon.client });
+
+      const status = yield* transport.runCycle;
+
+      // The whole backlog, in one cycle.
+      assert.strictEqual(status.counters.pulled, ids.length);
+      assert.strictEqual(status.counters.accepted, ids.length);
+
+      // It actually paged rather than being handed everything at once.
+      const pending = callsTo(daemon.calls, "/workjet/mailbox/pending");
+      assert.isAbove(pending.length, 1, "a single pending call means the cursor was dropped");
+
+      // The first page asks for no cursor; every later one carries the
+      // previous page's last id, so the cursor is followed, not invented.
+      assert.notInclude(pending[0]!.query, "after=");
+      assert.include(pending[1]!.query, `after=${envelopeId("backlog-2")}`);
+
+      // And the drain stops: the last call returns has_more=false, so the
+      // loop must not keep asking.
+      const lastPage = pending.at(-1)!;
+      assert.include(lastPage.query, "after=");
+
+      const allConsumed = callsTo(daemon.calls, "/workjet/mailbox/consumed").flatMap(
+        (call) => (call.body as { readonly envelope_ids: ReadonlyArray<string> }).envelope_ids,
+      );
+      assert.deepEqual(
+        [...allConsumed].sort(),
+        ids.map((raw) => envelopeId(raw)).sort(),
+        "every envelope in the backlog is consumed, not just the first page",
       );
     }),
   );

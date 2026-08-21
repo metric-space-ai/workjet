@@ -8,6 +8,15 @@ export function menuItemFrom(detail) {
   return typeof id === "number" ? id : null;
 }
 
+/** IMU-Messwerte, wenn die Brille Bewegungsdaten meldet. */
+export function imuFrom(detail) {
+  const data = detail?.sysEvent?.imuData || detail?.sysEvent?.IMU_Data || detail?.jsonData?.imuData;
+  if (data && typeof data === 'object') {
+    return { x: Number(data.x) || 0, y: Number(data.y) || 0, z: Number(data.z) || 0 };
+  }
+  return null;
+}
+
 export function osEventFrom(detail) {
   // Der Host liefert BEREITS geparst, z. B.
   //   { jsonData: {...}, textEvent: { containerID, containerName, eventType } }

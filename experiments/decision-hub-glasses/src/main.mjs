@@ -34,6 +34,7 @@ function sdkFromBridge(bridge) {
     rebuildPageContainer: (page) => bridge.callEvenApp(EvenAppMethod.RebuildPageContainer, page),
     textContainerUpgrade: (update) =>
       bridge.callEvenApp(EvenAppMethod.TextContainerUpgrade, update),
+    imuControl: (cmd) => bridge.callEvenApp(EvenAppMethod.ImuControl, cmd),
   };
 }
 
@@ -129,11 +130,22 @@ async function main() {
   });
 
   window.addEventListener(BridgeEvent.EvenHubEvent, (event) => {
-    const osEvent = osEventFrom(event.detail ?? event);
+    const detail = event.detail ?? event;
+    const imu = imuFrom(detail);
+    if (imu) {
+      plugin.handleImu(imu);
+      return;
+    }
+    const osEvent = osEventFrom(detail);
     if (osEvent !== null) plugin.handleEvent(osEvent);
   });
 
   // Handy-Bedienung: dieselben Aktionen wie im Brillenmenue.
+
+  // Gyroskop einschalten: ohne Meldungen gibt es keine Kopfneigung.
+  // iMUReportEn=1, reportFrq in Hz — niedrig, es geht nur um die Lage.
+  await bridge.callEvenApp(EvenAppMethod.ImuControl, { iMUReportEn: 1, reportFrq: 5 })
+    .catch((error) => console.warn('[decision-hub] IMU nicht verfügbar', error?.message || error));
 
   await plugin.start();
   const count = plugin.state.count;

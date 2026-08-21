@@ -37,11 +37,9 @@ test("the page carries the reading box and one item per rubric", async () => {
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   const page = sdk.calls.lastPage;
-  const items = page.textObject.filter((c) => c.containerName.startsWith("item-"));
-  assert.ok(items.length >= 1, "the rubrics are listed as items");
-  assert.equal(page.textObject.length, 2 + items.length, "box title + box body + items");
+  assert.equal(page.textObject.length, 3, "items column + box title + box body");
   assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
-  assert.equal(page.imageObject.length, 2, "nav dots and the icon bar");
+  assert.equal(page.imageObject.length, 3, "channel icons, nav dots and the icon bar");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
 });
 

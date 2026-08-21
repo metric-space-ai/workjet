@@ -83,22 +83,28 @@ export function renderActionBar({ icons, focusIcon, width, height, detail = 0, c
     const focused = i === focusIcon;
     const x = i * cell + Math.floor((cell - size) / 2);
     const y = Math.floor((height - size) / 2) - (compact ? 0 : 4);
-    if (focused) {
-      // Auswahl als Rahmen, nicht als Flaeche (Design-Guide).
-      const bx = i * cell + 2;
-      const bw = cell - 4;
-      fillRect(bmp, bx, 2, bw, 1, ON);
-      fillRect(bmp, bx, height - 3, bw, 1, ON);
-      fillRect(bmp, bx, 2, 1, height - 4, ON);
-      fillRect(bmp, bx + bw - 1, 2, 1, height - 4, ON);
-    }
+    // Keine Rahmen um die Aktionen (Owner-Vorgabe): die Auswahl zeigt ein
+    // kurzer Strich darunter und volle Helligkeit.
+    if (focused) fillRect(bmp, i * cell + 6, height - 4, cell - 12, 2, ON);
     const key = icon.wert === 'detail' && detail >= 1 ? 'kurz' : NAME[icon.wert] || 'annehmen';
-    drawIcon(bmp, key, x, y, scale, ON, setPixel);
+    drawIcon(bmp, key, x, y, scale, focused ? ON : 8, setPixel);
     if (!compact) {
       const label = (icon.glyph || icon.wert || '').toUpperCase();
       const lw = textWidth(label, 1);
       drawText(bmp, label, i * cell + Math.floor((cell - lw) / 2), y + size + 3, 1, ON, setPixel);
     }
+  });
+  return bmp;
+}
+
+/** Kanal-Icons links neben den Eintraegen — ohne Rahmen, nur das Zeichen. */
+export function renderChannelColumn({ width, height, pitch, channels, active }) {
+  const bmp = createBitmap(width, height);
+  channels.forEach((channel, i) => {
+    const y = i * pitch + Math.floor((pitch - ICON_SIZE) / 2);
+    if (y + ICON_SIZE > height) return;
+    const x = Math.floor((width - ICON_SIZE) / 2);
+    drawIcon(bmp, channel, x, y, 1, i === active ? ON : 8, setPixel);
   });
   return bmp;
 }

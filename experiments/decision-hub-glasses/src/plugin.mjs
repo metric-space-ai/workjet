@@ -8,6 +8,7 @@ import { decisionIcons, tabLabel } from '../../kundenpipeline-module/core/glasse
 import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, LEVEL } from './layout.mjs';
 import { navigate, initialNav } from './nav.mjs';
+import { createTiltGate } from './tilt.mjs';
 
 export function createDecisionHubPlugin({
   sdk,
@@ -16,6 +17,7 @@ export function createDecisionHubPlugin({
   onPaint = () => {},
   filter = () => true,
   sections: allowedSections = ['mail', 'antwort', 'aufgabe', 'notizen'],
+  tiltOptions = {},
 }) {
   let decisions = [];
   let vorgaenge = new Map();
@@ -23,6 +25,8 @@ export function createDecisionHubPlugin({
   let nav = initialNav();
   let started = false;
   let lastSignature = null;
+  let visible = true;
+  const tilt = createTiltGate(tiltOptions);
 
   const decision = () => decisions[index];
   const vorgangOf = (d) => vorgaenge.get(d?.vorgang_id);
@@ -39,6 +43,12 @@ export function createDecisionHubPlugin({
       icons: decisionIcons(d, {}, nav.level === LEVEL.DETAIL ? 1 : 0),
       detail: nav.level === LEVEL.DETAIL ? 1 : 0,
       typ: (d.typ || '').toUpperCase(),
+      betreff: vorgangOf(d)?.title || d.titel || '',
+      // Kanal je Eintrag: bestimmt das Icon links vor dem Text.
+      channels: decisions.map((item) => {
+        const kanal = vorgaenge.get(item.vorgang_id)?.quelle_json?.kanal;
+        return kanal === 'chat' ? 'chat' : kanal === 'dokument' ? 'doc' : 'mail';
+      }),
     };
   }
 
@@ -58,18 +68,24 @@ export function createDecisionHubPlugin({
     // Der Seitenaufbau aendert sich mit Ebene, Rubrik und Fokus; nur dann muss
     // neu gebaut werden. Bilder tragen Auswahl und Position, also gehen sie
     // bei jeder Aenderung mit.
-    const signature = `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}`;
+    const signature = visible
+      ? `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}`
+      : 'hidden';
+    const page = visible ? buildPage(view) : blankPage();
     if (!started) {
-      const result = await sdk.createStartUpPageContainer(buildPage(view));
+      const result = await sdk.createStartUpPageContainer(page);
       if (result !== 0 && result?.code !== 0) {
         throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
       }
       started = true;
     } else if (signature !== lastSignature) {
-      await sdk.rebuildPageContainer(buildPage(view));
+      await sdk.rebuildPageContainer(page);
     }
     if (signature !== lastSignature) {
-      for (const payload of buildBitmaps(view)) await sdk.updateImageRawData(payload);
+      // Ausgeblendet gibt es nichts zu zeichnen — das spart Funk und Strom.
+      if (visible) {
+        for (const payload of buildBitmaps(view)) await sdk.updateImageRawData(payload);
+      }
       lastSignature = signature;
     }
   }
@@ -126,6 +142,33 @@ export function createDecisionHubPlugin({
     await paint();
   }
 
+  /** Ausgeblendet: eine leere Seite, die App laeuft weiter. */
+  function blankPage() {
+    return {
+      containerTotalNum: 1,
+      textObject: [{
+        containerID: 1,
+        containerName: 'blank',
+        xPosition: 0,
+        yPosition: 0,
+        width: 576,
+        height: 288,
+        content: '',
+        textColor: 0,
+        isEventCapture: 1,
+        zOrderIndex: 0,
+      }],
+    };
+  }
+
+  /** IMU-Daten der Brille: Kopf in den Nacken blendet ein und aus. */
+  async function handleImu(sample) {
+    const change = tilt.feed(sample);
+    if (!change) return;
+    visible = change === 'show';
+    await paint();
+  }
+
   return {
     async start() {
       try {
@@ -136,6 +179,10 @@ export function createDecisionHubPlugin({
       }
     },
     handleEvent: (osEvent) => handleEvent(osEvent).catch(onError),
+    handleImu: (sample) => handleImu(sample).catch(onError),
+    get visible() {
+      return visible;
+    },
     act: (wert) => act(wert).catch(onError),
     refresh: () => refresh().catch(onError),
     async showTestCard() {

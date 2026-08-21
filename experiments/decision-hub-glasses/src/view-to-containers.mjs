@@ -18,7 +18,7 @@ import {
 const PAD_X = 14;
 // Gemessen am Simulator: 26 px Zeilenabstand, Textgroesse nicht einstellbar.
 const TAB_H = 25;
-const ICON_H = 33;
+const ICON_H = 30;
 const LINE_H = 26;
 
 // 0..4 Helligkeitsstufen des Text-Containers (nicht die 16 Grünstufen des
@@ -26,7 +26,7 @@ const LINE_H = 26;
 const DIM = 2;
 const BRIGHT = 4;
 
-export const CONTAINER = { TABS: 1, BODY: 2 };
+export const CONTAINER = { TABS: 1, BODY: 2, ICONS: 3 };
 
 // Die Brille scrollt den Eingabe-Container SELBST — Scroll-Ereignisse kommen
 // nicht als Fokuswechsel zurueck (am Geraet beobachtet: die einzeilige
@@ -82,44 +82,67 @@ export function iconsLine(view) {
  * rebuildPageContainer. Reines Objekt, damit es ohne Brille testbar bleibt.
  */
 export function viewToPageContainer(view) {
-  const bodyHeight = DISPLAY_H - TAB_H;
+  const bodyHeight = BODY_LINES * LINE_H + 10;
+  const iconY = TAB_H + bodyHeight;
   return {
-    containerTotalNum: 2,
+    containerTotalNum: 3,
     textObject: [
       {
         containerID: CONTAINER.TABS,
-        containerName: "tabs",
+        containerName: 'tabs',
         xPosition: PAD_X,
         yPosition: 0,
         width: DISPLAY_W - PAD_X * 2,
         height: TAB_H,
-        content: tabsLine(view.tabs),
-        textColor: BRIGHT,
+        content: headerLine(view),
+        textColor: view.focusIcon >= 0 ? DIM : BRIGHT,
         isEventCapture: 0,
         zOrderIndex: 0,
       },
       {
-        // Der Eingabe-Container: die Brille scrollt genau diesen selbst.
+        // Eingabe-Container. Sein Inhalt ist IMMER genau ein Fenster gross —
+        // laeuft er ueber, scrollt die Brille ihn selbst und die Ereignisse
+        // erreichen die App nicht mehr (am Geraet beobachtet).
         containerID: CONTAINER.BODY,
-        containerName: "body",
+        containerName: 'body',
         xPosition: PAD_X,
         yPosition: TAB_H,
         width: DISPLAY_W - PAD_X * 2,
         height: bodyHeight,
         content: bodyText(view),
-        textColor: BRIGHT,
+        textColor: view.focusIcon >= 0 ? DIM : BRIGHT,
         isEventCapture: 1,
         zOrderIndex: 1,
       },
+      {
+        containerID: CONTAINER.ICONS,
+        containerName: 'icons',
+        xPosition: PAD_X,
+        yPosition: iconY,
+        width: DISPLAY_W - PAD_X * 2,
+        height: DISPLAY_H - iconY,
+        content: iconsLine(view),
+        textColor: view.focusIcon >= 0 ? BRIGHT : DIM,
+        isEventCapture: 0,
+        zOrderIndex: 2,
+      },
     ],
-    menuObject: { menuItems: MENU.map(({ itemID, itemName }) => ({ itemID, itemName })) },
   };
+}
+
+/** Kopfzeile: Reiter plus Leseposition — sonst weiss niemand, wie viel folgt. */
+export function headerLine(view) {
+  const pos = view.position;
+  const marker = pos && pos.total > 0 ? ` ${pos.line}/${pos.total}` : '';
+  const room = Math.max(10, 52 - marker.length);
+  return `${tabsLine(view.tabs, room)}${marker}`;
 }
 
 /** Nur die Textinhalte — für textContainerUpgrade ohne Neuaufbau der Seite. */
 export function viewToTextUpdates(view) {
   return [
-    { containerID: CONTAINER.TABS, content: tabsLine(view.tabs) },
+    { containerID: CONTAINER.TABS, content: headerLine(view) },
     { containerID: CONTAINER.BODY, content: bodyText(view) },
+    { containerID: CONTAINER.ICONS, content: iconsLine(view) },
   ];
 }

@@ -20,7 +20,7 @@ export const DISPLAY_H = 288;
 // keine Designentscheidung, sondern der Messwert.
 const PAD_X = 14;
 const TAB_H = 25;
-const ICON_H = 33;
+const ICON_H = 30;
 const LINE_H = 26;
 const ICON_W = 40;
 const ICON_GAP = 8;
@@ -32,7 +32,7 @@ const ICON_GAP = 8;
 // Ohne eigene Icon-Zeile — die Entscheidungen liegen im nativen Aktionsmenue
 // der Brille — bleibt der Platz dem Text: 10 Zeilen, wie urspruenglich
 // gewuenscht. (Mit Icon-Zeile waren es nur 8.)
-export const BODY_LINES = Math.floor((DISPLAY_H - TAB_H - 4) / LINE_H); // 10
+export const BODY_LINES = Math.floor((DISPLAY_H - TAB_H - ICON_H - 4) / LINE_H); // 8
 
 // 16 Grünstufen (0 = aus, 15 = volle Helligkeit).
 export function green(level) {
@@ -168,19 +168,31 @@ export function hitTest(view, x, y) {
 
 // ---------- Modellaufbau ----------
 
-// Volltext eines Entscheidungs-Records (inkl. Detail-Seiten als Abschnitte).
-export function decisionLines(decision) {
+export const DETAIL_KURZ = 0;
+export const DETAIL_MEHR = 1;
+
+// Zeilen eines Entscheidungs-Records. KURZ ist die Fassung fuer den schnellen
+// Blick; MEHR haengt Detailseiten und die Originalmail an — ohne diese Stufe
+// bleibt auf der Brille nur eine Ultrakurzfassung ohne Ausweg.
+export function decisionLines(decision, detail = DETAIL_KURZ, vorgang = null) {
   const zeilen = [...(decision.zeilen_json || [])];
-  for (const seite of decision.detail_seiten_json || []) {
-    zeilen.push("", `» ${seite.titel || ""}`.trimEnd());
-    zeilen.push(...(seite.zeilen || []));
+  if (detail >= DETAIL_MEHR) {
+    for (const seite of decision.detail_seiten_json || []) {
+      zeilen.push("", `» ${seite.titel || ""}`.trimEnd());
+      zeilen.push(...(seite.zeilen || []));
+    }
+    const voll = vorgang?.quelle_json?.body_clean;
+    if (voll) {
+      zeilen.push("", "» ORIGINALMAIL");
+      zeilen.push(...layoutText(voll));
+    }
   }
   while (zeilen.length && zeilen[0] === "") zeilen.shift();
   return zeilen;
 }
 
 // Entscheidungs-Icons: kompakt, feste Reihenfolge der Bedienfläche.
-export function decisionIcons(decision, copy = {}) {
+export function decisionIcons(decision, copy = {}, detail = DETAIL_KURZ) {
   const icons = [];
   const aktionen = decision?.aktionen_json?.length
     ? decision.aktionen_json
@@ -198,9 +210,15 @@ export function decisionIcons(decision, copy = {}) {
     });
   }
   icons.push({
-    glyph: "KORREKTUR",
+    glyph: "KORR",
     wert: "korrektur",
     label: copy.action_correct || "Korrektur diktieren",
+  });
+  // Ausklappen: von der Ultrakurzfassung auf die ausfuehrliche Fassung.
+  icons.push({
+    glyph: detail >= DETAIL_MEHR ? "KURZ" : "MEHR",
+    wert: "detail",
+    label: detail >= DETAIL_MEHR ? "Kurzfassung" : "Mehr Details",
   });
   icons.push({ glyph: "SPÄTER", wert: "vertagt", label: copy.action_snooze || "Auf später" });
   return icons;
@@ -213,17 +231,24 @@ export function tabLabel(decision, vorgang) {
 }
 
 export function buildView(state) {
-  const { decisions, index, focusIcon, scroll, vorgangOf, copy } = state;
+  const { decisions, index, focusIcon, scroll, vorgangOf, copy, detail = DETAIL_KURZ } = state;
   const decision = decisions[index];
   if (!decision) return null;
   // Die Reiterleiste IST der Kopf — kein Kicker-/Titelblock im Text.
-  const zeilen = decisionLines(decision);
+  const vorgang = vorgangOf(decision);
+  const zeilen = decisionLines(decision, detail, vorgang);
+  const safeScroll = clampScroll(scroll, zeilen.length);
   return {
     tabs: decisions.map((d, i) => ({ label: tabLabel(d, vorgangOf(d)), active: i === index })),
     zeilen,
-    scroll,
-    icons: decisionIcons(decision, copy),
+    scroll: safeScroll,
+    icons: decisionIcons(decision, copy, detail),
     focusIcon,
+    detail,
+    // Leseposition: ohne sie sieht niemand, ob noch etwas kommt.
+    position: { line: Math.min(safeScroll + BODY_LINES, zeilen.length), total: zeilen.length },
+    index,
+    count: decisions.length,
   };
 }
 

@@ -42,7 +42,7 @@ function view(overrides = {}) {
 
 test("page fits the SDK container budget", () => {
   const page = viewToPageContainer(view());
-  assert.equal(page.containerTotalNum, 2);
+  assert.equal(page.containerTotalNum, 3);
   assert.ok(page.textObject.length <= 8, "max 8 text containers");
   assert.ok(page.containerTotalNum >= 1 && page.containerTotalNum <= 12);
 });
@@ -54,15 +54,6 @@ test("the text captures input, because the glasses scroll that container themsel
   assert.equal(capturing[0].containerID, CONTAINER.BODY);
 });
 
-test("every decision is reachable from the native action menu", () => {
-  const page = viewToPageContainer(view());
-  const names = page.menuObject.menuItems.map((i) => i.itemName);
-  for (const expected of ["Annehmen", "Ablehnen", "Korrektur", "Spaeter", "Naechster Vorgang"]) {
-    assert.ok(names.includes(expected), `missing menu item ${expected}`);
-  }
-  const ids = page.menuObject.menuItems.map((i) => i.itemID);
-  assert.equal(new Set(ids).size, ids.length, "menu item ids must be unique");
-});
 
 test("containers stay inside the 576x288 display", () => {
   for (const c of viewToPageContainer(view()).textObject) {
@@ -125,12 +116,12 @@ test("press in the text does nothing", () => {
   assert.equal(out.action, null);
 });
 
-test("focused action is marked and all four decisions are offered", () => {
+test("focused action is marked and every action is offered", () => {
   const line = iconsLine({ ...view(), focusIcon: 0 });
   // Die Brillenschrift hat kein ✓/✔/✗/✘/✎/◷ (am Simulator verifiziert),
   // deshalb Woerter plus das vorhandene Caret ▶.
   assert.ok(line.includes("▶OK"), `focus caret missing in: ${line}`);
-  for (const label of ["OK", "NEIN", "KORREKTUR", "SPÄTER"]) {
+  for (const label of ["OK", "NEIN", "KORR", "MEHR", "SPÄTER"]) {
     assert.ok(line.includes(label), `missing ${label}`);
   }
   for (const missing of ["✓", "✔", "✗", "✘", "✎", "◷"]) {

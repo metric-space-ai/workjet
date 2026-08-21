@@ -8,7 +8,6 @@
 import { buildView } from "../../kundenpipeline-module/core/glasses-renderer.mjs";
 import { viewToPageContainer, viewToTextUpdates } from "./view-to-containers.mjs";
 import { reduce } from "./input.mjs";
-import { menuAction } from "./view-to-containers.mjs";
 
 export function createDecisionHubPlugin({
   sdk,
@@ -17,7 +16,7 @@ export function createDecisionHubPlugin({
   onPaint = () => {},
   filter = () => true,
 }) {
-  const state = { scroll: 0, focusIcon: -1, index: 0 };
+  const state = { scroll: 0, focusIcon: -1, index: 0, detail: 0 };
   let decisions = [];
   let vorgaenge = new Map();
   let started = false;
@@ -30,6 +29,7 @@ export function createDecisionHubPlugin({
       scroll: state.scroll,
       vorgangOf: (d) => vorgaenge.get(d.vorgang_id),
       copy: {},
+      detail: state.detail,
     });
 
   async function paint() {
@@ -66,6 +66,15 @@ export function createDecisionHubPlugin({
   async function act(wert) {
     const decision = decisions[state.index];
     if (!decision) return;
+    if (wert === "detail") {
+      // Aus- und Einklappen bleibt im selben Vorgang: an den Anfang und
+      // zurueck in den Text, damit man sofort weiterliest.
+      state.detail = state.detail >= 1 ? 0 : 1;
+      state.scroll = 0;
+      state.focusIcon = -1;
+      await paint();
+      return;
+    }
     if (wert === "naechster") {
       state.index = (state.index + 1) % Math.max(1, decisions.length);
       state.scroll = 0;
@@ -84,10 +93,7 @@ export function createDecisionHubPlugin({
     await refresh();
   }
 
-  async function handleMenu(itemID) {
-    const item = menuAction(itemID);
-    if (item) await act(item.wert);
-  }
+
 
   async function handleEvent(osEvent) {
     const view = currentView();
@@ -101,10 +107,9 @@ export function createDecisionHubPlugin({
     Object.assign(state, next);
     if (action?.type === "activate") {
       const icon = view.icons[action.icon];
-      // Der Versand passiert serverseitig nach der Antwort — das Plugin
-      // entscheidet nichts selbst und sendet keine Mail.
-      await source.answer({ decision: decisions[state.index], wert: icon.wert });
-      await refresh();
+      // Ein Pfad fuer alle Oberflaechen. Versand und Delegation passieren
+      // serverseitig nach der Antwort — das Plugin sendet nie selbst.
+      if (icon?.wert) await act(icon.wert);
       return;
     }
     await paint();
@@ -120,7 +125,6 @@ export function createDecisionHubPlugin({
       }
     },
     handleEvent: (osEvent) => handleEvent(osEvent).catch(onError),
-    handleMenu: (itemID) => handleMenu(itemID).catch(onError),
     act: (wert) => act(wert).catch(onError),
     refresh: () => refresh().catch(onError),
     get state() {

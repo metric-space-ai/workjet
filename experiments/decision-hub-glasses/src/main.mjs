@@ -126,13 +126,7 @@ async function main() {
   });
 
   window.addEventListener(BridgeEvent.EvenHubEvent, (event) => {
-    const detail = event.detail ?? event;
-    const menuItem = menuItemFrom(detail);
-    if (menuItem !== null) {
-      plugin.handleMenu(menuItem);
-      return;
-    }
-    const osEvent = osEventFrom(detail);
+    const osEvent = osEventFrom(event.detail ?? event);
     if (osEvent !== null) plugin.handleEvent(osEvent);
   });
 

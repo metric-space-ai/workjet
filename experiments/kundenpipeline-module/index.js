@@ -311,20 +311,9 @@ export async function mount(ctx) {
       const next = transition(vorgang, decision, wert);
       await writeVorgang({ ...vorgang, ...next.patch, audit_json: audit });
       for (const folge of next.folgen) await writeDecision(makeDecision(folge, vorgang));
-      if (wert === 'annehmen') {
-        if (decision.typ === 'mailfreigabe') {
-          await dispatchPipelineCommand('kundenpipeline.mail.send', {
-            vorgang_id: vorgang.id,
-            art: decision.backing_ref === 'ergebnis' ? 'ergebnis' : 'bestaetigung'
-          })?.catch?.(reportError);
-        }
-        if (decision.typ === 'triage' && vorgang.triage_json?.aufgabe?.beschreibung) {
-          await dispatchPipelineCommand('kundenpipeline.delegate', {
-            vorgang_id: vorgang.id,
-            beschreibung: vorgang.triage_json.aufgabe.beschreibung
-          })?.catch?.(reportError);
-        }
-      }
+      // Versand und Delegation loest kundenpipeline.decision.answer
+      // serverseitig aus — sonst wuerde dieselbe Annahme von Desktop UND
+      // Brille je eine Mail verschicken.
     }
     ctx.notifications?.show?.({ type: 'success', title: wert === 'annehmen' ? copy.accepted : copy.rejected, message: decision.titel });
     state.scroll = 0;

@@ -437,10 +437,17 @@ finishes. Scope estimates are rough and name the files.
     inheriting someone else's releases. Ran both: 4/4 and 43/43.
     This item was stale, like items 26 and the About half of 24 — the list
     lags the code in at least three places.
-23. **Platform-keychain runtime smoke.** §10. A script exercising
-    `ElectronSafeStorage.ts` and `linuxSecretStorage.ts` against the real OS
-    keychain — encrypt, restart, decrypt, and assert the Linux backend guard
-    fails closed. **Small on macOS**; the Linux leg needs a Linux host.
+23. ~~**Platform-keychain runtime smoke.**~~ **DONE 2026-08-20, commit
+    9bade3aba** (macOS leg verified on this host; the Linux leg still needs a
+    Linux host to execute). §10. `scripts/keychain-smoke.ts` drives a bare
+    Electron twice — encrypt-and-exit, then decrypt in a FRESH process, which
+    is what makes it more than a unit test. Verified for real: it passes here,
+    and corrupting the ciphertext between phases makes it fail, so it is not
+    vacuous. An absent keychain reports `unavailable`, never `pass`. The Linux
+    leg fails closed on `basic_text`/`basic`. The verdict logic is pure and
+    unit-tested (7 tests) so CI checks it even where the smoke cannot run.
+    Run with `node keychain-smoke.ts` from `scripts/`, or
+    `pnpm --filter @t3tools/scripts smoke:keychain`.
 24. ~~**Keyboard and zoom targeting of the active CTOX guest.**~~ **ZOOM DONE
     2026-08-20, commit 10bb6a022; the keyboard half remains.** §10. `zoomMain`
     now targets a mounted guest and records the choice on its span. It reads

@@ -723,16 +723,20 @@ finishes. Scope estimates are rough and name the files.
     are meaningless, so the ownership half is skipped rather than faked, and it
     needs an ACL check of its own. Mutation-verified. The rest of that box
     still needs `ctox` CLI verbs.
-26. **Six user-visible `T3 Code` strings.** §9. `SplashScreen.tsx:4-5`,
-    `RightPanelTabs.tsx:88`, `SshPasswordPromptDialog.tsx:164`,
-    `RelayClientInstallDialog.tsx:72-73`,
-    `MobileClientsUserProfilePage.tsx:97`, `ChatView.tsx:6575`. Leave the
-    migration dialog's "previous T3 Code profile" copy and the ~70
-    non-user-visible occurrences alone. 6 one-line edits — **small**.
-27. **In-cycle cursor following in the mailbox transport.** §8. `next_cursor` is
-    decoded (`WorkjetMailboxTransport.ts:595`) and then dropped, so a backlog
-    drains one 50-envelope page per 10-second cycle. A small loop change in
-    `pull` — **small**.
+26. ~~**Six user-visible `T3 Code` strings.**~~ **DONE 2026-08-20, commit
+    fc2a807b7.** §9. Measuring the six found FIVE already renamed by earlier
+    work and never recorded; only `SshPasswordPromptDialog` remained, and it
+    named the product two different ways inside one paragraph. The migration
+    dialog's "previous T3 Code profile" copy and the ~70 non-user-visible
+    occurrences are untouched, as the item requires.
+27. ~~**In-cycle cursor following in the mailbox transport.**~~ **DONE
+    2026-08-20, commit 84be2a637.** §8. `pull` follows the cursor within the
+    cycle. The two stop conditions matter more than the loop: it advances only
+    when the daemon BOTH reports more AND returns a cursor — following
+    `has_more` without one would re-read page one forever — and it halts if the
+    cursor does not move. Bounded by
+    `WORKJET_TRANSPORT_PULL_MAX_PAGES_PER_CYCLE` so a busy sender cannot hold
+    the cycle open and starve publishing. Mutation-verified.
 28. ~~**Three Rust logging-policy tests.**~~ **DONE 2026-08-20, commit
     6c03e99c7.** §12, independent of decision 3. All three are now guards:
     `request_logging_policy_test.rs` pins that the host never selects

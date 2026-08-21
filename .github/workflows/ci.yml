@@ -48,6 +48,15 @@ jobs:
       - name: Check resource monitor formatting
         run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
 
+      # The "no raw secrets in Git" invariant, enforced rather than asserted.
+      # The scanner reuses the same declared shape table the support bundle
+      # redacts with (packages/shared/src/secretShapes.ts), so the two cannot
+      # drift into disagreeing about what a secret looks like. It exits
+      # non-zero on a hit, which is the whole point of running it here: a unit
+      # test proves the scanner works, only CI proves the tree is clean.
+      - name: Scan tracked files for committed secrets
+        run: node scripts/check-tracked-secrets.ts
+
       - name: Build desktop pipeline
         run: vp run build:desktop
 

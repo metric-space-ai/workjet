@@ -131,7 +131,9 @@ export function buildPage(nav) {
   });
 
   return {
-    containerTotalNum: 2 + itemContainers.length,
+    // ALLE Container zaehlen, auch die Bilder. Der Simulator nimmt einen
+    // falschen Wert klaglos an, das Geraet zeigt dann eine schwarze Seite.
+    containerTotalNum: 2 + itemContainers.length + 2,
     textObject: [
       {
         // Die Lesebox — Rahmen ist die Struktur, der Titel die erste Zeile.

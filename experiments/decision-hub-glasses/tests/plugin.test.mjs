@@ -87,3 +87,18 @@ test("a press in the overview expands instead of answering", async () => {
   assert.equal(answers.length, 0);
   assert.equal(plugin.state.level, "detail");
 });
+
+// Der Host lehnt eine Seite ab, deren containerTotalNum nicht zur Zahl der
+// Container passt — sichtbar als schwarzes Display. Der SDK-Validator kennt
+// diese Regel, also wird er hier befragt.
+test("the page passes the SDK's own validation", async () => {
+  const { validateEvenHubPageContainer } = await import("@evenrealities/even_hub_sdk");
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const page = sdk.calls.lastPage;
+  const total = (page.textObject?.length || 0) + (page.imageObject?.length || 0);
+  assert.equal(page.containerTotalNum, total, "containerTotalNum must count every container");
+  const result = validateEvenHubPageContainer(page);
+  assert.ok(result?.ok !== false, `SDK validation: ${JSON.stringify(result)}`);
+});

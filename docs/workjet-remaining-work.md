@@ -393,7 +393,19 @@ finishes. Scope estimates are rough and name the files.
 18. **Mount the cross-mode notification panel.** §1. Model and rendering are done
     and tested; nothing outside `apps/web/src/crossMode/` references them. The
     precondition — that the cross-mode link RPCs land — has since been met.
-    ~2 files plus a mounting test — **small**.
+    ~~~2 files plus a mounting test — **small**.~~
+    **KORREKTUR 2026-08-20: the estimate is wrong and the item is not a mount.**
+    Measured while starting it: nothing anywhere calls
+    `crossModeNotificationStore.publish` outside its own tests, so the store is
+    never fed. Mounting `CrossModeNotificationCenter` alone renders a
+    permanently empty section. There is also no cross-mode SUBSCRIPTION rpc to
+    hook up — `rpc.ts` has `openInCode`, `getThreadLink`, `listLinks` and
+    `submit`, all request/response — so the three moments the model describes
+    (link created, approval waiting, result submitted) have to be raised
+    client-side at their call sites, and deciding where is a design choice, not
+    wiring. Re-scope as **medium**, and settle the producer before the mount.
+    Item 17 (dead-letter state) has the same shape: its audit atom
+    (`server.ts:1109`) is likewise read by no component.
 19. **Wire the gateway host artifact resolver into startup and packaging.** §6.
     `resolveProviderGatewayHostExecutable` has no production call site, and
     `scripts/build-desktop-artifact.ts` contains no `provider-gateway` reference

@@ -349,9 +349,14 @@ finishes. Scope estimates are rough and name the files.
    it currently bypasses. Option B, cheaper: retire it in favour of
    `workjet_delegate_task`, which already has all five semantics. **Make the
    choice once**, then implement.
-10. **Durable per-delegation state event log.** §8. An append-only table written
-    in the same transaction as `transitionDelegationState`, so status stops being
-    a mutable row column. 1 migration, 1 store file plus tests — **medium**.
+10. ~~**Durable per-delegation state event log.**~~ **DONE 2026-08-20, commit
+    c5f7649e1.** §8. Migration 054 adds `workjet_delegation_state_events`, and
+    the write is inside `transitionDelegationState`'s existing transaction, so
+    a row cannot move without an event and a rolled-back move cannot leave
+    one — a test pins that a REFUSED transition leaves the log empty. No
+    UNIQUE on (delegation, from, to), deliberately: a retry cycle must record
+    both passes. Ordered by autoincrement `sequence`, not timestamp, so a
+    backwards clock cannot reorder history. Mutation-verified.
 11. ~~**Inbound thread-activity traces on the cross-environment path.**~~
     **DONE 2026-08-20, commit 7d0865a82.** §8 — one piece of work, two boxes.
     A remote delegation now marks `workjet.delegation.delivered` on the target

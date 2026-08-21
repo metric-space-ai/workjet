@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { WS_METHODS, WsRpcGroup, WsWorkjetMeshOverviewRpc } from "./rpc.ts";
 
 import {
+  WorkjetDiffReference,
   WorkjetHandoffAcknowledgement,
   WORKJET_MAILBOX_SCHEMA_VERSION,
   WORKJET_TERMINAL_DELEGATION_STATES,
@@ -1546,5 +1547,52 @@ describe("WorkjetHandoffAcknowledgement", () => {
       acknowledgement: base,
     });
     expect(payload._tag).toBe("handoff-ack");
+  });
+});
+
+describe("WorkjetDiffReference", () => {
+  it("is a revision RANGE the receiver resolves, never diff text", () => {
+    // The rule for this whole family is that remote servers resolve references
+    // against their own authorized environment state. A range lets them; diff
+    // text would both copy content and hand them something unverifiable.
+    const decoded = Schema.decodeUnknownSync(WorkjetDiffReference)({
+      schemaVersion: 1,
+      from: "aaaaaaa",
+      to: "bbbbbbb",
+      patch: "--- a/file\n+++ b/file\n",
+      body: "the whole diff",
+    });
+    expect(decoded).not.toHaveProperty("patch");
+    expect(decoded).not.toHaveProperty("body");
+    expect(Object.keys(decoded).sort()).toEqual(["from", "schemaVersion", "to"]);
+  });
+
+  it("allows an absent `from`, because a first commit has no predecessor", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetDiffReference)({
+      schemaVersion: 1,
+      to: "bbbbbbb",
+    });
+    expect(decoded).not.toHaveProperty("from");
+    expect(decoded.to).toBe("bbbbbbb");
+  });
+
+  it("refuses anything that is not a commit hash on either end", () => {
+    for (const bad of ["HEAD", "main", "../etc/passwd", ""]) {
+      expect(() =>
+        Schema.decodeUnknownSync(WorkjetDiffReference)({ schemaVersion: 1, to: bad }),
+      ).toThrow();
+    }
+  });
+
+  it("is bounded on the references struct so a result cannot become a history", () => {
+    const many = Array.from({ length: 33 }, () => ({ schemaVersion: 1, to: "bbbbbbb" }));
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetArtifactReferences)({
+        schemaVersion: 1,
+        commitHashes: [],
+        paths: [],
+        diffs: many,
+      }),
+    ).toThrow();
   });
 });

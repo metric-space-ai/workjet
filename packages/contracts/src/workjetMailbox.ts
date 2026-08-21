@@ -314,11 +314,44 @@ export type WorkjetGitBranchRef = typeof WorkjetGitBranchRef.Type;
  * paths. File contents, diffs, provider payloads, and secrets are excluded by
  * construction.
  */
+/**
+ * A diff, as a REVISION RANGE the receiver resolves itself.
+ *
+ * Two commit hashes and nothing else. The plan's rule for this whole family is
+ * that "remote servers resolve references against their own authorized
+ * environment state", and a range is exactly that: the receiver runs its own
+ * diff, against its own repository, under its own authorization. Shipping the
+ * diff TEXT instead would both copy content this contract exists to avoid and
+ * hand the receiver a diff it could not verify against anything it holds.
+ *
+ * `from` is optional because a first commit has no predecessor; absent means
+ * "the range ends at `to` and the receiver decides where it starts", which is
+ * the same judgement it already makes for a branch with no head.
+ */
+export const WorkjetDiffReference = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  from: Schema.optionalKey(WorkjetGitCommitHash),
+  to: WorkjetGitCommitHash,
+});
+export type WorkjetDiffReference = typeof WorkjetDiffReference.Type;
+
 export const WorkjetArtifactReferences = Schema.Struct({
   schemaVersion: MailboxSchemaVersion,
   branch: Schema.optionalKey(WorkjetGitBranchRef),
   commitHashes: Schema.Array(WorkjetGitCommitHash).check(Schema.isMaxLength(64)),
   paths: Schema.Array(WorkjetRepositoryPath).check(Schema.isMaxLength(256)),
+  /**
+   * Bounded diff ranges. Capped low on purpose: a result pointing at more than
+   * a handful of ranges is describing a history, not an artifact, and the
+   * bound is what keeps this from becoming an unbounded log.
+   *
+   * OPTIONAL, unlike its siblings, and deliberately so. This contract crosses
+   * MACHINES that may run different versions; a required new field would make
+   * an older sender's payload fail to decode on a newer receiver, turning an
+   * additive improvement into a compatibility break. Absent means "this sender
+   * names no diff ranges", never "there are none".
+   */
+  diffs: Schema.optionalKey(Schema.Array(WorkjetDiffReference).check(Schema.isMaxLength(32))),
 });
 export type WorkjetArtifactReferences = typeof WorkjetArtifactReferences.Type;
 

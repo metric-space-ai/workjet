@@ -1060,6 +1060,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       schemaVersion: 1,
       commitHashes: input.headCommit === undefined ? [] : [input.headCommit],
       paths: [],
+      // No diff range yet: a range needs a FROM revision, which is the commit
+      // the delegation started at, and the executor does not record one. An
+      // empty array is the honest answer; inventing `from` would name a range
+      // the receiver would resolve to the wrong work.
+      diffs: [],
     },
   });
 

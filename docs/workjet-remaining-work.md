@@ -313,12 +313,21 @@ finishes. Scope estimates are rough and name the files.
    over the declared byte budget"). Ran the egress suite: 8/8 green including
    the redirect bound.
 
-3. **Secret-scanning gate over tracked files, plus a browser-storage canary.**
-   §12 — closes the two unguarded sinks that keep the "no raw secrets" invariant
-   unticked. A script over `git ls-files` reusing the canary table the support
-   bundle already declares, run in CI, plus one renderer test asserting no secret
-   shape reaches `localStorage`/IndexedDB. **Small**, and the cheapest security
-   invariant on the list.
+3. ~~**Secret-scanning gate over tracked files, plus a browser-storage
+   canary.**~~ **DONE 2026-08-20, commit 6aa399150.** §12. The scanner
+   (`scripts/check-tracked-secrets.ts`), the canary
+   (`apps/web/src/browserStorageSecretCanary.test.ts`) and their 11 tests
+   already existed; what was missing was that NOTHING RAN the scanner. It is
+   now a CI step. A unit test proves the scanner works, only CI proves the
+   tree is clean — different claims.
+   Verified by planting one: an Authorization bearer header makes it exit
+   non-zero naming both matched shapes. A `SECRET=...` assignment does NOT
+   fire, correctly — `secret-assignment` and `password-prompt` are
+   deliberately `scansSourceTree: false`, or every fixture with
+   `password: "..."` would trip the gate. Over a source tree it runs the three
+   shapes that cannot be innocent: pem-private-key, known-credential,
+   authorization-header. Currently clean over 4809 tracked files.
+
 4. **`./node_modules/.bin/vp check --fix`.** §15. 144 tracked files unformatted
    (82 `native/web-stack`, 35 `native/provider-gateway`, 13
    `experiments/kundenpipeline-module`, 5 `native/pdf-parse`, 5 `apps/server`, 2

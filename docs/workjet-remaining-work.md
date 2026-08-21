@@ -426,10 +426,29 @@ finishes. Scope estimates are rough and name the files.
     section. `packages/contracts/src/settings.ts` needed nothing — it already
     had a single `./workjet.ts` import. No behaviour change.
 21. **A Workjet-owned `workjet-web-stack` CLI entry point.** §15 and §5 — one
-    piece of work, two boxes. The crate already declares the `[[bin]]`; retarget
-    `scripts/test_web_search_e2e.sh` and `scripts/test_web_unlock_e2e.sh` at it
-    and the CTOX-binary dependency disappears, leaving only network and browser
-    runtime. 2 shell scripts plus a bin entry point — **small**.
+    piece of work, two boxes. ~~2 shell scripts plus a bin entry point —
+    **small**.~~
+    **KORREKTUR 2026-08-20: not achievable as written; it needs a decision.**
+    Measured while starting it. The bin already exists AND is tested (its tests
+    live inside `src/bin/workjet-web-stack.rs`, which is why a filename search
+    misses them). The blocker is that the two surfaces are not
+    interchangeable:
+
+    - the scripts (`native/web-stack/scripts/`, not `scripts/`) probe EACH
+      provider — `--source mock` for a network-free shape check, then
+      `--source <provider>` per provider, then the auto-cascade;
+    - the bin speaks a JSON envelope on stdin, and its `SearchRequest`
+      (`capability.rs:291-293`) is exactly `{ query: String }` with
+      `deny_unknown_fields`. Everything else comes from
+      `CanonicalWebSearchRequest::default()`. There is NO source selector, and
+      an extra field is rejected outright.
+
+    Retargeting as written would therefore silently reduce the tests from
+    "every provider works, and the cascade works" to "the cascade works", and
+    drop the only network-free check. **DECISION NEEDED:** widen the
+    capability surface with a source selector — a deliberate widening of an
+    MCP-exposed tool, so a security-relevant choice, not a refactor — or accept
+    the reduced coverage and say so in the scripts. Re-scope as **medium**.
 22. ~~**About panel on Windows and Linux, plus a release-feed identity test.**~~
     **ALREADY DONE — verified 2026-08-20, no change needed.** §9. Both halves
     exist and pass. The Help menu carries `About ${appName}` outside the darwin

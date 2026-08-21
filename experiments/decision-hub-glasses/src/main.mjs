@@ -29,6 +29,8 @@ function sdkFromBridge(bridge) {
   return {
     createStartUpPageContainer: (page) =>
       bridge.callEvenApp(EvenAppMethod.CreateStartUpPageContainer, page),
+    updateImageRawData: (data) =>
+      bridge.callEvenApp(EvenAppMethod.UpdateImageRawData, data),
     rebuildPageContainer: (page) => bridge.callEvenApp(EvenAppMethod.RebuildPageContainer, page),
     textContainerUpgrade: (update) =>
       bridge.callEvenApp(EvenAppMethod.TextContainerUpgrade, update),
@@ -119,6 +121,7 @@ async function main() {
     source,
     onPaint: () => renderApp(),
     filter: (decision) => passesFilter(decision, settings),
+    sections: settings.sections,
     onError: (error) => {
       console.error("[decision-hub]", error?.stack || error?.message || String(error));
       status(`Fehler: ${error?.message || error}`, "error");

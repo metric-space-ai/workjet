@@ -1,13 +1,13 @@
-// Even-Hub-Plugin: Decision Hub auf der Brille.
+// Decision Hub auf der Brille: Entscheidungsvorlage als Rubriken, Seitenleiste
+// und gezeichnete Entscheidungs-Icons.
 //
-// Läuft als Web-App auf dem Handy; die Brille ist Anzeige und Eingabe.
-// Der Code hier ist bewusst dünn: Ansicht kommt aus buildView(), Layout aus
-// view-to-containers, Gesten aus input.mjs. Alle drei sind ohne Hardware
-// getestet — dieses Modul verdrahtet sie nur mit dem SDK und der Datenquelle.
+// Die Logik liegt in nav.mjs (Bedienung), layout.mjs (Seitenaufbau) und
+// sections.mjs (Inhalt) — hier wird nur verdrahtet.
 
-import { buildView } from "../../kundenpipeline-module/core/glasses-renderer.mjs";
-import { viewToPageContainer, viewToTextUpdates } from "./view-to-containers.mjs";
-import { reduce } from "./input.mjs";
+import { decisionIcons, tabLabel } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
+import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
+import { buildPage, buildBitmaps, CONTENT_LINES, LEVEL } from './layout.mjs';
+import { navigate, initialNav } from './nav.mjs';
 
 export function createDecisionHubPlugin({
   sdk,
@@ -15,113 +15,111 @@ export function createDecisionHubPlugin({
   onError = () => {},
   onPaint = () => {},
   filter = () => true,
+  sections: allowedSections = ['mail', 'antwort', 'aufgabe', 'notizen'],
 }) {
-  const state = { scroll: 0, focusIcon: -1, index: 0, detail: 0 };
   let decisions = [];
   let vorgaenge = new Map();
+  let index = 0;
+  let nav = initialNav();
   let started = false;
+  let lastSignature = null;
 
-  const currentView = () =>
-    buildView({
-      decisions,
-      index: Math.min(state.index, Math.max(0, decisions.length - 1)),
-      focusIcon: state.focusIcon,
-      scroll: state.scroll,
-      vorgangOf: (d) => vorgaenge.get(d.vorgang_id),
-      copy: {},
-      detail: state.detail,
-    });
+  const decision = () => decisions[index];
+  const vorgangOf = (d) => vorgaenge.get(d?.vorgang_id);
 
-  let lastFocus = null;
+  function currentNav() {
+    const d = decision();
+    if (!d) return null;
+    const sections = sectionsOf(d, vorgangOf(d), allowedSections);
+    return {
+      ...nav,
+      tabs: decisions.map((item) => tabLabel(item, vorgangOf(item))),
+      tabIndex: index,
+      sections,
+      icons: decisionIcons(d, {}, nav.level === LEVEL.DETAIL ? 1 : 0),
+      detail: nav.level === LEVEL.DETAIL ? 1 : 0,
+    };
+  }
+
+  function dimsOf(view) {
+    const section = view.sections[view.sectionIndex];
+    return {
+      sections: view.sections.length,
+      pages: section ? pageOf(section, view.page, CONTENT_LINES).pages : 1,
+      icons: view.icons.length,
+    };
+  }
 
   async function paint() {
-    const view = currentView();
+    const view = currentNav();
     onPaint(view);
     if (!view) return;
+    // Der Seitenaufbau aendert sich mit Ebene, Rubrik und Fokus; nur dann muss
+    // neu gebaut werden. Bilder tragen Auswahl und Position, also gehen sie
+    // bei jeder Aenderung mit.
+    const signature = `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}`;
     if (!started) {
-      const result = await sdk.createStartUpPageContainer(viewToPageContainer(view));
-      // 0 = Erfolg; alles andere ist ein echter Fehler und darf nicht als
-      // "laeuft schon" durchgehen.
+      const result = await sdk.createStartUpPageContainer(buildPage(view));
       if (result !== 0 && result?.code !== 0) {
         throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
       }
       started = true;
-      lastFocus = view.focusIcon;
-      return;
+    } else if (signature !== lastSignature) {
+      await sdk.rebuildPageContainer(buildPage(view));
     }
-    // Wandert der Fokus, aendert sich der STIL der Aktionskaestchen (Rahmen,
-    // Helligkeit) — das traegt textContainerUpgrade nicht, dafuer muss die
-    // Seite neu aufgebaut werden. Sonst bliebe der Fokus unsichtbar.
-    if (view.focusIcon !== lastFocus) {
-      await sdk.rebuildPageContainer(viewToPageContainer(view));
-      lastFocus = view.focusIcon;
-      return;
+    if (signature !== lastSignature) {
+      for (const payload of buildBitmaps(view)) await sdk.updateImageRawData(payload);
+      lastSignature = signature;
     }
-    for (const update of viewToTextUpdates(view)) await sdk.textContainerUpgrade(update);
   }
 
   async function refresh() {
     const data = await source.load();
-    // Der Filter kommt aus den Handy-Einstellungen: die Brille zeigt nur,
-    // was der Besitzer unterwegs sehen will.
     decisions = (data.decisions || []).filter(filter);
     vorgaenge = new Map((data.vorgaenge || []).map((v) => [v.id, v]));
-    if (state.index >= decisions.length) {
-      state.index = 0;
-      state.scroll = 0;
-      state.focusIcon = -1;
-    }
+    if (index >= decisions.length) index = 0;
+    nav = initialNav();
     await paint();
   }
 
-  /** Eine Entscheidung ausfuehren — von der Brille, vom Handy, egal woher. */
+  /** Eine Entscheidung ausfuehren — von der Brille wie vom Handy. */
   async function act(wert) {
-    const decision = decisions[state.index];
-    if (!decision) return;
-    if (wert === "detail") {
-      // Aus- und Einklappen bleibt im selben Vorgang: an den Anfang und
-      // zurueck in den Text, damit man sofort weiterliest.
-      state.detail = state.detail >= 1 ? 0 : 1;
-      state.scroll = 0;
-      state.focusIcon = -1;
+    const d = decision();
+    if (!d) return;
+    if (wert === 'detail') {
+      nav = { ...nav, level: nav.level === LEVEL.DETAIL ? LEVEL.RUBRIK : LEVEL.DETAIL, page: 0, focusIcon: -1 };
       await paint();
       return;
     }
-    if (wert === "naechster") {
-      state.index = (state.index + 1) % Math.max(1, decisions.length);
-      state.scroll = 0;
+    if (wert === 'vertagt') {
+      decisions.push(decisions.splice(index, 1)[0]);
+      index = Math.min(index, Math.max(0, decisions.length - 1));
+      nav = initialNav();
       await paint();
       return;
     }
-    if (wert === "vertagt") {
-      // Vertagen bleibt offen und wandert ans Ende der Queue.
-      decisions.push(decisions.splice(state.index, 1)[0]);
-      state.index = Math.min(state.index, Math.max(0, decisions.length - 1));
-      state.scroll = 0;
-      await paint();
-      return;
-    }
-    await source.answer({ decision, wert });
+    await source.answer({ decision: d, wert });
     await refresh();
   }
 
-
+  async function nextCase() {
+    index = (index + 1) % Math.max(1, decisions.length);
+    nav = initialNav();
+    await paint();
+  }
 
   async function handleEvent(osEvent) {
-    const view = currentView();
+    const view = currentNav();
     if (!view) return;
-    const dims = {
-      lineCount: view.zeilen.length,
-      iconCount: view.icons.length,
-      itemCount: decisions.length,
-    };
-    const { state: next, action } = reduce(state, osEvent, dims);
-    Object.assign(state, next);
-    if (action?.type === "activate") {
+    const { nav: nextNav, action } = navigate(nav, osEvent, dimsOf(view));
+    nav = nextNav;
+    if (action?.type === 'activate') {
       const icon = view.icons[action.icon];
-      // Ein Pfad fuer alle Oberflaechen. Versand und Delegation passieren
-      // serverseitig nach der Antwort — das Plugin sendet nie selbst.
       if (icon?.wert) await act(icon.wert);
+      return;
+    }
+    if (action?.type === 'nextCase') {
+      await nextCase();
       return;
     }
     await paint();
@@ -139,44 +137,29 @@ export function createDecisionHubPlugin({
     handleEvent: (osEvent) => handleEvent(osEvent).catch(onError),
     act: (wert) => act(wert).catch(onError),
     refresh: () => refresh().catch(onError),
-    get state() {
-      return { ...state, count: decisions.length };
-    },
-    /** Rohdaten fuer die Handy-Oberflaeche (die Brille bekommt currentView()). */
-    snapshot() {
-      return {
-        decisions,
-        index: Math.min(state.index, Math.max(0, decisions.length - 1)),
-        vorgangOf: (d) => vorgaenge.get(d?.vorgang_id),
-      };
-    },
-    /** Sichtprobe: zeigt, dass die Kette bis auf die Brille traegt. */
     async showTestCard() {
-      const now = new Date().toLocaleTimeString("de-DE");
-      decisions = [
-        {
-          id: "testkarte",
-          vorgang_id: "testkarte",
-          typ: "zuordnung",
-          titel: "Testkarte",
-          status: "offen",
-          zeilen_json: [
-            "» TESTKARTE",
-            `Gesendet um ${now}.`,
-            "Wenn du das liest, traegt die Kette.",
-          ],
-        },
-      ];
-      vorgaenge = new Map([["testkarte", { id: "testkarte", kunde_name: "Test" }]]);
-      state.index = 0;
-      state.scroll = 0;
+      decisions = [{
+        id: 'testkarte', vorgang_id: 'testkarte', typ: 'zuordnung', titel: 'Testkarte',
+        status: 'offen', zeilen_json: ['Wenn du das liest, trägt die Kette.'],
+      }];
+      vorgaenge = new Map([['testkarte', {
+        id: 'testkarte', kunde_name: 'Test',
+        quelle_json: { body_clean: `Testkarte gesendet um ${new Date().toLocaleTimeString('de-DE')}.` },
+      }]]);
+      index = 0;
+      nav = initialNav();
       await paint();
     },
-    async select(index) {
-      state.index = index;
-      state.scroll = 0;
-      state.focusIcon = -1;
+    async select(i) {
+      index = i;
+      nav = initialNav();
       await paint();
+    },
+    snapshot() {
+      return { decisions, index, vorgangOf };
+    },
+    get state() {
+      return { ...nav, index, count: decisions.length };
     },
   };
 }

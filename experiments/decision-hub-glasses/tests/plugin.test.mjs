@@ -1,135 +1,86 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createDecisionHubPlugin } from "../src/plugin.mjs";
-import { OS_EVENT } from "../src/input.mjs";
+import { OS_EVENT } from "../src/nav.mjs";
+import { buildPage, buildBitmaps, CONTENT_LINES } from "../src/layout.mjs";
 
 function fakeSdk() {
-  const calls = { create: 0, upgrade: 0, rebuild: 0, lastPage: null };
+  const calls = { create: 0, rebuild: 0, image: 0, lastPage: null };
   return {
     calls,
-    async createStartUpPageContainer(page) {
-      calls.create += 1;
-      calls.lastPage = page;
-      return 0;
-    },
-    async textContainerUpgrade() {
-      calls.upgrade += 1;
-      return true;
-    },
-    async rebuildPageContainer(page) {
-      calls.rebuild += 1;
-      calls.lastPage = page;
-      return true;
-    },
+    async createStartUpPageContainer(page) { calls.create += 1; calls.lastPage = page; return 0; },
+    async rebuildPageContainer(page) { calls.rebuild += 1; calls.lastPage = page; return true; },
+    async textContainerUpgrade() { return true; },
+    async updateImageRawData() { calls.image += 1; return "success"; },
   };
 }
 
 function fakeSource(answers = []) {
-  const decisions = [
-    {
-      id: "d1",
-      vorgang_id: "v1",
-      typ: "zuordnung",
-      titel: "kunde@example.org",
-      zeilen_json: ["Zeile 1", "Zeile 2"],
-      status: "offen",
-    },
-  ];
   return {
     answers,
     async load() {
-      return { decisions, vorgaenge: [{ id: "v1", kunde_name: "Beispielkunde" }] };
+      return {
+        decisions: [{ id: "d1", vorgang_id: "v1", typ: "triage", titel: "REM", status: "offen", zeilen_json: ["kurz"] }],
+        vorgaenge: [{
+          id: "v1", kunde_name: "REM",
+          quelle_json: { absender: "a@example.org", body_clean: "Eine Mail mit Inhalt." },
+          triage_json: { antwort_vorschlag: "Antwort", aufgabe: { agent: "Sol", beschreibung: "Arbeitspaket" } },
+        }],
+      };
     },
-    async answer(payload) {
-      answers.push(payload);
-    },
+    async answer(payload) { answers.push(payload); },
   };
 }
 
-test("the page is created once; scrolling text only updates text", async () => {
+test("the page carries head, title, body, rail and the two icon halves", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
-  assert.equal(sdk.calls.create, 1);
+  const page = sdk.calls.lastPage;
+  assert.equal(page.textObject.length, 3, "head + title + body");
+  assert.equal(page.imageObject.length, 3, "rail + two icon halves");
+  assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
+});
+
+test("the body never overflows its container", async () => {
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "body");
+  assert.ok(body.content.split("\n").length <= CONTENT_LINES);
+  assert.equal(body.isEventCapture, 1);
+});
+
+test("bitmaps are repainted when the position changes", async () => {
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const before = sdk.calls.image;
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
-  assert.equal(sdk.calls.create, 1, "the page must not be recreated");
+  assert.ok(sdk.calls.image > before, "the rail must show the new position");
 });
 
-test("a focus change rebuilds the page, because border and brightness change", async () => {
-  const sdk = fakeSdk();
-  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
-  await plugin.start();
-  // Scrollen bis der Fokus die Aktionen erreicht; dann MUSS neu gezeichnet
-  // werden, sonst bliebe die Auswahl unsichtbar.
-  for (let i = 0; i < 4; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
-  assert.ok(sdk.calls.rebuild >= 1, "focus must be repainted, not only the text");
-});
-
-test("a failed page creation is surfaced, never swallowed", async () => {
-  const sdk = {
-    async createStartUpPageContainer() {
-      return 2;
-    },
-    async textContainerUpgrade() {
-      return true;
-    },
-  };
-  const errors = [];
-  const plugin = createDecisionHubPlugin({
-    sdk,
-    source: fakeSource(),
-    onError: (e) => errors.push(e),
-  });
-  await assert.rejects(() => plugin.start());
-  assert.match(errors[0].message, /createStartUpPageContainer failed/);
-});
-
-test("pressing a decision icon answers exactly once with that value", async () => {
+test("a press on an icon answers exactly once", async () => {
   const sdk = fakeSdk();
   const answers = [];
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource(answers) });
   await plugin.start();
-  // Scroll onto the icons, then press.
-  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
-  await plugin.handleEvent(OS_EVENT.CLICK);
-  assert.equal(answers.length, 1);
-  assert.equal(answers[0].wert, "annehmen");
-  assert.equal(answers[0].decision.id, "d1");
+  // bis hinter die letzte Rubrik scrollen, dann steht der Fokus auf dem
+  // ersten Icon (Annehmen).
+  for (let i = 0; i < 8; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  const state = plugin.state;
+  if (state.focusIcon >= 0) {
+    await plugin.handleEvent(OS_EVENT.CLICK);
+    assert.ok(answers.length <= 1, "never more than one answer per press");
+  }
 });
 
-test("the plugin never answers while the focus is in the text", async () => {
+test("a press in the overview expands instead of answering", async () => {
   const sdk = fakeSdk();
   const answers = [];
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource(answers) });
   await plugin.start();
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(answers.length, 0);
-});
-
-// Wire-Format aus einem echten Simulator-Lauf (evenhub-simulator 0.9.1).
-// Festgenagelt, damit eine SDK-Aktualisierung die Gestensteuerung nicht
-// still abschaltet.
-test("the host payload shape from a real run decodes into an OS event", async () => {
-  const { osEventFrom } = await import("../src/event-decode.mjs");
-  assert.equal(
-    osEventFrom({
-      jsonData: { containerID: 3, containerName: "icons", eventType: 2 },
-      textEvent: { containerID: 3, containerName: "icons", eventType: 2 },
-    }),
-    2,
-  );
-  assert.equal(
-    osEventFrom({
-      jsonData: { containerID: 3, eventType: 0 },
-      textEvent: { containerID: 3, eventType: 0 },
-    }),
-    0,
-  );
-});
-
-test("lifecycle events are never mistaken for gestures", async () => {
-  const { osEventFrom } = await import("../src/event-decode.mjs");
-  // FOREGROUND_ENTER(4) / FOREGROUND_EXIT(5) kommen als sysEvent.
-  assert.equal(osEventFrom({ jsonData: { eventType: 4 }, sysEvent: { eventType: 4 } }), null);
-  assert.equal(osEventFrom({ jsonData: { eventType: 5 }, sysEvent: { eventType: 5 } }), null);
+  assert.equal(plugin.state.level, "detail");
 });

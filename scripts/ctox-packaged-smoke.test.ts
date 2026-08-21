@@ -1,7 +1,7 @@
+import { cdpCommandError } from "./lib/cdpClient.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   INITIAL_LIFECYCLE_STATE,
-  cdpCommandError,
   checkChildProcessProfiles,
   classifyAdvancedStatus,
   cleanupActionOrder,

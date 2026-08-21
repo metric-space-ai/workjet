@@ -534,9 +534,18 @@ finishes. Scope estimates are rough and name the files.
     deduplicated (a subscription re-delivers on reconnect, and one failure
     read as two sends someone after a problem that does not exist), capped at
     50 newest. Mutation-verified.
-    REMAINING: rendering it. The panel from item 18 is mounted and is the
-    natural host, so this is now a presentation step with no design question
-    left — **small**.
+    **RENDERING DONE 2026-08-20, commit 05ffb2594.**
+    `WorkjetMailboxNotifications.tsx` renders the list; the rows offer NO
+    navigation, deliberately — a dead-lettered envelope has no thread to open,
+    which is exactly what is wrong with it. Empty renders nothing rather than
+    a permanent "Mailbox (0)" box.
+    Accumulation was the piece the item did not mention and the one that
+    mattered: the atom yields only the LATEST stream value, so without folding,
+    a dead-letter would vanish as soon as any other event followed it —
+    reading as the problem having resolved. The fold returns the same array
+    reference for a replayed event so a reconnect does not rerender.
+    Mutation-verified. What is left is only mounting it in the shell beside
+    the cross-mode panel.
 
 18. ~~**Mount the cross-mode notification panel.**~~ **DONE 2026-08-20, commit
     b0060c11f.** §1. Model and rendering were done; nothing called `publish`,

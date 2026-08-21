@@ -341,8 +341,18 @@ finishes. Scope estimates are rough and name the files.
    with `workjet.harness.inspect|install|update|remove` RPCs beside the existing
    Greppy pair (`packages/contracts/src/rpc.ts:330-345`), a server service that
    probes each harness executable, and make `WorkerDispatch.ts` consult the
-   result — today the server never reads availability at all. ~4 server files, 1
-   contract, 2 web files plus tests — **the largest single Wave 5 item**.
+   result. ~4 server files, 1 contract, 2 web files plus tests — **the largest
+   single Wave 5 item**.
+   **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
+   availability at all" understates it. `WorkerDispatch.ts` contains ZERO
+   matches for profile, harness or computerId, and `WorkerDispatchInput` is
+   `{task, title, enabledCapabilityIds, modelSelection}` — no profile, no
+   computer, no harness. Repo-wide, `workerProfiles` is read only by the legacy
+   importer and `WorkjetSettings.tsx`; nothing on the dispatch path touches the
+   catalog. So "make dispatch consult the availability result" first requires
+   connecting dispatch to worker profiles AT ALL, which is an architectural
+   step the estimate does not appear to include. Re-scope accordingly before
+   starting, and expect the dispatch half to be the larger one.
 9. **Settle `workjet_dispatch_worker`.** §8 — one decision closes three boxes
    (bounded dispatch/cancel/retry/timeout/result, durable worker status, and
    completion-as-an-event). Option A: route it through the delegation machinery

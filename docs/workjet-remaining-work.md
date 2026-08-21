@@ -322,18 +322,27 @@ finishes. Scope estimates are rough and name the files.
    `docs`, 2 `apps/web`), which is the whole of why the CI `Check` step is red.
    One command, zero behaviour change — **but land it as its own
    formatting-only commit**, never mixed with a behavioural change.
-5. **Clear the 57 pre-existing `t3` server typecheck errors.** §15. The mobile
-   half of this gate is now green (0 errors, verified in this audit), so the
-   server package is the only thing keeping `vp run -r typecheck` red.
-   **Medium**, and it is pure debt.
-6. **Peer revoke / re-pin path.** §8 and §12 — one piece of work, two boxes. Key
-   rotation is currently a refusal with no way back, and there is no `revokePeer`
-   or `forgetPeer`, which is what leaves "revocable environment credentials"
-   unticked. ~1 migration, 1 RPC, 1 UI confirmation plus tests — **medium**.
-7. **Target-side capability check on the remote delegation path.** §12. Add a
-   parent-superset check beside the existing target ROLE check
-   (`WorkjetDelegationExecutor.ts:857`). Defence in depth rather than a live
-   escalation — ~1 file plus a test, **small**.
+5. ~~**Clear the 57 pre-existing `t3` server typecheck errors.**~~ **ALREADY
+   DONE — verified 2026-08-20, no change needed.** §15. Measured, not assumed:
+   `tsgo --noEmit -p tsconfig.json` in `apps/server` reports 0 errors, and
+   repo-wide `vp run -r typecheck` is clean across all five packages. The gate
+   this item describes is green.
+6. ~~**Peer revoke / re-pin path.**~~ **ALREADY DONE — verified 2026-08-20.**
+   §8 and §12. Migration 053 (`workjet_mailbox_peer_revocations`),
+   `WorkjetMeshRevocationRpc.ts` and the Machines-page confirmation all exist;
+   `key-revoked` is a real rejection reason in the audit contract and is
+   handled in the transport (`WorkjetMailboxTransport.ts:946`). Revocation
+   tests 4/4. The tombstone is what makes revocation stick: the pin is
+   destroyed so a rotated peer can re-pin, while the REVOKED key stays
+   refused.
+7. ~~**Target-side capability check on the remote delegation path.**~~
+   **ALREADY DONE — verified 2026-08-20** (commit b7cea0e79). §12. The
+   parent-superset check sits beside the target role check, with
+   `target-capability-escalation` as its own refusal reason and the empty set
+   as the defensible superset when the parent record is gone — so a target
+   holding no capabilities still runs and one holding any is refused. Covered
+   by tests including the read-failure path for the SECOND thread the check
+   reads.
 
 ### Tier 2 — finishes a wave
 

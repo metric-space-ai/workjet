@@ -4,6 +4,7 @@ import {
   type WorkjetComputer,
   type WorkjetComputerPresentationKind,
   type WorkjetHarness,
+  type WorkjetHarnessAvailabilitySnapshot,
   type WorkjetHarnessConfiguration,
 } from "@t3tools/contracts";
 import { useState } from "react";
@@ -15,6 +16,11 @@ import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { WORKJET_HARNESS_OPTIONS } from "./WorkjetWorkerEditor";
+import { cn } from "../../lib/utils";
+import {
+  resolveHarnessAvailabilityView,
+  type HarnessAvailabilityView,
+} from "./workjetHarnessAvailabilityView";
 
 export interface WorkjetEnvironmentTargetOption {
   readonly environmentId: EnvironmentId;
@@ -114,16 +120,50 @@ const PRESENTATION_OPTIONS: ReadonlyArray<{
   { id: "remote", label: "Remote" },
 ];
 
+/**
+ * Shows the DISAGREEMENT between the switch and the probe, and only that.
+ *
+ * Agreement and "not probed" render nothing: the switch already says what the
+ * operator decided, and repeating it back adds a line per harness to a list
+ * that is mostly uneventful. The whole value here is the mismatch.
+ */
+function HarnessAvailabilityNote({ view }: { readonly view: HarnessAvailabilityView }) {
+  if (view.kind === "agrees" || view.kind === "unknown") return null;
+  const isProblem = view.kind === "declared-but-missing";
+  return (
+    <p
+      className={cn(
+        "text-xs sm:col-span-3",
+        isProblem ? "text-destructive" : "text-muted-foreground",
+      )}
+      data-workjet-harness-availability={view.kind}
+      role={isProblem ? "alert" : undefined}
+    >
+      {isProblem
+        ? `Switched on, but this host cannot run it. ${view.reason}`
+        : `Installed on this host${view.version === undefined ? "" : ` (${view.version})`}, but switched off here.`}
+    </p>
+  );
+}
+
 export function WorkjetComputerEditor({
   computer = null,
   environments,
   onSave,
   onCancel,
+  availability = null,
 }: {
   readonly computer?: WorkjetComputer | null;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
   readonly onSave: (computer: WorkjetComputer) => void;
   readonly onCancel: () => void;
+  /**
+   * What the host actually found, from `workjet.harness.inspect`. Optional and
+   * defaulting to null so every existing caller and test keeps working and the
+   * editor stays usable before a probe has ever run — an absent probe shows
+   * nothing rather than implying agreement.
+   */
+  readonly availability?: WorkjetHarnessAvailabilitySnapshot | null;
 }) {
   const [draft, setDraft] = useState(() => createWorkjetComputerDraft({ computer, environments }));
   const [error, setError] = useState<string | null>(null);
@@ -252,6 +292,13 @@ export function WorkjetComputerEditor({
                   )
                 }
                 aria-label={`${label} available`}
+              />
+              <HarnessAvailabilityNote
+                view={resolveHarnessAvailabilityView({
+                  declaredAvailable: configuration.available,
+                  harness: configuration.harness,
+                  snapshot: availability,
+                })}
               />
             </div>
           );

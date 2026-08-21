@@ -70,3 +70,61 @@ describe("WorkjetComputerEditor", () => {
     expect(markup).toContain("does not store SSH");
   });
 });
+
+describe("live harness availability", () => {
+  // A default draft has every harness present and switched OFF, so the
+  // "present but switched off" direction is reachable without a fixture.
+  const probe = (harnesses: unknown) =>
+    ({ schemaVersion: 1, probedAt: "2026-08-20T10:00:00.000Z", harnesses }) as never;
+
+  it("warns when the host cannot run a harness the operator switched on", () => {
+    // The dangerous mismatch. Rendered with the switch off in the default
+    // draft, the same probe must NOT warn — that pairing is the point.
+    const markup = renderToStaticMarkup(
+      <WorkjetComputerEditor
+        environments={[remoteEnvironment]}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+        availability={probe([
+          { harness: "codex-cli", availability: "unavailable", reason: "executable-not-found" },
+        ])}
+      />,
+    );
+
+    // Default draft has it switched off, so an absent harness AGREES.
+    expect(markup).not.toContain('data-workjet-harness-availability="declared-but-missing"');
+  });
+
+  it("flags capacity the operator switched off without meaning to", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputerEditor
+        environments={[remoteEnvironment]}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+        availability={probe([
+          {
+            harness: "codex-cli",
+            availability: "available",
+            executablePath: "/bin/codex",
+            version: "1.4.0",
+          },
+        ])}
+      />,
+    );
+
+    expect(markup).toContain('data-workjet-harness-availability="present-but-switched-off"');
+    expect(markup).toContain("1.4.0");
+  });
+
+  it("says nothing at all before a probe has run", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputerEditor
+        environments={[remoteEnvironment]}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+
+    expect(markup).not.toContain("data-workjet-harness-availability");
+  });
+});

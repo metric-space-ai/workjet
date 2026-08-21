@@ -392,11 +392,20 @@ finishes. Scope estimates are rough and name the files.
     must face that decision instead of drifting into it.
     STILL OPEN and unblocked: `paths`, the diff and Greppy reference kinds
     (neither type exists), and reference resolution on the receiving side.
-14. **Handoff head commit and acknowledgement envelope.** §8. Read the real head
-    commit and push where a remote is configured (`headCommit` is an optionalKey
-    nothing writes), and add an acknowledgement kind to
-    `WorkjetMailboxEnvelopeKind` so machine A learns machine B continued the
-    work. ~4 files plus tests — **medium**.
+14. **Handoff head commit and acknowledgement envelope.** §8.
+    **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new
+    `sourceHeadCommit` port (GitVcsDriver.resolveCommit) fills the optionalKey
+    nothing used to write. It stays OFFLINE — rev-parse, never ls-remote,
+    never a push — so it does not imply reachability, and a test pins that a
+    known `headCommit` must survive alongside `remoteConfigured: false`.
+    `isWorkjetGitCommitHash` was added to contracts so a non-hash rev-parse
+    answer is refused rather than branded. Mutation-verified.
+    STILL OPEN: (a) PUSH where a remote is configured — an explicit operator
+    action a handoff must never perform implicitly, so it needs a decision on
+    who triggers it, not just code; (b) the acknowledgement envelope kind.
+    NOTE: (a) is also what blocks the `branch` half of item 13, since
+    `WorkjetGitBranchRef.delivery` cannot be stated truthfully until something
+    actually delivers.
 15. **Progress-board policy and verification state.** §8.
     ~~Add both with a schemaVersion 3 decode step … ~3 files plus tests —
     **medium**.~~

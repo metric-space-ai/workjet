@@ -41,7 +41,7 @@ test("the page carries the reading box and one item per rubric", async () => {
   assert.ok(items.length >= 1, "the rubrics are listed as items");
   assert.equal(page.textObject.length, 2 + items.length, "box title + box body + items");
   assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
-  assert.equal(page.imageObject.length, 1, "only the icon bar is a bitmap");
+  assert.equal(page.imageObject.length, 2, "nav dots and the icon bar");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
 });
 

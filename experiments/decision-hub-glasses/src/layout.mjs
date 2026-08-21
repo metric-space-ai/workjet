@@ -19,13 +19,14 @@
 import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { renderActionBar, bitmapPayload } from './icons.mjs';
+import { renderDots } from './dots.mjs';
 
 const LINE_H = 26;
 const CHAR_W = 9.2;
 
 // Linke Spalte
-const COL_X = 8;
-const COL_W = 168;
+const COL_X = 6;
+const COL_W = 150;
 const ITEM_H = 30;
 const ITEM_GAP = 4;
 const ITEMS_Y = 10;
@@ -35,10 +36,14 @@ const MAX_ITEMS = 4;
 const BAR_H = 40;
 const BAR_Y = DISPLAY_H - BAR_H - 8;
 
-// Lesebox rechts
-const BOX_X = COL_X + COL_W + 12;
-const BOX_Y = 8;
-const BOX_W = DISPLAY_W - BOX_X - 8;
+// Navigationspunkte zwischen Spalte und Box — wie im Geraete-Dashboard.
+const DOTS_X = COL_X + COL_W + 4;
+const DOTS_W = 10;
+
+// Lesebox rechts: so gross wie moeglich, sie traegt den Inhalt.
+const BOX_X = DOTS_X + DOTS_W + 4;
+const BOX_Y = 4;
+const BOX_W = DISPLAY_W - BOX_X - 4;
 const BOX_H = DISPLAY_H - BOX_Y * 2;
 
 export const CONTAINER = {
@@ -46,6 +51,7 @@ export const CONTAINER = {
   BOX_BODY: 2,
   ITEM_BASE: 3,      // 3..6
   BAR: 20,
+  DOTS: 21,
 };
 
 const BRIGHT = 4;
@@ -88,6 +94,15 @@ export function itemLabel(section, active) {
     ? `${section.titel.slice(0, ITEM_CHARS - 3)}.`
     : section.titel;
   return active ? `> ${text}` : `  ${text}`;
+}
+
+export function railState(nav) {
+  const section = nav.sections[nav.sectionIndex];
+  if (nav.level === LEVEL.DETAIL && section) {
+    const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
+    return { count: pages, active: page };
+  }
+  return { count: nav.sections.length, active: nav.sectionIndex };
 }
 
 export function buildPage(nav) {
@@ -153,6 +168,15 @@ export function buildPage(nav) {
     ],
     imageObject: [
       {
+        containerID: CONTAINER.DOTS,
+        containerName: 'dots',
+        xPosition: DOTS_X,
+        yPosition: BOX_Y + 6,
+        width: DOTS_W,
+        height: Math.min(144, BOX_H - 12),
+        zOrderIndex: 4,
+      },
+      {
         containerID: CONTAINER.BAR,
         containerName: 'bar',
         xPosition: COL_X,
@@ -170,6 +194,10 @@ export function buildPage(nav) {
 
 export function buildBitmaps(nav) {
   return [
+    bitmapPayload(
+      renderDots({ width: DOTS_W, height: Math.min(144, BOX_H - 12), ...railState(nav) }),
+      CONTAINER.DOTS,
+    ),
     bitmapPayload(
       renderActionBar({
         icons: nav.icons,

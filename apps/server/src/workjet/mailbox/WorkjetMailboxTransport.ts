@@ -886,6 +886,18 @@ const payloadClaim = (payload: WorkjetMailboxPayload): PayloadClaim => {
         targets: [],
         envelopeId: undefined,
       };
+    case "handoff-ack":
+      // Like a receipt: the acknowledging MACHINE is the sender, and the
+      // envelope being acknowledged is the handoff's, not this one's, so
+      // there is no envelope-id claim to cross-check. `acknowledgedBy` is an
+      // environment address with no thread id — a handoff is machine-to-
+      // machine, and `continuedThreadId` is B's own local id, never an
+      // address this comparison could authenticate.
+      return {
+        sources: [payload.acknowledgement.acknowledgedBy],
+        targets: [],
+        envelopeId: undefined,
+      };
   }
 };
 

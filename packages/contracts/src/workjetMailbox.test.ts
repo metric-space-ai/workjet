@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { WS_METHODS, WsRpcGroup, WsWorkjetMeshOverviewRpc } from "./rpc.ts";
 
 import {
+  WorkjetHandoffAcknowledgement,
   WORKJET_MAILBOX_SCHEMA_VERSION,
   WORKJET_TERMINAL_DELEGATION_STATES,
   WorkjetArtifactReferences,
@@ -1482,5 +1483,68 @@ describe("thread-handoff RPC surface", () => {
   it("has a bounded, distinct reason for a missing handoff snapshot", () => {
     const error = new WorkjetMailboxError({ reason: "handoff-snapshot-unavailable" });
     expect(error.message).toBe("The handoff context snapshot is not available on this machine.");
+  });
+});
+
+describe("WorkjetHandoffAcknowledgement", () => {
+  const base = {
+    schemaVersion: 1,
+    envelopeId: "env-handoff-ack-0000000001",
+    handoffId: "hof-0123456789abcdef",
+    acknowledgedBy: { schemaVersion: 1, workspaceId: "ws-1", environmentId: "env-b" },
+    outcome: "continued",
+    continuedThreadId: "thread-b-1",
+    acknowledgedAt: "2026-08-20T10:00:00.000Z",
+  };
+
+  it("carries where the work continued, because acknowledged alone is not actionable", () => {
+    // Without a destination an operator learns that B took the handoff but not
+    // where to follow it, and the source thread has no other way to find out.
+    const decoded = Schema.decodeUnknownSync(WorkjetHandoffAcknowledgement)(base);
+    expect(decoded.continuedThreadId).toBe("thread-b-1");
+    expect(decoded.outcome).toBe("continued");
+  });
+
+  it("treats declining as an OUTCOME, not a failure, and needs no destination", () => {
+    // A target may legitimately refuse: wrong machine, stale handoff, operator
+    // said no. Folding that into a transport error would make a deliberate
+    // answer look like a delivery problem.
+    const { continuedThreadId: _omitted, ...declined } = base;
+    const decoded = Schema.decodeUnknownSync(WorkjetHandoffAcknowledgement)({
+      ...declined,
+      outcome: "declined",
+    });
+    expect(decoded.outcome).toBe("declined");
+    expect(decoded).not.toHaveProperty("continuedThreadId");
+  });
+
+  it("has no field a payload could travel in", () => {
+    // The same structural rule the rest of the mailbox follows: ids, one
+    // address, a closed literal and a timestamp. An excess key is DROPPED
+    // rather than carried, so thread text cannot ride along on an ack.
+    const decoded = Schema.decodeUnknownSync(WorkjetHandoffAcknowledgement)({
+      ...base,
+      summary: "the worker said a lot of things",
+      snapshot: "raw bytes",
+    });
+    expect(decoded).not.toHaveProperty("summary");
+    expect(decoded).not.toHaveProperty("snapshot");
+    expect(Object.keys(decoded).sort()).toEqual([
+      "acknowledgedAt",
+      "acknowledgedBy",
+      "continuedThreadId",
+      "envelopeId",
+      "handoffId",
+      "outcome",
+      "schemaVersion",
+    ]);
+  });
+
+  it("is a first-class mailbox payload kind", () => {
+    const payload = Schema.decodeUnknownSync(WorkjetMailboxPayload)({
+      _tag: "handoff-ack",
+      acknowledgement: base,
+    });
+    expect(payload._tag).toBe("handoff-ack");
   });
 });

@@ -692,6 +692,52 @@ export const WorkjetHandoffSnapshotBytes = Schema.String.check(
 );
 export type WorkjetHandoffSnapshotBytes = typeof WorkjetHandoffSnapshotBytes.Type;
 
+/**
+ * Machine B telling machine A that a handoff was CONTINUED there.
+ *
+ * Without this a handoff is one-way: A composes a snapshot, enqueues it, and
+ * then has no way to learn whether B ever opened it. The source thread's
+ * timeline shows a handoff that was sent and nothing after, so "the target
+ * picked this up" and "the envelope was never consumed" look identical from A,
+ * which is exactly the ambiguity an operator needs resolved before abandoning
+ * their own copy of the work.
+ *
+ * It carries `continuedThreadId` — the thread B actually created — because
+ * "acknowledged" without a destination cannot be acted on: an operator
+ * following up needs to know WHERE the work continued, and the source thread
+ * has no other way to learn that id.
+ *
+ * Bounded by construction, like every other mailbox payload: ids, an address,
+ * a closed outcome literal and a timestamp. No thread text, no snapshot
+ * content, no branch state. B's thread is authoritative for its own history;
+ * this says only that the history exists and where.
+ *
+ * `declined` is a real outcome, not an error: a target may legitimately refuse
+ * to continue (wrong machine, stale handoff, operator said no), and folding
+ * that into a transport failure would make a deliberate answer look like a
+ * delivery problem.
+ */
+export const WorkjetHandoffAckOutcome = Schema.Literals(["continued", "declined"]);
+export type WorkjetHandoffAckOutcome = typeof WorkjetHandoffAckOutcome.Type;
+
+export const WorkjetHandoffAcknowledgement = Schema.Struct({
+  schemaVersion: MailboxSchemaVersion,
+  envelopeId: WorkjetEnvelopeId,
+  /** The handoff being answered. Ties the ack to exactly one offer. */
+  handoffId: WorkjetHandoffId,
+  /** The machine that received the handoff and is answering for it. */
+  acknowledgedBy: WorkjetEnvironmentAddress,
+  outcome: WorkjetHandoffAckOutcome,
+  /**
+   * The thread B created, present only when it actually continued. A declined
+   * handoff has no destination, and inventing one would point an operator at a
+   * thread that does not exist.
+   */
+  continuedThreadId: Schema.optionalKey(ThreadId),
+  acknowledgedAt: WorkjetMailboxTimestamp,
+});
+export type WorkjetHandoffAcknowledgement = typeof WorkjetHandoffAcknowledgement.Type;
+
 /** Discriminator of the payload an envelope carries. */
 export const WorkjetMailboxEnvelopeKind = Schema.Literals([
   "message",
@@ -700,6 +746,7 @@ export const WorkjetMailboxEnvelopeKind = Schema.Literals([
   "result",
   "review",
   "handoff",
+  "handoff-ack",
 ]);
 export type WorkjetMailboxEnvelopeKind = typeof WorkjetMailboxEnvelopeKind.Type;
 
@@ -784,6 +831,9 @@ export const WorkjetMailboxPayload = Schema.Union([
      * with {@link snapshotBytes}.
      */
     snapshotOversized: Schema.optionalKey(Schema.Literal(true)),
+  }),
+  Schema.TaggedStruct("handoff-ack", {
+    acknowledgement: WorkjetHandoffAcknowledgement,
   }),
 ]);
 export type WorkjetMailboxPayload = typeof WorkjetMailboxPayload.Type;

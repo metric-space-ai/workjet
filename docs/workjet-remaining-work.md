@@ -397,10 +397,34 @@ finishes. Scope estimates are rough and name the files.
     nothing writes), and add an acknowledgement kind to
     `WorkjetMailboxEnvelopeKind` so machine A learns machine B continued the
     work. ~4 files plus tests — **medium**.
-15. **Progress-board policy and verification state.** §8. Neither exists as a
-    field on `WorkjetConfigurationValue`. Add both with a schemaVersion 3 decode
-    step in the same style as the ticked v1→v2 migration, plus their settings
-    editors. ~3 files plus tests — **medium**.
+15. **Progress-board policy and verification state.** §8.
+    ~~Add both with a schemaVersion 3 decode step … ~3 files plus tests —
+    **medium**.~~
+    **KORREKTUR 2026-08-20: do NOT build this as written — it would undo two
+    deliberate decisions that are already recorded in code and tested.**
+    The premise ("neither exists") is true only of the FIELD NAMES. Both
+    concepts already have documented homes in
+    `apps/server/src/workjet/legacy/LegacyWorkjetMapping.ts`:
+
+    - **Progress-board policy is already persisted**, as a labelled section of
+      the composed managed prompt: `progressBoardRules → managedSystemPrompt`,
+      `outcome: "mapped-into-prompt"`, reason "Authored progress-board policy.
+      Section of the composed managed prompt." (`:224-229`), with the heading
+      `"## Progress board"` (`:712`) and two tests asserting it round-trips
+      (`LegacyWorkjetImport.test.ts:273`, `LegacyWorkjetMapping.test.ts:396`).
+      A separate field would give the importer TWO destinations for one source
+      and two authorities for the same text.
+    - **Verification state was deliberately NOT made configuration.** Five
+      `computers[].*` sources are `outcome: "dropped"` with the reason
+      "Observed verification state, not configuration. Re-observed by Code,
+      never imported." (`:408-435`). Persisting it as config would store a copy
+      that goes stale against the thing it describes.
+
+    **DECISION NEEDED** before any code: is the plan line asking for something
+    the mapping already satisfies — in which case tick it and cite the mapping
+    — or does it want to overturn those two decisions, which needs an explicit
+    reason, not a schemaVersion bump. Until that is settled this is
+    BLOCKED-ON-OWNER, not implementable.
 16. **Fresh-install / upgrade / rollback harness.** §15. Install a packaged build
     into a clean prefix, point it at the existing `scripts/mock-update-server.ts`,
     apply an update, force a rollback, assert the settings store survives. All

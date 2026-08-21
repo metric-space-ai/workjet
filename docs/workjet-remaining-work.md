@@ -373,10 +373,20 @@ finishes. Scope estimates are rough and name the files.
     authorization table, one server file, five MCP tool guards plus tests —
     **medium**.
 13. **Populate artifact references, and add diff/Greppy reference kinds.** §8.
-    The executor writes an empty `artifacts` literal on every result
-    (`WorkjetDelegationExecutor.ts:914`); there is no diff or Greppy reference
-    type at all, and nothing resolves a reference on the receiving side. ~3 files
-    plus tests — **medium**.
+    **HEAD-COMMIT HALF DONE 2026-08-20, commit c86d96bd9**; the rest is open,
+    and one part of it is BLOCKED, not merely unbuilt.
+    Results now carry the target worktree's head commit through an optional
+    best-effort `resolveHeadCommit` port; absent worktree, absent port, or a
+    dying port all yield no commit rather than failing a delegation that
+    already ran.
+    **BLOCKED on item 14, by construction:** a `branch` ref cannot be added
+    without lying. `WorkjetGitBranchRef` REQUIRES `delivery: "pushed" |
+    "sync-bundled"`, and this executor neither pushes nor bundles, so either
+    value asserts a delivery that did not happen and sends the source after a
+    branch it cannot fetch. A test pins `branch` as absent so a later change
+    must face that decision instead of drifting into it.
+    STILL OPEN and unblocked: `paths`, the diff and Greppy reference kinds
+    (neither type exists), and reference resolution on the receiving side.
 14. **Handoff head commit and acknowledgement envelope.** §8. Read the real head
     commit and push where a remote is configured (`headCommit` is an optionalKey
     nothing writes), and add an acknowledgement kind to

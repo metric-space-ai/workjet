@@ -56,6 +56,7 @@ function drawLess(bmp, x, y, s, level) {
 }
 
 import { drawIcon, ICON_SIZE } from './pixel-icons.mjs';
+import { drawText, textWidth } from './pixel-font.mjs';
 
 const NAME = {
   annehmen: 'annehmen',
@@ -66,30 +67,38 @@ const NAME = {
 };
 
 /**
- * Aktionsleiste im Stil des Geraete-Dashboards: keine Rahmen, keine Kaesten —
- * nur die Icons mit viel Luft. Ausgewaehlt heisst gefuellte Flaeche mit
- * ausgespartem Icon; das ist auf monochrom gruen sofort erkennbar.
+ * Aktionsleiste: Icon plus Beschriftung, kompakt gruppiert statt ueber die
+ * ganze Breite verstreut. Die gewaehlte Aktion steht auf gefuellter Flaeche
+ * mit ausgespartem Icon — die einzige Auswahl, die monochrom sofort liest.
  */
-export function renderActionBar({ icons, focusIcon, width, height, detail = 0 }) {
+export function renderActionBar({ icons, focusIcon, width, height, detail = 0, compact = false }) {
   const bmp = createBitmap(width, height);
   const count = icons.length || 1;
   const cell = Math.floor(width / count);
-  const scale = Math.max(1, Math.floor(Math.min(cell - 16, height - 12) / ICON_SIZE));
+  // Design-Guide: flaechige Icons, Striche >= 2 px. Ein Faktor 1 auf dem
+  // 16er-Raster ergibt genau das — groesser wirkt es plump.
+  const scale = compact ? 1 : 2;
   const size = ICON_SIZE * scale;
   icons.forEach((icon, i) => {
     const focused = i === focusIcon;
     const x = i * cell + Math.floor((cell - size) / 2);
-    const y = Math.floor((height - size) / 2);
+    const y = Math.floor((height - size) / 2) - (compact ? 0 : 4);
     if (focused) {
-      // Gefuellte Flaeche mit weichen Ecken statt Rahmen.
-      const px = i * cell + 6;
-      const pw = cell - 12;
-      fillRect(bmp, px, 3, pw, height - 6, ON);
-      fillRect(bmp, px - 1, 5, 1, height - 10, ON);
-      fillRect(bmp, px + pw, 5, 1, height - 10, ON);
+      // Auswahl als Rahmen, nicht als Flaeche (Design-Guide).
+      const bx = i * cell + 2;
+      const bw = cell - 4;
+      fillRect(bmp, bx, 2, bw, 1, ON);
+      fillRect(bmp, bx, height - 3, bw, 1, ON);
+      fillRect(bmp, bx, 2, 1, height - 4, ON);
+      fillRect(bmp, bx + bw - 1, 2, 1, height - 4, ON);
     }
     const key = icon.wert === 'detail' && detail >= 1 ? 'kurz' : NAME[icon.wert] || 'annehmen';
-    drawIcon(bmp, key, x, y, scale, focused ? OFF : ON, setPixel);
+    drawIcon(bmp, key, x, y, scale, ON, setPixel);
+    if (!compact) {
+      const label = (icon.glyph || icon.wert || '').toUpperCase();
+      const lw = textWidth(label, 1);
+      drawText(bmp, label, i * cell + Math.floor((cell - lw) / 2), y + size + 3, 1, ON, setPixel);
+    }
   });
   return bmp;
 }

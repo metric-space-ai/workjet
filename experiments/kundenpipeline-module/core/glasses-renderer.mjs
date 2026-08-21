@@ -200,7 +200,7 @@ export function decisionIcons(decision, copy = {}, detail = DETAIL_KURZ) {
   // Die Brillenschrift hat WEDER ✓/✔ NOCH ✗/✘ NOCH ✎/◷ (am Simulator
   // verifiziert). Kurze Woerter sind dort eindeutiger als ersatzweise
   // Symbole; der Fokus wird durch das Caret ▶ markiert, das es gibt.
-  const glyphs = { annehmen: "OK", ablehnen: "NEIN" };
+  const glyphs = { annehmen: "ANNEHMEN", ablehnen: "ABLEHNEN" };
   for (const aktion of aktionen) {
     if (aktion.wert === "details") continue;
     icons.push({
@@ -210,13 +210,13 @@ export function decisionIcons(decision, copy = {}, detail = DETAIL_KURZ) {
     });
   }
   icons.push({
-    glyph: "KORR",
+    glyph: "KORREKTUR",
     wert: "korrektur",
     label: copy.action_correct || "Korrektur diktieren",
   });
   // KEIN Ausklapp-Icon hier: aufgeklappt wird per Druck auf die Rubrik
   // selbst. In der Entscheidungsleiste stehen nur Entscheidungen.
-  icons.push({ glyph: "SPÄT", wert: "vertagt", label: copy.action_snooze || "Auf später" });
+  icons.push({ glyph: "SPÄTER", wert: "vertagt", label: copy.action_snooze || "Auf später" });
   return icons;
 }
 

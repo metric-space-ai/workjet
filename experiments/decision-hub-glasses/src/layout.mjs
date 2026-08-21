@@ -1,37 +1,51 @@
-// Seitenaufbau der Entscheidungsvorlage — an der Gestaltung des Geraete-
-// Dashboards ausgerichtet: links eine schmale Statusspalte, rechts ein
-// gerahmtes Panel mit dem Inhalt, dazwischen eine gepunktete Positionsleiste,
-// unten die Entscheidungs-Icons.
+// Seitenaufbau nach der Layout-Strategie des Owners (Skizze auf dem
+// Geraete-Dashboard):
 //
-//   REM Capital        ·   ┌─────────────────────────────┐
-//   TRIAGE             ·   │ MAIL                        │
-//   2/5                ▌   │ Guten Morgen, seit heute …  │
-//                      ·   │                             │
-//                      ·   └─────────────────────────────┘
-//   ✓    ✗    ✎    ◷
+//   ┌────────────┐  ┌──────────────────────────────────────┐
+//   │ Item MAIL  │  │ MAIL                                 │
+//   ├────────────┤  │ Guten Morgen, seit heute früh meldet │
+//   │ Item ANTW. │  │ unser Portal beim Login einen CORS-  │
+//   ├────────────┤  │ Fehler …                             │
+//   │ Item AUFG. │  │                                      │
+//   ├────────────┤  │                                      │
+//   │ Item AUDIT │  │                                      │
+//   └────────────┘  │                                      │
+//   ✓  ✗  ✎  ◷     └──────────────────────────────────────┘
+//
+// Links die Rubriken als Items und darunter die Icon-Leiste, rechts die
+// grosse Lesebox. Auswahl per Rahmen (Design-Guide: "Selection: Toggle
+// borderWidth on text containers"), keine gefuellten Flaechen.
 
 import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { renderActionBar, bitmapPayload } from './icons.mjs';
-import { renderDots } from './dots.mjs';
 
-const PAD = 10;
-const COL_W = 150;          // Statusspalte links
-const DOTS_W = 14;          // gepunktete Leiste
-const ACTION_H = 44;
 const LINE_H = 26;
-const PANEL_X = PAD + COL_W + DOTS_W;
-const PANEL_W = DISPLAY_W - PANEL_X - PAD;
-const PANEL_Y = 6;
-const PANEL_H = DISPLAY_H - ACTION_H - PANEL_Y - 4;
+const CHAR_W = 9.2;
+
+// Linke Spalte
+const COL_X = 8;
+const COL_W = 168;
+const ITEM_H = 30;
+const ITEM_GAP = 4;
+const ITEMS_Y = 10;
+const MAX_ITEMS = 4;
+
+// Icon-Leiste unten links
+const BAR_H = 40;
+const BAR_Y = DISPLAY_H - BAR_H - 8;
+
+// Lesebox rechts
+const BOX_X = COL_X + COL_W + 12;
+const BOX_Y = 8;
+const BOX_W = DISPLAY_W - BOX_X - 8;
+const BOX_H = DISPLAY_H - BOX_Y * 2;
 
 export const CONTAINER = {
-  STATUS: 1,
-  PANEL_TITLE: 2,
-  PANEL_BODY: 3,
-  DOTS: 20,
-  ACTION_L: 21,
-  ACTION_R: 22,
+  BOX_TITLE: 1,
+  BOX_BODY: 2,
+  ITEM_BASE: 3,      // 3..6
+  BAR: 20,
 };
 
 const BRIGHT = 4;
@@ -39,27 +53,10 @@ const DIM = 2;
 
 export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
 
-/** Zeilen im Panel — Titel belegt die erste. */
-export const CONTENT_LINES = Math.floor((PANEL_H - 14) / LINE_H) - 1;
+export const CONTENT_LINES = Math.floor((BOX_H - 22) / LINE_H) - 1;
+export const PANEL_CHARS = Math.floor((BOX_W - 26) / CHAR_W);
+const ITEM_CHARS = Math.floor((COL_W - 18) / CHAR_W);
 
-// Zeichen je Zeile im Panel — am Simulator gemessen: rund 9,2 px je Zeichen.
-export const PANEL_CHARS = Math.floor((PANEL_W - 24) / 9.2);
-
-/** Linke Spalte: wer, was, wo — knapp, wie die Statusspalte im Dashboard. */
-export function statusLines(nav) {
-  const section = nav.sections[nav.sectionIndex];
-  const lines = [nav.tabs[nav.tabIndex] || ''];
-  if (nav.typ) lines.push(nav.typ);
-  lines.push('');
-  lines.push(`${nav.sectionIndex + 1}/${Math.max(1, nav.sections.length)}`);
-  if (nav.tabs.length > 1) lines.push(`Vorgang ${nav.tabIndex + 1}/${nav.tabs.length}`);
-  if (section && nav.level === LEVEL.RUBRIK && section.zeilen.length > CONTENT_LINES) {
-    lines.push('', 'Druck öffnet');
-  }
-  return lines;
-}
-
-/** Panel-Titel: Rubrik, im Detail mit Seitenzahl. */
 export function titleLine(nav) {
   const section = nav.sections[nav.sectionIndex];
   if (!section) return '';
@@ -67,10 +64,9 @@ export function titleLine(nav) {
     const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
     return pages > 1 ? `${section.titel}  ${page + 1}/${pages}` : section.titel;
   }
-  return section.titel;
+  return section.zeilen.length > CONTENT_LINES ? `${section.titel}  ...` : section.titel;
 }
 
-/** Panel-Inhalt. */
 export function contentLines(nav) {
   const section = nav.sections[nav.sectionIndex];
   if (!section) return ['Keine Inhalte.'];
@@ -79,92 +75,91 @@ export function contentLines(nav) {
     : section.zeilen.slice(0, CONTENT_LINES);
 }
 
-export function railState(nav) {
-  const section = nav.sections[nav.sectionIndex];
-  if (nav.level === LEVEL.DETAIL && section) {
-    const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
-    return { count: pages, active: page };
-  }
-  return { count: nav.sections.length, active: nav.sectionIndex };
+/** Sichtbarer Ausschnitt der Item-Liste — sie scrollt mit der Auswahl mit. */
+export function visibleItems(nav) {
+  const total = nav.sections.length;
+  if (total <= MAX_ITEMS) return { from: 0, items: nav.sections };
+  const from = Math.max(0, Math.min(nav.sectionIndex - 1, total - MAX_ITEMS));
+  return { from, items: nav.sections.slice(from, from + MAX_ITEMS) };
+}
+
+export function itemLabel(section, active) {
+  const text = section.titel.length > ITEM_CHARS - 2
+    ? `${section.titel.slice(0, ITEM_CHARS - 3)}.`
+    : section.titel;
+  return active ? `> ${text}` : `  ${text}`;
 }
 
 export function buildPage(nav) {
   const focused = nav.focusIcon >= 0;
+  const { from, items } = visibleItems(nav);
+
+  const itemContainers = items.map((section, i) => {
+    const index = from + i;
+    const active = index === nav.sectionIndex && !focused;
+    return {
+      containerID: CONTAINER.ITEM_BASE + i,
+      containerName: `item-${index}`,
+      xPosition: COL_X,
+      yPosition: ITEMS_Y + i * (ITEM_H + ITEM_GAP),
+      width: COL_W,
+      height: ITEM_H,
+      content: itemLabel(section, active),
+      textColor: active ? BRIGHT : DIM,
+      borderWidth: active ? 2 : 1,
+      borderColor: active ? 14 : 5,
+      borderRadius: 6,
+      paddingLength: 4,
+      isEventCapture: 0,
+      zOrderIndex: 10 + i,
+    };
+  });
+
   return {
-    containerTotalNum: 6,
+    containerTotalNum: 2 + itemContainers.length,
     textObject: [
       {
-        containerID: CONTAINER.STATUS,
-        containerName: 'status',
-        xPosition: PAD,
-        yPosition: PANEL_Y + 6,
-        width: COL_W,
-        height: PANEL_H,
-        content: statusLines(nav).join('\n'),
-        textColor: focused ? DIM : BRIGHT,
-        isEventCapture: 0,
-        zOrderIndex: 0,
-      },
-      {
-        // Das gerahmte Panel — Rahmen und Radius kommen vom Container selbst,
-        // wie im Dashboard. Der Titel sitzt in der ersten Zeile.
-        containerID: CONTAINER.PANEL_TITLE,
-        containerName: 'panel-title',
-        xPosition: PANEL_X,
-        yPosition: PANEL_Y,
-        width: PANEL_W,
-        height: PANEL_H,
+        // Die Lesebox — Rahmen ist die Struktur, der Titel die erste Zeile.
+        containerID: CONTAINER.BOX_TITLE,
+        containerName: 'box-title',
+        xPosition: BOX_X,
+        yPosition: BOX_Y,
+        width: BOX_W,
+        height: BOX_H,
         content: titleLine(nav),
         textColor: focused ? DIM : BRIGHT,
         borderWidth: 1,
-        borderColor: focused ? 5 : 12,
+        borderColor: focused ? 5 : 13,
         borderRadius: 10,
-        paddingLength: 8,
+        paddingLength: 10,
         isEventCapture: 0,
         zOrderIndex: 1,
       },
       {
         // Eingabe-Container: Inhalt passt IMMER auf eine Seite, sonst scrollt
         // die Brille ihn selbst und die Gesten erreichen die App nicht.
-        containerID: CONTAINER.PANEL_BODY,
-        containerName: 'panel-body',
-        xPosition: PANEL_X + 8,
-        yPosition: PANEL_Y + LINE_H + 6,
-        width: PANEL_W - 16,
-        height: PANEL_H - LINE_H - 14,
+        containerID: CONTAINER.BOX_BODY,
+        containerName: 'box-body',
+        xPosition: BOX_X + 12,
+        yPosition: BOX_Y + LINE_H + 12,
+        width: BOX_W - 24,
+        height: BOX_H - LINE_H - 24,
         content: contentLines(nav).join('\n'),
         textColor: focused ? DIM : BRIGHT,
         isEventCapture: 1,
         zOrderIndex: 2,
       },
+      ...itemContainers,
     ],
     imageObject: [
       {
-        containerID: CONTAINER.DOTS,
-        containerName: 'dots',
-        xPosition: PAD + COL_W,
-        yPosition: PANEL_Y,
-        width: DOTS_W,
-        height: Math.min(144, PANEL_H),
+        containerID: CONTAINER.BAR,
+        containerName: 'bar',
+        xPosition: COL_X,
+        yPosition: BAR_Y,
+        width: COL_W,
+        height: BAR_H,
         zOrderIndex: 3,
-      },
-      {
-        containerID: CONTAINER.ACTION_L,
-        containerName: 'actions-left',
-        xPosition: 0,
-        yPosition: DISPLAY_H - ACTION_H,
-        width: 288,
-        height: ACTION_H,
-        zOrderIndex: 4,
-      },
-      {
-        containerID: CONTAINER.ACTION_R,
-        containerName: 'actions-right',
-        xPosition: 288,
-        yPosition: DISPLAY_H - ACTION_H,
-        width: 288,
-        height: ACTION_H,
-        zOrderIndex: 5,
       },
     ],
     menuObject: {
@@ -174,29 +169,17 @@ export function buildPage(nav) {
 }
 
 export function buildBitmaps(nav) {
-  const bar = renderActionBar({
-    icons: nav.icons,
-    focusIcon: nav.focusIcon,
-    width: DISPLAY_W,
-    height: ACTION_H,
-    detail: nav.detail,
-  });
   return [
     bitmapPayload(
-      renderDots({ width: DOTS_W, height: Math.min(144, PANEL_H), ...railState(nav) }),
-      CONTAINER.DOTS,
+      renderActionBar({
+        icons: nav.icons,
+        focusIcon: nav.focusIcon,
+        width: COL_W,
+        height: BAR_H,
+        detail: nav.detail,
+        compact: true,
+      }),
+      CONTAINER.BAR,
     ),
-    bitmapPayload(sliceBitmap(bar, 0, 288), CONTAINER.ACTION_L),
-    bitmapPayload(sliceBitmap(bar, 288, 288), CONTAINER.ACTION_R),
   ];
-}
-
-function sliceBitmap(bmp, x0, width) {
-  const out = { width, height: bmp.height, px: new Uint8Array(width * bmp.height) };
-  for (let y = 0; y < bmp.height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      out.px[y * width + x] = bmp.px[y * bmp.width + (x0 + x)] || 0;
-    }
-  }
-  return out;
 }

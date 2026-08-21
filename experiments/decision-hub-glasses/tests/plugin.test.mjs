@@ -32,13 +32,16 @@ function fakeSource(answers = []) {
   };
 }
 
-test("the page carries head, title, body, rail and the two icon halves", async () => {
+test("the page carries the reading box and one item per rubric", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   const page = sdk.calls.lastPage;
-  assert.equal(page.textObject.length, 3, "status column + panel title + panel body");
-  assert.equal(page.imageObject.length, 3, "rail + two icon halves");
+  const items = page.textObject.filter((c) => c.containerName.startsWith("item-"));
+  assert.ok(items.length >= 1, "the rubrics are listed as items");
+  assert.equal(page.textObject.length, 2 + items.length, "box title + box body + items");
+  assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
+  assert.equal(page.imageObject.length, 1, "only the icon bar is a bitmap");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
 });
 
@@ -46,7 +49,7 @@ test("the body never overflows its container", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
-  const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "panel-body");
+  const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "box-body");
   assert.ok(body.content.split("\n").length <= CONTENT_LINES);
   assert.equal(body.isEventCapture, 1);
 });

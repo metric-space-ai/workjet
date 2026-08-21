@@ -422,8 +422,29 @@ finishes. Scope estimates are rough and name the files.
     clean; the cause was `serverSettings.getSettings` carrying a
     `ServerSettingsError` the RPC did not declare. No layer work was needed.
 
-    STILL OPEN: the web editors, and the dispatch call site — the scope
-    correction below explains why the last is the big half.
+    **THE DISPATCH CALL SITE IS BLOCKED ON DECISION 9, not merely large.**
+    Measured, and this is the part the item does not say. There are exactly two
+    places a harness gate could go, and both are closed:
+
+    - `workjet_delegate_task` is HARNESS-NEUTRAL BY DESIGN. Its own module doc
+      (`MailboxTool.ts:28-34`) states the rule: "Every harness receives the
+      SAME bounded schemas ... nothing here may branch on provider, harness, or
+      model." Gating there would violate an explicit documented invariant.
+    - `WorkerDispatch` has exactly ONE caller, the `workjet_dispatch_worker`
+      MCP tool — which is precisely what decision 9 may RETIRE (Option B).
+      Building availability gating into it now is wasted if 9 goes that way,
+      and it makes the retirement more expensive by adding surface to remove.
+
+    There is also a vocabulary gap underneath: dispatch carries a
+    `ModelSelection` naming a provider INSTANCE, while availability is keyed by
+    `WorkjetHarness`, a different closed set. Nothing maps one to the other
+    outside the worker-profile catalog that dispatch never reads.
+
+    So: settle decision 9 first. If Option A (route dispatch through the
+    delegation machinery), the gate belongs at that junction. If Option B
+    (retire the tool), this half disappears with it.
+
+    STILL OPEN and unblocked: the web editors for the inspect result.
 
     **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
     availability at all" understates it. `WorkerDispatch.ts` contains ZERO

@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   ThreadId,
   WorkjetContentDigest,
+  WorkjetGitCommitHash,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
   WorkjetMailboxError,
@@ -451,6 +452,8 @@ const handlers = (
     readonly remoteConfigured?: boolean;
     /** The delegation's target thread, for the worker-ownership check. */
     readonly delegationTarget?: ThreadId | "unknown";
+    /** The source worktree's head commit, for the handoff branch ref. */
+    readonly headCommit?: string;
   } = {},
 ) => {
   const { recorded, delivery, snapshots, reassign } = doubles(options);
@@ -475,6 +478,12 @@ const handlers = (
           options.delegationTarget === undefined || options.delegationTarget === "unknown"
             ? Option.none()
             : Option.some(options.delegationTarget),
+        ),
+      sourceHeadCommit: () =>
+        Effect.succeed(
+          options.headCommit === undefined
+            ? Option.none()
+            : Option.some(WorkjetGitCommitHash.make(options.headCommit)),
         ),
     }),
   };
@@ -616,6 +625,7 @@ it.effect("maps an oversized prompt onto payload-too-large and never delegates",
       nowIso: Effect.succeed(NOW),
       sourceRemoteConfigured: () => Effect.succeed(false),
       delegationTargetThreadId: () => Effect.succeed(Option.none()),
+      sourceHeadCommit: () => Effect.succeed(Option.none()),
     });
 
     const error = yield* Effect.flip(rpc.delegateTask(delegateInput));
@@ -998,13 +1008,52 @@ it.effect("carries the branch name with the honest remote answer and no worktree
       branch: "agent/th-thread-handoff",
       remoteConfigured: true,
     });
-    // A head commit is never invented, and no local path travels.
+    // Absent because this harness's head read answers None — NOT because the
+    // field is unreachable. Since the local head read landed, an unreadable
+    // worktree is what omits it, and the contract defines that as "resolve the
+    // branch head yourself". The populated case is covered below.
     expect(sent?.input.branch).not.toHaveProperty("headCommit");
     expect(configured.recorded.prompts[0] ?? "").not.toContain("/private/tmp/worktrees");
 
     const offline = handlers("orchestrator", { remoteConfigured: false });
     yield* offline.handlers.sendHandoff(handoffInput);
     expect(offline.recorded.handoffs[0]?.input.branch?.remoteConfigured).toBe(false);
+  }),
+);
+
+it.effect("carries the real head commit when the source worktree can be read", () =>
+  Effect.gen(function* () {
+    const configured = handlers("orchestrator", {
+      remoteConfigured: true,
+      headCommit: "0a1b2c3d4e5f60718293",
+    });
+    yield* configured.handlers.sendHandoff(handoffInput);
+
+    expect(configured.recorded.handoffs[0]?.input.branch).toEqual({
+      schemaVersion: 1,
+      branch: "agent/th-thread-handoff",
+      headCommit: "0a1b2c3d4e5f60718293",
+      remoteConfigured: true,
+    });
+  }),
+);
+
+it.effect("reading the head does NOT imply the branch was pushed", () =>
+  Effect.gen(function* () {
+    // The trap this guards: a populated headCommit looks like proof the target
+    // can fetch it. It is not. The head read is local — rev-parse, never
+    // ls-remote — so `remoteConfigured: false` must survive alongside a known
+    // commit, and the pair means "this is the commit here, and there is no
+    // remote configured to get it from".
+    const noRemote = handlers("orchestrator", {
+      remoteConfigured: false,
+      headCommit: "0a1b2c3d4e5f60718293",
+    });
+    yield* noRemote.handlers.sendHandoff(handoffInput);
+
+    const branch = noRemote.recorded.handoffs[0]?.input.branch;
+    expect(branch?.headCommit).toBe("0a1b2c3d4e5f60718293");
+    expect(branch?.remoteConfigured).toBe(false);
   }),
 );
 

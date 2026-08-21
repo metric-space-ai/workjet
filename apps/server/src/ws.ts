@@ -27,6 +27,8 @@ import {
   type OrchestrationShellStreamEvent,
   type OrchestrationShellStreamItem,
   type OrchestrationThreadStreamItem,
+  isWorkjetGitCommitHash,
+  WorkjetGitCommitHash,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationSearchThreadsError,
@@ -392,6 +394,7 @@ const makeWsRpcLayer = (
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+      const gitVcsDriver = yield* GitVcsDriver.GitVcsDriver;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -495,6 +498,34 @@ const makeWsRpcLayer = (
           workjetMailboxStore.getDelegation(delegationId).pipe(
             Effect.map(Option.map((record) => record.delegation.target.threadId)),
             Effect.orElseSucceed(() => Option.none()),
+          ),
+        // A LOCAL head read, in the same spirit as sourceRemoteConfigured
+        // above: it says which commit the branch sits on HERE and never that
+        // the commit is reachable anywhere else, so it stays offline —
+        // `rev-parse`, never `ls-remote`, never a push. Any failure answers
+        // `None`, and the contract already defines an absent commit as
+        // "resolve the branch head yourself", not "the branch is empty".
+        sourceHeadCommit: (threadId) =>
+          projectionSnapshotQuery.getThreadWorktreeCleanupContext(threadId).pipe(
+            Effect.flatMap((option) =>
+              Option.match(option, {
+                onNone: () => Effect.succeed(Option.none<WorkjetGitCommitHash>()),
+                onSome: (context) =>
+                  gitVcsDriver
+                    .resolveCommit({
+                      cwd: context.worktreePath ?? context.workspaceRoot,
+                      revision: "HEAD",
+                    })
+                    .pipe(
+                      Effect.map((result) =>
+                        isWorkjetGitCommitHash(result.commitSha)
+                          ? Option.some(WorkjetGitCommitHash.make(result.commitSha))
+                          : Option.none<WorkjetGitCommitHash>(),
+                      ),
+                    ),
+              }),
+            ),
+            Effect.orElseSucceed(() => Option.none<WorkjetGitCommitHash>()),
           ),
       });
       // The one-shot legacy Swift Workjet import. Same construction discipline:

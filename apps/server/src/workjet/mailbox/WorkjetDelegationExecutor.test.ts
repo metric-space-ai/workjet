@@ -2241,6 +2241,7 @@ it.effect("satisfies the mailbox RPC's reassignment port with its own guard", ()
       nowIso: Effect.succeed("2026-08-19T12:00:00.000Z"),
       sourceRemoteConfigured: () => Effect.succeed(false),
       delegationTargetThreadId: () => Effect.succeed(Option.none()),
+      sourceHeadCommit: () => Effect.succeed(Option.none()),
     });
 
     const result = yield* rpc.reassignDelegation({

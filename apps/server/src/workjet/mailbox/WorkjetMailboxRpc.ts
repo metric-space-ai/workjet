@@ -2,6 +2,7 @@ import {
   WorkjetGitBranchName,
   WorkjetMailboxError,
   WORKJET_HANDOFF_LIST_MAX,
+  type WorkjetGitCommitHash,
   type WorkjetDelegationId,
   type EnvironmentId,
   type ThreadId,
@@ -123,6 +124,21 @@ export interface WorkjetMailboxRpcDependencies {
   readonly delegationTargetThreadId: (
     delegationId: WorkjetDelegationId,
   ) => Effect.Effect<Option.Option<ThreadId>>;
+  /**
+   * The head commit of the SOURCE thread's worktree, or `None` when it cannot
+   * be read offline — no worktree, no repository, an empty or detached head.
+   *
+   * A local read only, exactly like {@link sourceRemoteConfigured}: never
+   * `git ls-remote`, never a push. It answers "which commit is the branch on
+   * here", which is a fact about this machine and does not assert that the
+   * commit is reachable anywhere else. A caller that cannot answer returns
+   * `None`, and the handoff omits the field — which the contract already
+   * defines as "resolve the branch head yourself", never "the branch is
+   * empty".
+   */
+  readonly sourceHeadCommit: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<WorkjetGitCommitHash>>;
 }
 
 export interface WorkjetMailboxRpcHandlers {
@@ -468,17 +484,22 @@ export const makeWorkjetMailboxRpcHandlers = (
    * The Git branch a handoff reports, derived ONLY from what this server can
    * state offline.
    *
-   * The thread projection knows the branch NAME. It does not know the branch
-   * head, and resolving one would need a `git rev-parse` the Git service does
-   * not expose; the contract therefore leaves `headCommit` optional and this
-   * function omits it rather than substituting a stale or unrelated hash.
-   * `remoteConfigured` answers only "does the source repository have a primary
-   * remote", which is a local configuration read — never `git ls-remote`, never
-   * a push, and never a claim that the branch is reachable there.
+   * The thread projection knows the branch NAME. The head commit now comes
+   * from {@link sourceHeadCommit}, a LOCAL read, and is omitted when that read
+   * cannot answer — never substituted with a stale or unrelated hash. The
+   * contract defines an absent commit as "resolve the branch head yourself",
+   * which is exactly what an unreadable worktree should say.
+   *
+   * `remoteConfigured` still answers only "does the source repository have a
+   * primary remote", which is a local configuration read — never
+   * `git ls-remote`, never a push, and never a claim that the branch is
+   * reachable there. Reading the head does not change that: knowing which
+   * commit the branch sits on here says nothing about whether it was pushed.
    */
   const handoffBranchOf = (input: {
     readonly branch: string | null;
     readonly remoteConfigured: boolean;
+    readonly headCommit: Option.Option<WorkjetGitCommitHash>;
   }): WorkjetHandoffBranchRef | undefined => {
     const name = input.branch?.trim();
     if (name === undefined || name.length === 0) return undefined;
@@ -486,6 +507,7 @@ export const makeWorkjetMailboxRpcHandlers = (
     return {
       schemaVersion: 1,
       branch: WorkjetGitBranchName.make(name),
+      ...(Option.isSome(input.headCommit) ? { headCommit: input.headCommit.value } : {}),
       remoteConfigured: input.remoteConfigured,
     };
   };
@@ -512,6 +534,11 @@ export const makeWorkjetMailboxRpcHandlers = (
     const branch = handoffBranchOf({
       branch: thread.branch,
       remoteConfigured: yield* dependencies.sourceRemoteConfigured(input.sourceThreadId),
+      // Best-effort: an unreadable head omits the field rather than failing a
+      // handoff that is otherwise perfectly composable.
+      headCommit: yield* dependencies
+        .sourceHeadCommit(input.sourceThreadId)
+        .pipe(Effect.catchCause(() => Effect.succeed(Option.none<WorkjetGitCommitHash>()))),
     });
 
     const composition = composeWorkjetHandoffSnapshot({

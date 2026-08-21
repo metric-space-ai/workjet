@@ -283,6 +283,15 @@ export const WorkjetGitCommitHash = TrimmedNonEmptyString.check(
   Schema.isPattern(/^[a-f0-9]{7,64}$/),
 ).pipe(Schema.brand("WorkjetGitCommitHash"));
 export type WorkjetGitCommitHash = typeof WorkjetGitCommitHash.Type;
+/**
+ * Whether a raw string is a usable commit hash.
+ *
+ * A caller reading `git rev-parse` output needs this: git can answer with
+ * something that is not a hash (an unborn branch, an unexpected format), and
+ * `WorkjetGitCommitHash.make` on such a value would brand a lie rather than
+ * refuse it.
+ */
+export const isWorkjetGitCommitHash = Schema.is(WorkjetGitCommitHash);
 
 /**
  * How the target machine can obtain the branch. Per the owner decision the

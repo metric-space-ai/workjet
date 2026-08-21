@@ -62,12 +62,12 @@ export function createSource(config = {}) {
   return {
     kind: 'instance',
     async load() {
-      const response = await fetchImpl(`${endpoint}/cards`, { headers });
+      const response = await fetchImpl(`${endpoint}/api/business-os/kundenpipeline/cards`, { headers });
       if (!response.ok) throw new Error(`load failed: ${response.status}`);
       return response.json();
     },
     async answer({ decision, wert }) {
-      const response = await fetchImpl(`${endpoint}/answer`, {
+      const response = await fetchImpl(`${endpoint}/api/business-os/kundenpipeline/answer`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ entscheidung_id: decision.id, vorgang_id: decision.vorgang_id, wert, kanal: 'brille' }),

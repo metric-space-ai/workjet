@@ -8,8 +8,9 @@
 import { buildView } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { viewToPageContainer, viewToTextUpdates } from './view-to-containers.mjs';
 import { reduce } from './input.mjs';
+import { menuAction } from './view-to-containers.mjs';
 
-export function createDecisionHubPlugin({ sdk, source, onError = () => {} }) {
+export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPaint = () => {} }) {
   const state = { scroll: 0, focusIcon: -1, index: 0 };
   let decisions = [];
   let vorgaenge = new Map();
@@ -27,6 +28,7 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {} }) {
 
   async function paint() {
     const view = currentView();
+    onPaint(view);
     if (!view) return;
     if (!started) {
       const result = await sdk.createStartUpPageContainer(viewToPageContainer(view));
@@ -49,6 +51,33 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {} }) {
       state.focusIcon = -1;
     }
     await paint();
+  }
+
+  /** Eine Entscheidung ausfuehren — von der Brille, vom Handy, egal woher. */
+  async function act(wert) {
+    const decision = decisions[state.index];
+    if (!decision) return;
+    if (wert === 'naechster') {
+      state.index = (state.index + 1) % Math.max(1, decisions.length);
+      state.scroll = 0;
+      await paint();
+      return;
+    }
+    if (wert === 'vertagt') {
+      // Vertagen bleibt offen und wandert ans Ende der Queue.
+      decisions.push(decisions.splice(state.index, 1)[0]);
+      state.index = Math.min(state.index, Math.max(0, decisions.length - 1));
+      state.scroll = 0;
+      await paint();
+      return;
+    }
+    await source.answer({ decision, wert });
+    await refresh();
+  }
+
+  async function handleMenu(itemID) {
+    const item = menuAction(itemID);
+    if (item) await act(item.wert);
   }
 
   async function handleEvent(osEvent) {
@@ -82,9 +111,15 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {} }) {
       }
     },
     handleEvent: (osEvent) => handleEvent(osEvent).catch(onError),
+    handleMenu: (itemID) => handleMenu(itemID).catch(onError),
+    act: (wert) => act(wert).catch(onError),
     refresh: () => refresh().catch(onError),
     get state() {
       return { ...state, count: decisions.length };
+    },
+    /** Genau das Ansichtsmodell, das an die Brille geht — fuer den Spiegel. */
+    get view() {
+      return currentView();
     },
   };
 }

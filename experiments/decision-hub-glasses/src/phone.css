@@ -1,0 +1,31 @@
+/* Handy-Spiegel: bewusst wie die Brille — monochrom gruen auf schwarz,
+   Monospace, damit Umbrueche identisch aussehen. */
+:root { color-scheme: dark; }
+body {
+  margin: 0; padding: 12px; background: #000; color: #2bff46;
+  font: 14px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.dh-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+.dh-dot { width: 10px; height: 10px; border-radius: 50%; background: #555; flex: none; }
+.dh-dot[data-state="ok"] { background: #2bff46; }
+.dh-dot[data-state="warn"] { background: #ffd23f; }
+.dh-dot[data-state="error"] { background: #ff5a5a; }
+.dh-glass { border: 1px solid #2bff4644; border-radius: 6px; padding: 8px; background: #001a04; }
+.dh-line { white-space: pre; overflow-x: auto; }
+.dh-tabs { opacity: .75; border-bottom: 1px solid #2bff4622; padding-bottom: 6px; }
+.dh-body { margin: 8px 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+.dh-icons { border-top: 1px solid #2bff4622; padding-top: 6px; font-weight: 700; }
+.dh-hint { margin-top: 10px; font-size: 12px; opacity: .65; }
+
+/* Bedienung am Handy: dieselben Aktionen wie im Brillenmenue. Grosse
+   Trefferflaechen, weil das hier unterwegs mit einer Hand bedient wird. */
+.dh-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.dh-btn {
+  appearance: none; min-height: 52px; padding: 12px; border-radius: 8px;
+  border: 1px solid #2bff4655; background: #04220a; color: #2bff46;
+  font: 600 15px/1.2 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.dh-btn:active { background: #2bff46; color: #001a04; }
+.dh-btn--yes { border-color: #2bff46; }
+.dh-btn--wide { grid-column: 1 / -1; }
+.dh-btn[disabled] { opacity: .35; }

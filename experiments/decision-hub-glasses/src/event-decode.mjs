@@ -2,6 +2,12 @@
 // ohne Browser getestet werden kann.
 import { evenHubEventFromJson } from '@evenrealities/even_hub_sdk';
 
+/** Menuepunkt-ID, wenn die Brille einen Aktionspunkt gewaehlt hat. */
+export function menuItemFrom(detail) {
+  const id = detail?.menuItemClickEvent?.itemID ?? detail?.jsonData?.itemID;
+  return typeof id === 'number' ? id : null;
+}
+
 export function osEventFrom(detail) {
   // Der Host liefert BEREITS geparst, z. B.
   //   { jsonData: {...}, textEvent: { containerID, containerName, eventType } }

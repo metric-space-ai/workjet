@@ -29,7 +29,10 @@ const ICON_GAP = 8;
 // Entscheidungszeile bleiben 8 Textzeilen. Neun wurden unten angeschnitten —
 // 288 px / 26 px sind 11 Zeilen, und Reiter plus Icons kosten zwei davon.
 // Die vom Owner erhofften 10 Zeilen sind physikalisch nicht drin.
-export const BODY_LINES = Math.floor((DISPLAY_H - TAB_H - ICON_H - 6) / LINE_H); // 8
+// Ohne eigene Icon-Zeile — die Entscheidungen liegen im nativen Aktionsmenue
+// der Brille — bleibt der Platz dem Text: 10 Zeilen, wie urspruenglich
+// gewuenscht. (Mit Icon-Zeile waren es nur 8.)
+export const BODY_LINES = Math.floor((DISPLAY_H - TAB_H - 4) / LINE_H); // 10
 
 // 16 Grünstufen (0 = aus, 15 = volle Helligkeit).
 export function green(level) {

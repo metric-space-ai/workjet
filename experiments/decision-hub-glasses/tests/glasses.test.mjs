@@ -22,16 +22,26 @@ function view(overrides = {}) {
 
 test('page fits the SDK container budget', () => {
   const page = viewToPageContainer(view());
-  assert.equal(page.containerTotalNum, 3);
+  assert.equal(page.containerTotalNum, 2);
   assert.ok(page.textObject.length <= 8, 'max 8 text containers');
   assert.ok(page.containerTotalNum >= 1 && page.containerTotalNum <= 12);
 });
 
-test('exactly one container captures input', () => {
+test('the text captures input, because the glasses scroll that container themselves', () => {
   const page = viewToPageContainer(view());
   const capturing = page.textObject.filter((c) => c.isEventCapture === 1);
   assert.equal(capturing.length, 1);
-  assert.equal(capturing[0].containerID, CONTAINER.ICONS);
+  assert.equal(capturing[0].containerID, CONTAINER.BODY);
+});
+
+test('every decision is reachable from the native action menu', () => {
+  const page = viewToPageContainer(view());
+  const names = page.menuObject.menuItems.map((i) => i.itemName);
+  for (const expected of ['Annehmen', 'Ablehnen', 'Korrektur', 'Spaeter', 'Naechster Vorgang']) {
+    assert.ok(names.includes(expected), `missing menu item ${expected}`);
+  }
+  const ids = page.menuObject.menuItems.map((i) => i.itemID);
+  assert.equal(new Set(ids).size, ids.length, 'menu item ids must be unique');
 });
 
 test('containers stay inside the 576x288 display', () => {

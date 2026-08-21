@@ -26,7 +26,24 @@ const LINE_H = 26;
 const DIM = 2;
 const BRIGHT = 4;
 
-export const CONTAINER = { TABS: 1, BODY: 2, ICONS: 3 };
+export const CONTAINER = { TABS: 1, BODY: 2 };
+
+// Die Brille scrollt den Eingabe-Container SELBST — Scroll-Ereignisse kommen
+// nicht als Fokuswechsel zurueck (am Geraet beobachtet: die einzeilige
+// Icon-Zeile wackelte nur). Deshalb faengt der TEXT die Eingaben, und die
+// Entscheidungen liegen im nativen Aktionsmenue der Brille.
+export const MENU = [
+  { itemID: 1, itemName: 'Annehmen', wert: 'annehmen' },
+  { itemID: 2, itemName: 'Ablehnen', wert: 'ablehnen' },
+  { itemID: 3, itemName: 'Korrektur', wert: 'korrektur' },
+  { itemID: 4, itemName: 'Spaeter', wert: 'vertagt' },
+  { itemID: 5, itemName: 'Naechster Vorgang', wert: 'naechster' },
+];
+
+/** Menuepunkt-ID → Entscheidungswert. */
+export function menuAction(itemID) {
+  return MENU.find((item) => item.itemID === itemID) || null;
+}
 
 /** Reiterzeile: aktiver Reiter in eckigen Klammern, weil der Text-Container
  *  keine Inversdarstellung kennt. */
@@ -65,15 +82,9 @@ export function iconsLine(view) {
  * rebuildPageContainer. Reines Objekt, damit es ohne Brille testbar bleibt.
  */
 export function viewToPageContainer(view) {
-  // Der Textkoerper bekommt exakt seine Zeilen; der Rest gehoert der
-  // Entscheidungszeile. Mit der knappen Mindesthoehe schnitt die Brille die
-  // Umlautpunkte ab ("SPÄTER" wurde zu "SPATER") — am Simulator gesehen.
-  // +8 px Luft: LVGL setzt die Grundlinie mit Innenabstand, ohne die Zugabe
-  // wird die letzte Zeile von der Entscheidungszeile ueberdeckt.
-  const bodyHeight = BODY_LINES * LINE_H + 10;
-  const iconHeight = DISPLAY_H - TAB_H - bodyHeight;
+  const bodyHeight = DISPLAY_H - TAB_H;
   return {
-    containerTotalNum: 3,
+    containerTotalNum: 2,
     textObject: [
       {
         containerID: CONTAINER.TABS,
@@ -83,11 +94,12 @@ export function viewToPageContainer(view) {
         width: DISPLAY_W - PAD_X * 2,
         height: TAB_H,
         content: tabsLine(view.tabs),
-        textColor: view.focusIcon >= 0 ? DIM : BRIGHT,
+        textColor: BRIGHT,
         isEventCapture: 0,
         zOrderIndex: 0,
       },
       {
+        // Der Eingabe-Container: die Brille scrollt genau diesen selbst.
         containerID: CONTAINER.BODY,
         containerName: 'body',
         xPosition: PAD_X,
@@ -95,26 +107,12 @@ export function viewToPageContainer(view) {
         width: DISPLAY_W - PAD_X * 2,
         height: bodyHeight,
         content: bodyText(view),
-        textColor: view.focusIcon >= 0 ? DIM : BRIGHT,
-        isEventCapture: 0,
-        // Jeder Container braucht einen EIGENEN zOrderIndex; doppelte Werte
-        // auf einer Seite weist das SDK ab (vom Simulator gefunden).
+        textColor: BRIGHT,
+        isEventCapture: 1,
         zOrderIndex: 1,
       },
-      {
-        // Der Eingabe-Container: genau einer darf es sein.
-        containerID: CONTAINER.ICONS,
-        containerName: 'icons',
-        xPosition: PAD_X,
-        yPosition: TAB_H + bodyHeight,
-        width: DISPLAY_W - PAD_X * 2,
-        height: iconHeight,
-        content: iconsLine(view),
-        textColor: view.focusIcon >= 0 ? BRIGHT : DIM,
-        isEventCapture: 1,
-        zOrderIndex: 2,
-      },
     ],
+    menuObject: { menuItems: MENU.map(({ itemID, itemName }) => ({ itemID, itemName })) },
   };
 }
 
@@ -123,6 +121,5 @@ export function viewToTextUpdates(view) {
   return [
     { containerID: CONTAINER.TABS, content: tabsLine(view.tabs) },
     { containerID: CONTAINER.BODY, content: bodyText(view) },
-    { containerID: CONTAINER.ICONS, content: iconsLine(view) },
   ];
 }

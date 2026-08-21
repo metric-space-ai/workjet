@@ -76,6 +76,17 @@ const temporaryDirectory = Effect.acquireRelease(
   Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "gateway-host-pin-"))),
   (directory) => Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
 );
+describe("packaged resource directory", () => {
+  it("is the packaged resource directory the build script ships to", () => {
+    // Paired with "ships the host where the resolver looks for it" in
+    // scripts/build-desktop-artifact.test.ts. The scripts tsconfig cannot
+    // import this package, so the agreement is pinned as the same literal on
+    // both sides: renaming one alone ships a host the app cannot find, and one
+    // of the two tests then fails.
+    assert.equal(Artifact.PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY, "provider-gateway-host");
+  });
+});
+
 describe("ProviderGatewayHostArtifact", () => {
   it("decodes the pin checked into this repository", () => {
     const pin = Artifact.PROVIDER_GATEWAY_HOST_PIN;

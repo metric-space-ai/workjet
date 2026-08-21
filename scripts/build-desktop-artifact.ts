@@ -786,13 +786,43 @@ export const DESKTOP_LEGAL_EXTRA_RESOURCE = {
   to: DESKTOP_LEGAL_RESOURCE_DIRECTORY,
 } as const;
 
-export function createDesktopExtraResources(businessOsShellInstallPath: string) {
+/**
+ * Must match `PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY` in
+ * `apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts` — the
+ * resolver reads `resourcesPath/<this>` in a packaged build, so a rename on
+ * one side alone ships a host the app cannot find.
+ */
+export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
+
+/**
+ * The host is included ONLY when a staged directory is supplied.
+ *
+ * There is no `provider-gateway-host-v*` release yet
+ * (`apps/desktop/resources/provider-gateway/host-release.pin.json` reads
+ * `"status": "unreleased"`), so pointing electron-builder at a directory that
+ * does not exist would break every packaged build today for a binary nobody
+ * can ship yet. Passing the staged path — produced by
+ * `scripts/provider-gateway-host-artifacts.ts stage` — is what turns this on,
+ * so the wiring is in place the moment the tag is cut and inert until then.
+ */
+export function createDesktopExtraResources(
+  businessOsShellInstallPath: string,
+  providerGatewayHostStagePath?: string,
+) {
   return [
     DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
     {
       from: businessOsShellInstallPath,
       to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
     },
+    ...(providerGatewayHostStagePath === undefined
+      ? []
+      : [
+          {
+            from: providerGatewayHostStagePath,
+            to: PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
+          },
+        ]),
     DESKTOP_LEGAL_EXTRA_RESOURCE,
   ] as const;
 }
@@ -2176,6 +2206,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       }
     | undefined,
   businessOsShellInstallPath: string,
+  /** Staged host directory, or undefined when no release has been staged. */
+  providerGatewayHostStagePath?: string,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -2190,7 +2222,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // WINDOWS_ASAR_UNPACK); macOS and Linux stay packed — smart unpack
     // extracts native libraries, which fff-node finds in app.asar.unpacked.
     ...(platform === "win" ? { asarUnpack: [...WINDOWS_ASAR_UNPACK] } : {}),
-    extraResources: createDesktopExtraResources(businessOsShellInstallPath),
+    extraResources: createDesktopExtraResources(
+      businessOsShellInstallPath,
+      providerGatewayHostStagePath,
+    ),
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);

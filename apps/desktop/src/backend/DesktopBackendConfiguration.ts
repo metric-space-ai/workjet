@@ -3,6 +3,7 @@ import * as NodeOS from "node:os";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
@@ -16,6 +17,7 @@ import serverPackageJson from "../../../server/package.json" with { type: "json"
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ProviderGatewayHostArtifact from "../providerGateway/ProviderGatewayHostArtifact.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
@@ -376,6 +378,55 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     const backendExposure = yield* serverExposure.backendConfig;
 
+    // Point the server at the packaged provider-gateway host, when there is
+    // one to point at. The server's own default is a state-dir path
+    // (`ProviderGatewayNodeAdapter.ts:58`) that a packaged build never
+    // populates, so without this the resolver had no production caller at all
+    // and a shipped host would sit unused beside an app that cannot find it.
+    //
+    // Only the PRIMARY backend gets it. The WSL backend runs inside the
+    // distro, where a Windows-side executable path means nothing; forcing one
+    // there would be worse than leaving its own resolution alone.
+    //
+    // A local-build or unsatisfiable pin yields `undefined`, which leaves the
+    // server's existing resolution untouched rather than forcing a path that
+    // is not there — the pin is still `unreleased` today, so that is the
+    // normal case, not an error.
+    const resolvedHost = yield* ProviderGatewayHostArtifact.resolveProviderGatewayHostExecutable({
+      environment,
+      host: { platform: process.platform, arch: process.arch },
+      ...(process.env[ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV] !==
+      undefined
+        ? {
+            executableOverride:
+              process.env[ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV],
+          }
+        : {}),
+    }).pipe(
+      // A packaged build with an unsatisfiable pin is a real failure, but it
+      // must not take the whole backend down: log it and fall back to the
+      // server's own resolution, which reports the same problem where the user
+      // can see it.
+      Effect.catchCause((cause) =>
+        Effect.as(
+          Effect.logWarning("provider gateway host could not be resolved").pipe(
+            Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+          ),
+          {
+            executablePath: undefined as string | undefined,
+            source: "local-build" as const,
+          },
+        ),
+      ),
+    );
+    const providerGatewayHostEnv =
+      resolvedHost.executablePath === undefined
+        ? {}
+        : {
+            [ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV]:
+              resolvedHost.executablePath,
+          };
+
     const bootstrap = {
       mode: "desktop" as const,
       noBrowser: true,
@@ -402,6 +453,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        ...providerGatewayHostEnv,
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,

@@ -18,6 +18,7 @@ import {
   createBuildConfig,
   CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
   createDesktopExtraResources,
+  PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_LEGAL_EXTRA_RESOURCE,
@@ -902,6 +903,39 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(win, "azureSignOptions");
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
+
+  it("ships the provider-gateway host only once a release has been staged", () => {
+    // There is no provider-gateway-host-v* release yet, so pointing
+    // electron-builder at a directory that does not exist would break every
+    // packaged build today for a binary nobody can ship. Presence of a staged
+    // path is the switch, and the wiring is inert until the tag is cut.
+    const withoutHost = createDesktopExtraResources("/verified/ctox-business-os-shell");
+    assert.isUndefined(
+      withoutHost.find((entry) => entry.to === PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY),
+      "no staged host means no extra-resource entry at all",
+    );
+
+    const withHost = createDesktopExtraResources(
+      "/verified/ctox-business-os-shell",
+      "/stage/provider-gateway-host",
+    );
+    assert.deepStrictEqual(
+      withHost.find((entry) => entry.to === PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY),
+      { from: "/stage/provider-gateway-host", to: "provider-gateway-host" },
+    );
+  });
+
+  it("ships the host where the resolver looks for it", () => {
+    // The packaging constant and the resolver's constant are declared in two
+    // packages that cannot import each other. A rename on one side alone would
+    // ship a host the app silently cannot find, so pin the string in both.
+    // The two constants live in packages that cannot import each other (the
+    // scripts tsconfig does not include apps/desktop), so the agreement is
+    // pinned as the same literal on both sides. The other half of this pair is
+    // "the packaged resource directory the build script ships to" in
+    // apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.test.ts.
+    assert.equal(PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY, "provider-gateway-host");
+  });
 
   it("stages the resource monitor and verified shell as external resources", () => {
     assert.deepStrictEqual(DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE, {

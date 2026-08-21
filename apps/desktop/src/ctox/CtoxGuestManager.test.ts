@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -394,6 +397,49 @@ function makeGuestHarness() {
     views,
   };
 }
+
+describe("child views on a host window", () => {
+  it.effect("this file is the only place in the app that adds one", () =>
+    Effect.gen(function* () {
+      // DesktopWindow.zoomMain detects a mounted CTOX guest by looking for a
+      // child view on the window rather than depending on this whole service
+      // graph. That shortcut is only sound while this file is the sole caller
+      // of addChildView, so pin it: a second caller must either be excluded
+      // there, or make zoom targeting explicit instead of inferred.
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = path.resolve(import.meta.dirname, "..");
+
+      const callers: string[] = [];
+      const walk = (directory: string): Effect.Effect<void, never, never> =>
+        Effect.gen(function* () {
+          const entries = yield* fileSystem
+            .readDirectory(directory)
+            .pipe(Effect.orElseSucceed((): readonly string[] => []));
+          for (const entry of entries) {
+            const full = path.join(directory, entry);
+            const info = yield* fileSystem.stat(full).pipe(
+              Effect.map(Option.some),
+              Effect.orElseSucceed(() => Option.none()),
+            );
+            if (Option.isNone(info)) continue;
+            if (info.value.type === "Directory") {
+              yield* walk(full);
+              continue;
+            }
+            if (!entry.endsWith(".ts") || entry.endsWith(".test.ts")) continue;
+            const contents = yield* fileSystem
+              .readFileString(full)
+              .pipe(Effect.orElseSucceed(() => ""));
+            if (contents.includes("addChildView(")) callers.push(path.relative(root, full));
+          }
+        });
+
+      yield* walk(root);
+      assert.deepEqual(callers, ["ctox/CtoxGuestManager.ts"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
 
 describe("CtoxGuestManager", () => {
   it.effect(

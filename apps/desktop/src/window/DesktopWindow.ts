@@ -64,6 +64,26 @@ export type DesktopWindowError =
 
 export type MainWindowZoomDirection = "in" | "out" | "reset";
 
+/**
+ * The web contents of a mounted CTOX guest, or `null` when the host renderer
+ * is what the user is looking at.
+ *
+ * The guest is a `WebContentsView` that `CtoxGuestManager` adds to the
+ * window's content view (`CtoxGuestManager.ts:485`), and it is the ONLY thing
+ * in this app that adds a child view — `CtoxGuestManager.test.ts` pins that,
+ * so this detection cannot silently start matching something else. Reading the
+ * window rather than depending on `CtoxGuestManager` keeps the window module
+ * free of the whole CTOX service graph, which every window test would
+ * otherwise have to provide.
+ */
+function activeGuestWebContents(window: Electron.BrowserWindow): Electron.WebContents | null {
+  for (const child of window.contentView.children) {
+    const candidate = (child as { readonly webContents?: Electron.WebContents }).webContents;
+    if (candidate !== undefined && !candidate.isDestroyed()) return candidate;
+  }
+  return null;
+}
+
 export class DesktopWindow extends Context.Service<
   DesktopWindow,
   {
@@ -869,7 +889,12 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(window) || window.value.isDestroyed()) {
         return;
       }
-      const webContents = window.value.webContents;
+      // Zoom the CTOX guest when one is mounted, otherwise the host renderer.
+      // Zooming the host while a guest covers it moved nothing the user could
+      // see, so the accelerator looked broken in Business OS mode.
+      const guest = activeGuestWebContents(window.value);
+      const webContents = guest ?? window.value.webContents;
+      yield* Effect.annotateCurrentSpan({ target: guest === null ? "host" : "ctox-guest" });
       // Same step size as the Electron zoomIn/zoomOut menu roles.
       webContents.setZoomLevel(
         direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),

@@ -5,6 +5,7 @@ import {
   WorkjetMailboxPayload,
   WorkjetRoutingEnvelope,
   type EnvironmentId,
+  type ThreadId,
   type WorkjetMailboxPeerBindingRejection,
   type WorkjetMailboxTimestamp,
   type WorkjetMeshPeerBinding,
@@ -675,6 +676,28 @@ export interface WorkjetMailboxTransportSources {
    * {@link WorkjetMailboxAuditEmitter}.
    */
   readonly audit?: WorkjetMailboxAuditSink;
+
+  /**
+   * Best-effort redacted thread activity for envelopes that ARRIVE here.
+   *
+   * Without it a remotely delivered delegation first shows on the target
+   * timeline as `workjet.delegation.started` — the moment it begins running,
+   * not the moment it arrived — so the gap between delivery and execution was
+   * invisible and a delegation that never started looked like it was never
+   * sent. The local fast path has no such gap, which is why only the remote
+   * route needed this.
+   *
+   * Optional and best-effort for the same reason the audit sink is: the
+   * envelope is already durable when this runs, so a failed append must never
+   * turn a delivered envelope into a redelivery. Callers that omit it get a
+   * no-op.
+   */
+  readonly appendInboundActivity?: (input: {
+    readonly threadId: ThreadId;
+    readonly kind: string;
+    readonly summary: string;
+    readonly createdAt: string;
+  }) => Effect.Effect<void>;
 }
 
 // ===============================
@@ -940,6 +963,10 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
    * append. A failed emit never fails a transport cycle.
    */
   const emit = (event: WorkjetMailboxAuditEventInput) => emitAudit(sources.audit, event);
+  /** Absent sink → no-op, same rule the audit sink follows. */
+  const appendInboundActivity: NonNullable<
+    WorkjetMailboxTransportSources["appendInboundActivity"]
+  > = (input) => sources.appendInboundActivity?.(input) ?? Effect.void;
 
   /**
    * Record one failed push attempt against the outbox row AND emit the matching
@@ -1761,6 +1788,26 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
           .pipe(Effect.result);
         if (recorded._tag === "Failure") return { _tag: "deferred" } as const;
       }
+
+      // The envelope is durable by here, so this is deliberately the LAST
+      // thing and deliberately cannot fail the ingest: a rejected append
+      // leaves a delivered envelope delivered rather than forcing a
+      // redelivery for the sake of a timeline entry.
+      //
+      // `catchCause`, not `ignore`: ignore swallows failures but lets DEFECTS
+      // through, and a thrown exception inside the activity engine is exactly
+      // the case where delivery must survive. A test pins this.
+      if (payload._tag === "delegation") {
+        yield* appendInboundActivity({
+          threadId: payload.delegation.target.threadId,
+          kind: "workjet.delegation.delivered",
+          summary: "A delegation arrived from another environment.",
+          createdAt: input.now,
+        }).pipe(Effect.catchCause(() => Effect.void));
+      }
+      // No handoff equivalent on purpose: a handoff is addressed to a MACHINE,
+      // not a thread, so there is no target timeline to append to. Its arrival
+      // surfaces through the durable inbox row instead.
 
       return { _tag: "accepted" } as const;
     });

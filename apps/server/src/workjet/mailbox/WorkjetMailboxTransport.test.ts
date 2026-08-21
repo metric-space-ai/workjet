@@ -1007,6 +1007,78 @@ group("WorkjetMailboxTransport pull", (it) => {
     }),
   );
 
+  it.effect("records the ARRIVAL of a remote delegation on the target timeline", () =>
+    Effect.gen(function* () {
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("inbound-activity-01");
+      const delegation = delegationId("inbound-activity-01");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegation,
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+
+      const appended: Array<{ threadId: string; kind: string }> = [];
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: {
+          appendInboundActivity: (input) =>
+            Effect.sync(() => {
+              appended.push({ threadId: input.threadId, kind: input.kind });
+            }),
+        },
+      });
+
+      const status = yield* transport.runCycle;
+      assert.strictEqual(status.counters.accepted, 1);
+
+      // Without this the delegation's first mark on the timeline is
+      // `workjet.delegation.started`, so the window between delivery and
+      // execution is invisible and one that never starts looks unsent.
+      assert.deepEqual(appended, [
+        { threadId: localAddress.threadId, kind: "workjet.delegation.delivered" },
+      ]);
+    }),
+  );
+
+  it.effect("keeps a delivered envelope delivered when the activity append fails", () =>
+    Effect.gen(function* () {
+      // The envelope is already durable when the append runs. A rejected
+      // append must not turn delivery into a redelivery for the sake of a
+      // timeline entry, so the ingest still reports accepted and consumes.
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("inbound-activity-02");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegationId("inbound-activity-02"),
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const daemon = makeFakeDaemon({ seed: [document] });
+      const transport = yield* makeTransport({
+        client: daemon.client,
+        sources: { appendInboundActivity: () => Effect.die("the timeline is down") },
+      });
+
+      const status = yield* transport.runCycle;
+
+      assert.strictEqual(status.counters.accepted, 1);
+      assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+
   it.effect("consumes a replayed envelope without repeating its delegation effects", () =>
     Effect.gen(function* () {
       const store = yield* WorkjetMailboxStore;

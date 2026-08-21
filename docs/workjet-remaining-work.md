@@ -311,6 +311,12 @@ finishes. Scope estimates are rough and name the files.
    browser-download cost from this item's estimate; what stays large is the
    five assertions themselves (receipts, durable status, result return,
    cancellation, restart recovery).
+   **FIRST STEP DONE 2026-08-20, commit 6aeee8b9c:** the client is extracted to
+   `scripts/lib/cdpClient.ts` and `ctox-packaged-smoke.ts` now imports it, so
+   there is one implementation instead of two that can drift. Its bounds are
+   tested and mutation-verified — the error message is built from the method
+   and a validated numeric code, never the page's own text, which is
+   attacker-influenced on any page the app has navigated to.
 2. ~~**Web Stack SSRF, redirect cap, and the untested stdout budget.**~~
    **ALREADY DONE — verified 2026-08-20 by running it.** §7 and §12.
    `SsrfResolver` is installed on all three `scholarly_search.rs` agents

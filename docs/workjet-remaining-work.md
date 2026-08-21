@@ -366,12 +366,17 @@ finishes. Scope estimates are rough and name the files.
     would otherwise take delivery down and force a redelivery. No handoff
     equivalent — a handoff is addressed to a machine, not a thread, so there is
     no target timeline. Mutation-verified.
-12. **Per-operation mailbox ACLs and a worker-initiated path.** §8. Replace the
-    single `requireOrchestratorSource` gate (`WorkjetMailboxRpc.ts:169-181`) with
-    per-operation scopes, and let a WORKER thread reply to or update its own
-    delegation — today it cannot use the mailbox RPCs at all. The RPC
-    authorization table, one server file, five MCP tool guards plus tests —
-    **medium**.
+12. ~~**Per-operation mailbox ACLs and a worker-initiated path.**~~ **DONE
+    2026-08-20, commit 9604dd4e5.** §8. `reply`, `requestReview` and
+    `updateDelegation` now admit a worker that OWNS the delegation, via a new
+    `delegationTargetThreadId` port. The ownership check is the substance, not
+    the role list: widening the roles alone would have given every worker
+    authority over every delegation on the machine — more power than the gate
+    it replaces. An unresolvable delegation denies, so a worker cannot probe
+    for delegation ids. `reassignDelegation` stays orchestrator-only even for
+    the owning worker, since reassignment hands away assigned work.
+    Two pre-existing tests kept passing for a DIFFERENT reason than their names
+    claimed and were renamed accordingly. Mutation-verified.
 13. **Populate artifact references, and add diff/Greppy reference kinds.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit c86d96bd9**; the rest is open,
     and one part of it is BLOCKED, not merely unbuilt.

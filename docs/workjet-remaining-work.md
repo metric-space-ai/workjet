@@ -328,12 +328,23 @@ finishes. Scope estimates are rough and name the files.
    shapes that cannot be innocent: pem-private-key, known-credential,
    authorization-header. Currently clean over 4809 tracked files.
 
-4. **`./node_modules/.bin/vp check --fix`.** §15. 144 tracked files unformatted
-   (82 `native/web-stack`, 35 `native/provider-gateway`, 13
-   `experiments/kundenpipeline-module`, 5 `native/pdf-parse`, 5 `apps/server`, 2
-   `docs`, 2 `apps/web`), which is the whole of why the CI `Check` step is red.
-   One command, zero behaviour change — **but land it as its own
-   formatting-only commit**, never mixed with a behavioural change.
+4. ~~**`./node_modules/.bin/vp check --fix`.**~~ **DONE 2026-08-20, commit
+   44f823e43 — but NOT with that command.** §15. 32 files formatted with
+   `vp fmt --write`, formatting-only, on its own commit.
+   **Do not run `vp check --fix` here.** It also applies lint autofixes, and
+   one is wrong in this repo — the same one eaa6e4792's message warned about.
+   Running it rewrote `const span = file.body.slice(start, end)` (a STRING)
+   into `new Set(...)`, turning the following `span.has("<enforcer>(")` always
+   false and silently disabling WorkjetToolScopeGate's enforcer check. Reverted.
+   TWO FILES REMAIN UNFORMATTED, both deliberately:
+   - `experiments/kundenpipeline-module/index.js` carries substantive
+     uncommitted work on another strand; formatting it would bury that change.
+   - `docs/workjet-remaining-work.md` — the markdown formatter DOES NOT
+     CONVERGE on it. Three consecutive `--fix` runs produce three different
+     files, so no state exists that `vp check` considers formatted. The CI
+     `Check` step cannot go green on this file until that tooling bug is
+     fixed; that is a formatter defect, not repo debt.
+
 5. ~~**Clear the 57 pre-existing `t3` server typecheck errors.**~~ **ALREADY
    DONE — verified 2026-08-20, no change needed.** §15. Measured, not assumed:
    `tsgo --noEmit -p tsconfig.json` in `apps/server` reports 0 errors, and

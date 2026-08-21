@@ -4,11 +4,11 @@ Kept in the repo on purpose: the session scratchpad and `/tmp` are swept by the
 OS mid-task. On 2026-08-20 that wiped the SSH key, the cookie jar and every
 verification script at once.
 
-| Script | What it proves |
-| --- | --- |
+| Script                | What it proves                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `welsch-guest-key.sh` | Recreates the guest SSH key from the fleet DB and prints a ready `GUEST_SSH`. The key is never stored durably — it is decrypted on demand. |
-| `verify-chain.sh` | Inbound mail → Vorgang → Entscheidung → approval thread assigned to the owner. Purges its own `example.org` test data first. |
-| `verify-ui.mjs` | The same thing through a real browser and real WebRTC: Decision Hub queue, Threads inbox, mailbox settings. |
+| `verify-chain.sh`     | Inbound mail → Vorgang → Entscheidung → approval thread assigned to the owner. Purges its own `example.org` test data first.               |
+| `verify-ui.mjs`       | The same thing through a real browser and real WebRTC: Decision Hub queue, Threads inbox, mailbox settings.                                |
 
 ## Rules learned the hard way
 

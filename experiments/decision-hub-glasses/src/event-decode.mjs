@@ -1,11 +1,11 @@
 // Host-Nutzlast → OsEventTypeList. Bewusst DOM-frei, damit das Wire-Format
 // ohne Browser getestet werden kann.
-import { evenHubEventFromJson } from '@evenrealities/even_hub_sdk';
+import { evenHubEventFromJson } from "@evenrealities/even_hub_sdk";
 
 /** Menuepunkt-ID, wenn die Brille einen Aktionspunkt gewaehlt hat. */
 export function menuItemFrom(detail) {
   const id = detail?.menuItemClickEvent?.itemID ?? detail?.jsonData?.itemID;
-  return typeof id === 'number' ? id : null;
+  return typeof id === "number" ? id : null;
 }
 
 export function osEventFrom(detail) {
@@ -15,9 +15,9 @@ export function osEventFrom(detail) {
   // {type, jsonData}-Form — deshalb zuerst direkt lesen, dann ersatzweise.
   const raw = detail ?? {};
   const direct = raw.textEvent?.eventType ?? raw.listEvent?.eventType;
-  if (typeof direct === 'number') return direct;
+  if (typeof direct === "number") return direct;
   const parsed = evenHubEventFromJson(raw);
   const type = parsed?.textEvent?.eventType ?? parsed?.listEvent?.eventType;
-  return typeof type === 'number' ? type : null;
+  return typeof type === "number" ? type : null;
   // sysEvent (Vorder-/Hintergrund, Exit) ist Lebenszyklus, KEINE Eingabe.
 }

@@ -1,5 +1,7 @@
 <!-- SHELL FRAGMENT: Styles und mount(ctx) kommen aus der Business-OS-Shell. -->
-<p class="ctox-standalone-note">Dieses Modul-Fragment läuft nur innerhalb der CTOX Business-OS-Shell.</p>
+<p class="ctox-standalone-note">
+  Dieses Modul-Fragment läuft nur innerhalb der CTOX Business-OS-Shell.
+</p>
 <main class="ctox-workspace ctox-workspace--two-pane kpl" data-kpl-root data-resize-frame>
   <aside class="ctox-pane kpl-left" aria-label="Entscheidungen und Vorgänge">
     <header class="ctox-pane-header ctox-pane-band">
@@ -9,39 +11,245 @@
           <h2 class="ctox-pane-title" data-copy="queue_title">Entscheidungen</h2>
         </div>
         <div class="ctox-pane-actions">
-          <button type="button" class="ctox-pane-icon" data-action="create-vorgang" aria-label="Vorgang anlegen" title="Vorgang anlegen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-          <button type="button" class="ctox-pane-icon" data-action="seed" aria-label="Demo-Daten anlegen" title="Demo-Daten anlegen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v6m0 0 3-3m-3 3L9 6"/><rect x="4" y="13" width="16" height="8" rx="2"/></svg></button>
-          <button type="button" class="ctox-pane-icon" data-action="import" aria-label="Vorgänge als JSON importieren" title="Vorgänge als JSON importieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3m0 11 4-4m-4 4-8-4"/><path d="M5 12v7h14v-7"/></svg></button>
-          <button type="button" class="ctox-pane-icon" data-action="export" aria-label="Gefilterte Einträge als JSON exportieren" title="Gefilterte Einträge als JSON exportieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11M12 3 8 7m4-4 4 4M5 12v7h14v-7"/></svg></button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-action="create-vorgang"
+            aria-label="Vorgang anlegen"
+            title="Vorgang anlegen"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-action="seed"
+            aria-label="Demo-Daten anlegen"
+            title="Demo-Daten anlegen"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3v6m0 0 3-3m-3 3L9 6" />
+              <rect x="4" y="13" width="16" height="8" rx="2" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-action="import"
+            aria-label="Vorgänge als JSON importieren"
+            title="Vorgänge als JSON importieren"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 14V3m0 11 4-4m-4 4-8-4" />
+              <path d="M5 12v7h14v-7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-action="export"
+            aria-label="Gefilterte Einträge als JSON exportieren"
+            title="Gefilterte Einträge als JSON exportieren"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3v11M12 3 8 7m4-4 4 4M5 12v7h14v-7" />
+            </svg>
+          </button>
         </div>
       </div>
       <div class="kpl-filterbar">
-        <input class="ctox-pane-search" type="search" data-pg-search placeholder="Suchen" aria-label="Einträge suchen">
+        <input
+          class="ctox-pane-search"
+          type="search"
+          data-pg-search
+          placeholder="Suchen"
+          aria-label="Einträge suchen"
+        />
         <div class="kpl-view-toggle" role="group" aria-label="Darstellung">
-          <button type="button" class="ctox-pane-icon" data-pg-view="cards" aria-pressed="true" aria-label="Shard-Ansicht" title="Shard-Ansicht"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="1.5"/><rect x="4" y="14" width="16" height="7" rx="1.5"/></svg></button>
-        <button type="button" class="ctox-pane-icon" data-pg-view="list" aria-pressed="false" aria-label="Listen-Ansicht" title="Listen-Ansicht"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-pg-view="cards"
+            aria-pressed="true"
+            aria-label="Shard-Ansicht"
+            title="Shard-Ansicht"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="4" y="4" width="16" height="7" rx="1.5" />
+              <rect x="4" y="14" width="16" height="7" rx="1.5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-pg-view="list"
+            aria-pressed="false"
+            aria-label="Listen-Ansicht"
+            title="Listen-Ansicht"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+            </svg>
+          </button>
         </div>
-        <button type="button" class="ctox-pane-icon kpl-filter-toggle" data-pg-tray-toggle aria-expanded="false" aria-label="Filter" title="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.4" fill="var(--surface-2)"/><circle cx="15" cy="12" r="2.4" fill="var(--surface-2)"/><circle cx="8" cy="17" r="2.4" fill="var(--surface-2)"/></svg></button>
+        <button
+          type="button"
+          class="ctox-pane-icon kpl-filter-toggle"
+          data-pg-tray-toggle
+          aria-expanded="false"
+          aria-label="Filter"
+          title="Filter"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="4" y1="7" x2="20" y2="7" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="17" x2="20" y2="17" />
+            <circle cx="9" cy="7" r="2.4" fill="var(--surface-2)" />
+            <circle cx="15" cy="12" r="2.4" fill="var(--surface-2)" />
+            <circle cx="8" cy="17" r="2.4" fill="var(--surface-2)" />
+          </svg>
+        </button>
       </div>
       <div class="kpl-filter-tray" data-pg-tray hidden>
         <div class="kpl-filter-row">
-          <select class="ctox-select" data-pg-filter data-pg-name="typ" data-pg-default="all" aria-label="Entscheidungstyp">
+          <select
+            class="ctox-select"
+            data-pg-filter
+            data-pg-name="typ"
+            data-pg-default="all"
+            aria-label="Entscheidungstyp"
+          >
             <option value="all" data-copy="filter_all_types">Alle Typen</option>
             <option value="zuordnung">Zuordnung</option>
             <option value="triage">Triage</option>
             <option value="mailfreigabe">Mailfreigabe</option>
             <option value="ergebnisfreigabe">Ergebnisfreigabe</option>
           </select>
-          <button type="button" class="kpl-filter-reset" data-pg-reset aria-label="Filter zurücksetzen" title="Filter zurücksetzen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10a8 8 0 1 1 2 7"/><path d="M4 5v5h5"/></svg></button>
+          <button
+            type="button"
+            class="kpl-filter-reset"
+            data-pg-reset
+            aria-label="Filter zurücksetzen"
+            title="Filter zurücksetzen"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 10a8 8 0 1 1 2 7" />
+              <path d="M4 5v5h5" />
+            </svg>
+          </button>
         </div>
       </div>
     </header>
     <nav class="kpl-view-switch" aria-label="Ansichten">
       <div class="ctox-pane-tabs">
-        <button type="button" class="ctox-pane-tab is-active" role="tab" data-pg-band="offen" aria-selected="true"><span data-copy="band_open">Offen</span><span class="view-count" data-pg-count="offen"></span></button>
-        <button type="button" class="ctox-pane-tab" role="tab" data-pg-band="vorgaenge" aria-selected="false"><span data-copy="band_cases">Vorgänge</span><span class="view-count" data-pg-count="vorgaenge"></span></button>
-        <button type="button" class="ctox-pane-tab" role="tab" data-pg-band="erledigt" aria-selected="false"><span data-copy="band_done">Erledigt</span><span class="view-count" data-pg-count="erledigt"></span></button>
-        <button type="button" class="ctox-pane-tab" role="tab" data-pg-band="projekte" aria-selected="false"><span data-copy="band_projects">Projekte</span><span class="view-count" data-pg-count="projekte"></span></button>
+        <button
+          type="button"
+          class="ctox-pane-tab is-active"
+          role="tab"
+          data-pg-band="offen"
+          aria-selected="true"
+        >
+          <span data-copy="band_open">Offen</span
+          ><span class="view-count" data-pg-count="offen"></span>
+        </button>
+        <button
+          type="button"
+          class="ctox-pane-tab"
+          role="tab"
+          data-pg-band="vorgaenge"
+          aria-selected="false"
+        >
+          <span data-copy="band_cases">Vorgänge</span
+          ><span class="view-count" data-pg-count="vorgaenge"></span>
+        </button>
+        <button
+          type="button"
+          class="ctox-pane-tab"
+          role="tab"
+          data-pg-band="erledigt"
+          aria-selected="false"
+        >
+          <span data-copy="band_done">Erledigt</span
+          ><span class="view-count" data-pg-count="erledigt"></span>
+        </button>
+        <button
+          type="button"
+          class="ctox-pane-tab"
+          role="tab"
+          data-pg-band="projekte"
+          aria-selected="false"
+        >
+          <span data-copy="band_projects">Projekte</span
+          ><span class="view-count" data-pg-count="projekte"></span>
+        </button>
       </div>
     </nav>
     <div class="ctox-pane-body kpl-well">
@@ -50,25 +258,88 @@
     <footer class="kpl-footer"><span data-pg-footer></span></footer>
   </aside>
 
-  <button class="ctox-column-resizer" type="button" data-resizer="left" data-resizer-var="--ctox-left-width" data-resizer-min="240" data-resizer-max="440" aria-label="Linke Spaltenbreite anpassen"></button>
+  <button
+    class="ctox-column-resizer"
+    type="button"
+    data-resizer="left"
+    data-resizer-var="--ctox-left-width"
+    data-resizer-min="240"
+    data-resizer-max="440"
+    aria-label="Linke Spaltenbreite anpassen"
+  ></button>
 
   <section class="ctox-pane kpl-center" aria-label="Brillen-Display">
     <header class="ctox-pane-header ctox-pane-band">
       <div class="ctox-pane-title-row">
-        <button type="button" class="ctox-pane-icon kpl-mobile-back" data-mobile-back aria-label="Zur Liste" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <button
+          type="button"
+          class="ctox-pane-icon kpl-mobile-back"
+          data-mobile-back
+          aria-label="Zur Liste"
+          hidden
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
         <div class="ctox-pane-titles">
           <span class="ctox-pane-kicker" data-copy="display_kicker">Brillen-Display · 576×288</span>
           <h2 class="ctox-pane-title" data-display-title data-copy="display_empty">Queue leer</h2>
         </div>
         <div class="ctox-pane-actions">
-          <button type="button" class="ctox-pane-icon" data-action="toggle-context" data-toggle-context aria-pressed="false" aria-label="Vorgangskontext einblenden" title="Vorgangskontext einblenden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.5"/></svg></button>
+          <button
+            type="button"
+            class="ctox-pane-icon"
+            data-action="toggle-context"
+            data-toggle-context
+            aria-pressed="false"
+            aria-label="Vorgangskontext einblenden"
+            title="Vorgangskontext einblenden"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v5m0-8v.5" />
+            </svg>
+          </button>
         </div>
       </div>
     </header>
     <nav class="kpl-mode-switch" aria-label="Darstellungsmodus">
       <div class="ctox-pane-tabs">
-        <button type="button" class="ctox-pane-tab is-active" role="tab" data-mode-tab="glass" aria-selected="true" data-copy="mode_glass">Brille</button>
-        <button type="button" class="ctox-pane-tab" role="tab" data-mode-tab="desktop" aria-selected="false" data-copy="mode_desktop">Desktop</button>
+        <button
+          type="button"
+          class="ctox-pane-tab is-active"
+          role="tab"
+          data-mode-tab="glass"
+          aria-selected="true"
+          data-copy="mode_glass"
+        >
+          Brille
+        </button>
+        <button
+          type="button"
+          class="ctox-pane-tab"
+          role="tab"
+          data-mode-tab="desktop"
+          aria-selected="false"
+          data-copy="mode_desktop"
+        >
+          Desktop
+        </button>
       </div>
     </nav>
     <div class="ctox-pane-body kpl-stage">
@@ -79,15 +350,78 @@
             <h3 class="kpl-desktop-title" data-dv-titel></h3>
           </div>
           <div class="ctox-pane-actions">
-            <button type="button" class="ctox-pane-icon" data-action="dv-annehmen" aria-label="Annehmen" title="Annehmen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></button>
-            <button type="button" class="ctox-pane-icon" data-action="dv-ablehnen" aria-label="Ablehnen" title="Ablehnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-            <button type="button" class="ctox-pane-icon" data-action="dv-vertagt" aria-label="Auf später verschieben" title="Auf später verschieben"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
+            <button
+              type="button"
+              class="ctox-pane-icon"
+              data-action="dv-annehmen"
+              aria-label="Annehmen"
+              title="Annehmen"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m5 13 4 4L19 7" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="ctox-pane-icon"
+              data-action="dv-ablehnen"
+              aria-label="Ablehnen"
+              title="Ablehnen"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="ctox-pane-icon"
+              data-action="dv-vertagt"
+              aria-label="Auf später verschieben"
+              title="Auf später verschieben"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="8.5" />
+                <path d="M12 7.5V12l3 2" />
+              </svg>
+            </button>
           </div>
         </header>
         <div class="kpl-desktop-sections" data-dv-sections></div>
       </section>
       <div class="kpl-glass-frame">
-        <canvas class="kpl-glass" data-glass-canvas width="576" height="288" role="img" aria-label="Brillen-Display-Vorschau" tabindex="0"></canvas>
+        <canvas
+          class="kpl-glass"
+          data-glass-canvas
+          width="576"
+          height="288"
+          role="img"
+          aria-label="Brillen-Display-Vorschau"
+          tabindex="0"
+        ></canvas>
         <div class="kpl-gestures" role="group" aria-label="Touchpad-Gesten" data-gesture-row></div>
       </div>
       <section class="kpl-context" data-context-panel hidden>
@@ -104,22 +438,63 @@
 
   <div class="ctox-modal" data-project-modal hidden>
     <div class="ctox-modal-card">
-      <div class="ctox-modal-header"><h3 class="ctox-modal-title" data-project-modal-title data-copy="project_title">Projekt anlegen</h3></div>
+      <div class="ctox-modal-header">
+        <h3 class="ctox-modal-title" data-project-modal-title data-copy="project_title">
+          Projekt anlegen
+        </h3>
+      </div>
       <form class="ctox-modal-body" data-project-form>
-        <input type="hidden" name="projekt_id">
-        <label class="ctox-field-label" for="kpl-p-name" data-copy="project_field_name">Kunde / Projektname</label>
-        <input class="ctox-input" id="kpl-p-name" name="name" required autocomplete="off">
-        <label class="ctox-field-label" for="kpl-p-adressen" data-copy="project_field_addresses">Mail-Adressen (Komma-getrennt)</label>
-        <input class="ctox-input" id="kpl-p-adressen" name="adressen" autocomplete="off" placeholder="j.cakmak@remcapital.de, info@remcapital.de">
-        <label class="ctox-field-label" for="kpl-p-domains" data-copy="project_field_domains">Domains fürs Routing (Komma-getrennt)</label>
-        <input class="ctox-input" id="kpl-p-domains" name="domains" autocomplete="off" placeholder="remcapital.de">
-        <label class="ctox-field-label" for="kpl-p-code" data-copy="project_field_code">CTOX-Code-Projekt (Pfad oder Name)</label>
-        <input class="ctox-input" id="kpl-p-code" name="code_projekt" autocomplete="off" placeholder="~/Projekte/rem-gateway">
-        <label class="ctox-field-label" for="kpl-p-notizen" data-copy="project_field_notes">Notizen</label>
+        <input type="hidden" name="projekt_id" />
+        <label class="ctox-field-label" for="kpl-p-name" data-copy="project_field_name"
+          >Kunde / Projektname</label
+        >
+        <input class="ctox-input" id="kpl-p-name" name="name" required autocomplete="off" />
+        <label class="ctox-field-label" for="kpl-p-adressen" data-copy="project_field_addresses"
+          >Mail-Adressen (Komma-getrennt)</label
+        >
+        <input
+          class="ctox-input"
+          id="kpl-p-adressen"
+          name="adressen"
+          autocomplete="off"
+          placeholder="j.cakmak@remcapital.de, info@remcapital.de"
+        />
+        <label class="ctox-field-label" for="kpl-p-domains" data-copy="project_field_domains"
+          >Domains fürs Routing (Komma-getrennt)</label
+        >
+        <input
+          class="ctox-input"
+          id="kpl-p-domains"
+          name="domains"
+          autocomplete="off"
+          placeholder="remcapital.de"
+        />
+        <label class="ctox-field-label" for="kpl-p-code" data-copy="project_field_code"
+          >CTOX-Code-Projekt (Pfad oder Name)</label
+        >
+        <input
+          class="ctox-input"
+          id="kpl-p-code"
+          name="code_projekt"
+          autocomplete="off"
+          placeholder="~/Projekte/rem-gateway"
+        />
+        <label class="ctox-field-label" for="kpl-p-notizen" data-copy="project_field_notes"
+          >Notizen</label
+        >
         <textarea class="ctox-textarea" id="kpl-p-notizen" name="notizen" rows="3"></textarea>
         <div class="ctox-modal-footer">
-          <button class="ctox-button" type="button" data-action="close-project-modal" data-copy="create_cancel">Abbrechen</button>
-          <button class="ctox-button is-primary" type="submit" data-copy="project_submit">Speichern</button>
+          <button
+            class="ctox-button"
+            type="button"
+            data-action="close-project-modal"
+            data-copy="create_cancel"
+          >
+            Abbrechen
+          </button>
+          <button class="ctox-button is-primary" type="submit" data-copy="project_submit">
+            Speichern
+          </button>
         </div>
       </form>
     </div>
@@ -127,17 +502,34 @@
 
   <div class="ctox-modal" data-create-modal hidden>
     <div class="ctox-modal-card">
-      <div class="ctox-modal-header"><h3 class="ctox-modal-title" data-copy="create_title">Vorgang anlegen</h3></div>
+      <div class="ctox-modal-header">
+        <h3 class="ctox-modal-title" data-copy="create_title">Vorgang anlegen</h3>
+      </div>
       <form class="ctox-modal-body" data-create-form>
-        <label class="ctox-field-label" for="kpl-create-titel" data-copy="create_field_title">Betreff</label>
-        <input class="ctox-input" id="kpl-create-titel" name="titel" required autocomplete="off">
-        <label class="ctox-field-label" for="kpl-create-absender" data-copy="create_field_sender">Absender</label>
-        <input class="ctox-input" id="kpl-create-absender" name="absender" autocomplete="off">
-        <label class="ctox-field-label" for="kpl-create-body" data-copy="create_field_body">Nachricht</label>
+        <label class="ctox-field-label" for="kpl-create-titel" data-copy="create_field_title"
+          >Betreff</label
+        >
+        <input class="ctox-input" id="kpl-create-titel" name="titel" required autocomplete="off" />
+        <label class="ctox-field-label" for="kpl-create-absender" data-copy="create_field_sender"
+          >Absender</label
+        >
+        <input class="ctox-input" id="kpl-create-absender" name="absender" autocomplete="off" />
+        <label class="ctox-field-label" for="kpl-create-body" data-copy="create_field_body"
+          >Nachricht</label
+        >
         <textarea class="ctox-textarea" id="kpl-create-body" name="body" rows="6"></textarea>
         <div class="ctox-modal-footer">
-          <button class="ctox-button" type="button" data-action="close-modal" data-copy="create_cancel">Abbrechen</button>
-          <button class="ctox-button is-primary" type="submit" data-copy="create_submit">Anlegen</button>
+          <button
+            class="ctox-button"
+            type="button"
+            data-action="close-modal"
+            data-copy="create_cancel"
+          >
+            Abbrechen
+          </button>
+          <button class="ctox-button is-primary" type="submit" data-copy="create_submit">
+            Anlegen
+          </button>
         </div>
       </form>
     </div>

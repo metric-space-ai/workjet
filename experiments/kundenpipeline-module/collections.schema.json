@@ -51,14 +51,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "id",
-        "title",
-        "status",
-        "is_deleted",
-        "created_at_ms",
-        "updated_at_ms"
-      ],
+      "required": ["id", "title", "status", "is_deleted", "created_at_ms", "updated_at_ms"],
       "additionalProperties": true
     },
     "kundenpipeline_entscheidungen": {
@@ -156,13 +149,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "id",
-        "name",
-        "is_deleted",
-        "created_at_ms",
-        "updated_at_ms"
-      ],
+      "required": ["id", "name", "is_deleted", "created_at_ms", "updated_at_ms"],
       "additionalProperties": true
     }
   },

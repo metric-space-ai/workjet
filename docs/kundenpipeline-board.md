@@ -1,11 +1,12 @@
 # Progress-Board · Decision Hub (vormals Kundenpipeline) + Brillen-Approval
 
 ## Paket K (2026-08-20 nachmittags) — Guest vollständig aktuell + Werkzeuge gerettet
+
 - welsch-Guest auf branch-main-20260820T171044Z (Upgrade 11). Enthält
   jetzt ALLES: Owner/Participants-Fix, decision.answer, Threads-Spec,
   Backup-Fix (browser_profiles) und den decision-hub-triage-Skill.
   Skill auf dem Guest verifiziert: `ctox skills system show
-  decision-hub-triage` → skill-b264a56abe05, class ctox_core.
+decision-hub-triage` → skill-b264a56abe05, class ctox_core.
   Ab jetzt blockiert ein laufender Browser kein Upgrade mehr.
 - SCRATCHPAD-VERLUST (eigene Falle, teuer): /private/tmp wurde vom System
   geleert — SSH-Key, Cookie-Jar und ALLE Verifikationsskripte auf einen
@@ -17,7 +18,7 @@
 - ABSCHLUSSBEWEIS auf dem voll aktualisierten Guest, gefahren mit den
   versionierten Skripten (tools/decision-hub/verify-chain.sh):
   vorgang=kpl-v-dh-verify-1787247847-…, decision=kpl-e-zuord-…,
-  thread=thread_kundenpipeline_entscheidung_…,
+  thread=thread*kundenpipeline_entscheidung*…,
   assignee=michael.welsch@metric-space.ai, status=open → PASS.
   Testdaten wurden vom Skript selbst wieder entfernt.
 

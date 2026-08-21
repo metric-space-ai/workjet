@@ -5,12 +5,18 @@
 // view-to-containers, Gesten aus input.mjs. Alle drei sind ohne Hardware
 // getestet — dieses Modul verdrahtet sie nur mit dem SDK und der Datenquelle.
 
-import { buildView } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
-import { viewToPageContainer, viewToTextUpdates } from './view-to-containers.mjs';
-import { reduce } from './input.mjs';
-import { menuAction } from './view-to-containers.mjs';
+import { buildView } from "../../kundenpipeline-module/core/glasses-renderer.mjs";
+import { viewToPageContainer, viewToTextUpdates } from "./view-to-containers.mjs";
+import { reduce } from "./input.mjs";
+import { menuAction } from "./view-to-containers.mjs";
 
-export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPaint = () => {}, filter = () => true }) {
+export function createDecisionHubPlugin({
+  sdk,
+  source,
+  onError = () => {},
+  onPaint = () => {},
+  filter = () => true,
+}) {
   const state = { scroll: 0, focusIcon: -1, index: 0 };
   let decisions = [];
   let vorgaenge = new Map();
@@ -34,7 +40,8 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
       const result = await sdk.createStartUpPageContainer(viewToPageContainer(view));
       // 0 = Erfolg; alles andere ist ein echter Fehler und darf nicht als
       // "läuft schon" durchgehen.
-      if (result !== 0 && result?.code !== 0) throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
+      if (result !== 0 && result?.code !== 0)
+        throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
       started = true;
       return;
     }
@@ -59,13 +66,13 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
   async function act(wert) {
     const decision = decisions[state.index];
     if (!decision) return;
-    if (wert === 'naechster') {
+    if (wert === "naechster") {
       state.index = (state.index + 1) % Math.max(1, decisions.length);
       state.scroll = 0;
       await paint();
       return;
     }
-    if (wert === 'vertagt') {
+    if (wert === "vertagt") {
       // Vertagen bleibt offen und wandert ans Ende der Queue.
       decisions.push(decisions.splice(state.index, 1)[0]);
       state.index = Math.min(state.index, Math.max(0, decisions.length - 1));
@@ -92,7 +99,7 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
     };
     const { state: next, action } = reduce(state, osEvent, dims);
     Object.assign(state, next);
-    if (action?.type === 'activate') {
+    if (action?.type === "activate") {
       const icon = view.icons[action.icon];
       // Der Versand passiert serverseitig nach der Antwort — das Plugin
       // entscheidet nichts selbst und sendet keine Mail.
@@ -129,16 +136,22 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
     },
     /** Sichtprobe: zeigt, dass die Kette bis auf die Brille traegt. */
     async showTestCard() {
-      const now = new Date().toLocaleTimeString('de-DE');
-      decisions = [{
-        id: 'testkarte',
-        vorgang_id: 'testkarte',
-        typ: 'zuordnung',
-        titel: 'Testkarte',
-        status: 'offen',
-        zeilen_json: ['» TESTKARTE', `Gesendet um ${now}.`, 'Wenn du das liest, traegt die Kette.'],
-      }];
-      vorgaenge = new Map([['testkarte', { id: 'testkarte', kunde_name: 'Test' }]]);
+      const now = new Date().toLocaleTimeString("de-DE");
+      decisions = [
+        {
+          id: "testkarte",
+          vorgang_id: "testkarte",
+          typ: "zuordnung",
+          titel: "Testkarte",
+          status: "offen",
+          zeilen_json: [
+            "» TESTKARTE",
+            `Gesendet um ${now}.`,
+            "Wenn du das liest, traegt die Kette.",
+          ],
+        },
+      ];
+      vorgaenge = new Map([["testkarte", { id: "testkarte", kunde_name: "Test" }]]);
       state.index = 0;
       state.scroll = 0;
       await paint();

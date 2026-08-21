@@ -6,7 +6,7 @@
 // der Desktop-Vorschau: ein durchgehender Fluss aus Text und Icons, an
 // dessen Ende das nächste Item beginnt.
 
-import { BODY_LINES, clampScroll } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
+import { BODY_LINES, clampScroll } from "../../kundenpipeline-module/core/glasses-renderer.mjs";
 
 export const OS_EVENT = {
   CLICK: 0,
@@ -53,11 +53,11 @@ export function reduce(state, event, dims) {
     case OS_EVENT.CLICK:
       // Press aktiviert das fokussierte Icon; im Text ist Press wirkungslos.
       return next.focusIcon >= 0
-        ? { state: next, action: { type: 'activate', icon: next.focusIcon } }
+        ? { state: next, action: { type: "activate", icon: next.focusIcon } }
         : { state: next, action: null };
     case OS_EVENT.DOUBLE_CLICK:
       next.focusIcon = -1;
-      return { state: next, action: { type: 'back' } };
+      return { state: next, action: { type: "back" } };
     default:
       return { state: next, action: null };
   }

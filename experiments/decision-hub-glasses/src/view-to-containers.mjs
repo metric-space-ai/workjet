@@ -13,7 +13,7 @@ import {
   DISPLAY_H,
   BODY_LINES,
   clampScroll,
-} from '../../kundenpipeline-module/core/glasses-renderer.mjs';
+} from "../../kundenpipeline-module/core/glasses-renderer.mjs";
 
 const PAD_X = 14;
 // Gemessen am Simulator: 26 px Zeilenabstand, Textgroesse nicht einstellbar.
@@ -33,11 +33,11 @@ export const CONTAINER = { TABS: 1, BODY: 2 };
 // Icon-Zeile wackelte nur). Deshalb faengt der TEXT die Eingaben, und die
 // Entscheidungen liegen im nativen Aktionsmenue der Brille.
 export const MENU = [
-  { itemID: 1, itemName: 'Annehmen', wert: 'annehmen' },
-  { itemID: 2, itemName: 'Ablehnen', wert: 'ablehnen' },
-  { itemID: 3, itemName: 'Korrektur', wert: 'korrektur' },
-  { itemID: 4, itemName: 'Spaeter', wert: 'vertagt' },
-  { itemID: 5, itemName: 'Naechster Vorgang', wert: 'naechster' },
+  { itemID: 1, itemName: "Annehmen", wert: "annehmen" },
+  { itemID: 2, itemName: "Ablehnen", wert: "ablehnen" },
+  { itemID: 3, itemName: "Korrektur", wert: "korrektur" },
+  { itemID: 4, itemName: "Spaeter", wert: "vertagt" },
+  { itemID: 5, itemName: "Naechster Vorgang", wert: "naechster" },
 ];
 
 /** Menuepunkt-ID → Entscheidungswert. */
@@ -49,13 +49,13 @@ export function menuAction(itemID) {
  *  keine Inversdarstellung kennt. */
 export function tabsLine(tabs, width = 52) {
   const parts = tabs.map((tab) => (tab.active ? `[${tab.label}]` : ` ${tab.label} `));
-  let line = parts.join('');
+  let line = parts.join("");
   if (line.length <= width) return line;
   // Um den aktiven Reiter herum beschneiden, damit er sichtbar bleibt.
   const activeIndex = tabs.findIndex((tab) => tab.active);
-  const before = parts.slice(0, Math.max(0, activeIndex)).join('');
-  const active = parts[activeIndex] || '';
-  const after = parts.slice(activeIndex + 1).join('');
+  const before = parts.slice(0, Math.max(0, activeIndex)).join("");
+  const active = parts[activeIndex] || "";
+  const after = parts.slice(activeIndex + 1).join("");
   const room = Math.max(0, width - active.length);
   const left = before.slice(Math.max(0, before.length - Math.floor(room / 2)));
   const right = after.slice(0, Math.max(0, room - left.length));
@@ -66,7 +66,7 @@ export function tabsLine(tabs, width = 52) {
 /** Sichtbares Textfenster inklusive Positionsanzeige wie in der Vorschau. */
 export function bodyText(view, windowLines = BODY_LINES) {
   const scroll = clampScroll(view.scroll, view.zeilen.length, windowLines);
-  return view.zeilen.slice(scroll, scroll + windowLines).join('\n');
+  return view.zeilen.slice(scroll, scroll + windowLines).join("\n");
 }
 
 /** Icon-Zeile; das fokussierte Icon wird geklammert, da invers nicht geht. */
@@ -74,7 +74,7 @@ export function iconsLine(view) {
   // ▶ existiert in der Brillenschrift, ✓/✔ nicht — das Caret markiert den Fokus.
   return view.icons
     .map((icon, i) => (i === view.focusIcon ? `▶${icon.glyph}` : ` ${icon.glyph}`))
-    .join('  ');
+    .join("  ");
 }
 
 /**
@@ -88,7 +88,7 @@ export function viewToPageContainer(view) {
     textObject: [
       {
         containerID: CONTAINER.TABS,
-        containerName: 'tabs',
+        containerName: "tabs",
         xPosition: PAD_X,
         yPosition: 0,
         width: DISPLAY_W - PAD_X * 2,
@@ -101,7 +101,7 @@ export function viewToPageContainer(view) {
       {
         // Der Eingabe-Container: die Brille scrollt genau diesen selbst.
         containerID: CONTAINER.BODY,
-        containerName: 'body',
+        containerName: "body",
         xPosition: PAD_X,
         yPosition: TAB_H,
         width: DISPLAY_W - PAD_X * 2,

@@ -27,12 +27,12 @@ that needs a decision _and_ a second machine counts as BLOCKED-ON-REALITY, and a
 box with buildable work inside it still counts as blocked if something else gates
 the tick.
 
-| Bucket                 | Boxes | What it means                                                                 |
-| ---------------------- | ----- | ----------------------------------------------------------------------------- |
-| **DONE**               | 282   | Ticked against named files and a covering test. 12 by the audit, 2 since.     |
-| **BLOCKED-ON-OWNER**   | 11    | A person must decide. No amount of engineering moves these.                   |
-| **BLOCKED-ON-REALITY** | 40    | A second machine, another OS, real credentials, or a CTOX-repository change.  |
-| **IMPLEMENTABLE**      | 20    | Nothing gates them but effort.                                                |
+| Bucket                 | Boxes | What it means                                                                |
+| ---------------------- | ----- | ---------------------------------------------------------------------------- |
+| **DONE**               | 282   | Ticked against named files and a covering test. 12 by the audit, 2 since.    |
+| **BLOCKED-ON-OWNER**   | 11    | A person must decide. No amount of engineering moves these.                  |
+| **BLOCKED-ON-REALITY** | 40    | A second machine, another OS, real credentials, or a CTOX-repository change. |
+| **IMPLEMENTABLE**      | 20    | Nothing gates them but effort.                                               |
 
 Two different units appear below and they do not match on purpose. There are
 **11 owner-gated boxes but only 10 distinct decisions**, because one decision
@@ -358,28 +358,28 @@ finishes. Scope estimates are rough and name the files.
 
 ### Tier 2 — finishes a wave
 
-8. **Live harness availability.** §8. Replace the hand-toggled static boolean
-   with `workjet.harness.inspect|install|update|remove` RPCs beside the existing
-   Greppy pair (`packages/contracts/src/rpc.ts:330-345`), a server service that
-   probes each harness executable, and make `WorkerDispatch.ts` consult the
-   result. ~4 server files, 1 contract, 2 web files plus tests — **the largest
-   single Wave 5 item**.
-   **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
-   availability at all" understates it. `WorkerDispatch.ts` contains ZERO
-   matches for profile, harness or computerId, and `WorkerDispatchInput` is
-   `{task, title, enabledCapabilityIds, modelSelection}` — no profile, no
-   computer, no harness. Repo-wide, `workerProfiles` is read only by the legacy
-   importer and `WorkjetSettings.tsx`; nothing on the dispatch path touches the
-   catalog. So "make dispatch consult the availability result" first requires
-   connecting dispatch to worker profiles AT ALL, which is an architectural
-   step the estimate does not appear to include. Re-scope accordingly before
-   starting, and expect the dispatch half to be the larger one.
-9. **Settle `workjet_dispatch_worker`.** §8 — one decision closes three boxes
-   (bounded dispatch/cancel/retry/timeout/result, durable worker status, and
-   completion-as-an-event). Option A: route it through the delegation machinery
-   it currently bypasses. Option B, cheaper: retire it in favour of
-   `workjet_delegate_task`, which already has all five semantics. **Make the
-   choice once**, then implement.
+8.  **Live harness availability.** §8. Replace the hand-toggled static boolean
+    with `workjet.harness.inspect|install|update|remove` RPCs beside the existing
+    Greppy pair (`packages/contracts/src/rpc.ts:330-345`), a server service that
+    probes each harness executable, and make `WorkerDispatch.ts` consult the
+    result. ~4 server files, 1 contract, 2 web files plus tests — **the largest
+    single Wave 5 item**.
+    **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
+    availability at all" understates it. `WorkerDispatch.ts` contains ZERO
+    matches for profile, harness or computerId, and `WorkerDispatchInput` is
+    `{task, title, enabledCapabilityIds, modelSelection}` — no profile, no
+    computer, no harness. Repo-wide, `workerProfiles` is read only by the legacy
+    importer and `WorkjetSettings.tsx`; nothing on the dispatch path touches the
+    catalog. So "make dispatch consult the availability result" first requires
+    connecting dispatch to worker profiles AT ALL, which is an architectural
+    step the estimate does not appear to include. Re-scope accordingly before
+    starting, and expect the dispatch half to be the larger one.
+9.  **Settle `workjet_dispatch_worker`.** §8 — one decision closes three boxes
+    (bounded dispatch/cancel/retry/timeout/result, durable worker status, and
+    completion-as-an-event). Option A: route it through the delegation machinery
+    it currently bypasses. Option B, cheaper: retire it in favour of
+    `workjet_delegate_task`, which already has all five semantics. **Make the
+    choice once**, then implement.
 10. ~~**Durable per-delegation state event log.**~~ **DONE 2026-08-20, commit
     c5f7649e1.** §8. Migration 054 adds `workjet_delegation_state_events`, and
     the write is inside `transitionDelegationState`'s existing transaction, so
@@ -417,7 +417,7 @@ finishes. Scope estimates are rough and name the files.
     already ran.
     **BLOCKED on item 14, by construction:** a `branch` ref cannot be added
     without lying. `WorkjetGitBranchRef` REQUIRES `delivery: "pushed" |
-    "sync-bundled"`, and this executor neither pushes nor bundles, so either
+"sync-bundled"`, and this executor neither pushes nor bundles, so either
     value asserts a delivery that did not happen and sends the source after a
     branch it cannot fetch. A test pins `branch` as absent so a later change
     must face that decision instead of drifting into it.
@@ -430,21 +430,22 @@ finishes. Scope estimates are rough and name the files.
     required turned six round-trip tests red, which is exactly what an older
     sender's payload would do on a newer receiver. Mutation-verified.
 
-    **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
-    the server's ONLY Greppy surface is
-    `greppy search --root <cwd> --json … <task>`
-    (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
-    entry point to reference instead. Since the plan requires that "remote
-    servers resolve references against their own authorized environment
-    state", a Greppy reference must be RE-RUNNABLE, which means carrying that
-    free text. That would be the first prose channel in a contract whose stated
-    discipline is bounded ids and closed literals with no field a payload can
-    travel in. Either accept a bounded query field as a deliberate, documented
-    exception, or add a symbol-shaped Greppy entry point first and reference
-    that. Not a schema addition.
+        **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
+        the server's ONLY Greppy surface is
+        `greppy search --root <cwd> --json … <task>`
+        (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
+        entry point to reference instead. Since the plan requires that "remote
+        servers resolve references against their own authorized environment
+        state", a Greppy reference must be RE-RUNNABLE, which means carrying that
+        free text. That would be the first prose channel in a contract whose stated
+        discipline is bounded ids and closed literals with no field a payload can
+        travel in. Either accept a bounded query field as a deliberate, documented
+        exception, or add a symbol-shaped Greppy entry point first and reference
+        that. Not a schema addition.
 
-    STILL OPEN and unblocked: `paths` population, and reference resolution on
-    the receiving side.
+        STILL OPEN and unblocked: `paths` population, and reference resolution on
+        the receiving side.
+
 14. **Handoff head commit and acknowledgement envelope.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new
     `sourceHeadCommit` port (GitVcsDriver.resolveCommit) fills the optionalKey
@@ -492,6 +493,7 @@ finishes. Scope estimates are rough and name the files.
     — or does it want to overturn those two decisions, which needs an explicit
     reason, not a schemaVersion bump. Until that is settled this is
     BLOCKED-ON-OWNER, not implementable.
+
 16. **Fresh-install / upgrade / rollback harness.** §15. Install a packaged build
     into a clean prefix, point it at the existing `scripts/mock-update-server.ts`,
     apply an update, force a rollback, assert the settings store survives. All
@@ -508,7 +510,7 @@ finishes. Scope estimates are rough and name the files.
 18. **Mount the cross-mode notification panel.** §1. Model and rendering are done
     and tested; nothing outside `apps/web/src/crossMode/` references them. The
     precondition — that the cross-mode link RPCs land — has since been met.
-    ~~~2 files plus a mounting test — **small**.~~
+    ```2 files plus a mounting test — **small**.~~
     **KORREKTUR 2026-08-20: the estimate is wrong and the item is not a mount.**
     Measured while starting it: nothing anywhere calls
     `crossModeNotificationStore.publish` outside its own tests, so the store is
@@ -521,6 +523,7 @@ finishes. Scope estimates are rough and name the files.
     wiring. Re-scope as **medium**, and settle the producer before the mount.
     Item 17 (dead-letter state) has the same shape: its audit atom
     (`server.ts:1109`) is likewise read by no component.
+    ```
 19. ~~**Wire the gateway host artifact resolver into startup and packaging.**~~
     **DONE 2026-08-20, commit bfcda507d.** §6. The caller is the primary
     backend's environment (`DesktopBackendConfiguration.ts`), which is where
@@ -567,6 +570,7 @@ finishes. Scope estimates are rough and name the files.
     capability surface with a source selector — a deliberate widening of an
     MCP-exposed tool, so a security-relevant choice, not a refactor — or accept
     the reduced coverage and say so in the scripts. Re-scope as **medium**.
+
 22. ~~**About panel on Windows and Linux, plus a release-feed identity test.**~~
     **ALREADY DONE — verified 2026-08-20, no change needed.** §9. Both halves
     exist and pass. The Help menu carries `About ${appName}` outside the darwin

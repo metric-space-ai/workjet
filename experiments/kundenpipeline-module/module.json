@@ -18,11 +18,7 @@
   "archetype": "queue-workflow",
   "presentation": {
     "default_mode": "window",
-    "supported_modes": [
-      "window",
-      "maximized",
-      "focus"
-    ],
+    "supported_modes": ["window", "maximized", "focus"],
     "initial_size": {
       "width": 1360,
       "height": 860
@@ -52,10 +48,5 @@
     "last_request": "Create request: Prepare a Business OS app source workspace for direct MCP coding.",
     "updated_at_ms": 1787053601154
   },
-  "tags": [
-    "inbox",
-    "triage",
-    "approvals",
-    "glasses"
-  ]
+  "tags": ["inbox", "triage", "approvals", "glasses"]
 }

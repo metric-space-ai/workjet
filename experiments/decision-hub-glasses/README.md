@@ -17,11 +17,11 @@ Deshalb ist nur der Malschritt neu. Die Ansicht selbst kommt unverändert aus
 dieselbe Logik treibt die Desktop-Vorschau in der Business-OS-App. Es gibt
 keine zweite Wahrheit über das Layout.
 
-| Datei | Aufgabe |
-| --- | --- |
-| `src/view-to-containers.mjs` | Ansichtsmodell → Container-Nutzlast (3 Text-Container: Reiter, Text, Icons) |
-| `src/input.mjs` | `OsEventTypeList` → Zustandsübergänge (Scroll, Press, Doppel-Press) |
-| `src/plugin.mjs` | Verdrahtung: SDK + Datenquelle, erzeugt die Seite einmal und aktualisiert danach nur Text |
+| Datei                        | Aufgabe                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/view-to-containers.mjs` | Ansichtsmodell → Container-Nutzlast (3 Text-Container: Reiter, Text, Icons)               |
+| `src/input.mjs`              | `OsEventTypeList` → Zustandsübergänge (Scroll, Press, Doppel-Press)                       |
+| `src/plugin.mjs`             | Verdrahtung: SDK + Datenquelle, erzeugt die Seite einmal und aktualisiert danach nur Text |
 
 ## Bedienmodell (Owner-Vorgabe, unverändert)
 
@@ -55,23 +55,22 @@ ersetzt. `node --test tests/` (Verzeichnisform) funktioniert auf dieser
 Node-Version nicht — die Dateien müssen einzeln genannt werden, wie im
 `test`-Skript.
 
-
 ## Am Simulator gemessen (nicht geraten)
 
 Diese Werte stammen aus echten Läufen mit `evenhub-simulator` 0.9.1 und
 Screenshots des Framebuffers. Sie haben das Layout mehrfach korrigiert:
 
-| Befund | Konsequenz |
-| --- | --- |
-| `zOrderIndex` muss je Container **eindeutig** sein | Doppelte 0 → `CreateStartUpPageContainer validation failed`, Seite entsteht gar nicht |
-| Die Gerätefont hat **kein** ✓ ✔ ✗ ✘ ✎ ◷ ▸ ⌛ ⏱ ➤ ▪ | Entscheidungszeile blieb komplett leer; jetzt Wörter + Caret `▶` |
-| Verfügbar sind u. a. `… ◑ ▶ ▷ ● ○ » « • → ↓ ↑ ■ □ ◆` | Abschnittsmarker `▸` → `»` |
-| Deutsche Umlaute, Akzente, Ziffern, Satzzeichen: **alle vorhanden** | Deutsche Oberfläche ist unkritisch |
-| Zeilenschrittweite **26 px**, Textgröße nicht einstellbar | Geometrie ist Messwert, keine Designentscheidung |
-| Reiterzeile + Entscheidungszeile kosten zwei Zeilen | **8 Textzeilen** passen, nicht die erhofften 10 |
-| Zu knappe Icon-Zeile schneidet Umlautpunkte ab | „SPÄTER" wurde zu „SPATER"; Zeile bekommt den Restplatz |
-| Host liefert Ereignisse **bereits geparst** als `{jsonData, textEvent:{eventType}}` | `evenHubEventFromJson()` greift hier nicht — direkt lesen |
-| `sysEvent` 4/5 sind Vorder-/Hintergrund | Dürfen nie als Geste durchgehen (Test hält das fest) |
+| Befund                                                                              | Konsequenz                                                                            |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `zOrderIndex` muss je Container **eindeutig** sein                                  | Doppelte 0 → `CreateStartUpPageContainer validation failed`, Seite entsteht gar nicht |
+| Die Gerätefont hat **kein** ✓ ✔ ✗ ✘ ✎ ◷ ▸ ⌛ ⏱ ➤ ▪                                  | Entscheidungszeile blieb komplett leer; jetzt Wörter + Caret `▶`                      |
+| Verfügbar sind u. a. `… ◑ ▶ ▷ ● ○ » « • → ↓ ↑ ■ □ ◆`                                | Abschnittsmarker `▸` → `»`                                                            |
+| Deutsche Umlaute, Akzente, Ziffern, Satzzeichen: **alle vorhanden**                 | Deutsche Oberfläche ist unkritisch                                                    |
+| Zeilenschrittweite **26 px**, Textgröße nicht einstellbar                           | Geometrie ist Messwert, keine Designentscheidung                                      |
+| Reiterzeile + Entscheidungszeile kosten zwei Zeilen                                 | **8 Textzeilen** passen, nicht die erhofften 10                                       |
+| Zu knappe Icon-Zeile schneidet Umlautpunkte ab                                      | „SPÄTER" wurde zu „SPATER"; Zeile bekommt den Restplatz                               |
+| Host liefert Ereignisse **bereits geparst** als `{jsonData, textEvent:{eventType}}` | `evenHubEventFromJson()` greift hier nicht — direkt lesen                             |
+| `sysEvent` 4/5 sind Vorder-/Hintergrund                                             | Dürfen nie als Geste durchgehen (Test hält das fest)                                  |
 
 ## Selbst verifizieren
 

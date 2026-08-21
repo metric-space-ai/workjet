@@ -440,6 +440,86 @@ it.effect("walks the full legal delegation lifecycle", () =>
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("logs every transition append-only, in the same transaction as the row", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("stateevents1");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("del-stateevents"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+
+    const chain: ReadonlyArray<readonly [WorkjetDelegationState, WorkjetDelegationState]> = [
+      ["queued", "delivered"],
+      ["delivered", "accepted"],
+      ["accepted", "running"],
+      ["running", "review-requested"],
+      ["review-requested", "changes-requested"],
+      ["changes-requested", "running"],
+    ];
+    for (const [from, to] of chain) {
+      yield* store.transitionDelegationState(id, from, to, T1);
+    }
+
+    const events = yield* store.listDelegationStateEvents(id);
+
+    // The row alone answers only "where is this now". The point of the log is
+    // that `running` appears TWICE — a mutable column cannot tell a delegation
+    // that was sent back for changes from one that went straight through.
+    assert.deepEqual(
+      events.map((event) => [event.fromState, event.toState]),
+      chain.map(([from, to]) => [from, to]),
+    );
+    assert.deepEqual(
+      events.map((event) => event.sequence),
+      [...events].sort((left, right) => left.sequence - right.sequence).map((e) => e.sequence),
+      "returned oldest-first by sequence",
+    );
+    assert.isTrue(events.every((event) => event.terminal === false));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("writes NO event for a transition that was refused", () =>
+  Effect.gen(function* () {
+    // The half this guards is the one a post-hoc write would get wrong: a
+    // rejected transition must leave no trace, or the log would claim moves
+    // that never happened and be worse than no log.
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("stateevents2");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("del-stateevents2"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+
+    const skipped = yield* store
+      .transitionDelegationState(id, "queued", "running", T1)
+      .pipe(Effect.result);
+    assert.equal(skipped._tag, "Failure");
+
+    assert.deepEqual(
+      yield* store.listDelegationStateEvents(id),
+      [],
+      "an illegal transition leaves the log empty",
+    );
+
+    // And a legal one immediately after still records exactly once.
+    yield* store.transitionDelegationState(id, "queued", "delivered", T1);
+    const events = yield* store.listDelegationStateEvents(id);
+    assert.lengthOf(events, 1);
+    assert.equal(events[0]!.toState, "delivered");
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("rejects an illegal transition and keeps a terminal delegation immutable", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

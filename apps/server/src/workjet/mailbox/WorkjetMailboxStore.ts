@@ -637,6 +637,16 @@ const RECEIVED_HANDOFF_COLUMNS = `
 // Service
 // ===============================
 
+/** One append-only row from `workjet_delegation_state_events`. */
+export interface WorkjetDelegationStateEvent {
+  readonly sequence: number;
+  readonly delegationId: WorkjetDelegationId;
+  readonly fromState: WorkjetDelegationState;
+  readonly toState: WorkjetDelegationState;
+  readonly terminal: boolean;
+  readonly changedAtMillis: number;
+}
+
 export interface WorkjetMailboxStoreShape {
   readonly enqueueOutbound: (
     envelope: WorkjetRoutingEnvelope,
@@ -717,6 +727,16 @@ export interface WorkjetMailboxStoreShape {
     to: WorkjetDelegationState,
     changedAt: WorkjetMailboxTimestamp,
   ) => Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxStoreError>;
+
+  /**
+   * One delegation's transition history, oldest first.
+   *
+   * Ordered by `sequence`, not by time: two transitions can share a
+   * millisecond, and a clock that steps backwards must not reorder history.
+   */
+  readonly listDelegationStateEvents: (
+    delegationId: WorkjetDelegationId,
+  ) => Effect.Effect<ReadonlyArray<WorkjetDelegationStateEvent>, WorkjetMailboxStoreError>;
 
   readonly getDelegation: (
     delegationId: WorkjetDelegationId,
@@ -1531,6 +1551,17 @@ export const make = Effect.gen(function* () {
                 AND state = ${from}
             `;
 
+            // Inside the SAME transaction as the update, deliberately. Writing
+            // it afterwards would admit the two states this log exists to rule
+            // out: a row that moved with no event, and an event for a move
+            // that was rolled back. `from` is the state observed under this
+            // transaction above, not one the caller asserted.
+            yield* sql`
+              INSERT INTO workjet_delegation_state_events
+                (delegation_id, from_state, to_state, terminal, changed_at_ms)
+              VALUES (${delegationId}, ${from}, ${to}, ${terminal}, ${changedAtMillis})
+            `;
+
             return {
               delegationId,
               delegation: updatedDelegation,
@@ -1552,6 +1583,47 @@ export const make = Effect.gen(function* () {
           ),
         );
     });
+
+  const listDelegationStateEvents: WorkjetMailboxStoreShape["listDelegationStateEvents"] = (
+    delegationId,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* sql.unsafe(
+        `
+        SELECT sequence, delegation_id, from_state, to_state, terminal, changed_at_ms
+        FROM workjet_delegation_state_events
+        WHERE delegation_id = ?
+        ORDER BY sequence ASC
+      `,
+        [delegationId],
+      );
+      return rows.map((row) => {
+        const record = row as {
+          readonly sequence: number;
+          readonly delegation_id: string;
+          readonly from_state: string;
+          readonly to_state: string;
+          readonly terminal: number;
+          readonly changed_at_ms: number;
+        };
+        return {
+          sequence: record.sequence,
+          delegationId: record.delegation_id as WorkjetDelegationId,
+          fromState: record.from_state as WorkjetDelegationState,
+          toState: record.to_state as WorkjetDelegationState,
+          terminal: record.terminal === 1,
+          changedAtMillis: record.changed_at_ms,
+        } satisfies WorkjetDelegationStateEvent;
+      });
+    }).pipe(
+      Effect.mapError(
+        (cause): WorkjetMailboxStoreError =>
+          new PersistenceSqlError({
+            operation: "WorkjetMailboxStore.listDelegationStateEvents",
+            cause,
+          }),
+      ),
+    );
 
   const getDelegation: WorkjetMailboxStoreShape["getDelegation"] = (delegationId) =>
     Effect.gen(function* () {
@@ -2665,6 +2737,7 @@ export const make = Effect.gen(function* () {
     recordAttempt,
     upsertDelegation,
     transitionDelegationState,
+    listDelegationStateEvents,
     getDelegation,
     finalizeDelegationResult,
     getDelegationResult,

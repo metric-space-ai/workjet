@@ -425,11 +425,18 @@ finishes. Scope estimates are rough and name the files.
     `scripts/test_web_search_e2e.sh` and `scripts/test_web_unlock_e2e.sh` at it
     and the CTOX-binary dependency disappears, leaving only network and browser
     runtime. 2 shell scripts plus a bin entry point — **small**.
-22. **About panel on Windows and Linux, plus a release-feed identity test.** §9.
-    Add Help → About outside the `platform === "darwin"` branch
-    (`DesktopApplicationMenu.ts:146`), and a test that a released CTOX build's
-    publish feed points at the CTOX repository. 2 files plus 2 tests — **small**.
-    Becomes load-bearing the moment decision 2 is taken.
+22. ~~**About panel on Windows and Linux, plus a release-feed identity test.**~~
+    **ALREADY DONE — verified 2026-08-20, no change needed.** §9. Both halves
+    exist and pass. The Help menu carries `About ${appName}` outside the darwin
+    branch (`DesktopApplicationMenu.ts:296-304`), pinned by "offers About in
+    the Help menu on non-darwin platforms". The feed identity is pinned by
+    "points the desktop update feed at the configured CTOX repository"
+    (`scripts/build-desktop-artifact.test.ts`), which also covers the case that
+    matters most: with nothing configured there is deliberately NO publish
+    config, so an unconfigured build ships without a feed instead of silently
+    inheriting someone else's releases. Ran both: 4/4 and 43/43.
+    This item was stale, like items 26 and the About half of 24 — the list
+    lags the code in at least three places.
 23. **Platform-keychain runtime smoke.** §10. A script exercising
     `ElectronSafeStorage.ts` and `linuxSecretStorage.ts` against the real OS
     keychain — encrypt, restart, decrypt, and assert the Linux backend guard

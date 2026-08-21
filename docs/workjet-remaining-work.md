@@ -300,6 +300,17 @@ finishes. Scope estimates are rough and name the files.
    harness. _This is also the missing third prerequisite of the mixed-harness
    E2E._ New harness under `apps/web` or `scripts/` plus a browser-driver
    dependency — **large**, and the only large greenfield item left.
+   **SCOPE CORRECTION 2026-08-20: no browser-driver dependency is needed.**
+   The repo already drives an Electron app over the Chrome DevTools Protocol:
+   `scripts/ctox-packaged-smoke.ts` contains a complete `CdpClient`
+   (WebSocket, bounded 1 MiB messages, `Runtime.evaluate`), remote-debugging
+   port discovery (`:531`) and target selection by capability (`:159`) — with
+   no Playwright, WebDriver or Puppeteer anywhere in any package.json. The
+   class is private to that script, so the first step is EXTRACTING it, not
+   adding a dependency. That removes both the dependency decision and the CI
+   browser-download cost from this item's estimate; what stays large is the
+   five assertions themselves (receipts, durable status, result return,
+   cancellation, restart recovery).
 2. ~~**Web Stack SSRF, redirect cap, and the untested stdout budget.**~~
    **ALREADY DONE — verified 2026-08-20 by running it.** §7 and §12.
    `SsrfResolver` is installed on all three `scholarly_search.rs` agents

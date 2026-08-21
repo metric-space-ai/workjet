@@ -352,11 +352,15 @@ finishes. Scope estimates are rough and name the files.
 10. **Durable per-delegation state event log.** §8. An append-only table written
     in the same transaction as `transitionDelegationState`, so status stops being
     a mutable row column. 1 migration, 1 store file plus tests — **medium**.
-11. **Inbound thread-activity traces on the cross-environment path.** §8 — one
-    piece of work, two boxes. `WorkjetMailboxTransport.ts` appends no thread
-    activity at all, so a remotely delivered delegation first appears on the
-    target timeline as `workjet.delegation.started`. ~2 files plus tests —
-    **small**.
+11. ~~**Inbound thread-activity traces on the cross-environment path.**~~
+    **DONE 2026-08-20, commit 7d0865a82.** §8 — one piece of work, two boxes.
+    A remote delegation now marks `workjet.delegation.delivered` on the target
+    timeline on arrival, through an optional `appendInboundActivity` source
+    (absent = no-op, like the audit sink). It uses `catchCause`, not `ignore`:
+    ignore lets DEFECTS through, and a thrown exception in the activity engine
+    would otherwise take delivery down and force a redelivery. No handoff
+    equivalent — a handoff is addressed to a machine, not a thread, so there is
+    no target timeline. Mutation-verified.
 12. **Per-operation mailbox ACLs and a worker-initiated path.** §8. Replace the
     single `requireOrchestratorSource` gate (`WorkjetMailboxRpc.ts:169-181`) with
     per-operation scopes, and let a WORKER thread reply to or update its own

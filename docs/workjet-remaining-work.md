@@ -524,15 +524,19 @@ finishes. Scope estimates are rough and name the files.
 
 ### Tier 3 — visible gaps, small work
 
-17. **Dead-letter state in the UI.** §8. The data is already there and unread —
-    the executor's counters are annotated "for later UI exposure" and the audit
-    stream reaches a client-runtime atom (`server.ts:1109`) no component
-    renders. A dead-lettered plain _message_ surfaces nowhere today.
-    **STILL OPEN**, but the shared blocker is gone: item 18's panel is mounted
-    and fed, so a dead-letter entry now has a surface to appear on. What
-    remains is a producer for the audit atom, which — unlike cross-mode — DOES
-    have a subscription (`subscribeWorkjetMailboxAudit`), so this one really is
-    "read the atom and render", not a design question. **Small.**
+17. ~~**Dead-letter state in the UI.**~~ **SELECTION DONE 2026-08-20, commit
+    0500e0faf.** §8. `workjetMailboxNotificationState.ts` reads the audit
+    subscription nothing consumed and yields the user-facing subset — a
+    dead-lettered envelope now HAS a representation, where before the sender
+    saw a message that looked sent, the recipient never got it, and nothing
+    told anyone. The mapping deliberately stays in contracts so the redaction
+    discipline is not forked. Ordered by `sequence` not the clock,
+    deduplicated (a subscription re-delivers on reconnect, and one failure
+    read as two sends someone after a problem that does not exist), capped at
+    50 newest. Mutation-verified.
+    REMAINING: rendering it. The panel from item 18 is mounted and is the
+    natural host, so this is now a presentation step with no design question
+    left — **small**.
 
 18. ~~**Mount the cross-mode notification panel.**~~ **DONE 2026-08-20, commit
     b0060c11f.** §1. Model and rendering were done; nothing called `publish`,

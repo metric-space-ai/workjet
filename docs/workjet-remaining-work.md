@@ -444,7 +444,16 @@ finishes. Scope estimates are rough and name the files.
     delegation machinery), the gate belongs at that junction. If Option B
     (retire the tool), this half disappears with it.
 
-    STILL OPEN and unblocked: the web editors for the inspect result.
+    **THE WEB EDITOR IS DONE 2026-08-20, commit 7426a8d50.** The computer
+    editor now shows where the operator's `available` SWITCH disagrees with
+    what the host actually found — switched on but unrunnable (an alert, with
+    what to do), and present but switched off (capacity turned off, possibly
+    unintentionally). Agreement and "not probed" render nothing: repeating the
+    switch back would add a line per harness to a mostly uneventful list, and
+    "not probed" is explicitly not "fine". Mutation-verified.
+
+    NOTHING remains in this item that is not gated on decision 9 or the
+    installer decision above.
 
     **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
     availability at all" understates it. `WorkerDispatch.ts` contains ZERO

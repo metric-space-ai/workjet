@@ -412,13 +412,14 @@ finishes. Scope estimates are rough and name the files.
     at all, so nothing ships or resolves the host in a packaged build. One call
     site plus an extra-resource entry — **small**, and independent of the tag
     decision.
-20. **Three cheap upstream conflict mitigations.** §14. A trailing `workjet*`
-    barrel import in `ChatView.tsx`, `ChatComposer.tsx`, `SidebarChrome.tsx` and
-    `packages/contracts/src/settings.ts`; a marked Workjet section at the end of
-    `apps/desktop/src/ipc/channels.ts`; extraction of the Workjet turn-option
-    threading out of `CodexSessionRuntime.ts`. That is 5 of the measured 43
-    conflict hunks and they recur every cycle. 6 files, no behaviour change —
-    **small**. Worth doing whichever way decision 4 goes.
+20. ~~**Three cheap upstream conflict mitigations.**~~ **DONE 2026-08-20, commit
+    adbf8b9e4.** §14. `CodexWorkjetTurnOptions.ts` now holds the fork's turn
+    options behind one spread, so upstream's additions and Workjet's stop
+    sharing line ranges at the worst site; `ChatView` and `ChatComposer` take
+    their Workjet components through barrels; `SidebarChrome` went from two
+    scattered Workjet imports to one; `channels.ts` gained the marked trailing
+    section. `packages/contracts/src/settings.ts` needed nothing — it already
+    had a single `./workjet.ts` import. No behaviour change.
 21. **A Workjet-owned `workjet-web-stack` CLI entry point.** §15 and §5 — one
     piece of work, two boxes. The crate already declares the `[[bin]]`; retarget
     `scripts/test_web_search_e2e.sh` and `scripts/test_web_unlock_e2e.sh` at it

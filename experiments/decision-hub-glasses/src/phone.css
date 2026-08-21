@@ -1,31 +1,83 @@
-/* Handy-Spiegel: bewusst wie die Brille — monochrom gruen auf schwarz,
-   Monospace, damit Umbrueche identisch aussehen. */
-:root { color-scheme: dark; }
+/* Handy-Oberflaeche des Decision Hub. Eigenstaendig gestaltet — die
+   Brillenanzeige ist monochrom und zeilenbegrenzt, das Handy ist es nicht. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --surface: #f4f5f7;
+  --text: #14161a;
+  --muted: #5d636e;
+  --line: #e2e5ea;
+  --accent: #0a7d32;
+  --danger: #a01f1f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1013;
+    --surface: #171a1f;
+    --text: #f2f4f7;
+    --muted: #9aa2ae;
+    --line: #262b33;
+    --accent: #38d16a;
+    --danger: #ff6b6b;
+  }
+}
+* { box-sizing: border-box; }
 body {
-  margin: 0; padding: 12px; background: #000; color: #2bff46;
-  font: 14px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
 }
-.dh-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
-.dh-dot { width: 10px; height: 10px; border-radius: 50%; background: #555; flex: none; }
-.dh-dot[data-state="ok"] { background: #2bff46; }
-.dh-dot[data-state="warn"] { background: #ffd23f; }
-.dh-dot[data-state="error"] { background: #ff5a5a; }
-.dh-glass { border: 1px solid #2bff4644; border-radius: 6px; padding: 8px; background: #001a04; }
-.dh-line { white-space: pre; overflow-x: auto; }
-.dh-tabs { opacity: .75; border-bottom: 1px solid #2bff4622; padding-bottom: 6px; }
-.dh-body { margin: 8px 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
-.dh-icons { border-top: 1px solid #2bff4622; padding-top: 6px; font-weight: 700; }
-.dh-hint { margin-top: 10px; font-size: 12px; opacity: .65; }
 
-/* Bedienung am Handy: dieselben Aktionen wie im Brillenmenue. Grosse
-   Trefferflaechen, weil das hier unterwegs mit einer Hand bedient wird. */
-.dh-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-.dh-btn {
-  appearance: none; min-height: 52px; padding: 12px; border-radius: 8px;
-  border: 1px solid #2bff4655; background: #04220a; color: #2bff46;
-  font: 600 15px/1.2 ui-monospace, "SF Mono", Menlo, monospace;
+.dh-bar {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 0; background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px; color: var(--muted);
 }
-.dh-btn:active { background: #2bff46; color: #001a04; }
-.dh-btn--yes { border-color: #2bff46; }
-.dh-btn--wide { grid-column: 1 / -1; }
-.dh-btn[disabled] { opacity: .35; }
+.dh-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dh-dot[data-state="ok"] { background: var(--accent); }
+.dh-dot[data-state="warn"] { background: #d99a00; }
+.dh-dot[data-state="error"] { background: var(--danger); }
+
+.dh-chips { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 4px; }
+.dh-chip {
+  appearance: none; flex: none; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  font: 500 14px/1 inherit;
+}
+.dh-chip.is-active { border-color: var(--accent); color: var(--text); font-weight: 700; }
+
+.dh-case { padding: 12px 0 4px; }
+.dh-kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.dh-title { margin: 4px 0 2px; font-size: 22px; line-height: 1.25; }
+.dh-from { margin: 0; color: var(--muted); font-size: 14px; }
+
+.dh-sec { margin-top: 18px; }
+.dh-sec-title { margin: 0 0 6px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.dh-sec-body { margin: 0; white-space: pre-wrap; }
+.dh-agent { margin: 0 0 6px; color: var(--accent); font-weight: 600; }
+
+.dh-empty { padding: 48px 0; text-align: center; }
+.dh-empty-title { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+.dh-empty-hint { margin: 0; color: var(--muted); }
+.dh-busy { margin-top: 12px; color: var(--muted); }
+
+.dh-actions {
+  position: sticky; bottom: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  padding: 12px 0 calc(4px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+}
+.dh-btn {
+  appearance: none; min-height: 52px; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font: 600 16px/1.2 inherit;
+}
+.dh-btn:active { transform: translateY(1px); }
+.dh-btn--yes { border-color: var(--accent); color: var(--accent); }
+.dh-btn--no { border-color: var(--danger); color: var(--danger); }
+.dh-btn[disabled] { opacity: .4; }
+.dh-hint { margin: 4px 0 0; font-size: 12px; color: var(--muted); }

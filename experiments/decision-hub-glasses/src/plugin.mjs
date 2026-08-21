@@ -117,9 +117,19 @@ export function createDecisionHubPlugin({ sdk, source, onError = () => {}, onPai
     get state() {
       return { ...state, count: decisions.length };
     },
-    /** Genau das Ansichtsmodell, das an die Brille geht — fuer den Spiegel. */
-    get view() {
-      return currentView();
+    /** Rohdaten fuer die Handy-Oberflaeche (die Brille bekommt currentView()). */
+    snapshot() {
+      return {
+        decisions,
+        index: Math.min(state.index, Math.max(0, decisions.length - 1)),
+        vorgangOf: (d) => vorgaenge.get(d?.vorgang_id),
+      };
+    },
+    async select(index) {
+      state.index = index;
+      state.scroll = 0;
+      state.focusIcon = -1;
+      await paint();
     },
   };
 }

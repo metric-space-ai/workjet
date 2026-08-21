@@ -7,7 +7,7 @@ import {
   EvenAppMethod,
 } from '@evenrealities/even_hub_sdk';
 import { createDecisionHubPlugin } from './plugin.mjs';
-import { tabsLine, bodyText, iconsLine } from './view-to-containers.mjs';
+import { renderPhone } from './phone-view.mjs';
 import { createSource } from './source.mjs';
 import { osEventFrom, menuItemFrom } from './event-decode.mjs';
 
@@ -25,24 +25,7 @@ function hint(text) {
   if (el) el.textContent = text;
 }
 
-// Spiegel: exakt die drei Container, die auch die Brille bekommt.
-function mirror(view) {
-  const tabs = $('[data-dh-tabs]');
-  const body = $('[data-dh-body]');
-  const icons = $('[data-dh-icons]');
-  if (!tabs || !body || !icons) return;
-  if (!view) {
-    tabs.textContent = '';
-    body.textContent = 'Keine offene Entscheidung.';
-    icons.textContent = '';
-    return;
-  }
-  tabs.textContent = tabsLine(view.tabs);
-  body.textContent = bodyText(view);
-  icons.textContent = iconsLine(view);
-}
-
-/** Das SDK spricht über `callEvenApp`; hier die drei Aufrufe, die wir nutzen. */
+/** Das SDK spricht ueber `callEvenApp`; hier die Aufrufe, die wir nutzen. */
 function sdkFromBridge(bridge) {
   return {
     createStartUpPageContainer: (page) =>
@@ -54,6 +37,25 @@ function sdkFromBridge(bridge) {
   };
 }
 
+let plugin = null;
+
+/** Handy-Oberflaeche neu zeichnen — eigenstaendig, kein Brillen-Spiegel. */
+function renderApp(busy = false) {
+  const root = $('[data-dh-view]');
+  if (!root || !plugin) return;
+  const snapshot = plugin.snapshot();
+  renderPhone(root, {
+    decisions: snapshot.decisions,
+    index: snapshot.index,
+    vorgangOf: snapshot.vorgangOf,
+    busy,
+    onSelect: (i) => plugin.select(i),
+  });
+  for (const button of document.querySelectorAll('[data-dh-act]')) {
+    button.disabled = busy || snapshot.decisions.length === 0;
+  }
+}
+
 async function main() {
   const bridge = await waitForEvenAppBridge();
   // Die Instanz liefert die Karten; die Fixture greift nur, solange kein
@@ -62,13 +64,13 @@ async function main() {
     endpoint: import.meta.env?.VITE_DECISION_HUB_ENDPOINT || null,
     token: import.meta.env?.VITE_DECISION_HUB_TOKEN || null,
   });
-  const plugin = createDecisionHubPlugin({
+  plugin = createDecisionHubPlugin({
     sdk: sdkFromBridge(bridge),
     source,
-    onPaint: mirror,
+    onPaint: () => renderApp(),
     onError: (error) => {
-      console.error('[decision-hub]', error);
-      status(`Fehler: ${error.message}`, 'error');
+      console.error('[decision-hub]', error?.stack || error?.message || String(error));
+      status(`Fehler: ${error?.message || error}`, 'error');
     },
   });
 
@@ -85,7 +87,11 @@ async function main() {
 
   // Handy-Bedienung: dieselben Aktionen wie im Brillenmenue.
   for (const button of document.querySelectorAll('[data-dh-act]')) {
-    button.addEventListener('click', () => plugin.act(button.dataset.dhAct));
+    button.addEventListener('click', async () => {
+      renderApp(true);
+      await plugin.act(button.dataset.dhAct);
+      renderApp();
+    });
   }
 
   await plugin.start();
@@ -104,6 +110,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[decision-hub] start failed', error);
+  console.error('[decision-hub] start failed', error?.stack || error?.message || String(error));
   status(`Start fehlgeschlagen: ${error.message}`, 'error');
 });

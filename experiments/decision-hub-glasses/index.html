@@ -3,28 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Decision Hub · Brille</title>
+    <title>Decision Hub</title>
     <link rel="stylesheet" href="/src/phone.css" />
   </head>
   <body>
-    <!-- Die Brille rendert dieses DOM nicht — sie bekommt SDK-Container.
-         Diese Seite spiegelt, was dort steht, damit man am Handy sieht, ob
-         Daten fliessen, ohne die Brille aufsetzen zu muessen. -->
-    <header class="dh-head">
+    <!-- Die Brille bekommt SDK-Container, nicht dieses DOM. Hier steht die
+         Handy-Oberflaeche: derselbe Vorgang, aber fuer Farbe und Touch. -->
+    <header class="dh-bar">
       <span class="dh-dot" data-dh-dot></span>
-      <span data-dh-status>startet …</span>
+      <span class="dh-bar-text" data-dh-status>startet …</span>
     </header>
-    <section class="dh-glass" aria-label="Spiegel der Brillenanzeige">
-      <div class="dh-line dh-tabs" data-dh-tabs></div>
-      <pre class="dh-body" data-dh-body></pre>
-      <div class="dh-line dh-icons" data-dh-icons></div>
-    </section>
+    <main class="dh-main" data-dh-view></main>
     <nav class="dh-actions" aria-label="Entscheidung">
       <button type="button" class="dh-btn dh-btn--yes" data-dh-act="annehmen">Annehmen</button>
-      <button type="button" class="dh-btn" data-dh-act="ablehnen">Ablehnen</button>
+      <button type="button" class="dh-btn dh-btn--no" data-dh-act="ablehnen">Ablehnen</button>
       <button type="button" class="dh-btn" data-dh-act="korrektur">Korrektur</button>
       <button type="button" class="dh-btn" data-dh-act="vertagt">Später</button>
-      <button type="button" class="dh-btn dh-btn--wide" data-dh-act="naechster">Nächster Vorgang</button>
     </nav>
     <p class="dh-hint" data-dh-hint></p>
     <script type="module" src="/src/main.mjs"></script>

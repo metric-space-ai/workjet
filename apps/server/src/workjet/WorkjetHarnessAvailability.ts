@@ -29,7 +29,10 @@ import type {
   WorkjetHarnessAvailability,
   WorkjetHarnessAvailabilitySnapshot,
 } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 /** How long one harness may take to answer before it counts as unusable. */
 export const HARNESS_PROBE_TIMEOUT_MS = 5_000;
@@ -151,3 +154,72 @@ export const probeHarnessAvailability = (input: {
     );
     return { schemaVersion: 1, probedAt, harnesses };
   });
+
+// ===============================
+// The effectful half
+// ===============================
+
+/**
+ * The command each harness answers a version with.
+ *
+ * `--version` for all of them, and the executable name is the harness's own
+ * CLI name. This map is explicit rather than derived from the harness id
+ * because the two only look alike: `claude-code` is invoked as `claude`, and a
+ * derived name would silently probe a binary that does not exist and report
+ * every install as missing.
+ */
+const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
+  "claude-code": "claude",
+  "codex-cli": "codex",
+  opencode: "opencode",
+  "grok-cli": "grok",
+  "cursor-agent": "cursor-agent",
+  "pi-code": "pi",
+};
+
+/**
+ * A probe port backed by a real child process.
+ *
+ * It runs `<cli> --version` and nothing else. It never passes user input, so
+ * there is no argument-injection surface, and `shell: false` keeps the name
+ * from being interpreted. A harness that hangs is bounded by
+ * {@link HARNESS_PROBE_TIMEOUT_MS} rather than left to block the pass.
+ */
+export const makeChildProcessHarnessProbePort = (
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+): HarnessProbePort => ({
+  probe: (harness) =>
+    Effect.gen(function* () {
+      const executable = HARNESS_EXECUTABLES[harness];
+      if (executable === undefined) {
+        // An unknown harness is not a probe failure — this server simply does
+        // not know how to ask it, which is a different thing from asking and
+        // being refused.
+        return { _tag: "not-found" } as const;
+      }
+      const child = yield* spawner.spawn(
+        ChildProcess.make(executable, ["--version"], { extendEnv: true, shell: false }),
+      );
+      const [stdout, exitCode] = yield* Effect.all(
+        [
+          child.stdout.pipe(
+            Stream.decodeText(),
+            Stream.mkString,
+            Effect.map((text) => text.slice(0, 512)),
+          ),
+          child.exitCode.pipe(Effect.map(Number)),
+        ],
+        { concurrency: "unbounded" },
+      );
+      return exitCode === 0
+        ? ({ _tag: "answered", executablePath: executable, stdout } as const)
+        : ({ _tag: "failed" } as const);
+    }).pipe(
+      Effect.scoped,
+      Effect.timeout(Duration.millis(HARNESS_PROBE_TIMEOUT_MS)),
+      Effect.catchTag("TimeoutError", () => Effect.succeed({ _tag: "timed-out" as const })),
+      // A spawn that cannot start is the ordinary "not installed" case; it is
+      // by far the most common outcome and must not read as a broken probe.
+      Effect.catchCause(() => Effect.succeed({ _tag: "not-found" as const })),
+    ),
+});

@@ -16,6 +16,11 @@ function fakeSdk() {
       calls.upgrade += 1;
       return true;
     },
+    async rebuildPageContainer(page) {
+      calls.rebuild += 1;
+      calls.lastPage = page;
+      return true;
+    },
   };
 }
 

@@ -12,7 +12,7 @@ CTOX_DEV="${CTOX_DEV_DIR:-$HOME/Documents/ctox-dev}"
 OUT="${1:-${TMPDIR:-/tmp}/welsch-guest.key}"
 cd "$CTOX_DEV"
 set -a; . ./.env.local; set +a
-node -e '
+KEY_OUT="$OUT" node -e '
 const { neon } = require("@neondatabase/serverless");
 const crypto = require("crypto"), fs = require("fs");
 const sql = neon(process.env.DATABASE_URL);
@@ -39,4 +39,4 @@ function decryptSecret(payload) {
   fs.writeFileSync(process.env.KEY_OUT, key.endsWith("\n") ? key : key + "\n", { mode: 0o600 });
   process.stdout.write(`GUEST_SSH="ssh -i ${process.env.KEY_OUT} -o StrictHostKeyChecking=no -p ${r.ssh_port} ${r.ssh_username}@${r.public_ip || r.ssh_host}"\nexport GUEST_SSH\n`);
 })().catch(e => { console.error("ERR", e.message); process.exit(1); });
-' KEY_OUT="$OUT"
+'

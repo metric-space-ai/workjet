@@ -26,7 +26,8 @@ keine zweite Wahrheit über das Layout.
 ## Bedienmodell (Owner-Vorgabe, unverändert)
 
 Ein durchgehender Fluss: Reiterleiste aller offenen Items oben, darunter der
-Text, unten die Icon-Zeile `✓ ✗ ✎ ◷`. Wer ans Textende scrollt, scrollt
+Text, unten die Entscheidungszeile `OK NEIN KORREKTUR SPÄTER` (die Gerätefont
+kennt keine Häkchen-Glyphen). Wer ans Textende scrollt, scrollt
 weiter auf die Icons; über das letzte Icon hinaus beginnt das nächste Item.
 Press aktiviert das fokussierte Icon, Doppel-Press führt in den Text zurück.
 Swipe bewegt zwei Zeilen — bewusst grob gegen Übersensibilität.
@@ -54,6 +55,37 @@ ersetzt. `node --test tests/` (Verzeichnisform) funktioniert auf dieser
 Node-Version nicht — die Dateien müssen einzeln genannt werden, wie im
 `test`-Skript.
 
+
+## Am Simulator gemessen (nicht geraten)
+
+Diese Werte stammen aus echten Läufen mit `evenhub-simulator` 0.9.1 und
+Screenshots des Framebuffers. Sie haben das Layout mehrfach korrigiert:
+
+| Befund | Konsequenz |
+| --- | --- |
+| `zOrderIndex` muss je Container **eindeutig** sein | Doppelte 0 → `CreateStartUpPageContainer validation failed`, Seite entsteht gar nicht |
+| Die Gerätefont hat **kein** ✓ ✔ ✗ ✘ ✎ ◷ ▸ ⌛ ⏱ ➤ ▪ | Entscheidungszeile blieb komplett leer; jetzt Wörter + Caret `▶` |
+| Verfügbar sind u. a. `… ◑ ▶ ▷ ● ○ » « • → ↓ ↑ ■ □ ◆` | Abschnittsmarker `▸` → `»` |
+| Deutsche Umlaute, Akzente, Ziffern, Satzzeichen: **alle vorhanden** | Deutsche Oberfläche ist unkritisch |
+| Zeilenschrittweite **26 px**, Textgröße nicht einstellbar | Geometrie ist Messwert, keine Designentscheidung |
+| Reiterzeile + Entscheidungszeile kosten zwei Zeilen | **8 Textzeilen** passen, nicht die erhofften 10 |
+| Zu knappe Icon-Zeile schneidet Umlautpunkte ab | „SPÄTER" wurde zu „SPATER"; Zeile bekommt den Restplatz |
+| Host liefert Ereignisse **bereits geparst** als `{jsonData, textEvent:{eventType}}` | `evenHubEventFromJson()` greift hier nicht — direkt lesen |
+| `sysEvent` 4/5 sind Vorder-/Hintergrund | Dürfen nie als Geste durchgehen (Test hält das fest) |
+
+## Selbst verifizieren
+
+```bash
+npm run dev      # Vite auf 5173
+npm run sim      # Simulator + Automations-API auf 9898
+curl -X POST -H 'content-type: application/json' -d '{"action":"down"}' http://127.0.0.1:9898/api/input
+curl -o glasses.png http://127.0.0.1:9898/api/screenshot/glasses
+```
+
+Der Simulator braucht **kein Konto** und läuft offline. Fehlende Zeichen
+stehen als `glyph dsc. not found for U+XXXX` im Simulator-Log (stderr),
+nicht in `/api/console` — dort landet nur die JS-Konsole.
+
 ## Offen (braucht Hardware bzw. Entscheidung)
 
 1. **Transport**: Das Plugin braucht `source.load()` / `source.answer()`.
@@ -61,8 +93,8 @@ Node-Version nicht — die Dateien müssen einzeln genannt werden, wie im
    Tenant-Proxy, authentifiziert mit einem **Gerätetoken** (nicht dem
    Owner-Passwort), widerrufbar. Der Proxy cached, damit das Polling die
    Instanz nicht per SSH überlastet.
-2. **Zeichenbudget am Gerät prüfen**: Die Doku nennt für eine vollflächige
-   Textseite ~400–500 Zeichen; das Layout nutzt 10 × 52 = 520. Möglicherweise
-   müssen es 48 Zeichen je Zeile werden. Entscheidet der erste Gerätetest.
+2. ~~Zeichenbudget prüfen~~ — erledigt: 8 × 52 = 416 Zeichen, klar innerhalb
+   des Budgets. Die Zeilenzahl entschied ohnehin die Pixelhöhe, nicht das
+   Zeichenbudget.
 3. **Simulator/Gerätelauf**: `@evenrealities/evenhub-simulator` lokal,
    danach `evenhub pack` → `.ehpk` und Installation per QR-Code.

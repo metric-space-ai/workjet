@@ -16,9 +16,10 @@ import {
 } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 
 const PAD_X = 14;
-const TAB_H = 23;
-const ICON_H = 34;
-const LINE_H = 22;
+// Gemessen am Simulator: 26 px Zeilenabstand, Textgroesse nicht einstellbar.
+const TAB_H = 25;
+const ICON_H = 33;
+const LINE_H = 26;
 
 // 0..4 Helligkeitsstufen des Text-Containers (nicht die 16 Grünstufen des
 // Bild-Pfads): gedämpft für Nebensächliches, hell für den Fokus.
@@ -53,9 +54,10 @@ export function bodyText(view, windowLines = BODY_LINES) {
 
 /** Icon-Zeile; das fokussierte Icon wird geklammert, da invers nicht geht. */
 export function iconsLine(view) {
+  // ▶ existiert in der Brillenschrift, ✓/✔ nicht — das Caret markiert den Fokus.
   return view.icons
-    .map((icon, i) => (i === view.focusIcon ? `[${icon.glyph}]` : ` ${icon.glyph} `))
-    .join(' ');
+    .map((icon, i) => (i === view.focusIcon ? `▶${icon.glyph}` : ` ${icon.glyph}`))
+    .join('  ');
 }
 
 /**
@@ -63,7 +65,13 @@ export function iconsLine(view) {
  * rebuildPageContainer. Reines Objekt, damit es ohne Brille testbar bleibt.
  */
 export function viewToPageContainer(view) {
-  const bodyHeight = DISPLAY_H - TAB_H - ICON_H;
+  // Der Textkoerper bekommt exakt seine Zeilen; der Rest gehoert der
+  // Entscheidungszeile. Mit der knappen Mindesthoehe schnitt die Brille die
+  // Umlautpunkte ab ("SPÄTER" wurde zu "SPATER") — am Simulator gesehen.
+  // +8 px Luft: LVGL setzt die Grundlinie mit Innenabstand, ohne die Zugabe
+  // wird die letzte Zeile von der Entscheidungszeile ueberdeckt.
+  const bodyHeight = BODY_LINES * LINE_H + 10;
+  const iconHeight = DISPLAY_H - TAB_H - bodyHeight;
   return {
     containerTotalNum: 3,
     textObject: [
@@ -89,7 +97,9 @@ export function viewToPageContainer(view) {
         content: bodyText(view),
         textColor: view.focusIcon >= 0 ? DIM : BRIGHT,
         isEventCapture: 0,
-        zOrderIndex: 0,
+        // Jeder Container braucht einen EIGENEN zOrderIndex; doppelte Werte
+        // auf einer Seite weist das SDK ab (vom Simulator gefunden).
+        zOrderIndex: 1,
       },
       {
         // Der Eingabe-Container: genau einer darf es sein.
@@ -98,11 +108,11 @@ export function viewToPageContainer(view) {
         xPosition: PAD_X,
         yPosition: TAB_H + bodyHeight,
         width: DISPLAY_W - PAD_X * 2,
-        height: ICON_H,
+        height: iconHeight,
         content: iconsLine(view),
         textColor: view.focusIcon >= 0 ? BRIGHT : DIM,
         isEventCapture: 1,
-        zOrderIndex: 0,
+        zOrderIndex: 2,
       },
     ],
   };

@@ -60,3 +60,20 @@ test('the plugin never answers while the focus is in the text', async () => {
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(answers.length, 0);
 });
+
+
+// Wire-Format aus einem echten Simulator-Lauf (evenhub-simulator 0.9.1).
+// Festgenagelt, damit eine SDK-Aktualisierung die Gestensteuerung nicht
+// still abschaltet.
+test('the host payload shape from a real run decodes into an OS event', async () => {
+  const { osEventFrom } = await import('../src/event-decode.mjs');
+  assert.equal(osEventFrom({ jsonData: { containerID: 3, containerName: 'icons', eventType: 2 }, textEvent: { containerID: 3, containerName: 'icons', eventType: 2 } }), 2);
+  assert.equal(osEventFrom({ jsonData: { containerID: 3, eventType: 0 }, textEvent: { containerID: 3, eventType: 0 } }), 0);
+});
+
+test('lifecycle events are never mistaken for gestures', async () => {
+  const { osEventFrom } = await import('../src/event-decode.mjs');
+  // FOREGROUND_ENTER(4) / FOREGROUND_EXIT(5) kommen als sysEvent.
+  assert.equal(osEventFrom({ jsonData: { eventType: 4 }, sysEvent: { eventType: 4 } }), null);
+  assert.equal(osEventFrom({ jsonData: { eventType: 5 }, sysEvent: { eventType: 5 } }), null);
+});

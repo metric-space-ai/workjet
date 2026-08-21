@@ -4,7 +4,10 @@
   "description": "Even Hub plugin: Decision Hub approvals on the Even Realities G2",
   "main": "index.js",
   "scripts": {
-    "test": "node --test tests/glasses.test.mjs tests/plugin.test.mjs"
+    "test": "node --test tests/glasses.test.mjs tests/plugin.test.mjs",
+    "dev": "vite --port 5173",
+    "build": "vite build",
+    "sim": "evenhub-simulator --automation-port 9898 http://localhost:5173"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +16,9 @@
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.14"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@evenrealities/evenhub-simulator": "^0.9.1",
+    "vite": "^5.4.21"
+  }
 }

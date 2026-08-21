@@ -95,10 +95,17 @@ test('press in the text does nothing', () => {
   assert.equal(out.action, null);
 });
 
-test('focused icon is marked and all four decisions are offered', () => {
+test('focused action is marked and all four decisions are offered', () => {
   const line = iconsLine({ ...view(), focusIcon: 0 });
-  assert.ok(line.includes('[✓]'));
-  for (const glyph of ['✓', '✗', '✎', '◷']) assert.ok(line.includes(glyph), `missing ${glyph}`);
+  // Die Brillenschrift hat kein ✓/✔/✗/✘/✎/◷ (am Simulator verifiziert),
+  // deshalb Woerter plus das vorhandene Caret ▶.
+  assert.ok(line.includes('▶OK'), `focus caret missing in: ${line}`);
+  for (const label of ['OK', 'NEIN', 'KORREKTUR', 'SPÄTER']) {
+    assert.ok(line.includes(label), `missing ${label}`);
+  }
+  for (const missing of ['✓', '✔', '✗', '✘', '✎', '◷']) {
+    assert.ok(!line.includes(missing), `${missing} does not exist on the device font`);
+  }
 });
 
 test('text budget stays within the documented full-screen limit', () => {

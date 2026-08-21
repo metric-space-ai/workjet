@@ -14,14 +14,22 @@
 export const DISPLAY_W = 576;
 export const DISPLAY_H = 288;
 
+// Am Simulator gemessen (evenhub-simulator, 576x288): die Systemschrift der
+// Brille setzt mit 26 px Zeilenabstand. Die Textgroesse ist nicht einstellbar
+// (TextContainerProperty kennt kein Font-Feld), also ist die Geometrie hier
+// keine Designentscheidung, sondern der Messwert.
 const PAD_X = 14;
-const TAB_H = 23;
-const ICON_H = 34;
-const LINE_H = 22;
+const TAB_H = 25;
+const ICON_H = 33;
+const LINE_H = 26;
 const ICON_W = 40;
 const ICON_GAP = 8;
 
-export const BODY_LINES = Math.floor((DISPLAY_H - TAB_H - ICON_H - 4) / LINE_H); // 10
+// Am Geraet nachgemessen (Simulator-Screenshots): mit Reiterzeile UND
+// Entscheidungszeile bleiben 8 Textzeilen. Neun wurden unten angeschnitten —
+// 288 px / 26 px sind 11 Zeilen, und Reiter plus Icons kosten zwei davon.
+// Die vom Owner erhofften 10 Zeilen sind physikalisch nicht drin.
+export const BODY_LINES = Math.floor((DISPLAY_H - TAB_H - ICON_H - 6) / LINE_H); // 8
 
 // 16 Grünstufen (0 = aus, 15 = volle Helligkeit).
 export function green(level) {
@@ -155,7 +163,7 @@ export function hitTest(view, x, y) {
 export function decisionLines(decision) {
   const zeilen = [...(decision.zeilen_json || [])];
   for (const seite of decision.detail_seiten_json || []) {
-    zeilen.push('', `▸ ${seite.titel || ''}`.trimEnd());
+    zeilen.push('', `» ${seite.titel || ''}`.trimEnd());
     zeilen.push(...(seite.zeilen || []));
   }
   while (zeilen.length && zeilen[0] === '') zeilen.shift();
@@ -168,17 +176,20 @@ export function decisionIcons(decision, copy = {}) {
   const aktionen = decision?.aktionen_json?.length ? decision.aktionen_json : [
     { wert: 'annehmen' }, { wert: 'ablehnen' }
   ];
-  const glyphs = { annehmen: '✓', ablehnen: '✗' };
+  // Die Brillenschrift hat WEDER ✓/✔ NOCH ✗/✘ NOCH ✎/◷ (am Simulator
+  // verifiziert). Kurze Woerter sind dort eindeutiger als ersatzweise
+  // Symbole; der Fokus wird durch das Caret ▶ markiert, das es gibt.
+  const glyphs = { annehmen: 'OK', ablehnen: 'NEIN' };
   for (const aktion of aktionen) {
     if (aktion.wert === 'details') continue;
     icons.push({
-      glyph: glyphs[aktion.wert] || '?',
+      glyph: glyphs[aktion.wert] || String(aktion.wert || '').toUpperCase(),
       wert: aktion.wert || 'annehmen',
       label: aktion.label || copy[`action_${aktion.wert}`] || aktion.wert
     });
   }
-  icons.push({ glyph: '✎', wert: 'korrektur', label: copy.action_correct || 'Korrektur diktieren' });
-  icons.push({ glyph: '◷', wert: 'vertagt', label: copy.action_snooze || 'Auf später' });
+  icons.push({ glyph: 'KORREKTUR', wert: 'korrektur', label: copy.action_correct || 'Korrektur diktieren' });
+  icons.push({ glyph: 'SPÄTER', wert: 'vertagt', label: copy.action_snooze || 'Auf später' });
   return icons;
 }
 

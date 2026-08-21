@@ -396,9 +396,25 @@ finishes. Scope estimates are rough and name the files.
     stderr (untrusted third-party output), and a harness that ran but printed
     an unrecognizable banner counts as AVAILABLE with no version, since the
     question is whether it runs. Mutation-verified.
-    STILL OPEN: the four `workjet.harness.*` RPCs, the web editors, and the
-    dispatch call site — the scope correction below explains why the last is
-    the big half.
+    The port is real too (commit 69abaa7cd): `--version`, `shell: false`, no
+    user input in the arguments, bounded by the timeout. The executable map is
+    explicit because the names only LOOK derivable — `claude-code` is invoked
+    as `claude`, and deriving it would report every install as missing.
+
+    **THREE OF THE FOUR RPCs CANNOT BE BUILT AS SPECIFIED.** There is no
+    harness installer anywhere in the app. Greppy has one because it is a
+    MANAGED, pinned binary this app downloads; claude-code, codex-cli and the
+    rest are third-party CLIs the operator installs themselves. So
+    `workjet.harness.install|update|remove` would have nothing to call, and
+    declaring them ships a surface that always fails. Adding them means
+    deciding that the app may RUN THIRD-PARTY INSTALLERS on the operator's
+    host — a security and UX decision, not a missing handler. OWNER.
+
+    STILL OPEN and buildable: `workjet.harness.inspect` (attempted and
+    reverted — exposing it made `ChildProcessSpawner` a requirement of the ws
+    layer and produced 182 inference errors in the bin composition; it needs
+    deliberate layer work, not a guess), the web editors, and the dispatch call
+    site — the scope correction below explains why the last is the big half.
 
     **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
     availability at all" understates it. `WorkerDispatch.ts` contains ZERO

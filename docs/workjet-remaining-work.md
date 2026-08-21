@@ -437,10 +437,15 @@ finishes. Scope estimates are rough and name the files.
     (`DesktopWindow.ts:858-866`) and the View-menu accelerators ask
     `CtoxGuestManager` whether a guest is active, and either target it or suppress
     the accelerator deliberately. 2 files plus a test — **small**.
-25. **Local-daemon descriptor ownership check.** §10. The descriptor is trusted
-    from the state root with no owner/uid/permission verification. One file plus
-    a test — **small**, and worth doing on its own because it is a trust boundary
-    (the rest of that box needs `ctox` CLI verbs).
+25. ~~**Local-daemon descriptor ownership check.**~~ **DONE 2026-08-20, commit
+    7a9015033.** §10. `checkCtoxDescriptorTrust`
+    (`CtoxLocalDaemonSource.ts`) runs before the descriptor is parsed and
+    refuses a non-regular file, a foreign owner, or group/world-writable mode;
+    a refusal is indistinguishable from a malformed descriptor from the
+    outside. Windows is a DECLARED gap: no uid is reported and the POSIX bits
+    are meaningless, so the ownership half is skipped rather than faked, and it
+    needs an ACL check of its own. Mutation-verified. The rest of that box
+    still needs `ctox` CLI verbs.
 26. **Six user-visible `T3 Code` strings.** §9. `SplashScreen.tsx:4-5`,
     `RightPanelTabs.tsx:88`, `SshPasswordPromptDialog.tsx:164`,
     `RelayClientInstallDialog.tsx:72-73`,

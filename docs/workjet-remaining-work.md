@@ -386,6 +386,20 @@ finishes. Scope estimates are rough and name the files.
     probes each harness executable, and make `WorkerDispatch.ts` consult the
     result. ~4 server files, 1 contract, 2 web files plus tests — **the largest
     single Wave 5 item**.
+    **PROBE HALF DONE 2026-08-20, commit 9e9d52805.**
+    `WorkjetHarnessAvailability.ts` probes each harness and yields a typed
+    verdict; the contract carries `WorkjetHarnessAvailability(Snapshot)`. The
+    decision logic is pure, so the missing-binary and hung-process branches are
+    testable without arranging either on disk. Dispatch gating FAILS CLOSED on
+    an unprobed harness — treating "not probed" as fine would reintroduce the
+    unverified optimism this replaces. The verdict never carries the probe's
+    stderr (untrusted third-party output), and a harness that ran but printed
+    an unrecognizable banner counts as AVAILABLE with no version, since the
+    question is whether it runs. Mutation-verified.
+    STILL OPEN: the four `workjet.harness.*` RPCs, the web editors, and the
+    dispatch call site — the scope correction below explains why the last is
+    the big half.
+
     **SCOPE CORRECTION 2026-08-20, measured:** "the server never reads
     availability at all" understates it. `WorkerDispatch.ts` contains ZERO
     matches for profile, harness or computerId, and `WorkerDispatchInput` is

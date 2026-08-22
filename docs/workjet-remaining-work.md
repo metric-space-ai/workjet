@@ -566,7 +566,19 @@ finishes. Scope estimates are rough and name the files.
         path pattern outright and would brand a string that is not a path.
         Mutation-verified.
 
-        STILL OPEN and unblocked: reference resolution on the receiving side.
+        **RECEIVING-SIDE RESOLUTION DONE 2026-08-21, commit c330acda3.**
+        `WorkjetArtifactResolution.ts` answers a peer's references from THIS
+        machine's state, never from the claim. Three states, and `unchecked` is
+        deliberately distinct from `absent`: "I could not look" and "I looked
+        and it is not here" lead an operator to different actions, and
+        collapsing them reports a peer's work as missing when nothing was
+        checked. No network — a commit that exists only on a remote is `absent`
+        here. Bounded below the contract's caps so a peer cannot turn one
+        result into hundreds of local reads, and the summary line is built from
+        counts only, never from peer-supplied text. Mutation-verified.
+
+        **Item 13 is now complete** except the Greppy reference kind, which is
+        the owner decision recorded above.
 
 14. **Handoff head commit and acknowledgement envelope.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new

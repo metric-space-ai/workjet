@@ -557,8 +557,16 @@ finishes. Scope estimates are rough and name the files.
         exception, or add a symbol-shaped Greppy entry point first and reference
         that. Not a schema addition.
 
-        STILL OPEN and unblocked: `paths` population, and reference resolution on
-        the receiving side.
+        **`paths` DONE 2026-08-21, commit 8f3bad5ef.** Results now carry the
+        repository-relative paths the turn changed, as references — the source
+        learns which files moved and reads them from the branch, so no
+        contents travel. `isWorkjetRepositoryPath` (new in contracts) refuses
+        absolute and traversing entries, and the producer resolves git's
+        rename syntax to its DESTINATION: `old -> new` otherwise passes the
+        path pattern outright and would brand a string that is not a path.
+        Mutation-verified.
+
+        STILL OPEN and unblocked: reference resolution on the receiving side.
 
 14. **Handoff head commit and acknowledgement envelope.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new

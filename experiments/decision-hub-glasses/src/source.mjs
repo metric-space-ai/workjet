@@ -11,27 +11,49 @@ const FIXTURE = {
       "id": "v-demo-1",
       "kunde_name": "REM Capital",
       "quelle_json": {
+        "kanal": "mail",
         "absender": "jill@example.org",
         "betreff": "API-Key funktioniert nicht",
-        "body_clean": "Guten Morgen, seit heute früh meldet unser Portal beim Login einen CORS-Fehler und der API-Key wird abgelehnt. Bitte prüfen Sie die Konfiguration. Wir brauchen das bis Freitag."
+        "body_clean": "Guten Morgen, seit heute früh meldet unser Portal beim Login einen CORS-Fehler und der API-Key wird abgelehnt. Betroffen sind alle Mandanten, die sich über das Kundenportal anmelden; über die API direkt funktioniert es weiterhin. Der Fehler trat erstmals um 06:40 auf, kurz nach dem nächtlichen Deployment. Wir haben bereits geprüft, ob bei uns eine Konfiguration geändert wurde — das war nicht der Fall. Bitte prüfen Sie die CORS-Header und den Ablauf des API-Keys. Wir brauchen eine Lösung bis Freitag, sonst können sich unsere Kunden am Wochenende nicht anmelden."
+      },
+      "triage_json": {
+        "einordnung": "arbeit",
+        "aufwand": "M",
+        "antwort_vorschlag": "Danke für die Meldung und die genaue Zeitangabe. Wir prüfen die CORS-Konfiguration und den Ablauf des API-Keys umgehend und melden uns heute mit einem Zwischenstand. Sollte die Ursache an einer Änderung auf unserer Seite liegen, beheben wir sie vor Freitag. Für den Fall, dass wir die Ursache nicht bis heute Abend eingrenzen können, richten wir Ihnen einen temporären Zugang ein, damit Ihre Kunden sich anmelden können.",
+        "aufgabe": {
+          "agent": "Sol · Completion",
+          "beschreibung": "CORS-Header und API-Key-Ablauf im Kundenportal prüfen. Einstieg ist das Deployment von gestern Abend; zuerst die geänderten Header-Regeln und die Gültigkeitsdauer der Keys vergleichen. Ergebnis: Ursache benennen, Fix vorschlagen, Risiko für andere Mandanten einschätzen. Kein Fix ohne Freigabe ausrollen."
+        },
+        "notizen": "Die Frist Freitag ist vom Kunden gesetzt und nicht verhandelt. Vertrauen mittel: die Ursache ist noch nicht belegt, der zeitliche Zusammenhang mit dem Deployment ist aber deutlich."
       }
     },
     {
       "id": "v-demo-2",
       "kunde_name": "Thesen AG",
       "quelle_json": {
+        "kanal": "mail",
         "absender": "kontakt@example.org",
         "betreff": "Angebot Wartungsvertrag",
-        "body_clean": "Wir möchten ein Angebot für einen Wartungsvertrag über zwölf Monate."
+        "body_clean": "Wir möchten ein Angebot für einen Wartungsvertrag über zwölf Monate. Bitte mit Reaktionszeiten und einer Option auf Rufbereitschaft am Wochenende."
+      },
+      "triage_json": {
+        "einordnung": "arbeit",
+        "aufwand": "S",
+        "antwort_vorschlag": "Gern — wir senden Ihnen bis morgen ein Angebot über zwölf Monate inklusive Reaktionszeiten und einer Option auf Rufbereitschaft.",
+        "aufgabe": {
+          "agent": "Sol · Completion",
+          "beschreibung": "Angebot Wartungsvertrag über 12 Monate erstellen, Reaktionszeiten und Option Rufbereitschaft ausweisen."
+        }
       }
     },
     {
       "id": "v-demo-3",
       "kunde_name": "Nordwind",
       "quelle_json": {
+        "kanal": "chat",
         "absender": "info@example.org",
         "betreff": "Rückfrage Rechnung",
-        "body_clean": "Auf der letzten Rechnung fehlt die Bestellnummer."
+        "body_clean": "Auf der letzten Rechnung fehlt die Bestellnummer. Können Sie eine korrigierte Rechnung schicken?"
       }
     }
   ],
@@ -43,26 +65,15 @@ const FIXTURE = {
       "titel": "REM Capital",
       "status": "offen",
       "zeilen_json": [
-        "» MAIL",
-        "Guten Morgen, seit heute früh meldet unser Portal",
-        "beim Login einen CORS-Fehler und der API-Key wird",
-        "abgelehnt. Bitte prüfen Sie die Konfiguration.",
-        "",
-        "» ANTWORT-VORSCHLAG",
-        "Danke für die Meldung. Wir prüfen die CORS- und",
-        "Key-Konfiguration umgehend und melden uns heute",
-        "mit einem Zwischenstand.",
-        "",
-        "» AUFGABE → Sol · Completion",
-        "CORS-Header und API-Key-Ablauf im Kundenportal",
-        "prüfen, Ursache benennen, Fix vorschlagen."
+        "Kurzfassung REM Capital"
       ],
       "detail_seiten_json": [
         {
           "titel": "AUDIT",
           "zeilen": [
-            "eingegangen · REM Capital",
-            "triagiert · Sol"
+            "eingegangen · 06:52 · mail",
+            "triagiert · Sol · Completion",
+            "Aufwand M · Vertrauen mittel"
           ]
         }
       ]
@@ -74,23 +85,9 @@ const FIXTURE = {
       "titel": "Thesen AG",
       "status": "offen",
       "zeilen_json": [
-        "» MAIL",
-        "Wir möchten ein Angebot für einen Wartungsvertrag",
-        "über zwölf Monate.",
-        "",
-        "» ANTWORT-VORSCHLAG",
-        "Gern — wir senden Ihnen bis morgen ein Angebot.",
-        ""
+        "Kurzfassung Thesen AG"
       ],
-      "detail_seiten_json": [
-        {
-          "titel": "AUDIT",
-          "zeilen": [
-            "eingegangen · Thesen AG",
-            "triagiert · Sol"
-          ]
-        }
-      ]
+      "detail_seiten_json": []
     },
     {
       "id": "d-demo-3",
@@ -99,20 +96,9 @@ const FIXTURE = {
       "titel": "Nordwind",
       "status": "offen",
       "zeilen_json": [
-        "» MAIL",
-        "Auf der letzten Rechnung fehlt die Bestellnummer.",
-        "",
-        "Routing-Vorschlag: Nordwind"
+        "Kurzfassung Nordwind"
       ],
-      "detail_seiten_json": [
-        {
-          "titel": "AUDIT",
-          "zeilen": [
-            "eingegangen · Nordwind",
-            "triagiert · Sol"
-          ]
-        }
-      ]
+      "detail_seiten_json": []
     }
   ]
 };

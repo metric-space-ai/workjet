@@ -83,11 +83,12 @@ export function renderActionBar({ icons, focusIcon, width, height, detail = 0, c
     const focused = i === focusIcon;
     const x = i * cell + Math.floor((cell - size) / 2);
     const y = Math.floor((height - size) / 2) - (compact ? 0 : 4);
-    // Keine Rahmen um die Aktionen (Owner-Vorgabe): die Auswahl zeigt ein
-    // kurzer Strich darunter und volle Helligkeit.
-    if (focused) fillRect(bmp, i * cell + 6, height - 4, cell - 12, 2, ON);
+    // Keine Rahmen um die Aktionen (Owner-Vorgabe). Die Auswahl muss aber
+    // auf einen Blick erkennbar sein: ein duenner Strich war es nicht.
+    // Gewaehlt = gefuellte Flaeche, Icon ausgespart.
+    if (focused) fillRect(bmp, i * cell + 2, 1, cell - 4, height - 2, ON);
     const key = icon.wert === 'detail' && detail >= 1 ? 'kurz' : NAME[icon.wert] || 'annehmen';
-    drawIcon(bmp, key, x, y, scale, focused ? ON : 8, setPixel);
+    drawIcon(bmp, key, x, y, scale, focused ? OFF : ON, setPixel);
     if (!compact) {
       const label = (icon.glyph || icon.wert || '').toUpperCase();
       const lw = textWidth(label, 1);

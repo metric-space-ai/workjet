@@ -104,16 +104,27 @@ const FIXTURE = {
 };
 
 export function createSource(config = {}) {
-  const { endpoint = null, token = null, fetchImpl = globalThis.fetch } = config;
+  const { endpoint = null, token = null, live = false, fetchImpl = globalThis.fetch } = config;
 
-  if (!endpoint) {
+  // Ohne `live` gibt es keinen Endpunkt — die Demo kann physisch nichts
+  // versenden, statt sich nur zu merken, dass sie es nicht soll.
+  if (!endpoint || !live) {
+    const beantwortet = new Map();
     return {
       kind: "fixture",
       async load() {
-        return FIXTURE;
+        // Beantwortete Demo-Vorgaenge verschwinden, damit sich der Ablauf
+        // anfuehlt wie im Betrieb.
+        return {
+          vorgaenge: FIXTURE.vorgaenge,
+          decisions: FIXTURE.decisions.filter((d) => !beantwortet.has(d.id)),
+        };
       },
       async answer(payload) {
-        console.info("[decision-hub] fixture answer", payload.wert, payload.decision?.id);
+        // Demo: nur vermerken. Kein Versand, keine Delegation, kein Kontakt
+        // zur Instanz — dieser Zweig kennt den Endpunkt gar nicht.
+        beantwortet.set(payload.decision?.id, payload.wert);
+        console.info("[decision-hub] Demo — nicht gesendet:", payload.wert, payload.decision?.id);
       },
     };
   }

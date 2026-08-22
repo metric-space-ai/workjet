@@ -51,3 +51,13 @@ test("type filters decide what reaches the glasses", () => {
   assert.equal(passesFilter({ typ: "triage" }, settings), true);
   assert.equal(passesFilter({ typ: "zuordnung" }, settings), false);
 });
+
+// Die Kopplung darf nur zustande kommen, wenn der Code wirklich eine
+// CTOX-Einladung traegt — ein beliebiger QR-Code aus der Umgebung nicht.
+test("a scanned code is only accepted when it carries a CTOX invite", async () => {
+  const { parseInvite } = await import("../src/settings.mjs");
+  assert.equal(parseInvite("https://example.com/irgendwas"), null);
+  assert.equal(parseInvite("WIFI:S=Cafe;T=WPA;P=geheim;;"), null);
+  const gut = parseInvite("https://welsch.ctox.dev/pair?token=abc&user=michael&role=chef");
+  assert.equal(gut.baseUrl, "https://welsch.ctox.dev");
+});

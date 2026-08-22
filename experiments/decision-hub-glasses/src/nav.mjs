@@ -10,8 +10,17 @@ import { LEVEL } from './layout.mjs';
 export const OS_EVENT = { CLICK: 0, SCROLL_TOP: 1, SCROLL_BOTTOM: 2, DOUBLE_CLICK: 3 };
 
 export function initialNav() {
-  return { sectionIndex: 0, page: 0, level: LEVEL.RUBRIK, focusIcon: -1 };
+  return { sectionIndex: 0, page: 0, level: LEVEL.RUBRIK, focusIcon: -1, picker: null, pickerIndex: 0 };
 }
+
+/** Wiedervorlage-Optionen — der Druck auf die Uhr fragt danach. */
+export const SNOOZE_OPTIONS = [
+  { id: '1h', label: 'in 1 Stunde', minutes: 60 },
+  { id: '3h', label: 'in 3 Stunden', minutes: 180 },
+  { id: 'abend', label: 'heute Abend', minutes: 8 * 60 },
+  { id: 'morgen', label: 'morgen früh', minutes: 20 * 60 },
+  { id: 'woche', label: 'nächste Woche', minutes: 7 * 24 * 60 },
+];
 
 /**
  * @param {object} nav  { sectionIndex, page, level, focusIcon }
@@ -22,6 +31,31 @@ export function initialNav() {
 export function navigate(nav, event, dims) {
   const next = { ...nav };
   const lastSection = Math.max(0, dims.sections - 1);
+
+  // Steht eine Auswahl offen (z. B. Wiedervorlage), bedient das Scrollen sie
+  // und nichts anderes — sonst verliert man versehentlich die Auswahl.
+  if (next.picker) {
+    const count = next.picker.options.length;
+    if (event === OS_EVENT.SCROLL_BOTTOM) {
+      next.pickerIndex = (next.pickerIndex + 1) % count;
+      return { nav: next, action: null };
+    }
+    if (event === OS_EVENT.SCROLL_TOP) {
+      next.pickerIndex = (next.pickerIndex - 1 + count) % count;
+      return { nav: next, action: null };
+    }
+    if (event === OS_EVENT.CLICK) {
+      const option = next.picker.options[next.pickerIndex];
+      return {
+        nav: { ...next, picker: null, pickerIndex: 0 },
+        action: { type: 'pick', kind: next.picker.kind, option },
+      };
+    }
+    if (event === OS_EVENT.DOUBLE_CLICK) {
+      return { nav: { ...next, picker: null, pickerIndex: 0 }, action: null };
+    }
+    return { nav: next, action: null };
+  }
 
   switch (event) {
     case OS_EVENT.SCROLL_BOTTOM:

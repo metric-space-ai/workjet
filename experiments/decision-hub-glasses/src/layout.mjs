@@ -68,8 +68,12 @@ const ITEM_CHARS = Math.floor((COL_W - 6) / CHAR_W);
 
 /** Rechtsbuendig auffuellen — das Muster der Werte in der Vorlage. */
 function row(left, right, width) {
-  const l = left.slice(0, Math.max(0, width - right.length - 1));
-  return `${l}${' '.repeat(Math.max(1, width - l.length - right.length))}${right}`;
+  // Die Geraetefont ist proportional: eine Zeile, die rechnerisch exakt passt,
+  // laeuft real ueber und schneidet rechts ab ("DEMO" wurde zu "DEM").
+  // Deshalb zwei Zeichen Reserve.
+  const nutz = Math.max(4, width - 5);
+  const l = left.slice(0, Math.max(0, nutz - right.length - 1));
+  return `${l}${' '.repeat(Math.max(1, nutz - l.length - right.length))}${right}`;
 }
 
 /** Sichtbarer Ausschnitt der Entscheidungsliste. */
@@ -102,11 +106,17 @@ export function barY(nav) {
 
 export function boxTitle(nav) {
   const section = nav.sections[nav.sectionIndex];
+  if (nav.picker) return row(nav.picker.titel, nav.demo ? 'DEMO' : '', PANEL_CHARS);
+  // Oben rechts steht immer, woran man ist: im Demo-Modus DEMO, sonst der
+  // Vorgang. Ohne diesen Hinweis waere am Geraet nicht zu erkennen, ob eine
+  // Entscheidung wirklich etwas ausloest.
+  const rechts = nav.demo ? 'DEMO' : (nav.typ || '');
   if (nav.level === LEVEL.DETAIL && section) {
     const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
-    return pages > 1 ? `${section.titel} ${page + 1}/${pages}` : section.titel;
+    const links = pages > 1 ? `${section.titel} ${page + 1}/${pages}` : section.titel;
+    return row(links, rechts, PANEL_CHARS);
   }
-  return section ? section.titel : (nav.betreff || '');
+  return row(section ? section.titel : (nav.betreff || ''), rechts, PANEL_CHARS);
 }
 
 /**
@@ -124,12 +134,16 @@ export function boxTitle(nav) {
  *
  * Die Rahmenzeichen sind am Simulator als vorhanden geprueft.
  */
-/** Kopfzeile der Box: Rubrik links, Herkunft rechts. */
+/**
+ * Kopfzeile der Box: Rubrik links, rechts der Betriebszustand. Im Demo-Modus
+ * steht dort DEMO — man muss auf einen Blick sehen, ob eine Entscheidung
+ * wirklich etwas ausloest.
+ */
 export function boxHeader(nav, width) {
   const links = boxTitle(nav);
-  const rechts = [nav.betreff, nav.typ].filter(Boolean).join(' · ');
+  const rechts = nav.demo ? 'DEMO' : (nav.typ || '');
   if (!rechts) return links;
-  return row(links, rechts.slice(0, Math.max(0, width - links.length - 2)), width);
+  return row(links, rechts, width);
 }
 
 export function framedBox(title, lines, width, height) {
@@ -145,16 +159,27 @@ export function framedBox(title, lines, width, height) {
 }
 
 export function contentLines(nav) {
+  // Offene Auswahl (z. B. Wiedervorlage) belegt die Box vollstaendig — sie
+  // ist eine Frage, keine Nebeninformation.
+  if (nav.picker) {
+    return nav.picker.options.map((option, i) =>
+      `${i === nav.pickerIndex ? '>' : ' '} ${option.label}`,
+    ).slice(0, CONTENT_LINES);
+  }
   const section = nav.sections[nav.sectionIndex];
   if (!section) return ['Keine Inhalte.'];
+  // Laufendes Diktat gehoert vor den Text: es ist ein Zustand, den man
+  // sofort sehen muss, sonst spricht man ins Leere.
+  const kopf = nav.hinweis ? [nav.hinweis, ''] : [];
+  const rest = CONTENT_LINES - kopf.length;
   if (nav.level === LEVEL.DETAIL) {
-    return pageOf(section, nav.page, CONTENT_LINES).zeilen;
+    return [...kopf, ...pageOf(section, nav.page, rest).zeilen];
   }
-  const lines = section.zeilen.slice(0, CONTENT_LINES);
-  if (section.zeilen.length > CONTENT_LINES) {
+  const lines = section.zeilen.slice(0, rest);
+  if (section.zeilen.length > rest) {
     lines[lines.length - 1] = `${(lines[lines.length - 1] || '').slice(0, PANEL_CHARS - 4)} ...`;
   }
-  return lines;
+  return [...kopf, ...lines];
 }
 
 export function railState(nav) {

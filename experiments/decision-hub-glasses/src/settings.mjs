@@ -23,7 +23,15 @@ export const GLASS_SECTIONS = [
   { id: "notizen", label: "Notizen" },
 ];
 
+export const MODES = [
+  { id: 'demo', label: 'Demo', hint: 'Beispielvorgänge. Es wird nichts versendet und nichts beauftragt.' },
+  { id: 'live', label: 'Live', hint: 'Echte Vorgänge deiner Instanz. Annehmen versendet und delegiert wirklich.' },
+];
+
 export const DEFAULTS = {
+  // Demo ist die Vorgabe: eine falsche Entscheidung im Live-Betrieb schickt
+  // eine Mail an einen echten Kunden. Der Wechsel muss bewusst passieren.
+  mode: 'demo',
   instances: [], // { id, name, baseUrl, token, user, role, kind }
   activeInstanceId: null,
   types: DECISION_TYPES.map((t) => t.id),
@@ -51,6 +59,11 @@ export function saveSettings(settings) {
     /* Speicher voll oder gesperrt — die App laeuft weiter, nur ohne Merken. */
   }
   return settings;
+}
+
+/** Läuft die App scharf? Nur dann darf sie überhaupt etwas auslösen. */
+export function isLive(settings) {
+  return settings.mode === 'live' && Boolean(activeInstance(settings));
 }
 
 export function activeInstance(settings) {

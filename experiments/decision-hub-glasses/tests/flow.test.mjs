@@ -172,3 +172,80 @@ test("from the icons a scroll up returns into the pages", async () => {
   assert.equal(plugin.state.focusIcon, -1, "back in the text …");
   assert.ok(plugin.state.sectionIndex >= 0, "… on a page of the same case");
 });
+
+// Der Demo-Modus ist die Schutzschicht, solange die Pipeline nicht
+// produktionsreif ist: er darf die Instanz nicht einmal kennen.
+test("demo mode cannot reach the instance, even with endpoint and token", async () => {
+  const { createSource } = await import("../src/source.mjs");
+  let calls = 0;
+  const fetchImpl = async () => { calls += 1; return { ok: true, json: async () => ({}) }; };
+  const demo = createSource({ endpoint: "https://welsch.ctox.dev", token: "t", fetchImpl });
+  assert.equal(demo.kind, "fixture", "without live it stays on the fixture");
+  const data = await demo.load();
+  await demo.answer({ decision: data.decisions[0], wert: "annehmen" });
+  assert.equal(calls, 0, "an accepted decision must not send anything in demo mode");
+});
+
+test("live mode is only reached deliberately, with an instance", async () => {
+  const { isLive } = await import("../src/settings.mjs");
+  const instance = { id: "welsch.ctox.dev", baseUrl: "https://welsch.ctox.dev", token: "t" };
+  assert.equal(isLive({ mode: "demo", instances: [instance], activeInstanceId: instance.id }), false);
+  assert.equal(isLive({ mode: "live", instances: [], activeInstanceId: null }), false, "live without an instance is not live");
+  assert.equal(isLive({ mode: "live", instances: [instance], activeInstanceId: instance.id }), true);
+});
+
+test("an answered demo case disappears from the queue", async () => {
+  const { createSource } = await import("../src/source.mjs");
+  const demo = createSource();
+  const before = (await demo.load()).decisions;
+  await demo.answer({ decision: before[0], wert: "ablehnen" });
+  const after = (await demo.load()).decisions;
+  assert.equal(after.length, before.length - 1);
+});
+
+test("the clock asks how long before it snoozes", async () => {
+  const { sdk, calls, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  const vorher = (await source.load()).decisions.length;
+  await plugin.act("vertagt");
+  assert.ok(body(calls).includes("in 1 Stunde"), "the durations must be offered");
+  assert.ok(body(calls).includes("nächste Woche"));
+  // Scrollen waehlt, Druck bestaetigt.
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  const nachher = (await source.load()).decisions.length;
+  assert.equal(nachher, vorher, "snoozing keeps the case open");
+});
+
+test("a snooze can be abandoned without deciding anything", async () => {
+  const { sdk, calls, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  await plugin.act("vertagt");
+  assert.ok(body(calls).includes("in 1 Stunde"));
+  await plugin.handleEvent(OS_EVENT.DOUBLE_CLICK);
+  assert.ok(!body(calls).includes("in 1 Stunde"), "double press closes the question");
+});
+
+test("the pencil starts and stops dictation and says so", async () => {
+  const { sdk, calls, source } = harness();
+  const audio = [];
+  sdk.audioControl = async (on, quelle) => { audio.push({ on, quelle }); return true; };
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  await plugin.act("korrektur");
+  assert.deepEqual(audio[0], { on: true, quelle: "glasses" }, "the glasses microphone must be switched on");
+  assert.ok(body(calls).includes("Diktat"), "and the running dictation must be visible");
+  await plugin.act("korrektur");
+  assert.equal(audio[1].on, false, "a second press stops the recording");
+});
+
+test("a missing microphone is reported, not silently ignored", async () => {
+  const { sdk, calls, source } = harness();
+  sdk.audioControl = async () => false;
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  await plugin.act("korrektur");
+  assert.ok(body(calls).includes("nicht verfügbar"));
+});

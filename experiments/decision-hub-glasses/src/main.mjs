@@ -12,8 +12,10 @@ import {
   parseInvite,
   instanceFrom,
   passesFilter,
+  isLive,
 } from "./settings.mjs";
 import { osEventFrom, imuFrom } from "./event-decode.mjs";
+import { scanInvite } from "./pairing.mjs";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -35,10 +37,12 @@ function sdkFromBridge(bridge) {
     textContainerUpgrade: (update) =>
       bridge.callEvenApp(EvenAppMethod.TextContainerUpgrade, update),
     imuControl: (cmd) => bridge.callEvenApp(EvenAppMethod.ImuControl, cmd),
+    audioControl: (on, quelle = 'glasses') => bridge.audioControl?.(on, quelle),
   };
 }
 
 let plugin = null;
+let appBridge = null;
 let settings = loadSettings();
 const health = { lastSync: null, lastError: null };
 
@@ -58,6 +62,7 @@ function renderApp() {
       plugin?.refresh();
     },
     onConnect: (raw) => connect(raw),
+    onScan: () => scanAndConnect(),
     onDisconnect: (id) => {
       settings = saveSettings({
         ...settings,
@@ -70,6 +75,24 @@ function renderApp() {
     onTest: () => testConnection(),
     onTestCard: () => plugin?.showTestCard?.(),
   });
+}
+
+/** QR abfotografieren und die Einladung daraus uebernehmen. */
+async function scanAndConnect() {
+  status('Kamera öffnet …', 'warn');
+  const result = await scanInvite(appBridge);
+  if (!result.ok) {
+    health.lastError = result.reason;
+    status(result.reason, 'error');
+    renderApp();
+    return;
+  }
+  await connect(JSON.stringify({
+    base_url: result.invite.baseUrl,
+    capability_token: result.invite.token,
+    user_id: result.invite.user,
+    role: result.invite.role,
+  }));
 }
 
 /** Einladung annehmen — ohne Passwort, der Token steckt in der Einladung. */
@@ -110,12 +133,15 @@ async function testConnection() {
 
 async function main() {
   const bridge = await waitForEvenAppBridge();
+  appBridge = bridge;
   // Die Instanz liefert die Karten; die Fixture greift nur, solange kein
   // Endpunkt konfiguriert ist (Simulator, Erststart).
   const instance = activeInstance(settings);
+  const live = isLive(settings);
   const source = createSource({
     endpoint: instance?.baseUrl || import.meta.env?.VITE_DECISION_HUB_ENDPOINT || null,
     token: instance?.token || import.meta.env?.VITE_DECISION_HUB_TOKEN || null,
+    live,
   });
   plugin = createDecisionHubPlugin({
     sdk: sdkFromBridge(bridge),
@@ -123,6 +149,7 @@ async function main() {
     onPaint: () => renderApp(),
     filter: (decision) => passesFilter(decision, settings),
     sections: settings.sections,
+    demo: !live,
     onError: (error) => {
       console.error("[decision-hub]", error?.stack || error?.message || String(error));
       status(`Fehler: ${error?.message || error}`, "error");

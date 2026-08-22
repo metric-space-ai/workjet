@@ -15,7 +15,8 @@
     "sim": "evenhub-simulator --automation-port 9898 http://localhost:5173"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.14"
+    "@evenrealities/even_hub_sdk": "^0.0.14",
+    "jsqr": "^1.4.0"
   },
   "devDependencies": {
     "@evenrealities/evenhub-simulator": "^0.9.1",

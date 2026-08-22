@@ -2,7 +2,7 @@
 // WAS auf der Brille erscheint. Die Vorgaenge selbst gehoeren auf die Brille;
 // unten steht nur eine kompakte Vorschau, damit man sieht, dass Daten fliessen.
 
-import { DECISION_TYPES, GLASS_SECTIONS, activeInstance } from "./settings.mjs";
+import { DECISION_TYPES, GLASS_SECTIONS, MODES, activeInstance, isLive } from "./settings.mjs";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -63,6 +63,25 @@ function chipGroup(options, selected, onToggle) {
 export function renderSettings(root, ctx) {
   const { settings } = ctx;
   root.replaceChildren();
+
+  // --- Betriebsart: zuoberst, weil davon abhaengt, ob eine Entscheidung
+  //     wirklich eine Mail verschickt. ---
+  const live = isLive(settings);
+  const modus = card('Betriebsart', live ? 'Live — Entscheidungen wirken sofort' : 'Demo — es wird nichts versendet');
+  const wahl = el('div', 'dh-chips');
+  for (const mode of MODES) {
+    const aktiv = settings.mode === mode.id;
+    const chip = el('button', `dh-chip${aktiv ? ' is-active' : ''}`, mode.label);
+    chip.type = 'button';
+    chip.addEventListener('click', () => ctx.onSettings({ mode: mode.id }));
+    wahl.append(chip);
+  }
+  modus.append(wahl);
+  modus.append(el('p', 'dh-note', MODES.find((m) => m.id === settings.mode)?.hint || ''));
+  if (settings.mode === 'live' && !activeInstance(settings)) {
+    modus.append(el('p', 'dh-note', 'Ohne verbundene Instanz bleibt es bei Demo-Daten.'));
+  }
+  root.append(modus);
 
   // --- Verbindung: der Grund, warum diese App auf dem Handy existiert. ---
   const instance = activeInstance(settings);

@@ -7,12 +7,13 @@
 import { decisionIcons, tabLabel } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, LEVEL } from './layout.mjs';
-import { navigate, initialNav } from './nav.mjs';
+import { navigate, initialNav, SNOOZE_OPTIONS } from './nav.mjs';
 import { createTiltGate } from './tilt.mjs';
 
 export function createDecisionHubPlugin({
   sdk,
   source,
+  demo = false,
   onError = () => {},
   onPaint = () => {},
   filter = () => true,
@@ -26,6 +27,7 @@ export function createDecisionHubPlugin({
   let started = false;
   let lastSignature = null;
   let visible = true;
+  let diktat = null;   // { seit, frames } solange das Mikrofon laeuft
   const tilt = createTiltGate(tiltOptions);
 
   const decision = () => decisions[index];
@@ -43,6 +45,9 @@ export function createDecisionHubPlugin({
       icons: decisionIcons(d, {}, nav.level === LEVEL.DETAIL ? 1 : 0),
       detail: nav.level === LEVEL.DETAIL ? 1 : 0,
       typ: (d.typ || '').toUpperCase(),
+      demo,
+      hinweis: nav.hinweis || null,
+      diktat: Boolean(diktat),
       betreff: vorgangOf(d)?.title || d.titel || '',
       // Kanal je Eintrag: bestimmt das Icon links vor dem Text.
       channels: decisions.map((item) => {
@@ -69,7 +74,9 @@ export function createDecisionHubPlugin({
     // neu gebaut werden. Bilder tragen Auswahl und Position, also gehen sie
     // bei jeder Aenderung mit.
     const signature = visible
-      ? `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}`
+      // Die Auswahlliste MUSS in die Signatur: sonst aendert sich der Zustand,
+      // aber der Schirm bleibt stehen (genau so verschwand die Wiedervorlage).
+      ? `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}|${view.picker?.kind || ''}|${view.pickerIndex ?? ''}|${view.hinweis || ''}`
       : 'hidden';
     const page = visible ? buildPage(view) : blankPage();
     if (!started) {
@@ -103,12 +110,45 @@ export function createDecisionHubPlugin({
   async function act(wert) {
     const d = decision();
     if (!d) return;
+    if (wert === 'korrektur') {
+      // Korrektur wird diktiert: Mikrofon der Brille an, zweiter Druck
+      // beendet. Die Umwandlung in Text passiert serverseitig — das Plugin
+      // sammelt nur die Aufnahme und behauptet nichts anderes.
+      if (diktat) {
+        await sdk.audioControl?.(false);
+        const dauer = Math.round((Date.now() - diktat.seit) / 1000);
+        diktat = null;
+        nav = { ...nav, hinweis: `Diktat aufgenommen (${dauer}s)` };
+        await paint();
+        return;
+      }
+      const ok = await sdk.audioControl?.(true, 'glasses');
+      if (ok === false) {
+        nav = { ...nav, hinweis: 'Mikrofon nicht verfügbar' };
+      } else {
+        diktat = { seit: Date.now(), frames: 0 };
+        nav = { ...nav, hinweis: 'Diktat läuft — Druck beendet' };
+      }
+      await paint();
+      return;
+    }
     if (wert === 'detail') {
       nav = { ...nav, level: nav.level === LEVEL.DETAIL ? LEVEL.RUBRIK : LEVEL.DETAIL, page: 0, focusIcon: -1 };
       await paint();
       return;
     }
     if (wert === 'vertagt') {
+      // Die Uhr fragt zuerst, wie lange vertagt werden soll.
+      nav = {
+        ...nav,
+        picker: { kind: 'snooze', titel: 'WIEDERVORLAGE', options: SNOOZE_OPTIONS },
+        pickerIndex: 0,
+        focusIcon: -1,
+      };
+      await paint();
+      return;
+    }
+    if (wert === '__vertagt_bestaetigt') {
       decisions.push(decisions.splice(index, 1)[0]);
       index = Math.min(index, Math.max(0, decisions.length - 1));
       nav = initialNav();
@@ -133,6 +173,16 @@ export function createDecisionHubPlugin({
     if (action?.type === 'activate') {
       const icon = view.icons[action.icon];
       if (icon?.wert) await act(icon.wert);
+      return;
+    }
+    if (action?.type === 'pick') {
+      if (action.kind === 'snooze') {
+        // Der Vorgang bleibt offen und wandert ans Ende — mit der gewaehlten
+        // Frist, damit die Wiedervorlage nachvollziehbar ist.
+        const d = decision();
+        if (d) d.wiedervorlage_ms = Date.now() + action.option.minutes * 60000;
+        await act('__vertagt_bestaetigt');
+      }
       return;
     }
     if (action?.type === 'nextCase') {

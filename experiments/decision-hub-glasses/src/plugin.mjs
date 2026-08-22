@@ -139,6 +139,20 @@ export function createDecisionHubPlugin({
       await nextCase();
       return;
     }
+    if (action?.type === 'prevCase') {
+      // Beim Rueckwaertsgehen landet man auf den Icons des vorherigen
+      // Vorgangs — dort, wo man ihn nach unten verlassen haette.
+      index = (index - 1 + Math.max(1, decisions.length)) % Math.max(1, decisions.length);
+      const view = currentNav();
+      nav = {
+        ...nav,
+        sectionIndex: Math.max(0, (view?.sections.length || 1) - 1),
+        page: 0,
+        focusIcon: (view?.icons.length || 1) - 1,
+      };
+      await paint();
+      return;
+    }
     await paint();
   }
 

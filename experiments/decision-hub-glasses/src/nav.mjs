@@ -49,19 +49,36 @@ export function navigate(nav, event, dims) {
 
     case OS_EVENT.SCROLL_TOP:
       if (next.focusIcon > 0) { next.focusIcon -= 1; return { nav: next, action: null }; }
-      if (next.focusIcon === 0) { next.focusIcon = -1; return { nav: next, action: null }; }
+      if (next.focusIcon === 0) {
+        // Von den Icons zurueck auf die letzte Seite des Vorgangs.
+        next.focusIcon = -1;
+        next.sectionIndex = lastSection;
+        return { nav: next, action: null };
+      }
       if (next.level === LEVEL.DETAIL) {
         if (next.page > 0) next.page -= 1;
         else next.level = LEVEL.RUBRIK;
         return { nav: next, action: null };
       }
-      if (next.sectionIndex > 0) next.sectionIndex -= 1;
-      return { nav: next, action: null };
+      if (next.sectionIndex > 0) {
+        next.sectionIndex -= 1;
+        return { nav: next, action: null };
+      }
+      // Vor der ersten Seite geht es zum VORHERIGEN Action Item — spiegelbildlich
+      // zum Weg nach unten, der hinter den Icons beim naechsten landet. Ohne das
+      // endet der Weg nach oben in einer Sackgasse.
+      return {
+        nav: { ...next, sectionIndex: 0, page: 0, level: LEVEL.RUBRIK, focusIcon: dims.icons - 1 },
+        action: { type: 'prevCase' },
+      };
 
     case OS_EVENT.CLICK:
       if (next.focusIcon >= 0) return { nav: next, action: { type: 'activate', icon: next.focusIcon } };
-      // Druck auf eine Rubrik laedt die vollstaendige Fassung.
-      if (next.level === LEVEL.RUBRIK) { next.level = LEVEL.DETAIL; next.page = 0; }
+      // Druck schaltet zwischen Kurz- und Langfassung um. Ein zweiter Druck
+      // muss zurueckfuehren, sonst kommt man aus der Langfassung nur durch
+      // Weiterscrollen heraus.
+      next.level = next.level === LEVEL.RUBRIK ? LEVEL.DETAIL : LEVEL.RUBRIK;
+      next.page = 0;
       return { nav: next, action: null };
 
     case OS_EVENT.DOUBLE_CLICK:

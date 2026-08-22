@@ -139,3 +139,36 @@ test("head tilt hides and shows the display", async () => {
   assert.equal(plugin.visible, true);
   assert.ok(calls.lastPage.textObject.length > 1, "and the content comes back");
 });
+
+test("scrolling up past the first page reaches the previous case", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  // erst zum zweiten Vorgang, dann wieder hoch
+  const start = plugin.state.index;
+  while (plugin.state.index === start) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  const second = plugin.state.index;
+  while (plugin.state.index === second) await plugin.handleEvent(OS_EVENT.SCROLL_TOP);
+  assert.equal(plugin.state.index, start, "up must lead back to the case we came from");
+});
+
+test("a second press collapses the long version again", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  assert.equal(plugin.state.level, "detail");
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  assert.equal(plugin.state.level, "rubrik", "press must toggle, not only open");
+});
+
+test("from the icons a scroll up returns into the pages", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source });
+  await plugin.start();
+  while (plugin.state.focusIcon < 0) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  while (plugin.state.focusIcon > 0) await plugin.handleEvent(OS_EVENT.SCROLL_TOP);
+  await plugin.handleEvent(OS_EVENT.SCROLL_TOP);
+  assert.equal(plugin.state.focusIcon, -1, "back in the text …");
+  assert.ok(plugin.state.sectionIndex >= 0, "… on a page of the same case");
+});

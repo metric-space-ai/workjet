@@ -311,6 +311,23 @@ finishes. Scope estimates are rough and name the files.
    browser-download cost from this item's estimate; what stays large is the
    five assertions themselves (receipts, durable status, result return,
    cancellation, restart recovery).
+   **RESTART-RECOVERY ASSERTION BUILT 2026-08-21, commit 5f29b37c9 — but NOT
+   OBSERVED PASSING.** `scripts/workjet-restart-recovery.sh` boots the server
+   twice against a disposable state directory and records facts;
+   `workjet-restart-recovery-smoke.ts` judges them, with the rules unit-tested
+   (6 tests). This is the one assertion no unit test can make, because every
+   mailbox test uses in-memory sqlite and therefore cannot show that state
+   reaches a file or survives a restart.
+   **What blocks confirmation is the ENVIRONMENT, not the script.** A Node
+   parent that spawns this server is killed silently in this development
+   harness — no exception, no stderr, zero bytes — and a shell orchestrator
+   dies the same way during the second boot, while a plain Node process with
+   no child survives minutes (measured both ways). The first boot WAS observed
+   repeatedly: 54 migrations run, `state.sqlite` created, sentinel row written.
+   Run it on an ordinary machine or in CI before treating it as a gate.
+   The other four assertions (receipts, durable status, result return,
+   cancellation) need a booted app the same way and hit the same wall here.
+
    **FIRST STEP DONE 2026-08-20, commit 6aeee8b9c:** the client is extracted to
    `scripts/lib/cdpClient.ts` and `ctox-packaged-smoke.ts` now imports it, so
    there is one implementation instead of two that can drift. Its bounds are

@@ -68,6 +68,14 @@ export type MainWindowZoomDirection = "in" | "out" | "reset";
  * The web contents of a mounted CTOX guest, or `null` when the host renderer
  * is what the user is looking at.
  *
+ * VERIFIED against the neighbouring zoom comment, which warns about "an
+ * embedded preview WebContentsView": the browser PREVIEW is a `<webview>`
+ * element inside the renderer DOM, not a child of the window's content view
+ * (`PreviewAutomationHosts.tsx` queries `webview[data-preview-tab]`). It
+ * therefore cannot be picked up here, which is why targeting a content-view
+ * child does not reintroduce the "app UI appears stuck" problem that comment
+ * describes.
+ *
  * The guest is a `WebContentsView` that `CtoxGuestManager` adds to the
  * window's content view (`CtoxGuestManager.ts:485`), and it is the ONLY thing
  * in this app that adds a child view — `CtoxGuestManager.test.ts` pins that,

@@ -336,6 +336,8 @@ const makeHarness = (options?: {
    * the port die — a delegation that already ran must survive either.
    */
   readonly headCommit?: string;
+  /** Raw paths the changed-paths port reports, before validation. */
+  readonly changedPaths?: ReadonlyArray<string>;
 }): Harness => {
   const commands: Array<OrchestrationCommand> = [];
   const events: Array<WorkjetMailboxAuditEventInput> = [];
@@ -361,6 +363,9 @@ const makeHarness = (options?: {
         return options?.failAudit ? Effect.die("audit emitter exploded") : Effect.void;
       },
     },
+    ...(options?.changedPaths === undefined
+      ? {}
+      : { resolveChangedPaths: () => Effect.succeed(options.changedPaths ?? []) }),
     ...(options?.headCommit === undefined
       ? {}
       : {
@@ -1138,6 +1143,52 @@ it.effect("reports the target worktree's head commit as an artifact reference", 
     assert.isUndefined(stored.value.artifacts.branch);
     assert.deepEqual([...stored.value.artifacts.paths], []);
   }).pipe(Effect.provide(testLayer("delegation-executor-headcommit"))),
+);
+
+it.effect("reports the changed paths, and refuses the ones git cannot express safely", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "paths",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-paths",
+        turnState: "completed",
+        worktreePath: "/tmp/target-worktree",
+      }),
+      // git reports renames as `old -> new` and can emit absolute paths; both
+      // must be DROPPED rather than branded, or the contract would carry a
+      // path the receiver must not follow.
+      changedPaths: [
+        "src/app.ts",
+        "docs/readme.md",
+        "/etc/passwd",
+        "../outside.ts",
+        "src/old.ts -> src/new.ts",
+      ],
+    });
+    const executor = yield* harness.executor;
+    yield* seed(delegation);
+
+    yield* executor.runCycle;
+
+    const store = yield* WorkjetMailboxStore;
+    const stored = yield* store.getDelegationResult(delegation.delegationId);
+    assert.isTrue(Option.isSome(stored));
+    if (Option.isNone(stored)) return;
+
+    // The two usable ones survive; one bad entry does not cost the others.
+    // The two plain paths survive, the rename contributes its DESTINATION,
+    // and the absolute and traversing ones are gone. One bad entry does not
+    // cost the others.
+    assert.deepEqual(
+      [...stored.value.artifacts.paths],
+      ["src/app.ts", "docs/readme.md", "src/new.ts"],
+    );
+  }).pipe(Effect.provide(testLayer("delegation-executor-paths"))),
 );
 
 it.effect("still completes when the head commit cannot be read", () =>

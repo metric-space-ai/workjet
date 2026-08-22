@@ -53,7 +53,9 @@ import {
   type OrchestrationThread,
   type ThreadId,
   type WorkjetMailboxBudgetKind,
+  isWorkjetRepositoryPath,
   type WorkjetGitCommitHash,
+  type WorkjetRepositoryPath,
   type WorkjetDelegation,
   type WorkjetDelegationId,
   type WorkjetDelegationResult,
@@ -113,6 +115,9 @@ export const WORKJET_DELEGATION_EXECUTOR_INTERVAL = Duration.seconds(10);
 export const WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE = 32;
 
 /** A wedged cycle must never take the loop or the server down. */
+/** The contract caps `paths` at 256; keep the producer honest about it. */
+const WORKJET_ARTIFACT_PATHS_LIMIT = 256;
+
 const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
 
 /** Thread-visible activity kinds appended by the executor. */
@@ -327,6 +332,17 @@ export interface WorkjetDelegationExecutorSources {
   readonly resolveHeadCommit?: (
     worktreePath: string,
   ) => Effect.Effect<Option.Option<WorkjetGitCommitHash>>;
+
+  /**
+   * Repository-relative paths the delegation's worktree changed.
+   *
+   * Optional and best-effort, like the head commit. Paths are REFERENCES, not
+   * content: the source learns WHICH files moved and reads them from the
+   * branch, so nothing about a file's contents travels. The list is bounded by
+   * the contract at 256 entries; a turn that touched more is describing a
+   * whole tree, and truncating is more useful than refusing the result.
+   */
+  readonly resolveChangedPaths?: (worktreePath: string) => Effect.Effect<ReadonlyArray<string>>;
 }
 
 // ===============================
@@ -1007,6 +1023,36 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         );
 
   /**
+   * Bounded, validated repository paths, or empty for every reason a read
+   * might fail. `isWorkjetRepositoryPath` does the refusing: git reports
+   * renames as `old -> new` and can emit absolute paths, and branding one of
+   * those would put a path the receiver must not follow onto the contract.
+   * An unusable entry is DROPPED rather than failing the whole result — a
+   * delegation that ran should still report the paths that are usable.
+   */
+  const readChangedPaths = (
+    worktreePath: string | null | undefined,
+  ): Effect.Effect<ReadonlyArray<WorkjetRepositoryPath>> =>
+    worktreePath === null || worktreePath === undefined || sources.resolveChangedPaths === undefined
+      ? Effect.succeed([])
+      : sources.resolveChangedPaths(worktreePath).pipe(
+          Effect.map((paths) =>
+            paths
+              // A rename arrives as `old -> new` and would otherwise PASS the
+              // contract check — no leading slash, no `..`, no backslash — and
+              // brand a string that is not a path at all. The destination is
+              // what the source wants: where the file is now.
+              .map((raw) => {
+                const arrow = raw.lastIndexOf(" -> ");
+                return arrow === -1 ? raw.trim() : raw.slice(arrow + 4).trim();
+              })
+              .filter(isWorkjetRepositoryPath)
+              .slice(0, WORKJET_ARTIFACT_PATHS_LIMIT),
+          ),
+          Effect.catchCause(() => Effect.succeed([] as ReadonlyArray<WorkjetRepositoryPath>)),
+        );
+
+  /**
    * The bounded result reported back to the source. Summary is a fixed bounded
    * label — never prompt, path, or output material.
    *
@@ -1033,6 +1079,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     readonly budgetKind?: WorkjetMailboxBudgetKind;
     /** The target worktree's head commit, when it could be read. */
     readonly headCommit?: WorkjetGitCommitHash | undefined;
+    /** Repository-relative paths the turn changed, already validated. */
+    readonly paths?: ReadonlyArray<WorkjetRepositoryPath>;
   }): WorkjetDelegationResult => ({
     schemaVersion: 1,
     envelopeId: input.envelopeId,
@@ -1059,7 +1107,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     artifacts: {
       schemaVersion: 1,
       commitHashes: input.headCommit === undefined ? [] : [input.headCommit],
-      paths: [],
+      paths: input.paths ?? [],
       // No diff range yet: a range needs a FROM revision, which is the commit
       // the delegation started at, and the executor does not record one. An
       // empty array is the honest answer; inventing `from` would name a range
@@ -1510,12 +1558,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       // Best-effort: a thread with no worktree, or a worktree git cannot read,
       // reports no commit rather than failing a delegation that already ran.
       const headCommit = yield* readHeadCommit(thread.worktreePath);
+      const paths = yield* readChangedPaths(thread.worktreePath);
       const result = buildResult({
         delegation,
         outcome,
         envelopeId: delegationResultEnvelopeId(delegation.delegationId),
         now: input.now,
         ...(headCommit === undefined ? {} : { headCommit }),
+        ...(paths.length === 0 ? {} : { paths }),
         interrupted,
       });
 

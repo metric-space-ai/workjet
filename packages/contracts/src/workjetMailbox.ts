@@ -270,6 +270,17 @@ export const WorkjetRepositoryPath = TrimmedNonEmptyString.check(
 ).pipe(Schema.brand("WorkjetRepositoryPath"));
 export type WorkjetRepositoryPath = typeof WorkjetRepositoryPath.Type;
 
+/**
+ * Whether a raw string is a usable repository-relative path.
+ *
+ * A caller reading `git status` output needs this: git reports renames as
+ * `old -> new`, quotes paths containing unusual bytes, and can emit absolute
+ * paths in some configurations. Branding such a value would put a path the
+ * receiver must not follow onto a typed contract, so it has to be REFUSED
+ * rather than coerced.
+ */
+export const isWorkjetRepositoryPath = Schema.is(WorkjetRepositoryPath);
+
 /** Git branch name of a per-worker isolated worktree branch. */
 export const WorkjetGitBranchName = TrimmedNonEmptyString.check(
   Schema.isMaxLength(255),

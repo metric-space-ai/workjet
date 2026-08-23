@@ -59,6 +59,12 @@ import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import {
+  joinManagedPrompt,
+  replaceSectionBody,
+  sectionBody,
+  splitManagedPrompt,
+} from "./managedPromptSections";
 
 const SOURCE_LABELS: Readonly<Record<GreppyRuntimeSource, string>> = {
   override: "WORKJET_GREPPY_EXECUTABLE override",
@@ -692,6 +698,7 @@ export function WorkjetSettingsView({
   const [addingComputer, setAddingComputer] = useState(false);
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
   const [addingRoute, setAddingRoute] = useState(false);
+  const promptSections = splitManagedPrompt(configuration.managedSystemPrompt);
   const editingWorker =
     configuration.workerProfiles.find((worker) => worker.id === editingWorkerId) ?? null;
   const editingComputer =
@@ -992,26 +999,74 @@ export function WorkjetSettingsView({
           id={searchableSetting("workjet-prompt").id}
           title={searchableSetting("workjet-prompt").title}
         >
-          <SettingsRow
-            title="Managed system prompt"
-            description="Shared orchestration rules applied when Workjet composes managed worker instructions."
-          >
-            <div className="mt-3 max-w-3xl pb-3.5">
-              <Textarea
-                key={configuration.managedSystemPrompt}
-                defaultValue={configuration.managedSystemPrompt}
-                rows={8}
-                aria-label="Workjet managed system prompt"
-                placeholder="Define orchestration, delegation, verification, and recovery rules."
-                onBlur={(event) => {
-                  const managedSystemPrompt = event.target.value.trim();
-                  if (managedSystemPrompt !== configuration.managedSystemPrompt) {
-                    onChange({ ...configuration, managedSystemPrompt });
-                  }
-                }}
-              />
-            </div>
-          </SettingsRow>
+          {/* The Swift page shows this prompt as named cards, each with its own
+              edit affordance, instead of one 6 KB scroll box. Same here — but
+              as a VIEW: the sections are found by the headings already in the
+              text and joined straight back, because the prompt is deliberately
+              one stored field and a second home would give the importer two
+              targets for one source. */}
+          {promptSections.map((section, index) => (
+            <SettingsRow
+              key={`${section.title ?? "preamble"}-${String(index)}`}
+              title={section.title ?? "Preamble"}
+              description={
+                section.title === null
+                  ? "Everything before the first heading."
+                  : "Edit this part on its own; the rest of the prompt is untouched."
+              }
+            >
+              <div className="mt-2 max-w-3xl pb-3.5">
+                <Textarea
+                  key={`${configuration.managedSystemPrompt.length}-${String(index)}`}
+                  defaultValue={sectionBody(section)}
+                  rows={Math.min(16, Math.max(4, section.bodyLines.length))}
+                  aria-label={`Prompt section ${section.title ?? "preamble"}`}
+                  onBlur={(event) => {
+                    const next = joinManagedPrompt(
+                      replaceSectionBody(promptSections, index, event.target.value),
+                    );
+                    if (next !== configuration.managedSystemPrompt) {
+                      onChange({ ...configuration, managedSystemPrompt: next });
+                    }
+                  }}
+                />
+              </div>
+            </SettingsRow>
+          ))}
+
+          {/* Each worker's own task text, which the Swift page lists right
+              below the shared rules with its facts beside it — because the
+              question "what will this worker be told" is answered by both
+              together, and they lived on different pages here. */}
+          {configuration.workerProfiles.length === 0 ? null : (
+            <SettingsRow
+              title="Worker tasks"
+              description="Each worker's own instructions, appended to the shared rules above when Workjet composes its prompt."
+            >
+              <div className="mt-2 space-y-2 pb-3.5">
+                {configuration.workerProfiles.map((worker) => (
+                  <div key={worker.id} className="rounded-lg bg-muted/25 p-2.5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="text-xs font-medium text-foreground">{worker.name}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {[
+                          worker.modelId,
+                          worker.harness,
+                          configuration.computers.find(
+                            (computer) => computer.id === worker.computerId,
+                          )?.label ?? "unknown computer",
+                          worker.reasoning,
+                        ].join(" · ")}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] whitespace-pre-wrap text-muted-foreground">
+                      {worker.instructions?.trim() ? worker.instructions : "No task set."}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </SettingsRow>
+          )}
         </SettingsSection>
       ) : null}
 

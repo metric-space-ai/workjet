@@ -3848,6 +3848,26 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [runWorkjetConfigChange],
   );
+  /**
+   * Any capability, not just Greppy. executeWorkjetCapabilityToggle already
+   * took an id — only this caller pinned it, which is why two capabilities the
+   * thread config could already store were unreachable from the composer.
+   */
+  const handleWorkjetCapabilityEnabledChange = useCallback(
+    (capabilityId: string, enabled: boolean) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetCapabilityToggle({
+          ...input,
+          capabilityId: capabilityId as typeof GREPPY_CAPABILITY_ID,
+          enabled,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
   const handleWorkjetRoleChange = useCallback(
     (role: WorkjetSelectableRole) => {
       runWorkjetConfigChange((input) =>
@@ -7121,6 +7141,10 @@ function ChatViewContent(props: ChatViewProps) {
                             handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
                             onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
+                            onWorkjetCapabilityEnabledChange={handleWorkjetCapabilityEnabledChange}
+                            workjetEnabledCapabilityIds={
+                              visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
+                            }
                             onWorkjetRoleChange={handleWorkjetRoleChange}
                             onOpenWorkjetSettings={handleOpenWorkjetSettings}
                             focusComposer={focusComposer}

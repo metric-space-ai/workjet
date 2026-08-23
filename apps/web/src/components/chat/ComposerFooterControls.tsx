@@ -177,6 +177,10 @@ export interface ComposerFooterControlsProps {
   readonly onRuntimeModeChange: (mode: RuntimeMode) => void;
   readonly onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
   readonly onWorkjetGreppyEnabledChange: (enabled: boolean) => void;
+  readonly onWorkjetCapabilityEnabledChange?:
+    | ((capabilityId: string, enabled: boolean) => void)
+    | undefined;
+  readonly workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
   readonly onOpenWorkjetSettings: () => void;
 }
 
@@ -238,6 +242,8 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
             busy={props.workjetBusy}
             disabled={props.workjetDisabled}
             onGreppyEnabledChange={props.onWorkjetGreppyEnabledChange}
+            onCapabilityEnabledChange={props.onWorkjetCapabilityEnabledChange}
+            enabledCapabilityIds={props.workjetEnabledCapabilityIds}
           />
         </>
       )}

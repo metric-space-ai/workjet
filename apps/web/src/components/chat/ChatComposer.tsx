@@ -485,6 +485,9 @@ export interface ChatComposerProps {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   onWorkjetGreppyEnabledChange: (enabled: boolean) => void;
+  /** Toggles any capability the host can activate, not only Greppy. */
+  onWorkjetCapabilityEnabledChange?: ((capabilityId: string, enabled: boolean) => void) | undefined;
+  workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
   onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
   /** Routes to Settings → Workjet; the composer never hosts a second surface. */
   onOpenWorkjetSettings: () => void;
@@ -566,6 +569,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     handleRuntimeModeChange,
     handleInteractionModeChange,
     onWorkjetGreppyEnabledChange,
+    onWorkjetCapabilityEnabledChange,
+    workjetEnabledCapabilityIds,
     onWorkjetRoleChange,
     onOpenWorkjetSettings,
     focusComposer,
@@ -3135,6 +3140,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onRuntimeModeChange={handleRuntimeModeChange}
                     onWorkjetRoleChange={onWorkjetRoleChange}
                     onWorkjetGreppyEnabledChange={onWorkjetGreppyEnabledChange}
+                    onWorkjetCapabilityEnabledChange={onWorkjetCapabilityEnabledChange}
+                    workjetEnabledCapabilityIds={workjetEnabledCapabilityIds}
                     onOpenWorkjetSettings={onOpenWorkjetSettings}
                   />
                 )}

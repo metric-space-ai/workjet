@@ -128,16 +128,81 @@ export async function executeWorkjetCapabilityToggle<E>(input: {
   return nextConfig;
 }
 
+/**
+ * Every capability the composer's host can actually activate.
+ *
+ * Resolved from the catalog, not listed here: `web-search` and
+ * `web-stack-browser` declare `supportedAdapters: ALL_ADAPTERS`, which
+ * includes this host, so they were available all along and the menu simply
+ * never offered them. A hard-coded Greppy row hid two capabilities the thread
+ * config could already store — `enabledCapabilityIds` has always been a list.
+ */
+export const workjetComposerCapabilityList = (): ReadonlyArray<{
+  readonly id: string;
+  readonly displayName: string;
+  readonly description: string;
+}> =>
+  workjetComposerCapabilities([]).map(({ manifest }) => ({
+    id: manifest.id,
+    displayName: manifest.metadata.displayName,
+    description: manifest.metadata.description,
+  }));
+
 export interface WorkjetCapabilityMenuProps {
   readonly compact?: boolean;
+  /** Ids currently active on this thread. */
+  readonly enabledCapabilityIds?: ReadonlyArray<string> | undefined;
   readonly greppyEnabled: boolean;
   readonly busy: boolean;
   readonly disabled?: boolean;
   readonly onGreppyEnabledChange: (enabled: boolean) => void;
+  /** Present when the caller can toggle any capability, not just Greppy. */
+  readonly onCapabilityEnabledChange?:
+    | ((capabilityId: string, enabled: boolean) => void)
+    | undefined;
 }
 
 export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) {
   const disabled = props.disabled === true || props.busy;
+  const onCapabilityEnabledChange = props.onCapabilityEnabledChange;
+
+  // Whole catalog when the caller can toggle any of it; otherwise the Greppy
+  // row alone, so a caller that only wired Greppy cannot render switches that
+  // silently do nothing.
+  if (onCapabilityEnabledChange !== undefined) {
+    const enabled = new Set(props.enabledCapabilityIds ?? []);
+    return (
+      <MenuGroup>
+        <MenuGroupLabel>Tools</MenuGroupLabel>
+        {workjetComposerCapabilityList().map((capability) => (
+          <div key={capability.id}>
+            <MenuCheckboxItem
+              variant="switch"
+              checked={enabled.has(capability.id)}
+              disabled={disabled}
+              aria-label={`${capability.displayName} for this thread`}
+              aria-busy={props.busy || undefined}
+              onCheckedChange={(checked) =>
+                onCapabilityEnabledChange(capability.id, checked === true)
+              }
+            >
+              <span className="inline-flex items-center gap-2">
+                <span>{capability.displayName}</span>
+                {props.busy ? (
+                  <span className="text-muted-foreground text-xs" aria-hidden="true">
+                    Updating…
+                  </span>
+                ) : null}
+              </span>
+            </MenuCheckboxItem>
+            <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
+              {capability.description}
+            </p>
+          </div>
+        ))}
+      </MenuGroup>
+    );
+  }
 
   return (
     <MenuGroup>

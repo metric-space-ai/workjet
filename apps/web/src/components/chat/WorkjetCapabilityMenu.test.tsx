@@ -21,6 +21,7 @@ import {
   WORKJET_GREPPY_DISPLAY_NAME,
   WORKJET_GREPPY_FAILURE_TOAST,
   type WorkjetCapabilityMenuProps,
+  workjetComposerCapabilityList,
 } from "./WorkjetCapabilityMenu";
 
 const greppyManifest = builtInCapabilityManifests.find(({ id }) => id === GREPPY_CAPABILITY_ID);
@@ -257,5 +258,57 @@ describe("executeWorkjetCapabilityToggle", () => {
 
     expect(setVisibleConfig).toHaveBeenLastCalledWith(workerConfig);
     expect(notifyFailure).not.toHaveBeenCalled();
+  });
+});
+
+/** Every string in the element tree; Menu parts cannot render standalone. */
+function menuText(props: WorkjetCapabilityMenuProps): string {
+  const parts: string[] = [];
+  const walk = (node: unknown): void => {
+    if (typeof node === "string") {
+      parts.push(node);
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (isValidElement(node)) {
+      walk((node.props as { children?: ReactNode }).children);
+    }
+  };
+  walk(WorkjetCapabilityMenuContent(props));
+  return parts.join(" | ");
+}
+
+describe("Extras: every capability the host can activate", () => {
+  it("offers the whole catalog once the caller can toggle any of it", () => {
+    // web-search and web-stack-browser declare ALL_ADAPTERS, so they were
+    // available to this host all along — the menu just never offered them.
+    const text = menuText({
+      greppyEnabled: false,
+      busy: false,
+      enabledCapabilityIds: ["web-search"],
+      onGreppyEnabledChange: vi.fn(),
+      onCapabilityEnabledChange: vi.fn(),
+    });
+
+    expect(workjetComposerCapabilityList().length).toBeGreaterThan(1);
+    for (const capability of workjetComposerCapabilityList()) {
+      expect(text).toContain(capability.displayName);
+    }
+  });
+
+  it("shows Greppy alone when the caller wired only Greppy", () => {
+    // Rendering switches a caller cannot honour would be worse than one row:
+    // they would look live and silently do nothing.
+    const text = menuText({
+      greppyEnabled: true,
+      busy: false,
+      onGreppyEnabledChange: vi.fn(),
+    });
+
+    expect(text).toContain(WORKJET_GREPPY_DISPLAY_NAME);
+    expect(text).not.toContain("Web Search");
   });
 });

@@ -19,9 +19,9 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
     to: "/settings/connections",
   },
   {
-    id: "providers",
-    title: "Providers",
-    to: "/settings/providers",
+    id: "harnesses",
+    title: "Harnesses",
+    to: "/settings/harnesses",
   },
   {
     id: "provider-updates",
@@ -75,7 +75,7 @@ describe("searchSettings", () => {
       { id: "workjet-workers", title: "Workers", to: "/settings/workjet" },
     ]);
     expect(searchSettings("provider accounts")).toEqual([
-      { id: "workjet-provider-accounts", title: "Provider accounts", to: "/settings/providers" },
+      { id: "workjet-provider-accounts", title: "Provider accounts", to: "/settings/models" },
     ]);
     expect(searchSettings("llm routes")).toEqual([
       { id: "workjet-llm-routes", title: "LLM routes", to: "/settings/workjet" },
@@ -102,7 +102,8 @@ describe("searchSettings", () => {
     expect(workjetIds).toEqual([
       "workjet-workers",
       "workjet-computers",
-      // Provider accounts now resolve to /settings/providers: one surface.
+      // Provider accounts are LLM accounts and resolve to /settings/models;
+      // harnesses are CLI runtimes and live on /settings/harnesses.
       "workjet-llm-routes",
       "workjet-prompt",
       "workjet-telemetry",

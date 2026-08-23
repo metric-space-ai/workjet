@@ -62,7 +62,7 @@ export function SidebarProviderUpdatePill() {
   }, [effectiveVisibleAfterIso, visibleAfterIso]);
 
   const openProviderSettings = useCallback(() => {
-    void navigate({ to: "/settings/providers" });
+    void navigate({ to: "/settings/harnesses" });
   }, [navigate]);
   const displayedView = renderedView ?? view;
   const dismissAfterVisibleMs = displayedView?.dismissAfterVisibleMs;

@@ -217,7 +217,26 @@ function EnvironmentUnavailableRow({
   );
 }
 
-export function ProviderSettingsPanel() {
+/**
+ * Which half of this surface to render.
+ *
+ * Harness runtimes and LLM accounts were merged onto one "Providers" page on
+ * the theory that one surface is simpler. In practice the page held two
+ * unrelated things behind a name that read as one, and the LLM accounts —
+ * where Kimi, GLM, MiniMax and the rest are added — sat below the fold with
+ * no menu entry of their own. They were, in the owner's words, impossible to
+ * find. So the page splits: harnesses are CLI runtimes, models are the LLM
+ * accounts, and each gets its own entry in the settings sidebar.
+ *
+ * The device picker stays on both, because both are per-environment.
+ */
+export type ProviderSettingsSections = "harnesses" | "models";
+
+export function ProviderSettingsPanel({
+  sections = "harnesses",
+}: {
+  readonly sections?: ProviderSettingsSections;
+} = {}) {
   const { environments, isReady } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const options = useMemo(
@@ -300,18 +319,16 @@ export function ProviderSettingsPanel() {
         </SettingsSection>
       ) : null}
 
-      {selectedEnvironment ? (
+      {sections === "harnesses" && selectedEnvironment ? (
         <SelectedEnvironmentProviderSettings
           key={selectedEnvironment.environmentId}
           environment={selectedEnvironment}
         />
       ) : null}
 
-      {/*
-        One provider surface: the Workjet gateway's LLM accounts sit beneath the
-        harness runtimes instead of on a competing Workjet settings tab.
-      */}
-      <WorkjetGatewayAccountsSection environmentId={effectiveEnvironmentId} />
+      {sections === "models" ? (
+        <WorkjetGatewayAccountsSection environmentId={effectiveEnvironmentId} />
+      ) : null}
     </SettingsPageContainer>
   );
 }
@@ -726,7 +743,7 @@ export function EnvironmentProviderSettings({
   return (
     <>
       <SettingsSection
-        id={searchableSetting("providers").id}
+        id={searchableSetting("harnesses").id}
         // Named for what these actually are — harness CLI runtimes — so the
         // gateway account section below can never read as a rival "providers".
         title="Harness runtimes"

@@ -155,7 +155,7 @@ export function ProviderUpdatePrimaryNotification() {
       if (activeToast && (toastId === undefined || activeToast.toastId === toastId)) {
         activeToastRef.current = null;
       }
-      void navigate({ to: "/settings/providers" });
+      void navigate({ to: "/settings/harnesses" });
     },
     [navigate],
   );

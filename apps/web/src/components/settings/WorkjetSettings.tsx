@@ -901,14 +901,14 @@ export function WorkjetSettingsView({
           title={searchableSetting("workjet-provider-accounts").title}
         >
           <SettingsRow
-            title="Provider accounts moved to Settings → Providers"
-            description="Workjet gateway accounts are configured on the single provider surface, beneath the harness runtimes."
+            title="Provider accounts moved to Settings → Models"
+            description="LLM provider accounts are configured under Settings → Models. Harnesses are CLI runtimes and have their own section."
             control={
               <a
-                href="/settings/providers#workjet-provider-accounts"
+                href="/settings/models#workjet-provider-accounts"
                 className="text-sm font-medium text-primary underline-offset-4 hover:underline"
               >
-                Open Providers
+                Open Models
               </a>
             }
           />

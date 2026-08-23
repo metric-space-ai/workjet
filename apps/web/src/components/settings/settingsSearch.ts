@@ -2,7 +2,8 @@ export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
-  | "/settings/providers"
+  | "/settings/harnesses"
+  | "/settings/models"
   | "/settings/source-control"
   | "/settings/workjet"
   | "/settings/connections"
@@ -23,7 +24,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
-  "/settings/providers": "Providers",
+  "/settings/harnesses": "Harnesses",
+  "/settings/models": "Models",
   "/settings/source-control": "Source Control",
   "/settings/workjet": "Workjet",
   "/settings/connections": "Connections",
@@ -182,9 +184,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/keybindings",
   },
   {
-    id: "providers",
-    title: "Providers",
-    to: "/settings/providers",
+    id: "harnesses",
+    title: "Harnesses",
+    to: "/settings/harnesses",
   },
   {
     id: "source-control",
@@ -204,15 +206,16 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-provider-accounts",
     title: "Provider accounts",
-    // Single provider surface: the interactive gateway account section lives
-    // on the Providers page; the Workjet tab keeps only a pointer.
-    to: "/settings/providers",
+    // LLM accounts live on the Models page. Harnesses are CLI runtimes and
+    // have their own page — the two were merged once and became impossible to
+    // find, because "Providers" read as one thing and held two.
+    to: "/settings/models",
   },
   {
     id: "workjet-provider-pools",
     title: "Gateway pools",
-    // Sits directly under the account list on the same Providers page.
-    to: "/settings/providers",
+    // Directly under the account list, on the same Models page.
+    to: "/settings/models",
   },
   {
     id: "workjet-llm-routes",

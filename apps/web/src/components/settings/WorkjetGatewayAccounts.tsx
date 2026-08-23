@@ -476,7 +476,7 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
   return (
     <SettingsSection
       id={searchableSetting("workjet-provider-accounts").id}
-      title="Workjet gateway accounts"
+      title="LLM providers"
       headerAction={
         <div className="flex flex-wrap justify-end gap-2">
           <Button
@@ -505,7 +505,7 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
     >
       <SettingsRow
         title="Provider gateway"
-        description="These are the LLM accounts owned by the Workjet provider gateway on the selected server. The harness runtimes above are CLI runtimes, not LLM accounts, and are never listed here."
+        description="Connect the LLM accounts the provider gateway routes through on the selected server. Harnesses are CLI runtimes, live under Settings → Harnesses, and never appear here."
         status={
           <GatewayRuntimeStatus
             status={state.status}

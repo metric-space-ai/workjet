@@ -18,8 +18,9 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkjetRouteImport } from './routes/settings.workjet'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
-import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
+import { Route as SettingsHarnessesRouteImport } from './routes/settings.harnesses'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
@@ -75,14 +76,19 @@ const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   path: '/source-control',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
-  id: '/providers',
-  path: '/providers',
+const SettingsModelsRoute = SettingsModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   id: '/keybindings',
   path: '/keybindings',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsHarnessesRoute = SettingsHarnessesRouteImport.update({
+  id: '/harnesses',
+  path: '/harnesses',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
@@ -152,8 +158,9 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
-  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -173,8 +180,9 @@ export interface FileRoutesByTo {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
-  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/': typeof ChatIndexRoute
@@ -197,8 +205,9 @@ export interface FileRoutesById {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
-  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/_chat/': typeof ChatIndexRoute
@@ -222,8 +231,9 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
+    | '/settings/harnesses'
     | '/settings/keybindings'
-    | '/settings/providers'
+    | '/settings/models'
     | '/settings/source-control'
     | '/settings/workjet'
     | '/$environmentId/$threadId'
@@ -243,8 +253,9 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
+    | '/settings/harnesses'
     | '/settings/keybindings'
-    | '/settings/providers'
+    | '/settings/models'
     | '/settings/source-control'
     | '/settings/workjet'
     | '/'
@@ -266,8 +277,9 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
+    | '/settings/harnesses'
     | '/settings/keybindings'
-    | '/settings/providers'
+    | '/settings/models'
     | '/settings/source-control'
     | '/settings/workjet'
     | '/_chat/'
@@ -351,11 +363,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSourceControlRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/providers': {
-      id: '/settings/providers'
-      path: '/providers'
-      fullPath: '/settings/providers'
-      preLoaderRoute: typeof SettingsProvidersRouteImport
+    '/settings/models': {
+      id: '/settings/models'
+      path: '/models'
+      fullPath: '/settings/models'
+      preLoaderRoute: typeof SettingsModelsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/keybindings': {
@@ -363,6 +375,13 @@ declare module '@tanstack/react-router' {
       path: '/keybindings'
       fullPath: '/settings/keybindings'
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/harnesses': {
+      id: '/settings/harnesses'
+      path: '/harnesses'
+      fullPath: '/settings/harnesses'
+      preLoaderRoute: typeof SettingsHarnessesRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/general': {
@@ -460,8 +479,9 @@ interface SettingsRouteChildren {
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsHarnessesRoute: typeof SettingsHarnessesRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
-  SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsWorkjetRoute: typeof SettingsWorkjetRoute
 }
@@ -472,8 +492,9 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsHarnessesRoute: SettingsHarnessesRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
-  SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsModelsRoute: SettingsModelsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsWorkjetRoute: SettingsWorkjetRoute,
 }

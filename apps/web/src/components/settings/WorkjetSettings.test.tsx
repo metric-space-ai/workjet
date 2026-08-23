@@ -271,7 +271,7 @@ describe("Workjet configuration settings", () => {
     expect(workjetSectionFromHash("#unknown")).toBeNull();
   });
 
-  it("points the provider-accounts tab at the single Providers surface", () => {
+  it("points the provider-accounts tab at the Models page", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
@@ -308,8 +308,8 @@ describe("Workjet configuration settings", () => {
       />,
     );
 
-    expect(markup).toContain("Provider accounts moved to Settings → Providers");
-    expect(markup).toContain('href="/settings/providers#workjet-provider-accounts"');
+    expect(markup).toContain("Provider accounts moved to Settings → Models");
+    expect(markup).toContain('href="/settings/models#workjet-provider-accounts"');
     // The tab must not duplicate the interactive gateway surface.
     expect(markup).not.toContain("Add account");
     expect(markup).not.toContain("Claude Work");

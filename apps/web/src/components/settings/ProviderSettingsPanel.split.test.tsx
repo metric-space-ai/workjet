@@ -48,47 +48,51 @@ function environment(environmentId: EnvironmentId, label: string, primary: boole
   };
 }
 
-describe("the single provider surface", () => {
+describe("harnesses and models are separate surfaces", () => {
   beforeEach(() => {
     hooks.reset();
     environmentState.environments = [environment(primaryEnvironmentId, "This device", true)];
   });
 
-  function render() {
+  function render(sections: "harnesses" | "models") {
     hooks.beginRender();
-    return ProviderSettingsPanel();
+    return ProviderSettingsPanel({ sections });
   }
 
-  it("renders the harness runtimes and the Workjet gateway accounts on one page", () => {
-    const panel = render();
-
-    // Harness CLI runtimes for the selected device…
-    const runtimes = visitElements(
+  const harnessRuntimesOf = (panel: unknown, environmentId: EnvironmentId) =>
+    visitElements(
       panel,
       (element) =>
         (element.props as { environment?: { environmentId?: EnvironmentId } }).environment
-          ?.environmentId === primaryEnvironmentId,
+          ?.environmentId === environmentId,
     );
-    expect(runtimes).not.toBeNull();
+  const gatewayOf = (panel: unknown) =>
+    visitElements(panel, (element) => element.type === WorkjetGatewayAccountsSection);
 
-    // …and the gateway's LLM accounts directly beneath them, not on a second
-    // competing settings page.
-    const gateway = visitElements(
-      panel,
-      (element) => element.type === WorkjetGatewayAccountsSection,
-    );
+  // The two halves were merged onto one "Providers" page, and the LLM accounts
+  // ended up below the fold with no menu entry of their own — unfindable in
+  // practice. These tests pin the split: each page shows its own half and NOT
+  // the other, so a future re-merge cannot pass silently.
+  it("shows harness runtimes and no gateway accounts on the harnesses page", () => {
+    const panel = render("harnesses");
+
+    expect(harnessRuntimesOf(panel, primaryEnvironmentId)).not.toBeNull();
+    expect(gatewayOf(panel)).toBeNull();
+  });
+
+  it("shows gateway accounts and no harness runtimes on the models page", () => {
+    const panel = render("models");
+
+    const gateway = gatewayOf(panel);
     expect(gateway).not.toBeNull();
     expect(gateway?.props.environmentId).toBe(primaryEnvironmentId);
+    expect(harnessRuntimesOf(panel, primaryEnvironmentId)).toBeNull();
   });
 
   it("scopes the gateway section to the device the page is showing", () => {
     environmentState.environments = [environment(remoteEnvironmentId, "Remote device", false)];
-    const panel = render();
+    const panel = render("models");
 
-    const gateway = visitElements(
-      panel,
-      (element) => element.type === WorkjetGatewayAccountsSection,
-    );
-    expect(gateway?.props.environmentId).toBe(remoteEnvironmentId);
+    expect(gatewayOf(panel)?.props.environmentId).toBe(remoteEnvironmentId);
   });
 });

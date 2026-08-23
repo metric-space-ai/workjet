@@ -131,9 +131,23 @@ async function testConnection() {
   renderApp();
 }
 
+// --- Fernprotokoll ---------------------------------------------------------
+// Auf der Brille gibt es keine Konsole. Ohne diese Meldungen ist jeder
+// Startfehler unsichtbar und man raet. Geht nur an den Entwicklungsserver,
+// von dem die App selbst geladen wurde.
+function melde(text) {
+  try {
+    fetch(`${location.origin}/__log`, { method: 'POST', body: String(text) }).catch(() => {});
+  } catch {}
+}
+window.addEventListener('error', (e) => melde(`FEHLER ${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', (e) => melde(`ABBRUCH ${e.reason?.message || e.reason}`));
+
 async function main() {
+  melde('main() gestartet');
   const bridge = await waitForEvenAppBridge();
   appBridge = bridge;
+  melde('Bruecke zur Even-App da');
   // Die Instanz liefert die Karten; die Fixture greift nur, solange kein
   // Endpunkt konfiguriert ist (Simulator, Erststart).
   const instance = activeInstance(settings);
@@ -160,11 +174,19 @@ async function main() {
     const detail = event.detail ?? event;
     const imu = imuFrom(detail);
     if (imu) {
+      melde(`IMU x=${imu.x} y=${imu.y} z=${imu.z}`);
       plugin.handleImu(imu);
       return;
     }
     const osEvent = osEventFrom(detail);
-    if (osEvent !== null) plugin.handleEvent(osEvent);
+    if (osEvent !== null) {
+      melde(`Ereignis ${osEvent}`);
+      plugin.handleEvent(osEvent);
+      return;
+    }
+    // Unerkanntes Ereignis: genau hier gehen Kopfneigung und Tasten verloren,
+    // wenn das Geraet ein anderes Format schickt als erwartet.
+    melde(`UNERKANNT ${JSON.stringify(detail).slice(0, 220)}`);
   });
 
   // Handy-Bedienung: dieselben Aktionen wie im Brillenmenue.
@@ -172,9 +194,21 @@ async function main() {
   // Gyroskop einschalten: ohne Meldungen gibt es keine Kopfneigung.
   // iMUReportEn=1, reportFrq in Hz — niedrig, es geht nur um die Lage.
   await bridge.callEvenApp(EvenAppMethod.ImuControl, { iMUReportEn: 1, reportFrq: 5 })
-    .catch((error) => console.warn('[decision-hub] IMU nicht verfügbar', error?.message || error));
+    .then((r) => melde(`IMU eingeschaltet = ${JSON.stringify(r)}`))
+    .catch((error) => melde(`IMU-Einschalten fehlgeschlagen: ${error?.message || error}`));
 
-  await plugin.start();
+  melde('Plugin startet');
+  try {
+    await plugin.start();
+    melde('Plugin laeuft — Anzeige gesendet');
+  } catch (fehler) {
+    // Die Brille kann fehlen oder schweigen — die Handy-Ansicht muss dennoch
+    // da sein, sonst steht der Nutzer vor einem leeren Bildschirm.
+    melde(`Plugin-Start fehlgeschlagen: ${fehler.message}`);
+    health.lastError = fehler.message;
+  }
+  renderApp();
+  melde('Handy-Ansicht gezeichnet');
   const count = plugin.state.count;
   status(
     count === 1 ? "1 offene Entscheidung" : `${count} offene Entscheidungen`,

@@ -101,3 +101,38 @@ test("the page passes the SDK's own validation", async () => {
   const result = validateEvenHubPageContainer(page);
   assert.ok(result?.ok !== false, `SDK validation: ${JSON.stringify(result)}`);
 });
+
+// Die Firmware weist eine Seite als Ganzes zurueck, wenn ein einziger
+// Container ausserhalb der Grenzen liegt — und nennt dabei nicht welcher.
+// Der Simulator akzeptiert solche Seiten, das Geraet nicht. Deshalb hier.
+test("every page respects the firmware limits for containers", async () => {
+  const { createDecisionHubPlugin } = await import("../src/plugin.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { OS_EVENT } = await import("../src/nav.mjs");
+  const seiten = [];
+  const sdk = {
+    async createStartUpPageContainer(p) { seiten.push(p); return 0; },
+    async rebuildPageContainer(p) { seiten.push(p); return true; },
+    async textContainerUpgrade() { return true; },
+    async updateImageRawData() { return "success"; },
+  };
+  const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
+  await plugin.start();
+  for (let i = 0; i < 20; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+
+  for (const seite of seiten) {
+    const text = seite.textObject || [];
+    const bild = seite.imageObject || [];
+    assert.ok(text.length <= 8, `at most 8 text containers, got ${text.length}`);
+    assert.ok(bild.length <= 4, `at most 4 image containers, got ${bild.length}`);
+    const gesamt = text.length + bild.length;
+    assert.ok(gesamt >= 1 && gesamt <= 12, `1..12 containers, got ${gesamt}`);
+    assert.equal(seite.containerTotalNum, gesamt, "the announced count must match reality");
+    for (const c of bild) {
+      assert.ok(c.width >= 20 && c.width <= 288, `image "${c.containerName}" is ${c.width} wide, allowed is 20..288`);
+      assert.ok(c.height >= 20 && c.height <= 144, `image "${c.containerName}" is ${c.height} high, allowed is 20..144`);
+    }
+    const ids = [...text, ...bild].map((c) => c.containerID);
+    assert.equal(new Set(ids).size, ids.length, "container ids must be unique across the page");
+  }
+});

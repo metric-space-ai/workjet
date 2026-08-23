@@ -29,7 +29,7 @@ const body = (calls) =>
 
 test("scrolling down walks through every page of the case", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   const seen = [body(calls)];
   for (let i = 0; i < 4; i += 1) {
@@ -44,7 +44,7 @@ test("scrolling down walks through every page of the case", async () => {
 
 test("scrolling up returns to the previous page", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   const first = body(calls);
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
@@ -56,7 +56,7 @@ test("scrolling up returns to the previous page", async () => {
 
 test("a press opens the long version and scrolling pages through it", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   const kurz = body(calls);
   await plugin.handleEvent(OS_EVENT.CLICK);
@@ -70,7 +70,7 @@ test("a press opens the long version and scrolling pages through it", async () =
 
 test("the end of the long version continues into the next page", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.handleEvent(OS_EVENT.CLICK);          // MAIL lang
   for (let i = 0; i < 6; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
@@ -80,7 +80,7 @@ test("the end of the long version continues into the next page", async () => {
 
 test("a double press collapses the long version again", async () => {
   const { sdk, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(plugin.state.level, "detail");
@@ -90,7 +90,7 @@ test("a double press collapses the long version again", async () => {
 
 test("past the last page the focus reaches every action icon, then the next case", async () => {
   const { sdk, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   const start = plugin.state.index;
   const focusSeen = new Set();
@@ -105,7 +105,7 @@ test("past the last page the focus reaches every action icon, then the next case
 
 test("a press on an icon answers, a press on a page never does", async () => {
   const { sdk, answers, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(answers.length, 0, "pressing a page expands, it must not decide");
@@ -118,7 +118,7 @@ test("a press on an icon answers, a press on a page never does", async () => {
 
 test("no page ever overflows its container", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   for (let i = 0; i < 25; i += 1) {
     const lines = body(calls).split("\n").length;
@@ -129,7 +129,7 @@ test("no page ever overflows its container", async () => {
 
 test("head tilt hides and shows the display", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source, tiltOptions: { threshold: 25 } });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0, tiltOptions: { threshold: 25 } });
   await plugin.start();
   await plugin.handleImu({ x: 0, y: 0, z: 0 });
   await plugin.handleImu({ x: 0, y: -40, z: 0 });
@@ -142,7 +142,7 @@ test("head tilt hides and shows the display", async () => {
 
 test("scrolling up past the first page reaches the previous case", async () => {
   const { sdk, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   // erst zum zweiten Vorgang, dann wieder hoch
   const start = plugin.state.index;
@@ -154,7 +154,7 @@ test("scrolling up past the first page reaches the previous case", async () => {
 
 test("a second press collapses the long version again", async () => {
   const { sdk, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(plugin.state.level, "detail");
@@ -164,7 +164,7 @@ test("a second press collapses the long version again", async () => {
 
 test("from the icons a scroll up returns into the pages", async () => {
   const { sdk, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   while (plugin.state.focusIcon < 0) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
   while (plugin.state.focusIcon > 0) await plugin.handleEvent(OS_EVENT.SCROLL_TOP);
@@ -205,7 +205,7 @@ test("an answered demo case disappears from the queue", async () => {
 
 test("the clock asks how long before it snoozes", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   const vorher = (await source.load()).decisions.length;
   await plugin.act("vertagt");
@@ -220,7 +220,7 @@ test("the clock asks how long before it snoozes", async () => {
 
 test("a snooze can be abandoned without deciding anything", async () => {
   const { sdk, calls, source } = harness();
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.act("vertagt");
   assert.ok(body(calls).includes("in 1 Stunde"));
@@ -232,7 +232,7 @@ test("the pencil starts and stops dictation and says so", async () => {
   const { sdk, calls, source } = harness();
   const audio = [];
   sdk.audioControl = async (on, quelle) => { audio.push({ on, quelle }); return true; };
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.act("korrektur");
   assert.deepEqual(audio[0], { on: true, quelle: "glasses" }, "the glasses microphone must be switched on");
@@ -244,8 +244,39 @@ test("the pencil starts and stops dictation and says so", async () => {
 test("a missing microphone is reported, not silently ignored", async () => {
   const { sdk, calls, source } = harness();
   sdk.audioControl = async () => false;
-  const plugin = createDecisionHubPlugin({ sdk, source });
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
   await plugin.start();
   await plugin.act("korrektur");
   assert.ok(body(calls).includes("nicht verfügbar"));
+});
+
+// Auf der echten Brille loest eine Wischbewegung mehrere Scroll-Ereignisse
+// aus. Ohne Sperrzeit blaettert die Anzeige durch mehrere Seiten auf einmal.
+test("a burst of scroll events advances exactly one page", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 320 });
+  await plugin.start();
+  const start = plugin.state.sectionIndex;
+  for (let i = 0; i < 5; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  assert.equal(plugin.state.sectionIndex, start + 1, "one swipe, one step");
+});
+
+test("a deliberate second swipe still works", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 5 });
+  await plugin.start();
+  const start = plugin.state.sectionIndex;
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  await new Promise((r) => setTimeout(r, 20));
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  assert.equal(plugin.state.sectionIndex, start + 2, "the lock must not swallow real swipes");
+});
+
+test("a press is never swallowed by the scroll lock", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 5000 });
+  await plugin.start();
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  assert.equal(plugin.state.level, "detail", "pressing must stay responsive");
 });

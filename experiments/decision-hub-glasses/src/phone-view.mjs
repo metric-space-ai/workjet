@@ -113,11 +113,24 @@ export function renderSettings(root, ctx) {
     row.append(test, cut);
     conn.append(row);
   } else {
+    // Der gewollte Weg: den QR aus dem Decision Hub abfotografieren. Ein
+    // Zugangstoken auf einem Handy abzutippen ist keine Bedienung.
+    const scan = el("button", "dh-btn dh-btn--yes", "QR-Code scannen");
+    scan.type = "button";
+    scan.addEventListener("click", () => ctx.onScan?.());
+    conn.append(scan);
     conn.append(
       el(
         "p",
         "dh-note",
-        "Einladung aus CTOX einfügen: Business OS → Desktop-Einladung. Sie enthält Instanz und Zugang; ein Passwort wird hier nie eingegeben.",
+        "Decision Hub im Browser öffnen → Brille koppeln → Code abfotografieren.",
+      ),
+    );
+    conn.append(
+      el(
+        "p",
+        "dh-note",
+        "Oder Einladung einfügen: Business OS → Desktop-Einladung. Ein Passwort wird hier nie eingegeben.",
       ),
     );
     const invite = input({
@@ -127,7 +140,7 @@ export function renderSettings(root, ctx) {
       spellcheck: false,
     });
     conn.append(field("Einladung", invite));
-    const connect = el("button", "dh-btn dh-btn--yes", "Verbinden");
+    const connect = el("button", "dh-btn", "Verbinden");
     connect.type = "button";
     connect.addEventListener("click", () => ctx.onConnect(invite.value));
     conn.append(connect);

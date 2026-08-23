@@ -7,13 +7,42 @@
 import { decisionIcons, tabLabel } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, LEVEL } from './layout.mjs';
-import { navigate, initialNav, SNOOZE_OPTIONS } from './nav.mjs';
+import { navigate, initialNav, SNOOZE_OPTIONS, OS_EVENT } from './nav.mjs';
 import { createTiltGate } from './tilt.mjs';
+
+// Meldeweg zum Entwicklungsserver; auf der Brille gibt es keine Konsole.
+const melde = (t) => {
+  try { fetch(`${location.origin}/__log`, { method: 'POST', body: String(t) }).catch(() => {}); } catch {}
+};
+
+/**
+ * Ein Brueckenaufruf, der nicht antwortet, friert die App lautlos ein — genau
+ * so blieb der Start haengen. Deshalb bekommt jeder Aufruf eine Frist.
+ */
+async function mitFrist(name, aufruf, ms = 8000) {
+  melde(`-> ${name}`);
+  let timer;
+  const frist = new Promise((_, ab) => { timer = setTimeout(() => ab(new Error(`${name} antwortet seit ${ms}ms nicht`)), ms); });
+  try {
+    const wert = await Promise.race([aufruf(), frist]);
+    melde(`<- ${name} = ${JSON.stringify(wert)}`);
+    return wert;
+  } catch (fehler) {
+    melde(`!! ${name}: ${fehler.message}`);
+    throw fehler;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export function createDecisionHubPlugin({
   sdk,
   source,
   demo = false,
+  // Eine Wischbewegung auf dem Buegel loest mehrere Scroll-Ereignisse aus.
+  // Ohne Sperrzeit rauscht die Anzeige durch mehrere Seiten und ist auf der
+  // echten Brille nicht bedienbar. Wert in Millisekunden.
+  scrollSperreMs = 320,
   onError = () => {},
   onPaint = () => {},
   filter = () => true,
@@ -28,6 +57,7 @@ export function createDecisionHubPlugin({
   let lastSignature = null;
   let visible = true;
   let diktat = null;   // { seit, frames } solange das Mikrofon laeuft
+  const gesendeteBilder = new Map();  // containerID -> Fingerabdruck
   const tilt = createTiltGate(tiltOptions);
 
   const decision = () => decisions[index];
@@ -80,18 +110,28 @@ export function createDecisionHubPlugin({
       : 'hidden';
     const page = visible ? buildPage(view) : blankPage();
     if (!started) {
-      const result = await sdk.createStartUpPageContainer(page);
+      const result = await mitFrist('createStartUpPageContainer', () => sdk.createStartUpPageContainer(page));
       if (result !== 0 && result?.code !== 0) {
         throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
       }
       started = true;
     } else if (signature !== lastSignature) {
-      await sdk.rebuildPageContainer(page);
+      await mitFrist('rebuildPageContainer', () => sdk.rebuildPageContainer(page));
     }
     if (signature !== lastSignature) {
       // Ausgeblendet gibt es nichts zu zeichnen — das spart Funk und Strom.
       if (visible) {
-        for (const payload of buildBitmaps(view)) await sdk.updateImageRawData(payload);
+        for (const payload of buildBitmaps(view)) {
+          // Nur senden, was sich wirklich geaendert hat. Alles bei jedem
+          // Schritt neu zu funken ueberlastet die Strecke und quittiert mit
+          // sendFailed — dann fehlen Icons und Punkte ganz.
+          const abdruck = payload.fingerprint;
+          if (abdruck && gesendeteBilder.get(payload.containerID) === abdruck) continue;
+          const ergebnis = await mitFrist('updateImageRawData', () =>
+            sdk.updateImageRawData({ containerID: payload.containerID, imageData: payload.imageData }));
+          if (ergebnis === 0 || ergebnis === 'success') gesendeteBilder.set(payload.containerID, abdruck);
+          else gesendeteBilder.delete(payload.containerID);
+        }
       }
       lastSignature = signature;
     }
@@ -165,9 +205,16 @@ export function createDecisionHubPlugin({
     await paint();
   }
 
+  let letzterScroll = 0;
+
   async function handleEvent(osEvent) {
     const view = currentNav();
     if (!view) return;
+    if (osEvent === OS_EVENT.SCROLL_TOP || osEvent === OS_EVENT.SCROLL_BOTTOM) {
+      const jetzt = Date.now();
+      if (jetzt - letzterScroll < scrollSperreMs) return;   // Nachzuegler derselben Geste
+      letzterScroll = jetzt;
+    }
     const { nav: nextNav, action } = navigate(nav, osEvent, dimsOf(view));
     nav = nextNav;
     if (action?.type === 'activate') {

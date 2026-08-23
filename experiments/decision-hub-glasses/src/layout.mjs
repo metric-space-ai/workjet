@@ -38,7 +38,11 @@ const BAR_W = COL_W + CH_W;
 
 // Punkte fuer die Seitennavigation
 const DOTS_X = COL_X + CH_W + COL_W + 2;
-const DOTS_W = 8;
+// Bildcontainer der Brille muessen mindestens 20 breit sein (SDK: 20~288).
+// Mit 8 wies die Firmware die GANZE Seite als invalid zurueck — die App
+// startete gar nicht. Der Streifen wird 20 breit, die Punkte darin bleiben
+// schmal gezeichnet.
+const DOTS_W = 20;
 
 // Lesebox rechts
 const BOX_X = DOTS_X + DOTS_W + 4;

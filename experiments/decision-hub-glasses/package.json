@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.14",
-    "jsqr": "^1.4.0"
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@evenrealities/evenhub-simulator": "^0.9.1",

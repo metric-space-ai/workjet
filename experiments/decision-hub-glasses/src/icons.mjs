@@ -116,5 +116,22 @@ export function renderChannelColumn({ width, height, pitch, channels, active, ro
 export function bitmapPayload(bmp, containerID) {
   // Das Feld heisst imageData (ImageRawDataUpdate); mapRawData gehoert zur
   // Fragment-Variante und wird vom Host mit "no image_data provided" quittiert.
-  return { containerID, imageData: toBase64(toBmp(bmp)) };
+  // Als Bytes statt Base64-Text: das SDK empfiehlt number[] (List<int>), und
+  // das Geraet quittierte den Text-Weg mit sendFailed.
+  const bytes = toBmp(bmp);
+  return { containerID, imageData: Array.from(bytes), fingerprint: bitmapFingerprint(bytes) };
+}
+
+/**
+ * Fingerabdruck eines Bildes, um unveraenderte nicht erneut zu funken.
+ * Drei Bilder bei JEDEM Schritt neu zu senden ueberlastet die Funkstrecke —
+ * genau daran scheiterte die Uebertragung.
+ */
+export function bitmapFingerprint(bytes) {
+  let h = 2166136261;
+  for (let i = 0; i < bytes.length; i += 1) {
+    h ^= bytes[i];
+    h = Math.imul(h, 16777619);
+  }
+  return `${bytes.length}:${(h >>> 0).toString(36)}`;
 }

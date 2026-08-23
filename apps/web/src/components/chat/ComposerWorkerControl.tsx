@@ -1,4 +1,4 @@
-import type { WorkjetWorkerProfile } from "@t3tools/contracts";
+import type { WorkjetHarness, WorkjetWorkerProfile } from "@t3tools/contracts";
 import { memo } from "react";
 import { UsersRoundIcon } from "lucide-react";
 
@@ -24,6 +24,35 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
  * than leaving a dead control.
  */
 export const MANUAL_WORKER_VALUE = "__manual__";
+
+/**
+ * Which provider instance a worker's harness runs on.
+ *
+ * A worker names a HARNESS ("claude-code"); the composer drives a provider
+ * INSTANCE ("claudeAgent"). Without this mapping choosing a worker could set a
+ * model but not the runtime it belongs to, which would silently run one
+ * worker’s model on another’s harness.
+ *
+ * `null` for a harness this build has no instance for — the caller must then
+ * leave the selection alone rather than guess, because guessing here sends the
+ * turn somewhere the operator did not choose.
+ */
+export function providerInstanceIdForHarness(harness: WorkjetHarness): string | null {
+  switch (harness) {
+    case "claude-code":
+      return "claudeAgent";
+    case "codex-cli":
+      return "codex";
+    case "opencode":
+      return "opencode";
+    case "grok-cli":
+      return "grok";
+    case "cursor-agent":
+      return "cursor";
+    default:
+      return null;
+  }
+}
 
 export interface ComposerWorkerControlProps {
   readonly workers: ReadonlyArray<WorkjetWorkerProfile>;

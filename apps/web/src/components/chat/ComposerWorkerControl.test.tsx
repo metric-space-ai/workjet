@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   ComposerWorkerControlView,
   MANUAL_WORKER_VALUE,
+  providerInstanceIdForHarness,
   type ComposerWorkerControlProps,
 } from "./ComposerWorkerControl";
 
@@ -128,5 +129,23 @@ describe("selection", () => {
 
     expect(onOpenWorkjetSettings).toHaveBeenCalledTimes(1);
     expect(onSelectWorker).not.toHaveBeenCalled();
+  });
+});
+
+describe("a worker's harness decides which runtime the turn uses", () => {
+  it("maps every harness this build ships a runtime for", () => {
+    // A worker names a HARNESS; the composer drives a provider INSTANCE.
+    // Without the mapping, choosing a worker would set its model but leave
+    // the previous runtime — one worker's model on another's harness.
+    expect(providerInstanceIdForHarness("claude-code")).toBe("claudeAgent");
+    expect(providerInstanceIdForHarness("codex-cli")).toBe("codex");
+    expect(providerInstanceIdForHarness("opencode")).toBe("opencode");
+    expect(providerInstanceIdForHarness("grok-cli")).toBe("grok");
+    expect(providerInstanceIdForHarness("cursor-agent")).toBe("cursor");
+  });
+
+  it("refuses to guess for a harness with no runtime here", () => {
+    // Guessing would send the turn to a runtime the operator never chose.
+    expect(providerInstanceIdForHarness("pi-code")).toBeNull();
   });
 });

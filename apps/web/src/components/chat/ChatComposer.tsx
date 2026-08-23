@@ -62,6 +62,7 @@ import {
   usePromptStashStore,
   type PromptStashEntry,
 } from "../../promptStashStore";
+import { providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
@@ -845,6 +846,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const workjetWorkers = settings.workjet?.workerProfiles ?? [];
   const [selectedWorkjetWorkerId, setSelectedWorkjetWorkerId] = useState<string | null>(null);
+  /**
+   * Choosing a worker must MOVE the turn, not just relabel the bar. A worker
+   * names a harness and a model, so both are applied together: applying the
+   * model alone would run this worker's model on the previous worker's
+   * runtime, which is worse than applying nothing.
+   *
+   * A harness this build has no runtime for changes nothing but the label —
+   * guessing a runtime would send the turn somewhere unchosen.
+   */
+  const handleSelectWorkjetWorker = useCallback(
+    (workerId: string | null) => {
+      setSelectedWorkjetWorkerId(workerId);
+      if (workerId === null) return;
+      const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
+      if (worker === undefined) return;
+      const instanceId = providerInstanceIdForHarness(worker.harness);
+      if (instanceId === null || !worker.modelId) return;
+      onProviderModelSelect(ProviderInstanceId.make(instanceId), worker.modelId);
+    },
+    [onProviderModelSelect, workjetWorkers],
+  );
 
   const [composerCursor, setComposerCursor] = useState(() =>
     collapseExpandedComposerCursor(prompt, prompt.length),
@@ -3099,7 +3121,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <ComposerFooterControls
                     workjetWorkers={workjetWorkers}
                     selectedWorkjetWorkerId={selectedWorkjetWorkerId}
-                    onSelectWorkjetWorker={setSelectedWorkjetWorkerId}
+                    onSelectWorkjetWorker={handleSelectWorkjetWorker}
                     traitsPicker={providerTraitsPicker}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     interactionMode={interactionMode}

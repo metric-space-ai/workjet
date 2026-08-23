@@ -11,6 +11,33 @@ Fehlermuster. Dieses Dokument trägt NUR das Offene.
 
 ---
 
+## -1 · SCHWERSTER BEFUND: Harnesses laufen im privaten Nutzerzustand
+
+Gemessen 2026-08-24: Ein CTOX-Chat erschien in der Codex-Desktop-App.
+Mechanismus, mit Code:
+
+- `CodexHomeLayout.ts:40` — ohne `homePath` fällt CTOX auf `~/.codex`
+  zurück, den PRIVATEN Codex-Zustand des Betreibers.
+- `CodexHomeLayout.ts:19` — `KNOWN_SHARED_DIRECTORIES` enthält
+  `"sessions"`: jede CTOX-Sitzung landet in `~/.codex/sessions`, das die
+  Codex-Desktop-App anzeigt. Auch der Overlay-Modus (`shadowHomePath`)
+  teilt Sitzungen weiter (schattiert nur log/memories/tmp).
+- Analog Claude: der Harness nutzt die private CLI-Anmeldung
+  (`~/.claude`), deren totes Token die App tagelang blockierte.
+
+Das Original hat es andersherum gebaut (`Defaults.swift:224`):
+`codex … exec --ignore-user-config --ephemeral` plus eigener Provider via
+CLIProxy (`model_providers.workjet.base_url`, `requires_openai_auth=false`).
+Harness = reiner Motor, keine Spur im Nutzerzustand, kein natives Login.
+
+FERTIG heißt: Harness-Sitzungen laufen in einem CTOX-eigenen Zustands-
+verzeichnis (Codex: eigenes `CODEX_HOME` bzw. `--ephemeral` für
+Einmal-Läufe; Claude: eigenes `CLAUDE_CONFIG_DIR`), Zugangsdaten kommen
+über das Gateway-Routing statt aus dem nativen Login, und ein Turn aus
+CTOX erscheint in KEINER anderen App. Achtung Migrationsfrage: bestehende
+Threads referenzieren Sitzungen im alten Ort; Kontinuität klären, bevor
+der Standard kippt.
+
 ## 0 · Sofort prüfen: bringt Gateway-Routing Claude zurück?
 
 `providerInstances.claudeAgent.routeViaGateway = true` ist seit 2026-08-24

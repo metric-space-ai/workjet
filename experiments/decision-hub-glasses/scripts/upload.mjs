@@ -185,12 +185,18 @@ async function main() {
   const nummer = version?.version || version?.versions?.[0]?.version;
   console.log(`Hochgeladen: Version ${nummer}`);
 
-  const kanal = wert('--branch=', 'beta');
+  // Standard: KEIN Kanal. Der Entwickler-Hub auf dem Handy zeigt genau die
+  // unveroeffentlichten (privaten) Versionen — sobald eine einem Kanal
+  // zugewiesen ist, verschwindet sie dort. Zum Testen auf dem eigenen Geraet
+  // ist "privat" also richtig; --branch=beta erst fuer fremde Tester.
+  const kanal = wert('--branch=', 'none');
   const emails = wert('--testers=', '').split(',').map((e) => e.trim()).filter(Boolean);
   if (kanal !== 'none') {
     await veroeffentlichen({ paketId, version: nummer, kanal, emails, token });
   }
-  console.log('Fertig. Die App erscheint in der Even-App auf dem Gerät des Testers.');
+  console.log(kanal === 'none'
+    ? 'Fertig. Die Version bleibt privat und erscheint im Entwickler-Hub der Even-App.'
+    : 'Fertig. Die App erscheint auf dem Gerät der eingetragenen Tester.');
 }
 
 main().catch((fehler) => raus(fehler?.stack || String(fehler)));

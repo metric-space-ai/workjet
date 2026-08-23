@@ -282,3 +282,23 @@ test("the action slot is reserved, so nothing jumps when icons appear", async ()
   assert.equal(zeilenVon(mit, ZEILE_NAME + 8), true, "the actions use the reserved slot");
   assert.equal(zeilenVon(ohne, ZEILE_NAME + 8), false, "which stays empty otherwise");
 });
+
+// Das SDK kennt keine Schriftgroesse — der einzige Hebel fuer Gewichtung
+// ist die Helligkeit (0..4).
+test("the summary is brighter than the full text", async () => {
+  const { buildPage, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail"], PANEL_CHARS),
+    tabs: ["REM"], tabIndex: 0, icons: [{ wert: "annehmen" }], betreff: "REM", typ: "TRIAGE",
+  };
+  const hell = (n) => buildPage(n).textObject.find((c) => c.containerName === "box-body").textColor;
+  const kurz = hell(nav);
+  const lang = hell({ ...nav, level: LEVEL.DETAIL });
+  assert.ok(kurz > lang, `summary ${kurz} must outweigh full text ${lang}`);
+  assert.ok(kurz <= 4 && lang >= 0, "and both stay in the allowed 0..4");
+});

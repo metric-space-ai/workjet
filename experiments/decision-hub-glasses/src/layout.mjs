@@ -255,6 +255,10 @@ function bauePage(nav) {
         height: BOX_H,
         borderWidth: 1,
         borderColor: focused ? 5 : 13,
+        // Schriftgroesse gibt es am Geraet nicht (das SDK kennt kein
+        // Schriftfeld). Der einzige Hebel ist die Helligkeit: die
+        // Kurzfassung steht voll, der Volltext eine Stufe darunter — man
+        // liest die Uebersicht im Vorbeigehen, den Volltext bewusst.
         borderRadius: 10,
         paddingLength: 10,
         content: framedBox(
@@ -263,7 +267,11 @@ function bauePage(nav) {
           PANEL_CHARS,
           CONTENT_LINES,
         ).join('\n'),
-        textColor: focused ? DIM : BRIGHT,
+        // Schriftgroesse gibt es am Geraet nicht — das SDK kennt kein
+        // Schriftfeld. Der einzige Hebel fuer Gewichtung ist die Helligkeit:
+        // die Kurzfassung steht voll, der Volltext eine Stufe darunter. Man
+        // ueberfliegt die Uebersicht, den Volltext liest man bewusst.
+        textColor: nav.level === LEVEL.DETAIL ? 3 : 4,
         isEventCapture: 1,
         zOrderIndex: 1,
       },

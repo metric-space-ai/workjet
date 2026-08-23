@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   gatewayObservedAgeLabel,
   parseModelIds,
+  poolsFromCatalog,
   gatewayPoolBehaviourDescription,
   gatewayPoolMemberStateLabel,
   WorkjetGatewayPoolsSectionView,
@@ -134,6 +135,22 @@ describe("gateway pool semantics copy", () => {
     expect(gatewayPoolMemberStateLabel(member("a"))).toBe("In rotation");
     expect(gatewayPoolMemberStateLabel(member("a", { selectable: false }))).toBe("Held back");
     expect(gatewayPoolMemberStateLabel({ ...member("a"), enabled: false })).toBe("Disabled");
+  });
+});
+
+describe("rendering while the catalog is still loading", () => {
+  it("renders instead of looping when there is no catalog yet", () => {
+    // `state.catalog?.providerPools ?? []` handed back a FRESH array each
+    // render, so the seed memo recomputed, which set state during render,
+    // which rendered again. React stops that with "Too many re-renders" —
+    // error #301 — and the whole app showed "Something went wrong." The
+    // window lasts exactly as long as the query is pending, which is every
+    // single reload.
+    // The property that actually matters: the SAME reference each time.
+    // A fresh array per call is what fed the loop, and static rendering does
+    // not reproduce it, so asserting "does not throw" would prove nothing.
+    expect(poolsFromCatalog(null)).toBe(poolsFromCatalog(null));
+    expect(() => render({ catalog: null, health: null, models: null })).not.toThrow();
   });
 });
 

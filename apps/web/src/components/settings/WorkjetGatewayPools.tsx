@@ -129,6 +129,24 @@ export function parseModelIds(text: string): ReadonlyArray<string> {
 
 const draftKey = (member: WorkjetGatewayPoolMember): string => String(member.accountId);
 
+/** One shared empty array, so "no catalog yet" has a stable identity. */
+const EMPTY_POOLS: ReadonlyArray<WorkjetGatewayProviderPool> = [];
+
+/**
+ * The pools to render, with a STABLE identity while the catalog is pending.
+ *
+ * `catalog?.providerPools ?? []` returns a fresh array on every call, which
+ * makes the seed memo recompute, which sets state during render, which renders
+ * again. React stops that with "Too many re-renders" — #301 — and the whole
+ * app shows "Something went wrong." for as long as the query is pending, which
+ * is every reload.
+ */
+export function poolsFromCatalog(
+  catalog: WorkjetGatewayCatalog | null,
+): ReadonlyArray<WorkjetGatewayProviderPool> {
+  return catalog?.providerPools ?? EMPTY_POOLS;
+}
+
 const boundedInteger = (
   raw: string,
   minimum: number,
@@ -362,7 +380,12 @@ function GatewayModelsRow({
  * pools: it holds one pool per provider and cannot route to a subset of one.
  */
 export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSectionState) {
-  const pools = state.catalog?.providerPools ?? [];
+  // Memoised, not `?? []` inline: a fresh empty array on every render makes
+  // the seed below recompute, which sets state DURING render, which renders
+  // again — an infinite loop for exactly as long as the catalog is still
+  // loading. That window is every reload, and it took the whole app down with
+  // React error #301.
+  const pools = useMemo(() => poolsFromCatalog(state.catalog), [state.catalog]);
   const catalogStrategy = state.catalog?.routingStrategy ?? "round-robin";
   // Seeded from the catalog and re-seeded whenever the server's answer changes,
   // so a save elsewhere is never silently overwritten by a stale draft.
@@ -382,7 +405,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
       }
     }
     return { strategy: catalogStrategy, members };
-  }, [catalogStrategy, pools]);
+  }, [catalogStrategy, pools, state.catalog?.accounts]);
   const [draft, setDraft] = useState(seed);
   const [seenSeed, setSeenSeed] = useState(seed);
   if (seenSeed !== seed) {

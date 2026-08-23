@@ -126,10 +126,10 @@ describe("Workjet gateway account surface", () => {
     expect(markup).toContain("Antigravity");
     expect(markup).toContain("Claude Work");
     expect(markup).toContain("Enabled");
-    expect(markup).toContain("2 models");
+    expect(markup).toContain("2 models recorded");
     expect(markup).toContain("Codex Personal");
     expect(markup).toContain("Disabled");
-    expect(markup).toContain("1 model");
+    expect(markup).toContain("1 model recorded");
     // The prose that used to sit here — "No accounts are configured for this
     // provider." — said exactly what the button beside it says, seven times
     // over, and turned the page into something nobody could scan. Absence of

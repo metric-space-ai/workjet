@@ -1,6 +1,7 @@
 import {
   WorkjetGatewayOperationError,
   type WorkjetGatewayAccountSummary,
+  type WorkjetGatewayModelDiscovery,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayApiKeyProvider,
   type WorkjetGatewayFailureReason,
@@ -465,7 +466,17 @@ function AddApiKeyProgress({
   );
 }
 
-export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionState) {
+export function WorkjetGatewayAccountsSectionView(
+  state: WorkjetGatewaySectionState & {
+    /**
+     * Model discovery, supplied by useWorkjetGatewaySection alongside the
+     * account state. Optional so a caller that only has accounts still type
+     * checks; without it no account is ever marked as serving nothing, which
+     * is the safe direction — a false alarm is worse than a missing one.
+     */
+    readonly pools?: { readonly models: WorkjetGatewayModelDiscovery | null } | undefined;
+  },
+) {
   const phase = state.status?.phase ?? null;
   const canAdd = canAddWorkjetGatewayAccount(state);
   // Which provider's key field is open. Only one at a time, so a pasted key
@@ -473,6 +484,25 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
   const [openApiKeyProvider, setOpenApiKeyProvider] = useState<WorkjetGatewayApiKeyProvider | null>(
     null,
   );
+
+  /**
+   * Does the gateway serve ANY model for this provider?
+   *
+   * Two different things look alike and must not be conflated. An account's
+   * `modelIds` are the models recorded ON THE ACCOUNT; the gateway's catalog
+   * is what it serves for the provider. An account with no recorded models is
+   * completely normal — Claude serves 15 catalog models with zero recorded on
+   * the account. What is NOT normal is a provider the gateway has no catalog
+   * for and no recorded models either: that account cannot answer a request.
+   *
+   * `null` means discovery has not answered yet, which is not a fault to show.
+   */
+  const providerServesModels = (provider: WorkjetGatewayProvider): boolean | null => {
+    const entry = state.pools?.models?.providers.find(
+      (item: { readonly provider: WorkjetGatewayProvider }) => item.provider === provider,
+    );
+    return entry === undefined ? null : entry.models.length > 0;
+  };
 
   // Connected first: those are the rows with state worth reading. The rest is
   // a short menu of what can still be added.
@@ -597,11 +627,7 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
 
                     {accounts.map((account) => {
                       const suffix = maskGatewayCredentialSuffix(account.credentialSuffix);
-                      // An account the gateway routes through but for which it
-                      // discovered no model cannot serve a single request. It
-                      // was grey filler next to everything else; it is the one
-                      // thing on this page that needs acting on.
-                      const noModels = account.modelIds.length === 0;
+                      const serves = providerServesModels(provider);
                       return (
                         <div
                           key={account.id}
@@ -616,13 +642,19 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
                           <span
                             className={cn(
                               "shrink-0",
-                              noModels ? "text-amber-500" : "text-muted-foreground/70",
+                              serves === false ? "text-amber-500" : "text-muted-foreground/70",
                             )}
                           >
-                            {noModels
-                              ? "no models discovered"
-                              : `${account.modelIds.length} ${account.modelIds.length === 1 ? "model" : "models"}`}
-                            {" · "}
+                            {serves === false ? "serves no models · " : ""}
+                            {/*
+                              Explicitly "recorded on this account", never a
+                              bare model count: the bare number reads as what
+                              the provider serves, which is the gateway
+                              catalog and a different figure entirely.
+                            */}
+                            {account.modelIds.length > 0
+                              ? `${account.modelIds.length} ${account.modelIds.length === 1 ? "model" : "models"} recorded · `
+                              : ""}
                             {gatewayAccountRotationLabel(state.catalog, account) ??
                               (account.enabled ? "Enabled" : "Disabled")}
                           </span>

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   gatewayObservedAgeLabel,
+  isPoolDraftDirty,
   parseModelIds,
   poolsFromCatalog,
   gatewayPoolBehaviourDescription,
@@ -151,6 +152,21 @@ describe("rendering while the catalog is still loading", () => {
     // not reproduce it, so asserting "does not throw" would prove nothing.
     expect(poolsFromCatalog(null)).toBe(poolsFromCatalog(null));
     expect(() => render({ catalog: null, health: null, models: null })).not.toThrow();
+  });
+});
+
+describe("what counts as an edit worth saving", () => {
+  const draft = (models: string) => ({
+    strategy: "round-robin" as const,
+    members: new Map([["a", { enabled: true, priority: 0, weight: 1, models }]]),
+  });
+
+  it("editing only the model list enables Save", () => {
+    // `models` was missing from the dirty check, so the ONE field a
+    // catalog-less provider needs could be typed and never saved — the
+    // button simply stayed grey. Measured live before the fix.
+    expect(isPoolDraftDirty(draft(""), draft("glm-5.3"))).toBe(true);
+    expect(isPoolDraftDirty(draft("glm-5.3"), draft("glm-5.3"))).toBe(false);
   });
 });
 

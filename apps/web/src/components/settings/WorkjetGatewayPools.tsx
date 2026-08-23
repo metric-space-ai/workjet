@@ -115,6 +115,34 @@ interface MemberDraft {
   readonly models: string;
 }
 
+interface PoolDraft {
+  readonly strategy: WorkjetGatewayRoutingStrategy;
+  readonly members: ReadonlyMap<string, MemberDraft>;
+}
+
+/**
+ * Whether the operator changed anything Save must persist.
+ *
+ * Every field of MemberDraft is compared, `models` included. The model list
+ * was missing at first, so the ONE field a catalog-less provider needs could
+ * be typed and never saved — the button simply stayed grey, measured live.
+ * Comparing whole drafts field by field, in one exported predicate, keeps the
+ * next added field testable instead of silently un-saveable.
+ */
+export function isPoolDraftDirty(seed: PoolDraft, draft: PoolDraft): boolean {
+  if (draft.strategy !== seed.strategy) return true;
+  return [...draft.members].some(([accountId, member]) => {
+    const original = seed.members.get(accountId);
+    return (
+      original === undefined ||
+      original.enabled !== member.enabled ||
+      original.priority !== member.priority ||
+      original.weight !== member.weight ||
+      original.models !== member.models
+    );
+  });
+}
+
 /** Split the edited text into ids, dropping blanks and duplicates. */
 export function parseModelIds(text: string): ReadonlyArray<string> {
   return [
@@ -415,17 +443,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
 
   const isSaving = state.routing.status === "saving";
   const disabled = !state.canEdit || isSaving;
-  const isDirty =
-    draft.strategy !== seed.strategy ||
-    [...draft.members].some(([accountId, member]) => {
-      const original = seed.members.get(accountId);
-      return (
-        original === undefined ||
-        original.enabled !== member.enabled ||
-        original.priority !== member.priority ||
-        original.weight !== member.weight
-      );
-    });
+  const isDirty = isPoolDraftDirty(seed, draft);
 
   const save = () => {
     if (disabled || !isDirty) return;

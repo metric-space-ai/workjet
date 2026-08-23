@@ -541,7 +541,12 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
               ? null
               : providerModels.catalogAvailable
                 ? `${providerModels.models.length} models`
-                : "no gateway catalog",
+                : providerModels.models.length > 0
+                  ? // Account-recorded models serve fine without a host catalog;
+                    // hiding them behind "no gateway catalog" made a freshly
+                    // configured Z.ai account look as dead as an empty one.
+                    `${providerModels.models.length} account models`
+                  : "no gateway catalog",
           ].filter((entry): entry is string => entry !== null);
 
           return (

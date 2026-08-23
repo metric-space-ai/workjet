@@ -17,8 +17,8 @@
 
 import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { renderActionBar, renderChannelColumn, renderLegend, legendWidth, bitmapPayload } from './icons.mjs';
-import { renderDots } from './dots.mjs';
+import { renderCaseList, renderLegend, bitmapPayload, ZEILE_FALL } from './icons.mjs';
+import { renderDots, renderBar } from './dots.mjs';
 
 const LINE_H = 26;
 const CHAR_W = 9.2;
@@ -29,12 +29,18 @@ const CH_W = 20;                        // Spalte der Kanal-Icons
 const TEXT_X = COL_X + CH_W + 2;
 const COL_W = 150;
 const LIST_Y = 8;
-export const MAX_ITEMS = 5;
+// Jeder Vorgang belegt Namenszeile PLUS reservierten Aktionsplatz — der
+// Platz gehoert ihm dauerhaft, damit nichts springt, wenn die Aktionen
+// erscheinen.
+export const MAX_ITEMS = 3;
 
 // Icon-Leiste: sie steht UNTER dem aktiven Eintrag, damit man nach den Icons
 // nahtlos auf dem naechsten Eintrag landet.
 const BAR_H = 30;
 const BAR_W = COL_W + CH_W;
+// Feste Streifenbreite: eine mitwachsende Breite waere eine
+// Strukturaenderung und erzwaenge bei jeder Rubrik einen Neuaufbau.
+const LEGEND_W = 240;
 
 // Punkte fuer die Seitennavigation
 const DOTS_X = COL_X + CH_W + COL_W + 2;
@@ -67,7 +73,9 @@ const DIM = 2;
 
 export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
 
-export const CONTENT_LINES = Math.floor((BOX_H - 20) / LINE_H) - 2;
+// Eine Zeile Reserve: passt der Inhalt exakt, scrollt die Brille ihn selbst
+// und federt sichtbar zurueck — bei JEDEM Seitenwechsel.
+export const CONTENT_LINES = Math.floor((BOX_H - 20) / LINE_H) - 3;
 export const PANEL_CHARS = Math.floor((BOX_W - 26) / CHAR_W);
 // Zeichen je Zeile inklusive Rahmen.
 export const BOX_CHARS = Math.floor(BOX_W / CHAR_W);
@@ -235,21 +243,6 @@ function bauePage(nav) {
     containerTotalNum: 0,
     textObject: [
       {
-        containerID: CONTAINER.ITEMS,
-        containerName: 'items',
-        xPosition: TEXT_X,
-        yPosition: LIST_Y,
-        width: COL_W,
-        height: Math.min(items.length + (nav.demo ? 1 : 0), MAX_ITEMS + 1) * LINE_H + 6,
-        // Der Betriebszustand steht unter der Vorgangsliste: er gilt fuer
-        // alles, nicht fuer die gerade offene Rubrik. Ohne ihn ist am Geraet
-        // nicht zu sehen, ob eine Entscheidung wirklich etwas ausloest.
-        content: (nav.demo ? [...items, 'DEMO'] : items).join('\n'),
-        textColor: focused ? DIM : BRIGHT,
-        isEventCapture: 0,
-        zOrderIndex: 0,
-      },
-      {
         // Eine Box, ein Container: der Rahmen ist Text, damit der Titel in
         // der oberen Kante sitzt. Zugleich der Eingabe-Container — sein
         // Inhalt passt IMMER auf eine Seite, sonst scrollt ihn die Brille
@@ -277,12 +270,14 @@ function bauePage(nav) {
     ],
     imageObject: [
       {
+        // Icons UND Namen in einem Bild: nur so laesst sich der aktive
+        // Vorgang invertieren, und es spart einen Container.
         containerID: CONTAINER.CHANNELS,
-        containerName: 'channels',
+        containerName: 'liste',
         xPosition: COL_X,
         yPosition: LIST_Y,
-        width: CH_W,
-        height: Math.min(144, (MAX_ITEMS + 1) * LINE_H),
+        width: CH_W + COL_W,
+        height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
         zOrderIndex: 3,
       },
       {
@@ -301,18 +296,9 @@ function bauePage(nav) {
         containerName: 'legend',
         xPosition: BOX_X + 14,
         yPosition: BOX_Y - 10,
-        width: legendWidth(boxTitle(nav)),
+        width: LEGEND_W,
         height: 20,
         zOrderIndex: 9,
-      },
-      {
-        containerID: CONTAINER.BAR,
-        containerName: 'bar',
-        xPosition: COL_X,
-        yPosition: barY(nav),
-        width: BAR_W,
-        height: BAR_H,
-        zOrderIndex: 5,
       },
     ],
     menuObject: {
@@ -326,36 +312,34 @@ export function buildBitmaps(nav) {
   const { from, tabs } = visibleCases(nav);
   return [
     bitmapPayload(
-      renderChannelColumn({
-        width: CH_W,
-        height: Math.min(144, (MAX_ITEMS + 1) * LINE_H),
-        pitch: LINE_H,
-        channels: tabs.map((_, i) => nav.channels?.[from + i] || 'mail'),
+      renderCaseList({
+        width: CH_W + COL_W,
+        height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
+        // tabLabel liefert einen String, kein Objekt — das kostete die
+        // Namen in der Liste.
+        cases: tabs.map((t, i) => ({
+          titel: typeof t === 'string' ? t : (t.titel || ''),
+          kanal: nav.channels?.[from + i] || (typeof t === 'object' ? t.kanal : null) || 'mail',
+        })),
         active: nav.tabIndex - from,
-        // Zeilenindex je Eintrag: nach dem aktiven schiebt die Icon-Leiste
-        // alles um eine Zeile nach unten.
-        rows: tabs.map((_, i) => i + (from + i > nav.tabIndex ? 1 : 0)),
+        actions: nav.icons || [],
+        focusAction: nav.focusIcon,
+        demo: nav.demo,
       }),
       CONTAINER.CHANNELS,
     ),
     bitmapPayload(
-      renderDots({ width: DOTS_W, height: Math.min(144, BOX_H - 16), ...railState(nav) }),
+      // Uebersicht: ein Punkt je Rubrik. Langfassung: ein durchgehender
+      // Balken — man muss auf einen Blick unterscheiden koennen, ob man
+      // zwischen Rubriken blaettert oder in einem Text liest.
+      (nav.level === LEVEL.DETAIL ? renderBar : renderDots)({
+        width: DOTS_W, height: Math.min(144, BOX_H - 16), ...railState(nav),
+      }),
       CONTAINER.DOTS,
     ),
     bitmapPayload(
-      renderLegend({ title: titel, width: legendWidth(titel), height: 20 }),
+      renderLegend({ title: titel, width: LEGEND_W, height: 20 }),
       CONTAINER.LEGEND,
-    ),
-    bitmapPayload(
-      renderActionBar({
-        icons: nav.icons,
-        focusIcon: nav.focusIcon,
-        width: BAR_W,
-        height: BAR_H,
-        detail: nav.detail,
-        compact: true,
-      }),
-      CONTAINER.BAR,
     ),
   ];
 }

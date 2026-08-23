@@ -72,9 +72,13 @@ export function circle(bmp, cx, cy, r, level, thickness = 2) {
  * einfachste Weg, der ohne Canvas auskommt — also auch im Test.
  */
 export function toBmp(bmp) {
-  const rowSize = Math.ceil(bmp.width / 4) * 4; // Zeilen auf 4 Byte aufgefuellt
+  // 4 Bit je Pixel. Vorher waren es 8 Bit plus eine 256er-Palette — das ist
+  // doppelt so gross bei null Gewinn: die Brille wandelt ohnehin in Gray4,
+  // und unsere Helligkeiten sind bereits 0..15. Ueber die Funkstrecke war
+  // das der Unterschied zwischen fluessig und traege.
+  const rowSize = Math.ceil(bmp.width / 2 / 4) * 4;   // Zeilen auf 4 Byte
   const pixelBytes = rowSize * bmp.height;
-  const paletteBytes = 256 * 4;
+  const paletteBytes = 16 * 4;
   const offset = 14 + 40 + paletteBytes;
   const out = new Uint8Array(offset + pixelBytes);
   const view = new DataView(out.buffer);
@@ -86,20 +90,22 @@ export function toBmp(bmp) {
   view.setInt32(18, bmp.width, true);
   view.setInt32(22, bmp.height, true);       // positiv = von unten nach oben
   view.setUint16(26, 1, true);
-  view.setUint16(28, 8, true);               // 8 Bit je Pixel
+  view.setUint16(28, 4, true);               // 4 Bit je Pixel
   view.setUint32(34, pixelBytes, true);
-  view.setUint32(46, 256, true);
+  view.setUint32(46, 16, true);
 
-  for (let i = 0; i < 256; i += 1) {
+  for (let i = 0; i < 16; i += 1) {
     const p = 14 + 40 + i * 4;
-    out[p] = i; out[p + 1] = i; out[p + 2] = i; out[p + 3] = 0;
+    const g = i * 17;
+    out[p] = g; out[p + 1] = g; out[p + 2] = g; out[p + 3] = 0;
   }
   for (let y = 0; y < bmp.height; y += 1) {
     const src = (bmp.height - 1 - y) * bmp.width;
     const dst = offset + y * rowSize;
     for (let x = 0; x < bmp.width; x += 1) {
-      // 0..15 auf 0..255 spreizen
-      out[dst + x] = Math.min(255, bmp.px[src + x] * 17);
+      const wert = bmp.px[src + x] & 0x0f;
+      const byte = dst + (x >> 1);
+      out[byte] = (x & 1) ? (out[byte] | wert) : (wert << 4);
     }
   }
   return out;

@@ -3,6 +3,25 @@
 
 import { createBitmap, fillRect } from './bitmap.mjs';
 
+/**
+ * Durchgehender Balken fuer die Langfassung: dort blaettert man durch EINEN
+ * Text und will sehen, wie weit man ist und wie viel noch kommt. Punkte
+ * beantworten das nicht — sie zaehlen Rubriken, nicht Leseweg.
+ */
+export function renderBar({ width, height, count, active }) {
+  const bmp = createBitmap(width, height);
+  const x = Math.floor(width / 2) - 2;
+  const oben = 6;
+  const spur = Math.max(10, height - 12);
+  // Die Spur bleibt schwach sichtbar, damit die Gesamtlaenge ablesbar ist.
+  fillRect(bmp, x + 1, oben, 2, spur, 4);
+  const seiten = Math.max(1, count);
+  const hoehe = Math.max(8, Math.floor(spur / seiten));
+  const y = oben + Math.round((spur - hoehe) * (seiten > 1 ? active / (seiten - 1) : 0));
+  fillRect(bmp, x, y, 4, hoehe, 15);
+  return bmp;
+}
+
 export function renderDots({ width, height, count, active }) {
   const bmp = createBitmap(width, height);
   const segments = Math.max(1, count);

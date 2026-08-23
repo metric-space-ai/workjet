@@ -160,73 +160,8 @@ export function renderSettings(root, ctx) {
   }
   root.append(conn);
 
-  // --- Was auf der Brille erscheint ---
-  const filter = card("Auf der Brille zeigen", "Nur diese Entscheidungen erscheinen unterwegs.");
-  filter.append(
-    chipGroup(DECISION_TYPES, settings.types, (id) => {
-      const types = settings.types.includes(id)
-        ? settings.types.filter((t) => t !== id)
-        : [...settings.types, id];
-      // Ohne Typ bliebe die Brille dauerhaft leer — das ist keine Einstellung,
-      // das waere ein stiller Ausfall.
-      if (types.length) ctx.onSettings({ types });
-    }),
-  );
-  filter.append(el("h3", "dh-sub", "Abschnitte"));
-  filter.append(
-    chipGroup(GLASS_SECTIONS, settings.sections, (id) => {
-      const sections = settings.sections.includes(id)
-        ? settings.sections.filter((s) => s !== id)
-        : [...settings.sections, id];
-      if (sections.length) ctx.onSettings({ sections });
-    }),
-  );
-  root.append(filter);
-
-  // --- Verhalten ---
-  const behaviour = card("Verhalten");
-  behaviour.append(
-    toggleRow("Vor dem Senden nachfragen", settings.confirmBeforeSend, (v) =>
-      ctx.onSettings({ confirmBeforeSend: v }),
-    ),
-  );
-  const refresh = input({
-    type: "number",
-    min: "10",
-    max: "600",
-    value: String(settings.refreshSeconds),
-  });
-  refresh.addEventListener("change", () =>
-    ctx.onSettings({ refreshSeconds: Math.max(10, Number(refresh.value) || 30) }),
-  );
-  behaviour.append(field("Abgleich alle (Sekunden)", refresh));
-  const snooze = input({
-    type: "number",
-    min: "5",
-    max: "1440",
-    value: String(settings.snoozeMinutes),
-  });
-  snooze.addEventListener("change", () =>
-    ctx.onSettings({ snoozeMinutes: Math.max(5, Number(snooze.value) || 60) }),
-  );
-  behaviour.append(field('„Später" vertagt um (Minuten)', snooze));
-  root.append(behaviour);
-
-  // --- Diagnose ---
-  const diag = card("Status");
-  const list = el("dl", "dh-meta");
-  for (const [key, value] of [
-    ["Offene Entscheidungen", String(ctx.decisions ?? 0)],
-    ["Letzter Abgleich", ctx.status?.lastSync || "—"],
-    ["Auf der Brille", ctx.currentTitle || "—"],
-    ["Letzter Fehler", ctx.status?.lastError || "keiner"],
-  ]) {
-    list.append(el("dt", null, key), el("dd", null, value));
-  }
-  diag.append(list);
-  const testCard = el("button", "dh-btn", "Testkarte an Brille senden");
-  testCard.type = "button";
-  testCard.addEventListener("click", () => ctx.onTestCard());
-  diag.append(testCard);
-  root.append(diag);
+  // Filter, Abgleichintervall, Vertagungsdauer und Statusblock sind hier
+  // rausgeflogen: Einstellungen, die niemand trifft, kosten nur Platz. Der
+  // Betriebszustand steht auf der Brille selbst, die Vertagungsdauer wird
+  // dort gefragt, wo sie anfaellt — beim Druck auf die Uhr.
 }

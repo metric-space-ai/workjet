@@ -61,6 +61,18 @@ export function createDecisionHubPlugin({
   let visible = true;
   let diktat = null;   // { seit, frames } solange das Mikrofon laeuft
   const gesendeteBilder = new Map();  // containerID -> Fingerabdruck
+  let letzteStruktur = null;
+
+  /**
+   * Fingerabdruck der SEITENSTRUKTUR — Container, Lage, Groesse. Bleibt er
+   * gleich, genuegt ein Textaustausch; erst eine echte Strukturaenderung
+   * rechtfertigt den flackernden Neuaufbau.
+   */
+  function strukturVon(page) {
+    return [...(page.textObject || []), ...(page.imageObject || [])]
+      .map((c) => `${c.containerID}:${c.xPosition},${c.yPosition},${c.width},${c.height}`)
+      .join('|');
+  }
   const tilt = createTiltGate(tiltOptions);
 
   const decision = () => decisions[index];
@@ -118,6 +130,18 @@ export function createDecisionHubPlugin({
         throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
       }
       started = true;
+      letzteStruktur = strukturVon(page);
+    } else if (signature !== lastSignature && strukturVon(page) === letzteStruktur) {
+      // Gleiche Struktur, anderer Inhalt: NUR den Text tauschen. Ein voller
+      // Neuaufbau baut die Seite bei jedem Scroll sichtbar neu auf — am
+      // Geraet als unbedienbar gemeldet.
+      for (const c of page.textObject || []) {
+        await mitFrist('textContainerUpgrade', () => sdk.textContainerUpgrade({
+          containerID: c.containerID,
+          containerName: c.containerName,
+          content: c.content,
+        }));
+      }
     } else if (signature !== lastSignature) {
       await mitFrist('rebuildPageContainer', () => sdk.rebuildPageContainer(page));
       // Der Neuaufbau ersetzt die Container — ihre Bildinhalte sind damit
@@ -125,6 +149,7 @@ export function createDecisionHubPlugin({
       // verschwinden (am Simulator gesehen: nach dem Aufklappen war die
       // Kanalspalte leer). Also Gedaechtnis loeschen und neu senden.
       gesendeteBilder.clear();
+      letzteStruktur = strukturVon(page);
     }
     if (signature !== lastSignature) {
       // Ausgeblendet gibt es nichts zu zeichnen — das spart Funk und Strom.

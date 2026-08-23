@@ -14,7 +14,13 @@ function harness() {
   const sdk = {
     async createStartUpPageContainer(page) { calls.create += 1; calls.lastPage = page; return 0; },
     async rebuildPageContainer(page) { calls.rebuild += 1; calls.lastPage = page; return true; },
-    async textContainerUpgrade() { return true; },
+    // Der Textaustausch ersetzt den Neuaufbau — die Hilfe muss ihn
+    // mitschreiben, sonst prueft sie einen veralteten Bildschirm.
+    async textContainerUpgrade(c) {
+      const ziel = calls.lastPage?.textObject?.find((t) => t.containerID === c.containerID);
+      if (ziel) ziel.content = c.content;
+      return true;
+    },
     async updateImageRawData() { calls.image += 1; return "success"; },
   };
   const answers = [];
@@ -134,7 +140,10 @@ test("head tilt hides and shows the display", async () => {
   assert.equal(calls.lastPage.textObject.length, 1, "hidden means a blank page");
   await plugin.handleImu({ x: 0, y: 40, z: 0 });
   assert.equal(plugin.visible, true);
-  assert.ok(calls.lastPage.textObject.length > 1, "and the content comes back");
+  assert.ok(
+    calls.lastPage.textObject.some((c) => (c.content || "").trim().length > 0),
+    "and the content comes back",
+  );
 });
 
 test("scrolling up past the first page reaches the previous case", async () => {

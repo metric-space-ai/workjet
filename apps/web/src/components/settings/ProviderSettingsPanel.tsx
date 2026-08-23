@@ -918,6 +918,10 @@ export function EnvironmentProviderSettings({
                 instance={row.instance}
                 driverOption={driverOption}
                 liveProvider={liveProvider}
+                // This list IS the harness runtimes section, so every card here
+                // describes a CLI runtime and never a login. LLM account state
+                // lives on Settings → Models.
+                runtimeOnly
                 isExpanded={openInstanceDetails[row.instanceId] ?? false}
                 onExpandedChange={(open) =>
                   setOpenInstanceDetails((existing) => ({

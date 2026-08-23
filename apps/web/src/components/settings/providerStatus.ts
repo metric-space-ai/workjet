@@ -84,6 +84,32 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
 }
 
 /**
+ * Runtime-only status for the Harnesses surface.
+ *
+ * A harness is a CLI runtime: the questions it answers are "is it installed",
+ * "which version", "is it enabled". Whether an LLM account behind it is signed
+ * in is a different question with its own page.
+ *
+ * This is deliberately built from closed runtime facts and NEVER from
+ * `provider.message`. The server's message is where the auth prose lives —
+ * "Authenticated as …", "authentication could not be verified", "5 upstream
+ * providers connected through OpenCode" — so passing it through is exactly how
+ * login state leaked onto the harness list in the first place.
+ */
+export function getProviderRuntimeSummary(provider: ServerProvider | undefined) {
+  if (!provider) {
+    return { headline: "Checking runtime", detail: null };
+  }
+  if (!provider.enabled) {
+    return { headline: "Disabled", detail: "Not offered for new sessions." };
+  }
+  if (!provider.installed) {
+    return { headline: "Not installed", detail: "CLI not detected on PATH." };
+  }
+  return { headline: "Installed", detail: null };
+}
+
+/**
  * Age of the health check that produced a provider's claim. Rendered next to
  * the claim itself because "Authenticated" without a timestamp is read as a
  * live fact, and a cached one outlives an expired CLI login.

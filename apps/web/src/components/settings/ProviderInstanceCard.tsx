@@ -46,6 +46,7 @@ import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
+  getProviderRuntimeSummary,
   getProviderSummary,
   getProviderVersionLabel,
   providerCheckedAgeLabel,
@@ -324,6 +325,14 @@ interface ProviderInstanceCardProps {
   readonly instance: ProviderInstanceConfig;
   readonly driverOption: DriverOption | undefined;
   readonly liveProvider: ServerProvider | undefined;
+  /**
+   * `true` on the Harnesses surface, where a card describes a CLI RUNTIME and
+   * must not show login state. Whether the LLM account behind the harness is
+   * signed in belongs on Settings → Models; mixing the two put "Authenticated
+   * as <email> · ChatGPT Pro 20x Subscription" onto a list that is supposed to
+   * answer "is this CLI installed".
+   */
+  readonly runtimeOnly?: boolean | undefined;
   readonly isExpanded: boolean;
   readonly onExpandedChange: (open: boolean) => void;
   readonly onUpdate: (nextInstance: ProviderInstanceConfig) => void;
@@ -381,6 +390,7 @@ export function ProviderInstanceCard({
   instance,
   driverOption,
   liveProvider,
+  runtimeOnly = false,
   isExpanded,
   onExpandedChange,
   onUpdate,
@@ -402,10 +412,12 @@ export function ProviderInstanceCard({
   const statusKey: ProviderStatusKey =
     (liveProvider?.status as ProviderStatusKey | undefined) ?? (enabled ? "warning" : "disabled");
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
-  const rawSummary = getProviderSummary(liveProvider);
-  const authEmail = liveProvider?.auth.email;
+  const rawSummary = runtimeOnly
+    ? getProviderRuntimeSummary(liveProvider)
+    : getProviderSummary(liveProvider);
+  const authEmail = runtimeOnly ? undefined : liveProvider?.auth.email;
   const hasAuthenticatedEmail =
-    liveProvider?.auth.status === "authenticated" && Boolean(authEmail?.trim());
+    !runtimeOnly && liveProvider?.auth.status === "authenticated" && Boolean(authEmail?.trim());
   const authenticatedDetail = hasAuthenticatedEmail
     ? (liveProvider?.auth.label ?? liveProvider?.auth.type ?? null)
     : null;

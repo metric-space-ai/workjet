@@ -9,6 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   gatewayObservedAgeLabel,
+  parseModelIds,
   gatewayPoolBehaviourDescription,
   gatewayPoolMemberStateLabel,
   WorkjetGatewayPoolsSectionView,
@@ -133,6 +134,27 @@ describe("gateway pool semantics copy", () => {
     expect(gatewayPoolMemberStateLabel(member("a"))).toBe("In rotation");
     expect(gatewayPoolMemberStateLabel(member("a", { selectable: false }))).toBe("Held back");
     expect(gatewayPoolMemberStateLabel({ ...member("a"), enabled: false })).toBe("Disabled");
+  });
+});
+
+describe("model ids for a provider the gateway has no catalog for", () => {
+  it("drops blanks and duplicates so a pasted list is usable as typed", () => {
+    expect(parseModelIds(" glm-4.6 , glm-4.5-air ,, glm-4.6 \n glm-4.7 ")).toEqual([
+      "glm-4.6",
+      "glm-4.5-air",
+      "glm-4.7",
+    ]);
+    expect(parseModelIds("   ")).toEqual([]);
+  });
+
+  it("offers the field only where the host has no catalog", () => {
+    // Offering it everywhere would invite hand-maintaining a list the gateway
+    // already knows, and the two would drift apart silently.
+    const markup = render();
+
+    expect(markup).toContain("Model ids this account serves");
+    // Claude has a catalog in the fixture, Z.ai does not: exactly one field.
+    expect(markup.split("Model ids this account serves").length - 1).toBe(1);
   });
 });
 

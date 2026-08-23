@@ -1224,6 +1224,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
               enabled: update.enabled,
               priority: update.priority,
               weight: update.weight,
+              // Omitted means "not editing this list", which must stay
+              // distinct from an empty array clearing it.
+              ...(update.models === undefined ? {} : { models: [...update.models] }),
             };
       });
       const candidate = {

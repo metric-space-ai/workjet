@@ -749,6 +749,23 @@ export const WorkjetGatewayAccountRoutingUpdate = Schema.Struct({
     Schema.isLessThanOrEqualTo(WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY),
   ),
   weight: PositiveInt.check(Schema.isLessThanOrEqualTo(WORKJET_GATEWAY_MAX_ACCOUNT_WEIGHT)),
+  /**
+   * Model ids this account serves, for a provider the gateway host has no
+   * built-in catalog for.
+   *
+   * `zai` and `minimax` have `channel: null` in GATEWAY_MODEL_CHANNELS, so the
+   * host serves them nothing of its own and the account must carry the list
+   * itself. Without this field a valid, paid-for key sits "in rotation" and
+   * can answer no request at all — which is exactly what it did.
+   *
+   * Omit the field to leave the account's current list alone; an empty array
+   * clears it, which must stay distinguishable from "not editing this".
+   */
+  models: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128)))).pipe(
+      Schema.check(Schema.isMaxLength(128)),
+    ),
+  ),
 });
 export type WorkjetGatewayAccountRoutingUpdate = typeof WorkjetGatewayAccountRoutingUpdate.Type;
 

@@ -105,6 +105,26 @@ interface MemberDraft {
   readonly enabled: boolean;
   readonly priority: number;
   readonly weight: number;
+  /**
+   * Comma-separated model ids, edited as text.
+   *
+   * Only meaningful for a provider the gateway host has no catalog for
+   * (`zai`, `minimax`): there the account must carry its own list, or a valid
+   * paid-for key sits "in rotation" answering nothing.
+   */
+  readonly models: string;
+}
+
+/** Split the edited text into ids, dropping blanks and duplicates. */
+export function parseModelIds(text: string): ReadonlyArray<string> {
+  return [
+    ...new Set(
+      text
+        .split(/[,\n]/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    ),
+  ];
 }
 
 const draftKey = (member: WorkjetGatewayPoolMember): string => String(member.accountId);
@@ -354,6 +374,10 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
           enabled: member.enabled,
           priority: member.priority,
           weight: member.weight,
+          models: (
+            state.catalog?.accounts.find((account) => account.id === member.accountId)?.modelIds ??
+            []
+          ).join(", "),
         });
       }
     }
@@ -389,6 +413,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
         enabled: member.enabled,
         priority: member.priority,
         weight: member.weight,
+        models: parseModelIds(member.models),
       })),
     });
   };
@@ -494,6 +519,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
                     enabled: member.enabled,
                     priority: member.priority,
                     weight: member.weight,
+                    models: "",
                   };
                   return (
                     <PoolMemberRow
@@ -512,6 +538,43 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
                     />
                   );
                 })}
+
+                {/* Only where the host has no catalog of its own. Offering the
+                    field everywhere would invite an operator to hand-maintain
+                    a list the gateway already knows, and the two would drift. */}
+                {providerModels?.catalogAvailable === false
+                  ? pool.members.map((member) => {
+                      const memberDraft = draft.members.get(draftKey(member));
+                      if (memberDraft === undefined) return null;
+                      const id = `workjet-gateway-models-${String(member.accountId)}`;
+                      return (
+                        <div key={`models-${String(member.accountId)}`} className="space-y-1">
+                          <label htmlFor={id} className="block text-xs text-muted-foreground">
+                            Model ids this account serves — the gateway has no catalog for this
+                            provider, so it can serve nothing until they are listed.
+                          </label>
+                          <input
+                            id={id}
+                            type="text"
+                            value={memberDraft.models}
+                            disabled={disabled}
+                            placeholder="glm-4.6, glm-4.5-air"
+                            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                            onChange={(event) =>
+                              setDraft((current) => {
+                                const members = new Map(current.members);
+                                members.set(draftKey(member), {
+                                  ...memberDraft,
+                                  models: event.target.value,
+                                });
+                                return { ...current, members };
+                              })
+                            }
+                          />
+                        </div>
+                      );
+                    })
+                  : null}
               </div>
             </div>
           );

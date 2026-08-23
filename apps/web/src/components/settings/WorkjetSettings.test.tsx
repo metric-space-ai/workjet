@@ -318,10 +318,14 @@ describe("Workjet configuration settings", () => {
 });
 
 describe("Workjet Greppy runtime settings", () => {
-  it("registers the Workjet sidebar destination", () => {
+  it("registers the Worker sidebar destination, plus Computers at top level", () => {
+    // The operator's naming, given twice: the section configures WORKERS, and
+    // machines are not a detail of it — a worker references a computer, so
+    // Computers stands beside Models and Harnesses.
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Workjet", to: "/settings/workjet" }),
+        expect.objectContaining({ label: "Worker", to: "/settings/workjet" }),
+        expect.objectContaining({ label: "Computers", to: "/settings/computers" }),
       ]),
     );
   });

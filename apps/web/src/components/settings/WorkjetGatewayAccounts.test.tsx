@@ -130,7 +130,13 @@ describe("Workjet gateway account surface", () => {
     expect(markup).toContain("Codex Personal");
     expect(markup).toContain("Disabled");
     expect(markup).toContain("1 model");
-    expect(markup).toContain("No accounts are configured for this provider.");
+    // The prose that used to sit here — "No accounts are configured for this
+    // provider." — said exactly what the button beside it says, seven times
+    // over, and turned the page into something nobody could scan. Absence of
+    // accounts is now shown by the provider sitting under "Available".
+    expect(markup).not.toContain("No accounts are configured");
+    expect(markup).toContain("Connected");
+    expect(markup).toContain("Available");
     expect(markup).toContain("Add account");
     // The happy path never asks the user to start or stop anything: the server
     // starts the gateway when a login begins.

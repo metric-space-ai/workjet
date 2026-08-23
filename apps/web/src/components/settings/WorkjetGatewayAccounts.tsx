@@ -19,6 +19,7 @@ import { useState } from "react";
 
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
+import { cn } from "~/lib/utils";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
@@ -473,6 +474,15 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
     null,
   );
 
+  // Connected first: those are the rows with state worth reading. The rest is
+  // a short menu of what can still be added.
+  const providersWithAccounts = WORKJET_GATEWAY_PROVIDERS.filter(
+    (provider) => workjetGatewayAccountsByProvider(state.catalog, provider).length > 0,
+  );
+  const providersWithoutAccounts = WORKJET_GATEWAY_PROVIDERS.filter(
+    (provider) => workjetGatewayAccountsByProvider(state.catalog, provider).length === 0,
+  );
+
   return (
     <SettingsSection
       id={searchableSetting("workjet-provider-accounts").id}
@@ -527,82 +537,123 @@ export function WorkjetGatewayAccountsSectionView(state: WorkjetGatewaySectionSt
         />
       ) : null}
 
-      {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
-        const accounts = workjetGatewayAccountsByProvider(state.catalog, provider);
-        const isActiveLogin = state.login.status !== "idle" && state.login.provider === provider;
-        const isApiKey = isWorkjetGatewayApiKeyProvider(provider);
-        const isKeyFormOpen = isApiKey && openApiKeyProvider === provider;
-        return (
-          <SettingsRow
-            key={provider}
-            title={WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
-            description={
-              accounts.length === 0
-                ? isApiKey
-                  ? "No accounts are configured. This provider is added with an API key."
-                  : "No accounts are configured for this provider."
-                : `${accounts.length} ${accounts.length === 1 ? "account" : "accounts"} configured.`
-            }
-            control={
-              isApiKey ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canAdd || isKeyFormOpen}
-                  onClick={() => setOpenApiKeyProvider(provider)}
-                >
-                  <KeyRoundIcon className="size-3.5" />
-                  Add API key
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canAdd}
-                  onClick={() => state.onAddAccount(provider)}
-                >
-                  <PlusIcon className="size-3.5" />
-                  Add account
-                </Button>
-              )
-            }
-          >
-            <div className="mt-1 space-y-2 pb-3.5">
-              {accounts.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-t border-border/40 pt-2 first:border-t-0 first:pt-0"
-                >
-                  <span className="min-w-0 truncate text-sm text-foreground">{account.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {gatewayAccountRotationLabel(state.catalog, account) ??
-                      (account.enabled ? "Enabled" : "Disabled")}{" "}
-                    · {account.modelIds.length} {account.modelIds.length === 1 ? "model" : "models"}
-                    {maskGatewayCredentialSuffix(account.credentialSuffix) === null
-                      ? null
-                      : ` · ${maskGatewayCredentialSuffix(account.credentialSuffix)}`}
-                  </span>
-                </div>
-              ))}
-              {isKeyFormOpen ? (
-                <AddApiKeyForm
-                  provider={provider}
-                  disabled={!canAdd}
-                  apiKey={state.apiKey}
-                  onSubmit={(value) => state.onAddApiKey(provider, value)}
-                  onDismiss={() => setOpenApiKeyProvider(null)}
-                />
-              ) : null}
-              {isApiKey ? <AddApiKeyProgress provider={provider} apiKey={state.apiKey} /> : null}
-              {isActiveLogin ? (
-                <AddAccountProgress login={state.login} onCancel={state.onCancelLogin} />
-              ) : null}
+      {/*
+        A DENSE list, not SettingsRow. SettingsRow is built for one sparse
+        setting at a time; used per provider it spent ~180px on a single line
+        of fact, repeated "No accounts are configured. This provider is added
+        with an API key." next to a button that already says "Add API key",
+        and printed "1 account configured." directly above the one account.
+        Seven providers became a page nobody could scan.
+
+        Connected providers come first because they are the ones with state
+        worth reading. The rest are a short menu of what can still be added.
+      */}
+      {(
+        [
+          ["Connected", providersWithAccounts],
+          ["Available", providersWithoutAccounts],
+        ] as ReadonlyArray<readonly [string, ReadonlyArray<WorkjetGatewayProvider>]>
+      ).map(([groupLabel, providers]) =>
+        providers.length === 0 ? null : (
+          <div key={groupLabel} className="px-3 sm:px-4">
+            <h4 className="pt-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+              {groupLabel}
+            </h4>
+            <div className="divide-y divide-border/40">
+              {providers.map((provider) => {
+                const accounts = workjetGatewayAccountsByProvider(state.catalog, provider);
+                const isActiveLogin =
+                  state.login.status !== "idle" && state.login.provider === provider;
+                const isApiKey = isWorkjetGatewayApiKeyProvider(provider);
+                const isKeyFormOpen = isApiKey && openApiKeyProvider === provider;
+                return (
+                  <div key={provider} className="py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                        {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 shrink-0 px-2 text-xs"
+                        disabled={!canAdd || isKeyFormOpen}
+                        onClick={() =>
+                          isApiKey ? setOpenApiKeyProvider(provider) : state.onAddAccount(provider)
+                        }
+                      >
+                        {isApiKey ? (
+                          <KeyRoundIcon className="size-3.5" />
+                        ) : (
+                          <PlusIcon className="size-3.5" />
+                        )}
+                        {accounts.length === 0
+                          ? isApiKey
+                            ? "Add API key"
+                            : "Add account"
+                          : "Add another"}
+                      </Button>
+                    </div>
+
+                    {accounts.map((account) => {
+                      const suffix = maskGatewayCredentialSuffix(account.credentialSuffix);
+                      // An account the gateway routes through but for which it
+                      // discovered no model cannot serve a single request. It
+                      // was grey filler next to everything else; it is the one
+                      // thing on this page that needs acting on.
+                      const noModels = account.modelIds.length === 0;
+                      return (
+                        <div
+                          key={account.id}
+                          className="flex flex-wrap items-baseline justify-between gap-x-3 pl-3 text-xs"
+                        >
+                          <span className="min-w-0 truncate text-muted-foreground">
+                            {account.label}
+                            {suffix === null ? null : (
+                              <span className="text-muted-foreground/60"> · {suffix}</span>
+                            )}
+                          </span>
+                          <span
+                            className={cn(
+                              "shrink-0",
+                              noModels ? "text-amber-500" : "text-muted-foreground/70",
+                            )}
+                          >
+                            {noModels
+                              ? "no models discovered"
+                              : `${account.modelIds.length} ${account.modelIds.length === 1 ? "model" : "models"}`}
+                            {" · "}
+                            {gatewayAccountRotationLabel(state.catalog, account) ??
+                              (account.enabled ? "Enabled" : "Disabled")}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    {isKeyFormOpen ? (
+                      <div className="pt-2">
+                        <AddApiKeyForm
+                          provider={provider}
+                          disabled={!canAdd}
+                          apiKey={state.apiKey}
+                          onSubmit={(value) => state.onAddApiKey(provider, value)}
+                          onDismiss={() => setOpenApiKeyProvider(null)}
+                        />
+                      </div>
+                    ) : null}
+                    {isApiKey ? (
+                      <AddApiKeyProgress provider={provider} apiKey={state.apiKey} />
+                    ) : null}
+                    {isActiveLogin ? (
+                      <AddAccountProgress login={state.login} onCancel={state.onCancelLogin} />
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
-          </SettingsRow>
-        );
-      })}
+          </div>
+        ),
+      )}
     </SettingsSection>
   );
 }

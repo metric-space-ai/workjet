@@ -109,41 +109,45 @@ ein `claude auth status`-Aufruf existiert im Repo nirgends. Deshalb steht grün
 „Authenticated", während jeder Turn scheitert. Weg: beobachtete Turn-Fehler
 überstimmen die optimistische Sondierung.
 
-### T5 · xAI-Anmeldung — BLOCKIERT, Befund 2026-08-23
+### T5 · Anbieter-OAuth fehlt GANZ — gemessen 2026-08-23
 
-Was VERIFIZIERT ist (Quelltext-Grep, verlässlich):
+Nicht nur xAI. **Der laufende Gateway-Host bedient keine einzige
+OAuth-Begin-Route.** Gemessen, nicht geschlossen: "Add account" auf
+Antigravity in der laufenden App antwortet
 
-- `native/provider-gateway/internal/auth/xai/` enthält den vollständigen
-  Device-Flow (`discover`, `start_device_flow`, `poll_for_token`,
-  `refresh_tokens`); `types.rs` liefert `verification_uri_complete`, dessen
-  Form der bestehende Vertrag (`authorizationUrl`) tragen würde.
-- `normalize_oauth_provider` akzeptiert bereits `"xai" | "x-ai" | "x.ai" |
-"grok"`; `valid_path_provider("xai")` ist wahr. Die Sitzungsmaschinerie
-  ist vorbereitet.
-- `ManagementProviderOAuthAuthority` kommt im ganzen Crate dreimal vor:
-  Trait-Definition, Modul-Export, **ein Test**. Keine produktive
-  Implementierung.
-- Das Crate ist eine Portierung von CLIProxy (Go): `port-map.json`,
-  `upstream_commit a88197f8…`, 242 von 617 produktiven Go-Dateien portiert.
-  Der OAuth-Handler steht auf `status: "adapted_to_ctox"`.
-- Die laufende Binärdatei ist Rust aus diesem Crate (Pfade
-  `provider-gateway/internal/api/handlers/management/*.rs`).
+    "The Workjet provider gateway login flow is unavailable."
 
-KORREKTUR: Ich hatte aus einem Byte-Scan geschlossen, die `*-auth-url`-
-Routen fehlten im laufenden Host. Das ist FALSCH und die Methode taugt
-nicht: `model-definitions` erscheint ebenfalls nicht als Literal, obwohl
-diese Route nachweislich funktioniert (sie lieferte 15/10/8 Modelle).
-Routennamen liegen nicht als lesbare Zeichenketten vor. Über die im Host
-vorhandenen Routen sagt der Scan nichts.
+Das ist `oauth-unavailable` aus `ProviderGatewayService.ts:749` — der
+Server ruft `OAUTH_BEGIN_ROUTES[provider]` auf dem Host, der Aufruf
+wirft. Betrifft claude, codex UND antigravity gleichermaßen.
 
-WAS NICHT GEKLÄRT IST: ob der laufende Host die OAuth-Begin-Routen
-bedient. Der einzige belastbare Test ist ein Aufruf mit dem
-Management-Schlüssel; der liegt nur im Server-Secret-Store.
+Folgerungen:
 
-NÄCHSTER SCHRITT: Management-Schlüssel über den Server beziehen und
-`/v0/management/anthropic-auth-url` real aufrufen. Erst dann steht fest,
-ob T5 eine Rust-Portierung braucht oder nur Route, Vertrag und
-Oberfläche.
+- Die vorhandenen Claude- und Codex-Gateway-Konten stammen NICHT aus
+  einem Browser-Login über diesen Host.
+- xAI in `WorkjetGatewayOauthProvider` einzutragen und einen Knopf zu
+  bauen wäre wirkungslos: der Weg dahinter existiert für niemanden.
+- Der xAI-Device-Flow in `internal/auth/xai/` ist vollständig, aber wie
+  `internal/auth/claude/generate_auth_url` von NIEMANDEM aufgerufen —
+  ausserhalb der Auth-Module gibt es keinen Aufrufer.
+- `ManagementProviderOAuthAuthority` hat im Crate keine produktive
+  Implementierung (Trait, Export, ein Test).
+- Das Crate ist eine CLIProxy-Portierung: 242 von 617 produktiven
+  Go-Dateien portiert, OAuth-Handler `status: "adapted_to_ctox"`.
+
+METHODEN-KORREKTUR (bleibt stehen): Ich hatte dasselbe zuvor aus einem
+Byte-Scan der Binärdatei geschlossen. Das Ergebnis stimmte, die Methode
+taugt aber nicht — `model-definitions` fehlt dort ebenso als Literal und
+funktioniert nachweislich. Erst die Messung in der App zählt.
+
+NÄCHSTER SCHRITT: Die Management-OAuth-Routen im Rust-Crate an die
+vorhandenen Auth-Module hängen (`internal/auth/{claude,codex,antigravity,
+xai}`), inklusive einer produktiven `ManagementProviderOAuthAuthority`.
+Der xAI-Device-Flow passt in dasselbe Trait: `begin` liefert
+`verification_uri_complete`, `poll` fragt den Gerätecode ab.
+Danach Vertrag (`WorkjetGatewayOauthProvider` um "xai" erweitern),
+Server-Route und Oberfläche. Umfang: mehrere hundert Zeilen Rust plus
+ein Host-Build, der in den laufenden Stand gebracht werden muss.
 
 ### T3 · Workjet-Prompt-Seite — ERLEDIGT `bfbb02db4`
 

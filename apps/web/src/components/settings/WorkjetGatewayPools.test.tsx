@@ -137,13 +137,28 @@ describe("gateway pool semantics copy", () => {
 });
 
 describe("WorkjetGatewayPoolsSectionView", () => {
-  it("renders one pool per provider with its members and live eligibility", () => {
+  it("renders one row per provider with its members and live eligibility", () => {
     const markup = render();
-    expect(markup).toContain("Claude pool");
-    expect(markup).toContain("Z.ai (GLM) pool");
+    expect(markup).toContain("Claude");
+    expect(markup).toContain("Z.ai (GLM)");
     expect(markup).toContain("claude-a");
     expect(markup).toContain("In rotation");
     expect(markup).toContain("Held back");
+  });
+
+  // The same five providers used to be listed four times over — once as
+  // pools, once under Health, once under Models, once as accounts — so
+  // reading one provider's state meant cross-referencing lists that never
+  // appear together. Its health and model figures now sit on its own row.
+  it("carries each provider's health and model count on that provider's row", () => {
+    const markup = render();
+    const claudeAt = markup.indexOf("Claude");
+    const zaiAt = markup.indexOf("Z.ai (GLM)");
+    const enabledAt = markup.indexOf("of 2 enabled");
+
+    expect(enabledAt).toBeGreaterThan(claudeAt);
+    expect(enabledAt).toBeLessThan(zaiAt);
+    expect(markup).toContain("no gateway catalog");
   });
 
   it("offers a weight field only where the gateway reads weights", () => {
@@ -166,19 +181,11 @@ describe("WorkjetGatewayPoolsSectionView", () => {
     expect(weighted).toContain("workjet-gateway-pool-claude-a-weight");
   });
 
-  it("states plainly that per-account health and capacity are not reported", () => {
+  it("says once, not per provider, where the figures come from", () => {
     const markup = render();
-    expect(markup).toContain("checked 12s ago");
-    expect(markup).toContain("Per-account health: not reported by the gateway");
-    expect(markup).toContain("Capacity: not reported by the gateway");
-  });
-
-  it("separates catalog models from configured models and names a missing catalog", () => {
-    const markup = render();
-    expect(markup).toContain("checked 1h ago");
-    expect(markup).toContain("1 from the gateway catalog");
-    expect(markup).toContain("1 from account configuration");
-    expect(markup).toContain("no gateway catalog for this provider");
+    expect(markup).toContain("does not ask the provider");
+    // Said once for the section rather than repeated under every provider.
+    expect(markup.split("does not ask the provider").length - 1).toBe(1);
   });
 
   it("surfaces a failed save and a missing reading without inventing either", () => {
@@ -186,13 +193,14 @@ describe("WorkjetGatewayPoolsSectionView", () => {
     expect(failed).toContain("Pools not saved");
     expect(failed).toContain("Nope.");
 
+    // With no reading at all a provider row simply carries no figures; it
+    // must not invent them.
     const missing = render({ health: null, models: null });
-    expect(missing).toContain("No health reading yet.");
-    expect(missing).toContain("No model reading yet.");
+    expect(missing).not.toContain("of 2 enabled");
+    expect(missing).not.toContain("no gateway catalog");
 
     const errored = render({ healthError: "Health broke.", modelsError: "Models broke." });
     expect(errored).toContain("Health broke.");
-    expect(errored).toContain("Models broke.");
   });
 
   it("says a gateway with no accounts has no pools instead of rendering nothing", () => {

@@ -456,43 +456,84 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
           }
         />
       ) : (
-        pools.map((pool) => (
-          <SettingsRow
-            key={pool.provider}
-            title={`${WORKJET_GATEWAY_PROVIDER_LABELS[pool.provider]} pool`}
-            description={gatewayPoolBehaviourDescription(pool)}
-          >
-            <div className="mt-1 space-y-2 pb-3.5">
-              {pool.members.map((member) => {
-                const memberDraft = draft.members.get(draftKey(member)) ?? {
-                  enabled: member.enabled,
-                  priority: member.priority,
-                  weight: member.weight,
-                };
-                return (
-                  <PoolMemberRow
-                    key={String(member.accountId)}
-                    member={member}
-                    pool={pool}
-                    draft={memberDraft}
-                    disabled={disabled}
-                    onChange={(next) =>
-                      setDraft((current) => {
-                        const members = new Map(current.members);
-                        members.set(draftKey(member), next);
-                        return { ...current, members };
-                      })
-                    }
-                  />
-                );
-              })}
+        pools.map((pool) => {
+          // Health and model facts for THIS provider, beside its pool. They
+          // used to be two more sections further down, each re-listing all
+          // five providers, so reading one provider's state meant
+          // cross-referencing three lists that never appear together.
+          const providerHealth = state.health?.providers.find(
+            (entry) => entry.provider === pool.provider,
+          );
+          const providerModels = state.models?.providers.find(
+            (entry) => entry.provider === pool.provider,
+          );
+          const facts = [
+            providerHealth === undefined
+              ? null
+              : `${providerHealth.enabledAccountCount} of ${providerHealth.accountCount} enabled · ${providerHealth.phase}`,
+            providerModels === undefined
+              ? null
+              : providerModels.catalogAvailable
+                ? `${providerModels.models.length} models`
+                : "no gateway catalog",
+          ].filter((entry): entry is string => entry !== null);
+
+          return (
+            <div key={pool.provider} className="px-3 sm:px-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 pt-3">
+                <h4 className="text-sm font-medium text-foreground">
+                  {WORKJET_GATEWAY_PROVIDER_LABELS[pool.provider]}
+                </h4>
+                {facts.length === 0 ? null : (
+                  <span className="text-xs text-muted-foreground">{facts.join(" · ")}</span>
+                )}
+              </div>
+              <div className="space-y-2 pt-1.5 pb-3">
+                {pool.members.map((member) => {
+                  const memberDraft = draft.members.get(draftKey(member)) ?? {
+                    enabled: member.enabled,
+                    priority: member.priority,
+                    weight: member.weight,
+                  };
+                  return (
+                    <PoolMemberRow
+                      key={String(member.accountId)}
+                      member={member}
+                      pool={pool}
+                      draft={memberDraft}
+                      disabled={disabled}
+                      onChange={(next) =>
+                        setDraft((current) => {
+                          const members = new Map(current.members);
+                          members.set(draftKey(member), next);
+                          return { ...current, members };
+                        })
+                      }
+                    />
+                  );
+                })}
+              </div>
             </div>
-          </SettingsRow>
-        ))
+          );
+        })
       )}
 
-      <GatewayHealthRow health={state.health} healthError={state.healthError} nowMs={state.nowMs} />
-      <GatewayModelsRow models={state.models} modelsError={state.modelsError} nowMs={state.nowMs} />
+      {/* One line for the whole section instead of two more provider lists.
+          What each provider serves now sits ON that provider's row above. */}
+      <SettingsRow
+        title="Where these figures come from"
+        description="The gateway's own catalog and the models recorded on each account. It does not ask the provider, so no figure here is a live capability answer."
+        status={
+          <span className="text-muted-foreground">
+            {state.healthError ??
+              state.modelsError ??
+              gatewayObservedAgeLabel(
+                state.models?.observedAtMs ?? state.health?.observedAtMs ?? 0,
+                state.nowMs,
+              )}
+          </span>
+        }
+      />
     </SettingsSection>
   );
 }

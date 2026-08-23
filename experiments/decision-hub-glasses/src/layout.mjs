@@ -20,7 +20,11 @@ import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { renderCaseList, renderLegend, bitmapPayload, ZEILE_FALL } from './icons.mjs';
 import { renderDots, renderBar } from './dots.mjs';
 
-const LINE_H = 26;
+// Zeilenhoehe des GERAETEFONTS im Lesekasten. 26 war zu klein gemessen —
+// dadurch passte der Inhalt rechnerisch, real aber nicht, und die Brille
+// scrollte ihn selbst. Genau das war das Wackeln bei jedem Seitenwechsel.
+const LINE_H = 26;          // Listenzeilen links
+const TEXT_LINE_H = 34;     // Zeilen im Lesekasten, bewusst grosszuegig
 const CHAR_W = 9.2;
 
 // Linke Spalte
@@ -75,7 +79,18 @@ export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
 
 // Eine Zeile Reserve: passt der Inhalt exakt, scrollt die Brille ihn selbst
 // und federt sichtbar zurueck — bei JEDEM Seitenwechsel.
-export const CONTENT_LINES = Math.floor((BOX_H - 20) / LINE_H) - 3;
+// Wie viele Zeilen der Kasten SICHER traegt, ohne dass die Brille scrollt.
+export const CONTENT_LINES = Math.floor((BOX_H - 30) / TEXT_LINE_H);
+
+/**
+ * Hoehe des Kastens fuer eine gegebene Zeilenzahl. In der Seitenansicht
+ * bekommt er genau die Hoehe seines Inhalts: dann gibt es dort nichts zu
+ * scrollen — es gibt in der Seitenansicht keine scrollbare Textbox — und
+ * zugleich keine leere Flaeche.
+ */
+export function boxHeightFor(zeilen) {
+  return Math.min(BOX_H, Math.max(60, zeilen * TEXT_LINE_H + 26));
+}
 export const PANEL_CHARS = Math.floor((BOX_W - 26) / CHAR_W);
 // Zeichen je Zeile inklusive Rahmen.
 export const BOX_CHARS = Math.floor(BOX_W / CHAR_W);
@@ -252,6 +267,10 @@ function bauePage(nav) {
         xPosition: BOX_X,
         yPosition: BOX_Y,
         width: BOX_W,
+        // KONSTANT. Eine inhaltsabhaengige Hoehe waere eine Strukturaenderung
+        // und erzwaenge bei jedem Seitenwechsel einen Neuaufbau — sichtbares
+        // Neuzeichnen. Gegen das Scrollen hilft isEventCapture, nicht die
+        // Hoehe.
         height: BOX_H,
         borderWidth: 1,
         borderColor: focused ? 5 : 13,
@@ -272,8 +291,24 @@ function bauePage(nav) {
         // die Kurzfassung steht voll, der Volltext eine Stufe darunter. Man
         // ueberfliegt die Uebersicht, den Volltext liest man bewusst.
         textColor: nav.level === LEVEL.DETAIL ? 3 : 4,
-        isEventCapture: 1,
+        // KEINE Eingaben: ein Eingabecontainer bekommt vom Betriebssystem
+        // Scrollverhalten samt Federn — auch dann, wenn gar nichts zu
+        // scrollen ist. Genau das war das Wackeln in der Seitenansicht.
+        isEventCapture: 0,
         zOrderIndex: 1,
+      },
+      {
+        // Nimmt die Gesten entgegen, damit die App sie bekommt. Leer und
+        // winzig: was keinen Inhalt hat, kann nicht scrollen.
+        containerID: CONTAINER.BOX_TITLE,
+        containerName: 'input',
+        xPosition: 0,
+        yPosition: DISPLAY_H - 2,
+        width: 2,
+        height: 2,
+        content: '',
+        isEventCapture: 1,
+        zOrderIndex: 0,
       },
     ],
     imageObject: [

@@ -39,7 +39,13 @@ test("the page carries the reading box and one item per rubric", async () => {
   const page = sdk.calls.lastPage;
   // Die Vorgangsliste ist ein Bild, kein Text: nur so laesst sich der
   // aktive Eintrag invertieren.
-  assert.equal(page.textObject.length, 1, "only the reading box is text");
+  // Lesekasten plus der winzige Eingabecontainer, der die Gesten annimmt.
+  assert.equal(page.textObject.length, 2, "reading box and the gesture catcher");
+  const box = page.textObject.find((c) => c.containerName === "box-body");
+  assert.equal(box.isEventCapture, 0, "the reading box must never capture input …");
+  const fang = page.textObject.find((c) => c.containerName === "input");
+  assert.equal(fang.isEventCapture, 1, "… the empty catcher does");
+  assert.equal(fang.content, "", "and it stays empty, so there is nothing to scroll");
   assert.ok(page.imageObject.some((c) => c.containerName === "liste"), "the case list is a bitmap");
   assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
   // Die Aktionsleiste ist kein eigener Container mehr: sie sitzt im
@@ -53,9 +59,10 @@ test("the body never overflows its container", async () => {
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
   const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "box-body");
-  // Titel + Trennlinie + Inhalt
   assert.ok(body.content.split("\n").length <= CONTENT_LINES + 2);
-  assert.equal(body.isEventCapture, 1);
+  // Der Lesekasten darf KEINE Eingaben fangen: ein Eingabecontainer bekommt
+  // vom Betriebssystem Scrollverhalten samt Federn, auch bei kurzem Text.
+  assert.equal(body.isEventCapture, 0);
 });
 
 test("bitmaps are repainted when the position changes", async () => {

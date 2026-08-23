@@ -62,7 +62,8 @@ describe("CompactComposerControlsMenu", () => {
     expect(text).toContain("Mode");
     expect(text).toContain("Plan");
     expect(text).toContain("Chat");
-    expect(text).toContain("Access");
+    // Permission is ALWAYS full (operator rule): no Access group exists.
+    expect(text).not.toContain("Access");
   });
 
   it("omits the role group when the thread has no server configuration", () => {
@@ -70,7 +71,8 @@ describe("CompactComposerControlsMenu", () => {
     const text = textContent(menu);
 
     expect(text).toContain("Mode");
-    expect(text).toContain("Access");
+    // Permission is ALWAYS full (operator rule): no Access group exists.
+    expect(text).not.toContain("Access");
     expect(text).not.toContain("Orchestrator");
   });
 });

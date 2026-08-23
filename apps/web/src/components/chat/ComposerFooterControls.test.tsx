@@ -37,7 +37,8 @@ describe("ComposerFooterControls", () => {
     expect(markup).toContain('aria-label="Default mode — click to enter plan mode"');
     expect(markup).toContain(">Build<");
     // …and the access control it ships with.
-    expect(markup).toContain('aria-label="Runtime mode"');
+    // Permission is ALWAYS full (operator rule): the picker is gone.
+    expect(markup).not.toContain('aria-label="Runtime mode"');
 
     // The new Workjet role control, alongside it.
     expect(markup).toContain('aria-label="Workjet thread role"');
@@ -58,7 +59,8 @@ describe("ComposerFooterControls", () => {
     const markup = render({ showInteractionModeToggle: false });
 
     expect(markup).not.toContain(">Build<");
-    expect(markup).toContain('aria-label="Runtime mode"');
+    // Permission is ALWAYS full (operator rule): the picker is gone.
+    expect(markup).not.toContain('aria-label="Runtime mode"');
     expect(markup).toContain('aria-label="Workjet thread role"');
   });
 
@@ -79,7 +81,8 @@ describe("ComposerFooterControls", () => {
     expect(markup).not.toContain('aria-label="Thread tools"');
     // The provider controls are unaffected by the absence of Workjet state.
     expect(markup).toContain(">Build<");
-    expect(markup).toContain('aria-label="Runtime mode"');
+    // Permission is ALWAYS full (operator rule): the picker is gone.
+    expect(markup).not.toContain('aria-label="Runtime mode"');
   });
 
   it("renders the caller's traits picker and send-to-worker slots", () => {

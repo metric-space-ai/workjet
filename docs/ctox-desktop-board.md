@@ -215,6 +215,13 @@ für jeden Thread. Sauberer wäre, sie aus der Worker-Definition zu nehmen.
 
 ## 1. Environment-Fallen
 
+- **Der Backend läuft aus `apps/server/dist/bin.mjs`** — gebaut mit
+  `vp pack` (NICHT `vp build`, das scheitert an index.html). Server-
+  Quelländerungen sind erst nach `vp pack` + App-Neustart wirksam; ein
+  alter Server verwarf neue RPC-Felder STUMM (models beim Pool-Save).
+  Nach `vp pack` fehlt `dist/client/` → aus dem REPO-ROOT nachkopieren.
+- **Verwaiste Backends überleben den App-Kill** (Electron-Hauptprozess
+  killen reicht nicht) — `pgrep -f "apps/server/dist/bin.mjs"` prüfen.
 - **Deploy erreicht die App nicht von allein.** `vp build` in `apps/web`, dann
   `cp -R apps/web/dist/. apps/server/dist/client/`, **dann das Fenster neu
   laden** (`location.reload()` via CDP). Ohne Reload sieht man den alten Stand

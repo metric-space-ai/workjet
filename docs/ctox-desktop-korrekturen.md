@@ -180,11 +180,25 @@ je Modell unter dem ersten Worker dieses Modells. Das Datenmodell hier
 kennt `modelPrompts` NICHT — vor dem Bau klären, ob es beim Import
 mitkommt oder wo es leben soll.
 
-## 5 · Z.ai/MiniMax-Modell-IDs eintragen (D2)
+## 5 · Z.ai/MiniMax-Modell-IDs — EINGETRAGEN 2026-08-24, Turn offen
 
-Feld existiert (`07bfa3735`), Inhalt fehlt. Modell-IDs stehen in der
-Swift-Config (`providers[].modelIDs`): Z.ai `glm-*`, MiniMax
-`MiniMax-M*`. Eintragen, „Save pools", dann ein echter Turn je Anbieter.
+Gespeichert und verifiziert (`provider-gateway.json`): Z.ai 4 Modelle
+(`glm-5.3, glm-5.2, glm-5.1, glm-5`), MiniMax 8 (`MiniMax-M3 …`), aus
+der Swift-Config übernommen. Dabei zwei eigene Defekte gefunden und
+behoben: `models` fehlte in der Dirty-Prüfung (`54e7a73df` — Save blieb
+grau) und die Pool-Zeile versteckte Konto-Modelle hinter „no gateway
+catalog" (Zeile liest jetzt „4 account models").
+
+WICHTIGE LEHRE dabei: Der Backend läuft aus `apps/server/dist/bin.mjs`
+(`vp pack`, NICHT `vp build`). Server-Quelländerungen sind erst nach
+`vp pack` + App-Neustart wirksam — der erste Speicherversuch ging durch
+einen alten Server und verwarf `models` stumm. In die
+Environment-Fallen des Boards übernommen.
+
+OFFEN: der echte Turn je Anbieter. Er braucht einen durch den Gateway
+gerouteten Harness, der diese Modelle anpinnen kann — blockiert durch
+die Modellauflösung aus Posten 0/−1 (der Wähler bietet je Harness nur
+dessen eigene Modelle an).
 
 ## 6 · Sign-in-Ablauf übersichtlich (A4)
 

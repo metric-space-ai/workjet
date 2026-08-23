@@ -110,6 +110,44 @@ Offene Sachfrage für Rechner in der Leiste (B3): ob ein Entwurf die
 Ziel-Umgebung wechseln kann. `composerDraftStore` trägt `environmentId`;
 nie zu Ende geprüft.
 
+## 2b · UI/UX-Generalabgleich gegen die Swift-Vorlage
+
+Vom Betreiber mehrfach moniert („wie eine Debug-Konsole", „abenteuerlich
+dumm umgesetzt", „Farce") und in dieser Liste bisher NICHT als eigener
+Posten geführt — nur einzelne Seiten wurden repariert (Models `dfac8d911`,
+Pools `e3a05d6a9`, Worker-Editor `087cea464`, Prompt teilweise
+`bfbb02db4`). Der Rest wurde nie gegen das Original gehalten.
+
+Regel für JEDE Oberfläche (Lehre aus Fehlermuster Nr. 1): ERST die
+Swift-Ansicht in `~/Documents/claude-workjet/app/Sources/WorkjetApp/`
+öffnen, DANN bauen. Nicht aus dem Vertragsschema raten.
+
+Noch nie gegen die Vorlage geprüft:
+
+- **Sign-in-Ablauf je Anbieter** (SettingsView: Anbieter-Reiter mit
+  Logo-Kacheln, Status je Zugang, „Neu anmelden" am Zugang) — heute
+  verteilte Knöpfe mit Fortschritts-Prosa; A4/Posten 6.
+- **Workjet-Reiterleiste** — neun flache Reiter ohne Hierarchie; Swift
+  hat fünf mit klarer Aufgabenteilung (A3/Posten 1).
+- **Computers-Editor** — Formular mit sechs Harness-Zeilen samt
+  „Optional executable override"-Feldern; Swift zeigt Chips + Live-Status
+  („Claude Code: Version 2.1.226 installiert." + Aktualisieren/Entfernen).
+- **LLM-Routes-Seite** — Erklärprosa über drei Absätze, Auswahl zeigt
+  rohe UUIDs (`385a20df-… (this server)`); Swift zeigt sprechende Namen.
+- **Legacy-Import** — 14 Entscheidungen als endlose Liste mit
+  Roh-Hashes (`CLIProxy account-7dceb07fa…`); keine Gruppierung, keine
+  Vorbelegung sicherer Antworten.
+- **Telemetry/Execution/Capabilities** — nie angesehen.
+- **Durchgängig:** rohe IDs und Hashes im Sichtbereich, Erklärabsätze
+  statt Zustand, Wiederholung derselben Information, transiente
+  Meldungen dauerhaft im Layout (die Muster aus D5/T4, aber nur auf zwei
+  Seiten behoben).
+
+FERTIG heißt: jede Seite hat einen Screenshot-Vergleich gegen die
+Swift-Entsprechung ODER eine begründete bewusste Abweichung; keine rohe
+UUID/Hash im Standard-Sichtbereich; keine Erklärprosa, wo ein Zustand
+stehen kann.
+
 ## 3 · Import der 12 Swift-Worker (C1)
 
 `~/Library/Application Support/Workjet/config.v1.json` → Angebot in

@@ -24,7 +24,10 @@ import { renderDots, renderBar } from './dots.mjs';
 // dadurch passte der Inhalt rechnerisch, real aber nicht, und die Brille
 // scrollte ihn selbst. Genau das war das Wackeln bei jedem Seitenwechsel.
 const LINE_H = 26;          // Listenzeilen links
-const TEXT_LINE_H = 34;     // Zeilen im Lesekasten, bewusst grosszuegig
+// Gemessen an gerenderten Seiten: der Geraetefont setzt rund 28px Zeilen.
+// Zu grosszuegig gerechnet verschenkt eine ganze Zeile, zu knapp schneidet
+// der Kasten den Text ab (er scrollt nicht mehr — er fangt keine Eingaben).
+const TEXT_LINE_H = 29;
 const CHAR_W = 9.2;
 
 // Linke Spalte
@@ -92,6 +95,12 @@ export function boxHeightFor(zeilen) {
   return Math.min(BOX_H, Math.max(60, zeilen * TEXT_LINE_H + 26));
 }
 export const PANEL_CHARS = Math.floor((BOX_W - 26) / CHAR_W);
+// Im Volltext ist der Kasten breiter — der Umbruch muss das wissen, sonst
+// bleibt rechts die halbe Zeile leer.
+// Der Volltext beginnt links neben dem Leseweg-Balken; rechts endet er
+// dort, wo auch die Uebersicht endet.
+const DETAIL_BOX_X = 34;
+export const DETAIL_CHARS = Math.floor(((BOX_X + BOX_W) - DETAIL_BOX_X - 26) / CHAR_W);
 // Zeichen je Zeile inklusive Rahmen.
 export const BOX_CHARS = Math.floor(BOX_W / CHAR_W);
 const ITEM_CHARS = Math.floor((COL_W - 6) / CHAR_W);
@@ -145,10 +154,10 @@ export function boxTitle(nav) {
   if (nav.picker) return nav.picker.titel;
   const section = nav.sections[nav.sectionIndex];
   if (!section) return nav.betreff || '';
-  if (nav.level === LEVEL.DETAIL) {
-    const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
-    return pages > 1 ? `${section.titel} ${page + 1}/${pages}` : section.titel;
-  }
+  // Keine Seitenzahl: im Volltext liest man durch, die Position zeigt der
+  // Balken am rechten Rand. Eine Zaehlung "1/4" macht aus dem Lesen ein
+  // Blaettern.
+  if (nav.level === LEVEL.DETAIL) return section.titel;
   return section.titel;
 }
 
@@ -264,9 +273,12 @@ function bauePage(nav) {
         // selbst und die Gesten erreichen die App nicht mehr.
         containerID: CONTAINER.BOX_BODY,
         containerName: 'box-body',
-        xPosition: BOX_X,
+        // Der Kasten waechst nach LINKS. Rechte Kante, Titel und die obere
+        // wie untere Rahmenkante rechts bleiben damit exakt stehen — beim
+        // Aufklappen verschiebt sich nur, was sich verschieben muss.
+        xPosition: nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X,
         yPosition: BOX_Y,
-        width: BOX_W,
+        width: (BOX_X + BOX_W) - (nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X),
         // KONSTANT. Eine inhaltsabhaengige Hoehe waere eine Strukturaenderung
         // und erzwaenge bei jedem Seitenwechsel einen Neuaufbau — sichtbares
         // Neuzeichnen. Gegen das Scrollen hilft isEventCapture, nicht die
@@ -312,7 +324,7 @@ function bauePage(nav) {
       },
     ],
     imageObject: [
-      {
+      ...(nav.level === LEVEL.DETAIL ? [] : [{
         // Icons UND Namen in einem Bild: nur so laesst sich der aktive
         // Vorgang invertieren, und es spart einen Container.
         containerID: CONTAINER.CHANNELS,
@@ -322,12 +334,15 @@ function bauePage(nav) {
         width: CH_W + COL_W,
         height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
         zOrderIndex: 3,
-      },
+      }]),
       {
         containerID: CONTAINER.DOTS,
-        containerName: 'dots',
-        xPosition: DOTS_X,
-        yPosition: BOX_Y + 8,
+        containerName: 'rail',
+        // Im Volltext gehoert der Leseweg an den rechten Rand, neben den
+        // Text — nicht zwischen Navigation und Kasten. Mittig, weil ein Bild
+        // hoechstens 144 hoch sein darf, der Kasten aber 268.
+        xPosition: nav.level === LEVEL.DETAIL ? 8 : DOTS_X,
+        yPosition: nav.level === LEVEL.DETAIL ? BOX_Y + Math.round((BOX_H - 144) / 2) : BOX_Y + 8,
         width: DOTS_W,
         height: Math.min(144, BOX_H - 16),
         zOrderIndex: 4,
@@ -337,7 +352,9 @@ function bauePage(nav) {
         // dort unterbrochen, wo der Name steht.
         containerID: CONTAINER.LEGEND,
         containerName: 'legend',
-        xPosition: BOX_X + 14,
+        // Der Streifen sitzt ueber der oberen Kante des Kastens — und der
+        // steht im Volltext ganz links.
+        xPosition: BOX_X + 14,   // bleibt in beiden Ansichten an derselben Stelle
         yPosition: BOX_Y - 10,
         width: LEGEND_W,
         height: 20,

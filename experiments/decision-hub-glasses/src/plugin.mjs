@@ -4,9 +4,9 @@
 // Die Logik liegt in nav.mjs (Bedienung), layout.mjs (Seitenaufbau) und
 // sections.mjs (Inhalt) — hier wird nur verdrahtet.
 
-import { decisionIcons, tabLabel } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
+import { decisionIcons, tabLabel, layoutText } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, LEVEL } from './layout.mjs';
+import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, DETAIL_CHARS, LEVEL } from './layout.mjs';
 import { navigate, initialNav, SNOOZE_OPTIONS, OS_EVENT } from './nav.mjs';
 import { createTiltGate } from './tilt.mjs';
 
@@ -81,7 +81,12 @@ export function createDecisionHubPlugin({
   function currentNav() {
     const d = decision();
     if (!d) return null;
-    const sections = sectionsOf(d, vorgangOf(d), allowedSections, PANEL_CHARS);
+    // Volltext bricht auf der breiten Detailspalte um, die Kurzfassung auf
+    // der schmalen Uebersicht — sonst passt eine der beiden nie.
+    const sections = sectionsOf(d, vorgangOf(d), allowedSections, DETAIL_CHARS).map((sec) => ({
+      ...sec,
+      kurz: layoutText((sec.kurz || []).join(' '), PANEL_CHARS),
+    }));
     return {
       ...nav,
       tabs: decisions.map((item) => tabLabel(item, vorgangOf(item))),

@@ -309,3 +309,36 @@ test("the summary is brighter than the full text", async () => {
   assert.ok(kurz > lang, `summary ${kurz} must outweigh full text ${lang}`);
   assert.ok(kurz <= 4 && lang >= 0, "and both stay in the allowed 0..4");
 });
+
+// Beim Aufklappen darf sich nur bewegen, was sich bewegen MUSS. Rechte
+// Kante und Rubrikname bleiben stehen, der Kasten waechst nach links.
+test("expanding keeps the right edge and the rubric label in place", async () => {
+  const { buildPage, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail"], PANEL_CHARS),
+    tabs: ["REM"], tabIndex: 0, icons: [{ wert: "annehmen" }], betreff: "REM", typ: "TRIAGE",
+  };
+  const kurz = buildPage(nav);
+  const lang = buildPage({ ...nav, level: LEVEL.DETAIL });
+  const box = (p) => p.textObject.find((c) => c.containerName === "box-body");
+  const legende = (p) => p.imageObject.find((c) => c.containerName === "legend");
+
+  assert.equal(box(kurz).xPosition + box(kurz).width, box(lang).xPosition + box(lang).width,
+    "the right edge must not move");
+  assert.ok(box(lang).xPosition < box(kurz).xPosition, "the box grows to the left");
+  assert.equal(legende(kurz).xPosition, legende(lang).xPosition, "the rubric label stays put");
+  // Der Leseweg wandert nach links, damit der rechte Rahmen frei bleibt.
+  const rail = (p) => p.imageObject.find((c) => c.containerName === "rail");
+  assert.ok(rail(lang).xPosition < box(lang).xPosition, "the reading bar sits left of the text");
+});
+
+test("the long version fills the wider column", async () => {
+  const { PANEL_CHARS, DETAIL_CHARS } = await import("../src/layout.mjs");
+  assert.ok(DETAIL_CHARS > PANEL_CHARS + 10,
+    `the wide column must actually wrap wider: ${PANEL_CHARS} -> ${DETAIL_CHARS}`);
+});

@@ -1584,6 +1584,79 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("reports an api_error result as failed even though its subtype is success", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      // Byte-for-byte the shape observed in
+      // ~/.t3/userdata/logs/provider/events.*.log when the CLI's OAuth session
+      // has expired: subtype "success", is_error true, terminal_reason
+      // "api_error", NO `errors` array, reason in `result`, and the request
+      // never reached the API (duration_api_ms 0).
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        terminal_reason: "api_error",
+        duration_api_ms: 0,
+        num_turns: 1,
+        stop_reason: "stop_sequence",
+        result: "Failed to authenticate: OAuth session expired and could not be refreshed",
+        session_id: "sdk-session-api-error",
+        uuid: "result-api-error",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+
+      // The operator must be told. Before the fix no error event was emitted
+      // at all, because resultUserFacingError returned undefined for anything
+      // wearing subtype "success".
+      const runtimeError = runtimeEvents.find((event) => event.type === "runtime.error");
+      assert.isDefined(runtimeError, "an api_error result must surface as runtime.error");
+      if (runtimeError?.type === "runtime.error") {
+        assert.equal(
+          runtimeError.payload.message,
+          "Failed to authenticate: OAuth session expired and could not be refreshed",
+        );
+      }
+
+      const turnCompleted = runtimeEvents[runtimeEvents.length - 1];
+      assert.equal(turnCompleted?.type, "turn.completed");
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(String(turnCompleted.turnId), String(turn.turnId));
+        // Booking this as "completed" is the defect: it stored thirteen
+        // consecutive authentication outages as successful turns, which is
+        // why a 100%-failing provider stayed invisible behind a green UI.
+        assert.equal(turnCompleted.payload.state, "failed");
+        assert.equal(
+          turnCompleted.payload.errorMessage,
+          "Failed to authenticate: OAuth session expired and could not be refreshed",
+        );
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("treats aborted_tools results as interrupted and hides ede_diagnostic errors", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

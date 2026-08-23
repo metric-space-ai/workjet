@@ -389,7 +389,44 @@ function resultErrorsText(result: SDKResultMessage): string {
  * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
  * so they must never become the error banner.
  */
+/**
+ * A hard provider failure that arrives wearing the success shape.
+ *
+ * The CLI reports an API-level outage as `subtype: "success"` with
+ * `is_error: true`, `terminal_reason: "api_error"`, no `errors` array at all,
+ * and the human-readable text in `result`. An expired OAuth session is the
+ * common case:
+ *
+ *   { subtype: "success", is_error: true, terminal_reason: "api_error",
+ *     duration_api_ms: 0,
+ *     result: "Failed to authenticate: OAuth session expired and could not
+ *              be refreshed" }
+ *
+ * Reading `subtype` alone therefore books a provider that answers NOTHING as a
+ * completed turn and drops the reason on the floor. That is not hypothetical:
+ * it is how thirteen consecutive authentication failures were stored as
+ * `state: "completed"` while the UI kept reporting the provider as healthy.
+ *
+ * Deliberately narrow — only the success shape. Every other subtype already
+ * reaches `turnStatusFromResult`'s failure path with its `errors` intact, so
+ * widening this would change classifications that are already correct.
+ */
+function isSuccessShapedFailure(result: SDKResultMessage): boolean {
+  return result.subtype === "success" && result.is_error === true;
+}
+
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
+  if (isSuccessShapedFailure(result)) {
+    // `errors` is absent on this shape; the reason lives in `result`. Falling
+    // back to a fixed sentence keeps the banner non-empty, because a failure
+    // the operator cannot see is the defect being fixed here.
+    // Read defensively: the SDK union declares `result` only on the success
+    // member, so TypeScript cannot narrow it here. That mis-modelling is part
+    // of the same defect — upstream treats "success" as meaning no failure.
+    const raw = (result as { readonly result?: unknown }).result;
+    const text = typeof raw === "string" ? raw.trim() : "";
+    return text.length > 0 ? text : "The provider reported an API error.";
+  }
   if (result.subtype === "success" || !Array.isArray(result.errors)) {
     return undefined;
   }
@@ -1317,6 +1354,12 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 });
 
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
+  // Checked BEFORE the success shortcut: an api_error result carries
+  // subtype "success", so trusting the subtype first reports the turn as
+  // completed. See isSuccessShapedFailure.
+  if (isSuccessShapedFailure(result)) {
+    return isInterruptedResult(result) ? "interrupted" : "failed";
+  }
   if (result.subtype === "success") {
     return "completed";
   }

@@ -42,6 +42,7 @@ import {
   type ProviderInstance,
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
+import { getProviderAuthObservation, reconcileAuthClaim } from "../ProviderAuthObservations.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import { resolveGatewayRoutedEnvironment } from "../ProviderGatewayRouting.ts";
 import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
@@ -104,6 +105,15 @@ const withInstanceIdentity =
   }) =>
   (snapshot: ServerProviderDraft): ServerProvider => ({
     ...snapshot,
+    // The probe that produced `snapshot.auth` never reached the API — it reads
+    // a LOCAL handshake that succeeds with a dead token. A real turn is the
+    // only thing that spends the credential, so its verdict overrides, but
+    // only when it is newer than this probe.
+    auth: reconcileAuthClaim({
+      claim: snapshot.auth,
+      observation: getProviderAuthObservation(input.instanceId),
+      probedAtMs: Date.parse(snapshot.checkedAt),
+    }),
     instanceId: input.instanceId,
     driver: DRIVER_KIND,
     ...(input.displayName ? { displayName: input.displayName } : {}),

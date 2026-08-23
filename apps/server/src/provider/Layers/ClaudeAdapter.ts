@@ -57,6 +57,7 @@ import {
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -96,6 +97,11 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  clearProviderAuthObservation,
+  isAuthenticationFailureMessage,
+  recordProviderAuthFailure,
+} from "../ProviderAuthObservations.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -3021,6 +3027,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const status = turnStatusFromResult(message);
     const errorMessage = resultUserFacingError(message);
+
+    // A turn is the only thing that actually spends the credential, so record
+    // what it saw. Settings otherwise publishes "Authenticated" purely on the
+    // strength of a local handshake that succeeds with a dead token.
+    if (status === "completed") {
+      clearProviderAuthObservation(boundInstanceId);
+    } else if (
+      status === "failed" &&
+      errorMessage !== undefined &&
+      isAuthenticationFailureMessage(errorMessage)
+    ) {
+      recordProviderAuthFailure(boundInstanceId, errorMessage, yield* Clock.currentTimeMillis);
+    }
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");

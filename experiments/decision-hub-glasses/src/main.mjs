@@ -13,6 +13,7 @@ import {
   instanceFrom,
   passesFilter,
   isLive,
+  RUHEZEITEN,
 } from "./settings.mjs";
 import { osEventFrom, imuFrom } from "./event-decode.mjs";
 import { scanInvite } from "./pairing.mjs";
@@ -164,6 +165,7 @@ async function main() {
     filter: (decision) => passesFilter(decision, settings),
     sections: settings.sections,
     demo: !live,
+    ruhezeitMs: (RUHEZEITEN.find((z) => z.id === settings.ruhezeit) || { ms: 45000 }).ms,
     onError: (error) => {
       console.error("[decision-hub]", error?.stack || error?.message || String(error));
       status(`Fehler: ${error?.message || error}`, "error");

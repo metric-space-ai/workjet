@@ -43,6 +43,9 @@ export function createDecisionHubPlugin({
   // Ohne Sperrzeit rauscht die Anzeige durch mehrere Seiten und ist auf der
   // echten Brille nicht bedienbar. Wert in Millisekunden.
   scrollSperreMs = 320,
+  // Nach dieser Ruhezeit blendet die Anzeige aus. 0 schaltet das ab.
+  ruhezeitMs = 45000,
+  jetzt = () => Date.now(),
   onError = () => {},
   onPaint = () => {},
   filter = () => true,
@@ -117,6 +120,11 @@ export function createDecisionHubPlugin({
       started = true;
     } else if (signature !== lastSignature) {
       await mitFrist('rebuildPageContainer', () => sdk.rebuildPageContainer(page));
+      // Der Neuaufbau ersetzt die Container — ihre Bildinhalte sind damit
+      // weg. Wer jetzt "unveraendert" annimmt, laesst Icons und Punkte
+      // verschwinden (am Simulator gesehen: nach dem Aufklappen war die
+      // Kanalspalte leer). Also Gedaechtnis loeschen und neu senden.
+      gesendeteBilder.clear();
     }
     if (signature !== lastSignature) {
       // Ausgeblendet gibt es nichts zu zeichnen — das spart Funk und Strom.
@@ -206,10 +214,33 @@ export function createDecisionHubPlugin({
   }
 
   let letzterScroll = 0;
+  let ruheUhr = null;
+
+  /** Ruhezeit neu anstossen — nach jeder Bedienung. */
+  function ruheAnstossen() {
+    if (ruheUhr) clearTimeout(ruheUhr);
+    ruheUhr = null;
+    if (!ruhezeitMs || !visible) return;
+    ruheUhr = setTimeout(() => {
+      // Die Brille traegt man den ganzen Tag; eine liegengebliebene Anzeige
+      // im Blickfeld stoert. Sie kommt beim naechsten Handgriff zurueck.
+      visible = false;
+      paint().catch(() => {});
+    }, ruhezeitMs);
+    if (typeof ruheUhr?.unref === 'function') ruheUhr.unref();
+  }
 
   async function handleEvent(osEvent) {
     const view = currentNav();
     if (!view) return;
+    ruheAnstossen();
+    if (!visible) {
+      // Ausgeblendet: der erste Handgriff holt die Anzeige zurueck und
+      // fuehrt sonst nichts aus — sonst entscheidet man blind.
+      visible = true;
+      await paint();
+      return;
+    }
     if (osEvent === OS_EVENT.SCROLL_TOP || osEvent === OS_EVENT.SCROLL_BOTTOM) {
       const jetzt = Date.now();
       if (jetzt - letzterScroll < scrollSperreMs) return;   // Nachzuegler derselben Geste
@@ -234,6 +265,14 @@ export function createDecisionHubPlugin({
     }
     if (action?.type === 'nextCase') {
       await nextCase();
+      return;
+    }
+    if (action?.type === 'prevCase' && index === 0) {
+      // Ganz oben angekommen: statt im Kreis zum letzten Vorgang zu springen,
+      // blendet die Anzeige aus. Das ist die Geste zum Wegschauen — der
+      // naechste Handgriff holt sie zurueck.
+      visible = false;
+      await paint();
       return;
     }
     if (action?.type === 'prevCase') {
@@ -284,10 +323,16 @@ export function createDecisionHubPlugin({
     async start() {
       try {
         await refresh();
+        ruheAnstossen();
       } catch (error) {
         onError(error);
         throw error;
       }
+    },
+    /** Ruhezeit anhalten — fuer Tests und beim Beenden. */
+    stop() {
+      if (ruheUhr) clearTimeout(ruheUhr);
+      ruheUhr = null;
     },
     handleEvent: (osEvent) => handleEvent(osEvent).catch(onError),
     handleImu: (sample) => handleImu(sample).catch(onError),

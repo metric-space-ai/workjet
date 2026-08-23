@@ -37,9 +37,6 @@ test("scrolling down walks through every page of the case", async () => {
     seen.push(body(calls));
   }
   assert.equal(new Set(seen).size, 5, "five distinct pages: mail, reply, task, notes, audit");
-  assert.ok(seen[0].includes("MAIL"));
-  assert.ok(seen[1].includes("ANTWORT"));
-  assert.ok(seen[2].includes("AUFGABE"));
 });
 
 test("scrolling up returns to the previous page", async () => {
@@ -279,4 +276,112 @@ test("a press is never swallowed by the scroll lock", async () => {
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(plugin.state.level, "detail", "pressing must stay responsive");
+});
+
+// Kopfneigung liefert das Geraet nicht zuverlaessig. Ersatzgeste: ganz nach
+// oben scrollen blendet aus — man merkt, dass man am Anfang angekommen ist.
+test("scrolling up past the very top hides the display", async () => {
+  const { sdk, calls, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
+  await plugin.start();
+  assert.equal(plugin.visible, true);
+  await plugin.handleEvent(OS_EVENT.SCROLL_TOP);   // erste Seite, erster Vorgang
+  assert.equal(plugin.visible, false, "the top of the list blanks the display");
+  assert.equal(calls.lastPage.textObject.length, 1, "and nothing is drawn");
+});
+
+test("the next gesture brings the display back without deciding", async () => {
+  const { sdk, answers, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
+  await plugin.start();
+  await plugin.handleEvent(OS_EVENT.SCROLL_TOP);
+  assert.equal(plugin.visible, false);
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  assert.equal(plugin.visible, true, "back on screen");
+  assert.equal(answers.length, 0, "the reviving press must not decide anything");
+});
+
+test("hiding only happens at the very top, not between cases", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
+  await plugin.start();
+  const start = plugin.state.index;
+  while (plugin.state.index === start) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  const zweiter = plugin.state.index;
+  while (plugin.state.index === zweiter) await plugin.handleEvent(OS_EVENT.SCROLL_TOP);
+  assert.equal(plugin.visible, true, "going back one case must not blank the screen");
+});
+
+// Eine liegengebliebene Anzeige im Blickfeld stoert. Nach einstellbarer
+// Ruhezeit blendet sie aus und kommt beim naechsten Handgriff zurueck.
+test("the display blanks itself after the configured idle time", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0, ruhezeitMs: 40 });
+  await plugin.start();
+  assert.equal(plugin.visible, true);
+  await new Promise((r) => setTimeout(r, 90));
+  assert.equal(plugin.visible, false, "idle means out of the way");
+  plugin.stop();
+});
+
+test("every gesture restarts the idle clock", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0, ruhezeitMs: 80 });
+  await plugin.start();
+  for (let i = 0; i < 3; i += 1) {
+    await new Promise((r) => setTimeout(r, 40));
+    await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  }
+  assert.equal(plugin.visible, true, "while it is being used it must stay up");
+  plugin.stop();
+});
+
+test("the idle timeout can be switched off", async () => {
+  const { sdk, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0, ruhezeitMs: 0 });
+  await plugin.start();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(plugin.visible, true);
+  plugin.stop();
+});
+
+// Die Kurzfassung ist eine eigenstaendige Zusammenfassung, KEIN
+// angeschnittener Originaltext: sie muss ohne Scrollen lesbar sein.
+test("every short version fits on one page", async () => {
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { CONTENT_LINES, PANEL_CHARS } = await import("../src/layout.mjs");
+  const daten = await createSource().load();
+  for (const dec of daten.decisions) {
+    const v = daten.vorgaenge.find((x) => x.id === dec.vorgang_id);
+    for (const s of sectionsOf(dec, v, ["mail", "antwort", "aufgabe", "notizen"], PANEL_CHARS)) {
+      assert.ok(s.kurz.length <= CONTENT_LINES,
+        `"${s.titel}" needs ${s.kurz.length} lines, a page holds ${CONTENT_LINES}`);
+    }
+  }
+});
+
+test("the overview shows the summary, not the cut-off original", async () => {
+  const { sdk, calls, source } = harness();
+  const plugin = createDecisionHubPlugin({ sdk, source, scrollSperreMs: 0 });
+  await plugin.start();
+  const kurz = body(calls);
+  assert.ok(!kurz.includes("..."), "a summary is never truncated");
+  assert.ok(!kurz.startsWith("Guten Morgen"), "and it is not the raw mail either");
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  assert.ok(body(calls).includes("Guten Morgen"), "the long version carries the original text");
+});
+
+test("the long version of a mail describes its attachments", async () => {
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { PANEL_CHARS } = await import("../src/layout.mjs");
+  const daten = await createSource().load();
+  const v = daten.vorgaenge[0];
+  const mail = sectionsOf(daten.decisions[0], v, ["mail"], PANEL_CHARS)[0];
+  const text = mail.zeilen.join(" ");
+  assert.ok(text.includes("ANHÄNGE"), "attachments get their own heading");
+  assert.ok(text.includes("portal-fehler.png"), "named …");
+  assert.ok(text.includes("Bildschirmfoto"), "… and described, not just listed");
+  assert.ok(!mail.kurz.join(" ").includes("ANHÄNGE"), "but not in the summary");
 });

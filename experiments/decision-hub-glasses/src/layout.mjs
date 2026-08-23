@@ -17,7 +17,7 @@
 
 import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { renderActionBar, renderChannelColumn, bitmapPayload } from './icons.mjs';
+import { renderActionBar, renderChannelColumn, renderLegend, legendWidth, bitmapPayload } from './icons.mjs';
 import { renderDots } from './dots.mjs';
 
 const LINE_H = 26;
@@ -46,9 +46,11 @@ const DOTS_W = 20;
 
 // Lesebox rechts
 const BOX_X = DOTS_X + DOTS_W + 4;
-const BOX_Y = 4;
+// Der Kasten beginnt tiefer, damit der Rubrik-Streifen ueber seiner oberen
+// Kante liegen kann, ohne aus dem Display zu laufen.
+const BOX_Y = 15;
 const BOX_W = DISPLAY_W - BOX_X - 4;
-const BOX_H = DISPLAY_H - BOX_Y * 2;
+const BOX_H = DISPLAY_H - BOX_Y - 5;
 
 export const CONTAINER = {
   ITEMS: 1,
@@ -57,6 +59,7 @@ export const CONTAINER = {
   CHANNELS: 20,
   DOTS: 21,
   BAR: 22,
+  LEGEND: 23,
 };
 
 const BRIGHT = 4;
@@ -108,19 +111,22 @@ export function barY(nav) {
   return LIST_Y + rowsBefore * LINE_H + 2;
 }
 
+/**
+ * Beschriftung des Rahmenstreifens — nur die Rubrik, aufgeklappt mit
+ * Seitenzahl. Der Betriebszustand stand hier zuerst mit; bei doppelter
+ * Schriftgroesse passt er nicht mehr in die erlaubten 288 Pixel und wurde
+ * abgeschnitten. Er gehoert in die linke Spalte, weil er den ganzen Vorgang
+ * betrifft und nicht die einzelne Rubrik.
+ */
 export function boxTitle(nav) {
+  if (nav.picker) return nav.picker.titel;
   const section = nav.sections[nav.sectionIndex];
-  if (nav.picker) return row(nav.picker.titel, nav.demo ? 'DEMO' : '', PANEL_CHARS);
-  // Oben rechts steht immer, woran man ist: im Demo-Modus DEMO, sonst der
-  // Vorgang. Ohne diesen Hinweis waere am Geraet nicht zu erkennen, ob eine
-  // Entscheidung wirklich etwas ausloest.
-  const rechts = nav.demo ? 'DEMO' : (nav.typ || '');
-  if (nav.level === LEVEL.DETAIL && section) {
+  if (!section) return nav.betreff || '';
+  if (nav.level === LEVEL.DETAIL) {
     const { page, pages } = pageOf(section, nav.page, CONTENT_LINES);
-    const links = pages > 1 ? `${section.titel} ${page + 1}/${pages}` : section.titel;
-    return row(links, rechts, PANEL_CHARS);
+    return pages > 1 ? `${section.titel} ${page + 1}/${pages}` : section.titel;
   }
-  return row(section ? section.titel : (nav.betreff || ''), rechts, PANEL_CHARS);
+  return section.titel;
 }
 
 /**
@@ -144,13 +150,27 @@ export function boxTitle(nav) {
  * wirklich etwas ausloest.
  */
 export function boxHeader(nav, width) {
-  const links = boxTitle(nav);
-  const rechts = nav.demo ? 'DEMO' : (nav.typ || '');
-  if (!rechts) return links;
-  return row(links, rechts, width);
+  return boxTitle(nav);
+}
+
+/**
+ * Beschriftung des Rahmenstreifens: nur die Rubrik. Der Betriebszustand
+ * stand hier zuerst mit — bei doppelter Schriftgroesse passt er nicht mehr
+ * in die erlaubten 288 Pixel und wurde abgeschnitten. Er gehoert in die
+ * linke Spalte, weil er den ganzen Vorgang betrifft, nicht die Rubrik.
+ */
+export function legendTitle(nav) {
+  return boxTitle(nav);
 }
 
 export function framedBox(title, lines, width, height) {
+  // Der Titel steht NICHT mehr im Kasten: er sitzt als Streifen im Rahmen
+  // (Container LEGEND). Hier bleibt nur der Inhalt — das gibt zwei Zeilen
+  // mehr zurueck, die vorher Titel und Trennstrich belegt haben.
+  return lines.slice(0, height);
+}
+
+export function framedBoxAlt(title, lines, width, height) {
   // KEIN Textrahmen: die Geraetefont ist proportional, die rechte Kante
   // franst aus (am Simulator gesehen). Den Rahmen zeichnet der Container,
   // hier trennt nur eine Linie den Rubriktitel vom Inhalt — sonst liest sich
@@ -179,8 +199,12 @@ export function contentLines(nav) {
   if (nav.level === LEVEL.DETAIL) {
     return [...kopf, ...pageOf(section, nav.page, rest).zeilen];
   }
-  const lines = section.zeilen.slice(0, rest);
-  if (section.zeilen.length > rest) {
+  // Uebersicht = eigenstaendige Kurzfassung, nicht der angeschnittene
+  // Volltext. Sie soll auf EINE Seite passen; muss sie doch gekuerzt werden,
+  // ist das ein Datenfehler und kein Bedienzustand — der Hinweis bleibt.
+  const kurz = section.kurz || section.zeilen;
+  const lines = kurz.slice(0, rest);
+  if (kurz.length > rest) {
     lines[lines.length - 1] = `${(lines[lines.length - 1] || '').slice(0, PANEL_CHARS - 4)} ...`;
   }
   return [...kopf, ...lines];
@@ -196,10 +220,19 @@ export function railState(nav) {
 }
 
 export function buildPage(nav) {
+  const seite = bauePage(nav);
+  seite.containerTotalNum = (seite.textObject?.length || 0) + (seite.imageObject?.length || 0);
+  return seite;
+}
+
+function bauePage(nav) {
   const focused = nav.focusIcon >= 0;
   const items = itemLines(nav);
   return {
-    containerTotalNum: 5,
+    // Fest verdrahtet war das schon einmal falsch: die Firmware weist die
+    // Seite ab, wenn die angekuendigte Zahl nicht zur tatsaechlichen passt.
+    // Wird unten aus den Containern berechnet.
+    containerTotalNum: 0,
     textObject: [
       {
         containerID: CONTAINER.ITEMS,
@@ -207,8 +240,11 @@ export function buildPage(nav) {
         xPosition: TEXT_X,
         yPosition: LIST_Y,
         width: COL_W,
-        height: Math.min(items.length, MAX_ITEMS) * LINE_H + 6,
-        content: items.join('\n'),
+        height: Math.min(items.length + (nav.demo ? 1 : 0), MAX_ITEMS + 1) * LINE_H + 6,
+        // Der Betriebszustand steht unter der Vorgangsliste: er gilt fuer
+        // alles, nicht fuer die gerade offene Rubrik. Ohne ihn ist am Geraet
+        // nicht zu sehen, ob eine Entscheidung wirklich etwas ausloest.
+        content: (nav.demo ? [...items, 'DEMO'] : items).join('\n'),
         textColor: focused ? DIM : BRIGHT,
         isEventCapture: 0,
         zOrderIndex: 0,
@@ -259,6 +295,17 @@ export function buildPage(nav) {
         zOrderIndex: 4,
       },
       {
+        // Rubrik-Streifen ueber der oberen Rahmenkante — der Rahmen ist genau
+        // dort unterbrochen, wo der Name steht.
+        containerID: CONTAINER.LEGEND,
+        containerName: 'legend',
+        xPosition: BOX_X + 14,
+        yPosition: BOX_Y - 10,
+        width: legendWidth(boxTitle(nav)),
+        height: 20,
+        zOrderIndex: 9,
+      },
+      {
         containerID: CONTAINER.BAR,
         containerName: 'bar',
         xPosition: COL_X,
@@ -275,6 +322,7 @@ export function buildPage(nav) {
 }
 
 export function buildBitmaps(nav) {
+  const titel = boxTitle(nav);
   const { from, tabs } = visibleCases(nav);
   return [
     bitmapPayload(
@@ -293,6 +341,10 @@ export function buildBitmaps(nav) {
     bitmapPayload(
       renderDots({ width: DOTS_W, height: Math.min(144, BOX_H - 16), ...railState(nav) }),
       CONTAINER.DOTS,
+    ),
+    bitmapPayload(
+      renderLegend({ title: titel, width: legendWidth(titel), height: 20 }),
+      CONTAINER.LEGEND,
     ),
     bitmapPayload(
       renderActionBar({

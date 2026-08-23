@@ -113,6 +113,27 @@ export function renderChannelColumn({ width, height, pitch, channels, active, ro
   return bmp;
 }
 
+/**
+ * Die Rubrik sitzt IM Rahmen, nicht darin: dieser Streifen liegt ueber der
+ * oberen Rahmenkante und deckt sie auf seiner Breite ab. Dadurch ist der
+ * Rahmen genau dort unterbrochen, wo der Name steht — man sieht auf einen
+ * Blick, in welcher Rubrik man ist, ohne eine Zeile Inhalt dafuer zu opfern.
+ */
+const LEGEND_SCALE = 2;   // Massstab 1 war am Geraet kaum zu lesen.
+
+export function renderLegend({ title, width, height }) {
+  const bmp = createBitmap(width, height);
+  fillRect(bmp, 0, 0, width, height, 0);            // deckt die Rahmenlinie ab
+  const y = Math.max(0, Math.floor((height - 7 * LEGEND_SCALE) / 2));
+  drawText(bmp, title, 6, y, LEGEND_SCALE, ON, setPixel);
+  return bmp;
+}
+
+export function legendWidth(title) {
+  // 20 ist die kleinste erlaubte Bildbreite, 288 die groesste.
+  return Math.max(20, Math.min(288, textWidth(title, LEGEND_SCALE) + 14));
+}
+
 export function bitmapPayload(bmp, containerID) {
   // Das Feld heisst imageData (ImageRawDataUpdate); mapRawData gehoert zur
   // Fragment-Variante und wird vom Host mit "no image_data provided" quittiert.

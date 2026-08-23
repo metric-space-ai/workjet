@@ -25,29 +25,63 @@ const TITEL = {
  */
 export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'aufgabe', 'notizen'], width = 52) {
   const out = [];
-  const push = (id, zeilen) => {
-    const gefiltert = (zeilen || []).filter((z) => z != null);
-    if (!gefiltert.length || !erlaubt.includes(id)) return;
+  /**
+   * Jeder Abschnitt hat ZWEI Fassungen:
+   *   kurz  — worum es geht, auf einer Seite, ohne Scrollen. Das ist eine
+   *           Zusammenfassung, KEIN abgeschnittener Originaltext.
+   *   lang  — der wesentliche Originaltext, seitenweise lesbar.
+   * Ein angeschnittener Satz auf der Übersicht ist unbrauchbar: man muss
+   * aufklappen, nur um den ersten Gedanken zu Ende zu lesen.
+   */
+  const push = (id, lang, kurz) => {
+    const volltext = (lang || []).filter((z) => z != null);
+    if (!volltext.length || !erlaubt.includes(id)) return;
+    const kurzfassung = (kurz || []).filter((z) => z != null);
     out.push({
       id,
       titel: TITEL[id] || id.toUpperCase(),
-      zeilen: gefiltert,
-      // Vorschau: die erste inhaltliche Zeile, hart gekürzt.
-      vorschau: gefiltert.find((z) => z.trim()) || '',
+      // `zeilen` bleibt der Volltext (Langfassung, seitenweise).
+      zeilen: volltext,
+      // `kurz` ist die eigenständige Zusammenfassung für die Übersicht.
+      // Fehlt sie, greift der Volltext — dann wird eben doch gekürzt.
+      kurz: kurzfassung.length ? kurzfassung : volltext,
+      vorschau: (kurzfassung[0] || volltext.find((z) => z.trim()) || ''),
     });
   };
 
-  const mail = vorgang?.quelle_json?.body_clean;
-  push('mail', mail ? layoutText(mail, width) : null);
+  const quelle = vorgang?.quelle_json || {};
+  const triageJson = vorgang?.triage_json || {};
+  const mail = quelle.body_clean;
+  const mailLang = [];
+  if (mail) {
+    mailLang.push(...layoutText(mail, width));
+    // Anhänge gehören in die Langfassung: sie erklären oft erst, worum es geht.
+    const anhaenge = quelle.anhaenge || quelle.attachments || [];
+    if (anhaenge.length) {
+      mailLang.push('', 'ANHÄNGE');
+      for (const a of anhaenge) {
+        const name = typeof a === 'string' ? a : (a.name || 'Anhang');
+        const was = typeof a === 'string' ? '' : (a.beschreibung ? ` — ${a.beschreibung}` : '');
+        mailLang.push(...layoutText(`• ${name}${was}`, width));
+      }
+    }
+  }
+  push('mail', mailLang.length ? mailLang : null,
+    triageJson.zusammenfassung ? layoutText(triageJson.zusammenfassung, width) : null);
 
-  const triage = vorgang?.triage_json;
-  push('antwort', triage?.antwort_vorschlag ? layoutText(triage.antwort_vorschlag, width) : null);
+  const triage = triageJson;
+  push('antwort',
+    triage?.antwort_vorschlag ? layoutText(triage.antwort_vorschlag, width) : null,
+    triage?.antwort_kurz ? layoutText(triage.antwort_kurz, width) : null);
 
   if (triage?.aufgabe?.beschreibung) {
     const zeilen = [];
     if (triage.aufgabe.agent) zeilen.push(`→ ${triage.aufgabe.agent}`);
     zeilen.push(...layoutText(triage.aufgabe.beschreibung, width));
-    push('aufgabe', zeilen);
+    const kurz = triage.aufgabe_kurz
+      ? [triage.aufgabe.agent ? `→ ${triage.aufgabe.agent}` : null, ...layoutText(triage.aufgabe_kurz, width)]
+      : null;
+    push('aufgabe', zeilen, kurz);
   }
 
   push('notizen', triage?.notizen ? layoutText(triage.notizen, width) : null);
@@ -58,6 +92,7 @@ export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'auf
       id,
       titel: String(seite.titel || 'DETAIL').toUpperCase(),
       zeilen: seite.zeilen || [],
+      kurz: seite.kurz || seite.zeilen || [],
       vorschau: (seite.zeilen || []).find((z) => z.trim()) || '',
     });
   }

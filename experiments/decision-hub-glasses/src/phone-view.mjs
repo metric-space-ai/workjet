@@ -2,7 +2,7 @@
 // WAS auf der Brille erscheint. Die Vorgaenge selbst gehoeren auf die Brille;
 // unten steht nur eine kompakte Vorschau, damit man sieht, dass Daten fliessen.
 
-import { DECISION_TYPES, GLASS_SECTIONS, MODES, activeInstance, isLive } from "./settings.mjs";
+import { DECISION_TYPES, GLASS_SECTIONS, MODES, RUHEZEITEN, activeInstance, isLive } from "./settings.mjs";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -82,6 +82,19 @@ export function renderSettings(root, ctx) {
     modus.append(el('p', 'dh-note', 'Ohne verbundene Instanz bleibt es bei Demo-Daten.'));
   }
   root.append(modus);
+
+  // --- Anzeige: wie lange sie stehen bleibt ---
+  const anzeige = card("Anzeige", "Nach dieser Ruhezeit blendet die Brille aus");
+  const zeiten = el("div", "dh-chips");
+  for (const zeit of RUHEZEITEN) {
+    const chip = el("button", `dh-chip${settings.ruhezeit === zeit.id ? " is-active" : ""}`, zeit.label);
+    chip.type = "button";
+    chip.addEventListener("click", () => ctx.onSettings({ ruhezeit: zeit.id }));
+    zeiten.append(chip);
+  }
+  anzeige.append(zeiten);
+  anzeige.append(el("p", "dh-note", "Der nächste Handgriff holt sie zurück. Ganz nach oben scrollen blendet sofort aus."));
+  root.append(anzeige);
 
   // --- Verbindung: der Grund, warum diese App auf dem Handy existiert. ---
   const instance = activeInstance(settings);

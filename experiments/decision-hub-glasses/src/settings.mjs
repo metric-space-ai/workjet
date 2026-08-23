@@ -28,7 +28,16 @@ export const MODES = [
   { id: 'live', label: 'Live', hint: 'Echte Vorgänge deiner Instanz. Annehmen versendet und delegiert wirklich.' },
 ];
 
+/** Ruhezeit, nach der die Anzeige ausblendet. */
+export const RUHEZEITEN = [
+  { id: 'aus', label: 'aus', ms: 0 },
+  { id: '15s', label: '15 Sek.', ms: 15000 },
+  { id: '45s', label: '45 Sek.', ms: 45000 },
+  { id: '2m', label: '2 Min.', ms: 120000 },
+];
+
 export const DEFAULTS = {
+  ruhezeit: '45s',
   // Demo ist die Vorgabe: eine falsche Entscheidung im Live-Betrieb schickt
   // eine Mail an einen echten Kunden. Der Wechsel muss bewusst passieren.
   mode: 'demo',

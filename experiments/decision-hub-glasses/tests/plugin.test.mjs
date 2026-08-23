@@ -39,7 +39,7 @@ test("the page carries the reading box and one item per rubric", async () => {
   const page = sdk.calls.lastPage;
   assert.equal(page.textObject.length, 2, "items column + reading box");
   assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
-  assert.equal(page.imageObject.length, 3, "channel icons, nav dots and the icon bar");
+  assert.equal(page.imageObject.length, 4, "channel icons, nav dots, icon bar and the rubric legend");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
 });
 
@@ -135,4 +135,61 @@ test("every page respects the firmware limits for containers", async () => {
     const ids = [...text, ...bild].map((c) => c.containerID);
     assert.equal(new Set(ids).size, ids.length, "container ids must be unique across the page");
   }
+});
+
+// Die Rubrik muss IM Rahmen stehen, nicht als Zeile darin: der Streifen
+// liegt ueber der oberen Rahmenkante und unterbricht sie genau dort.
+test("the rubric sits in the frame, not inside the box", async () => {
+  const { buildPage, CONTAINER, PANEL_CHARS, boxTitle } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
+    tabs: [{ titel: "REM", kanal: "mail" }], tabIndex: 0,
+    icons: [{ id: "annehmen" }], betreff: "REM", typ: "TRIAGE",
+  };
+  const page = buildPage(nav);
+  const box = page.textObject.find((c) => c.containerName === "box-body");
+  const legende = page.imageObject.find((c) => c.containerName === "legend");
+
+  assert.ok(legende, "there must be a legend strip");
+  assert.ok(!box.content.startsWith("MAIL"), "the title must not be the first line of the box any more");
+  assert.ok(!box.content.includes("─"), "and no rule underneath it either");
+  assert.ok(box.content.startsWith("REM Capital kommt"), "the box starts straight into the summary");
+
+  const boxOben = page.textObject.find((c) => c.containerName === "box-body").yPosition;
+  assert.ok(legende.yPosition < boxOben, "the strip sits above the top edge …");
+  assert.ok(legende.yPosition + legende.height > boxOben, "… and reaches across it, so the frame is broken there");
+  assert.ok(legende.xPosition > box.xPosition, "indented, not starting in the corner");
+  assert.ok(legende.width >= 20 && legende.width <= 288, "and within the firmware limits");
+  assert.equal(boxTitle(nav).includes("MAIL"), true, "the strip carries the rubric name");
+});
+
+// Ein Neuaufbau der Seite ersetzt die Container und leert ihre Bilder.
+// Werden sie dann als "unveraendert" uebersprungen, fehlen Icons und Punkte.
+test("images are resent after every page rebuild", async () => {
+  const { createDecisionHubPlugin } = await import("../src/plugin.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { OS_EVENT } = await import("../src/nav.mjs");
+  let rebuilds = 0;
+  const bilderNachRebuild = [];
+  let seitRebuild = 0;
+  const sdk = {
+    async createStartUpPageContainer() { return 0; },
+    async rebuildPageContainer() {
+      if (rebuilds > 0) bilderNachRebuild.push(seitRebuild);
+      rebuilds += 1; seitRebuild = 0; return true;
+    },
+    async textContainerUpgrade() { return true; },
+    async updateImageRawData() { seitRebuild += 1; return 0; },
+  };
+  const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
+  await plugin.start();
+  for (let i = 0; i < 4; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  assert.ok(rebuilds >= 3, "the test needs several rebuilds to be meaningful");
+  assert.ok(bilderNachRebuild.every((n) => n > 0),
+    `after a rebuild the images must be sent again, got ${JSON.stringify(bilderNachRebuild)}`);
 });

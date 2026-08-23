@@ -14,7 +14,17 @@ const FIXTURE = {
         "kanal": "mail",
         "absender": "jill@example.org",
         "betreff": "API-Key funktioniert nicht",
-        "body_clean": "Guten Morgen, seit heute früh meldet unser Portal beim Login einen CORS-Fehler und der API-Key wird abgelehnt. Betroffen sind alle Mandanten, die sich über das Kundenportal anmelden; über die API direkt funktioniert es weiterhin. Der Fehler trat erstmals um 06:40 auf, kurz nach dem nächtlichen Deployment. Wir haben bereits geprüft, ob bei uns eine Konfiguration geändert wurde — das war nicht der Fall. Bitte prüfen Sie die CORS-Header und den Ablauf des API-Keys. Wir brauchen eine Lösung bis Freitag, sonst können sich unsere Kunden am Wochenende nicht anmelden."
+        "body_clean": "Guten Morgen, seit heute früh meldet unser Portal beim Login einen CORS-Fehler und der API-Key wird abgelehnt. Betroffen sind alle Mandanten, die sich über das Kundenportal anmelden; über die API direkt funktioniert es weiterhin. Der Fehler trat erstmals um 06:40 auf, kurz nach dem nächtlichen Deployment. Wir haben bereits geprüft, ob bei uns eine Konfiguration geändert wurde — das war nicht der Fall. Bitte prüfen Sie die CORS-Header und den Ablauf des API-Keys. Wir brauchen eine Lösung bis Freitag, sonst können sich unsere Kunden am Wochenende nicht anmelden.",
+        "anhaenge": [
+          {
+            "name": "portal-fehler.png",
+            "beschreibung": "Bildschirmfoto der Fehlermeldung beim Login"
+          },
+          {
+            "name": "har-mitschnitt.har",
+            "beschreibung": "Netzwerkmitschnitt, zeigt die abgewiesene Anfrage"
+          }
+        ]
       },
       "triage_json": {
         "einordnung": "arbeit",
@@ -24,7 +34,10 @@ const FIXTURE = {
           "agent": "Sol · Completion",
           "beschreibung": "CORS-Header und API-Key-Ablauf im Kundenportal prüfen. Einstieg ist das Deployment von gestern Abend; zuerst die geänderten Header-Regeln und die Gültigkeitsdauer der Keys vergleichen. Ergebnis: Ursache benennen, Fix vorschlagen, Risiko für andere Mandanten einschätzen. Kein Fix ohne Freigabe ausrollen."
         },
-        "notizen": "Die Frist Freitag ist vom Kunden gesetzt und nicht verhandelt. Vertrauen mittel: die Ursache ist noch nicht belegt, der zeitliche Zusammenhang mit dem Deployment ist aber deutlich."
+        "notizen": "Die Frist Freitag ist vom Kunden gesetzt und nicht verhandelt. Vertrauen mittel: die Ursache ist noch nicht belegt, der zeitliche Zusammenhang mit dem Deployment ist aber deutlich.",
+        "zusammenfassung": "REM Capital kommt seit dem Deployment von gestern Abend nicht mehr ins Kundenportal. CORS-Fehler beim Login, API-Key abgelehnt. Alle Mandanten betroffen, die API direkt läuft. Frist Freitag.",
+        "antwort_kurz": "Zusage, heute mit Zwischenstand zu antworten, Fix vor Freitag, notfalls temporärer Zugang.",
+        "aufgabe_kurz": "CORS-Header und API-Key-Ablauf prüfen, Ursache benennen, Fix vorschlagen. Kein Ausrollen ohne Freigabe."
       }
     },
     {
@@ -43,7 +56,10 @@ const FIXTURE = {
         "aufgabe": {
           "agent": "Sol · Completion",
           "beschreibung": "Angebot Wartungsvertrag über 12 Monate erstellen, Reaktionszeiten und Option Rufbereitschaft ausweisen."
-        }
+        },
+        "zusammenfassung": "Thesen AG möchte ein Angebot für einen Wartungsvertrag über zwölf Monate, mit Reaktionszeiten und Rufbereitschaft am Wochenende.",
+        "antwort_kurz": "Angebot bis morgen zusagen.",
+        "aufgabe_kurz": "Angebot über 12 Monate erstellen, Reaktionszeiten und Rufbereitschaft ausweisen."
       }
     },
     {
@@ -54,6 +70,9 @@ const FIXTURE = {
         "absender": "info@example.org",
         "betreff": "Rückfrage Rechnung",
         "body_clean": "Auf der letzten Rechnung fehlt die Bestellnummer. Können Sie eine korrigierte Rechnung schicken?"
+      },
+      "triage_json": {
+        "zusammenfassung": "Nordwind fehlt die Bestellnummer auf der letzten Rechnung und bittet um eine korrigierte Fassung."
       }
     }
   ],

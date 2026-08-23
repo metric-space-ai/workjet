@@ -12,7 +12,8 @@
     "test": "node --test tests/flow.test.mjs tests/plugin.test.mjs tests/nav.test.mjs tests/settings.test.mjs tests/tilt.test.mjs",
     "dev": "vite --port 5173",
     "build": "vite build",
-    "sim": "evenhub-simulator --automation-port 9898 http://localhost:5173"
+    "sim": "evenhub-simulator --automation-port 9898 http://localhost:5173",
+    "upload": "node scripts/upload.mjs"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.14",

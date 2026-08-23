@@ -132,26 +132,23 @@ describe("Workjet configuration settings", () => {
       />,
     );
 
-    const tabs = [
-      "Workers",
-      "Computers",
-      "Provider accounts",
-      "LLM routes",
-      "Prompt",
-      "Telemetry",
-      "Execution",
-      "Capabilities",
-      "Legacy import",
-    ];
+    // Five tabs, mirroring the Swift original after the operator's re-mapping:
+    // Computers is a top-level settings page, provider accounts and LLM
+    // routes live on Models, capabilities are toggled in the worker editor.
+    const tabs = ["Workers", "Prompt", "Telemetry", "Execution", "Legacy import"];
     for (const tab of tabs) expect(markup).toContain(`>${tab}<`);
+    for (const gone of ["Provider accounts", "LLM routes", ">Capabilities<", ">Computers<"]) {
+      expect(markup).not.toContain(gone);
+    }
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain("No saved workers");
     expect(markup).not.toContain("Connection targets");
-    expect(markup).not.toContain("Greppy Runtime");
+    // The Greppy RUNTIME sits under Workers now — it supports composition.
+    expect(markup).toContain("Greppy Runtime");
     expect(markup).not.toContain("remote execution is implemented");
   });
 
-  it("opens telemetry and capabilities as distinct settings areas", () => {
+  it("keeps telemetry free of the Greppy runtime, which lives under Workers", () => {
     const telemetryMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
@@ -179,11 +176,10 @@ describe("Workjet configuration settings", () => {
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
         legacyImport={legacyImport}
-        defaultSection="capabilities"
+        defaultSection="workers"
         onChange={() => undefined}
       />,
     );
-    expect(capabilitiesMarkup).toContain("Shared capabilities");
     expect(capabilitiesMarkup).toContain("Greppy Runtime");
   });
 
@@ -267,54 +263,13 @@ describe("Workjet configuration settings", () => {
   it("maps settings-search targets to their tab", () => {
     expect(workjetSectionFromHash("#workjet-computers")).toBe("computers");
     expect(workjetSectionFromHash("workjet-telemetry")).toBe("telemetry");
-    expect(workjetSectionFromHash("#greppy-runtime")).toBe("capabilities");
+    expect(workjetSectionFromHash("#greppy-runtime")).toBe("workers");
     expect(workjetSectionFromHash("#unknown")).toBeNull();
   });
 
-  it("points the provider-accounts tab at the Models page", () => {
-    const markup = renderToStaticMarkup(
-      <WorkjetSettingsView
-        configuration={DEFAULT_WORKJET_CONFIGURATION}
-        environments={[]}
-        environmentsReady
-        greppy={greppy}
-        gateway={{
-          ...gateway,
-          catalog: {
-            schemaVersion: 1,
-            accounts: [
-              {
-                id: WorkjetGatewayAccountId.make("account-claude-1"),
-                label: "Claude Work",
-                provider: "claude",
-                enabled: true,
-                priority: 1,
-                weight: 1,
-                modelIds: ["claude-opus"],
-                credentialSuffix: null,
-              },
-            ],
-            pools: [],
-            routes: [],
-            models: [],
-            routingStrategy: "round-robin",
-            providerPools: [],
-          },
-        }}
-        automaticWorktreeStorage={automaticWorktreeStorage}
-        legacyImport={legacyImport}
-        defaultSection="provider-accounts"
-        onChange={() => undefined}
-      />,
-    );
-
-    expect(markup).toContain("Provider accounts moved to Settings → Models");
-    expect(markup).toContain('href="/settings/models#workjet-provider-accounts"');
-    // The tab must not duplicate the interactive gateway surface.
-    expect(markup).not.toContain("Add account");
-    expect(markup).not.toContain("Claude Work");
-    expect(markup).not.toContain("Start gateway");
-  });
+  // The provider-accounts pointer tab is gone entirely: the surface lives on
+  // Settings → Models, and a tab whose only content is a link to another page
+  // is navigation debt rather than a section.
 });
 
 describe("Workjet Greppy runtime settings", () => {

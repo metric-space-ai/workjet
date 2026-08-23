@@ -36,7 +36,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useEnvironmentSettings,
+  usePrimarySettings,
+  useUpdateEnvironmentSettings,
+  useUpdatePrimarySettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
@@ -91,6 +96,7 @@ import {
 } from "./settingsLayout";
 import { WorkjetGatewayAccountsSectionView } from "./WorkjetGatewayAccounts";
 import { WorkjetGatewayPoolsSectionView } from "./WorkjetGatewayPools";
+import { WorkjetLlmRoutesSection } from "./WorkjetLlmRoutesSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
   buildProviderEnvironmentOptions,
@@ -339,6 +345,8 @@ export function WorkjetGatewayAccountsSection({
   readonly environmentId: EnvironmentId | null;
 }) {
   const gateway = useWorkjetGatewaySection(environmentId);
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
   return (
     <>
       <WorkjetGatewayAccountsSectionView {...gateway} />
@@ -348,6 +356,14 @@ export function WorkjetGatewayAccountsSection({
         the account list stays the place where accounts are added.
       */}
       <WorkjetGatewayPoolsSectionView {...gateway.pools} />
+      {/* Routes complete the Models page: accounts → pools → the routes
+          workers reference. They lived as tab four inside the Worker section,
+          away from the accounts they point at. */}
+      <WorkjetLlmRoutesSection
+        configuration={settings.workjet}
+        catalog={gateway.catalog ?? null}
+        onChange={(workjet) => updateSettings({ workjet })}
+      />
     </>
   );
 }

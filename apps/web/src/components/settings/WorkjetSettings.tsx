@@ -50,12 +50,10 @@ import {
   WorkjetComputerEditor,
 } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
-import { WorkjetGatewayModelRoutes } from "./WorkjetGatewayModelRoutes";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import type { WorkjetLegacyImportSection } from "./useWorkjetLegacyImportSection";
 import { useWorkjetLegacyImportSection } from "./useWorkjetLegacyImportSection";
 import { WorkjetLegacyImportSectionView } from "./WorkjetLegacyImport";
-import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -381,24 +379,25 @@ const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   readonly targetId: string;
   readonly label: string;
 }> = [
+  // Five tabs, mirroring the Swift original's settings page after the
+  // operator's re-mapping: Computers is a TOP-LEVEL settings page, provider
+  // accounts and LLM routes live on Models beside the accounts they
+  // reference, and capabilities are toggled inside the worker editor.
+  // Legacy import stays until its one-shot decision is taken.
   { id: "workers", targetId: "workjet-workers", label: "Workers" },
-  { id: "computers", targetId: "workjet-computers", label: "Computers" },
-  {
-    id: "provider-accounts",
-    targetId: "workjet-provider-accounts",
-    label: "Provider accounts",
-  },
-  { id: "llm-routes", targetId: "workjet-llm-routes", label: "LLM routes" },
   { id: "prompt", targetId: "workjet-prompt", label: "Prompt" },
   { id: "telemetry", targetId: "workjet-telemetry", label: "Telemetry" },
   { id: "execution", targetId: "workjet-execution", label: "Execution" },
-  { id: "capabilities", targetId: "workjet-capabilities", label: "Capabilities" },
   { id: "legacy-import", targetId: "workjet-legacy-import", label: "Legacy import" },
 ];
 
 export function workjetSectionFromHash(hash: string): WorkjetSettingsSectionId | null {
   const targetId = hash.replace(/^#/, "");
-  if (targetId === "greppy-runtime") return "capabilities";
+  // Old anchors keep working: the Greppy runtime moved under Workers, and
+  // Computers is reachable as its own page but still renders here when an
+  // old link lands on the tabless section.
+  if (targetId === "greppy-runtime") return "workers";
+  if (targetId === "workjet-computers") return "computers";
   return WORKJET_SETTINGS_SECTIONS.find((section) => section.targetId === targetId)?.id ?? null;
 }
 
@@ -899,101 +898,6 @@ export function WorkjetSettingsView({
         </SettingsSection>
       ) : null}
 
-      {activeSection === "provider-accounts" ? (
-        // Pointer only. Two interactive provider surfaces were the defect; the
-        // gateway account list now lives beside the harness runtimes on the
-        // single Providers page.
-        <SettingsSection
-          id={searchableSetting("workjet-provider-accounts").id}
-          title={searchableSetting("workjet-provider-accounts").title}
-        >
-          <SettingsRow
-            title="Provider accounts moved to Settings → Models"
-            description="LLM provider accounts are configured under Settings → Models. Harnesses are CLI runtimes and have their own section."
-            control={
-              <a
-                href="/settings/models#workjet-provider-accounts"
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Open Models
-              </a>
-            }
-          />
-        </SettingsSection>
-      ) : null}
-
-      {activeSection === "llm-routes" ? (
-        <SettingsSection
-          id={searchableSetting("workjet-llm-routes").id}
-          title={searchableSetting("workjet-llm-routes").title}
-          headerAction={
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setEditingRouteId(null);
-                setAddingRoute(true);
-              }}
-            >
-              <PlusIcon className="size-3.5" />
-              Add route
-            </Button>
-          }
-        >
-          <SettingsRow
-            title="Provider-gateway accounts"
-            description="An LLM route references one Workjet provider-gateway account. Code harness drivers such as Codex, Claude, and Grok are intentionally excluded because they are not LLM accounts. Models remain selected on workers."
-          />
-          {configuration.llmRoutes.map((route) => (
-            <SettingsRow
-              key={route.id}
-              title={route.label}
-              description={`Provider-gateway account: ${route.gatewayAccountId}`}
-              control={
-                <ItemActions
-                  label={`LLM route ${route.label}`}
-                  onEdit={() => {
-                    setAddingRoute(false);
-                    setEditingRouteId(route.id);
-                  }}
-                  onDelete={() =>
-                    onChange({
-                      ...configuration,
-                      llmRoutes: configuration.llmRoutes.filter(
-                        (candidate) => candidate.id !== route.id,
-                      ),
-                    })
-                  }
-                />
-              }
-            />
-          ))}
-          <WorkjetGatewayModelRoutes catalog={gateway.catalog ?? null} />
-          {addingRoute || editingRoute ? (
-            <div className="px-3 pt-2 sm:px-4">
-              <WorkjetLlmRouteEditor
-                key={editingRoute?.id ?? "new-route"}
-                route={editingRoute}
-                accounts={gateway.catalog?.accounts ?? []}
-                onCancel={() => {
-                  setAddingRoute(false);
-                  setEditingRouteId(null);
-                }}
-                onSave={(route: WorkjetLlmRoute) => {
-                  onChange({
-                    ...configuration,
-                    llmRoutes: replaceCatalogItem(configuration.llmRoutes, route),
-                  });
-                  setAddingRoute(false);
-                  setEditingRouteId(null);
-                }}
-              />
-            </div>
-          ) : null}
-        </SettingsSection>
-      ) : null}
-
       {activeSection === "prompt" ? (
         <SettingsSection
           id={searchableSetting("workjet-prompt").id}
@@ -1216,20 +1120,10 @@ export function WorkjetSettingsView({
         </SettingsSection>
       ) : null}
 
-      {activeSection === "capabilities" ? (
-        <>
-          <SettingsSection
-            id={searchableSetting("workjet-capabilities").id}
-            title={searchableSetting("workjet-capabilities").title}
-          >
-            <SettingsRow
-              title="Shared capabilities"
-              description="Workers opt into Greppy, Web Research, and Web Stack Browser independently. Runtime availability is checked on the selected computer and does not replace worker composition."
-            />
-          </SettingsSection>
-          <GreppyRuntimeSectionView {...greppy} />
-        </>
-      ) : null}
+      {/* The Greppy RUNTIME (install/pin state) supports worker composition,
+          so it sits under Workers instead of a tab of its own; the per-worker
+          capability toggles already live in the worker editor. */}
+      {activeSection === "workers" ? <GreppyRuntimeSectionView {...greppy} /> : null}
 
       {activeSection === "legacy-import" ? (
         <WorkjetLegacyImportSectionView

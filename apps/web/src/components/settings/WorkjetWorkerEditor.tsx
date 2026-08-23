@@ -9,7 +9,8 @@ import {
   type WorkjetReasoningSelection,
   type WorkjetWorkerProfile,
 } from "@t3tools/contracts";
-import { useMemo, useState } from "react";
+import { PlusIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { randomUUID } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -17,6 +18,8 @@ import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Switch } from "../ui/switch";
+import { cn } from "../../lib/utils";
 import { Textarea } from "../ui/textarea";
 
 export const WORKJET_HARNESS_OPTIONS: ReadonlyArray<{
@@ -167,18 +170,68 @@ function Field({
   );
 }
 
+/**
+ * The segmented control the Swift Workjet worker panel uses for harness,
+ * reasoning and target computer. A dropdown hides the option set behind a
+ * click; with three to six choices the whole set fits on one line, and seeing
+ * every option at once is the difference between picking and guessing.
+ */
+function ChoiceButton({
+  title,
+  selected,
+  disabled,
+  onClick,
+}: {
+  readonly title: string;
+  readonly selected: boolean;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        "rounded-md border px-2.5 py-1 text-xs whitespace-nowrap transition-colors",
+        selected
+          ? "border-primary bg-primary/20 text-foreground"
+          : "border-border/60 bg-muted/20 text-muted-foreground hover:text-foreground",
+        disabled ? "cursor-not-allowed opacity-40" : "",
+      )}
+    >
+      {title}
+    </button>
+  );
+}
+
+function SectionHeader({ title, action }: { readonly title: string; readonly action?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between">
+      <h4 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h4>
+      {action}
+    </div>
+  );
+}
+
 export function WorkjetWorkerEditor({
   worker = null,
   computers,
   routes,
   onSave,
   onCancel,
+  onAddRoute,
 }: {
   readonly worker?: WorkjetWorkerProfile | null;
   readonly computers: ReadonlyArray<WorkjetComputer>;
   readonly routes: ReadonlyArray<WorkjetLlmRoute>;
   readonly onSave: (worker: WorkjetWorkerProfile) => void;
   readonly onCancel: () => void;
+  /** Opens the place where an access is created. Optional so existing callers keep working. */
+  readonly onAddRoute?: (() => void) | undefined;
 }) {
   const [draft, setDraft] = useState(() => createWorkjetWorkerDraft({ worker, computers, routes }));
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +239,13 @@ export function WorkjetWorkerEditor({
     () => workjetHarnessAvailabilityWarning(draft, computers),
     [computers, draft],
   );
+  const harnessLabel =
+    WORKJET_HARNESS_OPTIONS.find((option) => option.id === draft.harness)?.label ?? draft.harness;
+  const chosenComputer = computers.find((computer) => computer.id === draft.computerId) ?? null;
+  const harnessStatusLine =
+    chosenComputer === null
+      ? "No target computer chosen."
+      : (warning ?? `${harnessLabel}: reported available on ${chosenComputer.label}.`);
   const patchDraft = (patch: Partial<WorkjetWorkerDraft>) => {
     setDraft((current) => updateWorkjetWorkerDraft(current, patch));
     setError(null);
@@ -204,146 +264,199 @@ export function WorkjetWorkerEditor({
         }
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field id="workjet-worker-name" label="Name / role">
-          <Input
-            id="workjet-worker-name"
-            nativeInput
-            value={draft.name}
-            onChange={(event) => patchDraft({ name: event.target.value })}
-            placeholder="Completion engine"
-          />
-        </Field>
-        <Field id="workjet-worker-computer" label="Computer">
-          <Select
-            value={draft.computerId || null}
-            onValueChange={(value) => patchDraft({ computerId: value ?? "" })}
-          >
-            <SelectTrigger id="workjet-worker-computer" aria-label="Worker computer">
-              <SelectValue>
-                {computers.find((computer) => computer.id === draft.computerId)?.label ??
-                  "Choose computer"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {computers.map((computer) => (
-                <SelectItem key={computer.id} value={computer.id}>
-                  {computer.label} · {computer.presentationKind}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </Field>
-        <Field id="workjet-worker-harness" label="Harness">
-          <Select
-            value={draft.harness}
-            onValueChange={(value) => patchDraft({ harness: value as WorkjetHarness })}
-          >
-            <SelectTrigger id="workjet-worker-harness" aria-label="Worker harness">
-              <SelectValue>
-                {WORKJET_HARNESS_OPTIONS.find((option) => option.id === draft.harness)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {WORKJET_HARNESS_OPTIONS.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </Field>
-        <Field id="workjet-worker-route" label="LLM route">
-          <Select
-            value={draft.llmRouteId || null}
-            onValueChange={(value) => patchDraft({ llmRouteId: value ?? "" })}
-          >
-            <SelectTrigger id="workjet-worker-route" aria-label="Worker LLM route">
-              <SelectValue>
-                {routes.find((route) => route.id === draft.llmRouteId)?.label ?? "Choose route"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {routes.map((route) => (
-                <SelectItem key={route.id} value={route.id}>
-                  {route.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </Field>
-        <Field id="workjet-worker-model" label="Model ID">
-          <Input
-            id="workjet-worker-model"
-            nativeInput
-            value={draft.modelId}
-            onChange={(event) => patchDraft({ modelId: event.target.value })}
-            placeholder="gpt-5.6-sol"
-          />
-        </Field>
-        <Field id="workjet-worker-reasoning" label="Reasoning">
-          <Select
-            value={draft.reasoning}
-            onValueChange={(value) => patchDraft({ reasoning: value as WorkjetReasoningSelection })}
-          >
-            <SelectTrigger id="workjet-worker-reasoning" aria-label="Worker reasoning">
-              <SelectValue>
-                {REASONING_OPTIONS.find((option) => option.id === draft.reasoning)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {REASONING_OPTIONS.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </Field>
+      {/* Order, controls and wording follow the Swift Workjet worker panel:
+          name → harness → provider → model → reasoning → task → skills →
+          target computer → technical details. One column, because each choice
+          narrows the next; a two-column grid put harness beside computer and
+          broke that chain. */}
+      <div className="space-y-1.5">
+        <SectionHeader title="Name / role" />
+        <Input
+          id="workjet-worker-name"
+          nativeInput
+          value={draft.name}
+          onChange={(event) => patchDraft({ name: event.target.value })}
+          placeholder="e.g. Completion engine"
+        />
       </div>
 
-      <Field id="workjet-worker-instructions" label="Task / system instructions">
+      <div className="space-y-1.5">
+        <SectionHeader title="Harness" />
+        <div className="flex flex-wrap gap-2">
+          {WORKJET_HARNESS_OPTIONS.map((option) => (
+            <ChoiceButton
+              key={option.id}
+              title={option.label}
+              selected={draft.harness === option.id}
+              onClick={() => patchDraft({ harness: option.id })}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <SectionHeader title="Provider" />
+        <div className="flex flex-wrap items-center gap-2">
+          {routes.map((route) => (
+            <ChoiceButton
+              key={route.id}
+              title={route.label}
+              selected={draft.llmRouteId === route.id}
+              onClick={() => patchDraft({ llmRouteId: route.id })}
+            />
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => onAddRoute?.()}
+          >
+            <PlusIcon className="size-3.5" />
+            Set up access
+          </Button>
+        </div>
+        {draft.llmRouteId ? (
+          <p className="text-[11px] text-muted-foreground">
+            Access: {routes.find((route) => route.id === draft.llmRouteId)?.label}
+          </p>
+        ) : (
+          // Amber, not grey, and it names the consequence: a worker without an
+          // access cannot run at all.
+          <p className="text-[11px] text-amber-500">
+            No access chosen yet. Pick a provider to make this worker usable.
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <SectionHeader title="Model" />
+        <Input
+          id="workjet-worker-model"
+          nativeInput
+          value={draft.modelId}
+          onChange={(event) => patchDraft({ modelId: event.target.value })}
+          placeholder="Model ID"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <SectionHeader title="Reasoning" />
+        <div className="flex flex-wrap gap-2">
+          {REASONING_OPTIONS.map((option) => (
+            <ChoiceButton
+              key={option.id}
+              title={option.label}
+              selected={draft.reasoning === option.id}
+              onClick={() => patchDraft({ reasoning: option.id })}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <SectionHeader title="This worker’s task" />
         <Textarea
           id="workjet-worker-instructions"
           value={draft.instructions}
           onChange={(event) => patchDraft({ instructions: event.target.value })}
-          placeholder="Describe this worker's reusable role and operating instructions."
+          placeholder="What should this worker take on?"
           rows={4}
         />
-      </Field>
+        <p className="text-[11px] text-muted-foreground">
+          For this worker only; it goes into the system prompt as the worker’s task.
+        </p>
+      </div>
 
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">Capabilities</legend>
-        <div className="grid gap-2 sm:grid-cols-3">
+      <div className="space-y-1.5">
+        <SectionHeader title="Skills" />
+        <div className="space-y-2">
           {CAPABILITY_OPTIONS.map((capability) => {
             const checked = draft.capabilityIds.includes(capability.id);
             return (
-              <Label
+              <div
                 key={capability.id}
-                className="items-start rounded-lg border border-border/50 p-2.5"
+                className="flex items-start justify-between gap-3 rounded-lg bg-muted/25 p-2.5"
               >
-                <Checkbox
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-medium">{capability.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{capability.description}</p>
+                </div>
+                <Switch
                   checked={checked}
-                  onCheckedChange={(nextChecked) =>
+                  onCheckedChange={(next) =>
                     patchDraft({
-                      capabilityIds: nextChecked
+                      capabilityIds: next
                         ? [...draft.capabilityIds, capability.id]
                         : draft.capabilityIds.filter((id) => id !== capability.id),
                     })
                   }
-                  aria-label={`Enable ${capability.label}`}
+                  aria-label={`Skill ${capability.label}`}
                 />
-                <span className="space-y-0.5">
-                  <span className="block text-sm">{capability.label}</span>
-                  <span className="block text-xs font-normal text-muted-foreground">
-                    {capability.description}
-                  </span>
-                </span>
-              </Label>
+              </div>
             );
           })}
         </div>
-      </fieldset>
+      </div>
+
+      <div className="space-y-1.5">
+        <SectionHeader title="Target computer" />
+        <div className="flex flex-wrap gap-2">
+          {computers.map((computer) => (
+            <ChoiceButton
+              key={computer.id}
+              title={computer.label}
+              selected={draft.computerId === computer.id}
+              onClick={() => patchDraft({ computerId: computer.id })}
+            />
+          ))}
+        </div>
+        {/* The harness status for the CHOSEN computer, on the same screen as
+            the choice. Swift puts it here because the answer to "can this
+            worker actually run" belongs beside the machine, not on another
+            page. */}
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              warning === null ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
+          {harnessStatusLine}
+        </p>
+      </div>
+
+      {/* Native <details>: the direct analogue of Swift's DisclosureGroup,
+          keyboard- and screen-reader-correct without a library. */}
+      <details className="group">
+        <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
+          <span aria-hidden className="mr-1 inline-block group-open:rotate-90">
+            &#9656;
+          </span>
+          Technical details
+        </summary>
+        <div>
+          <dl className="mt-2 space-y-1 rounded-lg bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
+            <div className="flex gap-2">
+              <dt className="w-28 shrink-0">Harness</dt>
+              <dd className="font-mono">{draft.harness}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-28 shrink-0">Computer</dt>
+              <dd className="font-mono">{draft.computerId || "—"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-28 shrink-0">Access</dt>
+              <dd className="font-mono">{draft.llmRouteId || "—"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-28 shrink-0">Model</dt>
+              <dd className="font-mono">{draft.modelId || "—"}</dd>
+            </div>
+          </dl>
+        </div>
+      </details>
 
       {warning ? (
         <p role="alert" className="text-xs text-warning-foreground">

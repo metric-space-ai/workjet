@@ -112,9 +112,31 @@ describe("WorkjetWorkerEditor", () => {
     );
 
     expect(markup).toContain('aria-label="Add worker"');
-    expect(markup).toContain("Name / role");
-    expect(markup).toContain("Task / system instructions");
+
+    // The panel follows the Swift Workjet worker editor: one column, in the
+    // order each choice constrains the next, with the harness, provider,
+    // reasoning and target computer as visible option sets rather than
+    // dropdowns that hide them.
+    const sections = [
+      "Name / role",
+      "Harness",
+      "Provider",
+      "Model",
+      "Reasoning",
+      "task",
+      "Skills",
+      "Target computer",
+      "Technical details",
+    ] as const;
+    const order = sections.map((section) => markup.indexOf(section));
+    expect(sections.filter((_s, i) => order[i]! < 0)).toEqual([]);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    // Options visible, not hidden behind a trigger.
+    expect(markup).toContain("Claude Code");
+    expect(markup).toContain("OpenCode");
     expect(markup).toContain("Web Stack Browser");
-    expect(markup).toContain("connection secrets are managed in Connections");
+    // With an access chosen the panel names it.
+    expect(markup).toContain("Access: Codex work");
   });
 });

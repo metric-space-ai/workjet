@@ -111,25 +111,39 @@ ein `claude auth status`-Aufruf existiert im Repo nirgends. Deshalb steht grün
 
 ### T5 · xAI-Anmeldung — BLOCKIERT, Befund 2026-08-23
 
-Nicht "noch nicht gebaut", sondern nicht baubar aus diesem Repo:
+Was VERIFIZIERT ist (Quelltext-Grep, verlässlich):
 
-- `native/provider-gateway/internal/auth/xai/` hat den vollständigen
+- `native/provider-gateway/internal/auth/xai/` enthält den vollständigen
   Device-Flow (`discover`, `start_device_flow`, `poll_for_token`,
-  `refresh_tokens`) und `types.rs` liefert `verification_uri_complete` —
-  die Form würde den bestehenden Vertrag (`authorizationUrl`) tragen.
+  `refresh_tokens`); `types.rs` liefert `verification_uri_complete`, dessen
+  Form der bestehende Vertrag (`authorizationUrl`) tragen würde.
 - `normalize_oauth_provider` akzeptiert bereits `"xai" | "x-ai" | "x.ai" |
-"grok"`, und `valid_path_provider("xai")` ist wahr. Die Sitzungs-
-  maschinerie ist also vorbereitet.
-- ABER: `ManagementProviderOAuthAuthority` kommt im ganzen Crate nur
-  dreimal vor — Trait-Definition, Modul-Export, **ein Test**. Keine
-  produktive Implementierung.
-- Der laufende Host bedient `/v0/management/anthropic-auth-url` dennoch
-  (das Codex-Konto wurde damit angelegt). Die laufende Binärdatei
-  entspricht also nicht diesem Quellstand.
+"grok"`; `valid_path_provider("xai")` ist wahr. Die Sitzungsmaschinerie
+  ist vorbereitet.
+- `ManagementProviderOAuthAuthority` kommt im ganzen Crate dreimal vor:
+  Trait-Definition, Modul-Export, **ein Test**. Keine produktive
+  Implementierung.
+- Das Crate ist eine Portierung von CLIProxy (Go): `port-map.json`,
+  `upstream_commit a88197f8…`, 242 von 617 produktiven Go-Dateien portiert.
+  Der OAuth-Handler steht auf `status: "adapted_to_ctox"`.
+- Die laufende Binärdatei ist Rust aus diesem Crate (Pfade
+  `provider-gateway/internal/api/handlers/management/*.rs`).
 
-NÄCHSTER SCHRITT: klären, aus welchem Stand `provider-gateway-host`
-(21 MB, 2026-08-20) gebaut wurde. Ohne das ist jede Rust-Änderung hier
-nicht in den laufenden Host zu bringen und nicht prüfbar.
+KORREKTUR: Ich hatte aus einem Byte-Scan geschlossen, die `*-auth-url`-
+Routen fehlten im laufenden Host. Das ist FALSCH und die Methode taugt
+nicht: `model-definitions` erscheint ebenfalls nicht als Literal, obwohl
+diese Route nachweislich funktioniert (sie lieferte 15/10/8 Modelle).
+Routennamen liegen nicht als lesbare Zeichenketten vor. Über die im Host
+vorhandenen Routen sagt der Scan nichts.
+
+WAS NICHT GEKLÄRT IST: ob der laufende Host die OAuth-Begin-Routen
+bedient. Der einzige belastbare Test ist ein Aufruf mit dem
+Management-Schlüssel; der liegt nur im Server-Secret-Store.
+
+NÄCHSTER SCHRITT: Management-Schlüssel über den Server beziehen und
+`/v0/management/anthropic-auth-url` real aufrufen. Erst dann steht fest,
+ob T5 eine Rust-Portierung braucht oder nur Route, Vertrag und
+Oberfläche.
 
 ### T3 · Workjet-Prompt-Seite — ERLEDIGT `bfbb02db4`
 

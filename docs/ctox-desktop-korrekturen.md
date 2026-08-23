@@ -124,8 +124,9 @@ Swift-Ansicht in `~/Documents/claude-workjet/app/Sources/WorkjetApp/`
 
 Noch nie gegen die Vorlage geprüft:
 
-- **Sign-in-Ablauf je Anbieter** (SettingsView: Anbieter-Reiter mit
-  Logo-Kacheln, Status je Zugang, „Neu anmelden" am Zugang) — heute
+- **Sign-in-Ablauf je Anbieter** — Vorlage `ProviderAccountsView.swift`
+  (verifiziert: Zeile 260 trägt je Zugang „Neu anmelden" bzw. „Schlüssel",
+  je nachdem ob der Zugang über den Gateway-Login läuft) — heute
   verteilte Knöpfe mit Fortschritts-Prosa; A4/Posten 6.
 - **Workjet-Reiterleiste** — neun flache Reiter ohne Hierarchie; Swift
   hat fünf mit klarer Aufgabenteilung (A3/Posten 1).

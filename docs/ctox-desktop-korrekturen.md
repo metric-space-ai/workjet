@@ -48,7 +48,33 @@ CTOX erscheint in KEINER anderen App. Achtung Migrationsfrage: bestehende
 Threads referenzieren Sitzungen im alten Ort; Kontinuität klären, bevor
 der Standard kippt.
 
-## 0 · Sofort prüfen: bringt Gateway-Routing Claude zurück?
+## 0 · Gateway-Routing Claude — DIAGNOSE 2026-08-24, Ursache gefunden
+
+Gemessen in dieser Reihenfolge:
+
+1. `routeViaGateway=true` gesetzt → der Turn-Fehler wechselte von
+   „Failed to authenticate" zu „issue with the selected model
+   (claude-sonnet-5)". Das Routing GREIFT also.
+2. Direkter POST auf den Provider-Port des laufenden Hosts:
+   `http://127.0.0.1:59770/v1/messages` → **404 „route not found"**
+   (anthropic-förmig), mit und ohne `X-CTOX-Provider`-Header, ebenso
+   `/v1/responses`-Varianten.
+3. Im QUELLCODE existiert die Route (`internal/api/server.rs:362`,
+   `dispatch_messages_request`). Der laufende Host (Build 2026-08-20)
+   bedient sie nicht.
+
+Ursache also NICHT Modellauflösung, sondern: **die laufende
+Host-Binärdatei serviert die Anthropic-Messages-Route nicht.** Der
+Claude-CLI bekommt 404 und meldet generisch „issue with the selected
+model".
+
+IN ARBEIT: Host aus dem aktuellen Quellstand bauen
+(`cargo build --release --bin workjet-provider-gateway`), Binärdatei in
+`~/.t3/userdata/provider-gateway-host` tauschen, App neu starten,
+denselben Claude-Turn wiederholen. Das ist zugleich der erste Schritt zu
+Posten 7 (gleiche Binärdatei).
+
+### (ursprünglich) 0 · Sofort prüfen: bringt Gateway-Routing Claude zurück?
 
 `providerInstances.claudeAgent.routeViaGateway = true` ist seit 2026-08-24
 gesetzt (war überall aus — DER Grund, warum jeder Harness native

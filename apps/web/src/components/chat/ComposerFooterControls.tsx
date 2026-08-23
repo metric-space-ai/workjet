@@ -1,4 +1,9 @@
-import type { ProviderInteractionMode, RuntimeMode, WorkjetThreadRole } from "@t3tools/contracts";
+import type {
+  ProviderInteractionMode,
+  RuntimeMode,
+  WorkjetThreadRole,
+  WorkjetWorkerProfile,
+} from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import {
   BotIcon,
@@ -12,6 +17,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
+import { ComposerWorkerControl } from "./ComposerWorkerControl";
 import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
 import { WorkjetRoleControl, type WorkjetSelectableRole } from "./WorkjetRoleControl";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
@@ -145,6 +151,16 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
 });
 
 export interface ComposerFooterControlsProps {
+  /**
+   * Saved Workjet workers, leftmost in the bar. A worker bundles harness,
+   * access, model, reasoning, computer and skills, so choosing one settles
+   * what the controls to its right would otherwise ask separately. Omit to
+   * leave the control out entirely.
+   */
+  readonly workjetWorkers?: ReadonlyArray<WorkjetWorkerProfile> | undefined;
+  /** `null` is manual — the individual controls apply, as they always have. */
+  readonly selectedWorkjetWorkerId?: string | null | undefined;
+  readonly onSelectWorkjetWorker?: ((workerId: string | null) => void) | undefined;
   /** Provider traits picker, already resolved by the caller; null when the provider has none. */
   readonly traitsPicker: ReactNode;
   readonly showInteractionModeToggle: boolean;
@@ -177,6 +193,18 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
 ) {
   return (
     <>
+      {props.workjetWorkers === undefined || props.onSelectWorkjetWorker === undefined ? null : (
+        <>
+          <ComposerWorkerControl
+            workers={props.workjetWorkers}
+            selectedWorkerId={props.selectedWorkjetWorkerId ?? null}
+            disabled={props.workjetDisabled}
+            onSelectWorker={props.onSelectWorkjetWorker}
+            onOpenWorkjetSettings={props.onOpenWorkjetSettings}
+          />
+          <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+        </>
+      )}
       {props.traitsPicker ? (
         <>
           <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />

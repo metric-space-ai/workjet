@@ -838,6 +838,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Composer-local state
   // ------------------------------------------------------------------
+  /**
+   * Saved Workjet workers, offered as the bar's leftmost choice. `null` is
+   * manual — the individual model and effort controls apply, exactly as
+   * before — so a setup with no saved workers behaves as it always has.
+   */
+  const workjetWorkers = settings.workjet?.workerProfiles ?? [];
+  const [selectedWorkjetWorkerId, setSelectedWorkjetWorkerId] = useState<string | null>(null);
+
   const [composerCursor, setComposerCursor] = useState(() =>
     collapseExpandedComposerCursor(prompt, prompt.length),
   );
@@ -3089,6 +3097,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   </>
                 ) : (
                   <ComposerFooterControls
+                    workjetWorkers={workjetWorkers}
+                    selectedWorkjetWorkerId={selectedWorkjetWorkerId}
+                    onSelectWorkjetWorker={setSelectedWorkjetWorkerId}
                     traitsPicker={providerTraitsPicker}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     interactionMode={interactionMode}

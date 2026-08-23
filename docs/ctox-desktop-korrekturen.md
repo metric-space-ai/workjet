@@ -30,6 +30,16 @@ Das Original hat es andersherum gebaut (`Defaults.swift:224`):
 CLIProxy (`model_providers.workjet.base_url`, `requires_openai_auth=false`).
 Harness = reiner Motor, keine Spur im Nutzerzustand, kein natives Login.
 
+FOLGE für die Leiste (Betreiber-Hinweis 2026-08-24): Der Thread-Lock
+("… is unavailable in this thread. Start a new thread to switch
+providers") ist KEIN korrektes Verhalten, sondern ein Symptom dieser
+Architektur — die Sitzung gehört dem CLI, also ist sie an dessen Harness
+genagelt. Gehört die Sitzung der App (Original-Modell: Verlauf in der
+App, Turn als Brief an einen austauschbaren Motor), sind Harness, Modell
+und Rechner PRO TURN wechselbar. Die Zwei-Modi-Leiste (Posten 2) setzt
+also Posten −1 voraus, sonst bleibt der Wechsel mitten in der Session
+unmöglich.
+
 FERTIG heißt: Harness-Sitzungen laufen in einem CTOX-eigenen Zustands-
 verzeichnis (Codex: eigenes `CODEX_HOME` bzw. `--ephemeral` für
 Einmal-Läufe; Claude: eigenes `CLAUDE_CONFIG_DIR`), Zugangsdaten kommen

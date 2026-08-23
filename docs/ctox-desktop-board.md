@@ -1,8 +1,9 @@
 # CTOX Desktop — Kanban & Recovery-Dokument
 
 **Kopfzeile:** Die App programmiert nachweislich (OpenCode, 2026-08-23 20:51).
-Blockiert sind nur zwei Anbieter aus externen Gründen. Offen ist die
-Composer-Leiste und der Rest der Swift-Parität.
+T2, T3, T4, T6 erledigt, T1 im Kern. T5 ist blockiert, weil die laufende
+Host-Binärdatei nicht diesem Quellstand entspricht. Drei Blocker gehören
+dem Betreiber.
 
 Stand 2026-08-23. Nur VERIFIZIERTE Fakten. Worker-Berichte sind Behauptungen;
 hier steht, was ich selbst geprüft habe.
@@ -74,16 +75,25 @@ Mutationsgeprüft (Skills vor Harness schieben lässt den Test fallen).
 
 ## WORKING
 
-Nichts läuft gerade. Alle Änderungen sind committet, Arbeitsbaum sauber,
-0 Typfehler, 210 Settings-Tests grün.
+Nichts läuft gerade. Alle Änderungen committet, Arbeitsbaum sauber,
+0 Typfehler; 215 Settings-, 316 Chat-, 543 Provider-, 510 Vertragstests grün.
+
+Ich habe zum Prüfen Konfiguration angelegt (umkehrbar): Computer
+"MacBook Pro von Michael (2)", LLM-Route "Codex (OpenAI)", Worker
+"Codex Prüfworker". Auf Wunsch wieder entfernen.
 
 ---
 
 ## TO-DO
 
-### T1 · Composer-Leiste — Worker · Rechner · Extras + manueller Modus
+### T1 · Composer-Leiste — KERN ERLEDIGT `79940af65` + `87e23eca5`
 
-TRIGGER: sofort, hängt nicht am Import (manueller Modus = Zustand ohne Worker).
+Live bewiesen: ein Klick stellt Anbieter UND Modell um
+(`MiMo V2.5 Free | Manual` → `GPT-5.6-Luna | Codex Prüfworker`).
+OFFEN: Reasoning/Computer/Skills werden nicht angewendet (die Leiste hat
+dafür keinen Setter); "Rechner" und "Extras" fehlen als eigene Elemente;
+der Wähler steht an zweiter statt erster Stelle; "Full access" bleibt bis
+OWNER-4 entschieden ist.
 Heute: `Modell · Reasoning · Full access · Code · Orchestrator · Tools`.
 Soll: `Worker · Rechner · Extras`, Erlaubnis immer voll (Wähler entfällt),
 Kontext/Reasoning aus der Worker-Definition. Plus manueller Modus mit
@@ -91,23 +101,45 @@ Harness, Provider, Modell, Rechner, Extras, eigenem System-Prompt.
 Dateien: `ComposerFooterControls.tsx`, `CompactComposerControlsMenu.tsx`.
 FERTIG heißt: Worker wählbar, Auswahl wirkt auf den Turn, Ende-zu-Ende belegt.
 
-### T2 · Echte Anmeldungsprüfung
+### T2 · Echte Anmeldungsprüfung — ERLEDIGT `d21f9c786`
 
-TRIGGER: sofort. `probeClaudeCapabilities` erreicht die API **absichtlich nie**
+War: TRIGGER sofort. `probeClaudeCapabilities` erreicht die API **absichtlich nie**
 (Kommentar: „This prevents any prompt from reaching the Anthropic API"), und
 ein `claude auth status`-Aufruf existiert im Repo nirgends. Deshalb steht grün
 „Authenticated", während jeder Turn scheitert. Weg: beobachtete Turn-Fehler
 überstimmen die optimistische Sondierung.
 
-### T3 · Workjet-Prompt-Seite
+### T5 · xAI-Anmeldung — BLOCKIERT, Befund 2026-08-23
 
-TRIGGER: nach T1. Heute **ein** rohes Textfeld (`managedSystemPrompt`).
+Nicht "noch nicht gebaut", sondern nicht baubar aus diesem Repo:
+
+- `native/provider-gateway/internal/auth/xai/` hat den vollständigen
+  Device-Flow (`discover`, `start_device_flow`, `poll_for_token`,
+  `refresh_tokens`) und `types.rs` liefert `verification_uri_complete` —
+  die Form würde den bestehenden Vertrag (`authorizationUrl`) tragen.
+- `normalize_oauth_provider` akzeptiert bereits `"xai" | "x-ai" | "x.ai" |
+"grok"`, und `valid_path_provider("xai")` ist wahr. Die Sitzungs-
+  maschinerie ist also vorbereitet.
+- ABER: `ManagementProviderOAuthAuthority` kommt im ganzen Crate nur
+  dreimal vor — Trait-Definition, Modul-Export, **ein Test**. Keine
+  produktive Implementierung.
+- Der laufende Host bedient `/v0/management/anthropic-auth-url` dennoch
+  (das Codex-Konto wurde damit angelegt). Die laufende Binärdatei
+  entspricht also nicht diesem Quellstand.
+
+NÄCHSTER SCHRITT: klären, aus welchem Stand `provider-gateway-host`
+(21 MB, 2026-08-20) gebaut wurde. Ohne das ist jede Rust-Änderung hier
+nicht in den laufenden Host zu bringen und nicht prüfbar.
+
+### T3 · Workjet-Prompt-Seite — ERLEDIGT `bfbb02db4`
+
+War: TRIGGER nach T1. Heute **ein** rohes Textfeld (`managedSystemPrompt`).
 Swift: strukturierte Abschnitte (Allgemeine Regeln, Progress Board, Worker,
 Modellregeln, Worker-Aufgabe) mit je eigenem „Bearbeiten".
 
-### T4 · Gateway-Pools konsolidieren
+### T4 · Gateway-Pools — ERLEDIGT `e3a05d6a9`
 
-TRIGGER: nach T3. Dieselben fünf Anbieter stehen viermal untereinander
+War: TRIGGER nach T3. Dieselben fünf Anbieter stehen viermal untereinander
 (Connected, Pools, Health, Models); der identische Absatz fünfmal.
 Soll: eine Zeile pro Anbieter, die alles trägt.
 
@@ -121,7 +153,7 @@ vollständigen Device-Flow (`discover`, `start_device_flow`, `poll_for_token`,
 Vertrag und Oberfläche. Der Device-Flow hat eine andere Form als eine
 Redirect-URL.
 
-### T6 · Z.ai und MiniMax nutzbar machen
+### T6 · Z.ai und MiniMax — ERLEDIGT `07bfa3735`
 
 `GATEWAY_MODEL_CHANNELS`: `zai: null, minimax: null` — kein eingebauter
 Katalog, also nur konto-eigene Modell-IDs, wofür die Oberfläche kein Feld hat.

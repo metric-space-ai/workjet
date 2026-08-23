@@ -206,23 +206,29 @@ test("images are resent after a rebuild, or icons vanish", async () => {
   plugin.stop?.();
 });
 
-test("scrolling swaps text instead of rebuilding the page", async () => {
+test("a page turn actually reaches the display", async () => {
   const { createDecisionHubPlugin } = await import("../src/plugin.mjs");
   const { createSource } = await import("../src/source.mjs");
   const { OS_EVENT } = await import("../src/nav.mjs");
-  let rebuilds = 0;
-  let upgrades = 0;
+  // textContainerUpgrade laesst das Geraet NICHT neu zeichnen: im Simulator
+  // stand die Seite beim Blaettern still, waehrend der Zustand weiterlief.
+  // Sichtbar wird eine Aenderung nur durch einen Neuaufbau.
+  const gezeichnet = [];
   const sdk = {
-    async createStartUpPageContainer() { return 0; },
-    async rebuildPageContainer() { rebuilds += 1; return true; },
-    async textContainerUpgrade() { upgrades += 1; return true; },
+    async createStartUpPageContainer(p) { gezeichnet.push(p); return 0; },
+    async rebuildPageContainer(p) { gezeichnet.push(p); return true; },
+    async textContainerUpgrade() { return true; },
     async updateImageRawData() { return 0; },
   };
-  const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
+  const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0, ruhezeitMs: 0 });
   await plugin.start();
-  for (let i = 0; i < 6; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
-  assert.ok(upgrades > 0, "the text must be swapped in place");
-  assert.equal(rebuilds, 0, `no rebuild may happen while paging, got ${rebuilds}`);
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  const vorher = gezeichnet.length;
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  assert.ok(gezeichnet.length > vorher, "a page turn must reach the display");
+  const jetzt = gezeichnet[gezeichnet.length - 1].textObject.find((c) => c.containerName === "box-body");
+  const davor = gezeichnet[vorher - 1].textObject.find((c) => c.containerName === "box-body");
+  assert.notEqual(jetzt.content, davor.content, "and it must carry different content");
   plugin.stop?.();
 });
 

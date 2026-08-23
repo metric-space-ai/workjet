@@ -136,18 +136,13 @@ export function createDecisionHubPlugin({
       }
       started = true;
       letzteStruktur = strukturVon(page);
-    } else if (signature !== lastSignature && strukturVon(page) === letzteStruktur) {
-      // Gleiche Struktur, anderer Inhalt: NUR den Text tauschen. Ein voller
-      // Neuaufbau baut die Seite bei jedem Scroll sichtbar neu auf — am
-      // Geraet als unbedienbar gemeldet.
-      for (const c of page.textObject || []) {
-        await mitFrist('textContainerUpgrade', () => sdk.textContainerUpgrade({
-          containerID: c.containerID,
-          containerName: c.containerName,
-          content: c.content,
-        }));
-      }
     } else if (signature !== lastSignature) {
+      // KEIN textContainerUpgrade: das Geraet zeichnet danach nicht neu — im
+      // Simulator blieb die Seite beim Blaettern stehen, obwohl der Zustand
+      // weiterlief. Ein Neuaufbau ist die einzige Aenderung, die man sieht.
+      // Gegen das fruehere Flackern half nicht das Sparen am Neuaufbau,
+      // sondern isEventCapture=0 (kein OS-Scrollen) und weniger Bilddaten.
+
       await mitFrist('rebuildPageContainer', () => sdk.rebuildPageContainer(page));
       // Der Neuaufbau ersetzt die Container — ihre Bildinhalte sind damit
       // weg. Wer jetzt "unveraendert" annimmt, laesst Icons und Punkte

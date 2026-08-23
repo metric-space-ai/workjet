@@ -1242,7 +1242,11 @@ export function WorkjetSettingsView({
   );
 }
 
-export function WorkjetSettings() {
+export function WorkjetSettings({
+  defaultSection,
+}: {
+  readonly defaultSection?: WorkjetSettingsSectionId;
+} = {}) {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const { environments, isReady: environmentsReady } = useEnvironments();
@@ -1363,6 +1367,7 @@ export function WorkjetSettings() {
 
   return (
     <WorkjetSettingsView
+      {...(defaultSection ? { defaultSection } : {})}
       configuration={settings.workjet}
       environments={workjetEnvironmentTargetOptions(environments)}
       environmentsReady={environmentsReady}

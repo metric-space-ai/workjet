@@ -4,6 +4,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/harnesses"
   | "/settings/models"
+  | "/settings/computers"
   | "/settings/source-control"
   | "/settings/workjet"
   | "/settings/connections"
@@ -26,8 +27,9 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/harnesses": "Harnesses",
   "/settings/models": "Models",
+  "/settings/computers": "Computers",
   "/settings/source-control": "Source Control",
-  "/settings/workjet": "Workjet",
+  "/settings/workjet": "Worker",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };

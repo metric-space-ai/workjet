@@ -12,6 +12,7 @@ import {
   ArrowLeftIcon,
   GitBranchIcon,
   KeyboardIcon,
+  MonitorIcon,
   Link2Icon,
   PaletteIcon,
   SearchIcon,
@@ -53,6 +54,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   // Harnesses are CLI runtimes; models are the LLM accounts behind them.
   "/settings/harnesses": TerminalIcon,
   "/settings/models": SparklesIcon,
+  "/settings/computers": MonitorIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/workjet": WrenchIcon,
   "/settings/connections": Link2Icon,

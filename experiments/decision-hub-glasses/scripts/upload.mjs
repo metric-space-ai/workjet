@@ -135,6 +135,32 @@ async function hochladen({ datei, paketId, name, tagline, changelog, token }) {
   return daten;
 }
 
+/**
+ * Hochladen allein reicht NICHT: eine Version, die keinem Kanal zugewiesen
+ * ist, erreicht kein Geraet — beide Kanaele stehen nach dem Anlegen auf
+ * `version: null`. Erst die Zuweisung macht die App auf der Brille sichtbar,
+ * und beim Beta-Kanal muss das eigene Konto als Tester eingetragen sein.
+ */
+async function veroeffentlichen({ paketId, version, kanal, emails, token }) {
+  const kopf = { [HEADER]: token, 'content-type': 'application/json' };
+  const ziel = `?package_id=${encodeURIComponent(paketId)}`;
+  // Das Feld heisst version_name, nicht version — mit `version` antwortet
+  // der Server mit HTTP 500 statt einer Meldung.
+  await api(`/api/v1/apps/branch-version${ziel}`, {
+    method: 'POST', headers: kopf,
+    body: JSON.stringify({ branch_name: kanal, version_name: version }),
+  });
+  console.log(`Version ${version} im Kanal "${kanal}" veröffentlicht.`);
+
+  if (kanal === 'beta' && emails.length) {
+    await api(`/api/v1/apps/add-branch-users${ziel}`, {
+      method: 'POST', headers: kopf,
+      body: JSON.stringify({ branch_name: 'beta', emails }),
+    });
+    console.log(`Tester freigeschaltet: ${emails.join(', ')}`);
+  }
+}
+
 async function main() {
   const argumente = process.argv.slice(2);
   const wert = (praefix, standard) =>
@@ -156,8 +182,15 @@ async function main() {
 
   console.log(`Lade ${datei} als ${paketId} …`);
   const version = await hochladen({ datei, paketId, name, tagline, changelog, token });
-  console.log('Fertig:', JSON.stringify(version).slice(0, 300));
-  console.log('Die App erscheint in der Even-App unter den unveröffentlichten Plugins.');
+  const nummer = version?.version || version?.versions?.[0]?.version;
+  console.log(`Hochgeladen: Version ${nummer}`);
+
+  const kanal = wert('--branch=', 'beta');
+  const emails = wert('--testers=', '').split(',').map((e) => e.trim()).filter(Boolean);
+  if (kanal !== 'none') {
+    await veroeffentlichen({ paketId, version: nummer, kanal, emails, token });
+  }
+  console.log('Fertig. Die App erscheint in der Even-App auf dem Gerät des Testers.');
 }
 
 main().catch((fehler) => raus(fehler?.stack || String(fehler)));

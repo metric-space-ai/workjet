@@ -63,6 +63,8 @@ import {
   type PromptStashEntry,
 } from "../../promptStashStore";
 import { providerInstanceIdForHarness } from "./ComposerWorkerControl";
+import { workerReasoningSelections } from "./workerReasoning";
+import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
@@ -851,6 +853,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const workjetWorkers = settings.workjet?.workerProfiles ?? [];
   const [selectedWorkjetWorkerId, setSelectedWorkjetWorkerId] = useState<string | null>(null);
+  const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
   /**
    * Choosing a worker must MOVE the turn, not just relabel the bar. A worker
    * names a harness and a model, so both are applied together: applying the
@@ -868,9 +871,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (worker === undefined) return;
       const instanceId = providerInstanceIdForHarness(worker.harness);
       if (instanceId === null || !worker.modelId) return;
-      onProviderModelSelect(ProviderInstanceId.make(instanceId), worker.modelId);
+      const targetInstance = ProviderInstanceId.make(instanceId);
+      onProviderModelSelect(targetInstance, worker.modelId);
+
+      // Effort too, but only where the provider offers that exact value. The
+      // Workjet list and a provider's own options are not the same list and
+      // are mapped nowhere, so a near-miss is left alone rather than guessed.
+      const status = providerStatuses.find((entry) => entry.instanceId === targetInstance);
+      if (status === undefined) return;
+      const selections = workerReasoningSelections({
+        caps: getProviderModelCapabilities(status.models, worker.modelId, status.driver),
+        reasoning: worker.reasoning,
+      });
+      if (selections === null) return;
+      setProviderModelOptions(composerDraftTarget, status.driver, selections, {
+        instanceId: targetInstance,
+        model: worker.modelId,
+        persistSticky: true,
+      });
     },
-    [onProviderModelSelect, workjetWorkers],
+    [
+      composerDraftTarget,
+      onProviderModelSelect,
+      providerStatuses,
+      setProviderModelOptions,
+      workjetWorkers,
+    ],
   );
 
   const [composerCursor, setComposerCursor] = useState(() =>

@@ -5,5 +5,6 @@
 pub use super::config_types::{
     default_api_key_base_url, AntigravitySubscriptionAccountConfig, ApiKeyAccountConfig,
     ClaudeSubscriptionAccountConfig, CliproxyRuntimeConfig, CodexSubscriptionAccountConfig,
-    RuntimeConfigError, RuntimeSecretRef, ValidatedRuntimeConfig, API_KEY_PROVIDERS,
+    RuntimeConfigError, RuntimeSecretRef, ValidatedRuntimeConfig, XaiSubscriptionAccountConfig,
+    API_KEY_PROVIDERS,
 };

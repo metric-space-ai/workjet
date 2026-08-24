@@ -15,11 +15,13 @@ default = [
   "codex-http-transport",
   "antigravity-http-transport",
   "api-key-http-transport",
+  "xai-http-transport",
 ]
 anthropic-fingerprint-transport = ["dep:wreq", "dep:wreq-util", "wreq/stream"]
 codex-http-transport = ["dep:wreq", "dep:wreq-util", "wreq/stream"]
 antigravity-http-transport = ["dep:wreq", "dep:wreq-util", "wreq/stream"]
 api-key-http-transport = ["dep:wreq", "wreq/stream"]
+xai-http-transport = ["dep:wreq", "wreq/stream"]
 
 [[bin]]
 name = "cliproxy-differential"

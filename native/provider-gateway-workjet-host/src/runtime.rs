@@ -35,7 +35,13 @@ use workjet_provider_gateway::sdk::api::handlers::claude::code_handlers::{
 };
 use zeroize::Zeroizing;
 
-use workjet_provider_gateway::internal::runtime::executor::ApiKeyHttpClient;
+use workjet_provider_gateway::internal::runtime::executor::xai_subscription_pool::{
+    xai_subscription_auth_record, XaiAuthPersist, XaiSubscriptionAccountPool,
+    XaiSubscriptionPoolAccount,
+};
+use workjet_provider_gateway::internal::runtime::executor::{
+    ApiKeyHttpClient, XaiAuthClock, XaiExecutor, XaiSubscriptionAuth, XaiSubscriptionHttpTransport,
+};
 use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_api_key_handlers::{
     ApiKeyAccount, ApiKeyAccountPool, OpenAiResponsesApiKeyHandler,
 };
@@ -43,6 +49,8 @@ use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_handl
     OpenAiResponsesAntigravityHandler, OpenAiResponsesClaudeHandler, OpenAiResponsesCodexHandler,
     OpenAiResponsesProviderRouter,
 };
+use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_xai_handlers::OpenAiResponsesXaiHandler;
+use workjet_provider_gateway::sdk::cliproxy::auth::Auth;
 use workjet_provider_gateway::sdk::cliproxy::auth::{
     AccountRouter, CooldownConductor, CooldownStateRecord, CooldownStateStore, CooldownStoreError,
 };
@@ -75,6 +83,38 @@ impl AccountStateClock for SystemAccountClock {
             .ok()
             .and_then(|duration| i64::try_from(duration.as_millis()).ok())
             .unwrap_or(i64::MAX)
+    }
+}
+
+#[derive(Debug)]
+struct SystemXaiAuthClock;
+
+impl XaiAuthClock for SystemXaiAuthClock {
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
+    }
+}
+
+/// Writes a rotated xAI credential back into the secret files the account's
+/// configuration references. A failed write is not fatal to the running
+/// request — the refreshed token stays live in the pool — but the next
+/// restart would resume from the previous refresh token.
+struct XaiSecretPersist {
+    store: Arc<WorkjetSecretStore>,
+    refs: HashMap<String, (RuntimeSecretRef, RuntimeSecretRef)>,
+}
+
+impl XaiAuthPersist for XaiSecretPersist {
+    fn persist(&self, account_id: &str, auth: &Auth) {
+        let Some((access_ref, refresh_ref)) = self.refs.get(account_id) else {
+            return;
+        };
+        if let Some(access) = auth.metadata.get("access_token").and_then(|v| v.as_str()) {
+            let _ = self.store.write_text(access_ref, access);
+        }
+        if let Some(refresh) = auth.metadata.get("refresh_token").and_then(|v| v.as_str()) {
+            let _ = self.store.write_text(refresh_ref, refresh);
+        }
     }
 }
 
@@ -390,13 +430,91 @@ pub fn build_provider_routes(
         }
     }
 
+    // xAI subscription accounts. The pool carries ONE executor, so a proxy
+    // must be pool-wide: differing per-account proxies are refused rather
+    // than silently routing some accounts through the wrong egress.
+    let xai = if config.xai_accounts().is_empty() {
+        None
+    } else {
+        let mut pool_proxy: Option<Option<zeroize::Zeroizing<String>>> = None;
+        let mut accounts = Vec::new();
+        let mut persist_refs = HashMap::new();
+        for account in config.xai_accounts() {
+            let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
+            match &pool_proxy {
+                None => pool_proxy = Some(configured_proxy),
+                Some(existing) => {
+                    if existing.as_deref().map(String::as_str)
+                        != configured_proxy.as_deref().map(String::as_str)
+                    {
+                        return Err(RuntimeBuildError::Configuration);
+                    }
+                }
+            }
+            let access = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Secret)?;
+            let refresh = store
+                .resolve_text(&account.refresh_token_secret)
+                .map_err(|_| RuntimeBuildError::Secret)?;
+            let base_url = account
+                .base_url()
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            let mut auth =
+                xai_subscription_auth_record(&account.id, &access, Some(&refresh), Some(&base_url));
+            let token_endpoint = account.token_endpoint.trim();
+            if !token_endpoint.is_empty() {
+                auth.metadata.insert(
+                    "token_endpoint".into(),
+                    serde_json::Value::String(token_endpoint.to_owned()),
+                );
+            }
+            persist_refs.insert(
+                account.id.clone(),
+                (
+                    account.access_token_secret.clone(),
+                    account.refresh_token_secret.clone(),
+                ),
+            );
+            accounts.push(XaiSubscriptionPoolAccount {
+                id: account.id.clone(),
+                label: account.id.clone(),
+                models: account.models.clone(),
+                priority: account.priority,
+                disabled: account.disabled,
+                auth,
+            });
+        }
+        let proxy = pool_proxy.flatten();
+        let transport = Arc::new(
+            XaiSubscriptionHttpTransport::new(proxy.as_deref().map(String::as_str))
+                .map_err(|_| RuntimeBuildError::Transport)?,
+        );
+        let executor = XaiExecutor::new(transport.clone(), config.request_timeout())
+            .map_err(|_| RuntimeBuildError::Configuration)?
+            .with_stream_transport(transport.clone());
+        let auth = XaiSubscriptionAuth::new(
+            transport,
+            Arc::new(SystemXaiAuthClock),
+            workjet_provider_gateway::internal::runtime::executor::DEFAULT_XAI_API_BASE_URL,
+        );
+        let pool = XaiSubscriptionAccountPool::new(accounts, executor, auth)
+            .map_err(|_| RuntimeBuildError::Configuration)?
+            .with_persist(Arc::new(XaiSecretPersist {
+                store: store.clone(),
+                refs: persist_refs,
+            }));
+        Some(Arc::new(OpenAiResponsesXaiHandler::new(Arc::new(pool))))
+    };
+
     let responses = Arc::new(
-        OpenAiResponsesProviderRouter::with_api_key_handlers(
+        OpenAiResponsesProviderRouter::with_all_handlers(
             default_provider,
             claude,
             codex,
             antigravity,
             api_key_handlers,
+            xai,
         )
         .map_err(|_| RuntimeBuildError::Configuration)?,
     );
@@ -460,6 +578,18 @@ fn model_catalog(config: &ValidatedRuntimeConfig) -> Vec<ClaudeModel> {
                 .entry(model.clone())
                 .or_default()
                 .insert(account.provider.trim().to_owned());
+        }
+    }
+    for account in config
+        .xai_accounts()
+        .iter()
+        .filter(|account| !account.disabled)
+    {
+        for model in &account.models {
+            models
+                .entry(model.clone())
+                .or_default()
+                .insert("xai".to_owned());
         }
     }
     models
@@ -567,6 +697,33 @@ impl HostManagementSource {
             }
         })
         .collect();
+        // xAI subscription accounts share the "xai" row with any xai API
+        // keys — one provider, one row, counts merged.
+        let mut providers: Vec<ManagementProviderConfigSummary> = providers;
+        if !config.xai_accounts().is_empty() {
+            let subscriptions = config.xai_accounts();
+            let enabled = subscriptions
+                .iter()
+                .filter(|account| !account.disabled)
+                .count();
+            let models: BTreeSet<String> = subscriptions
+                .iter()
+                .flat_map(|account| account.models.iter().cloned())
+                .collect();
+            if let Some(row) = providers.iter_mut().find(|row| row.provider == "xai") {
+                row.account_count += subscriptions.len();
+                row.enabled_account_count += enabled;
+                let merged: BTreeSet<String> = row.models.iter().cloned().chain(models).collect();
+                row.models = merged.into_iter().take(256).collect();
+            } else {
+                providers.push(ManagementProviderConfigSummary {
+                    provider: "xai".to_owned(),
+                    account_count: subscriptions.len(),
+                    enabled_account_count: enabled,
+                    models: models.into_iter().take(256).collect(),
+                });
+            }
+        }
         Self {
             provider_endpoint,
             management_endpoint,

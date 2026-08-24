@@ -417,6 +417,18 @@ BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
    claude_accounts); `src/runtime.rs`: Pool bauen, im
    `OpenAiResponsesProviderRouter` als "xai" registrieren, Summary-Zeile.
    GATE: Host baut, `runtime-status` zeigt xai.
+   → ERLEDIGT 2026-08-24: `xai_accounts`-Sektion in CliproxyRuntimeConfig
+   (access+refresh Secret-Refs, optionale base_url/token_endpoint/proxy),
+   Produktions-Transport `XaiSubscriptionHttpTransport` (wreq, Feature
+   xai-http-transport; execute + stream + Token-Refresh mit Discovery),
+   Host: Pool-Bau + Persist-Port (rotierter Refresh-Token → Secret-Store,
+   write_text) + Router `with_all_handlers` (default "xai" auch ohne
+   API-Key gültig) + Summary-Zeile (Subscription und API-Key teilen die
+   "xai"-Zeile) + Modellkatalog. GATE grün per Boot-Test: echter Host
+   startet mit xai-Subscription als Default, runtime-status zeigt
+   active_provider=xai, runtime-config listet die xai-Zeile, /v1/models
+   führt das Modell, kein Token erscheint auf einer Fläche; fehlendes
+   Secret schlägt vor jedem Bind fehl. Suiten: Gateway 2532 ok, Host 16 ok.
 4. Login: `HostOAuthSource` „xai"-Fall — begin = `start_device_flow`,
    authorizationUrl = `verification_uri_complete`, KEIN Callback-Port;
    stattdessen Hintergrund-Task `poll_for_token` → LoginOutcome (Muster:

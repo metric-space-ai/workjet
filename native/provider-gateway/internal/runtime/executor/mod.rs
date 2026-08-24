@@ -54,6 +54,7 @@ pub mod xai_executor_stream;
 pub mod xai_executor_tokens;
 pub mod xai_reasoning_replay;
 pub mod xai_subscription_pool;
+pub mod xai_transport;
 pub mod xai_websockets_executor;
 
 #[cfg(test)]
@@ -339,4 +340,6 @@ pub use xai_executor_response::*;
 pub use xai_executor_stream::*;
 pub use xai_executor_tokens::*;
 pub use xai_reasoning_replay::*;
+#[cfg(feature = "xai-http-transport")]
+pub use xai_transport::XaiSubscriptionHttpTransport;
 pub use xai_websockets_executor::*;

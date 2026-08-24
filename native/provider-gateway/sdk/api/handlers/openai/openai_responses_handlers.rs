@@ -376,6 +376,20 @@ impl OpenAiResponsesProviderRouter {
         antigravity: Option<Arc<OpenAiResponsesAntigravityHandler>>,
         api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>>,
     ) -> Result<Self, ProviderRouterError> {
+        Self::with_all_handlers(default_provider, claude, codex, antigravity, api_key, None)
+    }
+
+    /// The full allow-list router, including the xAI subscription handler —
+    /// the only constructor that accepts "xai" as the default provider when
+    /// no xai API key exists.
+    pub fn with_all_handlers(
+        default_provider: impl Into<String>,
+        claude: Option<Arc<OpenAiResponsesClaudeHandler>>,
+        codex: Option<Arc<OpenAiResponsesCodexHandler>>,
+        antigravity: Option<Arc<OpenAiResponsesAntigravityHandler>>,
+        api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>>,
+        xai: Option<Arc<super::openai_responses_xai_handlers::OpenAiResponsesXaiHandler>>,
+    ) -> Result<Self, ProviderRouterError> {
         let default_provider = default_provider.into().trim().to_ascii_lowercase();
         let api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>> = api_key
             .into_iter()
@@ -393,7 +407,7 @@ impl OpenAiResponsesProviderRouter {
             "claude" => claude.is_some(),
             "codex" => codex.is_some(),
             "antigravity" => antigravity.is_some(),
-            other => api_key.contains_key(other),
+            other => api_key.contains_key(other) || (other == "xai" && xai.is_some()),
         };
         if !configured {
             return Err(ProviderRouterError::Configuration);
@@ -404,14 +418,13 @@ impl OpenAiResponsesProviderRouter {
             codex,
             antigravity,
             api_key,
-            xai: None,
+            xai,
         })
     }
 
-    /// Attaches the xAI subscription handler. Kept out of the constructor
-    /// signatures so the existing call sites stay untouched; apply it AFTER
-    /// construction, which also means a default provider of "xai" must still
-    /// be backed by an api_key handler at construction time.
+    /// Attaches the xAI subscription handler after construction. Note: a
+    /// default provider of "xai" without an xai API key must go through
+    /// [`Self::with_all_handlers`], which validates it.
     #[must_use]
     pub fn with_xai(
         mut self,

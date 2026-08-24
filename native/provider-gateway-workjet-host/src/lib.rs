@@ -338,6 +338,10 @@ fn validate_provider_secrets(
         references.push(&account.api_key_secret);
         references.extend(account.proxy_url_secret.iter());
     }
+    for account in config.runtime.xai_accounts() {
+        references.extend([&account.access_token_secret, &account.refresh_token_secret]);
+        references.extend(account.proxy_url_secret.iter());
+    }
     if let Some((client_id, client_secret)) = &config.antigravity_oauth {
         references.extend([client_id, client_secret]);
     }

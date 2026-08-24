@@ -151,7 +151,7 @@ impl WorkjetSecretStore {
             .join(format!("{}.{}.bin", secret_ref.scope, secret_ref.name)))
     }
 
-    fn write_text(
+    pub(crate) fn write_text(
         &self,
         secret_ref: &RuntimeSecretRef,
         value: &str,

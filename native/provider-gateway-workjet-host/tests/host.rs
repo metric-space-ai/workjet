@@ -59,6 +59,7 @@ fn config(root: &std::path::Path) -> HostConfig {
             }],
             antigravity_accounts: Vec::new(),
             api_key_accounts: Vec::new(),
+            xai_accounts: Vec::new(),
         },
     }
 }
@@ -770,6 +771,88 @@ async fn boots_with_an_api_key_provider_as_default_and_never_serves_the_key() {
     assert!(!models.contains(API_KEY_VALUE));
 
     host.shutdown().await.unwrap();
+}
+
+fn xai_subscription_config(root: &std::path::Path) -> HostConfig {
+    let mut config = config(root);
+    config.default_provider = Some("xai".to_owned());
+    config.runtime.codex_accounts = Vec::new();
+    config.runtime.xai_accounts = vec![
+        workjet_provider_gateway::internal::config::XaiSubscriptionAccountConfig {
+            id: "xai-sub-1".to_owned(),
+            disabled: false,
+            priority: 0,
+            models: vec!["grok-test-model".to_owned()],
+            access_token_secret: secret("xai-sub-1.access"),
+            refresh_token_secret: secret("xai-sub-1.refresh"),
+            upstream_base_url: String::new(),
+            token_endpoint: String::new(),
+            proxy_url_secret: None,
+        },
+    ];
+    config
+}
+
+#[tokio::test]
+async fn boots_with_an_xai_subscription_as_default_and_lists_it_in_the_summary() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+    write_secret(root.path(), "xai-sub-1.access", b"test-not-a-real-access");
+    write_secret(root.path(), "xai-sub-1.refresh", b"test-not-a-real-refresh");
+
+    let mut host = workjet_provider_gateway_host::start(
+        xai_subscription_config(root.path()).validate().unwrap(),
+    )
+    .await
+    .unwrap();
+    let key = "07".repeat(32);
+    let address = host.management_address();
+    assert_eq!(host.readiness().phase, "ready");
+
+    let status =
+        management_request(address, "GET", "/v0/management/runtime-status", Some(&key)).await;
+    let payload: serde_json::Value = serde_json::from_str(body_of(&status)).unwrap();
+    assert_eq!(payload["main_responses_gateway"]["phase"], "ready");
+    assert_eq!(payload["active_provider"], "xai");
+
+    // The runtime summary lists the subscription on the "xai" row.
+    let summary =
+        management_request(address, "GET", "/v0/management/runtime-config", Some(&key)).await;
+    let payload: serde_json::Value = serde_json::from_str(body_of(&summary)).unwrap();
+    let providers = payload["providers"].as_array().unwrap();
+    assert_eq!(providers.len(), 1);
+    assert_eq!(providers[0]["provider"], "xai");
+    assert_eq!(providers[0]["account_count"], 1);
+    assert_eq!(providers[0]["enabled_account_count"], 1);
+    assert_eq!(providers[0]["models"][0], "grok-test-model");
+
+    // No management surface renders a token.
+    assert!(!format!("{status}{summary}").contains("test-not-a-real-access"));
+    assert!(!format!("{status}{summary}").contains("test-not-a-real-refresh"));
+
+    // The model catalog carries the subscription's model under "xai".
+    let models = management_request(host.provider_address(), "GET", "/v1/models", None).await;
+    assert!(models.starts_with("HTTP/1.1 200"), "{models}");
+    assert!(models.contains("grok-test-model"), "{models}");
+    assert!(!models.contains("test-not-a-real-access"));
+
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_missing_xai_subscription_secret_fails_startup_before_anything_binds() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+    // The access secret is deliberately not written.
+    let error = workjet_provider_gateway_host::start(
+        xai_subscription_config(root.path()).validate().unwrap(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert_eq!(error, workjet_provider_gateway_host::HostError::Secret);
 }
 
 #[tokio::test]

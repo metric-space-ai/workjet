@@ -491,6 +491,80 @@ impl ApiKeyAccountConfig {
     }
 }
 
+/// One xAI subscription (OAuth) account. Like every other account, the
+/// tokens never appear here — only references into the host secret store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct XaiSubscriptionAccountConfig {
+    pub id: String,
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(default)]
+    pub models: Vec<String>,
+    pub access_token_secret: RuntimeSecretRef,
+    pub refresh_token_secret: RuntimeSecretRef,
+    /// Empty means the xAI default (`https://api.x.ai/v1`).
+    #[serde(default)]
+    pub upstream_base_url: String,
+    /// Empty means OpenID discovery at refresh time — the same order the
+    /// login flow uses.
+    #[serde(default)]
+    pub token_endpoint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url_secret: Option<RuntimeSecretRef>,
+}
+
+impl XaiSubscriptionAccountConfig {
+    /// Resolved upstream base URL, validated with the same https-origin rule
+    /// as the API-key accounts.
+    pub fn base_url(&self) -> Result<String, RuntimeConfigError> {
+        let configured = self.upstream_base_url.trim();
+        let base = if configured.is_empty() {
+            default_api_key_base_url("xai").expect("xai default base URL")
+        } else {
+            configured
+        };
+        if base.len() > MAX_API_KEY_BASE_URL_LEN
+            || base.chars().any(char::is_control)
+            || base.chars().any(char::is_whitespace)
+        {
+            return Err(RuntimeConfigError::InvalidApiKeyBaseUrl);
+        }
+        let parsed = url::Url::parse(base).map_err(|_| RuntimeConfigError::InvalidApiKeyBaseUrl)?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none_or(str::is_empty)
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
+            return Err(RuntimeConfigError::InvalidApiKeyBaseUrl);
+        }
+        Ok(base.trim_end_matches('/').to_owned())
+    }
+
+    fn validate(&self) -> Result<(), RuntimeConfigError> {
+        if self.id.trim().is_empty() {
+            return Err(RuntimeConfigError::InvalidAccountId);
+        }
+        self.access_token_secret.validate()?;
+        self.refresh_token_secret.validate()?;
+        if self.access_token_secret == self.refresh_token_secret {
+            return Err(RuntimeConfigError::DuplicateSecretReference);
+        }
+        if let Some(proxy) = &self.proxy_url_secret {
+            proxy.validate()?;
+            if proxy == &self.access_token_secret || proxy == &self.refresh_token_secret {
+                return Err(RuntimeConfigError::DuplicateSecretReference);
+            }
+        }
+        self.base_url()?;
+        Ok(())
+    }
+}
+
 fn default_codex_base_url() -> String {
     DEFAULT_CODEX_BASE_URL.to_owned()
 }
@@ -524,6 +598,9 @@ pub struct CliproxyRuntimeConfig {
     /// existing configuration without this field decodes unchanged.
     #[serde(default)]
     pub api_key_accounts: Vec<ApiKeyAccountConfig>,
+    /// xAI subscription (OAuth) accounts. Additive like `api_key_accounts`.
+    #[serde(default)]
+    pub xai_accounts: Vec<XaiSubscriptionAccountConfig>,
 }
 
 fn default_request_timeout_ms() -> u64 {
@@ -579,6 +656,12 @@ impl CliproxyRuntimeConfig {
                 return Err(RuntimeConfigError::DuplicateAccountId);
             }
         }
+        for account in &self.xai_accounts {
+            account.validate()?;
+            if !ids.insert(account.id.trim().to_owned()) {
+                return Err(RuntimeConfigError::DuplicateAccountId);
+            }
+        }
         if require_enabled_portable_account
             && !self.claude_accounts.iter().any(|account| !account.disabled)
             && !self.codex_accounts.iter().any(|account| !account.disabled)
@@ -590,6 +673,7 @@ impl CliproxyRuntimeConfig {
                 .api_key_accounts
                 .iter()
                 .any(|account| !account.disabled)
+            && !self.xai_accounts.iter().any(|account| !account.disabled)
         {
             return Err(RuntimeConfigError::NoEnabledAccounts);
         }
@@ -655,6 +739,10 @@ impl ValidatedRuntimeConfig {
 
     pub fn api_key_accounts(&self) -> &[ApiKeyAccountConfig] {
         &self.0.api_key_accounts
+    }
+
+    pub fn xai_accounts(&self) -> &[XaiSubscriptionAccountConfig] {
+        &self.0.xai_accounts
     }
 
     /// API-key accounts of one provider, in configuration order.
@@ -880,6 +968,7 @@ mod tests {
                 api_key_account("zai-a", "zai"),
                 api_key_account("xai-a", "xai"),
             ],
+            xai_accounts: Vec::new(),
         };
         let validated = config.clone().validate().unwrap();
         assert_eq!(validated.api_key_accounts().len(), 2);
@@ -927,6 +1016,7 @@ mod tests {
             codex_accounts: vec![codex_account("codex-a")],
             antigravity_accounts: vec![antigravity_account("antigravity-a")],
             api_key_accounts: Vec::new(),
+            xai_accounts: Vec::new(),
         }
         .validate()
         .unwrap();
@@ -955,6 +1045,7 @@ mod tests {
             codex_accounts: Vec::new(),
             antigravity_accounts: Vec::new(),
             api_key_accounts: Vec::new(),
+            xai_accounts: Vec::new(),
         };
         assert_eq!(
             empty.clone().validate(),
@@ -975,6 +1066,7 @@ mod tests {
             codex_accounts: vec![codex_account("codex-a")],
             antigravity_accounts: vec![antigravity_account("antigravity-a")],
             api_key_accounts: Vec::new(),
+            xai_accounts: Vec::new(),
         })
         .unwrap();
         assert!(encoded.contains("account-a-access"));
@@ -994,6 +1086,7 @@ mod tests {
                 codex_accounts: Vec::new(),
                 antigravity_accounts: Vec::new(),
                 api_key_accounts: Vec::new(),
+                xai_accounts: Vec::new(),
             }
             .validate(),
             Err(RuntimeConfigError::DuplicateAccountId)
@@ -1008,6 +1101,7 @@ mod tests {
                 codex_accounts: Vec::new(),
                 antigravity_accounts: Vec::new(),
                 api_key_accounts: Vec::new(),
+                xai_accounts: Vec::new(),
             }
             .validate(),
             Err(RuntimeConfigError::DuplicateSecretReference)
@@ -1034,6 +1128,7 @@ mod tests {
                 codex_accounts: Vec::new(),
                 antigravity_accounts: Vec::new(),
                 api_key_accounts: Vec::new(),
+                xai_accounts: Vec::new(),
             }
             .validate(),
             Err(RuntimeConfigError::Target(

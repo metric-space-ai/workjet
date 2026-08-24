@@ -53,6 +53,7 @@ pub mod xai_executor_response;
 pub mod xai_executor_stream;
 pub mod xai_executor_tokens;
 pub mod xai_reasoning_replay;
+pub mod xai_subscription_pool;
 pub mod xai_websockets_executor;
 
 #[cfg(test)]

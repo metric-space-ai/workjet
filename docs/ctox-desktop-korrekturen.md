@@ -397,6 +397,13 @@ BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
    (openai_responses_api_key_handlers.rs:121, ~120 Zeilen) — NICHT das
    2383-Zeilen-Antigravity-File spiegeln; Credits/Fingerprints entfallen.
    GATE: Unit-Tests Pool-Auswahl + Refresh-Pfad.
+   → ERLEDIGT 2026-08-24: Pool + Tests gebaut, beide Tests grün
+   (`cargo test --lib xai_subscription`: refresh-einmal-und-persistiere,
+   Wildcard-Auswahl). Zwei Vorlagen-Fakten, die die Tests erzwangen:
+   Grok-`/responses` antwortet auch ohne `stream` als SSE (`data:`-Frames,
+   `aggregate_responses_sse`), und der Default-base_url-Parameter von
+   `XaiSubscriptionAuth::new` MUSS gesetzt sein — ein leerer landet im
+   refreshten Auth und lässt den Retry an `InvalidTarget` sterben.
 2. `OpenAiResponsesXaiHandler` im selben Muster wie der ApiKey-Handler
    (parse model/stream → pool → Stream-Pumpe). GATE: cargo test.
 3. Host `src/config.rs`: Sektion `xai_accounts` (Secrets-Refs wie

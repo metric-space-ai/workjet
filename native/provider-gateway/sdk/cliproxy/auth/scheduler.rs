@@ -442,7 +442,6 @@ mod tests {
         assert!(!model_entry_matches("claude-fable-5", "claude-fable"));
     }
 
-
     use super::*;
 
     fn candidate(id: &str, provider: &str, priority: i32, weight: i64) -> AccountCandidate {

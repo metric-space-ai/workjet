@@ -206,8 +206,24 @@ nie zu Ende geprüft.
   deklarierten Stand ehrlich als „not probed from here".
 - **Import**: 14/14 vorbelegt (s. Posten 3).
 
-OFFEN im Generalabgleich: Telemetry/Execution nie verglichen;
-Computers-EDITOR-Formular (Override-Felder) gegen Swift-Editor.
+Weitere Abgleiche 2026-08-24:
+
+- **Telemetry/Execution vs. Swift**: deckungsgleich bis auf
+  „Gleichzeitige Aufträge" (`providerSlots` 1–3). Das Feld fehlt im
+  Vertrag UND hätte hier keinen Verbraucher — Speicher ohne Verbraucher
+  wäre eine Attrappe. Erst Slot-Begrenzung im Ausführungspfad bauen,
+  dann das Feld.
+- **Computers-EDITOR**: Override-Eingaben hinter `details` gefaltet,
+  Verfügbarkeit führt (wie Swift); ein GESETZTER Override bleibt offen
+  sichtbar.
+
+FOLGEARBEIT (präzise Naht): Worker-`capabilityIds` beim Thread-Start
+anwenden. Die Schreib-Naht (`runWorkjetConfigChange` →
+`setThreadWorkjetConfig`) existiert NUR auf Server-Threads
+(`activeServerThread`-Guard, ChatView:3787); die Worker-Wahl lebt im
+Draft. Anwendung also nach dem Start: beim Übergang Draft→Server-Thread
+die capabilityIds des gewählten Workers über den vorhandenen
+Per-Id-Toggle setzen. Gleiches Muster später für den Rechner.
 
 ### (ursprünglich) UI/UX-Generalabgleich gegen die Swift-Vorlage
 

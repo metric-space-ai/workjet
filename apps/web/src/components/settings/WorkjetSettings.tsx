@@ -353,6 +353,10 @@ function replaceCatalogItem<T extends { readonly id: string }>(
 
 export type WorkjetSettingsSectionId = "workers" | "prompt" | "telemetry" | "execution";
 
+function modelPromptFor(configuration: WorkjetConfiguration, modelId: string): string {
+  return configuration.modelPrompts.find((entry) => entry.modelId === modelId)?.prompt ?? "";
+}
+
 export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   readonly id: WorkjetSettingsSectionId;
   readonly targetId: string;
@@ -842,6 +846,44 @@ export function WorkjetSettingsView({
                           worker.reasoning,
                         ].join(" · ")}
                       </span>
+                    </div>
+                    {/* Model rules — the Swift page's "MODELL · …" block:
+                        guidance shared by every worker on this model, edited
+                        here per model (changing it changes it for all of
+                        them) and prepended to the task at dispatch. */}
+                    <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                      Model rules · {worker.modelId}
+                    </div>
+                    <Textarea
+                      key={`${worker.id}-model-${modelPromptFor(configuration, worker.modelId)}`}
+                      defaultValue={modelPromptFor(configuration, worker.modelId)}
+                      rows={Math.min(
+                        8,
+                        Math.max(
+                          2,
+                          modelPromptFor(configuration, worker.modelId).split("\n").length,
+                        ),
+                      )}
+                      aria-label={`Model rules for ${worker.modelId}`}
+                      placeholder="No model rules — shared guidance for every worker on this model."
+                      className="mt-1 text-[12px]"
+                      onBlur={(event) => {
+                        const prompt = event.target.value;
+                        if (prompt === modelPromptFor(configuration, worker.modelId)) return;
+                        const rest = configuration.modelPrompts.filter(
+                          (entry) => entry.modelId !== worker.modelId,
+                        );
+                        onChange({
+                          ...configuration,
+                          modelPrompts:
+                            prompt.trim() === ""
+                              ? rest
+                              : [...rest, { modelId: worker.modelId, prompt }],
+                        });
+                      }}
+                    />
+                    <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                      Worker task
                     </div>
                     {/* Editable in place, like the Swift page's per-worker
                         Bearbeiten: the task is prompt text, and the prompt

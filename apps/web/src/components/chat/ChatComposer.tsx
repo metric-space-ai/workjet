@@ -945,9 +945,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       readonly managedInstructions?: string;
     };
     if (worker !== undefined) {
+      // Model rules travel with every worker on this model (the Swift app's
+      // Modellregeln), ahead of the worker's own task.
+      const modelRules = settings.workjet.modelPrompts
+        .find((entry) => entry.modelId === worker.modelId)
+        ?.prompt.trim();
       payload = {
         capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
-        managedInstructions: worker.instructions ?? "",
+        managedInstructions: [modelRules, worker.instructions?.trim()]
+          .filter((part): part is string => part !== undefined && part.length > 0)
+          .join("\n\n"),
       };
     } else if (draftManagedInstructions !== null) {
       payload = { managedInstructions: draftManagedInstructions };

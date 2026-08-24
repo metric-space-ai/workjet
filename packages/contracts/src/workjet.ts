@@ -218,9 +218,23 @@ const WorkjetConfigurationSchemaVersion = Schema.Literals([1, 2]).pipe(
 );
 
 /** Whole-object value schema without an outer default, used by patch contracts. */
+/**
+ * Per-model prompt rules, the Swift app's "Modellregeln": guidance that
+ * travels with every worker running this model, shown and edited on the
+ * Prompt page and prepended to the worker's own task at dispatch.
+ */
+export const WorkjetModelPrompt = Schema.Struct({
+  modelId: TrimmedNonEmptyString,
+  prompt: TrimmedString,
+});
+export type WorkjetModelPrompt = typeof WorkjetModelPrompt.Type;
+
 export const WorkjetConfigurationValue = Schema.Struct({
   schemaVersion: WorkjetConfigurationSchemaVersion,
   computers: Schema.Array(WorkjetComputer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  modelPrompts: Schema.Array(WorkjetModelPrompt).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   llmRoutes: Schema.Array(WorkjetLlmRoutePersisted).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),

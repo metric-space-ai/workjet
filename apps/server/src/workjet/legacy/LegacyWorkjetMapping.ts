@@ -1008,6 +1008,7 @@ export function mapLegacyWorkjetConfig(input: {
   const configuration: WorkjetConfiguration = {
     schemaVersion: WORKJET_CONFIGURATION_SCHEMA_VERSION,
     computers,
+    modelPrompts: [],
     llmRoutes,
     workerProfiles,
     managedSystemPrompt: composeManagedSystemPrompt(config),

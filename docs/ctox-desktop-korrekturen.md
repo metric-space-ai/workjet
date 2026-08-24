@@ -60,10 +60,12 @@ Kern von Posten 7 gebaut: `ClaudeMessagesClaudeHandler` bedient
 Übersetzer), Stream-Relay inklusive; Host neu gebaut und getauscht
 (Backup: `provider-gateway-host.backup-aug20`).
 
-ZWEI-ROUTER-FALLE (Folgearbeit): Konto-Modelllisten matcht der HOST
-exakt (leer = alles), die App-Seite versteht `*`-Muster. Ein
-Wildcard-Eintrag ent-routet das Konto hostseitig. Konten tragen jetzt
-exakte IDs (claude-fable-5[1m] etc.). Die Semantiken gehören vereinheitlicht.
+ZWEI-ROUTER-FALLE — GESCHLOSSEN 2026-08-24: Der Host-Scheduler versteht
+jetzt dieselben verankerten `*`-Muster wie die App-Seite
+(`model_entry_matches` in `sdk/cliproxy/auth/scheduler.rs`, mit Test).
+Ende-zu-Ende belegt: Konten wieder auf `claude-*`/`gpt-*`/`kimi-*`
+gestellt, Host neu gebaut und getauscht, App-Turn → BEREIT
+(`state=completed`, 10,4 s).
 
 ### (Diagnoseweg) Gateway-Routing Claude — Ursache gefunden
 

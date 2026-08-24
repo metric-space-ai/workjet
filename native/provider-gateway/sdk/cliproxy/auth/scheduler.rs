@@ -289,7 +289,7 @@ fn available_candidates(
                 && !candidate
                     .supported_models
                     .iter()
-                    .any(|model| canonical_model_key(model) == requested_model))
+                    .any(|model| model_entry_matches(model, &requested_model)))
         {
             continue;
         }
@@ -356,6 +356,51 @@ fn provider_index(providers: &[String], provider: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+/// Whether a configured model entry admits the requested model.
+///
+/// Entries support the same anchored `*` wildcard as Workjet's app-side
+/// resolver (`matchesWorkjetGatewayModelPattern`): the two routers used to
+/// disagree — the app side matched `claude-*` while this scheduler compared
+/// exactly, so a wildcard entry silently UN-routed the account host-side
+/// ("no Claude account is currently available", measured 2026-08-24). One
+/// semantic now, defined here without a regex: split on `*`, then the
+/// segments must appear in order, with the first anchored to the start and
+/// the last to the end.
+pub fn model_entry_matches(entry: &str, requested_model: &str) -> bool {
+    let entry_key = canonical_model_key(entry);
+    if !entry_key.contains('*') {
+        return entry_key == requested_model;
+    }
+    let entry_key = entry_key.to_ascii_lowercase();
+    let requested = requested_model.to_ascii_lowercase();
+    let segments: Vec<&str> = entry_key.split('*').collect();
+    let mut position = 0usize;
+    for (index, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            continue;
+        }
+        let found = if index == 0 {
+            if requested.starts_with(segment) {
+                Some(0)
+            } else {
+                None
+            }
+        } else {
+            requested[position..]
+                .find(segment)
+                .map(|offset| position + offset)
+        };
+        let Some(found) = found else { return false };
+        position = found + segment.len();
+    }
+    if let Some(last) = segments.last() {
+        if !last.is_empty() && !requested.ends_with(last) {
+            return false;
+        }
+    }
+    true
+}
+
 pub fn canonical_model_key(model: &str) -> String {
     let model = model.trim();
     let parsed = parse_suffix(model);
@@ -380,6 +425,24 @@ fn normalize_provider_keys(providers: &[String]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wildcard_entries_match_like_the_app_side_resolver() {
+        use super::model_entry_matches;
+        // The exact ids that broke: "claude-*" un-routed the account because
+        // this side compared exactly while the app side matched the pattern.
+        assert!(model_entry_matches("claude-*", "claude-fable-5"));
+        assert!(model_entry_matches("claude-*", "claude-sonnet-5"));
+        assert!(model_entry_matches("gpt-*", "gpt-5.6-luna"));
+        assert!(!model_entry_matches("claude-*", "gpt-5.6-luna"));
+        // Anchored, not substring: a trailing segment must end the model.
+        assert!(model_entry_matches("*-luna", "gpt-5.6-luna"));
+        assert!(!model_entry_matches("*-luna", "gpt-5.6-luna-x"));
+        // No wildcard keeps exact semantics, including suffix stripping.
+        assert!(model_entry_matches("claude-fable-5", "claude-fable-5"));
+        assert!(!model_entry_matches("claude-fable-5", "claude-fable"));
+    }
+
+
     use super::*;
 
     fn candidate(id: &str, provider: &str, priority: i32, weight: i64) -> AccountCandidate {

@@ -25,6 +25,22 @@ import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
  * Extracted 1:1 from WorkjetSettings; the section keeps its anchor id, so
  * settings search and old `#workjet-llm-routes` links keep landing here.
  */
+/**
+ * Name the account, not its id. The row used to print the raw
+ * `gatewayAccountId` — an opaque hash the operator cannot recognise, on a
+ * page whose whole point is telling accounts apart. The id appears only when
+ * the catalog cannot resolve it, because then it is the only truthful thing
+ * left to show — together with the fact that the account is gone.
+ */
+function describeRouteAccount(accountId: string, catalog: WorkjetGatewayCatalog | null): string {
+  const account = catalog?.accounts.find((candidate) => candidate.id === accountId);
+  if (account === undefined) {
+    return `Account not in the gateway catalog (${accountId}). The route cannot serve until it exists again.`;
+  }
+  const suffix = account.credentialSuffix ? ` · …${account.credentialSuffix}` : "";
+  return `Account: ${account.label} · ${account.provider}${suffix}`;
+}
+
 export function WorkjetLlmRoutesSection(props: {
   readonly configuration: WorkjetConfiguration;
   readonly catalog: WorkjetGatewayCatalog | null;
@@ -69,7 +85,7 @@ export function WorkjetLlmRoutesSection(props: {
         <SettingsRow
           key={route.id}
           title={route.label}
-          description={`Provider-gateway account: ${route.gatewayAccountId}`}
+          description={describeRouteAccount(route.gatewayAccountId, props.catalog)}
           control={
             <span className="flex items-center gap-1">
               <Button

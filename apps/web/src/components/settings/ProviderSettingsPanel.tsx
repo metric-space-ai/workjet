@@ -217,7 +217,9 @@ function EnvironmentUnavailableRow({
   // No spinner: this state can persist indefinitely for a wedged device, and a
   // continuously repainting animation would run the whole time.
   return (
-    <SettingsSection title="Providers">
+    // Titled like the section it stands in for, so the placeholder never
+    // reads as a different page than the loaded state.
+    <SettingsSection title="Harness runtimes">
       <SettingsRow title={title} description={description} />
     </SettingsSection>
   );
@@ -268,7 +270,7 @@ export function ProviderSettingsPanel({
   return (
     <SettingsPageContainer>
       {!onlyPrimaryDevice ? (
-        <SettingsSection title="Devices">
+        <SettingsSection title="Computers">
           {options.length === 0 ? (
             // The catalog hydrates asynchronously, so an empty list before it is
             // ready means "not loaded yet", not "nothing is connected".

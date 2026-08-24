@@ -101,7 +101,12 @@ export function WorkjetLlmRouteEditor({
               aria-label="LLM route provider-gateway account"
             >
               <SelectValue>
-                {selected?.label ?? draft.gatewayAccountId ?? "Choose provider-gateway account"}
+                {/* Never the raw account id: when the referenced account left
+                    the catalog, say so instead of printing an opaque hash. */}
+                {selected?.label ??
+                  (draft.gatewayAccountId
+                    ? "Account missing from catalog"
+                    : "Choose provider-gateway account")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>

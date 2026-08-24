@@ -462,7 +462,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
   return (
     <SettingsSection
       id={searchableSetting("workjet-provider-pools").id}
-      title="Gateway pools"
+      title={searchableSetting("workjet-provider-pools").title}
       headerAction={
         <Button type="button" size="sm" onClick={save} disabled={disabled || !isDirty}>
           {isSaving ? <Spinner className="size-3.5" /> : null}

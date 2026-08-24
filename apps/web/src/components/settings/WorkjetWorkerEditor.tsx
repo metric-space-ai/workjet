@@ -442,13 +442,20 @@ export function WorkjetWorkerEditor({
               <dt className="w-28 shrink-0">Harness</dt>
               <dd className="font-mono">{draft.harness}</dd>
             </div>
+            {/* Labels, not raw catalog ids: the operator recognises "gpu3",
+                not a UUID. The id stays reachable as the hover title. */}
             <div className="flex gap-2">
               <dt className="w-28 shrink-0">Computer</dt>
-              <dd className="font-mono">{draft.computerId || "—"}</dd>
+              <dd title={draft.computerId || undefined}>
+                {chosenComputer?.label ?? (draft.computerId ? "Missing computer" : "—")}
+              </dd>
             </div>
             <div className="flex gap-2">
               <dt className="w-28 shrink-0">Access</dt>
-              <dd className="font-mono">{draft.llmRouteId || "—"}</dd>
+              <dd title={draft.llmRouteId || undefined}>
+                {routes.find((route) => route.id === draft.llmRouteId)?.label ??
+                  (draft.llmRouteId ? "Missing route" : "—")}
+              </dd>
             </div>
             <div className="flex gap-2">
               <dt className="w-28 shrink-0">Model</dt>
@@ -465,7 +472,7 @@ export function WorkjetWorkerEditor({
       ) : null}
       {routes.length === 0 ? (
         <p role="status" className="text-xs text-muted-foreground">
-          Add an LLM route in Workjet Settings before saving this worker.
+          Add an LLM route in Settings → Models before saving this worker.
         </p>
       ) : null}
       {error ? (

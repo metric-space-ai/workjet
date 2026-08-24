@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
+  ActivityIcon,
   ArchiveIcon,
   ArrowLeftIcon,
   GitBranchIcon,
@@ -55,9 +56,10 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/harnesses": TerminalIcon,
   "/settings/models": SparklesIcon,
   "/settings/computers": MonitorIcon,
-  "/settings/source-control": GitBranchIcon,
   "/settings/workjet": WrenchIcon,
+  "/settings/source-control": GitBranchIcon,
   "/settings/connections": Link2Icon,
+  "/settings/diagnostics": ActivityIcon,
   "/settings/archived": ArchiveIcon,
 };
 

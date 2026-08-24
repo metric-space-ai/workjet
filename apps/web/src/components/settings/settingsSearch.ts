@@ -5,9 +5,10 @@ export type SettingsPath =
   | "/settings/harnesses"
   | "/settings/models"
   | "/settings/computers"
-  | "/settings/source-control"
   | "/settings/workjet"
+  | "/settings/source-control"
   | "/settings/connections"
+  | "/settings/diagnostics"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -28,9 +29,12 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/harnesses": "Harnesses",
   "/settings/models": "Models",
   "/settings/computers": "Computers",
-  "/settings/source-control": "Source Control",
+  // Worker composition sits beside the pages it references (Models,
+  // Computers, Harnesses); Source Control follows the workflow pages.
   "/settings/workjet": "Worker",
+  "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
+  "/settings/diagnostics": "Diagnostics",
   "/settings/archived": "Archive",
 };
 
@@ -203,11 +207,12 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-computers",
     title: "Computers",
-    to: "/settings/workjet",
+    // Computers is a top-level settings page of its own.
+    to: "/settings/computers",
   },
   {
     id: "workjet-provider-accounts",
-    title: "Provider accounts",
+    title: "LLM providers",
     // LLM accounts live on the Models page. Harnesses are CLI runtimes and
     // have their own page — the two were merged once and became impossible to
     // find, because "Providers" read as one thing and held two.
@@ -222,7 +227,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-llm-routes",
     title: "LLM routes",
-    to: "/settings/workjet",
+    // Routes live on the Models page, beside the accounts they reference.
+    to: "/settings/models",
   },
   {
     id: "workjet-prompt",
@@ -246,11 +252,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "workjet-execution",
   },
   {
-    id: "workjet-capabilities",
-    title: "Capabilities",
-    to: "/settings/workjet",
-  },
-  {
     id: "greppy-runtime",
     title: "Greppy Runtime",
     to: "/settings/workjet",
@@ -258,7 +259,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "remote-environments",
     title: "Remote environments",
-    to: "/settings/connections",
+    // Paired and removed on the Computers page, beside the computers that
+    // reference them; Connections keeps this machine's own access.
+    to: "/settings/computers",
   },
   {
     id: "archive",
@@ -295,6 +298,15 @@ function normalizeSearchText(value: string): string {
     .trim();
 }
 
+/**
+ * The settings pages themselves as synthetic search items, so typing a
+ * sidebar label ("Computers", "Diagnostics") finds the page even when no
+ * individual setting carries that title.
+ */
+const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
+  Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
+).map(([path, label]) => ({ id: path, title: label, to: path }));
+
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
@@ -302,5 +314,17 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  return items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  const matches = items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  // Page results lead, minus pages an equally titled item already represents
+  // (e.g. the "Computers" catalog entry that lands on /settings/computers).
+  const pageMatches = SETTINGS_PAGE_SEARCH_ITEMS.filter(
+    (page) =>
+      normalizeSearchText(page.title).includes(normalizedQuery) &&
+      !matches.some(
+        (item) =>
+          item.to === page.to &&
+          normalizeSearchText(item.title) === normalizeSearchText(page.title),
+      ),
+  );
+  return [...pageMatches, ...matches];
 }

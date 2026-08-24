@@ -36,11 +36,24 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
-  it("matches only setting titles", () => {
+  it("matches setting titles and the pages themselves", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
-    expect(searchSettings("connections", ITEMS)).toEqual([]);
+    // A sidebar label is findable even when no individual setting carries it.
+    expect(searchSettings("connections", ITEMS)).toEqual([
+      { id: "/settings/connections", title: "Connections", to: "/settings/connections" },
+    ]);
     expect(searchSettings("claude", ITEMS)).toEqual([]);
+  });
+
+  it("does not repeat a page whose title an item already carries", () => {
+    // "Harnesses" is both the sidebar label and a catalog item landing on the
+    // same page; one result, not two identical rows.
+    expect(searchSettings("harnesses", ITEMS)).toEqual([
+      { id: "harnesses", title: "Harnesses", to: "/settings/harnesses" },
+    ]);
+    // "Computers" likewise resolves to the single catalog entry for the page.
+    expect(searchSettings("computers").map((item) => item.id)).toEqual(["workjet-computers"]);
   });
 
   it("matches normalized title substrings", () => {
@@ -74,11 +87,11 @@ describe("searchSettings", () => {
     expect(searchSettings("workers")).toEqual([
       { id: "workjet-workers", title: "Workers", to: "/settings/workjet" },
     ]);
-    expect(searchSettings("provider accounts")).toEqual([
-      { id: "workjet-provider-accounts", title: "Provider accounts", to: "/settings/models" },
+    expect(searchSettings("llm providers")).toEqual([
+      { id: "workjet-provider-accounts", title: "LLM providers", to: "/settings/models" },
     ]);
     expect(searchSettings("llm routes")).toEqual([
-      { id: "workjet-llm-routes", title: "LLM routes", to: "/settings/workjet" },
+      { id: "workjet-llm-routes", title: "LLM routes", to: "/settings/models" },
     ]);
     expect(searchSettings("greppy runtime")).toEqual([
       {
@@ -99,17 +112,15 @@ describe("searchSettings", () => {
     const workjetIds = SETTINGS_SEARCH_ITEMS.filter((item) => item.to === "/settings/workjet").map(
       (item) => item.id,
     );
+    // Computers is its own page, provider accounts and LLM routes live on
+    // /settings/models, and capabilities are toggled in the worker editor —
+    // only the four tabs plus their nested anchors resolve to the Worker page.
     expect(workjetIds).toEqual([
       "workjet-workers",
-      "workjet-computers",
-      // Provider accounts are LLM accounts and resolve to /settings/models;
-      // harnesses are CLI runtimes and live on /settings/harnesses.
-      "workjet-llm-routes",
       "workjet-prompt",
       "workjet-telemetry",
       "workjet-execution",
       "automatic-worktree-storage",
-      "workjet-capabilities",
       "greppy-runtime",
     ]);
   });

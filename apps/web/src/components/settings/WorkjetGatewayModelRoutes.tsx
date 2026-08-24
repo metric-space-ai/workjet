@@ -34,7 +34,12 @@ export function workjetGatewayModelRouteDescription(entry: WorkjetGatewayModelRo
         : entry.via === "pool"
           ? `pool ${entry.poolId}`
           : "the accounts that list it";
-    return `Served by ${provider}${entry.poolId === null ? "" : ` · pool ${entry.poolId}`} — resolved from ${source}.`;
+    // When the pool IS the source, naming it twice ("· pool X — resolved from
+    // pool X") says nothing new; the suffix earns its place only when the pool
+    // came in through a route.
+    const poolSuffix =
+      entry.poolId === null || entry.via === "pool" ? "" : ` · pool ${entry.poolId}`;
+    return `Served by ${provider}${poolSuffix} — resolved from ${source}.`;
   }
   return entry.detail;
 }

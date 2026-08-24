@@ -4,12 +4,9 @@ import type {
   GreppyRuntimeSnapshot,
   GreppyRuntimeSource,
   WorktreeStorageInspection,
-  WorkjetComputer,
   WorkjetComputerPresentationKind,
   WorkjetConfiguration,
-  WorkjetLlmRoute,
   WorkjetWorkerProfile,
-  WorkjetHarnessAvailabilitySnapshot,
 } from "@t3tools/contracts";
 import { WS_METHODS } from "@t3tools/contracts";
 import {
@@ -18,7 +15,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
   PencilIcon,
@@ -32,11 +29,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
-import {
-  type EnvironmentPresentation,
-  useEnvironments,
-  usePrimaryEnvironment,
-} from "../../state/environments";
+import { type EnvironmentPresentation, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -46,10 +39,7 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
-import {
-  type WorkjetEnvironmentTargetOption,
-  WorkjetComputerEditor,
-} from "./WorkjetComputerEditor";
+import type { WorkjetEnvironmentTargetOption } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
@@ -361,26 +351,17 @@ function replaceCatalogItem<T extends { readonly id: string }>(
   return items.map((candidate) => (candidate.id === item.id ? item : candidate));
 }
 
-export type WorkjetSettingsSectionId =
-  | "workers"
-  | "computers"
-  | "provider-accounts"
-  | "llm-routes"
-  | "prompt"
-  | "telemetry"
-  | "execution"
-  | "capabilities";
+export type WorkjetSettingsSectionId = "workers" | "prompt" | "telemetry" | "execution";
 
-const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
+export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   readonly id: WorkjetSettingsSectionId;
   readonly targetId: string;
   readonly label: string;
 }> = [
-  // Five tabs, mirroring the Swift original's settings page after the
+  // Four tabs, mirroring the Swift original's settings page after the
   // operator's re-mapping: Computers is a TOP-LEVEL settings page, provider
   // accounts and LLM routes live on Models beside the accounts they
   // reference, and capabilities are toggled inside the worker editor.
-  // Legacy import stays until its one-shot decision is taken.
   { id: "workers", targetId: "workjet-workers", label: "Workers" },
   { id: "prompt", targetId: "workjet-prompt", label: "Prompt" },
   { id: "telemetry", targetId: "workjet-telemetry", label: "Telemetry" },
@@ -389,11 +370,9 @@ const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
 
 export function workjetSectionFromHash(hash: string): WorkjetSettingsSectionId | null {
   const targetId = hash.replace(/^#/, "");
-  // Old anchors keep working: the Greppy runtime moved under Workers, and
-  // Computers is reachable as its own page but still renders here when an
-  // old link lands on the tabless section.
+  // Old anchors keep working: the Greppy runtime moved under Workers.
+  // Computers is its own page (/settings/computers) and no longer renders here.
   if (targetId === "greppy-runtime") return "workers";
-  if (targetId === "workjet-computers") return "computers";
   return WORKJET_SETTINGS_SECTIONS.find((section) => section.targetId === targetId)?.id ?? null;
 }
 
@@ -563,13 +542,13 @@ export function AutomaticWorktreeStorageSettings({
 
   return (
     <SettingsRow
-      title="Automatic worktree storage"
+      title={searchableSetting("automatic-worktree-storage").title}
       description="Choose the server-local directory used when Workjet creates a worktree without an explicit path."
       status={
         storage.selectedServerId === null ? (
           <span role="alert">No primary Code environment is selected.</span>
         ) : (
-          `Selected server: ${storage.selectedServerLabel ?? "Unnamed server"} · ${storage.selectedServerId}`
+          `Selected server: ${storage.selectedServerLabel ?? "Unnamed server"}`
         )
       }
     >
@@ -663,10 +642,6 @@ export function AutomaticWorktreeStorageSettings({
 
 export function WorkjetSettingsView({
   configuration,
-  harnessInspection = null,
-  environmentId = null,
-  environments,
-  environmentsReady,
   greppy,
   gateway,
   automaticWorktreeStorage,
@@ -674,38 +649,22 @@ export function WorkjetSettingsView({
   onChange,
 }: {
   readonly configuration: WorkjetConfiguration;
-  readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
-  readonly environmentsReady: boolean;
   readonly greppy: GreppySectionState;
   readonly gateway: WorkjetGatewaySectionState;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
-  /**
-   * Live probe of THIS server's harnesses (`workjet.harness.inspect`), plus
-   * which environment it describes. Null before the first probe answers —
-   * rows then show the declared state with "not probed from here" instead of
-   * implying agreement.
-   */
-  readonly harnessInspection?: WorkjetHarnessAvailabilitySnapshot | null;
-  readonly environmentId?: EnvironmentId | null;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
   const locationHash = useLocation({ select: (location) => location.hash });
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
     () => workjetSectionFromHash(locationHash) ?? defaultSection,
   );
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [addingWorker, setAddingWorker] = useState(false);
-  const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
-  const [addingComputer, setAddingComputer] = useState(false);
-  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
-  const [addingRoute, setAddingRoute] = useState(false);
   const promptSections = splitManagedPrompt(configuration.managedSystemPrompt);
   const editingWorker =
     configuration.workerProfiles.find((worker) => worker.id === editingWorkerId) ?? null;
-  const editingComputer =
-    configuration.computers.find((computer) => computer.id === editingComputerId) ?? null;
-  const editingRoute = configuration.llmRoutes.find((route) => route.id === editingRouteId) ?? null;
 
   useEffect(() => {
     const section = workjetSectionFromHash(locationHash);
@@ -792,6 +751,15 @@ export function WorkjetSettingsView({
                 worker={editingWorker}
                 computers={configuration.computers}
                 routes={configuration.llmRoutes}
+                onAddRoute={() =>
+                  // LLM routes live on the Models page; "Set up access" takes
+                  // the operator to where an access is actually created.
+                  void navigate({
+                    to: "/settings/models",
+                    hash: "workjet-llm-routes",
+                    hashScrollIntoView: false,
+                  })
+                }
                 onCancel={() => {
                   setAddingWorker(false);
                   setEditingWorkerId(null);
@@ -803,143 +771,6 @@ export function WorkjetSettingsView({
                   });
                   setAddingWorker(false);
                   setEditingWorkerId(null);
-                }}
-              />
-            </div>
-          ) : null}
-        </SettingsSection>
-      ) : null}
-
-      {activeSection === "computers" ? (
-        <SettingsSection
-          id={searchableSetting("workjet-computers").id}
-          title={searchableSetting("workjet-computers").title}
-          headerAction={
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setEditingComputerId(null);
-                setAddingComputer(true);
-              }}
-              disabled={!environmentsReady || environments.length === 0}
-            >
-              <PlusIcon className="size-3.5" />
-              Add computer
-            </Button>
-          }
-        >
-          <SettingsRow
-            title={environmentsReady ? "Connection targets" : "Loading connection targets"}
-            description="Choose from existing local, relay, SSH, Tailscale, or other remote environments. Connection authority and secrets stay in Connections settings; Workjet stores only the selected target and harness availability."
-          />
-          {configuration.computers.map((computer) => {
-            // The Swift page shows, per computer, ONE ROW PER HARNESS with a
-            // live status dot and detail — not a count. The live snapshot
-            // (workjet.harness.inspect) describes THIS server; a computer on
-            // another environment shows its declared availability with an
-            // explicit "not probed from here" instead of borrowing our probe.
-            const probedHere =
-              harnessInspection !== null && environmentId === computer.environmentId;
-            return (
-              <SettingsRow
-                key={computer.id}
-                title={computer.label}
-                description={
-                  probedHere
-                    ? "This machine"
-                    : `${computer.presentationKind} · ${computer.environmentId}`
-                }
-                control={
-                  <ItemActions
-                    label={`computer ${computer.label}`}
-                    onEdit={() => {
-                      setAddingComputer(false);
-                      setEditingComputerId(computer.id);
-                    }}
-                    onDelete={() =>
-                      onChange({
-                        ...configuration,
-                        computers: configuration.computers.filter(
-                          (candidate) => candidate.id !== computer.id,
-                        ),
-                      })
-                    }
-                  />
-                }
-              >
-                <div className="mt-1 space-y-1 pb-3">
-                  {computer.harnesses.map((declared) => {
-                    const live = probedHere
-                      ? (harnessInspection?.harnesses.find(
-                          (entry) => entry.harness === declared.harness,
-                        ) ?? null)
-                      : null;
-                    const state =
-                      live === null
-                        ? declared.available
-                          ? "declared"
-                          : "off"
-                        : live.availability === "available"
-                          ? "ok"
-                          : "missing";
-                    const detail =
-                      live === null
-                        ? declared.available
-                          ? "declared available · not probed from here"
-                          : "not offered"
-                        : live.availability === "available"
-                          ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
-                          : live.reason;
-                    return (
-                      <p
-                        key={declared.harness}
-                        className="flex items-center gap-2 pl-1 text-xs text-muted-foreground"
-                      >
-                        <span
-                          aria-hidden
-                          className={
-                            state === "ok"
-                              ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
-                              : state === "missing"
-                                ? "size-1.5 shrink-0 rounded-full bg-amber-500"
-                                : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                          }
-                        />
-                        <span className="w-28 shrink-0 font-medium text-foreground">
-                          {declared.harness}
-                        </span>
-                        <span className="min-w-0 truncate">{detail}</span>
-                      </p>
-                    );
-                  })}
-                  {computer.harnesses.length === 0 ? (
-                    <p className="pl-1 text-xs text-muted-foreground">
-                      No harnesses declared — edit the computer to declare them.
-                    </p>
-                  ) : null}
-                </div>
-              </SettingsRow>
-            );
-          })}
-          {addingComputer || editingComputer ? (
-            <div className="px-3 pt-2 sm:px-4">
-              <WorkjetComputerEditor
-                key={editingComputer?.id ?? "new-computer"}
-                computer={editingComputer}
-                environments={environments}
-                onCancel={() => {
-                  setAddingComputer(false);
-                  setEditingComputerId(null);
-                }}
-                onSave={(computer: WorkjetComputer) => {
-                  onChange({
-                    ...configuration,
-                    computers: replaceCatalogItem(configuration.computers, computer),
-                  });
-                  setAddingComputer(false);
-                  setEditingComputerId(null);
                 }}
               />
             </div>
@@ -1207,20 +1038,12 @@ export function WorkjetSettings({
 } = {}) {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const { environments, isReady: environmentsReady } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const environmentId = primaryEnvironment?.environmentId ?? null;
   const query = useEnvironmentQuery(
     environmentId === null
       ? null
       : serverEnvironment.greppyRuntimeInspect({ environmentId, input: {} }),
-  );
-  // Live harness probe of this server, for the per-computer rows. Same
-  // environment-query mechanics as every other read on this page.
-  const harnessInspectQuery = useEnvironmentQuery(
-    environmentId === null
-      ? null
-      : serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
   const install = useAtomCommand(serverEnvironment.installGreppyRuntime, { reportFailure: false });
   const inspectAutomaticWorktreeRoot = useAtomCommand(inspectAutomaticWorktreeRootCommand, {
@@ -1329,11 +1152,7 @@ export function WorkjetSettings({
   return (
     <WorkjetSettingsView
       {...(defaultSection ? { defaultSection } : {})}
-      harnessInspection={harnessInspectQuery.data ?? null}
-      environmentId={environmentId}
       configuration={settings.workjet}
-      environments={workjetEnvironmentTargetOptions(environments)}
-      environmentsReady={environmentsReady}
       greppy={{
         snapshot: query.data,
         isInitialLoading: query.isPending && query.data === null,

@@ -29,6 +29,7 @@ import {
   formatAvailableBytes,
   performAutomaticWorktreeStorageAction,
   performGreppyRuntimeInstall,
+  WORKJET_SETTINGS_SECTIONS,
   WorkjetSettingsView,
   workjetSectionFromHash,
 } from "./WorkjetSettings";
@@ -107,8 +108,6 @@ describe("Workjet configuration settings", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        environments={[]}
-        environmentsReady={false}
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
@@ -116,12 +115,21 @@ describe("Workjet configuration settings", () => {
       />,
     );
 
-    // Five tabs, mirroring the Swift original after the operator's re-mapping:
-    // Computers is a top-level settings page, provider accounts and LLM
-    // routes live on Models, capabilities are toggled in the worker editor.
-    const tabs = ["Workers", "Prompt", "Telemetry", "Execution", "Legacy import"];
-    for (const tab of tabs) expect(markup).toContain(`>${tab}<`);
-    for (const gone of ["Provider accounts", "LLM routes", ">Capabilities<", ">Computers<"]) {
+    // Four tabs, mirroring the Swift original after the operator's
+    // re-mapping: Computers is a top-level settings page, provider accounts
+    // and LLM routes live on Models, capabilities are toggled in the worker
+    // editor, and the one-shot legacy import surface is gone. Every section
+    // the catalog declares must actually render a tab.
+    for (const section of WORKJET_SETTINGS_SECTIONS) {
+      expect(markup).toContain(`>${section.label}<`);
+    }
+    for (const gone of [
+      "Provider accounts",
+      "LLM routes",
+      ">Capabilities<",
+      ">Computers<",
+      "Legacy import",
+    ]) {
       expect(markup).not.toContain(gone);
     }
     expect(markup).toContain('role="tablist"');
@@ -136,8 +144,6 @@ describe("Workjet configuration settings", () => {
     const telemetryMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        environments={[]}
-        environmentsReady
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
@@ -153,8 +159,6 @@ describe("Workjet configuration settings", () => {
     const capabilitiesMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        environments={[]}
-        environmentsReady
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
@@ -169,8 +173,6 @@ describe("Workjet configuration settings", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         configuration={DEFAULT_WORKJET_CONFIGURATION}
-        environments={[]}
-        environmentsReady
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={{
@@ -190,7 +192,9 @@ describe("Workjet configuration settings", () => {
     );
 
     expect(markup).toContain("Automatic worktree storage");
-    expect(markup).toContain("Selected server: Code server · code-server");
+    // The label alone, never the raw environment id beside it.
+    expect(markup).toContain("Selected server: Code server");
+    expect(markup).not.toContain("code-server</");
     expect(markup).toContain("Writable · 125 GB available");
     expect(markup).toContain("Effective canonical path:");
     expect(markup).toContain("Use default");
@@ -242,7 +246,8 @@ describe("Workjet configuration settings", () => {
   });
 
   it("maps settings-search targets to their tab", () => {
-    expect(workjetSectionFromHash("#workjet-computers")).toBe("computers");
+    // Computers is its own page now; its anchor no longer selects a tab here.
+    expect(workjetSectionFromHash("#workjet-computers")).toBeNull();
     expect(workjetSectionFromHash("workjet-telemetry")).toBe("telemetry");
     expect(workjetSectionFromHash("#greppy-runtime")).toBe("workers");
     expect(workjetSectionFromHash("#unknown")).toBeNull();

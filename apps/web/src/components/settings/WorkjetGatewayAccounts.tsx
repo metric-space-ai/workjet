@@ -519,7 +519,7 @@ export function WorkjetGatewayAccountsSectionView(
   return (
     <SettingsSection
       id={searchableSetting("workjet-provider-accounts").id}
-      title="LLM providers"
+      title={searchableSetting("workjet-provider-accounts").title}
       headerAction={
         <div className="flex flex-wrap justify-end gap-2">
           <Button

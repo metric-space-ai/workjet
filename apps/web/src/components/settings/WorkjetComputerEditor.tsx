@@ -186,7 +186,10 @@ export function WorkjetComputerEditor({
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="workjet-computer-environment">Environment</Label>
+          {/* Deliberately NOT "Computer": this picker selects the existing
+              connection (environment) the computer runs on — the computer is
+              the thing being edited, the environment is what backs it. */}
+          <Label htmlFor="workjet-computer-environment">Environment (connection)</Label>
           <Select
             value={draft.environmentId || null}
             onValueChange={(value) => {

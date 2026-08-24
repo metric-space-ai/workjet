@@ -127,7 +127,16 @@ gehören zu Models, Capabilities in den Worker-Editor, Legacy import
 bleibt bis zur Ausführung sichtbar. Warum offen: ich habe die
 Swift-Reiter ausgelesen und dann nichts damit gemacht.
 
-## 2 · Composer-Leiste: ZWEI Modi, nichts vermischt
+## 2 · Composer-Leiste — MODUSWECHSEL ERLEDIGT 2026-08-24, Rest an −1
+
+Live belegt: Worker-Modus zeigt `Worker | Checkout` (Modell und Effort
+verschwinden — der Worker bündelt sie); Manual bringt beide zurück.
+„Full access" ist in beiden Modi entfernt (B2). OFFEN: Rechner- und
+Extras-Element im Worker-Modus (Extras existiert bislang nur auf
+Server-Threads), Harness/System-Prompt im manuellen Modus, Wechsel
+MITTEN in der Session (hängt an −1: Sitzungs-Eigentum).
+
+### (ursprünglich) Composer-Leiste: ZWEI Modi, nichts vermischt
 
 Ansage des Betreibers, wörtlich rekonstruiert:
 

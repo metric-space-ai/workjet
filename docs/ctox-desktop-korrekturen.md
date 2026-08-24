@@ -962,3 +962,20 @@ working-dir ~/Documents/ctox (läuft seit ~21:21, Playwright-Daemon
 nicht (läuft seit 5 Tagen, frühe Läufe überlebten). OPERATOR:
 Entscheidung nötig — fremde Session prüfen/stoppen. Wir fassen sie
 nicht an.
+
+## F1 GEFIXT + LIVE BEWIESEN — 2026-08-25 ~00:50
+
+Ursache: Die Worker-Wahl lebte nur in flüchtigem Komponenten-State,
+während das Worker-MODELL sticky in die geteilte Modellauswahl
+geschrieben wurde — nach Unmount blieb „Manual mit Worker-Modell"
+zurück. Fix: workjetWorkerId + workjetManualReturn (Manual-Modell-
+Schnappschuss beim Eintritt in den Worker-Modus) sind jetzt Teil des
+persistierten Composer-Drafts (composerDraftStore v1-Schema, optionale
+Felder — alte Drafts decodieren unverändert); der Draft-Store ist der
+einzige Besitzer der Worker-Wahl.
+LIVE-BEWEIS (laufende App): (1) Manual claude-fable-5 → Sol →
+zurück Manual → Modell wieder claude-fable-5 (vorher: gpt-5.6-sol-
+Leck). (2) Sol gewählt → Settings → zurück → Leiste steht weiter auf
+Sol (vorher: Rückfall auf Manual). F2 ebenfalls live bestätigt: keine
+„Checking…"-Zeilen mehr, ehrliche Leerzustände. Suiten: chat+store 461,
+Typecheck 0.

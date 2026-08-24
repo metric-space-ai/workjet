@@ -883,7 +883,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const workjetWorkers = settings.workjet.workerProfiles;
   const workjetComputers = settings.workjet.computers;
   const workjetLlmRoutes = settings.workjet.llmRoutes;
-  const [selectedWorkjetWorkerId, setSelectedWorkjetWorkerId] = useState<string | null>(null);
+  // Persisted with the draft (F1): the worker's model lands in the shared
+  // per-instance selection, so a component-local worker choice that dies on
+  // unmount left the bar in "Manual" WITH the worker's model — a corrupted
+  // state the operator measured. The draft store is the single owner now.
+  const selectedWorkjetWorkerId = composerDraft.workjetWorkerId ?? null;
+  const setWorkjetWorkerSelection = useComposerDraftStore(
+    (store) => store.setWorkjetWorkerSelection,
+  );
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
   /**
    * Choosing a worker must MOVE the turn, not just relabel the bar. A worker
@@ -975,14 +982,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
   const handleSelectWorkjetWorker = useCallback(
     (workerId: string | null) => {
-      setSelectedWorkjetWorkerId(workerId);
       // A different choice invalidates the local bar edits: extras belong to
       // the newly chosen worker, and a worker carries its own task text.
       setDraftWorkerCapabilityIds(null);
       setDraftManagedInstructions(null);
-      if (workerId === null) return;
+      if (workerId === null) {
+        // Back to Manual: restore the model that was chosen BEFORE the worker
+        // took over the shared selection — without this, the worker's model
+        // stays behind masquerading as a manual choice (F1).
+        const manualReturn = composerDraft.workjetManualReturn;
+        setWorkjetWorkerSelection(composerDraftTarget, null, null);
+        if (manualReturn !== null) {
+          onProviderModelSelect(manualReturn.provider, manualReturn.model);
+        }
+        return;
+      }
       const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
       if (worker === undefined) return;
+      // Entering worker mode from Manual snapshots the manual model for the
+      // way back; worker-to-worker switches keep the original snapshot.
+      setWorkjetWorkerSelection(
+        composerDraftTarget,
+        workerId,
+        selectedWorkjetWorkerId === null
+          ? { provider: selectedInstanceId, model: selectedModel }
+          : (composerDraft.workjetManualReturn ?? null),
+      );
 
       // Apply the worker's COMPUTER: a worker names where it runs, so a
       // draft moves to that computer's environment through the same path the
@@ -1024,6 +1049,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
     },
     [
+      composerDraft.workjetManualReturn,
       composerDraftTarget,
       composerTargetIsThread,
       environmentId,
@@ -1031,7 +1057,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onProviderModelSelect,
       providerStatuses,
       selectableEnvironmentIds,
+      selectedInstanceId,
+      selectedModel,
+      selectedWorkjetWorkerId,
       setProviderModelOptions,
+      setWorkjetWorkerSelection,
       workjetComputers,
       workjetWorkers,
     ],

@@ -755,9 +755,9 @@ OFFEN (nächste Iterationen, priorisiert):
    Anbieter rechts) statt gruppierter Liste.
 2. Business-OS 14–17: Instanz-Warmhalten/Instant-Swap, Status-Punkte,
    Ein-/Ausklappen, Menüleiste.
-3. Rest-Testthreads (Failed + hängender Working) settlen — die App
-   verlangt Resolve/Interrupt zuerst; Interrupt-Kontrolle im
-   Thread-Actions-Menü war per CDP nicht greifbar.
+3. Rest-Testthreads: ERLEDIGT ~14:45 — der Weg war "Dismiss error" im
+   Thread (Fehler quittieren), Stop beim laufenden, dann Settle.
+   Live-Endstand: 0 offene Zeilen, kein Working, keine Failed-Badges.
 4. Betreiber: Grok-Login, gpu-Pairing.
 
 ## Nachtrag 2026-08-24 ~14:30 — Modell-Mini-Menü (T3-Stil) live

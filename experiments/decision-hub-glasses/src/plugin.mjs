@@ -11,7 +11,9 @@ import { navigate, initialNav, SNOOZE_OPTIONS, OS_EVENT } from './nav.mjs';
 import { createTiltGate } from './tilt.mjs';
 
 // Meldeweg zum Entwicklungsserver; auf der Brille gibt es keine Konsole.
+const DEV = Boolean(import.meta.env?.DEV);
 const melde = (t) => {
+  if (!DEV) return;   // Produktion: kein Beacon, keine Latenz je Geste
   try { fetch(`${location.origin}/__log`, { method: 'POST', body: String(t) }).catch(() => {}); } catch {}
 };
 

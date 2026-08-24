@@ -136,7 +136,9 @@ async function testConnection() {
 // Auf der Brille gibt es keine Konsole. Ohne diese Meldungen ist jeder
 // Startfehler unsichtbar und man raet. Geht nur an den Entwicklungsserver,
 // von dem die App selbst geladen wurde.
+const DEV = Boolean(import.meta.env?.DEV);
 function melde(text) {
+  if (!DEV) return;   // Produktion: keine Diagnose-Aufrufe
   try {
     fetch(`${location.origin}/__log`, { method: 'POST', body: String(text) }).catch(() => {});
   } catch {}

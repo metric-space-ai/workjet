@@ -26,11 +26,17 @@ import { Fragment, memo, useState, type ReactNode } from "react";
 import { CpuIcon, FileTextIcon, MonitorIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
 
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
-import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
+import {
+  ComposerControl,
+  ComposerControlIcon,
+  ComposerSelectControl,
+  ComposerControlChevron,
+} from "./ComposerControl";
 import { MANUAL_WORKER_VALUE, providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { MenuGroup, MenuGroupLabel, MenuRadioGroup, MenuRadioItem } from "../ui/menu";
+import { ClaudeAI, GrokIcon, OpenAI } from "../Icons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
@@ -255,6 +261,14 @@ const NO_HARNESS_VALUE = "__no_harness__";
  * the settings page's label table — pulling a settings component into the
  * composer chunk for seven strings would be the heavier coupling.
  */
+const GATEWAY_PROVIDER_RAIL_ICONS: Readonly<
+  Record<string, React.FC<React.SVGProps<SVGSVGElement>>>
+> = {
+  claude: ClaudeAI,
+  codex: OpenAI,
+  xai: GrokIcon,
+};
+
 const GATEWAY_PROVIDER_GROUP_LABELS: Readonly<Record<string, string>> = {
   claude: "Claude",
   codex: "Codex (OpenAI)",
@@ -285,6 +299,8 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   // Free-text fallback: the gateway catalog is a discovery aid, not an
   // authority — any model id the gateway accepts may be typed directly.
   const [customModelDraft, setCustomModelDraft] = useState<string | null>(null);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelProviderChoice, setModelProviderChoice] = useState<string | null>(null);
 
   const harnessOptions = composerHarnessOptions(props.configuredInstanceIds);
   const selectedHarnessOption =
@@ -302,6 +318,13 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     }
     return [...groups.entries()];
   })();
+  // The rail's active provider: the explicit pick, else the provider of the
+  // current model, else the first group.
+  const activeModelProvider =
+    modelProviderChoice ??
+    props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
+    modelGroups[0]?.[0] ??
+    null;
 
   const commitCustomModel = () => {
     const next = customModelDraft?.trim() ?? "";
@@ -357,82 +380,109 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         </TooltipPopup>
       </Tooltip>
 
-      {/* Model */}
+      {/* Model — the T3-style mini menu: a provider rail on the left, the
+          selected provider's models on the right, plus the free-text escape
+          hatch. Data source is the Workjet gateway catalog. */}
       {customModelDraft === null ? (
-        <Tooltip>
-          <Select
-            value={modelInCatalog || props.selectedModelId.length > 0 ? props.selectedModelId : ""}
-            onValueChange={(value) => {
-              if (typeof value !== "string" || value.length === 0) return;
-              if (value === CUSTOM_MODEL_VALUE) {
-                setCustomModelDraft(props.selectedModelId);
-                return;
-              }
-              props.onSelectModel(value);
-            }}
-          >
-            <TooltipTrigger render={<ComposerSelectControl aria-label="Model" />}>
-              <ComposerControlIcon icon={CpuIcon} />
-              <SelectValue>
-                {props.selectedModelId.length > 0 ? props.selectedModelId : "Model"}
-              </SelectValue>
-            </TooltipTrigger>
-            <SelectPopup alignItemWithTrigger={false}>
-              {modelInCatalog || props.selectedModelId.length === 0 ? null : (
-                <SelectItem value={props.selectedModelId} hideIndicator className="min-w-64 py-2">
-                  <div className="grid min-w-0 gap-0.5">
-                    <span className="font-medium text-foreground">{props.selectedModelId}</span>
-                    <span className="truncate text-xs leading-4 text-muted-foreground">
-                      Current selection — not in the gateway catalog
-                    </span>
-                  </div>
-                </SelectItem>
-              )}
-              {modelGroups.map(([provider, models]) => (
-                <Fragment key={provider}>
-                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                    {GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
-                  </div>
-                  {models.map((model) => (
-                    <SelectItem
-                      key={model.id}
-                      value={model.id}
-                      hideIndicator
-                      className="min-w-64 py-2"
-                    >
-                      <div className="grid min-w-0 gap-0.5">
-                        <span className="font-medium text-foreground">{model.displayName}</span>
-                        {model.displayName === model.id ? null : (
-                          <span className="truncate text-xs leading-4 text-muted-foreground">
-                            {model.id}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </Fragment>
-              ))}
-              {props.models.length === 0 && props.modelsUnavailableReason !== null ? (
-                <SelectItem
-                  value="__models_unavailable__"
-                  disabled
-                  hideIndicator
-                  className="min-w-64 py-2"
-                >
-                  <span className="text-xs text-muted-foreground">
-                    {props.modelsUnavailableReason}
+        <Popover open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <PopoverTrigger render={<ComposerControl aria-label="Model" type="button" />}>
+                  <ComposerControlIcon icon={CpuIcon} />
+                  <span className="truncate">
+                    {props.selectedModelId.length > 0 ? props.selectedModelId : "Model"}
                   </span>
-                </SelectItem>
+                  <ComposerControlChevron />
+                </PopoverTrigger>
+              }
+            />
+            <TooltipPopup side="top">
+              Model — served by the Workjet gateway; the model decides which provider account
+              answers
+            </TooltipPopup>
+          </Tooltip>
+          <PopoverPopup side="top" align="start" className="flex overflow-hidden p-0">
+            <div className="flex flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
+              {modelGroups.map(([provider]) => {
+                const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
+                const active = provider === activeModelProvider;
+                return (
+                  <button
+                    key={provider}
+                    type="button"
+                    aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
+                    className={
+                      "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
+                      (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
+                    }
+                    onClick={() => setModelProviderChoice(provider)}
+                  >
+                    {RailIcon ? (
+                      <RailIcon className="size-4" />
+                    ) : (
+                      <span className="text-[11px] font-semibold uppercase">
+                        {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex max-h-72 min-w-56 flex-col overflow-y-auto p-1.5">
+              <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
+                  activeModelProvider ??
+                  "Models"}
+              </div>
+              {(modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []).map(
+                (model) => (
+                  <button
+                    key={model.id}
+                    type="button"
+                    className={
+                      "rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted " +
+                      (model.id === props.selectedModelId
+                        ? "bg-accent text-accent-foreground"
+                        : "text-foreground")
+                    }
+                    onClick={() => {
+                      setModelMenuOpen(false);
+                      props.onSelectModel(model.id);
+                    }}
+                  >
+                    <span className="block truncate font-medium">{model.displayName}</span>
+                    {model.displayName === model.id ? null : (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {model.id}
+                      </span>
+                    )}
+                  </button>
+                ),
+              )}
+              {props.models.length === 0 && props.modelsUnavailableReason !== null ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  {props.modelsUnavailableReason}
+                </div>
               ) : null}
-              <SelectItem value={CUSTOM_MODEL_VALUE} hideIndicator className="min-w-64 py-2">
-                <span className="text-xs text-muted-foreground">Custom model id…</span>
-              </SelectItem>
-            </SelectPopup>
-          </Select>
-          <TooltipPopup side="top">
-            Model — served by the Workjet gateway; the model decides which provider account answers
-          </TooltipPopup>
-        </Tooltip>
+              {modelInCatalog || props.selectedModelId.length === 0 ? null : (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Current: {props.selectedModelId} (not in the gateway catalog)
+                </div>
+              )}
+              <button
+                type="button"
+                className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                onClick={() => {
+                  setModelMenuOpen(false);
+                  setCustomModelDraft(props.selectedModelId);
+                }}
+              >
+                Custom model id…
+              </button>
+            </div>
+          </PopoverPopup>
+        </Popover>
       ) : (
         <Input
           autoFocus

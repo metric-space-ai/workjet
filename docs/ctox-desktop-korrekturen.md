@@ -759,3 +759,14 @@ OFFEN (nächste Iterationen, priorisiert):
    verlangt Resolve/Interrupt zuerst; Interrupt-Kontrolle im
    Thread-Actions-Menü war per CDP nicht greifbar.
 4. Betreiber: Grok-Login, gpu-Pairing.
+
+## Nachtrag 2026-08-24 ~14:30 — Modell-Mini-Menü (T3-Stil) live
+
+Das Modell-Menü im Manual-Modus ist jetzt das zweispaltige Mini-Menü
+wie im T3-Original: Anbieter-Leiste links (Icons Claude/OpenAI/Grok,
+Buchstaben-Badges für Z.ai/Kimi/MiniMax), rechts die Modelle des
+aktiven Anbieters aus dem Gateway-Katalog + "Custom model id…".
+Live verifiziert (Rail-Wechsel MiniMax→Claude zeigt die jeweiligen
+Modelle). Hinweis: Accounts, die nur Wildcards führen (claude-\*),
+zeigen das Muster — ehrlich, bis Modell-Discovery die konkreten IDs
+liefert. Chat-Suite 35 Dateien/382 Tests grün.

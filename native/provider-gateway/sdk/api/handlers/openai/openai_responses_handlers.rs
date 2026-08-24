@@ -346,6 +346,10 @@ pub struct OpenAiResponsesProviderRouter {
     /// API-key provider handlers, keyed by the lowercase provider name. Still
     /// an allow-list: a provider only routes when it has a handler here.
     api_key: BTreeMap<String, Arc<OpenAiResponsesApiKeyHandler>>,
+    /// xAI subscription (OAuth) handler. Checked BEFORE the api_key map for
+    /// provider "xai", so a configured subscription outranks an API key; with
+    /// no subscription accounts, an xai API-key pool still serves as before.
+    xai: Option<Arc<super::openai_responses_xai_handlers::OpenAiResponsesXaiHandler>>,
 }
 
 impl OpenAiResponsesProviderRouter {
@@ -400,7 +404,21 @@ impl OpenAiResponsesProviderRouter {
             codex,
             antigravity,
             api_key,
+            xai: None,
         })
+    }
+
+    /// Attaches the xAI subscription handler. Kept out of the constructor
+    /// signatures so the existing call sites stay untouched; apply it AFTER
+    /// construction, which also means a default provider of "xai" must still
+    /// be backed by an api_key handler at construction time.
+    #[must_use]
+    pub fn with_xai(
+        mut self,
+        handler: Arc<super::openai_responses_xai_handlers::OpenAiResponsesXaiHandler>,
+    ) -> Self {
+        self.xai = Some(handler);
+        self
     }
 }
 
@@ -424,8 +442,15 @@ impl OpenAiResponsesRouteHandler for OpenAiResponsesProviderRouter {
                 if let Some(handler) = self.antigravity.as_ref() {
                     return handler.handle_route(body).await;
                 }
-            } else if let Some(handler) = self.api_key.get(&provider.to_ascii_lowercase()) {
-                return handler.handle_route(body).await;
+            } else {
+                if provider.eq_ignore_ascii_case("xai") {
+                    if let Some(handler) = self.xai.as_ref() {
+                        return handler.handle_route(body).await;
+                    }
+                }
+                if let Some(handler) = self.api_key.get(&provider.to_ascii_lowercase()) {
+                    return handler.handle_route(body).await;
+                }
             }
             OpenAiResponsesRouteResponse::Buffered(OpenAiResponsesHttpResponse::error(
                 400,
@@ -447,6 +472,7 @@ impl std::fmt::Debug for OpenAiResponsesProviderRouter {
                 &self.antigravity.as_ref().map(|_| "configured"),
             )
             .field("api_key", &self.api_key.keys().collect::<Vec<_>>())
+            .field("xai", &self.xai.as_ref().map(|_| "configured"))
             .finish()
     }
 }
@@ -480,6 +506,10 @@ pub enum OpenAiResponsesRouteResponse {
     /// Stream from an API-key provider pool (see
     /// `openai_responses_api_key_handlers`).
     ApiKeyStream(Box<super::openai_responses_api_key_handlers::OpenAiResponsesApiKeyStream>),
+    /// Stream from the xAI subscription pool (see
+    /// `openai_responses_xai_handlers`). Frames arrive COMPLETE, terminator
+    /// included — the server writes them verbatim.
+    XaiStream(Box<super::openai_responses_xai_handlers::OpenAiResponsesXaiStream>),
 }
 
 pub struct OpenAiResponsesAntigravityStream {

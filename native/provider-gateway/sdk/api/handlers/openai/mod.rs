@@ -13,6 +13,7 @@ mod openai_responses_websocket_requests;
 mod openai_responses_websocket_session;
 mod openai_responses_websocket_timeline;
 mod openai_responses_websocket_toolcall_repair;
+pub mod openai_responses_xai_handlers;
 mod openai_videos_handlers;
 
 pub use codex_client_models::{

@@ -406,6 +406,13 @@ BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
    refreshten Auth und lässt den Retry an `InvalidTarget` sterben.
 2. `OpenAiResponsesXaiHandler` im selben Muster wie der ApiKey-Handler
    (parse model/stream → pool → Stream-Pumpe). GATE: cargo test.
+   → ERLEDIGT 2026-08-24: `openai_responses_xai_handlers.rs` + Router-Feld
+   `with_xai` (Subscription schlägt für "xai" die API-Key-Map, ohne sie zu
+   verdrängen), Enum-Variante `XaiStream`, Server-Writer-Arm OHNE
+   Extra-Delimiter (xai-Frames kommen KOMPLETT inkl. Terminator — anders
+   als die Translator-Pfade). Gepufferte Antworten entpacken das
+   aggregierte `response.completed`-Event zum Response-Objekt.
+   GATE grün: volle Suite 2532 lib-Tests ok, 4 neue Handler-Tests ok.
 3. Host `src/config.rs`: Sektion `xai_accounts` (Secrets-Refs wie
    claude_accounts); `src/runtime.rs`: Pool bauen, im
    `OpenAiResponsesProviderRouter` als "xai" registrieren, Summary-Zeile.

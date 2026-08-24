@@ -587,3 +587,40 @@ LIVE VERIFIZIERT (CDP, frisch gestartete App):
   OFFEN DANACH: Prompt-Seite mit vollen Worker-Prompts + Modellregeln
   (Swift modelPrompts), gpu-Computer nach Environment-Pairing zuweisen,
   Betreiber: Grok-Login.
+
+## Stand nach zweitem Deploy 2026-08-24 ~10:00 — ALLES LIVE VERIFIZIERT
+
+KRITIK-FUND dieser Runde: der Banner-Fix von heute Vormittag hatte
+`message: undefined` in den Provider-Snapshot gelegt. Ein expliziter
+undefined-Schlüssel ist kein JSON-Wert — der Client-Decode der
+serverGetConfig-Antwort STARB damit ("Expected JSON value at
+providers[1]"), die Environment-Verbindung fiel in eine Retry-Schleife
+und die App lebte unbemerkt aus dem IndexedDB-Cache (deshalb wirkte
+auch "Refresh" tot und neue Felder wie modelPrompts kamen nie an).
+FIX: den Schlüssel ganz weglassen statt undefined. Beweiskette:
+Wire-Sniff (JSON.parse-Hook), Server-Probe (in-memory 7 modelPrompts),
+Defekt-Log im Supervisor. Probes wieder entfernt.
+
+Nach dem Fix live geprüft (CDP):
+
+- Verbindung stabil, kein Defect-Log, Live-Daten statt Cache.
+- Prompt-Seite: alle Worker-Karten mit "MODEL RULES · <modell>"
+  (Swift-Modellregeln, 7 Modelle, editierbar; geteilt je Modell) und
+  vollem "WORKER TASK"-Text.
+- Manual-Modus-Leiste: Codex CLI · Codex (OpenAI) · gpt-5.6-luna ·
+  MacBook Pro von Michael (2) · Manual · Medium · System prompt —
+  Harness/Provider/Modell/Rechner getrennt, System-Prompt-Feld da.
+- Worker-Modus-Leiste nach Auswahl "Sol · Completion (Hard Tasks)":
+  Worker · Rechner · Tools — sonst nichts.
+- Computers-Seite: eigene Seite (h1 Computers), gpu3-a4500 gelistet,
+  Remote-environments-Pairing integriert; Connections ohne Dopplung.
+- Models-Seite: Accounts je 1×, Remove-Knöpfe, xAI beide Knöpfe.
+- Kein "unauthenticated"-Banner.
+
+OFFEN (Betreiber): Grok-Device-Login abschließen (Karte → Add account,
+Browser-Freigabe), danach die Route "xAI (Grok)" auf den neuen Account
+zeigen lassen (Models → LLM routes, 1 Klick — zeigt bis dahin ehrlich
+"Account not in the gateway catalog (xai-grok-pending)").
+OFFEN (später): gpu3/gpu1-Computer nach Environment-Pairing zuweisen;
+managedSystemPrompt-Import aus Swift (composeManagedSystemPrompt)
+entscheiden; Prüfworker-Aufräumposten.

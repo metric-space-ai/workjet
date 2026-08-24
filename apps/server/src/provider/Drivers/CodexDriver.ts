@@ -202,16 +202,25 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         // provider gateway at session start; the CLI's own login state is
         // irrelevant to it. Reporting "unauthenticated" here made every app
         // restart demand a CLI re-login that the instance never needs.
-        Effect.map((draft) =>
-          routeViaGateway && draft.status === "error" && draft.auth.status === "unauthenticated"
-            ? {
-                ...draft,
-                status: "ready" as const,
-                auth: { status: "authenticated" as const, label: "Workjet provider gateway" },
-                message: undefined,
-              }
-            : draft,
-        ),
+        Effect.map((draft) => {
+          if (
+            !routeViaGateway ||
+            draft.status !== "error" ||
+            draft.auth.status !== "unauthenticated"
+          ) {
+            return draft;
+          }
+          // Drop the message KEY entirely — an explicit `message: undefined`
+          // is not a JSON value and killed the client's config decode
+          // (measured: "Expected JSON value at providers[1]", connection
+          // retry loop, app fell back to its cached config).
+          const { message: _message, ...rest } = draft;
+          return {
+            ...rest,
+            status: "ready" as const,
+            auth: { status: "authenticated" as const, label: "Workjet provider gateway" },
+          };
+        }),
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );

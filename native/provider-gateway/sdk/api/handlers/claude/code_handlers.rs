@@ -15,7 +15,8 @@ use crate::internal::client::claude::models::{
 };
 use crate::internal::runtime::executor::{
     AntigravityAccountPoolError, AntigravityExecutionError, AntigravitySubscriptionAccountPool,
-    AntigravityTrackedResponsesStream,
+    AntigravityTrackedResponsesStream, ClaudeAccountPoolError, ClaudeSubscriptionAccountPool,
+    ClaudeTrackedMessagesStreamResponse,
 };
 
 pub type ClaudeAntigravityCapabilityResolver =
@@ -182,6 +183,10 @@ fn status_text(status: u16) -> &'static str {
 pub enum ClaudeMessagesRouteResponse {
     Buffered(ClaudeMessagesHttpResponse),
     Stream(Box<ClaudeMessagesAntigravityStream>),
+    /// Passthrough stream from a Claude-subscription account. Unlike the
+    /// Antigravity variant nothing is translated: the upstream already speaks
+    /// the Messages SSE shape, which is exactly what the caller asked for.
+    ClaudeStream(Box<ClaudeMessagesClaudeStream>),
 }
 
 pub struct ClaudeMessagesAntigravityStream {
@@ -231,6 +236,159 @@ impl std::fmt::Debug for ClaudeMessagesAntigravityStream {
             .field("terminal", &self.terminal)
             .field("emitted_failure", &self.emitted_failure)
             .finish()
+    }
+}
+
+/// Claude Messages SSE relay from a Claude-subscription account.
+///
+/// The tracked response already yields complete Anthropic SSE frames (tool
+/// names restored, usage published), so the relay only forwards frames and
+/// terminates cleanly on `message_stop` — mirroring the Antigravity relay
+/// above, without its translation layer.
+pub struct ClaudeMessagesClaudeStream {
+    upstream: ClaudeTrackedMessagesStreamResponse,
+    terminal: bool,
+    emitted_failure: bool,
+}
+
+impl ClaudeMessagesClaudeStream {
+    fn new(upstream: ClaudeTrackedMessagesStreamResponse) -> Self {
+        Self {
+            upstream,
+            terminal: false,
+            emitted_failure: false,
+        }
+    }
+
+    pub async fn next_chunk(&mut self) -> Option<Vec<u8>> {
+        if self.terminal {
+            return None;
+        }
+        match self.upstream.next_chunk().await {
+            Some(Ok(chunk)) => {
+                if chunk.starts_with(b"event: message_stop\n") {
+                    self.terminal = true;
+                }
+                Some(chunk)
+            }
+            Some(Err(_)) if !self.emitted_failure => {
+                self.emitted_failure = true;
+                self.terminal = true;
+                Some(b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Claude upstream stream failed\"}}\n\n".to_vec())
+            }
+            Some(Err(_)) | None => {
+                self.terminal = true;
+                None
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for ClaudeMessagesClaudeStream {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClaudeMessagesClaudeStream")
+            .field("upstream", &"[REDACTED]")
+            .field("terminal", &self.terminal)
+            .field("emitted_failure", &self.emitted_failure)
+            .finish()
+    }
+}
+
+fn claude_pool_error_response(error: ClaudeAccountPoolError) -> ClaudeMessagesHttpResponse {
+    // Coarse on purpose: the pool error carries account identity and auth
+    // internals a provider response must not leak. 503 says "not this
+    // request's fault", 502 says "upstream broke", and that is all a caller
+    // can act on.
+    let (status, message) = match error {
+        ClaudeAccountPoolError::Configuration | ClaudeAccountPoolError::Routing(_) => {
+            (503, "no Claude account is currently available")
+        }
+        ClaudeAccountPoolError::Execution(_) => (502, "Claude upstream request failed"),
+        ClaudeAccountPoolError::OutcomePersistence => (502, "Claude outcome persistence failed"),
+    };
+    ClaudeMessagesHttpResponse::error(status, message)
+}
+
+/// Claude Messages route backed by the CLAUDE subscription pool.
+///
+/// This is the route a gateway-routed Claude Code CLI actually calls
+/// (`ANTHROPIC_BASE_URL` + `/v1/messages`). Until it existed the host served
+/// Claude accounts only through the OpenAI Responses shape, so a routed CLI
+/// got 404 and reported it as a model problem — measured 2026-08-24.
+pub struct ClaudeMessagesClaudeHandler {
+    pool: Arc<ClaudeSubscriptionAccountPool>,
+}
+
+impl ClaudeMessagesClaudeHandler {
+    pub fn new(pool: Arc<ClaudeSubscriptionAccountPool>) -> Self {
+        Self { pool }
+    }
+
+    pub async fn handle_route(&self, body: &[u8]) -> ClaudeMessagesRouteResponse {
+        let request = match parse_messages_request(body) {
+            Ok(request) => request,
+            Err(message) => {
+                return ClaudeMessagesRouteResponse::Buffered(ClaudeMessagesHttpResponse::error(
+                    400, message,
+                ));
+            }
+        };
+        if request.stream {
+            let outcome = self
+                .pool
+                .execute_stream_configured(&request.model, body.to_vec())
+                .await;
+            return match outcome {
+                Ok(outcome) => ClaudeMessagesRouteResponse::ClaudeStream(Box::new(
+                    ClaudeMessagesClaudeStream::new(outcome.into_outcome().into_response()),
+                )),
+                Err(error) => {
+                    ClaudeMessagesRouteResponse::Buffered(claude_pool_error_response(error))
+                }
+            };
+        }
+        match self
+            .pool
+            .execute_configured(&request.model, body.to_vec(), false)
+            .await
+        {
+            Ok(outcome) => {
+                let upstream = outcome.outcome().response();
+                ClaudeMessagesRouteResponse::Buffered(ClaudeMessagesHttpResponse::json(
+                    upstream.status(),
+                    upstream.body().to_vec(),
+                ))
+            }
+            Err(error) => ClaudeMessagesRouteResponse::Buffered(claude_pool_error_response(error)),
+        }
+    }
+}
+
+impl std::fmt::Debug for ClaudeMessagesClaudeHandler {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClaudeMessagesClaudeHandler")
+            .field("pool", &"ClaudeSubscriptionAccountPool")
+            .finish()
+    }
+}
+
+impl ClaudeMessagesRouteHandler for ClaudeMessagesClaudeHandler {
+    fn handle_provider_route<'a>(
+        &'a self,
+        provider: Option<&'a str>,
+        body: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = ClaudeMessagesRouteResponse> + Send + 'a>> {
+        Box::pin(async move {
+            if provider.is_some_and(|provider| !provider.eq_ignore_ascii_case("claude")) {
+                return ClaudeMessagesRouteResponse::Buffered(ClaudeMessagesHttpResponse::error(
+                    400,
+                    "requested provider is not configured",
+                ));
+            }
+            self.handle_route(body).await
+        })
     }
 }
 

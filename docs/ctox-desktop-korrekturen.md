@@ -48,7 +48,24 @@ CTOX erscheint in KEINER anderen App. Achtung Migrationsfrage: bestehende
 Threads referenzieren Sitzungen im alten Ort; Kontinuität klären, bevor
 der Standard kippt.
 
-## 0 · Gateway-Routing Claude — DIAGNOSE 2026-08-24, Ursache gefunden
+## 0 · Gateway-Routing Claude — ERLEDIGT 2026-08-24, Ende-zu-Ende belegt
+
+    user      :: Antworte ausschliesslich mit dem Wort BEREIT.
+    assistant :: BEREIT          state=completed · 12,8 s
+
+Claude Fable 5, gestreamt durch den CLI-Proxy, über das Gateway-Konto —
+das tote native CLI-Token ist nicht mehr beteiligt. Damit ist auch der
+Kern von Posten 7 gebaut: `ClaudeMessagesClaudeHandler` bedient
+`/v1/messages` aus dem Claude-Subscription-Pool (Passthrough, kein
+Übersetzer), Stream-Relay inklusive; Host neu gebaut und getauscht
+(Backup: `provider-gateway-host.backup-aug20`).
+
+ZWEI-ROUTER-FALLE (Folgearbeit): Konto-Modelllisten matcht der HOST
+exakt (leer = alles), die App-Seite versteht `*`-Muster. Ein
+Wildcard-Eintrag ent-routet das Konto hostseitig. Konten tragen jetzt
+exakte IDs (claude-fable-5[1m] etc.). Die Semantiken gehören vereinheitlicht.
+
+### (Diagnoseweg) Gateway-Routing Claude — Ursache gefunden
 
 Gemessen in dieser Reihenfolge:
 

@@ -30,7 +30,8 @@ use workjet_provider_gateway::internal::runtime::executor::{
     CodexSubscriptionAuth, CodexSubscriptionResponsesExecutor, SystemAntigravityAuthClock,
 };
 use workjet_provider_gateway::sdk::api::handlers::claude::code_handlers::{
-    claude_models_response, ClaudeMessagesAntigravityHandler, ClaudeMessagesHttpResponse,
+    claude_models_response, ClaudeMessagesAntigravityHandler, ClaudeMessagesClaudeHandler,
+    ClaudeMessagesHttpResponse, ClaudeMessagesRouteHandler,
 };
 use zeroize::Zeroizing;
 
@@ -94,7 +95,7 @@ impl std::error::Error for RuntimeBuildError {}
 
 pub struct ProviderRoutes {
     pub responses: Arc<OpenAiResponsesProviderRouter>,
-    pub messages: Option<Arc<ClaudeMessagesAntigravityHandler>>,
+    pub messages: Option<Arc<dyn ClaudeMessagesRouteHandler>>,
     pub auxiliary: Option<Arc<dyn AuxiliaryRouteHandler>>,
     pub models: ClaudeMessagesHttpResponse,
 }
@@ -140,6 +141,7 @@ pub fn build_provider_routes(
     let account_clock: Arc<dyn AccountStateClock> = Arc::new(SystemAccountClock);
     let mut auxiliary_handlers: Vec<Arc<dyn AuxiliaryRouteHandler>> = Vec::new();
 
+    let mut claude_messages: Option<Arc<dyn ClaudeMessagesRouteHandler>> = None;
     let claude = if config.claude_accounts().is_empty() {
         None
     } else {
@@ -206,6 +208,12 @@ pub fn build_provider_routes(
             .map_err(|_| RuntimeBuildError::Configuration)?,
         );
         auxiliary_handlers.push(Arc::new(ClaudeCountTokensRouteHandler::new(pool.clone())));
+        // The Messages route is what a gateway-routed Claude Code CLI calls
+        // (`ANTHROPIC_BASE_URL` + `/v1/messages`). Serving Claude accounts
+        // only through the Responses shape left that CLI a 404 — measured
+        // 2026-08-24 — which it reported as a model problem.
+        claude_messages = Some(Arc::new(ClaudeMessagesClaudeHandler::new(pool.clone()))
+            as Arc<dyn ClaudeMessagesRouteHandler>);
         Some(Arc::new(OpenAiResponsesClaudeHandler::new(pool)))
     };
 
@@ -262,7 +270,7 @@ pub fn build_provider_routes(
         Some(Arc::new(OpenAiResponsesCodexHandler::new(Arc::new(pool))))
     };
 
-    let mut messages = None;
+    let mut messages: Option<Arc<dyn ClaudeMessagesRouteHandler>> = None;
     let antigravity = if config.antigravity_accounts().is_empty() {
         None
     } else {
@@ -335,7 +343,7 @@ pub fn build_provider_routes(
             pool.clone(),
             None,
             Arc::new(|_, _| false),
-        )));
+        )) as Arc<dyn ClaudeMessagesRouteHandler>);
         Some(Arc::new(OpenAiResponsesAntigravityHandler::new(pool)))
     };
 
@@ -397,7 +405,10 @@ pub fn build_provider_routes(
     });
     Ok(Some(ProviderRoutes {
         responses,
-        messages,
+        // Claude first: on a host with Claude accounts the Messages route
+        // belongs to them; Antigravity keeps it only where it is the sole
+        // subscription that can serve the shape.
+        messages: claude_messages.or(messages),
         auxiliary,
         models: claude_models_response(&model_catalog(config), false),
     }))

@@ -963,9 +963,32 @@ export function WorkjetSettingsView({
                         ].join(" · ")}
                       </span>
                     </div>
-                    <p className="mt-1 text-[11px] whitespace-pre-wrap text-muted-foreground">
-                      {worker.instructions?.trim() ? worker.instructions : "No task set."}
-                    </p>
+                    {/* Editable in place, like the Swift page's per-worker
+                        Bearbeiten: the task is prompt text, and the prompt
+                        page is where prompt text is edited. Saved on blur into
+                        the worker profile — same field the worker editor
+                        writes, one storage, two doors. */}
+                    <Textarea
+                      key={`${worker.id}-${worker.instructions ?? ""}`}
+                      defaultValue={worker.instructions ?? ""}
+                      rows={Math.min(
+                        10,
+                        Math.max(2, (worker.instructions ?? "").split("\n").length),
+                      )}
+                      aria-label={`Task for worker ${worker.name}`}
+                      placeholder="No task set — describe what this worker takes on."
+                      className="mt-1 text-[12px]"
+                      onBlur={(event) => {
+                        const instructions = event.target.value;
+                        if (instructions === (worker.instructions ?? "")) return;
+                        onChange({
+                          ...configuration,
+                          workerProfiles: configuration.workerProfiles.map((candidate) =>
+                            candidate.id === worker.id ? { ...candidate, instructions } : candidate,
+                          ),
+                        });
+                      }}
+                    />
                   </div>
                 ))}
               </div>

@@ -15,7 +15,7 @@ import {
   isLive,
   RUHEZEITEN,
 } from "./settings.mjs";
-import { osEventFrom, imuFrom, listSelectFrom } from "./event-decode.mjs";
+import { osEventFrom, imuFrom } from "./event-decode.mjs";
 import { scanInvite } from "./pairing.mjs";
 
 const $ = (sel) => document.querySelector(sel);
@@ -136,9 +136,7 @@ async function testConnection() {
 // Auf der Brille gibt es keine Konsole. Ohne diese Meldungen ist jeder
 // Startfehler unsichtbar und man raet. Geht nur an den Entwicklungsserver,
 // von dem die App selbst geladen wurde.
-const DEV = Boolean(import.meta.env?.DEV);
 function melde(text) {
-  if (!DEV) return;   // Produktion: keine Diagnose-Aufrufe
   try {
     fetch(`${location.origin}/__log`, { method: 'POST', body: String(text) }).catch(() => {});
   } catch {}
@@ -176,13 +174,6 @@ async function main() {
 
   window.addEventListener(BridgeEvent.EvenHubEvent, (event) => {
     const detail = event.detail ?? event;
-    // Auswahl aus dem OS-Listencontainer ZUERST: ein Listen-Klick traegt
-    // keinen eventType und darf nicht als Seiten-Geste fehlgedeutet werden.
-    const auswahl = listSelectFrom(detail);
-    if (auswahl) {
-      plugin.handleListSelect(auswahl);
-      return;
-    }
     const imu = imuFrom(detail);
     if (imu) {
       melde(`IMU x=${imu.x} y=${imu.y} z=${imu.z}`);

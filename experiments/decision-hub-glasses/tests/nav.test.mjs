@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { navigate, caseNav, OS_EVENT } from '../src/nav.mjs';
+import { navigate, initialNav, OS_EVENT } from '../src/nav.mjs';
 import { LEVEL } from '../src/layout.mjs';
 
 const dims = { sections: 3, pages: 4, icons: 5 };
 
 test('one scroll moves to the next rubric, not through text', () => {
-  let nav = caseNav();
+  let nav = initialNav();
   nav = navigate(nav, OS_EVENT.SCROLL_BOTTOM, dims).nav;
   assert.equal(nav.sectionIndex, 1);
   assert.equal(nav.level, LEVEL.RUBRIK, 'stays on the overview level');
 });
 
 test('press expands a rubric, scrolling then pages inside it', () => {
-  let nav = caseNav();
+  let nav = initialNav();
   nav = navigate(nav, OS_EVENT.CLICK, dims).nav;
   assert.equal(nav.level, LEVEL.DETAIL);
   nav = navigate(nav, OS_EVENT.SCROLL_BOTTOM, dims).nav;
@@ -21,19 +21,19 @@ test('press expands a rubric, scrolling then pages inside it', () => {
 });
 
 test('the end of a rubric returns to the overview instead of trapping', () => {
-  let nav = { ...caseNav(), level: LEVEL.DETAIL, page: dims.pages - 1 };
+  let nav = { ...initialNav(), level: LEVEL.DETAIL, page: dims.pages - 1 };
   nav = navigate(nav, OS_EVENT.SCROLL_BOTTOM, dims).nav;
   assert.equal(nav.level, LEVEL.RUBRIK);
 });
 
 test('past the last rubric the focus enters the decision icons', () => {
-  let nav = { ...caseNav(), sectionIndex: dims.sections - 1 };
+  let nav = { ...initialNav(), sectionIndex: dims.sections - 1 };
   nav = navigate(nav, OS_EVENT.SCROLL_BOTTOM, dims).nav;
   assert.equal(nav.focusIcon, 0);
 });
 
 test('every icon is reachable, and past the last one the next case begins', () => {
-  let nav = { ...caseNav(), focusIcon: 0 };
+  let nav = { ...initialNav(), focusIcon: 0 };
   const seen = new Set([0]);
   for (let i = 0; i < dims.icons - 1; i += 1) {
     nav = navigate(nav, OS_EVENT.SCROLL_BOTTOM, dims).nav;
@@ -46,13 +46,13 @@ test('every icon is reachable, and past the last one the next case begins', () =
 });
 
 test('press on an icon activates it; double press leaves the icons', () => {
-  const nav = { ...caseNav(), focusIcon: 2 };
+  const nav = { ...initialNav(), focusIcon: 2 };
   assert.deepEqual(navigate(nav, OS_EVENT.CLICK, dims).action, { type: 'activate', icon: 2 });
   assert.equal(navigate(nav, OS_EVENT.DOUBLE_CLICK, dims).nav.focusIcon, -1);
 });
 
 test('double press collapses an expanded rubric', () => {
-  const nav = { ...caseNav(), level: LEVEL.DETAIL, page: 2 };
+  const nav = { ...initialNav(), level: LEVEL.DETAIL, page: 2 };
   const out = navigate(nav, OS_EVENT.DOUBLE_CLICK, dims);
   assert.equal(out.nav.level, LEVEL.RUBRIK);
   assert.deepEqual(out.action, { type: 'collapse' });
@@ -91,14 +91,4 @@ test("lifecycle and IMU reports are never gestures", async () => {
   for (const type of [4, 5, 6, 7, 8]) {
     assert.equal(osEventFrom({ sysEvent: { eventType: type, eventSource: 1 } }), null, `type ${type}`);
   }
-});
-
-// Protobuf laesst Nullwerte weg — auch den Listenindex: ein Klick auf das
-// oberste Element traegt KEIN Indexfeld. Fehlt der Index, ist er 0.
-test('a list click on the top item carries no index field and still counts', async () => {
-  const { listSelectFrom } = await import('../src/event-decode.mjs');
-  assert.deepEqual(listSelectFrom({ listEvent: { containerID: 1 } }),
-    { index: 0, name: null, klick: true });
-  assert.equal(listSelectFrom({ listEvent: { currentSelectItemIndex: 2 } }).index, 2);
-  assert.equal(listSelectFrom({ sysEvent: { eventSource: 1 } }), null);
 });

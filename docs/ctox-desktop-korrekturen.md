@@ -195,7 +195,21 @@ Offene Sachfrage für Rechner in der Leiste (B3): ob ein Entwurf die
 Ziel-Umgebung wechseln kann. `composerDraftStore` trägt `environmentId`;
 nie zu Ende geprüft.
 
-## 2b · UI/UX-Generalabgleich gegen die Swift-Vorlage
+## 2b · UI/UX-Generalabgleich — drei Flächen erledigt 2026-08-24
+
+- **Routen-Zeile**: Konto-LABEL statt Roh-Hash (`2577747cd`); deckte
+  sofort einen echten Datenfehler auf (Route „Codex (OpenAI)" zeigte
+  aufs Claude-Konto; korrigiert).
+- **Computers-Liste**: je Computer eine Zeile pro Harness mit Live-Punkt
+  und Detail aus `workjet.harness.inspect` (`540841518`) — der Zähler
+  „0 harnesses marked available" ist weg; fremde Umgebungen zeigen den
+  deklarierten Stand ehrlich als „not probed from here".
+- **Import**: 14/14 vorbelegt (s. Posten 3).
+
+OFFEN im Generalabgleich: Telemetry/Execution nie verglichen;
+Computers-EDITOR-Formular (Override-Felder) gegen Swift-Editor.
+
+### (ursprünglich) UI/UX-Generalabgleich gegen die Swift-Vorlage
 
 Vom Betreiber mehrfach moniert („wie eine Debug-Konsole", „abenteuerlich
 dumm umgesetzt", „Farce") und in dieser Liste bisher NICHT als eigener
@@ -302,6 +316,15 @@ OFFEN: der echte Turn je Anbieter. Er braucht einen durch den Gateway
 gerouteten Harness, der diese Modelle anpinnen kann — blockiert durch
 die Modellauflösung aus Posten 0/−1 (der Wähler bietet je Harness nur
 dessen eigene Modelle an).
+
+## 6 · Sign-in — KERN ERLEDIGT 2026-08-24
+
+Der Login funktioniert (Browser-Handoff, s. u.), und die Swift-Vorlage
+ist übernommen: **„Re-login" sitzt am Zugang selbst** (`462f9d6e7`, live:
+beide OAuth-Konten tragen den Knopf), statt dass der Betreiber wissen
+muss, dass „Add another" mit derselben Identität den Zugang heilt.
+API-Key-Zugänge behalten ihr Schlüssel-Formular. OFFEN: Antigravity
+braucht Client-Secrets (Betreiber).
 
 ## 6/7 · KORREKTUR 2026-08-24: Der OAuth-Login FUNKTIONIERT mit dem neuen Host
 

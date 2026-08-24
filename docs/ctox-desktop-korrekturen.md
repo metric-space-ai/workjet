@@ -158,7 +158,16 @@ gehören zu Models, Capabilities in den Worker-Editor, Legacy import
 bleibt bis zur Ausführung sichtbar. Warum offen: ich habe die
 Swift-Reiter ausgelesen und dann nichts damit gemacht.
 
-## 2 · Composer-Leiste — MODUSWECHSEL ERLEDIGT 2026-08-24, Rest an −1
+## 2 · Composer-Leiste — WORKER-MODUS KOMPLETT 2026-08-24
+
+Live: `MacBook Pro von Michael (2) | Codex Prüfworker | Current checkout`
+— Rechner (aus dem Worker-Profil) · Worker · Checkout; Modell/Effort
+verschwinden (der Worker bündelt sie), Extras wendet der Thread-Start
+aus dem Profil an (ein Dispatch, Standard wird überschrieben), „Full
+access" ist entfernt. Der Rechner ist bewusst noch KEIN Umschalter: mit
+einer Umgebung wäre ein Ein-Options-Dropdown eine Attrappe; Naht für
+später = Projekt-Umgebung des Drafts. NUR noch an −1 gebunden: Wechsel
+MITTEN in der Session (Sitzungs-Eigentum).
 
 Live belegt: Worker-Modus zeigt `Worker | Checkout` (Modell und Effort
 verschwinden — der Worker bündelt sie); Manual bringt beide zurück.

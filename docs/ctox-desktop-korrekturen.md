@@ -870,3 +870,64 @@ Befunde (Fixes ausstehend, Nummerierung F1…):
   Mini-Menü-Rail folgt nicht dem aktuellen Provider, ⌘N/⇧⌘O doppelt
   als „Chat: New", Diagnostics „Resource monitor NATIVE UNAVAILABLE".
   Kimi-K3-Gegenreview läuft (Workjet-Run local-…193547Z-977e1443).
+
+## §12 Kimi-K3-Gegenreview 2026-08-24 (2 Läufe, read-only, integriert)
+
+Lauf 1 (voll) starb leer am 200k-Kontext → abandoned; Aufteilung in zwei
+Scope-Läufe (Learning bestätigt). Beide Berichte liegen als
+kimi-report-A.md / kimi-report-B.md im Session-Scratchpad; Runs als
+integrated markiert. Kimi meldete ausschließlich NEUE Befunde (F1–F16
+nicht wiederholt). Nummerierung K-A* (Settings+Chat) / K-B* (CTOX+Sidebar):
+
+HOCH
+
+- K-A1: Computers-Seite löscht Computer mit EINEM Klick ohne
+  ConfirmingDeleteButton (WorkjetComputersSettings.tsx:173-189) — die
+  anderen drei Flächen (Worker/Route/Account) haben ihn; Löschung
+  hinterlässt Worker mit „Missing computer" ohne Warnung.
+- K-A2: Unter dem Compact-Breakpoint fällt der Manual-Composer auf den
+  ALTEN ProviderModelPicker zurück (ChatComposer.tsx:3381) und das
+  Kompakt-Menü hat weder Harness- noch Modell-Mini-Menü — die neue
+  Leiste existiert nur im breiten Layout.
+
+MITTEL (Auswahl)
+
+- K-A3: „Computers" benennt drei verschiedene Dinge (Top-Level-Seite,
+  Environment-Picker auf Models/Harnesses, Connections-Zeiger).
+- K-A4: Modus „default" heißt breit „Build", kompakt „Chat".
+- K-A5/K-B6: Dieselbe Capability heißt „Web Research" (Worker-Editor),
+  „Web Search" (Tools-Menü), „Extras" (Doku).
+- K-A6: Worker-Editor nennt dieselbe Wahl „Provider"/„Access"/„LLM route".
+- K-A7: „Set up access" navigiert weg und verwirft den ungespeicherten
+  Worker-Entwurf lautlos.
+- K-A8: Veraltete Ortsangaben („…managed in Connections", „Workjet
+  settings") nach dem Seitenumzug.
+- K-B1: Produkt-Modus-Schalter (Code|Business OS) verschwindet unter
+  768px komplett — kein alternativer Wechselweg (index.css sidebar-brand).
+- K-B2/K-B3: BOS-Sidebar „Remove" und ctox.dev „Sign out" ohne
+  Bestätigung (destruktiv, ein Klick).
+- K-B4/K-B5: Rohe Enums im UI: connection-Status („connecting"/„error")
+  in der BOS-Topbar; presentationKind („t3-connect") als Untertitel.
+- K-B7: Pi heißt „Pi Code" (Harnesses, π-Icon) und „Pi Agent"
+  (Add-Dialog, anderes Icon); Coming-Soon-Karte obsolet.
+- K-B8: Zwei xAI-Marken je Fläche (GrokIcon-Wirbel auf Harness-Flächen,
+  XaiIcon-X auf Gateway/Composer).
+
+NIEDRIG (Auswahl): K-A9 codex „Codex" vs „Codex (OpenAI)"; K-A10
+„Held back (by priority)" doppelt benannt; K-A11 Roh-Slugs in Listen
+(claude-code/xhigh); K-A12 Seite „Worker/Workjet/Workers" dreifach +
+Doppel-Treffer in der Suche; K-A13 Model-rules-Editor doppelt bei
+gleichem Modell zweier Worker; K-A14 Routen-Speichern ohne Toast;
+K-A15 tote onAddComputer-Prop im Kompakt-Menü + Tab-Hash-Divergenz;
+K-B9 Sidebar- vs Topbar-Instanzname; K-B10 doppelter Refresh in BOS;
+K-B11 Update-Pills im BOS-Modus unsichtbar (Entscheidung Operator!);
+K-B13 toter Zweig resolveAppModelSelectionState (keptSelectedProvider
+=false); K-B14 „Github Copilot"-Tippfehler; K-B15 „Expiry in Unix
+milliseconds"-Rohfeld im Pairing; K-B16 Pi-Statuspunkt grau=grau;
+K-B17 „Not paired"-Texte divergent.
+
+Hypothesen (Laufzeitprüfung nötig): K-AH1 Worker-Wechsel nullt
+draftManagedInstructions (System-Prompt-Verlust); K-AH3 Environment-Wahl
+überschreibt Computer-Custom-Label; K-AH5 Zahlen-Inputs nicht leerbar;
+K-BH1 „Connecting to guest…" ohne Spinner/Timeout; K-BH3
+Remove-Feedback am Listenende (unter dem Fold).

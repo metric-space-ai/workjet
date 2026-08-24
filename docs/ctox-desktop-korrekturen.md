@@ -243,6 +243,25 @@ gerouteten Harness, der diese Modelle anpinnen kann — blockiert durch
 die Modellauflösung aus Posten 0/−1 (der Wähler bietet je Harness nur
 dessen eigene Modelle an).
 
+## 6/7 · KORREKTUR 2026-08-24: Der OAuth-Login FUNKTIONIERT mit dem neuen Host
+
+Gemessen nach dem Host-Tausch: „Add another" auf Claude antwortet
+
+    Finish the Claude login in your browser, then return here.
+    Login session e4d9…61c4. Workjet never sees your credentials.
+
+Die produktive `ManagementProviderOAuthAuthority` lebt im HOST-Crate
+(`provider-gateway-workjet-host/src/oauth.rs`, 1031 Zeilen,
+anthropic/codex/antigravity) — mein Befund „keine produktive
+Implementierung" galt nur für das Gateway-Crate und für die alte
+Binärdatei vom 20.08. Antigravity scheitert weiterhin separat
+(braucht eigene Client-Secrets in der Konfiguration).
+
+Damit schrumpft Posten 8 (Grok) auf: xai-Fall in `HostOAuthSource`
+(Device-Flow statt Callback — `verification_uri_complete` als
+authorizationUrl, Poll statt Redirect), `xai-auth-url`-Route,
+Vertrag + Karte. Alles auf einem bewiesenen Build/Swap-Weg.
+
 ## 6 · Sign-in-Ablauf übersichtlich (A4)
 
 Nie angefasst. Erst NACH E1 sinnvoll bewertbar, denn heute funktioniert

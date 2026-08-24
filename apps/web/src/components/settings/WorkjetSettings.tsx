@@ -43,7 +43,12 @@ import type { WorkjetEnvironmentTargetOption } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  ConfirmingDeleteButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   joinManagedPrompt,
@@ -434,15 +439,7 @@ function ItemActions({
       >
         <PencilIcon className="size-3.5" />
       </Button>
-      <Button
-        type="button"
-        size="icon-xs"
-        variant="ghost"
-        aria-label={`Delete ${label}`}
-        onClick={onDelete}
-      >
-        <Trash2Icon className="size-3.5" />
-      </Button>
+      <ConfirmingDeleteButton label={label} onDelete={onDelete} />
     </div>
   );
 }
@@ -696,6 +693,13 @@ export function WorkjetSettingsView({
           });
           setAddingWorker(false);
           setEditingWorkerId(null);
+          // The saved row can sit below the fold; without this the viewport
+          // shows no evidence the save happened (interactive-review finding).
+          toastManager.add({
+            type: "success",
+            title: "Worker saved",
+            description: worker.name,
+          });
         }}
       />
     </div>

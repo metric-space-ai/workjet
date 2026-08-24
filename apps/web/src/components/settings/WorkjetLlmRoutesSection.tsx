@@ -8,7 +8,7 @@ import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "../ui/button";
 import { searchableSetting } from "./settingsSearch";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { ConfirmingDeleteButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { WorkjetGatewayModelRoutes } from "./WorkjetGatewayModelRoutes";
 import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 
@@ -123,12 +123,9 @@ export function WorkjetLlmRoutesSection(props: {
                 >
                   <PencilIcon className="size-3.5" />
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Delete LLM route ${route.label}`}
-                  onClick={() =>
+                <ConfirmingDeleteButton
+                  label={`LLM route ${route.label}`}
+                  onDelete={() =>
                     props.onChange({
                       ...props.configuration,
                       llmRoutes: props.configuration.llmRoutes.filter(
@@ -136,9 +133,7 @@ export function WorkjetLlmRoutesSection(props: {
                       ),
                     })
                   }
-                >
-                  <Trash2Icon className="size-3.5" />
-                </Button>
+                />
               </span>
             }
           />

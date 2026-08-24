@@ -17,12 +17,12 @@ import {
   TriangleAlertIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { cn } from "~/lib/utils";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { ConfirmingDeleteButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 /**
@@ -482,6 +482,17 @@ export function WorkjetGatewayAccountsSectionView(
 ) {
   const phase = state.status?.phase ?? null;
   const canAdd = canAddWorkjetGatewayAccount(state);
+  // Visible refresh feedback: the WS refetch can answer in tens of
+  // milliseconds, which read as "the button does nothing". Hold the spinner
+  // long enough to be seen; the data still comes from the real refetch.
+  const [refreshSpinUntil, setRefreshSpinUntil] = useState(0);
+  const [, forceSpinTick] = useState(0);
+  const refreshSpinning = state.isRefreshing || Date.now() < refreshSpinUntil;
+  useEffect(() => {
+    if (Date.now() >= refreshSpinUntil) return;
+    const id = setTimeout(() => forceSpinTick((tick) => tick + 1), refreshSpinUntil - Date.now());
+    return () => clearTimeout(id);
+  }, [refreshSpinUntil]);
   // Which provider's key field is open. Only one at a time, so a pasted key
   // can never be left visible in a second collapsed row.
   const [openApiKeyProvider, setOpenApiKeyProvider] = useState<WorkjetGatewayApiKeyProvider | null>(
@@ -526,10 +537,18 @@ export function WorkjetGatewayAccountsSectionView(
             type="button"
             size="sm"
             variant="outline"
-            onClick={state.onRefresh}
-            disabled={state.isRefreshing}
+            onClick={() => {
+              // The refetch runs over the WebSocket and often answers in
+              // tens of milliseconds — without a minimum spin the click
+              // produced no visible change at all (interactive-review
+              // finding: "Refresh does nothing"). The spinner is held long
+              // enough to be seen; the DATA still comes from the refetch.
+              setRefreshSpinUntil(Date.now() + 900);
+              state.onRefresh();
+            }}
+            disabled={refreshSpinning}
           >
-            <RefreshCwIcon className={state.isRefreshing ? "size-3.5 animate-spin" : "size-3.5"} />
+            <RefreshCwIcon className={refreshSpinning ? "size-3.5 animate-spin" : "size-3.5"} />
             Refresh
           </Button>
           {/*
@@ -701,17 +720,10 @@ export function WorkjetGatewayAccountsSectionView(
                                 Re-login
                               </Button>
                             )}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-1.5 text-[11px] text-destructive hover:text-destructive"
-                              aria-label={`Remove account ${account.label}`}
-                              disabled={!canAdd}
-                              onClick={() => state.onRemoveAccount(account.id)}
-                            >
-                              <Trash2Icon className="size-3" />
-                            </Button>
+                            <ConfirmingDeleteButton
+                              label={`account ${account.label}`}
+                              onDelete={() => state.onRemoveAccount(account.id)}
+                            />
                           </span>
                         </div>
                       );

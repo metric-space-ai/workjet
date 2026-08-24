@@ -1,4 +1,4 @@
-import { InfoIcon, Undo2Icon } from "lucide-react";
+import { InfoIcon, Undo2Icon, Trash2Icon } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -14,6 +14,7 @@ import {
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 
 interface SettingsSearchTargetContextValue {
   readonly targetId: string | null;
@@ -83,12 +84,17 @@ function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) 
   return targetRef;
 }
 
-/** Info affordance explaining how a setting interacts with the shared background policy. */
+/**
+ * Info affordance explaining how a setting interacts with the shared
+ * background policy. A POPOVER, not a hover tooltip: the control is a
+ * clickable aria-labelled button, and a click that produces nothing reads as
+ * a dead control (measured in the interactive review) — hover-only also
+ * excludes touch and keyboard users.
+ */
 export function PolicyTooltip({ children }: { readonly children: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        delay={200}
+    <Popover>
+      <PopoverTrigger
         render={
           <button
             type="button"
@@ -99,10 +105,57 @@ export function PolicyTooltip({ children }: { readonly children: string }) {
           </button>
         }
       />
-      <TooltipPopup side="top" className="max-w-72">
+      <PopoverPopup side="top" className="max-w-72 p-3 text-sm">
         {children}
-      </TooltipPopup>
-    </Tooltip>
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
+/**
+ * Two-step delete: the first click ARMS the button (it turns into a red
+ * "Delete?" for four seconds), the second click deletes. Introduced after the
+ * interactive review found every list delete fired instantly from an
+ * always-visible trash icon — one stray click destroyed a configured entry
+ * with no confirmation, no undo.
+ */
+export function ConfirmingDeleteButton({
+  label,
+  onDelete,
+}: {
+  readonly label: string;
+  readonly onDelete: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 4_000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return armed ? (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="h-6 px-1.5 text-[11px] font-medium text-destructive hover:text-destructive"
+      aria-label={`Confirm delete ${label}`}
+      onClick={() => {
+        setArmed(false);
+        onDelete();
+      }}
+    >
+      Delete?
+    </Button>
+  ) : (
+    <Button
+      type="button"
+      size="icon-xs"
+      variant="ghost"
+      aria-label={`Delete ${label}`}
+      onClick={() => setArmed(true)}
+    >
+      <Trash2Icon className="size-3.5" />
+    </Button>
   );
 }
 

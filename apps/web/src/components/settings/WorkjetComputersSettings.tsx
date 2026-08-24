@@ -12,6 +12,7 @@ import { useEnvironments, usePrimaryEnvironment } from "../../state/environments
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
+import { toastManager } from "../ui/toast";
 import { RemoteEnvironmentsSection } from "./ConnectionsSettings";
 import {
   type WorkjetEnvironmentTargetOption,
@@ -79,6 +80,11 @@ export function WorkjetComputersSettingsView({
           });
           setAddingComputer(false);
           setEditingComputerId(null);
+          toastManager.add({
+            type: "success",
+            title: "Computer saved",
+            description: computer.label,
+          });
         }}
       />
     </div>
@@ -247,7 +253,7 @@ export function WorkjetComputersSettingsView({
         description="Remote environments are paired and removed below; each one becomes selectable as a computer target here. This machine's network access, Tailscale, and authorized clients stay in Settings → Connections."
         control={
           <a
-            href="/settings/connections"
+            href="#/settings/connections"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
             Open Connections

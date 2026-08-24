@@ -663,3 +663,28 @@ bleibt die EHRLICHE Warnung des gpu1-Workers (Maschine unpaired).
 LEKTION: statische Reviews finden solche Fehler nicht — interaktiver
 Klick-Durchlauf in der laufenden App wird als eigener Review-Schritt
 etabliert (läuft).
+
+## Interaktiver UI/UX-Klick-Review 2026-08-24 ~10:45 — 6 Befunde, alle gefixt
+
+Review-Methode: Subagent klickt die LAUFENDE App über CDP durch, prüft
+sichtbare Konsequenz im Viewport (Rects, Hit-Tests, Screenshots),
+Konsole überwacht (0 Fehler). Volle Abdeckungsliste im Agent-Bericht;
+Harness-Skripte liegen wiederverwendbar im Session-Scratchpad (h.mjs,
+s1…s8\*.mjs).
+
+1. "Open Computers"-Link (Connections) warf in den Chat-Draft — roher
+   href ohne Hash-Präfix im Hash-Router. FIX: #/settings/…-Hrefs (auch
+   der Gegenlink auf der Computers-Seite). Live: landet auf h1 Computers.
+2. Composer-Chipzeile: versteckter Overflow-Scroller ohne Affordance —
+   Manual/Effort/System prompt unsichtbar hinter der Kante (scrollWidth
+   1136 in 720px). FIX: Chips WRAPPEN statt zu clippen. Live: alle
+   Chips im Viewport.
+3. Models-Refresh "tot": WS-Refetch antwortet in Millisekunden, nichts
+   sichtbar. FIX: Spinner mit Mindestdauer. Live: Spinner erscheint.
+4. Info-Knopf "Background policy details": Hover-only-Tooltip, Klick
+   ergebnislos. FIX: Klick-Popover statt Tooltip. Live: öffnet.
+5. Löschen ohne Bestätigung (Worker/Route/Computer/Account): FIX:
+   zweistufiger ConfirmingDeleteButton (erst "Delete?", 4s Auto-
+   Entschärfung), an allen vier Stellen. Live: armiert + entschärft.
+6. Kein sichtbares Feedback nach Save (Zeile unter dem Fold): FIX:
+   Success-Toast bei Worker-/Computer-Save.

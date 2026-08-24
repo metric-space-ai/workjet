@@ -3374,7 +3374,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 showMobilePendingAnswerActions && "hidden sm:flex",
               )}
             >
-              <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {/* WRAP, never clip: this row used to be a hidden-scrollbar
+                  overflow-x scroller, which left the Manual/Effort/System-
+                  prompt chips invisible past the right edge with no cue they
+                  existed (measured: scrollWidth 1136 in a 720px row). Chips
+                  that don't fit now wrap onto a second line instead. */}
+              <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-center gap-1 p-1 ps-3.5">
                 {workerModeActive ? null : !isComposerFooterCompact &&
                   workjetManualControlsAvailable ? (
                   /* Manual mode with a Workjet catalog: Harness · Provider ·

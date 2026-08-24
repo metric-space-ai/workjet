@@ -3453,7 +3453,9 @@ export function ConnectionsSettings() {
           description="Pair, reconnect, and remove remote environments on the Computers page, beside the computers that use them. This page keeps this machine's network access and authorized clients."
           control={
             <a
-              href="/settings/computers"
+              // Hash router: a bare /settings/... href falls through to the
+              // draft view (measured). The hash form navigates correctly.
+              href="#/settings/computers"
               className="text-sm font-medium text-primary underline-offset-4 hover:underline"
             >
               Open Computers

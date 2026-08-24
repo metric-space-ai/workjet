@@ -9,6 +9,7 @@ import type {
   WorkjetConfiguration,
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
+  WorkjetHarnessAvailabilitySnapshot,
 } from "@t3tools/contracts";
 import { WS_METHODS } from "@t3tools/contracts";
 import {
@@ -667,6 +668,8 @@ export function AutomaticWorktreeStorageSettings({
 
 export function WorkjetSettingsView({
   configuration,
+  harnessInspection = null,
+  environmentId = null,
   environments,
   environmentsReady,
   greppy,
@@ -685,6 +688,14 @@ export function WorkjetSettingsView({
   /** The one-shot legacy Swift import offer. */
   readonly legacyImport: WorkjetLegacyImportSection;
   readonly defaultSection?: WorkjetSettingsSectionId;
+  /**
+   * Live probe of THIS server's harnesses (`workjet.harness.inspect`), plus
+   * which environment it describes. Null before the first probe answers —
+   * rows then show the declared state with "not probed from here" instead of
+   * implying agreement.
+   */
+  readonly harnessInspection?: WorkjetHarnessAvailabilitySnapshot | null;
+  readonly environmentId?: EnvironmentId | null;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
   const locationHash = useLocation({ select: (location) => location.hash });
@@ -849,31 +860,95 @@ export function WorkjetSettingsView({
             title={environmentsReady ? "Connection targets" : "Loading connection targets"}
             description="Choose from existing local, relay, SSH, Tailscale, or other remote environments. Connection authority and secrets stay in Connections settings; Workjet stores only the selected target and harness availability."
           />
-          {configuration.computers.map((computer) => (
-            <SettingsRow
-              key={computer.id}
-              title={computer.label}
-              description={`${computer.presentationKind} · ${computer.environmentId}`}
-              status={`${computer.harnesses.filter((harness) => harness.available).length} harnesses marked available`}
-              control={
-                <ItemActions
-                  label={`computer ${computer.label}`}
-                  onEdit={() => {
-                    setAddingComputer(false);
-                    setEditingComputerId(computer.id);
-                  }}
-                  onDelete={() =>
-                    onChange({
-                      ...configuration,
-                      computers: configuration.computers.filter(
-                        (candidate) => candidate.id !== computer.id,
-                      ),
-                    })
-                  }
-                />
-              }
-            />
-          ))}
+          {configuration.computers.map((computer) => {
+            // The Swift page shows, per computer, ONE ROW PER HARNESS with a
+            // live status dot and detail — not a count. The live snapshot
+            // (workjet.harness.inspect) describes THIS server; a computer on
+            // another environment shows its declared availability with an
+            // explicit "not probed from here" instead of borrowing our probe.
+            const probedHere =
+              harnessInspection !== null && environmentId === computer.environmentId;
+            return (
+              <SettingsRow
+                key={computer.id}
+                title={computer.label}
+                description={
+                  probedHere
+                    ? "This machine"
+                    : `${computer.presentationKind} · ${computer.environmentId}`
+                }
+                control={
+                  <ItemActions
+                    label={`computer ${computer.label}`}
+                    onEdit={() => {
+                      setAddingComputer(false);
+                      setEditingComputerId(computer.id);
+                    }}
+                    onDelete={() =>
+                      onChange({
+                        ...configuration,
+                        computers: configuration.computers.filter(
+                          (candidate) => candidate.id !== computer.id,
+                        ),
+                      })
+                    }
+                  />
+                }
+              >
+                <div className="mt-1 space-y-1 pb-3">
+                  {computer.harnesses.map((declared) => {
+                    const live = probedHere
+                      ? (harnessInspection?.harnesses.find(
+                          (entry) => entry.harness === declared.harness,
+                        ) ?? null)
+                      : null;
+                    const state =
+                      live === null
+                        ? declared.available
+                          ? "declared"
+                          : "off"
+                        : live.availability === "available"
+                          ? "ok"
+                          : "missing";
+                    const detail =
+                      live === null
+                        ? declared.available
+                          ? "declared available · not probed from here"
+                          : "not offered"
+                        : live.availability === "available"
+                          ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
+                          : live.reason;
+                    return (
+                      <p
+                        key={declared.harness}
+                        className="flex items-center gap-2 pl-1 text-xs text-muted-foreground"
+                      >
+                        <span
+                          aria-hidden
+                          className={
+                            state === "ok"
+                              ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
+                              : state === "missing"
+                                ? "size-1.5 shrink-0 rounded-full bg-amber-500"
+                                : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+                          }
+                        />
+                        <span className="w-28 shrink-0 font-medium text-foreground">
+                          {declared.harness}
+                        </span>
+                        <span className="min-w-0 truncate">{detail}</span>
+                      </p>
+                    );
+                  })}
+                  {computer.harnesses.length === 0 ? (
+                    <p className="pl-1 text-xs text-muted-foreground">
+                      No harnesses declared — edit the computer to declare them.
+                    </p>
+                  ) : null}
+                </div>
+              </SettingsRow>
+            );
+          })}
           {addingComputer || editingComputer ? (
             <div className="px-3 pt-2 sm:px-4">
               <WorkjetComputerEditor
@@ -1174,6 +1249,13 @@ export function WorkjetSettings({
       ? null
       : serverEnvironment.greppyRuntimeInspect({ environmentId, input: {} }),
   );
+  // Live harness probe of this server, for the per-computer rows. Same
+  // environment-query mechanics as every other read on this page.
+  const harnessInspectQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
+  );
   const install = useAtomCommand(serverEnvironment.installGreppyRuntime, { reportFailure: false });
   const inspectAutomaticWorktreeRoot = useAtomCommand(inspectAutomaticWorktreeRootCommand, {
     reportFailure: false,
@@ -1285,6 +1367,8 @@ export function WorkjetSettings({
   return (
     <WorkjetSettingsView
       {...(defaultSection ? { defaultSection } : {})}
+      harnessInspection={harnessInspectQuery.data ?? null}
+      environmentId={environmentId}
       configuration={settings.workjet}
       environments={workjetEnvironmentTargetOptions(environments)}
       environmentsReady={environmentsReady}

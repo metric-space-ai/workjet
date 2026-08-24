@@ -781,6 +781,11 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayHealth,
     staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
   });
+  const workjetHarnessInspect = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:harness:inspect",
+    tag: WS_METHODS.workjetHarnessInspect,
+    staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
+  });
   const workjetGatewayModels = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:workjet:gateway:models",
     tag: WS_METHODS.workjetGatewayDiscoverModels,
@@ -1075,6 +1080,7 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetGatewayCatalog,
     workjetGatewayHealth,
     workjetGatewayModels,
+    workjetHarnessInspect,
     startWorkjetGateway,
     stopWorkjetGateway,
     startWorkjetGatewayOauth,

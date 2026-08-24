@@ -624,3 +624,24 @@ zeigen lassen (Models → LLM routes, 1 Klick — zeigt bis dahin ehrlich
 OFFEN (später): gpu3/gpu1-Computer nach Environment-Pairing zuweisen;
 managedSystemPrompt-Import aus Swift (composeManagedSystemPrompt)
 entscheiden; Prüfworker-Aufräumposten.
+
+## Nachtrag 2026-08-24 ~10:10 — Restposten über die Live-UI erledigt
+
+- Globaler Workjet-Prompt aus der Swift-App importiert (27,5 KB:
+  Orchestrator-/Skill-Regeln als Preamble, Progress board, Ad-hoc
+  learnings, Technical rules) — über die Prompt-Seite der laufenden App
+  gesetzt (kein Neustart), gespeichert bestätigt, Seite zeigt die vier
+  benannten Sektionen. Modellregeln bleiben strukturell in
+  modelPrompts (bewusst NICHT in den globalen Text dupliziert).
+- Aufräumposten: "Codex Prüfworker" gelöscht — es stehen exakt die
+  12 Swift-Worker in der Liste (persistiert verifiziert). Computer
+  "MacBook Pro von Michael (2)" und Route "Codex (OpenAI)" bleiben:
+  sie sind jetzt reguläre Ziele der eingerichteten Worker.
+
+Verbleibende BETREIBER-Punkte (nicht von hier aus machbar):
+
+1. Grok-Login: Models → xAI (Grok) → "Add account", Browser-Freigabe;
+   danach Route "xAI (Grok)" auf den neuen Account zeigen (1 Klick).
+2. gpu3-a4500/gpu1-a6000: Environments pairen (Computers-Seite,
+   Remote environments), dann in den beiden Computer-Einträgen das
+   Environment zuweisen.

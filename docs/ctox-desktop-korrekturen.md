@@ -645,3 +645,21 @@ Verbleibende BETREIBER-Punkte (nicht von hier aus machbar):
 2. gpu3-a4500/gpu1-a6000: Environments pairen (Computers-Seite,
    Remote environments), dann in den beiden Computer-Einträgen das
    Environment zuweisen.
+
+## Nachtrag 2026-08-24 ~10:3x — "die Buttons machen nichts"
+
+Ursache (gemessen): Die Editier-/Anlege-Editoren (Worker, Computer,
+LLM-Route) mounteten ans LISTENENDE — bei 12 Workern lag der Editor bei
+y≈1456 in einem 844px-Viewport. Der Klick FUNKTIONIERTE, das Ergebnis
+war nur unsichtbar. FIX: Editor rendert jetzt direkt UNTER der
+angeklickten Zeile (Add-Editor direkt unterm Kopf). Live verifiziert
+per Screenshot (Sol-Editor voll sichtbar unter der Zeile; Computer-
+Editor top=768 im 844px-Viewport). Der Pairing-Dialog (Add environment)
+funktionierte bereits — er ist ein Modal.
+Zusätzlich: claude-code/codex-cli auf "MacBook Pro von Michael (2)" als
+verfügbar deklariert (die Live-Probe zeigt beide installiert) — die
+"not marked available"-Warnungen der 10 lokalen Worker sind weg; übrig
+bleibt die EHRLICHE Warnung des gpu1-Workers (Maschine unpaired).
+LEKTION: statische Reviews finden solche Fehler nicht — interaktiver
+Klick-Durchlauf in der laufenden App wird als eigener Review-Schritt
+etabliert (läuft).

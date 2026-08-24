@@ -25,7 +25,7 @@ import {
   TriangleAlertIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
@@ -669,6 +669,37 @@ export function WorkjetSettingsView({
   const promptSections = splitManagedPrompt(configuration.managedSystemPrompt);
   const editingWorker =
     configuration.workerProfiles.find((worker) => worker.id === editingWorkerId) ?? null;
+  const workerEditor = (
+    <div className="px-3 pt-2 sm:px-4">
+      <WorkjetWorkerEditor
+        key={editingWorker?.id ?? "new-worker"}
+        worker={editingWorker}
+        computers={configuration.computers}
+        routes={configuration.llmRoutes}
+        onAddRoute={() =>
+          // LLM routes live on the Models page; "Set up access" takes the
+          // operator to where an access is actually created.
+          void navigate({
+            to: "/settings/models",
+            hash: "workjet-llm-routes",
+            hashScrollIntoView: false,
+          })
+        }
+        onCancel={() => {
+          setAddingWorker(false);
+          setEditingWorkerId(null);
+        }}
+        onSave={(worker: WorkjetWorkerProfile) => {
+          onChange({
+            ...configuration,
+            workerProfiles: replaceCatalogItem(configuration.workerProfiles, worker),
+          });
+          setAddingWorker(false);
+          setEditingWorkerId(null);
+        }}
+      />
+    </div>
+  );
 
   useEffect(() => {
     const section = workjetSectionFromHash(locationHash);
@@ -707,6 +738,12 @@ export function WorkjetSettingsView({
             </Button>
           }
         >
+          {/* The editor renders WHERE THE USER IS LOOKING: adding — right
+              here under the header button; editing — directly below the
+              edited row. Mounted at the list bottom it sat below the fold on
+              a 12-worker list and the pencil looked dead (measured: editor
+              at y=1456 in an 844px viewport). */}
+          {addingWorker ? workerEditor : null}
           {configuration.workerProfiles.length === 0 ? (
             <SettingsRow
               title="No saved workers"
@@ -722,63 +759,34 @@ export function WorkjetSettingsView({
               );
               const warning = workjetHarnessAvailabilityWarning(worker, configuration.computers);
               return (
-                <SettingsRow
-                  key={worker.id}
-                  title={worker.name}
-                  description={`${computer?.label ?? "Missing computer"} · ${worker.harness} · ${route?.label ?? "Missing route"} · ${worker.modelId}`}
-                  status={warning ? <span role="alert">{warning}</span> : undefined}
-                  control={
-                    <ItemActions
-                      label={`worker ${worker.name}`}
-                      onEdit={() => {
-                        setAddingWorker(false);
-                        setEditingWorkerId(worker.id);
-                      }}
-                      onDelete={() =>
-                        onChange({
-                          ...configuration,
-                          workerProfiles: configuration.workerProfiles.filter(
-                            (candidate) => candidate.id !== worker.id,
-                          ),
-                        })
-                      }
-                    />
-                  }
-                />
+                <Fragment key={worker.id}>
+                  <SettingsRow
+                    title={worker.name}
+                    description={`${computer?.label ?? "Missing computer"} · ${worker.harness} · ${route?.label ?? "Missing route"} · ${worker.modelId}`}
+                    status={warning ? <span role="alert">{warning}</span> : undefined}
+                    control={
+                      <ItemActions
+                        label={`worker ${worker.name}`}
+                        onEdit={() => {
+                          setAddingWorker(false);
+                          setEditingWorkerId(worker.id);
+                        }}
+                        onDelete={() =>
+                          onChange({
+                            ...configuration,
+                            workerProfiles: configuration.workerProfiles.filter(
+                              (candidate) => candidate.id !== worker.id,
+                            ),
+                          })
+                        }
+                      />
+                    }
+                  />
+                  {editingWorker?.id === worker.id ? workerEditor : null}
+                </Fragment>
               );
             })
           )}
-          {addingWorker || editingWorker ? (
-            <div className="px-3 pt-2 sm:px-4">
-              <WorkjetWorkerEditor
-                key={editingWorker?.id ?? "new-worker"}
-                worker={editingWorker}
-                computers={configuration.computers}
-                routes={configuration.llmRoutes}
-                onAddRoute={() =>
-                  // LLM routes live on the Models page; "Set up access" takes
-                  // the operator to where an access is actually created.
-                  void navigate({
-                    to: "/settings/models",
-                    hash: "workjet-llm-routes",
-                    hashScrollIntoView: false,
-                  })
-                }
-                onCancel={() => {
-                  setAddingWorker(false);
-                  setEditingWorkerId(null);
-                }}
-                onSave={(worker: WorkjetWorkerProfile) => {
-                  onChange({
-                    ...configuration,
-                    workerProfiles: replaceCatalogItem(configuration.workerProfiles, worker),
-                  });
-                  setAddingWorker(false);
-                  setEditingWorkerId(null);
-                }}
-              />
-            </div>
-          ) : null}
         </SettingsSection>
       ) : null}
 

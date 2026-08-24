@@ -3,7 +3,7 @@ import type {
   WorkjetGatewayCatalog,
   WorkjetLlmRoute,
 } from "@t3tools/contracts";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -51,6 +51,28 @@ export function WorkjetLlmRoutesSection(props: {
   const editingRoute =
     props.configuration.llmRoutes.find((route) => route.id === editingRouteId) ?? null;
 
+  const routeEditor = (
+    <div className="px-3 pt-2 sm:px-4">
+      <WorkjetLlmRouteEditor
+        key={editingRoute?.id ?? "new-route"}
+        route={editingRoute}
+        accounts={props.catalog?.accounts ?? []}
+        onCancel={() => {
+          setAddingRoute(false);
+          setEditingRouteId(null);
+        }}
+        onSave={(route: WorkjetLlmRoute) => {
+          props.onChange({
+            ...props.configuration,
+            llmRoutes: replaceRoute(route),
+          });
+          setAddingRoute(false);
+          setEditingRouteId(null);
+        }}
+      />
+    </div>
+  );
+
   const replaceRoute = (route: WorkjetLlmRoute): ReadonlyArray<WorkjetLlmRoute> => {
     const existing = props.configuration.llmRoutes;
     return existing.some((candidate) => candidate.id === route.id)
@@ -81,67 +103,49 @@ export function WorkjetLlmRoutesSection(props: {
         title="Provider-gateway accounts"
         description="An LLM route references one Workjet provider-gateway account. Code harness drivers such as Codex, Claude, and Grok are intentionally excluded because they are not LLM accounts. Models remain selected on workers."
       />
+      {addingRoute ? routeEditor : null}
       {props.configuration.llmRoutes.map((route) => (
-        <SettingsRow
-          key={route.id}
-          title={route.label}
-          description={describeRouteAccount(route.gatewayAccountId, props.catalog)}
-          control={
-            <span className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Edit LLM route ${route.label}`}
-                onClick={() => {
-                  setAddingRoute(false);
-                  setEditingRouteId(route.id);
-                }}
-              >
-                <PencilIcon className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Delete LLM route ${route.label}`}
-                onClick={() =>
-                  props.onChange({
-                    ...props.configuration,
-                    llmRoutes: props.configuration.llmRoutes.filter(
-                      (candidate) => candidate.id !== route.id,
-                    ),
-                  })
-                }
-              >
-                <Trash2Icon className="size-3.5" />
-              </Button>
-            </span>
-          }
-        />
+        <Fragment key={route.id}>
+          <SettingsRow
+            title={route.label}
+            description={describeRouteAccount(route.gatewayAccountId, props.catalog)}
+            control={
+              <span className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Edit LLM route ${route.label}`}
+                  onClick={() => {
+                    setAddingRoute(false);
+                    setEditingRouteId(route.id);
+                  }}
+                >
+                  <PencilIcon className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Delete LLM route ${route.label}`}
+                  onClick={() =>
+                    props.onChange({
+                      ...props.configuration,
+                      llmRoutes: props.configuration.llmRoutes.filter(
+                        (candidate) => candidate.id !== route.id,
+                      ),
+                    })
+                  }
+                >
+                  <Trash2Icon className="size-3.5" />
+                </Button>
+              </span>
+            }
+          />
+          {editingRoute?.id === route.id ? routeEditor : null}
+        </Fragment>
       ))}
       <WorkjetGatewayModelRoutes catalog={props.catalog} />
-      {addingRoute || editingRoute ? (
-        <div className="px-3 pt-2 sm:px-4">
-          <WorkjetLlmRouteEditor
-            key={editingRoute?.id ?? "new-route"}
-            route={editingRoute}
-            accounts={props.catalog?.accounts ?? []}
-            onCancel={() => {
-              setAddingRoute(false);
-              setEditingRouteId(null);
-            }}
-            onSave={(route: WorkjetLlmRoute) => {
-              props.onChange({
-                ...props.configuration,
-                llmRoutes: replaceRoute(route),
-              });
-              setAddingRoute(false);
-              setEditingRouteId(null);
-            }}
-          />
-        </div>
-      ) : null}
     </SettingsSection>
   );
 }

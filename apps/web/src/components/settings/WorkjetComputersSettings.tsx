@@ -5,7 +5,7 @@ import type {
   WorkjetHarnessAvailabilitySnapshot,
 } from "@t3tools/contracts";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
@@ -55,6 +55,34 @@ export function WorkjetComputersSettingsView({
   const [addingComputer, setAddingComputer] = useState(false);
   const editingComputer =
     configuration.computers.find((computer) => computer.id === editingComputerId) ?? null;
+  const computerEditor = (
+    <div className="px-3 pt-2 sm:px-4">
+      <WorkjetComputerEditor
+        key={editingComputer?.id ?? "new-computer"}
+        computer={editingComputer}
+        environments={environments}
+        availability={
+          // The probe describes THIS server only; a computer targeting
+          // another environment must not borrow its answers.
+          editingComputer !== null && environmentId === editingComputer.environmentId
+            ? harnessInspection
+            : null
+        }
+        onCancel={() => {
+          setAddingComputer(false);
+          setEditingComputerId(null);
+        }}
+        onSave={(computer: WorkjetComputer) => {
+          onChange({
+            ...configuration,
+            computers: replaceComputer(computer),
+          });
+          setAddingComputer(false);
+          setEditingComputerId(null);
+        }}
+      />
+    </div>
+  );
 
   const replaceComputer = (computer: WorkjetComputer): ReadonlyArray<WorkjetComputer> => {
     const existing = configuration.computers;
@@ -87,6 +115,11 @@ export function WorkjetComputersSettingsView({
         title={environmentsReady ? "Computer targets" : "Loading computer targets"}
         description="A computer is an existing local, relay, SSH, Tailscale, or other remote environment plus its declared harnesses. Connection authority and secrets stay in Connections settings; Workjet stores only the selected target and harness availability."
       />
+      {/* The editor renders where the user is looking: adding — right here
+          under the header button; editing — directly below the edited row
+          (mounted at the page bottom it sat below the fold and the pencil
+          looked dead). */}
+      {addingComputer ? computerEditor : null}
       {configuration.computers.length === 0 ? (
         <SettingsRow
           title="No computers yet"
@@ -107,131 +140,105 @@ export function WorkjetComputersSettingsView({
           environments.find((environment) => environment.environmentId === computer.environmentId)
             ?.label ?? null;
         return (
-          <SettingsRow
-            key={computer.id}
-            title={computer.label}
-            description={
-              probedHere
-                ? "This machine"
-                : environmentLabel === null
-                  ? computer.presentationKind
-                  : `${computer.presentationKind} · ${environmentLabel}`
-            }
-            control={
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  aria-label={`Edit computer ${computer.label}`}
-                  onClick={() => {
-                    setAddingComputer(false);
-                    setEditingComputerId(computer.id);
-                  }}
-                >
-                  <PencilIcon className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  aria-label={`Delete computer ${computer.label}`}
-                  onClick={() =>
-                    onChange({
-                      ...configuration,
-                      computers: configuration.computers.filter(
-                        (candidate) => candidate.id !== computer.id,
-                      ),
-                    })
-                  }
-                >
-                  <Trash2Icon className="size-3.5" />
-                </Button>
-              </div>
-            }
-          >
-            <div className="mt-1 space-y-1 pb-3">
-              {computer.harnesses.map((declared) => {
-                const live = probedHere
-                  ? (harnessInspection?.harnesses.find(
-                      (entry) => entry.harness === declared.harness,
-                    ) ?? null)
-                  : null;
-                const state =
-                  live === null
-                    ? declared.available
-                      ? "declared"
-                      : "off"
-                    : live.availability === "available"
-                      ? "ok"
-                      : "missing";
-                const detail =
-                  live === null
-                    ? declared.available
-                      ? "declared available · not probed from here"
-                      : "not offered"
-                    : live.availability === "available"
-                      ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
-                      : live.reason;
-                return (
-                  <p
-                    key={declared.harness}
-                    className="flex items-center gap-2 pl-1 text-xs text-muted-foreground"
+          <Fragment key={computer.id}>
+            <SettingsRow
+              title={computer.label}
+              description={
+                probedHere
+                  ? "This machine"
+                  : environmentLabel === null
+                    ? computer.presentationKind
+                    : `${computer.presentationKind} · ${environmentLabel}`
+              }
+              control={
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Edit computer ${computer.label}`}
+                    onClick={() => {
+                      setAddingComputer(false);
+                      setEditingComputerId(computer.id);
+                    }}
                   >
-                    <span
-                      aria-hidden
-                      className={
-                        state === "ok"
-                          ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
-                          : state === "missing"
-                            ? "size-1.5 shrink-0 rounded-full bg-amber-500"
-                            : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                      }
-                    />
-                    <span className="w-28 shrink-0 font-medium text-foreground">
-                      {declared.harness}
-                    </span>
-                    <span className="min-w-0 truncate">{detail}</span>
+                    <PencilIcon className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Delete computer ${computer.label}`}
+                    onClick={() =>
+                      onChange({
+                        ...configuration,
+                        computers: configuration.computers.filter(
+                          (candidate) => candidate.id !== computer.id,
+                        ),
+                      })
+                    }
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </div>
+              }
+            >
+              <div className="mt-1 space-y-1 pb-3">
+                {computer.harnesses.map((declared) => {
+                  const live = probedHere
+                    ? (harnessInspection?.harnesses.find(
+                        (entry) => entry.harness === declared.harness,
+                      ) ?? null)
+                    : null;
+                  const state =
+                    live === null
+                      ? declared.available
+                        ? "declared"
+                        : "off"
+                      : live.availability === "available"
+                        ? "ok"
+                        : "missing";
+                  const detail =
+                    live === null
+                      ? declared.available
+                        ? "declared available · not probed from here"
+                        : "not offered"
+                      : live.availability === "available"
+                        ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
+                        : live.reason;
+                  return (
+                    <p
+                      key={declared.harness}
+                      className="flex items-center gap-2 pl-1 text-xs text-muted-foreground"
+                    >
+                      <span
+                        aria-hidden
+                        className={
+                          state === "ok"
+                            ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
+                            : state === "missing"
+                              ? "size-1.5 shrink-0 rounded-full bg-amber-500"
+                              : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+                        }
+                      />
+                      <span className="w-28 shrink-0 font-medium text-foreground">
+                        {declared.harness}
+                      </span>
+                      <span className="min-w-0 truncate">{detail}</span>
+                    </p>
+                  );
+                })}
+                {computer.harnesses.length === 0 ? (
+                  <p className="pl-1 text-xs text-muted-foreground">
+                    No harnesses declared — edit the computer to declare them.
                   </p>
-                );
-              })}
-              {computer.harnesses.length === 0 ? (
-                <p className="pl-1 text-xs text-muted-foreground">
-                  No harnesses declared — edit the computer to declare them.
-                </p>
-              ) : null}
-            </div>
-          </SettingsRow>
+                ) : null}
+              </div>
+            </SettingsRow>
+            {editingComputer?.id === computer.id ? computerEditor : null}
+          </Fragment>
         );
       })}
-      {addingComputer || editingComputer ? (
-        <div className="px-3 pt-2 sm:px-4">
-          <WorkjetComputerEditor
-            key={editingComputer?.id ?? "new-computer"}
-            computer={editingComputer}
-            environments={environments}
-            availability={
-              // The probe describes THIS server only; a computer targeting
-              // another environment must not borrow its answers.
-              editingComputer !== null && environmentId === editingComputer.environmentId
-                ? harnessInspection
-                : null
-            }
-            onCancel={() => {
-              setAddingComputer(false);
-              setEditingComputerId(null);
-            }}
-            onSave={(computer: WorkjetComputer) => {
-              onChange({
-                ...configuration,
-                computers: replaceComputer(computer),
-              });
-              setAddingComputer(false);
-              setEditingComputerId(null);
-            }}
-          />
-        </div>
-      ) : null}
       {/* One row ties the two concepts together: computers reference
           environments, and environment CONNECTION authority lives on the
           Connections page. */}

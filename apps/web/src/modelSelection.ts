@@ -248,6 +248,19 @@ export function resolveAppModelSelectionForInstance(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
+  // A GATEWAY-ROUTED instance serves whatever model the Workjet gateway
+  // routes — the harness is only the engine. Clamping to the instance's
+  // native model list here was the last place harness choice silently
+  // overrode the model choice (picking the Claude Code harness snapped the
+  // model back to claude-fable-5): keep the requested model verbatim.
+  const requested = selectedModel?.trim();
+  if (
+    requested !== undefined &&
+    requested.length > 0 &&
+    settings.providerInstances?.[instanceId]?.routeViaGateway === true
+  ) {
+    return requested;
+  }
   const options = getAppModelOptionsForInstance(settings, entry);
   return (
     resolveSelectableModel(entry.driverKind, selectedModel, options) ??

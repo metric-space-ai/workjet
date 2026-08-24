@@ -92,9 +92,12 @@ export interface ComposerFooterControlsProps {
   readonly onSelectWorkjetWorker?: ((workerId: string | null) => void) | undefined;
   /**
    * The Computer ("Rechner") select — after the Worker control in worker
-   * mode, directly after the Model controls in manual mode.
+   * mode, second in the manual row (operator-specified order: mode ·
+   * computer · harness · model · model settings).
    */
   readonly computerControl?: ReactNode;
+  /** Manual mode's Harness · Model selects, rendered after the computer. */
+  readonly manualTargetControls?: ReactNode;
   /** Custom-system-prompt affordance; manual mode only. */
   readonly systemPromptControl?: ReactNode;
   /** Provider traits picker, already resolved by the caller; null when the provider has none. */
@@ -175,49 +178,49 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
     );
   }
 
+  // Manual mode, TWO rows (operator-specified): the first row answers WHAT
+  // runs — mode · computer · harness · model; the second row tunes it —
+  // model settings (effort), system prompt, plan/build, role, tools.
   return (
-    <>
-      {/* Manual mode: the Computer select reads as the fourth manual choice —
-          Harness · Provider · Model live directly to the left of this
-          cluster, so it renders BEFORE the Worker control. */}
-      {props.computerControl ? (
-        <>
-          {props.computerControl}
-          {separator}
-        </>
-      ) : null}
-      {workerControl === null ? null : (
-        <>
-          {workerControl}
-          {separator}
-        </>
-      )}
-      {props.traitsPicker ? (
-        <>
-          {separator}
-          {props.traitsPicker}
-        </>
-      ) : null}
-      <ComposerFooterModeControls
-        showInteractionModeToggle={props.showInteractionModeToggle}
-        interactionMode={props.interactionMode}
-        onToggleInteractionMode={props.onToggleInteractionMode}
-      />
-      {props.workjetRole === null ? null : (
-        <>
-          {separator}
-          <WorkjetRoleControl
-            role={props.workjetRole}
-            busy={props.workjetBusy}
-            disabled={props.workjetDisabled}
-            onRoleChange={props.onWorkjetRoleChange}
-            onOpenSettings={props.onOpenWorkjetSettings}
-          />
-        </>
-      )}
-      {capabilityMenu}
-      {props.systemPromptControl ?? null}
-      {props.sendToWorkerControl}
-    </>
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
+        {workerControl === null ? null : (
+          <>
+            {workerControl}
+            {separator}
+          </>
+        )}
+        {props.computerControl ? (
+          <>
+            {props.computerControl}
+            {separator}
+          </>
+        ) : null}
+        {props.manualTargetControls ?? null}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
+        {props.traitsPicker ?? null}
+        {props.systemPromptControl ?? null}
+        <ComposerFooterModeControls
+          showInteractionModeToggle={props.showInteractionModeToggle}
+          interactionMode={props.interactionMode}
+          onToggleInteractionMode={props.onToggleInteractionMode}
+        />
+        {props.workjetRole === null ? null : (
+          <>
+            {separator}
+            <WorkjetRoleControl
+              role={props.workjetRole}
+              busy={props.workjetBusy}
+              disabled={props.workjetDisabled}
+              onRoleChange={props.onWorkjetRoleChange}
+              onOpenSettings={props.onOpenWorkjetSettings}
+            />
+          </>
+        )}
+        {capabilityMenu}
+        {props.sendToWorkerControl}
+      </div>
+    </div>
   );
 });

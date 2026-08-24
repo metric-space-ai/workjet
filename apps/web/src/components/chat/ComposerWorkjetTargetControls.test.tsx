@@ -157,15 +157,12 @@ describe("the Computer control", () => {
 });
 
 describe("the manual target controls", () => {
-  it("renders Harness, Provider and Model as three separate choices", () => {
+  it("renders Harness and Model — no separate provider chip: the model implies the account", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView
         configuredInstanceIds={new Set(["claudeAgent", "codex"])}
         selectedHarness="claude-code"
         onSelectHarness={() => undefined}
-        llmRoutes={[route("r1", "Pool OpenAI", "acc-openai")]}
-        selectedLlmRouteId="r1"
-        onSelectLlmRoute={() => undefined}
         models={[model("gpt-5.6-sol", ["acc-openai"])]}
         modelsUnavailableReason={null}
         selectedModelId="gpt-5.6-sol"
@@ -174,22 +171,18 @@ describe("the manual target controls", () => {
     );
 
     expect(markup).toContain('aria-label="Harness"');
-    expect(markup).toContain('aria-label="Provider"');
+    expect(markup).not.toContain('aria-label="Provider"');
     expect(markup).toContain('aria-label="Model"');
     expect(markup).toContain("Claude Code");
-    expect(markup).toContain("Pool OpenAI");
     expect(markup).toContain("gpt-5.6-sol");
   });
 
-  it("disables the Provider select when no LLM route exists, instead of a silent blank", () => {
+  it("shows the unavailable reason instead of a silent blank model menu", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView
         configuredInstanceIds={new Set(["claudeAgent"])}
         selectedHarness="claude-code"
         onSelectHarness={() => undefined}
-        llmRoutes={[]}
-        selectedLlmRouteId={null}
-        onSelectLlmRoute={() => undefined}
         models={[]}
         modelsUnavailableReason="The Workjet gateway catalog is not available — type a model id."
         selectedModelId=""
@@ -197,10 +190,6 @@ describe("the manual target controls", () => {
       />,
     );
 
-    // The route select is disabled (data-disabled trigger) and the model
-    // trigger shows its placeholder — no invented values.
-    expect(markup).toContain("data-disabled");
-    expect(markup).toContain(">Provider<");
     expect(markup).toContain(">Model<");
   });
 });

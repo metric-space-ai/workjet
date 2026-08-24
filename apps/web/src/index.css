@@ -1697,6 +1697,25 @@ code {
   -webkit-app-region: no-drag;
 }
 
+/*
+ * Popups, menus, and dialogs render in portals with high z-index, but the
+ * frameless window's drag region is an OS-level hit area that wins over
+ * z-index: a menu opening upward into the titlebar strip silently swallowed
+ * clicks on its topmost items (measured: the worker menu's "Manual" entry —
+ * switching back out of worker mode looked broken). Portal layers must never
+ * be draggable.
+ */
+[data-slot$="popup"],
+[data-slot$="popup"] *,
+[role="dialog"],
+[role="dialog"] *,
+[role="listbox"],
+[role="listbox"] *,
+[role="menu"],
+[role="menu"] * {
+  -webkit-app-region: no-drag;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: var(--app-scrollbar-width);

@@ -123,20 +123,22 @@ describe("ComposerFooterControls", () => {
     expect(markup).not.toContain('data-test-system-prompt="true"');
   });
 
-  it("manual mode renders the Computer control before the Worker control", () => {
+  it("manual mode: mode select first, then computer, then the manual targets (operator order)", () => {
     const markup = render({
       workjetWorkers: [],
       selectedWorkjetWorkerId: null,
       onSelectWorkjetWorker: () => undefined,
       computerControl: <span data-test-computer="true">computer</span>,
+      manualTargetControls: <span data-test-manual-targets="true">targets</span>,
     });
 
-    const computerIndex = markup.indexOf('data-test-computer="true"');
     const workerIndex = markup.indexOf('aria-label="Worker"');
-    expect(computerIndex).toBeGreaterThanOrEqual(0);
+    const computerIndex = markup.indexOf('data-test-computer="true"');
+    const targetsIndex = markup.indexOf('data-test-manual-targets="true"');
     expect(workerIndex).toBeGreaterThanOrEqual(0);
-    expect(computerIndex).toBeLessThan(workerIndex);
-    // The manual bar keeps the full control set.
+    expect(computerIndex).toBeGreaterThan(workerIndex);
+    expect(targetsIndex).toBeGreaterThan(computerIndex);
+    // The manual bar keeps the full control set (second row).
     expect(markup).toContain(">Build<");
     expect(markup).toContain('aria-label="Workjet thread role"');
   });

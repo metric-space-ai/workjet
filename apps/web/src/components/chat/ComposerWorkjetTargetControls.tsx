@@ -22,15 +22,8 @@ import type {
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
 } from "@t3tools/contracts";
-import { memo, useState, type ReactNode } from "react";
-import {
-  CpuIcon,
-  FileTextIcon,
-  KeyRoundIcon,
-  MonitorIcon,
-  TerminalIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { Fragment, memo, useState, type ReactNode } from "react";
+import { CpuIcon, FileTextIcon, MonitorIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
 
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
 import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
@@ -145,6 +138,8 @@ export interface ComposerComputerControlProps {
   /** Worker-mode mismatch, e.g. the worker's computer is not paired here. */
   readonly mismatchNote: string | null;
   readonly onSelectComputer: (computerId: string) => void;
+  /** Jump to Settings → Computers to create one (operator request). */
+  readonly onAddComputer?: (() => void) | undefined;
 }
 
 /** Exported unwrapped so a test can call it; `memo` returns an object. */
@@ -174,6 +169,10 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
           disabled={disabled}
           onValueChange={(value) => {
             if (typeof value !== "string" || value === NO_COMPUTER_VALUE) return;
+            if (value === "__add_computer__") {
+              props.onAddComputer?.();
+              return;
+            }
             props.onSelectComputer(value);
           }}
         >
@@ -226,6 +225,11 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
                 </SelectItem>
               );
             })}
+            {props.onAddComputer === undefined ? null : (
+              <SelectItem value="__add_computer__" hideIndicator className="min-w-56 py-2">
+                <span className="text-xs text-muted-foreground">+ Add computer…</span>
+              </SelectItem>
+            )}
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">{tooltip}</TooltipPopup>
@@ -237,12 +241,29 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
 export const ComposerComputerControl = memo(ComposerComputerControlView);
 
 // ---------------------------------------------------------------------------
-// Manual mode: Harness · Provider (LLM route) · Model
+// Manual mode: Harness · Model. There is NO separate provider chip — with
+// the Workjet gateway the MODEL determines the serving account (accounts
+// route by model pattern), so a provider select was a redundant third field;
+// the model menu groups by provider instead.
 // ---------------------------------------------------------------------------
 
 const CUSTOM_MODEL_VALUE = "__custom_model__";
-const NO_ROUTE_VALUE = "__no_route__";
 const NO_HARNESS_VALUE = "__no_harness__";
+
+/**
+ * Group headers for the model menu. Kept as a local map instead of importing
+ * the settings page's label table — pulling a settings component into the
+ * composer chunk for seven strings would be the heavier coupling.
+ */
+const GATEWAY_PROVIDER_GROUP_LABELS: Readonly<Record<string, string>> = {
+  claude: "Claude",
+  codex: "Codex (OpenAI)",
+  antigravity: "Antigravity",
+  zai: "Z.ai (GLM)",
+  minimax: "MiniMax",
+  xai: "xAI (Grok)",
+  kimi: "Kimi (Moonshot)",
+};
 
 export interface ComposerManualTargetControlsProps {
   /** Provider instance ids this turn may actually target. */
@@ -251,10 +272,7 @@ export interface ComposerManualTargetControlsProps {
   readonly unavailableHint?: string | undefined;
   readonly selectedHarness: WorkjetHarness | null;
   readonly onSelectHarness: (harness: WorkjetHarness) => void;
-  readonly llmRoutes: ReadonlyArray<WorkjetLlmRoute>;
-  readonly selectedLlmRouteId: string | null;
-  readonly onSelectLlmRoute: (routeId: string) => void;
-  /** Gateway catalog models already narrowed to the selected route. */
+  /** The FULL gateway catalog; the menu groups the models by provider. */
   readonly models: ReadonlyArray<WorkjetGatewayModelSummary>;
   /** Why the model list may be empty; shown instead of a silent blank. */
   readonly modelsUnavailableReason: string | null;
@@ -271,9 +289,19 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   const harnessOptions = composerHarnessOptions(props.configuredInstanceIds);
   const selectedHarnessOption =
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
-  const selectedRoute =
-    props.llmRoutes.find((route) => route.id === props.selectedLlmRouteId) ?? null;
   const modelInCatalog = props.models.some((model) => model.id === props.selectedModelId);
+  // Group by the model's FIRST provider; a model served by several accounts
+  // still appears once, under its primary provider.
+  const modelGroups = (() => {
+    const groups = new Map<string, WorkjetGatewayModelSummary[]>();
+    for (const model of props.models) {
+      const key = model.providers[0] ?? "other";
+      const list = groups.get(key) ?? [];
+      list.push(model);
+      groups.set(key, list);
+    }
+    return [...groups.entries()];
+  })();
 
   const commitCustomModel = () => {
     const next = customModelDraft?.trim() ?? "";
@@ -329,42 +357,6 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         </TooltipPopup>
       </Tooltip>
 
-      {/* Provider (Workjet LLM route) */}
-      <Tooltip>
-        <Select
-          value={props.selectedLlmRouteId ?? NO_ROUTE_VALUE}
-          disabled={props.llmRoutes.length === 0}
-          onValueChange={(value) => {
-            if (typeof value !== "string" || value === NO_ROUTE_VALUE) return;
-            props.onSelectLlmRoute(value);
-          }}
-        >
-          <TooltipTrigger render={<ComposerSelectControl aria-label="Provider" />}>
-            <ComposerControlIcon icon={KeyRoundIcon} />
-            <SelectValue>{selectedRoute?.label ?? "Provider"}</SelectValue>
-          </TooltipTrigger>
-          <SelectPopup alignItemWithTrigger={false}>
-            {props.llmRoutes.length === 0 ? (
-              <SelectItem value={NO_ROUTE_VALUE} disabled hideIndicator className="min-w-56 py-2">
-                <span className="text-xs text-muted-foreground">
-                  No LLM routes — add one in Workjet settings
-                </span>
-              </SelectItem>
-            ) : null}
-            {props.llmRoutes.map((route) => (
-              <SelectItem key={route.id} value={route.id} hideIndicator className="min-w-56 py-2">
-                <span className="font-medium text-foreground">{route.label}</span>
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">
-          {props.llmRoutes.length === 0
-            ? "No LLM routes configured — add one in Workjet settings"
-            : "Provider — the Workjet gateway access route that serves the model"}
-        </TooltipPopup>
-      </Tooltip>
-
       {/* Model */}
       {customModelDraft === null ? (
         <Tooltip>
@@ -396,17 +388,29 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                   </div>
                 </SelectItem>
               )}
-              {props.models.map((model) => (
-                <SelectItem key={model.id} value={model.id} hideIndicator className="min-w-64 py-2">
-                  <div className="grid min-w-0 gap-0.5">
-                    <span className="font-medium text-foreground">{model.displayName}</span>
-                    {model.displayName === model.id ? null : (
-                      <span className="truncate text-xs leading-4 text-muted-foreground">
-                        {model.id}
-                      </span>
-                    )}
+              {modelGroups.map(([provider, models]) => (
+                <Fragment key={provider}>
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                    {GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
                   </div>
-                </SelectItem>
+                  {models.map((model) => (
+                    <SelectItem
+                      key={model.id}
+                      value={model.id}
+                      hideIndicator
+                      className="min-w-64 py-2"
+                    >
+                      <div className="grid min-w-0 gap-0.5">
+                        <span className="font-medium text-foreground">{model.displayName}</span>
+                        {model.displayName === model.id ? null : (
+                          <span className="truncate text-xs leading-4 text-muted-foreground">
+                            {model.id}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </Fragment>
               ))}
               {props.models.length === 0 && props.modelsUnavailableReason !== null ? (
                 <SelectItem
@@ -426,7 +430,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             </SelectPopup>
           </Select>
           <TooltipPopup side="top">
-            Model — served by the Workjet gateway through the selected provider route
+            Model — served by the Workjet gateway; the model decides which provider account answers
           </TooltipPopup>
         </Tooltip>
       ) : (
@@ -546,6 +550,10 @@ export interface ComposerWorkjetCompactMenuContentProps {
   readonly selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
   readonly computerDisabledReason: string | null;
   readonly onSelectComputer: (computerId: string) => void;
+  /** Accepted for call-site symmetry with the wide control; the compact
+      overflow menu offers no add entry (navigation from inside a nested
+      menu closes over the draft state mid-gesture). */
+  readonly onAddComputer?: (() => void) | undefined;
 }
 
 /**

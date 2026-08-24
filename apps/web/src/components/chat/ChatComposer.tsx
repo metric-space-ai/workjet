@@ -98,7 +98,6 @@ import {
   ComposerManualTargetControls,
   ComposerSystemPromptControl,
   ComposerWorkjetCompactMenuContent,
-  gatewayModelsForRoute,
   GREPPY_CAPABILITY_ID,
   harnessForProviderInstanceId,
   WorkjetCapabilityMenu,
@@ -1141,13 +1140,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} })
       : null,
   );
-  const [manualLlmRouteId, setManualLlmRouteId] = useState<string | null>(null);
-  const selectedManualLlmRoute =
-    workjetLlmRoutes.find((route) => route.id === manualLlmRouteId) ?? workjetLlmRoutes[0] ?? null;
+  // The FULL gateway catalog: the model menu groups by provider itself; a
+  // separate route/provider pre-filter was the redundant third field the
+  // operator rejected.
   const manualGatewayModels = useMemo(
-    () =>
-      gatewayModelsForRoute(workjetGatewayCatalogQuery.data?.models ?? [], selectedManualLlmRoute),
-    [selectedManualLlmRoute, workjetGatewayCatalogQuery.data],
+    () => workjetGatewayCatalogQuery.data?.models ?? [],
+    [workjetGatewayCatalogQuery.data],
   );
   const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
     ? "Loading the gateway model catalog…"
@@ -3381,33 +3379,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   that don't fit now wrap onto a second line instead. */}
               <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-center gap-1 p-1 ps-3.5">
                 {workerModeActive ? null : !isComposerFooterCompact &&
-                  workjetManualControlsAvailable ? (
-                  /* Manual mode with a Workjet catalog: Harness · Provider ·
-                     Model, each its own choice — models and credentials come
-                     from the Workjet gateway, any harness combines with any
-                     model. The classic single picker survives only for a
-                     pre-Workjet install (no computers, no llmRoutes) and for
-                     the compact footer, where three selects do not fit. */
-                  <ComposerManualTargetControls
-                    configuredInstanceIds={configuredProviderInstanceIds}
-                    unavailableHint={
-                      lockedProvider === null
-                        ? undefined
-                        : "Locked — this thread continues on its current provider"
-                    }
-                    selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
-                    onSelectHarness={handleSelectManualHarness}
-                    llmRoutes={workjetLlmRoutes}
-                    selectedLlmRouteId={selectedManualLlmRoute?.id ?? null}
-                    onSelectLlmRoute={setManualLlmRouteId}
-                    models={manualGatewayModels}
-                    modelsUnavailableReason={
-                      manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
-                    }
-                    selectedModelId={selectedModelForPickerWithCustomFallback}
-                    onSelectModel={handleSelectManualModel}
-                  />
-                ) : noProviderAvailable ? (
+                  workjetManualControlsAvailable ? null : noProviderAvailable ? (
                   <Button
                     type="button"
                     size="sm"
@@ -3466,6 +3438,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           selectableEnvironmentIds={selectableEnvironmentIds}
                           computerDisabledReason={composerComputerDisabledReason}
                           onSelectComputer={handleSelectComposerComputer}
+                          onAddComputer={() => {
+                            window.location.hash = "#/settings/computers";
+                          }}
                         />
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
@@ -3518,6 +3493,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           disabledReason={composerComputerDisabledReason}
                           mismatchNote={composerComputerMismatchNote}
                           onSelectComputer={handleSelectComposerComputer}
+                          onAddComputer={() => {
+                            window.location.hash = "#/settings/computers";
+                          }}
+                        />
+                      )
+                    }
+                    manualTargetControls={
+                      workerModeActive || !workjetManualControlsAvailable ? null : (
+                        <ComposerManualTargetControls
+                          configuredInstanceIds={configuredProviderInstanceIds}
+                          unavailableHint={
+                            lockedProvider === null
+                              ? undefined
+                              : "Locked — this thread continues on its current provider"
+                          }
+                          selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
+                          onSelectHarness={handleSelectManualHarness}
+                          models={manualGatewayModels}
+                          modelsUnavailableReason={
+                            manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+                          }
+                          selectedModelId={selectedModelForPickerWithCustomFallback}
+                          onSelectModel={handleSelectManualModel}
                         />
                       )
                     }

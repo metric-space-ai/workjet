@@ -720,3 +720,27 @@ ist ein eigenes Projekt und bewusst nicht Teil dieses Fixes.
     Dazu aus dem Chat: die untere Icon-Leiste der Code-Seite (Settings,
     Pull Requests, Usage, Machines, Refresh) muss nachweislich
     funktionieren — in die Klick-Verifikation aufgenommen.
+
+## Nachtrag 2026-08-24 ~13:5x — Composer-Umbau Runde 2 (alle live verifiziert)
+
+- NEUE Reihenfolge (Betreiber-Vorgabe): Reihe 1 = Modus (Worker/Manual)
+  · Rechner · Harness · Modell; Reihe 2 = Modell-Settings (Effort) ·
+  System prompt · Rest. Worker-Modus bleibt EINE Reihe (abgenommen:
+  "schon clean, so soll das sein").
+- Provider-Chip ENTFERNT: beim Gateway bestimmt das Modell den Account
+  (Routing per Modellmuster) — das Modell-Menü gruppiert stattdessen
+  nach Anbieter. T3-Mini-Menü mit Anbieter-Leiste ist als nächste
+  Iteration notiert (aktuell gruppierte Liste mit Anbieter-Headern).
+- Harness-Wahl ändert das MODELL nicht mehr: der Resolver klemmte auf
+  die native Modellliste der Instanz (claude-fable-5-Rückfall).
+  Gateway-geroutete Instanzen behalten das gewählte Modell wörtlich.
+- Worker→Manual-Wechsel war TOT: das Menü ragte in die Electron-
+  Titelleisten-DRAG-ZONE, die Klicks auf oberste Einträge schluckt
+  (OS-Trefferfläche schlägt z-index). Fix: Portal-Ebenen (Popups,
+  Menüs, Dialoge) global -webkit-app-region: no-drag. Live: Wechsel
+  in beide Richtungen funktioniert.
+- Dropdowns bekommen Anlege-Einträge: "+ Add worker…" im Worker-Menü,
+  "+ Add computer…" im Rechner-Menü — springen in die Settings.
+- Aufräumung Testthreads: viele gesettelt; übrig sind Failed-Threads
+  und ein hängender Working-Thread (Settle verlangt erst
+  Resolve/Interrupt) — Restaufräumung folgt.

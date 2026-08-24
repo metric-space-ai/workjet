@@ -117,13 +117,15 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
               </div>
             </SelectItem>
           ))}
-          {props.workers.length === 0 ? (
-            <SelectItem value="__configure__" hideIndicator className="min-w-64 py-2">
-              <span className="text-xs text-muted-foreground">
-                No saved workers — set one up in Workjet settings
-              </span>
-            </SelectItem>
-          ) : null}
+          {/* Creating belongs one click away from choosing: the entry jumps
+              to the Worker settings page (operator request). */}
+          <SelectItem value="__configure__" hideIndicator className="min-w-64 py-2">
+            <span className="text-xs text-muted-foreground">
+              {props.workers.length === 0
+                ? "No saved workers — set one up in Workjet settings"
+                : "+ Add worker…"}
+            </span>
+          </SelectItem>
         </SelectPopup>
       </Select>
       <TooltipPopup side="top">{tooltip}</TooltipPopup>

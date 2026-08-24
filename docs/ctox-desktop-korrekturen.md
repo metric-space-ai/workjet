@@ -434,6 +434,16 @@ BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
    stattdessen Hintergrund-Task `poll_for_token` → LoginOutcome (Muster:
    die Callback-Task-Enden in oauth.rs). Identität aus
    `parse_jwt_identity`. Secrets: access+refresh wie anthropic.
+   → ERLEDIGT 2026-08-24: HostOAuthAuthority-"xai"-Arm — begin blockt
+   kurz in place (multi-thread Runtime) für discovery+device-code, gibt
+   `verification_uri_complete` als authorizationUrl zurück, KEIN
+   Callback-Listener; Hintergrund-Task `wait_for_authorization` →
+   LoginOutcome (Refresh-Token PFLICHT, sonst sichtbarer Fehler);
+   Abbruch über `device_polls`-Cancellation (cancel + poll-Terminal).
+   Neuer Produktions-Login-Transport `XaiLoginHttpTransport` (wreq) im
+   Gateway. UNGEPRÜFT offline: begin("xai") braucht das Netz — der
+   Live-Beweis (verification-URL, Poll pending) ist das Gate von
+   Schritt 5, der Login selbst das Betreiber-Gate von Schritt 6.
 5. Vertrag `WorkjetGatewayOauthProvider`+`"xai"`, Server
    `OAUTH_BEGIN_ROUTES`/`HOST_PROVIDERS`, Management-Route
    `xai-auth-url` (server_management.rs neben den drei vorhandenen),

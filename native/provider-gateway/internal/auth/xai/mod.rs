@@ -3,10 +3,14 @@
 
 #[path = "xai.rs"]
 mod flow;
+#[cfg(feature = "xai-http-transport")]
+mod login_transport;
 mod token;
 mod types;
 
 pub use flow::*;
+#[cfg(feature = "xai-http-transport")]
+pub use login_transport::{XaiLoginHttpTransport, XaiLoginTransportBuildError};
 pub use token::*;
 pub use types::*;
 

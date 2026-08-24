@@ -117,6 +117,9 @@ use workjet_provider_gateway::internal::auth::codex::{
     generate_auth_url_with_redirect as codex_auth_url, generate_pkce_codes as codex_pkce,
     CodexAuth, CodexHttpTransport, PkceCodes as CodexPkceCodes, SecretString as CodexSecret,
 };
+use workjet_provider_gateway::internal::auth::xai::{
+    SystemXaiClock, XaiAuth, XaiLoginHttpTransport, XaiRefreshCoordinator,
+};
 use workjet_provider_gateway::sdk::auth::LoginCancellation;
 
 use crate::loopback::{BoundCallback, CallbackBindError};
@@ -171,6 +174,9 @@ enum ProviderPkce {
     Claude(ClaudePkceCodes),
     Codex(CodexPkceCodes),
     Antigravity,
+    /// Device flow: no redirect, no code exchange — the background poll task
+    /// owns completion, `record_callback` never fires for it.
+    XaiDevice,
 }
 
 struct PendingLogin {
@@ -194,6 +200,9 @@ pub struct HostOAuthAuthority {
     outcomes: Mutex<BTreeMap<String, LoginOutcome>>,
     claims: Mutex<BTreeMap<String, Vec<ManagementClaimedCredential>>>,
     listeners: Mutex<BTreeMap<String, tokio::task::JoinHandle<()>>>,
+    /// Device-flow polls in flight, cancellable by state. The xai flow has no
+    /// loopback listener to stop; cancelling the token poll is the analogue.
+    device_polls: Mutex<BTreeMap<String, LoginCancellation>>,
 }
 
 impl std::fmt::Debug for HostOAuthAuthority {
@@ -233,6 +242,7 @@ impl HostOAuthAuthority {
             outcomes: Mutex::new(BTreeMap::new()),
             claims: Mutex::new(BTreeMap::new()),
             listeners: Mutex::new(BTreeMap::new()),
+            device_polls: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -241,6 +251,15 @@ impl HostOAuthAuthority {
         if let Ok(mut listeners) = self.listeners.lock() {
             if let Some(handle) = listeners.remove(state) {
                 handle.abort();
+            }
+        }
+    }
+
+    /// Cancels and forgets the device-flow token poll of `state`, if any.
+    fn stop_device_poll(&self, state: &str) {
+        if let Ok(mut polls) = self.device_polls.lock() {
+            if let Some(cancellation) = polls.remove(state) {
+                cancellation.cancel();
             }
         }
     }
@@ -394,6 +413,55 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
                     .build_auth_url(state, Some(&redirect_uri));
                 (url, ProviderPkce::Antigravity)
             }
+            "xai" => {
+                // DEVICE flow: the authorization URL is xAI's verification
+                // page for this device code — obtained over the network, so
+                // the sync `begin` briefly blocks in place (the host runs a
+                // multi-threaded runtime). A background task then polls the
+                // token endpoint until the operator approves in the browser.
+                let transport = Arc::new(
+                    XaiLoginHttpTransport::new()
+                        .map_err(|_| ManagementProviderOAuthAuthorityError)?,
+                );
+                let auth = XaiAuth::new(
+                    transport,
+                    Arc::new(SystemXaiClock),
+                    Arc::new(XaiRefreshCoordinator::default()),
+                );
+                let cancellation = LoginCancellation::default();
+                let begin_cancellation = cancellation.clone();
+                let code = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(auth.start_device_flow(&begin_cancellation))
+                })
+                .map_err(|_| ManagementProviderOAuthAuthorityError)?;
+                let url = [
+                    code.verification_uri_complete.trim(),
+                    code.verification_uri.trim(),
+                ]
+                .into_iter()
+                .find(|value| !value.is_empty())
+                .ok_or(ManagementProviderOAuthAuthorityError)?
+                .to_owned();
+                if let Ok(mut polls) = self.device_polls.lock() {
+                    if let Some(previous) = polls.insert(state.to_owned(), cancellation.clone()) {
+                        previous.cancel();
+                    }
+                }
+                let authority = self
+                    .me
+                    .upgrade()
+                    .ok_or(ManagementProviderOAuthAuthorityError)?;
+                let poll_state = state.to_owned();
+                tokio::spawn(async move {
+                    let outcome = match auth.wait_for_authorization(&cancellation, &code).await {
+                        Ok(bundle) => xai_device_outcome(&auth, &bundle),
+                        Err(_) => LoginOutcome::Failed("Authentication failed".to_owned()),
+                    };
+                    let _ = authority.set_outcome(&poll_state, outcome);
+                });
+                (url, ProviderPkce::XaiDevice)
+            }
             _ => return Err(ManagementProviderOAuthAuthorityError),
         };
         self.pending
@@ -451,6 +519,7 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
             }),
             Some(LoginOutcome::Failed(message)) => {
                 self.stop_listener(state);
+                self.stop_device_poll(state);
                 Ok(ManagementProviderOAuthPoll {
                     pending: false,
                     error: Some(message),
@@ -459,6 +528,7 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
             }
             Some(LoginOutcome::Completed(claimed)) => {
                 self.stop_listener(state);
+                self.stop_device_poll(state);
                 let credentials = claimed
                     .iter()
                     .map(|entry| entry.account.clone())
@@ -503,6 +573,7 @@ impl ManagementProviderOAuthAuthority for HostOAuthAuthority {
         // A cancelled login must release its loopback redirect port at once;
         // the codex port is fixed and shared with the official CLI.
         self.stop_listener(state);
+        self.stop_device_poll(state);
         Ok(())
     }
 }
@@ -618,6 +689,38 @@ async fn exchange(
         }
         _ => Err("provider session is inconsistent".to_owned()),
     }
+}
+
+/// Builds the claimable credential from a completed xAI device login. The
+/// refresh token is REQUIRED: without it the account dies at the first
+/// access-token expiry, silently — better to fail the login visibly.
+fn xai_device_outcome(
+    auth: &XaiAuth,
+    bundle: &workjet_provider_gateway::internal::auth::xai::AuthBundle,
+) -> LoginOutcome {
+    let Some(storage) = auth.create_token_storage(Some(bundle)) else {
+        return LoginOutcome::Failed("provider returned no credential".to_owned());
+    };
+    let credentials = storage.credentials();
+    let Some(refresh_token) = credentials.refresh_token() else {
+        return LoginOutcome::Failed("provider returned no refresh token".to_owned());
+    };
+    let Some(identity) = first_nonempty(&[storage.subject(), storage.email()]) else {
+        return LoginOutcome::Failed("provider identity unavailable".to_owned());
+    };
+    LoginOutcome::Completed(vec![ManagementClaimedCredential {
+        account: record("xai", &identity, storage.email()),
+        secrets: BTreeMap::from([
+            (
+                "access_token_secret".to_owned(),
+                credentials.access_token().expose_secret().to_owned(),
+            ),
+            (
+                "refresh_token_secret".to_owned(),
+                refresh_token.expose_secret().to_owned(),
+            ),
+        ]),
+    }])
 }
 
 /// Absolute expiry the antigravity state payload records, derived from the

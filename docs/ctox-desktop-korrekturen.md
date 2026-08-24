@@ -371,15 +371,19 @@ Posten 8 (Grok), Umfang nach vollständiger Prüfung 2026-08-24:
   `verification_uri_complete` als authorizationUrl, Hintergrund-Task
   pollt `poll_for_token` und schreibt das LoginOutcome, kein
   Callback-Port), `xai-auth-url`-Route, Vertrag, Karte.
-- ABER die BEDIEN-Hälfte fehlt ganz: `XaiSubscriptionAuth` existiert im
-  Gateway-Crate und wird von NIEMANDEM verbraucht — kein Executor, kein
-  Pool, keine Runtime-Konfigurationssektion, kein Router-Eintrag (nur
-  der eigene Test). Ein Abo-Login ohne diesen Pfad erzeugte Zugangs-
-  daten, die nichts bedienen kann — dieselbe Attrappen-Falle, nur eine
-  Ebene tiefer. Vergleichsgröße: der Claude-Pfad (Auth→Executor→Pool→
-  Handler) ist tausende Zeilen.
-- Reihenfolge daher: erst Bedien-Pfad (Executor+Pool+Config nach dem
-  Claude-Muster, upstream-Form des Grok-Abo-APIs klären), DANN Login.
+- KORREKTUR 2026-08-24 (zweite Messung): „kein Executor" war FALSCH.
+  Die gesamte xai-Executor-Familie IST portiert
+  (`xai_executor{,_execute,_stream,_tokens,_media,_request,_response}.rs`
+  plus Reasoning-Replay-Cache und Websockets) — Grok-`/responses`-Form
+  nativ. Mein Grep suchte nur nach „XaiSubscription" und übersah sie.
+- Was WIRKLICH fehlt: der Subscription-POOL nach dem Muster der anderen
+  (`XaiSubscriptionAccountPool` analog Claude/Codex/Antigravity), ein
+  Responses-Handler darüber, die Host-Konfigurationssektion für
+  xai-OAuth-Konten, der Device-Flow-Fall in `HostOAuthSource`,
+  `xai-auth-url`-Route, Vertrag, Karte.
+- E2E-Schlussprüfung braucht den BETREIBER: der Device-Flow verlangt
+  seine Anmeldung im Browser. Bau und Unit-Verifikation gehen vorher;
+  „bewiesen" gibt es erst nach seinem Login.
 
 ## 6 · Sign-in-Ablauf übersichtlich (A4)
 

@@ -29,7 +29,7 @@ import {
   type OrchestrationShellStreamItem,
   type OrchestrationThreadStreamItem,
   isWorkjetGitCommitHash,
-  type WorkjetHarness,
+  WorkjetHarness,
   WorkjetGitCommitHash,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
@@ -1802,9 +1802,19 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.workjetHarnessInspect,
             serverSettings.getSettings.pipe(
-              Effect.map((settings) =>
-                settings.workjet.workerProfiles.map((profile) => profile.harness),
-              ),
+              // Probe EVERY known harness kind, not only the ones current
+              // worker profiles reference: the settings surfaces (Harnesses
+              // page, Computers rows) report per-harness install state, and a
+              // harness nobody uses yet — Pi Code was the reported case —
+              // otherwise never appears in the snapshot at all. Probing wider
+              // only ever widens what the dispatch gate accepts, and each
+              // entry is still a real measurement.
+              Effect.map((settings) => [
+                ...new Set([
+                  ...WorkjetHarness.literals,
+                  ...settings.workjet.workerProfiles.map((profile) => profile.harness),
+                ]),
+              ]),
               // A settings read that fails yields NO harnesses to probe, and
               // that is the safe direction rather than a convenient one: the
               // dispatch gate refuses any harness the snapshot does not list,

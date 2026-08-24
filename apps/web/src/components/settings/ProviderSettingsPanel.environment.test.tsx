@@ -53,12 +53,24 @@ vi.mock("@effect/atom-react", () => ({
   useAtomValue: () => atoms.providers,
 }));
 
+vi.mock("../../state/query", () => ({
+  // The panel's Pi Code row reads the Workjet harness probe; these tests
+  // exercise provider routing, so the probe stays unresolved.
+  useEnvironmentQuery: () => ({
+    data: null,
+    error: null,
+    isPending: false,
+    refresh: () => undefined,
+  }),
+}));
+
 vi.mock("../../state/server", () => ({
   EMPTY_SERVER_PROVIDERS: [],
   serverEnvironment: {
     providersValueAtom: () => atoms.providersAtom,
     refreshProviders: atoms.refreshProviders,
     updateProvider: atoms.updateProvider,
+    workjetHarnessInspect: () => null,
   },
 }));
 

@@ -688,3 +688,18 @@ s1…s8\*.mjs).
    Entschärfung), an allen vier Stellen. Live: armiert + entschärft.
 6. Kein sichtbares Feedback nach Save (Zeile unter dem Fold): FIX:
    Success-Toast bei Worker-/Computer-Save.
+
+## Nachtrag 2026-08-24 ~13:05 — Pi Code auf der Harnesses-Seite
+
+Meldung: "pi code fehlt bei den harnesses" (+ Korrektur: kein Logo,
+falsche Beschreibung im ersten Wurf). Ursachen: (a) Pi Code hat keinen
+Chat-Treiber, also keine Instanz-Karte; (b) die Harness-Probe
+untersuchte NUR von Worker-Profilen referenzierte Harnesses — pi-code
+tauchte im Snapshot nie auf. FIX: Probe deckt jetzt alle bekannten
+Harness-Arten ab (jede Zeile bleibt echte Messung); die Harnesses-Seite
+zeigt Pi Code als Karte im Stil der übrigen Runtimes (π-Glyphe in
+currentColor — das CLI bündelt kein offizielles Markenzeichen —,
+Status-Punkt, Versions-Chip, "Installed · available to Workjet
+workers"). Live verifiziert per Screenshot: v0.80.2 grün in der Reihe.
+Anmerkung: ein vollwertiger Pi-Code-CHAT-Treiber (Instanzen, Threads)
+ist ein eigenes Projekt und bewusst nicht Teil dieses Fixes.

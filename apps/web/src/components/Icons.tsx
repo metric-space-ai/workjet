@@ -647,6 +647,23 @@ export const AntigravityIcon: Icon = (props) => (
   </svg>
 );
 
+/**
+ * Pi Code (the `pi` coding agent). No official mark is bundled with the CLI,
+ * so this is a neutral pi glyph in currentColor — recognisable without
+ * pretending to be a trademarked logo.
+ */
+export const PiCodeIcon: Icon = (props) => (
+  <svg {...props} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M4 7c0-1.5 1-3 3-3h13M8.5 4v16M15.5 4v12.5c0 1.5 1 2.5 2.5 2.5s2.5-1 2.5-2.5"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export const OpenCodeIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
     <g clipPath="url(#opencode__clip0_1311_94969)">

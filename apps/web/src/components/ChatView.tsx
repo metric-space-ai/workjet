@@ -256,6 +256,7 @@ import {
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import {
+  executeWorkjetCapabilitySet,
   executeWorkjetCapabilityToggle,
   GREPPY_CAPABILITY_ID,
   WORKJET_GREPPY_FAILURE_TOAST,
@@ -3868,6 +3869,27 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [runWorkjetConfigChange],
   );
+  /**
+   * Set the whole capability list in ONE dispatch — the worker-bundle apply.
+   * Per-id toggles cannot do this: runWorkjetConfigChange drops concurrent
+   * changes via its in-flight guard, so only the first id would land.
+   */
+  const handleWorkjetCapabilitySet = useCallback(
+    (capabilityIds: ReadonlyArray<string>) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetCapabilitySet({
+          ...input,
+          capabilityIds: capabilityIds as ReadonlyArray<
+            WorkjetThreadConfig["enabledCapabilityIds"][number]
+          >,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
   const handleWorkjetRoleChange = useCallback(
     (role: WorkjetSelectableRole) => {
       runWorkjetConfigChange((input) =>
@@ -7142,6 +7164,7 @@ function ChatViewContent(props: ChatViewProps) {
                             handleInteractionModeChange={handleInteractionModeChange}
                             onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
                             onWorkjetCapabilityEnabledChange={handleWorkjetCapabilityEnabledChange}
+                            onWorkjetCapabilitySet={handleWorkjetCapabilitySet}
                             workjetEnabledCapabilityIds={
                               visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
                             }

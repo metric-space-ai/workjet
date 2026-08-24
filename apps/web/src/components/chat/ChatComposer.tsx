@@ -489,6 +489,8 @@ export interface ChatComposerProps {
   onWorkjetGreppyEnabledChange: (enabled: boolean) => void;
   /** Toggles any capability the host can activate, not only Greppy. */
   onWorkjetCapabilityEnabledChange?: ((capabilityId: string, enabled: boolean) => void) | undefined;
+  /** Sets the thread's capability list in one dispatch (worker-bundle apply). */
+  onWorkjetCapabilitySet?: ((capabilityIds: ReadonlyArray<string>) => void) | undefined;
   workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
   onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
   /** Routes to Settings → Workjet; the composer never hosts a second surface. */
@@ -572,6 +574,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     handleInteractionModeChange,
     onWorkjetGreppyEnabledChange,
     onWorkjetCapabilityEnabledChange,
+    onWorkjetCapabilitySet,
     workjetEnabledCapabilityIds,
     onWorkjetRoleChange,
     onOpenWorkjetSettings,
@@ -872,6 +875,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * the draft, where the next turn is composed.
    */
   const workerModeActive = selectedWorkjetWorkerId !== null;
+  /**
+   * Apply the selected worker's EXTRAS once the draft becomes a server
+   * thread. A worker defines its capabilities the way it defines its model;
+   * the thread-config write path only exists on server threads, so the apply
+   * waits for the transition and runs exactly once per thread — the ref
+   * guards against re-applying on every render and against overriding what
+   * the operator changes afterwards.
+   */
+  const appliedWorkerCapabilitiesRef = useRef<string | null>(null);
+  const composerTargetIsThread =
+    typeof composerDraftTarget === "object" && composerDraftTarget !== null;
+  useEffect(() => {
+    if (!composerTargetIsThread || onWorkjetCapabilitySet === undefined) return;
+    if (selectedWorkjetWorkerId === null) return;
+    const worker = workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId);
+    if (worker === undefined) return;
+    const targetKey = JSON.stringify(composerDraftTarget);
+    if (appliedWorkerCapabilitiesRef.current === targetKey) return;
+    appliedWorkerCapabilitiesRef.current = targetKey;
+    onWorkjetCapabilitySet(worker.capabilityIds);
+  }, [
+    composerDraftTarget,
+    composerTargetIsThread,
+    onWorkjetCapabilitySet,
+    selectedWorkjetWorkerId,
+    workjetWorkers,
+  ]);
   const handleSelectWorkjetWorker = useCallback(
     (workerId: string | null) => {
       setSelectedWorkjetWorkerId(workerId);

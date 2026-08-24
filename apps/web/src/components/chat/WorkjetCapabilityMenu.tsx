@@ -98,6 +98,43 @@ export function setWorkjetCapabilityEnabled(
   };
 }
 
+/**
+ * Set the thread's capability list to EXACTLY `capabilityIds`, one dispatch.
+ *
+ * Built for applying a worker's bundle when a draft becomes a thread: a
+ * worker DEFINES its extras, so applying means enable-these-disable-others,
+ * not enable-on-top. It must be one config change because the caller's
+ * in-flight guard silently drops concurrent changes — per-id toggles would
+ * land only the first id and lose the rest without a trace.
+ */
+export async function executeWorkjetCapabilitySet<E>(input: {
+  readonly currentConfig: WorkjetThreadConfig;
+  readonly capabilityIds: ReadonlyArray<WorkjetCapabilityId>;
+  readonly dispatch: (nextConfig: WorkjetThreadConfig) => Promise<AtomCommandResult<unknown, E>>;
+  readonly setVisibleConfig: (config: WorkjetThreadConfig) => void;
+  readonly notifyFailure: () => void;
+}): Promise<WorkjetThreadConfig> {
+  const wanted = [...new Set(input.capabilityIds)];
+  const current = [...input.currentConfig.enabledCapabilityIds].sort().join(",");
+  if (wanted.slice().sort().join(",") === current) {
+    return input.currentConfig;
+  }
+  const nextConfig: WorkjetThreadConfig = {
+    ...input.currentConfig,
+    enabledCapabilityIds: wanted,
+  };
+  input.setVisibleConfig(nextConfig);
+  const result = await input.dispatch(nextConfig);
+  if (result._tag === "Failure") {
+    input.setVisibleConfig(input.currentConfig);
+    if (!isAtomCommandInterrupted(result)) {
+      input.notifyFailure();
+    }
+    return input.currentConfig;
+  }
+  return nextConfig;
+}
+
 export async function executeWorkjetCapabilityToggle<E>(input: {
   readonly currentConfig: WorkjetThreadConfig;
   readonly capabilityId: WorkjetCapabilityId;

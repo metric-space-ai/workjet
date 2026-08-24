@@ -703,3 +703,20 @@ Status-Punkt, Versions-Chip, "Installed · available to Workjet
 workers"). Live verifiziert per Screenshot: v0.80.2 grün in der Reihe.
 Anmerkung: ein vollwertiger Pi-Code-CHAT-Treiber (Instanzen, Threads)
 ist ein eigenes Projekt und bewusst nicht Teil dieses Fixes.
+
+## 10 · Business-OS-Meldungen 2026-08-24 ~13:3x (Screenshots)
+
+14. Instanz-Wechsel erzwingt jedes Mal einen kompletten Reload mit
+    Ladescreen. SOLL: geladene Instanzen bleiben warm (Webview-Pool),
+    Wechsel zwischen zwei geladenen Instanzen ist instant, ohne
+    sichtbaren Ladescreen; nur der ERSTE Load darf dauern.
+15. Kein farbiger Status-Punkt je Instanz, der "geladen/verbunden"
+    anzeigt — alle Punkte grau. SOLL: Punktfarbe = Ladezustand, und
+    geladene Instanzen sind instant wechselbar.
+16. Instanzen in der Seitenleiste lassen sich nicht ein-/ausklappen
+    (Klick auf den Instanznamen faltet den App-Baum nicht).
+17. Business-OS hat keine eigene Menüleiste (Pendant zur unteren
+    Icon-Leiste der Code-Seite fehlt).
+    Dazu aus dem Chat: die untere Icon-Leiste der Code-Seite (Settings,
+    Pull Requests, Usage, Machines, Refresh) muss nachweislich
+    funktionieren — in die Klick-Verifikation aufgenommen.

@@ -203,7 +203,17 @@ Swift-Entsprechung ODER eine begründete bewusste Abweichung; keine rohe
 UUID/Hash im Standard-Sichtbereich; keine Erklärprosa, wo ein Zustand
 stehen kann.
 
-## 3 · Import der 12 Swift-Worker (C1)
+## 3 · Import — VORBEREITET 2026-08-24: 14/14 vorausgewählt, ein Klick übrig
+
+Die Seite kommt jetzt mit allen 14 Antworten vorbelegt an (live geprüft:
+„Records that need you (14/14 answered)", null offene Auswahlfelder).
+Die Vorbelegung folgt der dokumentierten sicheren Zuordnung und ist
+konservativ (nur Eindeutiges; Mehrdeutiges bleibt offen; unlesbarer
+Katalog belegt nichts). **„Import once" bleibt unberührt — dieser eine
+Klick gehört dem Betreiber**, samt Prüfblick auf die vorbelegten Werte
+(gpu3/gpu1/xAI stehen auf „Do not import this").
+
+### (ursprünglich) Import der 12 Swift-Worker (C1)
 
 `~/Library/Application Support/Workjet/config.v1.json` → Angebot in
 Settings → Workjet → Legacy import. Läuft GENAU EINMAL; Stand:

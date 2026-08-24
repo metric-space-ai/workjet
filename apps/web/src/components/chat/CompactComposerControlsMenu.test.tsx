@@ -30,10 +30,8 @@ const renderMenu = (props: Parameters<typeof CompactComposerControlsMenu>[0]): I
 
 const baseProps = {
   interactionMode: "default",
-  runtimeMode: "full-access",
   showInteractionModeToggle: true,
   onToggleInteractionMode: () => undefined,
-  onRuntimeModeChange: () => undefined,
 } as const;
 
 describe("CompactComposerControlsMenu", () => {
@@ -64,6 +62,20 @@ describe("CompactComposerControlsMenu", () => {
     expect(text).toContain("Chat");
     // Permission is ALWAYS full (operator rule): no Access group exists.
     expect(text).not.toContain("Access");
+  });
+
+  /**
+   * Below the breakpoint the Worker and Computer choices must still exist —
+   * the compact menu carries them in its own slot, before everything else.
+   */
+  it("carries the worker menu slot so Worker and Computer exist when compact", () => {
+    const workerContent = <span data-test-worker-menu="true">worker</span>;
+    const menu = renderMenu({
+      ...baseProps,
+      workerMenuContent: workerContent,
+    });
+
+    expect(containsNode(menu, workerContent)).toBe(true);
   });
 
   it("omits the role group when the thread has no server configuration", () => {

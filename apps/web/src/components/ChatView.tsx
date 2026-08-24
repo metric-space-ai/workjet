@@ -1363,7 +1363,6 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
-  const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
   );
@@ -2349,6 +2348,15 @@ function ChatViewContent(props: ChatViewProps) {
     return envs;
   }, [activeProject, allProjects, projectGroupingSettings, primaryEnvironmentId, environmentById]);
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
+  /**
+   * The environments the composer's Computer ("Rechner") control may move a
+   * draft to — exactly the set `onEnvironmentChange` accepts. A Workjet
+   * computer whose environment is not in this list renders as "not paired".
+   */
+  const selectableEnvironmentIds = useMemo(
+    () => logicalProjectEnvironments.map((environment) => environment.environmentId),
+    [logicalProjectEnvironments],
+  );
   const activeEnvironmentOption =
     logicalProjectEnvironments.find(
       (environment) => environment.environmentId === activeThread?.environmentId,
@@ -3699,24 +3707,8 @@ function ChatViewContent(props: ChatViewProps) {
     [activeProject, persistProjectScripts],
   );
 
-  const handleRuntimeModeChange = useCallback(
-    (mode: RuntimeMode) => {
-      if (mode === runtimeMode) return;
-      setComposerDraftRuntimeMode(composerDraftTarget, mode);
-      if (isLocalDraftThread) {
-        setDraftThreadContext(composerDraftTarget, { runtimeMode: mode });
-      }
-      scheduleComposerFocus();
-    },
-    [
-      isLocalDraftThread,
-      runtimeMode,
-      scheduleComposerFocus,
-      composerDraftTarget,
-      setComposerDraftRuntimeMode,
-      setDraftThreadContext,
-    ],
-  );
+  // No runtime-mode handler: permission is ALWAYS full (operator rule), the
+  // picker is gone, and the composer no longer threads a change callback.
 
   const handleInteractionModeChange = useCallback(
     (mode: ProviderInteractionMode) => {
@@ -3870,18 +3862,29 @@ function ChatViewContent(props: ChatViewProps) {
     [runWorkjetConfigChange],
   );
   /**
-   * Set the whole capability list in ONE dispatch — the worker-bundle apply.
-   * Per-id toggles cannot do this: runWorkjetConfigChange drops concurrent
-   * changes via its in-flight guard, so only the first id would land.
+   * Set the whole capability list and/or the managed instructions in ONE
+   * dispatch — the worker-bundle apply and the composer's custom system
+   * prompt. Per-field dispatches cannot do this: runWorkjetConfigChange drops
+   * concurrent changes via its in-flight guard, so only the first would land.
    */
-  const handleWorkjetCapabilitySet = useCallback(
-    (capabilityIds: ReadonlyArray<string>) => {
-      runWorkjetConfigChange((input) =>
+  const handleWorkjetConfigApply = useCallback(
+    (input: {
+      readonly capabilityIds?: ReadonlyArray<string>;
+      readonly managedInstructions?: string;
+    }) => {
+      runWorkjetConfigChange((run) =>
         executeWorkjetCapabilitySet({
-          ...input,
-          capabilityIds: capabilityIds as ReadonlyArray<
-            WorkjetThreadConfig["enabledCapabilityIds"][number]
-          >,
+          ...run,
+          ...(input.capabilityIds === undefined
+            ? {}
+            : {
+                capabilityIds: input.capabilityIds as ReadonlyArray<
+                  WorkjetThreadConfig["enabledCapabilityIds"][number]
+                >,
+              }),
+          ...(input.managedInstructions === undefined
+            ? {}
+            : { managedInstructions: input.managedInstructions }),
           notifyFailure: () => {
             toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
           },
@@ -7112,7 +7115,6 @@ function ChatViewContent(props: ChatViewProps) {
                             respondingRequestIds={respondingRequestIds}
                             showPlanFollowUpPrompt={showPlanFollowUpPrompt}
                             activeProposedPlan={activeProposedPlan}
-                            runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             workjetRole={visibleWorkjetConfig?.role ?? null}
                             workjetGreppyEnabled={
@@ -7160,14 +7162,18 @@ function ChatViewContent(props: ChatViewProps) {
                             onProviderModelSelect={onProviderModelSelect}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
-                            handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
                             onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
                             onWorkjetCapabilityEnabledChange={handleWorkjetCapabilityEnabledChange}
-                            onWorkjetCapabilitySet={handleWorkjetCapabilitySet}
+                            onWorkjetConfigApply={handleWorkjetConfigApply}
                             workjetEnabledCapabilityIds={
                               visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
                             }
+                            workjetManagedInstructions={
+                              visibleWorkjetConfig?.managedInstructions ?? null
+                            }
+                            selectableEnvironmentIds={selectableEnvironmentIds}
+                            onDraftEnvironmentChange={onEnvironmentChange}
                             onWorkjetRoleChange={handleWorkjetRoleChange}
                             onOpenWorkjetSettings={handleOpenWorkjetSettings}
                             focusComposer={focusComposer}

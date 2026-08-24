@@ -6,5 +6,14 @@
  *
  * Re-exports only.
  */
-export { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
+export { GREPPY_CAPABILITY_ID, WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
 export { WorkjetRoleControl, type WorkjetSelectableRole } from "./WorkjetRoleControl";
+export {
+  COMPOSER_COMPUTER_LOCKED_REASON,
+  ComposerComputerControl,
+  ComposerManualTargetControls,
+  ComposerSystemPromptControl,
+  ComposerWorkjetCompactMenuContent,
+  gatewayModelsForRoute,
+  harnessForProviderInstanceId,
+} from "./ComposerWorkjetTargetControls";

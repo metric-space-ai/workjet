@@ -6,7 +6,6 @@ import type {
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ResolvedKeybindingsConfig,
-  RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
@@ -94,10 +93,20 @@ import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerFooterControls } from "./ComposerFooterControls";
 import {
+  COMPOSER_COMPUTER_LOCKED_REASON,
+  ComposerComputerControl,
+  ComposerManualTargetControls,
+  ComposerSystemPromptControl,
+  ComposerWorkjetCompactMenuContent,
+  gatewayModelsForRoute,
+  GREPPY_CAPABILITY_ID,
+  harnessForProviderInstanceId,
   WorkjetCapabilityMenu,
   WorkjetRoleControl,
   type WorkjetSelectableRole,
 } from "./workjetSurfaces";
+import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -198,7 +207,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { CircleAlertIcon, MonitorIcon, XIcon } from "lucide-react";
+import { CircleAlertIcon, XIcon } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -417,7 +426,6 @@ export interface ChatComposerProps {
   activeProposedPlan: Thread["proposedPlans"][number] | null;
 
   // Mode / Workjet
-  runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
   /**
    * The current thread's Workjet role, or `null` on a draft thread that has no
@@ -484,14 +492,30 @@ export interface ChatComposerProps {
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
-  handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   onWorkjetGreppyEnabledChange: (enabled: boolean) => void;
   /** Toggles any capability the host can activate, not only Greppy. */
   onWorkjetCapabilityEnabledChange?: ((capabilityId: string, enabled: boolean) => void) | undefined;
-  /** Sets the thread's capability list in one dispatch (worker-bundle apply). */
-  onWorkjetCapabilitySet?: ((capabilityIds: ReadonlyArray<string>) => void) | undefined;
+  /**
+   * Sets the thread's capability list and/or managed instructions in ONE
+   * dispatch (worker-bundle apply, custom system prompt).
+   */
+  onWorkjetConfigApply?:
+    | ((input: {
+        readonly capabilityIds?: ReadonlyArray<string>;
+        readonly managedInstructions?: string;
+      }) => void)
+    | undefined;
   workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
+  /** The thread's managed instructions, `null` on a draft thread. */
+  workjetManagedInstructions: string | null;
+  /**
+   * Environments the current DRAFT can move to (same logical project). A
+   * computer whose environment is not in this list renders as "not paired".
+   */
+  selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  /** Moves a draft to another environment; the caller guards started threads. */
+  onDraftEnvironmentChange?: ((environmentId: EnvironmentId) => void) | undefined;
   onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
   /** Routes to Settings → Workjet; the composer never hosts a second surface. */
   onOpenWorkjetSettings: () => void;
@@ -537,7 +561,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     respondingRequestIds,
     showPlanFollowUpPrompt,
     activeProposedPlan,
-    runtimeMode,
     interactionMode,
     workjetRole,
     workjetGreppyEnabled,
@@ -570,12 +593,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onProviderModelSelect,
     getModelDisabledReason,
     toggleInteractionMode,
-    handleRuntimeModeChange,
     handleInteractionModeChange,
     onWorkjetGreppyEnabledChange,
     onWorkjetCapabilityEnabledChange,
-    onWorkjetCapabilitySet,
+    onWorkjetConfigApply,
     workjetEnabledCapabilityIds,
+    workjetManagedInstructions,
+    selectableEnvironmentIds,
+    onDraftEnvironmentChange,
     onWorkjetRoleChange,
     onOpenWorkjetSettings,
     focusComposer,
@@ -853,8 +878,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * Saved Workjet workers, offered as the bar's leftmost choice. `null` is
    * manual — the individual model and effort controls apply, exactly as
    * before — so a setup with no saved workers behaves as it always has.
+   * `settings.workjet` is required-with-default in the contract, so no
+   * optional chain: the one at the footer never had one either.
    */
-  const workjetWorkers = settings.workjet?.workerProfiles ?? [];
+  const workjetWorkers = settings.workjet.workerProfiles;
+  const workjetComputers = settings.workjet.computers;
+  const workjetLlmRoutes = settings.workjet.llmRoutes;
   const [selectedWorkjetWorkerId, setSelectedWorkjetWorkerId] = useState<string | null>(null);
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
   /**
@@ -875,11 +904,30 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * the draft, where the next turn is composed.
    */
   const workerModeActive = selectedWorkjetWorkerId !== null;
+  const selectedWorkjetWorker =
+    selectedWorkjetWorkerId === null
+      ? null
+      : (workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId) ?? null);
   /**
-   * Apply the selected worker's EXTRAS once the draft becomes a server
-   * thread. A worker defines its capabilities the way it defines its model;
-   * the thread-config write path only exists on server threads, so the apply
-   * waits for the transition and runs exactly once per thread — the ref
+   * Worker-mode EXTRAS on a draft, held locally: the menu edits this list
+   * (seeded from the worker's own `capabilityIds`), and the draft→thread
+   * apply below dispatches it instead of the profile's — what the operator
+   * changed in the bar wins over what the profile says. `null` means
+   * untouched; the worker's list applies as-is.
+   */
+  const [draftWorkerCapabilityIds, setDraftWorkerCapabilityIds] =
+    useState<ReadonlyArray<string> | null>(null);
+  /**
+   * Manual-mode custom system prompt on a draft, held locally until the
+   * thread exists — the thread-config write path only exists on server
+   * threads. `null` means never edited.
+   */
+  const [draftManagedInstructions, setDraftManagedInstructions] = useState<string | null>(null);
+  /**
+   * Apply the selected worker's EXTRAS and TASK TEXT once the draft becomes a
+   * server thread — one dispatch, because the caller's in-flight guard drops
+   * concurrent config changes. A manual draft with a locally edited system
+   * prompt takes the same path with only `managedInstructions` set. The ref
    * guards against re-applying on every render and against overriding what
    * the operator changes afterwards.
    */
@@ -887,27 +935,67 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTargetIsThread =
     typeof composerDraftTarget === "object" && composerDraftTarget !== null;
   useEffect(() => {
-    if (!composerTargetIsThread || onWorkjetCapabilitySet === undefined) return;
-    if (selectedWorkjetWorkerId === null) return;
-    const worker = workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId);
-    if (worker === undefined) return;
+    if (!composerTargetIsThread || onWorkjetConfigApply === undefined) return;
+    const worker =
+      selectedWorkjetWorkerId === null
+        ? undefined
+        : workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId);
+    let payload: {
+      readonly capabilityIds?: ReadonlyArray<string>;
+      readonly managedInstructions?: string;
+    };
+    if (worker !== undefined) {
+      payload = {
+        capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
+        managedInstructions: worker.instructions ?? "",
+      };
+    } else if (draftManagedInstructions !== null) {
+      payload = { managedInstructions: draftManagedInstructions };
+    } else {
+      return;
+    }
     const targetKey = JSON.stringify(composerDraftTarget);
     if (appliedWorkerCapabilitiesRef.current === targetKey) return;
     appliedWorkerCapabilitiesRef.current = targetKey;
-    onWorkjetCapabilitySet(worker.capabilityIds);
+    onWorkjetConfigApply(payload);
   }, [
     composerDraftTarget,
     composerTargetIsThread,
-    onWorkjetCapabilitySet,
+    draftManagedInstructions,
+    draftWorkerCapabilityIds,
+    onWorkjetConfigApply,
     selectedWorkjetWorkerId,
     workjetWorkers,
   ]);
   const handleSelectWorkjetWorker = useCallback(
     (workerId: string | null) => {
       setSelectedWorkjetWorkerId(workerId);
+      // A different choice invalidates the local bar edits: extras belong to
+      // the newly chosen worker, and a worker carries its own task text.
+      setDraftWorkerCapabilityIds(null);
+      setDraftManagedInstructions(null);
       if (workerId === null) return;
       const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
       if (worker === undefined) return;
+
+      // Apply the worker's COMPUTER: a worker names where it runs, so a
+      // draft moves to that computer's environment through the same path the
+      // environment selector uses. Only drafts move — a started thread's
+      // session owns its environment. An unresolvable computer changes
+      // nothing; the Computer control shows the mismatch instead of lying.
+      if (!composerTargetIsThread && onDraftEnvironmentChange !== undefined) {
+        const workerEnvironmentId = workjetComputers.find(
+          (computer) => computer.id === worker.computerId,
+        )?.environmentId;
+        if (
+          workerEnvironmentId !== undefined &&
+          workerEnvironmentId !== environmentId &&
+          selectableEnvironmentIds.includes(workerEnvironmentId)
+        ) {
+          onDraftEnvironmentChange(workerEnvironmentId);
+        }
+      }
+
       const instanceId = providerInstanceIdForHarness(worker.harness);
       if (instanceId === null || !worker.modelId) return;
       const targetInstance = ProviderInstanceId.make(instanceId);
@@ -931,11 +1019,178 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
     [
       composerDraftTarget,
+      composerTargetIsThread,
+      environmentId,
+      onDraftEnvironmentChange,
       onProviderModelSelect,
       providerStatuses,
+      selectableEnvironmentIds,
       setProviderModelOptions,
+      workjetComputers,
       workjetWorkers,
     ],
+  );
+
+  /**
+   * The Computer ("Rechner") control, selectable in BOTH modes. On a draft,
+   * choosing a computer moves the draft to that computer's environment; on a
+   * started server thread the control is disabled with the reason — moving a
+   * live session between machines is a separate project.
+   */
+  const composerComputerDisabledReason =
+    composerTargetIsThread || routeKind === "server"
+      ? COMPOSER_COMPUTER_LOCKED_REASON
+      : onDraftEnvironmentChange === undefined
+        ? "This draft cannot change its environment here."
+        : null;
+  const workerBoundComputer =
+    selectedWorkjetWorker === null
+      ? null
+      : (workjetComputers.find((computer) => computer.id === selectedWorkjetWorker.computerId) ??
+        null);
+  const activeEnvironmentComputer =
+    workjetComputers.find((computer) => computer.environmentId === environmentId) ?? null;
+  const composerSelectedComputerId = workerModeActive
+    ? (workerBoundComputer?.id ?? null)
+    : (activeEnvironmentComputer?.id ?? null);
+  // Worker mode surfaces the mismatch instead of lying: the worker names a
+  // computer this draft could not move to, so the thread stays where it is.
+  const composerComputerMismatchNote = !workerModeActive
+    ? null
+    : selectedWorkjetWorker === null
+      ? null
+      : workerBoundComputer === null
+        ? "This worker's computer is no longer in the Workjet catalog — the thread stays on its current environment."
+        : workerBoundComputer.environmentId !== environmentId
+          ? `${workerBoundComputer.label} is not paired with this project — the thread stays on its current environment.`
+          : null;
+  const handleSelectComposerComputer = useCallback(
+    (computerId: string) => {
+      if (composerTargetIsThread || onDraftEnvironmentChange === undefined) return;
+      const computer = workjetComputers.find((candidate) => candidate.id === computerId);
+      if (computer === undefined) return;
+      if (computer.environmentId === environmentId) return;
+      if (!selectableEnvironmentIds.includes(computer.environmentId)) return;
+      onDraftEnvironmentChange(computer.environmentId);
+    },
+    [
+      composerTargetIsThread,
+      environmentId,
+      onDraftEnvironmentChange,
+      selectableEnvironmentIds,
+      workjetComputers,
+    ],
+  );
+
+  /**
+   * Worker-mode EXTRAS resolve against the thread config on a server thread
+   * and against the local draft list on a draft, so the menu exists in both
+   * places and one dispatch applies the final list when the thread starts.
+   */
+  const workerDraftExtrasActive = workerModeActive && !composerTargetIsThread;
+  const effectiveEnabledCapabilityIds = workerDraftExtrasActive
+    ? (draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [])
+    : workjetEnabledCapabilityIds;
+  const effectiveWorkjetGreppyEnabled = workerDraftExtrasActive
+    ? (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID)
+    : workjetGreppyEnabled;
+  const handleDraftWorkerCapabilityChange = useCallback(
+    (capabilityId: string, enabled: boolean) => {
+      setDraftWorkerCapabilityIds((current) => {
+        const base = current ?? selectedWorkjetWorker?.capabilityIds ?? [];
+        const without = base.filter((id) => id !== capabilityId);
+        return enabled ? [...without, capabilityId] : without;
+      });
+    },
+    [selectedWorkjetWorker],
+  );
+  const effectiveCapabilityEnabledChange = workerDraftExtrasActive
+    ? handleDraftWorkerCapabilityChange
+    : onWorkjetCapabilityEnabledChange;
+  const effectiveGreppyEnabledChange = useCallback(
+    (enabled: boolean) => {
+      if (workerDraftExtrasActive) {
+        handleDraftWorkerCapabilityChange(GREPPY_CAPABILITY_ID, enabled);
+        return;
+      }
+      onWorkjetGreppyEnabledChange(enabled);
+    },
+    [handleDraftWorkerCapabilityChange, onWorkjetGreppyEnabledChange, workerDraftExtrasActive],
+  );
+  const effectiveWorkjetCapabilityBusy = workerDraftExtrasActive ? false : workjetCapabilityBusy;
+  const effectiveWorkjetCapabilityDisabled = workerDraftExtrasActive
+    ? false
+    : workjetCapabilityDisabled;
+
+  /**
+   * Manual mode replaces the single provider/model picker with the Workjet
+   * target controls (Harness · Provider · Model) whenever the Workjet catalog
+   * exists at all. With NO computers and NO LLM routes this is a pre-Workjet
+   * product install, and the classic picker stays.
+   */
+  const workjetManualControlsAvailable = workjetComputers.length > 0 || workjetLlmRoutes.length > 0;
+  const workjetGatewayCatalogQuery = useEnvironmentQuery(
+    workjetManualControlsAvailable && !workerModeActive
+      ? serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} })
+      : null,
+  );
+  const [manualLlmRouteId, setManualLlmRouteId] = useState<string | null>(null);
+  const selectedManualLlmRoute =
+    workjetLlmRoutes.find((route) => route.id === manualLlmRouteId) ?? workjetLlmRoutes[0] ?? null;
+  const manualGatewayModels = useMemo(
+    () =>
+      gatewayModelsForRoute(workjetGatewayCatalogQuery.data?.models ?? [], selectedManualLlmRoute),
+    [selectedManualLlmRoute, workjetGatewayCatalogQuery.data],
+  );
+  const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
+    ? "Loading the gateway model catalog…"
+    : (workjetGatewayCatalogQuery.error ??
+      (workjetGatewayCatalogQuery.data === null
+        ? "The Workjet gateway catalog is not available — type a model id."
+        : "The gateway catalog lists no models — type a model id."));
+  /**
+   * The instances a manual harness choice may target: configured in this
+   * build, and — on a thread locked to a continuation provider — of the
+   * locked driver kind. Everything else renders disabled with the hint.
+   */
+  const configuredProviderInstanceIds = useMemo(
+    () =>
+      new Set<string>(
+        providerInstanceEntries
+          .filter((entry) => lockedProvider === null || entry.driverKind === lockedProvider)
+          .map((entry) => entry.instanceId),
+      ),
+    [lockedProvider, providerInstanceEntries],
+  );
+  const handleSelectManualHarness = useCallback(
+    (harness: Parameters<typeof providerInstanceIdForHarness>[0]) => {
+      const instanceId = providerInstanceIdForHarness(harness);
+      if (instanceId === null || !configuredProviderInstanceIds.has(instanceId)) return;
+      onProviderModelSelect(ProviderInstanceId.make(instanceId), selectedModel);
+    },
+    [configuredProviderInstanceIds, onProviderModelSelect, selectedModel],
+  );
+  const handleSelectManualModel = useCallback(
+    (modelId: string) => {
+      onProviderModelSelect(selectedInstanceId, modelId);
+    },
+    [onProviderModelSelect, selectedInstanceId],
+  );
+
+  /**
+   * The custom-system-prompt affordance (manual mode). On a server thread the
+   * edit dispatches immediately through the one thread-config path; on a
+   * draft it is held locally and applied by the draft→thread effect above.
+   */
+  const handleApplyManagedInstructions = useCallback(
+    (text: string) => {
+      if (composerTargetIsThread) {
+        onWorkjetConfigApply?.({ managedInstructions: text });
+        return;
+      }
+      setDraftManagedInstructions(text);
+    },
+    [composerTargetIsThread, onWorkjetConfigApply],
   );
 
   const [composerCursor, setComposerCursor] = useState(() =>
@@ -3113,21 +3368,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {workerModeActive ? (
-                  /* Worker mode shows the worker's TARGET COMPUTER — the
-                     operator's bar spec is Worker · Rechner · Extras. This is
-                     the worker's own binding, read from its profile; a
-                     switcher only makes sense once a second machine exists,
-                     and a one-option dropdown would be a dummy control. */
-                  <span className="flex shrink-0 items-center gap-1.5 px-2 text-xs text-secondary-label">
-                    <MonitorIcon className="size-3.5" />
-                    {settings.workjet.computers.find(
-                      (computer) =>
-                        computer.id ===
-                        workjetWorkers.find((worker) => worker.id === selectedWorkjetWorkerId)
-                          ?.computerId,
-                    )?.label ?? "No computer bound"}
-                  </span>
+                {workerModeActive ? null : !isComposerFooterCompact &&
+                  workjetManualControlsAvailable ? (
+                  /* Manual mode with a Workjet catalog: Harness · Provider ·
+                     Model, each its own choice — models and credentials come
+                     from the Workjet gateway, any harness combines with any
+                     model. The classic single picker survives only for a
+                     pre-Workjet install (no computers, no llmRoutes) and for
+                     the compact footer, where three selects do not fit. */
+                  <ComposerManualTargetControls
+                    configuredInstanceIds={configuredProviderInstanceIds}
+                    unavailableHint={
+                      lockedProvider === null
+                        ? undefined
+                        : "Locked — this thread continues on its current provider"
+                    }
+                    selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
+                    onSelectHarness={handleSelectManualHarness}
+                    llmRoutes={workjetLlmRoutes}
+                    selectedLlmRouteId={selectedManualLlmRoute?.id ?? null}
+                    onSelectLlmRoute={setManualLlmRouteId}
+                    models={manualGatewayModels}
+                    modelsUnavailableReason={
+                      manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+                    }
+                    selectedModelId={selectedModelForPickerWithCustomFallback}
+                    onSelectModel={handleSelectManualModel}
+                  />
                 ) : noProviderAvailable ? (
                   <Button
                     type="button"
@@ -3171,11 +3438,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <>
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
-                      runtimeMode={runtimeMode}
-                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                      traitsMenuContent={providerTraitsMenuContent}
+                      showInteractionModeToggle={
+                        workerModeActive
+                          ? false
+                          : composerProviderControls.showInteractionModeToggle
+                      }
+                      workerMenuContent={
+                        <ComposerWorkjetCompactMenuContent
+                          workers={workjetWorkers}
+                          selectedWorkerId={selectedWorkjetWorkerId}
+                          onSelectWorker={handleSelectWorkjetWorker}
+                          computers={workjetComputers}
+                          selectedComputerId={composerSelectedComputerId}
+                          activeEnvironmentId={environmentId}
+                          selectableEnvironmentIds={selectableEnvironmentIds}
+                          computerDisabledReason={composerComputerDisabledReason}
+                          onSelectComputer={handleSelectComposerComputer}
+                        />
+                      }
+                      traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
                       workjetRoleMenuContent={
-                        workjetRole === null ? undefined : (
+                        workjetRole === null || workerModeActive ? undefined : (
                           <WorkjetRoleControl
                             compact
                             role={workjetRole}
@@ -3187,41 +3470,73 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         )
                       }
                       workjetMenuContent={
-                        workjetGreppyEnabled === null ? undefined : (
+                        effectiveWorkjetGreppyEnabled === null ? undefined : (
                           <WorkjetCapabilityMenu
                             compact
-                            greppyEnabled={workjetGreppyEnabled}
-                            busy={workjetCapabilityBusy}
-                            disabled={workjetCapabilityDisabled}
-                            onGreppyEnabledChange={onWorkjetGreppyEnabledChange}
+                            greppyEnabled={effectiveWorkjetGreppyEnabled}
+                            busy={effectiveWorkjetCapabilityBusy}
+                            disabled={effectiveWorkjetCapabilityDisabled}
+                            onGreppyEnabledChange={effectiveGreppyEnabledChange}
+                            onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                            enabledCapabilityIds={effectiveEnabledCapabilityIds}
                           />
                         )
                       }
                       onToggleInteractionMode={toggleInteractionMode}
-                      onRuntimeModeChange={handleRuntimeModeChange}
                     />
-                    {workjetSendToWorkerControl?.({ compact: true }) ?? null}
+                    {workerModeActive
+                      ? null
+                      : (workjetSendToWorkerControl?.({ compact: true }) ?? null)}
                   </>
                 ) : (
                   <ComposerFooterControls
+                    workerMode={workerModeActive}
                     workjetWorkers={workjetWorkers}
                     selectedWorkjetWorkerId={selectedWorkjetWorkerId}
                     onSelectWorkjetWorker={handleSelectWorkjetWorker}
+                    computerControl={
+                      /* A pre-Workjet install (no computers, no llmRoutes)
+                         keeps its bar unchanged. */
+                      !workjetManualControlsAvailable && !workerModeActive ? null : (
+                        <ComposerComputerControl
+                          computers={workjetComputers}
+                          selectedComputerId={composerSelectedComputerId}
+                          activeEnvironmentId={environmentId}
+                          selectableEnvironmentIds={selectableEnvironmentIds}
+                          disabledReason={composerComputerDisabledReason}
+                          mismatchNote={composerComputerMismatchNote}
+                          onSelectComputer={handleSelectComposerComputer}
+                        />
+                      )
+                    }
+                    systemPromptControl={
+                      workerModeActive || !workjetManualControlsAvailable ? null : (
+                        <ComposerSystemPromptControl
+                          value={
+                            composerTargetIsThread
+                              ? (workjetManagedInstructions ?? "")
+                              : (draftManagedInstructions ?? "")
+                          }
+                          busy={workjetCapabilityBusy}
+                          disabled={composerTargetIsThread && workjetCapabilityDisabled}
+                          draftPending={!composerTargetIsThread}
+                          onApply={handleApplyManagedInstructions}
+                        />
+                      )
+                    }
                     traitsPicker={workerModeActive ? null : providerTraitsPicker}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     interactionMode={interactionMode}
-                    runtimeMode={runtimeMode}
                     workjetRole={workjetRole}
-                    workjetGreppyEnabled={workjetGreppyEnabled}
-                    workjetBusy={workjetCapabilityBusy}
-                    workjetDisabled={workjetCapabilityDisabled}
+                    workjetGreppyEnabled={effectiveWorkjetGreppyEnabled}
+                    workjetBusy={effectiveWorkjetCapabilityBusy}
+                    workjetDisabled={effectiveWorkjetCapabilityDisabled}
                     sendToWorkerControl={workjetSendToWorkerControl?.({ compact: false }) ?? null}
                     onToggleInteractionMode={toggleInteractionMode}
-                    onRuntimeModeChange={handleRuntimeModeChange}
                     onWorkjetRoleChange={onWorkjetRoleChange}
-                    onWorkjetGreppyEnabledChange={onWorkjetGreppyEnabledChange}
-                    onWorkjetCapabilityEnabledChange={onWorkjetCapabilityEnabledChange}
-                    workjetEnabledCapabilityIds={workjetEnabledCapabilityIds}
+                    onWorkjetGreppyEnabledChange={effectiveGreppyEnabledChange}
+                    onWorkjetCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                    workjetEnabledCapabilityIds={effectiveEnabledCapabilityIds}
                     onOpenWorkjetSettings={onOpenWorkjetSettings}
                   />
                 )}

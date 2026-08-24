@@ -1,4 +1,4 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import { ProviderInteractionMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -13,14 +13,14 @@ import {
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
-  runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
+  /** Worker + Computer groups, so both choices exist below the breakpoint. */
+  workerMenuContent?: ReactNode;
   traitsMenuContent?: ReactNode;
   /** Workjet role radio group plus the settings item; omitted on a draft thread. */
   workjetRoleMenuContent?: ReactNode;
   workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
-  onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
     <Menu>
@@ -37,6 +37,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         <EllipsisIcon aria-hidden="true" className="size-4" />
       </MenuTrigger>
       <MenuPopup align="start">
+        {props.workerMenuContent ? (
+          <>
+            {props.workerMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}

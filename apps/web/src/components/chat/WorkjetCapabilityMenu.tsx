@@ -99,30 +99,45 @@ export function setWorkjetCapabilityEnabled(
 }
 
 /**
- * Set the thread's capability list to EXACTLY `capabilityIds`, one dispatch.
+ * Set the thread's capability list — and/or its managed instructions — to
+ * EXACTLY the given values, one dispatch.
  *
  * Built for applying a worker's bundle when a draft becomes a thread: a
- * worker DEFINES its extras, so applying means enable-these-disable-others,
- * not enable-on-top. It must be one config change because the caller's
- * in-flight guard silently drops concurrent changes — per-id toggles would
- * land only the first id and lose the rest without a trace.
+ * worker DEFINES its extras and its task text, so applying means
+ * set-these-drop-others, not enable-on-top. It must be one config change
+ * because the caller's in-flight guard silently drops concurrent changes —
+ * per-field dispatches would land only the first field and lose the rest
+ * without a trace. The composer's custom-system-prompt affordance reuses the
+ * same runner with only `managedInstructions` set, so the whole next config
+ * always travels through one path.
  */
 export async function executeWorkjetCapabilitySet<E>(input: {
   readonly currentConfig: WorkjetThreadConfig;
-  readonly capabilityIds: ReadonlyArray<WorkjetCapabilityId>;
+  /** Omitted leaves the thread's capability list untouched. */
+  readonly capabilityIds?: ReadonlyArray<WorkjetCapabilityId> | undefined;
+  /** Omitted leaves the thread's managed instructions untouched. */
+  readonly managedInstructions?: string | undefined;
   readonly dispatch: (nextConfig: WorkjetThreadConfig) => Promise<AtomCommandResult<unknown, E>>;
   readonly setVisibleConfig: (config: WorkjetThreadConfig) => void;
   readonly notifyFailure: () => void;
 }): Promise<WorkjetThreadConfig> {
-  const wanted = [...new Set(input.capabilityIds)];
-  const current = [...input.currentConfig.enabledCapabilityIds].sort().join(",");
-  if (wanted.slice().sort().join(",") === current) {
+  let nextConfig: WorkjetThreadConfig = input.currentConfig;
+  if (input.capabilityIds !== undefined) {
+    const wanted = [...new Set(input.capabilityIds)];
+    const current = [...nextConfig.enabledCapabilityIds].sort().join(",");
+    if (wanted.slice().sort().join(",") !== current) {
+      nextConfig = { ...nextConfig, enabledCapabilityIds: wanted };
+    }
+  }
+  if (
+    input.managedInstructions !== undefined &&
+    input.managedInstructions !== nextConfig.managedInstructions
+  ) {
+    nextConfig = { ...nextConfig, managedInstructions: input.managedInstructions };
+  }
+  if (nextConfig === input.currentConfig) {
     return input.currentConfig;
   }
-  const nextConfig: WorkjetThreadConfig = {
-    ...input.currentConfig,
-    enabledCapabilityIds: wanted,
-  };
   input.setVisibleConfig(nextConfig);
   const result = await input.dispatch(nextConfig);
   if (result._tag === "Failure") {

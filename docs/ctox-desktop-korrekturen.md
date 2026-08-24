@@ -567,3 +567,23 @@ Alle sechs direkt aus Chat-Nachrichten mit Screenshots übernommen:
     providers"). Gateway-geroutete Instanzen dürfen NIE einen
     CLI-Login verlangen — Auth kommt vom Gateway. Statusprüfung
     korrigieren.
+
+## Stand nach Deploy 2026-08-24 ~09:10
+
+LIVE VERIFIZIERT (CDP, frisch gestartete App):
+
+- 12 Swift-Worker auf der Worker-Seite sichtbar; Import-UI komplett weg.
+- Models-Seite: 5 Accounts (je 1 pro Provider), 5 Remove-Knöpfe,
+  xAI-Karte mit "Add account" UND "Add API key".
+- xAI "Add account" startet den Device-Flow real (Session-Anzeige,
+  Cancel möglich) → Schritt-5-Gate GRÜN; Browser-Login = Betreiber.
+- "Codex is unauthenticated"-Banner nach Neustart: WEG (Punkt 13).
+  IN ARBEIT (zwei Implementierungs-Subagents, eigene Worktrees):
+- Settings-Umbau (16 Review-Befunde: echte Computers-Seite, Connections-
+  Merge, Suche, tote Knöpfe, UUID-Lecks, roter Test).
+- Composer-Umbau (14 Review-Befunde: Manual = Harness·Provider·Modell·
+  Rechner·Extras, Rechner wählbar in beiden Modi, Worker-Modus pur,
+  System-Prompt-Feld, worker.computerId/instructions wirken).
+  OFFEN DANACH: Prompt-Seite mit vollen Worker-Prompts + Modellregeln
+  (Swift modelPrompts), gpu-Computer nach Environment-Pairing zuweisen,
+  Betreiber: Grok-Login.

@@ -16,6 +16,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type WorkjetGatewayModelSummary,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -1170,13 +1171,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} })
       : null,
   );
+  // Live per-provider model discovery — the same source the settings pools
+  // use. The catalog alone lists the accounts' route PATTERNS (grok-*), which
+  // read as broken entries in the picker; the discovery holds the concrete
+  // model ids the providers actually serve.
+  const workjetGatewayModelsQuery = useEnvironmentQuery(
+    workjetManualControlsAvailable && !workerModeActive
+      ? serverEnvironment.workjetGatewayModels({ environmentId, input: {} })
+      : null,
+  );
   // The FULL gateway catalog: the model menu groups by provider itself; a
   // separate route/provider pre-filter was the redundant third field the
   // operator rejected.
-  const manualGatewayModels = useMemo(
-    () => workjetGatewayCatalogQuery.data?.models ?? [],
-    [workjetGatewayCatalogQuery.data],
-  );
+  const manualGatewayModels = useMemo(() => {
+    const catalog = workjetGatewayCatalogQuery.data?.models ?? [];
+    const discovery = workjetGatewayModelsQuery.data ?? null;
+    if (discovery === null) return catalog;
+    const concrete: WorkjetGatewayModelSummary[] = [];
+    const covered = new Set<string>();
+    for (const providerModels of discovery.providers) {
+      if (providerModels.models.length === 0) continue;
+      covered.add(providerModels.provider);
+      for (const discovered of providerModels.models) {
+        concrete.push({
+          id: discovered.id,
+          displayName: discovered.displayName,
+          providers: [providerModels.provider],
+          accountIds: [],
+        });
+      }
+    }
+    // Catalog patterns stay only for providers the discovery has nothing for —
+    // better a wildcard than an empty group.
+    const remaining = catalog.filter((entry) => {
+      const provider = entry.providers[0];
+      return provider === undefined || !covered.has(provider);
+    });
+    return [...concrete, ...remaining];
+  }, [workjetGatewayCatalogQuery.data, workjetGatewayModelsQuery.data]);
   const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
     ? "Loading the gateway model catalog…"
     : (workjetGatewayCatalogQuery.error ??

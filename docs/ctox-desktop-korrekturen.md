@@ -990,3 +990,21 @@ Gruppierungslogik wie das breite Mini-Menü, extrahiert als
 groupGatewayModelsByProvider). Im Worker-Modus bleiben beide Gruppen
 aus — der Worker bündelt Harness+Modell. 2 neue Komponententests
 (Manual zeigt Harness/Model, Worker versteckt sie); chat-Suite 384 grün.
+
+## Modell-Mini-Menü repariert — 2026-08-25 ~01:15 (Operator-Meldung)
+
+Meldung: „man kann keine Modelle auswählen, das Mini-Menü ist kaputt —
+rechts erwarte ich die Modelle der Anbieter, stattdessen erscheint
+manchmal unten nur Text."
+Zwei Ursachen: (1) Layout — die Popup-Kinder rendern im inneren
+Popover-VIEWPORT (Block + Padding), meine Flex-Klassen lagen auf dem
+Popup; zudem wickelt der Viewport die Kinder in einen Transitions-
+Container. Fix: eigener flex-row-Wrapper im Inhalt. (2) Daten — das
+Menü zeigte nur die Katalog-Wildcards (grok-_, claude-_), weil der
+Catalog die ROUTEN-Muster der Accounts listet. Fix: workjetGatewayModels
+(dieselbe Discovery-Quelle wie die Pools-Seite) liefert die konkreten
+Modelle; Wildcards bleiben nur als Fallback für Anbieter ohne Discovery.
+LIVE-BEWEIS: alle 6 Provider mit echten Listen (Claude 17, Codex 13,
+Z.ai 5, MiniMax 9, xAI 15, Kimi 10 Modelle; Anzeigename + ID), Rail und
+Liste nebeneinander (Screenshot model-menu-fixed.png im Scratchpad).
+Draft-Zustand nach Prüfung wiederhergestellt (Codex CLI · claude-fable-5).

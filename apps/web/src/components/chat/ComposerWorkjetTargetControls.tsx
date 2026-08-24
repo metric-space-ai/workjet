@@ -422,41 +422,53 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
               answers
             </TooltipPopup>
           </Tooltip>
-          <PopoverPopup side="top" align="start" className="flex overflow-hidden p-0">
-            <div className="flex flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
-              {modelGroups.map(([provider]) => {
-                const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
-                const active = provider === activeModelProvider;
-                return (
-                  <button
-                    key={provider}
-                    type="button"
-                    aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
-                    className={
-                      "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
-                      (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
-                    }
-                    onClick={() => setModelProviderChoice(provider)}
-                  >
-                    {RailIcon ? (
-                      <RailIcon className="size-4" />
-                    ) : (
-                      <span className="text-[11px] font-semibold uppercase">
-                        {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex max-h-72 min-w-56 flex-col overflow-y-auto p-1.5">
-              <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
-                  activeModelProvider ??
-                  "Models"}
+          <PopoverPopup
+            side="top"
+            align="start"
+            className="overflow-hidden p-0"
+            // Children render inside the popup's inner VIEWPORT, not the popup
+            // itself — flex on the popup silently stacked rail and list
+            // vertically (measured: rail above, models below).
+            viewportClassName="p-0"
+          >
+            {/* Own flex wrapper: the popup viewport nests children inside a
+                transition pane, so flex on the viewport never reaches them. */}
+            <div className="flex flex-row">
+              <div className="flex flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
+                {modelGroups.map(([provider]) => {
+                  const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
+                  const active = provider === activeModelProvider;
+                  return (
+                    <button
+                      key={provider}
+                      type="button"
+                      aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
+                      className={
+                        "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
+                        (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
+                      }
+                      onClick={() => setModelProviderChoice(provider)}
+                    >
+                      {RailIcon ? (
+                        <RailIcon className="size-4" />
+                      ) : (
+                        <span className="text-[11px] font-semibold uppercase">
+                          {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              {(modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []).map(
-                (model) => (
+              <div className="flex max-h-72 min-w-56 flex-col overflow-y-auto p-1.5">
+                <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                  {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
+                    activeModelProvider ??
+                    "Models"}
+                </div>
+                {(
+                  modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []
+                ).map((model) => (
                   <button
                     key={model.id}
                     type="button"
@@ -478,28 +490,28 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                       </span>
                     )}
                   </button>
-                ),
-              )}
-              {props.models.length === 0 && props.modelsUnavailableReason !== null ? (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  {props.modelsUnavailableReason}
-                </div>
-              ) : null}
-              {modelInCatalog || props.selectedModelId.length === 0 ? null : (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Current: {props.selectedModelId} (not in the gateway catalog)
-                </div>
-              )}
-              <button
-                type="button"
-                className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
-                onClick={() => {
-                  setModelMenuOpen(false);
-                  setCustomModelDraft(props.selectedModelId);
-                }}
-              >
-                Custom model id…
-              </button>
+                ))}
+                {props.models.length === 0 && props.modelsUnavailableReason !== null ? (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {props.modelsUnavailableReason}
+                  </div>
+                ) : null}
+                {modelInCatalog || props.selectedModelId.length === 0 ? null : (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    Current: {props.selectedModelId} (not in the gateway catalog)
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  onClick={() => {
+                    setModelMenuOpen(false);
+                    setCustomModelDraft(props.selectedModelId);
+                  }}
+                >
+                  Custom model id…
+                </button>
+              </div>
             </div>
           </PopoverPopup>
         </Popover>

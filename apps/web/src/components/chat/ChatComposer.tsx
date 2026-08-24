@@ -198,7 +198,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { CircleAlertIcon, XIcon } from "lucide-react";
+import { CircleAlertIcon, MonitorIcon, XIcon } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -3113,7 +3113,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {workerModeActive ? null : noProviderAvailable ? (
+                {workerModeActive ? (
+                  /* Worker mode shows the worker's TARGET COMPUTER — the
+                     operator's bar spec is Worker · Rechner · Extras. This is
+                     the worker's own binding, read from its profile; a
+                     switcher only makes sense once a second machine exists,
+                     and a one-option dropdown would be a dummy control. */
+                  <span className="flex shrink-0 items-center gap-1.5 px-2 text-xs text-secondary-label">
+                    <MonitorIcon className="size-3.5" />
+                    {settings.workjet.computers.find(
+                      (computer) =>
+                        computer.id ===
+                        workjetWorkers.find((worker) => worker.id === selectedWorkjetWorkerId)
+                          ?.computerId,
+                    )?.label ?? "No computer bound"}
+                  </span>
+                ) : noProviderAvailable ? (
                   <Button
                     type="button"
                     size="sm"

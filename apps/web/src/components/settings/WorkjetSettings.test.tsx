@@ -79,23 +79,8 @@ describe("Workjet configuration settings", () => {
     onAddAccount: () => undefined,
     onCancelLogin: () => undefined,
     apiKey: { status: "idle" as const },
+    onRemoveAccount: () => undefined,
     onAddApiKey: () => undefined,
-  };
-  const legacyImport = {
-    hasOffer: false,
-    draft: {},
-    onAnswer: () => undefined,
-    state: {
-      inspection: { schemaVersion: 1 as const, state: "nothing-to-import" as const },
-      isInitialLoading: false,
-      hasInspectFailure: false,
-      isRefreshing: false,
-      isDeciding: false,
-      error: null,
-      onRefresh: () => undefined,
-      onAccept: () => undefined,
-      onDecline: () => undefined,
-    },
   };
   const automaticWorktreeStorage = {
     configuredRoot: "",
@@ -127,7 +112,6 @@ describe("Workjet configuration settings", () => {
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
-        legacyImport={legacyImport}
         onChange={() => undefined}
       />,
     );
@@ -157,7 +141,6 @@ describe("Workjet configuration settings", () => {
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
-        legacyImport={legacyImport}
         defaultSection="telemetry"
         onChange={() => undefined}
       />,
@@ -175,7 +158,6 @@ describe("Workjet configuration settings", () => {
         greppy={greppy}
         gateway={gateway}
         automaticWorktreeStorage={automaticWorktreeStorage}
-        legacyImport={legacyImport}
         defaultSection="workers"
         onChange={() => undefined}
       />,
@@ -202,7 +184,6 @@ describe("Workjet configuration settings", () => {
             canonicalRoot: "/Volumes/worktrees",
           },
         }}
-        legacyImport={legacyImport}
         defaultSection="execution"
         onChange={() => undefined}
       />,

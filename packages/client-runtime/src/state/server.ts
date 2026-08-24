@@ -847,6 +847,13 @@ export function createServerEnvironmentAtoms<R, E>(
     concurrency: workjetGatewayConcurrency,
     onSuccess: refreshWorkjetGateway,
   });
+  // Removal rewrites the configuration and reloads the host.
+  const removeWorkjetGatewayAccount = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:remove-account",
+    tag: WS_METHODS.workjetGatewayRemoveAccount,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
   // Pool editing rewrites the configuration and reloads the host, so it shares
   // the gateway's single-flight key with every other lifecycle command.
   const updateWorkjetGatewayRouting = createEnvironmentRpcCommand(runtime, {
@@ -1087,6 +1094,7 @@ export function createServerEnvironmentAtoms<R, E>(
     pollWorkjetGatewayOauth,
     cancelWorkjetGatewayOauth,
     addWorkjetGatewayApiKeyAccount,
+    removeWorkjetGatewayAccount,
     updateWorkjetGatewayRouting,
     workjetLegacyImport,
     decideWorkjetLegacyImport,

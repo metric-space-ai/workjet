@@ -66,6 +66,7 @@ export const RPC_REQUIRED_SCOPES = {
   // Writing a provider credential is an operate action, exactly like starting
   // an OAuth login; a read-only session can never add an account.
   [WS_METHODS.workjetGatewayAddApiKeyAccount]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayRemoveAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayHealth]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,

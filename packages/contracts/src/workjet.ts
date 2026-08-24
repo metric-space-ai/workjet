@@ -845,6 +845,18 @@ export const WorkjetGatewayAddApiKeyAccountResult = Schema.Struct({
 });
 export type WorkjetGatewayAddApiKeyAccountResult = typeof WorkjetGatewayAddApiKeyAccountResult.Type;
 
+/** Removes one gateway account by id; the server deletes its secrets too. */
+export const WorkjetGatewayRemoveAccountInput = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayRemoveAccountInput = typeof WorkjetGatewayRemoveAccountInput.Type;
+
+export const WorkjetGatewayRemoveAccountResult = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  removedAccountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayRemoveAccountResult = typeof WorkjetGatewayRemoveAccountResult.Type;
+
 export const WorkjetGatewayOauthPollInput = Schema.Struct({
   state: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128))),
 });

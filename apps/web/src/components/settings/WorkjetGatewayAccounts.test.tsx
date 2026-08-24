@@ -110,6 +110,7 @@ const BASE: WorkjetGatewaySectionState = {
   onAddAccount: () => undefined,
   onCancelLogin: () => undefined,
   apiKey: { status: "idle" },
+  onRemoveAccount: () => undefined,
   onAddApiKey: () => undefined,
 };
 

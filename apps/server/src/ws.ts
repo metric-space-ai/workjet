@@ -1873,6 +1873,12 @@ const makeWsRpcLayer = (
             providerGateway.addApiKeyAccount(input),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetGatewayRemoveAccount]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayRemoveAccount,
+            providerGateway.removeAccount(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
         [WS_METHODS.workjetGatewayHealth]: (_input) =>
           observeRpcEffect(WS_METHODS.workjetGatewayHealth, providerGateway.health(), {
             "rpc.aggregate": "workjet-provider-gateway",

@@ -8,6 +8,7 @@ import type {
   WorkjetGatewayOauthProvider,
   WorkjetGatewayUpdateRoutingInput,
 } from "@t3tools/contracts";
+import { WorkjetGatewayAccountId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
@@ -78,6 +79,9 @@ export function useWorkjetGatewaySection(
     reportFailure: false,
   });
   const addApiKeyAccount = useAtomCommand(serverEnvironment.addWorkjetGatewayApiKeyAccount, {
+    reportFailure: false,
+  });
+  const removeAccount = useAtomCommand(serverEnvironment.removeWorkjetGatewayAccount, {
     reportFailure: false,
   });
   const [login, setLogin] = useState<WorkjetGatewayLoginState>({ status: "idle" });
@@ -284,6 +288,24 @@ export function useWorkjetGatewaySection(
     void cancelGatewayOauth({ environmentId, input: { state: login.state } });
   }, [cancelGatewayOauth, environmentId, login]);
 
+  const removeRef = useRef(false);
+  const removeAccountById = useCallback(
+    (accountId: string) => {
+      if (environmentId === null || removeRef.current) return;
+      removeRef.current = true;
+      void (async () => {
+        const result = await removeAccount({
+          environmentId,
+          input: { accountId: WorkjetGatewayAccountId.make(accountId) },
+        });
+        if (result._tag === "Success") refresh();
+      })().finally(() => {
+        removeRef.current = false;
+      });
+    },
+    [environmentId, refresh, removeAccount],
+  );
+
   return {
     status: statusQuery.data,
     catalog: catalogQuery.data,
@@ -303,6 +325,7 @@ export function useWorkjetGatewaySection(
     onCancelLogin: cancelLogin,
     apiKey,
     onAddApiKey: addApiKey,
+    onRemoveAccount: removeAccountById,
     pools: {
       catalog: catalogQuery.data,
       health: healthQuery.data,

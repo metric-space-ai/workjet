@@ -546,3 +546,9 @@ Alle sechs direkt aus Chat-Nachrichten mit Screenshots übernommen:
     Swift-App (dort: Karte je Worker mit Badges + MODELL-Regeln +
     WORKER-AUFGABE voll ausgeschrieben). FIX: Prompt-Seite baut die
     vollständige Ansicht nach; Modellregeln (modelPrompts) importieren.
+11. Manual-Modus: Harness/Modell-Trennung fehlt weiter — Screenshot
+    zeigt den alten Provider-Tab-Modellpicker ("No models found") statt
+    Harness · Provider · Modell als getrennte Auswahlen.
+12. In BEIDEN Modi fehlt die Rechner-AUSWAHL in der Leiste (nur
+    Anzeige). Funktional fehlt damit auch: einen Thread auf einen
+    anderen PC schieben.

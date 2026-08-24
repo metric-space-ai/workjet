@@ -11,6 +11,8 @@ import {
   type WorkjetGatewayOauthPollResult,
   type WorkjetGatewayOauthSession,
   type WorkjetGatewayAddApiKeyAccountInput,
+  type WorkjetGatewayRemoveAccountInput,
+  type WorkjetGatewayRemoveAccountResult,
   type WorkjetGatewayAddApiKeyAccountResult,
   type WorkjetGatewayOauthProvider,
   type WorkjetGatewayOauthStartInput,
@@ -151,6 +153,14 @@ export interface ProviderGatewayServiceShape {
   readonly addApiKeyAccount: (
     input: WorkjetGatewayAddApiKeyAccountInput,
   ) => Effect.Effect<WorkjetGatewayAddApiKeyAccountResult, WorkjetGatewayOperationError>;
+  /**
+   * Remove one gateway account: its secrets are deleted from the secret
+   * store, pools and routes that referenced it are pruned, and the gateway
+   * reloads without it.
+   */
+  readonly removeAccount: (
+    input: WorkjetGatewayRemoveAccountInput,
+  ) => Effect.Effect<WorkjetGatewayRemoveAccountResult, WorkjetGatewayOperationError>;
   /**
    * Health as the RUNNING host reports it. Everything here is read from the
    * host's management surface; the dimensions the host does not publish are
@@ -826,6 +836,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       });
     };
 
+    /**
+     * Models a fresh OAuth account serves, when the provider reported none.
+     * The wildcard patterns are the ones the operator's own configuration
+     * used; without them a new account is "In rotation" but serves nothing.
+     */
+    const DEFAULT_OAUTH_ACCOUNT_MODELS: Partial<
+      Record<WorkjetGatewayOauthProvider, ReadonlyArray<string>>
+    > = {
+      claude: ["claude-*"],
+      codex: ["gpt-*", "codex-*"],
+      xai: ["grok-*"],
+    };
+
     const persistClaimedAccounts = async (
       claimed: ReadonlyArray<ClaimedCredential>,
     ): Promise<ReadonlyArray<string>> => {
@@ -839,6 +862,43 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           // never decode or start; refuse instead of writing a broken config.
           throw safeError("invalid-configuration");
         }
+        const writeSecret = async (ref: GatewaySecretReference, value: string): Promise<void> => {
+          await runPromise(secrets.set(secretStoreName(ref), textEncoder.encode(value))).catch(
+            () => {
+              throw safeError("secret-unavailable");
+            },
+          );
+        };
+        // RE-LOGIN heals in place. Logging into the same identity again means
+        // "these tokens replaced those tokens" — so the fresh secrets are
+        // written to the EXISTING account's references and no second account
+        // appears. Identity = provider + label (the provider-reported email);
+        // an API-key account of the same provider is a different thing and is
+        // never matched.
+        const relogin = accounts.find(
+          (account) =>
+            account.provider === credential.provider &&
+            account.label === credential.label &&
+            "accessTokenSecret" in account,
+        );
+        if (relogin !== undefined) {
+          await writeSecret(
+            relogin.accessTokenSecret,
+            credential.secrets["access_token_secret"] ?? "",
+          );
+          await writeSecret(
+            relogin.refreshTokenSecret,
+            credential.secrets["refresh_token_secret"] ?? "",
+          );
+          if ("idTokenSecret" in relogin) {
+            await writeSecret(relogin.idTokenSecret, credential.secrets["id_token_secret"] ?? "");
+          }
+          if ("stateSecret" in relogin) {
+            await writeSecret(relogin.stateSecret, credential.secrets["state_secret"] ?? "");
+          }
+          createdIds.push(relogin.id);
+          continue;
+        }
         const base = `${credential.provider}-${secretSlug(credential.label)}`;
         let id = base;
         for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${base}-${suffix}`;
@@ -847,20 +907,16 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           scope: GATEWAY_SECRET_SCOPE,
           name: `account-${id}-${kind}`,
         });
-        const writeSecret = async (ref: GatewaySecretReference, value: string): Promise<void> => {
-          await runPromise(secrets.set(secretStoreName(ref), textEncoder.encode(value))).catch(
-            () => {
-              throw safeError("secret-unavailable");
-            },
-          );
-        };
         const common = {
           id,
           label: credential.label,
           enabled: true,
           priority: 0,
           weight: 1,
-          models: credential.models,
+          models:
+            credential.models.length > 0
+              ? credential.models
+              : (DEFAULT_OAUTH_ACCOUNT_MODELS[credential.provider] ?? []),
         };
         if (credential.provider === "claude") {
           const accessTokenSecret = reference("access-token");
@@ -1051,6 +1107,68 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         // status() carries the failure reason.
       }
       return { schemaVersion: 1, accountId: WorkjetGatewayAccountId.make(id) };
+    };
+
+    /**
+     * Removes one account. Order matters: the configuration is validated and
+     * written FIRST, so a failure never leaves references pointing at deleted
+     * secrets; the secret files go last and a failed delete only leaves an
+     * orphaned (unreferenced) secret behind.
+     */
+    const runRemoveAccount = async (
+      input: WorkjetGatewayRemoveAccountInput,
+    ): Promise<WorkjetGatewayRemoveAccountResult> => {
+      const existing = await loadConfiguration().catch(() => undefined);
+      const account = existing?.accounts.find((candidate) => candidate.id === input.accountId);
+      if (existing === undefined || account === undefined) {
+        throw safeError("invalid-configuration");
+      }
+      const accounts = existing.accounts.filter((candidate) => candidate.id !== input.accountId);
+      // Pools shrink; a pool with no member left disappears, and with it the
+      // routes that pointed at it.
+      const pools = existing.pools
+        .map((pool) => ({
+          ...pool,
+          accountIds: pool.accountIds.filter((accountId) => accountId !== input.accountId),
+        }))
+        .filter((pool) => pool.accountIds.length > 0);
+      const poolIds = new Set(pools.map((pool) => pool.id));
+      const routes = existing.routes.filter((route) => poolIds.has(route.poolId));
+      // The default provider must keep an enabled account while any exist.
+      const defaultProvider =
+        accounts.length === 0 ||
+        accounts.some(
+          (candidate) => candidate.enabled && candidate.provider === existing.defaultProvider,
+        )
+          ? existing.defaultProvider
+          : (accounts.find((candidate) => candidate.enabled)?.provider ?? accounts[0]!.provider);
+      const candidate = {
+        schemaVersion: 1,
+        defaultProvider,
+        accounts,
+        pools,
+        routes,
+        routingStrategy: existing.routingStrategy,
+        ...(existing.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+        ...(existing.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+      };
+      const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
+      if (decoded === undefined) throw safeError("invalid-configuration");
+      await platform
+        .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
+        .catch(() => {
+          throw safeError("invalid-configuration");
+        });
+      for (const reference of accountSecretReferences(account)) {
+        await runPromise(secrets.delete(secretStoreName(reference))).catch(() => undefined);
+      }
+      try {
+        await stopSingleFlight();
+        await startSingleFlight();
+      } catch {
+        // status() carries the failure reason.
+      }
+      return { schemaVersion: 1, removedAccountId: input.accountId };
     };
 
     const GATEWAY_PROVIDERS: ReadonlyArray<WorkjetGatewayProvider> = [
@@ -1361,6 +1479,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       addApiKeyAccount: (input) =>
         Effect.tryPromise({
           try: () => runAddApiKeyAccount(input),
+          catch: (error) =>
+            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+        }),
+      removeAccount: (input) =>
+        Effect.tryPromise({
+          try: () => runRemoveAccount(input),
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),

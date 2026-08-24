@@ -195,6 +195,8 @@ import {
   WorkjetHarnessAvailabilitySnapshot,
   WorkjetGatewayAddApiKeyAccountInput,
   WorkjetGatewayAddApiKeyAccountResult,
+  WorkjetGatewayRemoveAccountInput,
+  WorkjetGatewayRemoveAccountResult,
   WorkjetGatewayCatalog,
   WorkjetGatewayHealth,
   WorkjetGatewayModelDiscovery,
@@ -362,6 +364,7 @@ export const WS_METHODS = {
   workjetGatewayOauthPoll: "workjet.providerGateway.oauthPoll",
   workjetGatewayOauthCancel: "workjet.providerGateway.oauthCancel",
   workjetGatewayAddApiKeyAccount: "workjet.providerGateway.addApiKeyAccount",
+  workjetGatewayRemoveAccount: "workjet.providerGateway.removeAccount",
   workjetGatewayHealth: "workjet.providerGateway.health",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
@@ -692,6 +695,13 @@ export const WsWorkjetGatewayAddApiKeyAccountRpc = Rpc.make(
     error: WorkjetGatewayRpcError,
   },
 );
+
+/** Removes one gateway account. The server deletes the account's secrets. */
+export const WsWorkjetGatewayRemoveAccountRpc = Rpc.make(WS_METHODS.workjetGatewayRemoveAccount, {
+  payload: WorkjetGatewayRemoveAccountInput,
+  success: WorkjetGatewayRemoveAccountResult,
+  error: WorkjetGatewayRpcError,
+});
 
 /**
  * Health as the running gateway host reports it. Read-only, and deliberately
@@ -1497,6 +1507,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayOauthPollRpc,
   WsWorkjetGatewayOauthCancelRpc,
   WsWorkjetGatewayAddApiKeyAccountRpc,
+  WsWorkjetGatewayRemoveAccountRpc,
   WsWorkjetGatewayHealthRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,

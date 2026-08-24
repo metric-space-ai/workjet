@@ -15,6 +15,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   TriangleAlertIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -136,6 +137,8 @@ export interface WorkjetGatewaySectionState {
    * to the server over the existing gateway RPC and is never logged or echoed.
    */
   readonly onAddApiKey: (provider: WorkjetGatewayApiKeyProvider, apiKey: string) => void;
+  /** Removes one account; the server deletes its secrets and reloads. */
+  readonly onRemoveAccount: (accountId: string) => void;
 }
 
 const GATEWAY_FAILURE_REASONS = new Set<WorkjetGatewayFailureReason>([
@@ -698,6 +701,17 @@ export function WorkjetGatewayAccountsSectionView(
                                 Re-login
                               </Button>
                             )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1.5 text-[11px] text-destructive hover:text-destructive"
+                              aria-label={`Remove account ${account.label}`}
+                              disabled={!canAdd}
+                              onClick={() => state.onRemoveAccount(account.id)}
+                            >
+                              <Trash2Icon className="size-3" />
+                            </Button>
                           </span>
                         </div>
                       );

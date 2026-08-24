@@ -52,9 +52,6 @@ import {
 } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
-import type { WorkjetLegacyImportSection } from "./useWorkjetLegacyImportSection";
-import { useWorkjetLegacyImportSection } from "./useWorkjetLegacyImportSection";
-import { WorkjetLegacyImportSectionView } from "./WorkjetLegacyImport";
 import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -372,8 +369,7 @@ export type WorkjetSettingsSectionId =
   | "prompt"
   | "telemetry"
   | "execution"
-  | "capabilities"
-  | "legacy-import";
+  | "capabilities";
 
 const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   readonly id: WorkjetSettingsSectionId;
@@ -389,7 +385,6 @@ const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   { id: "prompt", targetId: "workjet-prompt", label: "Prompt" },
   { id: "telemetry", targetId: "workjet-telemetry", label: "Telemetry" },
   { id: "execution", targetId: "workjet-execution", label: "Execution" },
-  { id: "legacy-import", targetId: "workjet-legacy-import", label: "Legacy import" },
 ];
 
 export function workjetSectionFromHash(hash: string): WorkjetSettingsSectionId | null {
@@ -675,7 +670,6 @@ export function WorkjetSettingsView({
   greppy,
   gateway,
   automaticWorktreeStorage,
-  legacyImport,
   defaultSection = "workers",
   onChange,
 }: {
@@ -685,8 +679,6 @@ export function WorkjetSettingsView({
   readonly greppy: GreppySectionState;
   readonly gateway: WorkjetGatewaySectionState;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
-  /** The one-shot legacy Swift import offer. */
-  readonly legacyImport: WorkjetLegacyImportSection;
   readonly defaultSection?: WorkjetSettingsSectionId;
   /**
    * Live probe of THIS server's harnesses (`workjet.harness.inspect`), plus
@@ -729,24 +721,6 @@ export function WorkjetSettingsView({
             Compose reusable workers from independent computer, harness, route, model, prompt,
             reasoning, and capability choices.
           </p>
-          {legacyImport.hasOffer && activeSection !== "legacy-import" ? (
-            // A one-time offer nobody finds is a one-time offer nobody answers,
-            // so the page says it is waiting instead of hiding it behind a tab.
-            <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-              <span>
-                This server still holds an unanswered import offer from the legacy Swift Workjet
-                app.
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setActiveSection("legacy-import")}
-              >
-                Review the import
-              </Button>
-            </p>
-          ) : null}
         </div>
         <SectionNavigation activeSection={activeSection} onSelect={setActiveSection} />
       </div>
@@ -1222,14 +1196,6 @@ export function WorkjetSettingsView({
           so it sits under Workers instead of a tab of its own; the per-worker
           capability toggles already live in the worker editor. */}
       {activeSection === "workers" ? <GreppyRuntimeSectionView {...greppy} /> : null}
-
-      {activeSection === "legacy-import" ? (
-        <WorkjetLegacyImportSectionView
-          state={legacyImport.state}
-          draft={legacyImport.draft}
-          onAnswer={legacyImport.onAnswer}
-        />
-      ) : null}
     </SettingsPageContainer>
   );
 }
@@ -1278,10 +1244,6 @@ export function WorkjetSettings({
   // Settings → Providers. This page keeps the same state only so an LLM route
   // can pick from the gateway's account catalog.
   const gateway = useWorkjetGatewaySection(environmentId);
-  // The one-shot legacy Swift import. Server-authoritative and per environment:
-  // the document lives on the machine THIS server runs on, and the import lands
-  // in that server's own settings.
-  const legacyImport = useWorkjetLegacyImportSection(environmentId);
 
   const handleInstall = useCallback(() => {
     if (environmentId === null || action === null || operatingRef.current) return;
@@ -1382,7 +1344,6 @@ export function WorkjetSettings({
         onInstall: handleInstall,
       }}
       gateway={gateway}
-      legacyImport={legacyImport}
       automaticWorktreeStorage={{
         configuredRoot: settings.automaticWorktreeRoot,
         selectedServerLabel: primaryEnvironment?.label ?? null,

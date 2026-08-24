@@ -111,7 +111,6 @@ describe("searchSettings", () => {
       "automatic-worktree-storage",
       "workjet-capabilities",
       "greppy-runtime",
-      "workjet-legacy-import",
     ]);
   });
 

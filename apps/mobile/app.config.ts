@@ -49,36 +49,47 @@ const PREVIEW_ASSETS = {
 } as const;
 
 const RELEASE_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  androidAdaptiveForeground: "./assets/android-icon-mark.png",
-  androidAdaptiveBackgroundColor: "#000000",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#FFFFFF",
+  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
+  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
+  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidAdaptiveForegroundPng),
+  // Matches the near-white background baked into the CTOX mark so the
+  // adaptive-icon mask blends seamlessly.
+  androidAdaptiveBackgroundColor: "#FEFEFE",
+  androidMonochromeIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidMonochromePng),
+  androidNotificationIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidNotificationPng),
+  androidNotificationColor: "#0B7EBC",
 } as const;
 
+// CTOX display identity, same split as the desktop rebrand
+// (apps/desktop/src/electron/desktopSchemes.ts): the user-facing name and the
+// preferred deep-link scheme are CTOX, while the legacy t3code scheme stays
+// claimed and the com.t3tools.t3code identifiers stay untouched — signing,
+// store listings, push entitlements, app groups, and the Clerk passkey
+// relying party all hang off them, so renaming those is a separate migration.
+// The schemes are deliberately not `ctox:` — that namespace belongs to the
+// CTOX daemon's own pairing/invite links — and not `ctox-desktop*`, which the
+// desktop app claims.
 const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
-    scheme: "t3code-dev",
+    appName: "CTOX Dev",
+    schemes: ["ctox-mobile-dev", "t3code-dev"],
     iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
     relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
-    scheme: "t3code-preview",
+    appName: "CTOX Preview",
+    schemes: ["ctox-mobile-preview", "t3code-preview"],
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
     relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
-    scheme: "t3code",
+    appName: "CTOX",
+    schemes: ["ctox-mobile", "t3code"],
     iosBundleIdentifier: "com.t3tools.t3code",
     androidPackage: "com.t3tools.t3code",
     relyingParty: "clerk.t3.codes",
@@ -121,7 +132,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: "Shows the current state of active CTOX agents.",
         supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
       },
     ],
@@ -160,7 +171,7 @@ const config: ExpoConfig = {
   name: variant.appName,
   slug: "t3-code",
   platforms: ["ios", "android"],
-  scheme: variant.scheme,
+  scheme: [...variant.schemes],
   version: "1.0.4",
   runtimeVersion: {
     // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
@@ -198,7 +209,7 @@ const config: ExpoConfig = {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+        "Allow CTOX to connect to CTOX servers on your local network or tailnet.",
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -292,7 +303,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: "Allow CTOX to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,

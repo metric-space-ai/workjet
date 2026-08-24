@@ -34,7 +34,18 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 const appLinking = {
-  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
+  prefixes: [
+    Linking.createURL("/"),
+    // CTOX-branded schemes first; the legacy t3code schemes stay claimed so
+    // links baked into older docs, QR codes, and OAuth consoles keep opening
+    // the app (same policy as apps/desktop/src/electron/desktopSchemes.ts).
+    "ctox-mobile://",
+    "ctox-mobile-dev://",
+    "ctox-mobile-preview://",
+    "t3code://",
+    "t3code-dev://",
+    "t3code-preview://",
+  ],
   // The Expo dev client launches the app via
   // <scheme>://expo-development-client/?url=<packager> — that URL addresses
   // the launcher, not app navigation. Without this filter it falls through

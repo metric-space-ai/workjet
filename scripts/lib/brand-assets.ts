@@ -25,6 +25,13 @@ export const BRAND_ASSET_PATHS = {
 
   ctoxAppIconPng: "assets/ctox/ctox-app-icon.png",
   ctoxMacIconIcns: "assets/ctox/ctox-app-icon.icns",
+  // Mobile derivatives of the CTOX mark (generated from ctox-app-icon.png):
+  // full-bleed 1024 for iOS icon + splash, safe-zone padded adaptive
+  // foreground, and white-on-transparent monochrome/notification marks.
+  ctoxIosIconPng: "assets/ctox/ctox-ios-1024.png",
+  ctoxAndroidAdaptiveForegroundPng: "assets/ctox/ctox-android-adaptive-foreground.png",
+  ctoxAndroidMonochromePng: "assets/ctox/ctox-android-monochrome.png",
+  ctoxAndroidNotificationPng: "assets/ctox/ctox-android-notification.png",
   ctoxWindowsIconIco: "assets/ctox/ctox-windows.ico",
   ctoxWebFaviconIco: "assets/ctox/ctox-web-favicon.ico",
   ctoxWebFavicon16Png: "assets/ctox/ctox-web-favicon-16x16.png",

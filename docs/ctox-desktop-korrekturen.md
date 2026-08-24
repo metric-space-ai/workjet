@@ -11,7 +11,38 @@ Fehlermuster. Dieses Dokument trägt NUR das Offene.
 
 ---
 
-## -1 · SCHWERSTER BEFUND: Harnesses laufen im privaten Nutzerzustand
+## -1 · Harness-Isolation — FÜR CLAUDE UND CODEX AKTIV seit 2026-08-24
+
+Umgesetzt rein per Konfiguration (die Mechanik existierte):
+
+- **Claude:** `homePath = ~/.t3/userdata/harness-homes/claude` →
+  `CLAUDE_CONFIG_DIR` (ClaudeHome.ts), plus `routeViaGateway`.
+  BEWIESEN: Turn `BEREIT` (14,6 s) übers Gateway; `~/.claude` blieb bei
+  16 greppy-Sitzungen, die neue Sitzung liegt im CTOX-Home.
+- **Codex:** `homePath = ~/.t3/userdata/harness-homes/codex` →
+  `CODEX_HOME`, plus `routeViaGateway`. App-Server bootet im isolierten
+  Home; `~/.codex/sessions` stabil bei 401 über mehrere Threads.
+  Der volle Codex-Turn-Beweis wartet auf das Kontingent (27.08.).
+  (Eine 401. Datei entstand VOR dem Neustart — Titel-Generierung lief
+  noch mit altem Home; seit dem Instanz-Neuaufbau nichts mehr.)
+
+ZWEI FALLEN dabei, beide teuer:
+
+1. `providerInstances.codex` von Hand in settings.json zu schreiben
+   KILLT den Default-Slot (Codex verschwand komplett aus Harness-Liste
+   und Wähler). Instanzen NUR über das App-Formular anlegen; Rollback
+   war nötig.
+2. Konfigurationsänderungen wirken erst nach App-Neustart auf die
+   Instanz — dazwischen schreibt z. B. die Titel-Generierung noch ins
+   alte Home.
+
+OFFEN an −1: Grok/OpenCode-Homes analog (OpenCode nutzt native
+Anmeldung — Isolation dort erst mit Gateway-Route sinnvoll); und die
+GROSSE Frage bleibt separat: Sitzungs-EIGENTUM in der App (Thread-Lock,
+Wechsel mitten in der Session) — das ist die Migrationsentscheidung des
+Betreibers, unverändert.
+
+### (ursprünglich) SCHWERSTER BEFUND: Harnesses laufen im privaten Nutzerzustand
 
 Gemessen 2026-08-24: Ein CTOX-Chat erschien in der Codex-Desktop-App.
 Mechanismus, mit Code:

@@ -641,22 +641,43 @@ export function WorkjetGatewayAccountsSectionView(
                           </span>
                           <span
                             className={cn(
-                              "shrink-0",
+                              "flex shrink-0 items-center gap-2",
                               serves === false ? "text-amber-500" : "text-muted-foreground/70",
                             )}
                           >
-                            {serves === false ? "serves no models · " : ""}
-                            {/*
-                              Explicitly "recorded on this account", never a
-                              bare model count: the bare number reads as what
-                              the provider serves, which is the gateway
-                              catalog and a different figure entirely.
-                            */}
-                            {account.modelIds.length > 0
-                              ? `${account.modelIds.length} ${account.modelIds.length === 1 ? "model" : "models"} recorded · `
-                              : ""}
-                            {gatewayAccountRotationLabel(state.catalog, account) ??
-                              (account.enabled ? "Enabled" : "Disabled")}
+                            <span>
+                              {serves === false ? "serves no models · " : ""}
+                              {/*
+                                Explicitly "recorded on this account", never a
+                                bare model count: the bare number reads as what
+                                the provider serves, which is the gateway
+                                catalog and a different figure entirely.
+                              */}
+                              {account.modelIds.length > 0
+                                ? `${account.modelIds.length} ${account.modelIds.length === 1 ? "model" : "models"} recorded · `
+                                : ""}
+                              {gatewayAccountRotationLabel(state.catalog, account) ??
+                                (account.enabled ? "Enabled" : "Disabled")}
+                            </span>
+                            {/* Per-access re-login, as in the Swift original
+                                (ProviderAccountsView: "Neu anmelden" on the
+                                access). Same begin flow as adding — logging
+                                into the same identity updates this account's
+                                secrets — but the affordance sits WHERE the
+                                expired access is, instead of asking the
+                                operator to know that "Add another" heals it. */}
+                            {isApiKey ? null : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-1.5 text-[11px]"
+                                disabled={!canAdd || isActiveLogin}
+                                onClick={() => state.onAddAccount(provider)}
+                              >
+                                Re-login
+                              </Button>
+                            )}
                           </span>
                         </div>
                       );

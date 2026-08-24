@@ -812,3 +812,61 @@ Marke (Screenshot). Suiten: web settings+composer 214 grün, Typecheck 0.
 Lehre (CDP): attach.mjs wählte das ERSTE Page-Target — im BOS-Modus ist
 das ein Kunden-Guest, nicht der Host; Probe-Klicks landeten in der
 Thesen-Instanz. attach.mjs pinnt jetzt default auf t3code://app.
+
+## Grok-Kette KOMPLETT 2026-08-24 ~21:43
+
+Der Operator hat den Browser-Login durchgeführt (xAI-Account
+metricspace.ai@gmail.com, In rotation, 14 models — vom UI-Review live
+gesehen). Daraufhin Route „xAI (Grok)" per UI vom Platzhalter
+xai-grok-pending auf den echten Account umgehängt (Editor → Account →
+Save). Verifiziert: „xai-grok-pending" aus dem DOM verschwunden,
+„grok-\* Served by xAI (Grok)" aktiv. Damit sind ALLE sechs Schritte der
+Grok-Subscription-Kette erledigt. Offen bleibt nur noch: GPU-Pairing
+(gpu3/gpu1, Operator).
+
+## §11 Review-Runde 2026-08-24 abends — Befunde Fable (interaktiv, CDP)
+
+Vollständiger Klick-Durchgang der laufenden App. Positiv bestätigt:
+Icons Models↔Composer identisch (SVG-Fingerprints), Manual exakt 2
+Reihen / Worker 1 Reihe, kein Overflow bei 1512px, alle Settings-Seiten
+
+- Editoren funktionsfähig, Icon-Strip korrekt, BOS-Chevrons/Punkte/
+  Fußleiste ok, Endzustand wiederhergestellt.
+
+Befunde (Fixes ausstehend, Nummerierung F1…):
+
+- F1 HOCH: Moduswechsel Worker→Manual übernimmt das Worker-Modell in
+  den Manual-Zustand (claude-fable-5 → gpt-5.6-sol) und die
+  Worker-Auswahl geht bei Navigation verloren (fällt auf Manual zurück).
+- F2 HOCH: Zwei ewige Ladezeilen im Draft-Bereich („Checking for
+  pending approvals…", „Checking both modes for cross-mode activity…"),
+  > 30 min präsent, nie auflösend.
+- F3 MITTEL: erledigt durch Routen-Umhängung (siehe oben).
+- F4 MITTEL: Toter Menüeintrag „Cursor Agent" im Harness-Menü (Klick
+  ohne Wirkung; Harness disabled/executable-not-found).
+- F5 MITTEL: Effort-Chip verschwindet ersatzlos bei Modellen ohne
+  Effort-Metadaten (gpt-5.6-sol) statt Default/disabled-Zustand.
+- F6 MITTEL: Widersprüchliche Modellzahlen (Pool „16 models" vs
+  „1 model recorded" vs Mini-Menü nur Wildcards; „Current: … not in
+  the gateway catalog" neben „gpt-\* Served by Codex").
+- F7 MITTEL: Refresh-Knöpfe ohne sichtbares Feedback (Models-Refresh,
+  BOS-Refresh, Check for updates) — Feedback fehlt, Handler unklar.
+- F8: „+ Add worker/computer…" springt zur Seite, öffnet aber den
+  Anlege-Editor nicht.
+- F9: xAI-Zeile hat als einziger Provider „Add account" UND „Add
+  another".
+- F10: Erklärtext „Codex, Claude, and Grok are intentionally excluded"
+  kollidiert sprachlich mit gleichnamigen Routen darunter.
+- F11: Roh-Slug „executable-not-found" statt Prosa (Computers/cursor).
+- F12: Pi-Code-Zeile bricht das Zeilenmuster der Harness-Liste.
+- F13: Pool-Hilfetext „…can serve nothing until listed" steht dauerhaft
+  trotz gelisteter Modelle.
+- F14: Escape schließt Settings samt offenem Inline-Formular (Verlust).
+- F15: Prompt-Tab zeigt doppelte „Progress board"-Sektionen (Spiegel
+  der Quelle, ungefiltert).
+- F16: Reasoning-Optionssätze Worker-Editor vs Composer inkonsistent
+  (Automatic/Ultra fehlen bzw. andere Schreibung).
+- Verdachtsfälle: gpu1 alle Harnesses „not offered" (Datenimport),
+  Mini-Menü-Rail folgt nicht dem aktuellen Provider, ⌘N/⇧⌘O doppelt
+  als „Chat: New", Diagnostics „Resource monitor NATIVE UNAVAILABLE".
+  Kimi-K3-Gegenreview läuft (Workjet-Run local-…193547Z-977e1443).

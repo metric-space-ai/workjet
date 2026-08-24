@@ -268,20 +268,47 @@ export function WorkjetComputerEditor({
               className="grid gap-2 rounded-lg border border-border/50 p-2.5 sm:grid-cols-[minmax(8rem,1fr)_minmax(12rem,1.5fr)_auto] sm:items-center"
             >
               <Label htmlFor={inputId}>{label}</Label>
-              <Input
-                id={inputId}
-                nativeInput
-                value={configuration.executableOverride}
-                onChange={(event) =>
-                  setDraft((current) =>
-                    updateWorkjetComputerHarness(current, configuration.harness, {
-                      executableOverride: event.target.value,
-                    }),
-                  )
-                }
-                placeholder="Optional executable override"
-                aria-label={`${label} executable override`}
-              />
+              {/* The override is an expert escape hatch, and six always-open
+                  text inputs made the form read like a deployment script (the
+                  Swift editor shows availability first). Folded away unless a
+                  value exists — an existing override stays visible, because a
+                  hidden ACTIVE override would be worse than the clutter. */}
+              {configuration.executableOverride ? (
+                <Input
+                  id={inputId}
+                  nativeInput
+                  value={configuration.executableOverride}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      updateWorkjetComputerHarness(current, configuration.harness, {
+                        executableOverride: event.target.value,
+                      }),
+                    )
+                  }
+                  placeholder="Optional executable override"
+                  aria-label={`${label} executable override`}
+                />
+              ) : (
+                <details>
+                  <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
+                    Executable override…
+                  </summary>
+                  <Input
+                    id={inputId}
+                    nativeInput
+                    value={configuration.executableOverride}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        updateWorkjetComputerHarness(current, configuration.harness, {
+                          executableOverride: event.target.value,
+                        }),
+                      )
+                    }
+                    placeholder="Optional executable override"
+                    aria-label={`${label} executable override`}
+                  />
+                </details>
+              )}
               <Switch
                 checked={configuration.available}
                 onCheckedChange={(available) =>

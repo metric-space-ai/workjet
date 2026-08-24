@@ -79,7 +79,7 @@ export const WORKJET_GATEWAY_PROVIDER_ICONS: Readonly<
 
 export const WORKJET_GATEWAY_PROVIDER_LABELS: Readonly<Record<WorkjetGatewayProvider, string>> = {
   claude: "Claude",
-  codex: "Codex",
+  codex: "Codex (OpenAI)",
   antigravity: "Antigravity",
   zai: "Z.ai (GLM)",
   minimax: "MiniMax",

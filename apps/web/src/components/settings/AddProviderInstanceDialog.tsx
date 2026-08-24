@@ -80,7 +80,7 @@ interface ComingSoonDriverOption {
 const COMING_SOON_DRIVER_OPTIONS: readonly ComingSoonDriverOption[] = [
   {
     value: ProviderDriverKind.make("githubCopilot"),
-    label: "Github Copilot",
+    label: "GitHub Copilot",
     icon: GithubCopilotIcon,
   },
   {

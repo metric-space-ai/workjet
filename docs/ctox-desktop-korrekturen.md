@@ -931,3 +931,34 @@ draftManagedInstructions (System-Prompt-Verlust); K-AH3 Environment-Wahl
 überschreibt Computer-Custom-Label; K-AH5 Zahlen-Inputs nicht leerbar;
 K-BH1 „Connecting to guest…" ohne Spinner/Timeout; K-BH3
 Remove-Feedback am Listenende (unter dem Fold).
+
+## Fix-Runde 1 zur Review-Welle — 2026-08-24 ~22:18
+
+- F2 GEFIXT: Der Notification-Store hatte eine settle()-API („Behörde
+  antwortete mit Nichts"), die NIE aufgerufen wurde — die einzigen
+  Produzenten sind lokale RPC-Call-Sites, es gibt keine Remote-Antwort,
+  auf die man warten könnte. CrossModeNotificationCenter settlet jetzt
+  beim Mount; aus den ewigen „Checking…"-Zeilen werden die ehrlichen
+  Leerzustände. (crossMode/CrossModeNotifications.tsx)
+- K-A1 GEFIXT: Computers-Löschknopf nutzt jetzt ConfirmingDeleteButton
+  (rot „Delete?", 4s-Auto-Entschärfung) wie die anderen drei Flächen.
+- K-A9 GEFIXT: codex heißt überall „Codex (OpenAI)".
+- K-A10 GEFIXT: Pool-Label vereinheitlicht „Held back by priority".
+- K-B14 GEFIXT: „GitHub Copilot"-Schreibweise.
+  Suiten: crossMode+settings 66 grün, Typecheck 0 Fehler.
+
+## KORREKTUR zum „Gateway-Crash" der Mobile-Session — kein Code-Bug
+
+Gemeinsame Diagnose mit der Mobile-Session (Messreihe dort, Isolation
+hier): JEDER frische `bin.ts serve`-Prozess auf dieser Maschine wird
+seit ~21:44 wenige Sekunden nach „Listening" von AUSSEN per SIGKILL
+auf die Prozessgruppe beendet — unabhängig von Gateway-Config (auch
+ohne), Port, Sandbox, Node-Version; triviale Node-Prozesse überleben.
+Der Gateway-Code ist abgesichert (Spawn-Fehler → getypter
+host-unavailable; live nachgemessen: WARN + Weiterlauf). Tatverdacht
+(Zeitkorrelation, nicht bewiesen): fremde ChatGPT-Agenten-Session mit
+working-dir ~/Documents/ctox (läuft seit ~21:21, Playwright-Daemon
+„ctox-prod-security"); Alternative ctox-real-Dienst passt zeitlich
+nicht (läuft seit 5 Tagen, frühe Läufe überlebten). OPERATOR:
+Entscheidung nötig — fremde Session prüfen/stoppen. Wir fassen sie
+nicht an.

@@ -19,7 +19,12 @@ import {
   WorkjetComputerEditor,
 } from "./WorkjetComputerEditor";
 import { workjetEnvironmentTargetOptions } from "./WorkjetSettings";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  ConfirmingDeleteButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 /**
@@ -170,12 +175,9 @@ export function WorkjetComputersSettingsView({
                   >
                     <PencilIcon className="size-3.5" />
                   </Button>
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Delete computer ${computer.label}`}
-                    onClick={() =>
+                  <ConfirmingDeleteButton
+                    label={`computer ${computer.label}`}
+                    onDelete={() =>
                       onChange({
                         ...configuration,
                         computers: configuration.computers.filter(
@@ -183,9 +185,7 @@ export function WorkjetComputersSettingsView({
                         ),
                       })
                     }
-                  >
-                    <Trash2Icon className="size-3.5" />
-                  </Button>
+                  />
                 </div>
               }
             >

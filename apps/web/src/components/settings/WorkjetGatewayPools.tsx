@@ -79,7 +79,7 @@ export function gatewayPoolBehaviourDescription(pool: WorkjetGatewayProviderPool
 
 export function gatewayPoolMemberStateLabel(member: WorkjetGatewayPoolMember): string {
   if (!member.enabled) return "Disabled";
-  return member.selectable ? "In rotation" : "Held back";
+  return member.selectable ? "In rotation" : "Held back by priority";
 }
 
 export type WorkjetGatewayRoutingState =

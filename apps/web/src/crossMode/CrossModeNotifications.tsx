@@ -30,7 +30,7 @@
  * change that starts feeding the store.
  */
 import { AlertTriangleIcon, ArrowUpRightIcon, LinkIcon, XIcon } from "lucide-react";
-import { useCallback, useSyncExternalStore } from "react";
+import { useEffect, useCallback, useSyncExternalStore } from "react";
 
 import { cn } from "../lib/utils";
 import {
@@ -199,6 +199,13 @@ export function CrossModeNotificationCenter() {
     crossModeNotificationStore.getSnapshot,
     crossModeNotificationStore.getSnapshot,
   );
+  // The store's only producers are this session's own RPC call sites — there
+  // is no remote subscription that could answer later (see the producer's
+  // header). Settling on mount is therefore the authority answering "nothing
+  // yet"; without it the panel shows "Checking…" forever (Befund F2).
+  useEffect(() => {
+    crossModeNotificationStore.settle();
+  }, []);
   const navigate = useCrossModeNavigator();
   const onOpen = useCallback(
     (target: CrossModeTarget) => {

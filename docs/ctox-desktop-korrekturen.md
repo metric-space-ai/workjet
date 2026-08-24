@@ -257,10 +257,21 @@ Implementierung" galt nur für das Gateway-Crate und für die alte
 Binärdatei vom 20.08. Antigravity scheitert weiterhin separat
 (braucht eigene Client-Secrets in der Konfiguration).
 
-Damit schrumpft Posten 8 (Grok) auf: xai-Fall in `HostOAuthSource`
-(Device-Flow statt Callback — `verification_uri_complete` als
-authorizationUrl, Poll statt Redirect), `xai-auth-url`-Route,
-Vertrag + Karte. Alles auf einem bewiesenen Build/Swap-Weg.
+Posten 8 (Grok), Umfang nach vollständiger Prüfung 2026-08-24:
+
+- Login-Hälfte KLEIN: xai-Fall in `HostOAuthSource` (Device-Flow —
+  `verification_uri_complete` als authorizationUrl, Hintergrund-Task
+  pollt `poll_for_token` und schreibt das LoginOutcome, kein
+  Callback-Port), `xai-auth-url`-Route, Vertrag, Karte.
+- ABER die BEDIEN-Hälfte fehlt ganz: `XaiSubscriptionAuth` existiert im
+  Gateway-Crate und wird von NIEMANDEM verbraucht — kein Executor, kein
+  Pool, keine Runtime-Konfigurationssektion, kein Router-Eintrag (nur
+  der eigene Test). Ein Abo-Login ohne diesen Pfad erzeugte Zugangs-
+  daten, die nichts bedienen kann — dieselbe Attrappen-Falle, nur eine
+  Ebene tiefer. Vergleichsgröße: der Claude-Pfad (Auth→Executor→Pool→
+  Handler) ist tausende Zeilen.
+- Reihenfolge daher: erst Bedien-Pfad (Executor+Pool+Config nach dem
+  Claude-Muster, upstream-Form des Grok-Abo-APIs klären), DANN Login.
 
 ## 6 · Sign-in-Ablauf übersichtlich (A4)
 

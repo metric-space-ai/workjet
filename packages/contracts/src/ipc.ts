@@ -96,6 +96,7 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   CtoxAppActionResult,
   CtoxDiscoveryResult,
+  CtoxGuestStateEvent,
   CtoxHostThemeInput,
   CtoxGuestBounds,
   CtoxInstanceAppsResult,
@@ -1209,6 +1210,12 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxAppActionResult>;
   /** Project the host appearance theme into the Business OS guest. */
   setHostTheme: (theme: CtoxHostThemeInput) => Promise<CtoxManagedActionResult>;
+  /**
+   * Subscribe to per-instance guest lifecycle changes ("none" | "loading" |
+   * "warm"); returns the unsubscribe. The payload carries the instance id and
+   * state only — never guest content. Optional so older preloads keep working.
+   */
+  onGuestState?: (listener: (event: CtoxGuestStateEvent) => void) => () => void;
 }
 
 export interface DesktopPreviewBridge {

@@ -1,6 +1,8 @@
 import type {
   CtoxDiscoveryResult,
   CtoxGuestBounds,
+  CtoxGuestLifecycleState,
+  CtoxGuestStateEvent,
   CtoxHostThemeTokenKey,
   CtoxInstanceApp,
   CtoxManagedGuestResult,
@@ -25,7 +27,8 @@ import {
   type ReactNode,
 } from "react";
 
-import { Plus, RefreshCw } from "lucide-react";
+import { ChevronRight, Plus, RefreshCw, SettingsIcon } from "lucide-react";
+import { useRouter } from "@tanstack/react-router";
 
 import {
   peekCrossModeBusinessOsRequest,
@@ -36,9 +39,17 @@ import {
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
-import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
-import { SidebarContent, SidebarGroup, SidebarInset } from "../ui/sidebar";
+import {
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "../ui/sidebar";
 
 type CtoxManagedState = "loading" | "ready" | "signed_out" | "failed";
 type CtoxConnectionState = "idle" | "connecting" | "ready" | "error" | "revoked";
@@ -123,6 +134,8 @@ interface CtoxModeContextValue {
   readonly connection: CtoxConnectionState;
   readonly modeReady: boolean;
   readonly bridge: DesktopCtoxBridge | undefined;
+  /** Per-instance native guest lifecycle, pushed by the desktop main process. */
+  readonly guestStates: ReadonlyMap<string, CtoxGuestLifecycleState>;
   readonly refresh: () => void;
   readonly login: () => void;
   readonly logout: () => void;
@@ -351,6 +364,30 @@ export function releaseCtoxMode(bridge: DesktopCtoxBridge | undefined): void {
   void bridge?.exitBusinessOsMode().catch(() => undefined);
 }
 
+const EMPTY_GUEST_STATES: ReadonlyMap<string, CtoxGuestLifecycleState> = new Map();
+
+/**
+ * Folds one guest-state event into the per-instance map. "none" removes the
+ * entry (absence IS the none state), and an unchanged state returns the same
+ * map identity so subscribers can skip re-rendering.
+ */
+export function applyCtoxGuestStateEvent(
+  current: ReadonlyMap<string, CtoxGuestLifecycleState>,
+  event: CtoxGuestStateEvent,
+): ReadonlyMap<string, CtoxGuestLifecycleState> {
+  const existing = current.get(event.instanceId);
+  if (event.state === "none") {
+    if (existing === undefined) return current;
+    const next = new Map(current);
+    next.delete(event.instanceId);
+    return next;
+  }
+  if (existing === event.state) return current;
+  const next = new Map(current);
+  next.set(event.instanceId, event.state);
+  return next;
+}
+
 function useCtoxMode(): CtoxModeContextValue {
   const value = useContext(CtoxModeContext);
   if (value === null) throw new Error("CTOX mode shell must be rendered inside CtoxModeProvider.");
@@ -372,8 +409,24 @@ export function CtoxModeProvider({
   const [activationKey, setActivationKey] = useState(0);
   const [connection, setConnection] = useState<CtoxConnectionState>("idle");
   const [modeReady, setModeReady] = useState(bridge === undefined);
+  const [guestStates, setGuestStates] = useState(EMPTY_GUEST_STATES);
   const mountedRef = useRef(true);
   const selectedIdRef = useRef<string | null>(null);
+
+  // The desktop main process owns the guest pool; the sidebar dots follow its
+  // per-instance lifecycle events (instance id + state token, nothing else).
+  useEffect(() => {
+    const subscribeToGuestState = bridge?.onGuestState;
+    if (subscribeToGuestState === undefined) return;
+    const unsubscribe = subscribeToGuestState((event) => {
+      if (!mountedRef.current) return;
+      setGuestStates((current) => applyCtoxGuestStateEvent(current, event));
+    });
+    return () => {
+      unsubscribe();
+      setGuestStates(EMPTY_GUEST_STATES);
+    };
+  }, [bridge]);
 
   const clearSelection = useCallback(
     (nextConnection: CtoxConnectionState) => {
@@ -702,6 +755,7 @@ export function CtoxModeProvider({
       connection,
       modeReady,
       bridge,
+      guestStates,
       refresh,
       login,
       logout,
@@ -724,6 +778,7 @@ export function CtoxModeProvider({
       bridge,
       connection,
       discovery,
+      guestStates,
       importInvite,
       importManualPairing,
       login,
@@ -1107,9 +1162,19 @@ export function unavailableHint(instance: CtoxManagedInstance): string | undefin
   return isPairedCtoxInstance(instance) ? "This pairing is not available." : undefined;
 }
 
-/** Connection dot color, project-row style: state at a glance, detail in the tooltip. */
-function instanceDotClass(instance: CtoxManagedInstance, connected: boolean): string {
-  if (connected) return "bg-emerald-500";
+/**
+ * Connection dot color, project-row style: state at a glance, detail in the
+ * tooltip. The guest lifecycle wins over the discovery status — a warm guest
+ * switches instantly (green), a loading one is on its first load (pulsing
+ * amber), and only a guest-less instance falls back to its discovery status.
+ */
+export function ctoxInstanceDotClass(
+  instance: CtoxManagedInstance,
+  connected: boolean,
+  guestState: CtoxGuestLifecycleState = "none",
+): string {
+  if (connected || guestState === "warm") return "bg-emerald-500";
+  if (guestState === "loading") return "animate-pulse bg-amber-500/90";
   if (instance.status === "error" || instance.status === "offline") return "bg-red-500/80";
   if (
     instance.status === "needs_auth" ||
@@ -1129,14 +1194,24 @@ function CtoxInstanceCard({
   readonly removingId?: string | null | undefined;
   readonly onRemove?: ((instance: CtoxManagedInstance) => void) | undefined;
 }) {
-  const { selectedId, connection, select } = useCtoxMode();
+  const { selectedId, connection, guestStates, select } = useCtoxMode();
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  // Collapse is per-card UI state (defect 16): the chevron folds the app tree
+  // without touching the selection; selecting always re-expands.
+  const [collapsed, setCollapsed] = useState(false);
   const selected = selectedId === instance.id;
   const busy = selected && connection === "connecting";
   const connected = selected && connection === "ready";
+  const guestState = guestStates.get(instance.id) ?? "none";
   const launchable = canActivateCtoxInstance(instance);
   const removable = isRemovableCtoxInstance(instance);
   const title = workspaceName ?? instance.displayName;
+
+  useEffect(() => {
+    // The selected instance's tree stays visible however the selection was
+    // reached (row click, cross-mode handoff, app open).
+    if (selected) setCollapsed(false);
+  }, [selected]);
   const meta = [SOURCE_LABELS[instance.source], instance.role, instance.domain]
     .filter(Boolean)
     .join(" · ");
@@ -1153,6 +1228,23 @@ function CtoxInstanceCard({
       <div className="flex items-center">
         <button
           type="button"
+          className="shrink-0 rounded p-0.5 text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} apps of ${title}`}
+          data-ctox-instance-collapse=""
+          data-ctox-instance-collapsed={collapsed}
+          onClick={() => setCollapsed((value) => !value)}
+        >
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3.5 transition-transform motion-reduce:transition-none",
+              !collapsed && "rotate-90",
+            )}
+          />
+        </button>
+        <button
+          type="button"
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
             selected
@@ -1164,13 +1256,22 @@ function CtoxInstanceCard({
           aria-busy={busy}
           data-ctox-instance-source={instance.source}
           data-ctox-instance-status={instance.status}
+          data-ctox-guest-state={guestState}
           disabled={!launchable || busy}
           title={detailTitle}
-          onClick={() => select(instance)}
+          onClick={() => {
+            // Selecting is a separate affordance from collapsing: the name
+            // click selects AND expands; only the chevron folds the tree.
+            setCollapsed(false);
+            select(instance);
+          }}
         >
           <span
             aria-hidden
-            className={cn("size-2 shrink-0 rounded-full", instanceDotClass(instance, connected))}
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              ctoxInstanceDotClass(instance, connected, guestState),
+            )}
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
@@ -1190,11 +1291,13 @@ function CtoxInstanceCard({
           </button>
         ) : null}
       </div>
-      <CtoxInstanceAppRail
-        instance={instance}
-        launchable={launchable}
-        onWorkspaceName={setWorkspaceName}
-      />
+      {collapsed ? null : (
+        <CtoxInstanceAppRail
+          instance={instance}
+          launchable={launchable}
+          onWorkspaceName={setWorkspaceName}
+        />
+      )}
     </div>
   );
 }
@@ -1642,6 +1745,51 @@ function ManagedAccountState({
   );
 }
 
+/**
+ * The Business OS sidebar footer strip. Code mode's footer navigates to
+ * thread-scoped pages (Usage, Machines, Pull Requests) that the Business OS
+ * main surface never renders, so those would be dead icons here and are
+ * hidden. What remains is what has a BOS meaning: Settings (a real route that
+ * swaps the whole shell) and refreshing the instance catalog.
+ */
+export function CtoxSidebarFooter() {
+  const { refresh, refreshing } = useCtoxMode();
+  // Resolved leniently so the shell can render outside a RouterProvider
+  // (tests, storybook-style harnesses); without a router the Settings button
+  // simply has nowhere to go and stays inert.
+  const router = useRouter({ warn: false });
+  return (
+    <SidebarFooter className="p-[var(--sidebar-content-inset)]" data-ctox-sidebar-footer="">
+      <SidebarMenu className="flex-row items-center">
+        <SidebarMenuItem className="shrink-0">
+          <SidebarMenuButton
+            aria-label="Settings"
+            size="icon"
+            title="Settings"
+            onClick={() => {
+              void router?.navigate({ to: "/settings" });
+            }}
+          >
+            <SettingsIcon />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem className="shrink-0">
+          <SidebarMenuButton
+            aria-label="Refresh instances"
+            size="icon"
+            title="Refresh instances"
+            aria-busy={refreshing}
+            disabled={refreshing}
+            onClick={refresh}
+          >
+            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarFooter>
+  );
+}
+
 export function CtoxSidebarShell() {
   const { discovery, refreshing, bridge, refresh, removePairedInstance, removeSshManagedInstance } =
     useCtoxMode();
@@ -1808,7 +1956,7 @@ export function CtoxSidebarShell() {
           ) : null}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarChromeFooter />
+      <CtoxSidebarFooter />
     </>
   );
 }
@@ -2007,7 +2155,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 }
 
 export function CtoxMainShell() {
-  const { discovery, selectedId, connection } = useCtoxMode();
+  const { discovery, selectedId, connection, guestStates } = useCtoxMode();
   const selected =
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find(
@@ -2038,9 +2186,14 @@ export function CtoxMainShell() {
 
   // Business OS brings its own full shell header; while the guest is ready
   // the Workjet chrome row would just double it, so it collapses entirely and
-  // the guest surface takes the full height. It returns for connecting/error
-  // states, which need the status line (and a drag region) anyway.
-  const chromeHidden = selected !== undefined && connection === "ready";
+  // the guest surface takes the full height. It returns for cold connects and
+  // error states, which need the status line (and a drag region) anyway — but
+  // NOT for a switch onto a warm guest: that attach is instant, and flashing
+  // the chrome row would be the visible "load" defect 14 forbids.
+  const chromeHidden =
+    selected !== undefined &&
+    (connection === "ready" ||
+      (connection === "connecting" && guestStates.get(selected.id) === "warm"));
 
   return (
     <SidebarInset

@@ -16,6 +16,7 @@ vi.mock("electron", () => ({ WebContentsView: class {} }));
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { CTOX_GUEST_STATE_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
@@ -330,6 +331,7 @@ function makeGuestHarness() {
       }),
   );
   const businessOsShell = CtoxBusinessOsShell.CtoxBusinessOsShell.of({ launch: shellLaunch });
+  const sendAll = vi.fn((_channel: string, ..._args: readonly unknown[]) => Effect.void);
   const electronWindow = ElectronWindow.ElectronWindow.of({
     create: () => Effect.die("unused"),
     main: Effect.succeed(Option.some(mainWindow)),
@@ -338,7 +340,7 @@ function makeGuestHarness() {
     setMain: () => Effect.void,
     clearMain: () => Effect.void,
     reveal: () => Effect.void,
-    sendAll: () => Effect.void,
+    sendAll,
     destroyAll: Effect.void,
     syncAllAppearance: () => Effect.void,
   });
@@ -359,16 +361,26 @@ function makeGuestHarness() {
     Layer.succeed(ElectronShell.ElectronShell, electronShell),
   );
   const layer = CtoxGuestManager.layer({ createView }).pipe(Layer.provide(dependencies));
+  /** [instanceId, state] pairs of every guest-state event, in emission order. */
+  const guestStateEvents = () =>
+    sendAll.mock.calls
+      .filter(([channel]) => channel === CTOX_GUEST_STATE_CHANNEL)
+      .map(([, payload]) => {
+        const event = payload as { readonly instanceId: string; readonly state: string };
+        return [event.instanceId, event.state] as const;
+      });
   return {
     addChildView,
     beforeRequest,
     browserSession,
     createView,
+    guestStateEvents,
     instance,
     launch,
     layer,
     openExternal,
     removeChildView,
+    sendAll,
     closeForwards,
     resolveLocalLaunch,
     resolvePairedLaunch,
@@ -730,16 +742,20 @@ describe("CtoxGuestManager", () => {
       );
       assert.notInclude(encodeUnknownJson(first), "transient-secret");
 
+      // Re-activating the already-loaded instance reattaches the warm guest:
+      // no teardown, no fresh launch, no second view — only new bounds.
       const second = yield* manager.activate(descriptor.id, secondBounds);
       assert.deepEqual(second, { _tag: "ready", instanceId: descriptor.id });
-      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
-      expect(harness.removeChildView).toHaveBeenCalledWith(harness.views[0]?.view);
-      assert.deepEqual(harness.views[1]?.setBounds.mock.calls[0]?.[0], secondBounds);
+      expect(harness.views[0]?.close).not.toHaveBeenCalled();
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.launch).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.setBounds).toHaveBeenLastCalledWith(secondBounds);
 
       yield* manager.deactivate;
-      expect(harness.views[1]?.close).toHaveBeenCalledOnce();
-      expect(harness.removeChildView).toHaveBeenCalledWith(harness.views[1]?.view);
-      expect(harness.launch).toHaveBeenCalledTimes(2);
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.removeChildView).toHaveBeenCalledWith(harness.views[0]?.view);
+      expect(harness.launch).toHaveBeenCalledOnce();
     }).pipe(Effect.provide(harness.layer));
   });
 
@@ -772,6 +788,171 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("keeps a detached guest warm and reattaches it without a reload", () => {
+    const harness = makeGuestHarness();
+    const second = { ...descriptor, id: "managed:tenant_two", displayName: "Two" };
+    harness.setDiscovery({ _tag: "ready", instances: [descriptor, second] });
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const returnBounds = { ...bounds, width: 908 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      assert.deepEqual(yield* manager.activate(second.id, bounds), {
+        _tag: "ready",
+        instanceId: second.id,
+      });
+      // The switch detached the first guest without destroying it.
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      expect(harness.views[0]?.close).not.toHaveBeenCalled();
+      expect(harness.createView).toHaveBeenCalledTimes(2);
+
+      // Switching back is a pure reattach: no view, no launch, no navigation.
+      assert.deepEqual(yield* manager.activate(descriptor.id, returnBounds), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.createView).toHaveBeenCalledTimes(2);
+      expect(harness.launch).toHaveBeenCalledTimes(2);
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.setBounds).toHaveBeenLastCalledWith(returnBounds);
+      expect(harness.addChildView).toHaveBeenLastCalledWith(harness.views[0]?.view);
+      expect(harness.views[1]?.close).not.toHaveBeenCalled();
+
+      // Bounds updates land on the re-attached guest again.
+      assert.deepEqual(yield* manager.setBounds(bounds), { _tag: "completed" });
+      expect(harness.views[0]?.setBounds).toHaveBeenLastCalledWith(bounds);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("evicts the least recently used warm guest through the shared teardown", () => {
+    const harness = makeGuestHarness();
+    const tenants = ["one", "two", "three", "four", "five"].map((name) => ({
+      ...descriptor,
+      id: `managed:tenant_${name}`,
+      displayName: name,
+    }));
+    harness.setDiscovery({ _tag: "ready", instances: tenants });
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      assert.equal(CtoxGuestManager.CTOX_GUEST_POOL_LIMIT, 4);
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      for (const tenant of tenants.slice(0, 4)) {
+        assert.deepEqual(yield* manager.activate(tenant.id, bounds), {
+          _tag: "ready",
+          instanceId: tenant.id,
+        });
+      }
+      for (const view of harness.views) expect(view.close).not.toHaveBeenCalled();
+
+      // The fifth cold load evicts exactly the least recently used guest.
+      assert.deepEqual(yield* manager.activate(tenants[4]!.id, bounds), {
+        _tag: "ready",
+        instanceId: tenants[4]!.id,
+      });
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      for (const view of harness.views.slice(1)) expect(view.close).not.toHaveBeenCalled();
+
+      // The evicted instance is cold again: re-activating creates a new view.
+      assert.deepEqual(yield* manager.activate(tenants[0]!.id, bounds), {
+        _tag: "ready",
+        instanceId: tenants[0]!.id,
+      });
+      expect(harness.createView).toHaveBeenCalledTimes(6);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("destroys the warm guest of a deactivated instance even while detached", () => {
+    const harness = makeGuestHarness();
+    const second = { ...descriptor, id: "managed:tenant_two", displayName: "Two" };
+    harness.setDiscovery({ _tag: "ready", instances: [descriptor, second] });
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.activate(second.id, bounds);
+      expect(harness.views[0]?.close).not.toHaveBeenCalled();
+
+      // Removal of the detached instance must not leave its guest warm.
+      assert.deepEqual(yield* manager.deactivateInstance(descriptor.id), {
+        _tag: "completed",
+      });
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      // The attached instance is untouched and still accepts bounds.
+      expect(harness.views[1]?.close).not.toHaveBeenCalled();
+      assert.deepEqual(yield* manager.setBounds(bounds), { _tag: "completed" });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("emits identity-only guest state events on every lifecycle transition", () => {
+    const harness = makeGuestHarness();
+    const second = { ...descriptor, id: "managed:tenant_two", displayName: "Two" };
+    harness.setDiscovery({ _tag: "ready", instances: [descriptor, second] });
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.activate(second.id, bounds);
+      // A warm reattach is not a transition and must stay silent.
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.deactivateInstance(second.id);
+      yield* manager.deactivate;
+
+      yield* Effect.promise(() =>
+        vi.waitFor(() =>
+          assert.deepEqual(harness.guestStateEvents(), [
+            [descriptor.id, "loading"],
+            [descriptor.id, "warm"],
+            [second.id, "loading"],
+            [second.id, "warm"],
+            [second.id, "none"],
+            [descriptor.id, "none"],
+          ]),
+        ),
+      );
+      // The payload carries identity and state only — never launch material.
+      for (const [, payload] of harness.sendAll.mock.calls.filter(
+        ([channel]) => channel === CTOX_GUEST_STATE_CHANNEL,
+      )) {
+        assert.deepEqual(Object.keys(payload as object).toSorted(), ["instanceId", "state"]);
+      }
+      assert.notInclude(encodeUnknownJson(harness.sendAll.mock.calls), "transient-secret");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("fails an activation cleanly and reports the guest state as none", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    harness.setLoadURLImplementation(() => Promise.reject(new Error("load failed")));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+        _tag: "failed",
+        code: "guest_failed",
+      });
+      yield* Effect.promise(() =>
+        vi.waitFor(() =>
+          assert.deepEqual(harness.guestStateEvents(), [
+            [descriptor.id, "loading"],
+            [descriptor.id, "none"],
+          ]),
+        ),
+      );
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("launches paired guests while ctox.dev is signed out or failed", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
@@ -798,6 +979,9 @@ describe("CtoxGuestManager", () => {
         "paired-packed-secret",
       );
 
+      // Release the warm guest so the next activation is a genuine cold
+      // launch under the failed managed discovery.
+      yield* manager.deactivate;
       harness.setDiscovery({ _tag: "failed", code: "network_error" });
       const failedManagedDiscovery = yield* manager.activate(pairedDescriptor.id, bounds);
       assert.deepEqual(failedManagedDiscovery, {
@@ -828,7 +1012,11 @@ describe("CtoxGuestManager", () => {
       expect(harness.instance).toHaveBeenCalledWith(localDescriptor);
       assert.notInclude(encodeUnknownJson(activation), "local-room-secret");
 
-      // A second activation re-derives the material instead of reusing it.
+      // A cold activation after teardown re-derives the material instead of
+      // reusing it; a warm reattach in between never re-mints anything.
+      yield* manager.activate(localDescriptor.id, bounds);
+      expect(harness.resolveLocalLaunch).toHaveBeenCalledOnce();
+      yield* manager.deactivate;
       yield* manager.activate(localDescriptor.id, bounds);
       expect(harness.resolveLocalLaunch).toHaveBeenCalledTimes(2);
     }).pipe(Effect.provide(harness.layer));

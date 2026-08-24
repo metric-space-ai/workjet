@@ -770,3 +770,26 @@ Live verifiziert (Rail-Wechsel MiniMax→Claude zeigt die jeweiligen
 Modelle). Hinweis: Accounts, die nur Wildcards führen (claude-\*),
 zeigen das Muster — ehrlich, bis Modell-Discovery die konkreten IDs
 liefert. Chat-Suite 35 Dateien/382 Tests grün.
+
+## Business-OS 14–17 UMGESETZT 2026-08-24 ~15:55 (Agent + Integration)
+
+Ursache von 14: CtoxGuestManager hielt EINEN Guest und ZERSTÖRTE ihn
+bei jedem Wechsel. Jetzt: Guest-POOL (Map je Instanz, LRU-Deckel 4,
+Eviction über den bestehenden Teardown-Pfad; Entfernen/Abmelden/
+Moduswechsel zerstören weiterhin vollständig — ein entfernter
+Instanz-Guest kann nicht warm überleben). Wechsel auf einen warmen
+Guest = detach/attach ohne Reload. Theme wird in alle warmen Guests
+projiziert. Bewusster Trade-off (im Code dokumentiert): warmer
+Reattach überspringt die Cold-Start-Revalidierung; Widerruf reißt
+weiterhin über Discovery/Removal ab.
+15: Neuer IPC-Kanal desktop:ctox-guest-state ({instanceId, state:
+none|loading|warm}, nie Guest-Inhalte) → Sidebar-Punkt grün=warm,
+amber pulsierend=lädt.
+16: Chevron je Instanz-Karte (aria-expanded), Name wählt UND klappt
+auf, Auswahl erzwingt aufgeklappt.
+17: Eigene BOS-Fußleiste (Settings-Navigation + Katalog-Refresh);
+tote Code-Einträge (Usage/Machines/PRs) dort ausgeblendet.
+LIVE-BEWEIS: Thesen AG laden → Punkt warm; Welsch laden → 2× warm;
+Rückwechsel auf Thesen: KEIN Lade-UI, beide warm. Suiten: Desktop 831,
+Web-ctox 35, Contracts 510 (davon 6 Fixture-Fixes für modelPrompts +
+xai-als-OAuth — meine Nachzügler, jetzt grün).

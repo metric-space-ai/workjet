@@ -136,6 +136,7 @@ describe("ServerSettings Workjet catalog", () => {
       schemaVersion: 2,
       computers: [],
       llmRoutes: [],
+      modelPrompts: [],
       workerProfiles: [],
       managedSystemPrompt: "",
       telemetry: {
@@ -176,6 +177,7 @@ describe("ServerSettings Workjet catalog", () => {
         schemaVersion: 2,
         computers: [],
         llmRoutes: [],
+        modelPrompts: [],
         workerProfiles: [],
         managedSystemPrompt: "Coordinate deliberately.",
         telemetry: {

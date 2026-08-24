@@ -296,6 +296,7 @@ describe("WorkjetConfiguration", () => {
       schemaVersion: 2,
       computers: [],
       llmRoutes: [],
+      modelPrompts: [],
       workerProfiles: [],
       managedSystemPrompt: "",
       telemetry: {
@@ -347,6 +348,7 @@ describe("WorkjetConfiguration", () => {
         },
       ],
       workerProfiles: [],
+      modelPrompts: [],
       managedSystemPrompt: "",
       telemetry: { claudeCodeEvents: true, sidecarEvents: true, retentionDays: 14 },
       execution: { probeTimeoutSeconds: 120, turnTimeoutSeconds: 5_400, degradationAllowed: true },
@@ -690,7 +692,12 @@ describe("WorkjetGateway API-key providers", () => {
     expect(
       Schema.decodeUnknownSync(WorkjetGatewayOauthStartInput)({ provider: "claude" }).provider,
     ).toBe("claude");
-    for (const provider of ["zai", "minimax", "xai", "kimi"]) {
+    // xAI joined the login-capable providers with the Grok device flow; it is
+    // deliberately BOTH an OAuth provider and an API-key provider.
+    expect(
+      Schema.decodeUnknownSync(WorkjetGatewayOauthStartInput)({ provider: "xai" }).provider,
+    ).toBe("xai");
+    for (const provider of ["zai", "minimax", "kimi"]) {
       expect(() => Schema.decodeUnknownSync(WorkjetGatewayOauthStartInput)({ provider })).toThrow();
     }
   });

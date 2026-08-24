@@ -15,6 +15,7 @@ import { SidebarProvider } from "../ui/sidebar";
 import ctoxModeShellSource from "./CtoxModeShell.tsx?raw";
 import {
   activateCtoxInstance,
+  applyCtoxGuestStateEvent,
   buildCtoxManualPairingInput,
   buildCtoxSshManagedInput,
   canActivateCtoxInstance,
@@ -24,6 +25,7 @@ import {
   CTOX_REMOVE_ERROR_MESSAGE,
   CTOX_SSH_LAUNCH_PENDING_HINT,
   CTOX_RAIL_FALLBACK_CATEGORY,
+  ctoxInstanceDotClass,
   ctoxRailCollapseKey,
   CtoxAppRailList,
   CtoxMainShell,
@@ -975,5 +977,125 @@ describe("CTOX app rail categories", () => {
     expect(markup).not.toContain('data-ctox-app-id="tickets"');
     // The sibling category has no stored state and stays expanded.
     expect(markup).toContain('data-ctox-app-id="mail"');
+  });
+});
+
+describe("CTOX guest lifecycle presentation", () => {
+  const managed = instance({
+    id: "managed:alpha",
+    source: "ctox_dev",
+    displayName: "Managed Alpha",
+  });
+
+  it("folds guest-state events into a minimal per-instance map", () => {
+    const empty = new Map<string, "none" | "loading" | "warm">();
+    const loading = applyCtoxGuestStateEvent(empty, {
+      instanceId: "managed:alpha",
+      state: "loading",
+    });
+    expect(loading.get("managed:alpha")).toBe("loading");
+    const warm = applyCtoxGuestStateEvent(loading, {
+      instanceId: "managed:alpha",
+      state: "warm",
+    });
+    expect(warm.get("managed:alpha")).toBe("warm");
+    // An unchanged state keeps the map identity so no re-render is forced.
+    expect(applyCtoxGuestStateEvent(warm, { instanceId: "managed:alpha", state: "warm" })).toBe(
+      warm,
+    );
+    // "none" removes the entry entirely: absence IS the none state.
+    const cleared = applyCtoxGuestStateEvent(warm, {
+      instanceId: "managed:alpha",
+      state: "none",
+    });
+    expect(cleared.has("managed:alpha")).toBe(false);
+    expect(cleared.size).toBe(0);
+    expect(applyCtoxGuestStateEvent(cleared, { instanceId: "managed:alpha", state: "none" })).toBe(
+      cleared,
+    );
+  });
+
+  it("colors the sidebar dot from the guest lifecycle before the discovery status", () => {
+    // A warm guest switches instantly and shows the same green as connected.
+    expect(ctoxInstanceDotClass(managed, false, "warm")).toBe("bg-emerald-500");
+    expect(ctoxInstanceDotClass(managed, true, "none")).toBe("bg-emerald-500");
+    // A first load pulses amber; only a guest-less instance falls back to the
+    // discovery status coloring.
+    expect(ctoxInstanceDotClass(managed, false, "loading")).toContain("animate-pulse");
+    expect(ctoxInstanceDotClass(managed, false, "none")).toBe("bg-sidebar-muted-foreground/50");
+    expect(ctoxInstanceDotClass(managed, false)).toBe("bg-sidebar-muted-foreground/50");
+    expect(ctoxInstanceDotClass({ ...managed, status: "offline" }, false, "none")).toBe(
+      "bg-red-500/80",
+    );
+    expect(ctoxInstanceDotClass({ ...managed, status: "needs_auth" }, false, "none")).toBe(
+      "bg-amber-500/90",
+    );
+  });
+
+  it("renders the guest state on the instance row without leaking identity", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{ _tag: "ready", managedState: "ready", instances: [managed] }}
+      >
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+    expect(markup).toContain('data-ctox-guest-state="none"');
+    expect(markup).toContain("bg-sidebar-muted-foreground/50");
+  });
+});
+
+describe("CTOX instance collapse", () => {
+  const managed = instance({
+    id: "managed:alpha",
+    source: "ctox_dev",
+    displayName: "Managed Alpha",
+  });
+
+  it("renders an expanded tree with a chevron affordance separate from selection", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{ _tag: "ready", managedState: "ready", instances: [managed] }}
+      >
+        <SidebarProvider>
+          <CtoxManagedInstanceList instances={[managed]} />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+    // Expanded by default: the chevron is rotated and announces collapse.
+    expect(markup).toContain('data-ctox-instance-collapsed="false"');
+    expect(markup).toContain("Collapse apps of Managed Alpha");
+    expect(markup).toContain("rotate-90");
+    // The chevron is its own button, so folding never triggers selection; the
+    // name click both selects and re-expands (see the row's onClick).
+    expect(ctoxModeShellSource).toContain("setCollapsed((value) => !value)");
+    expect(ctoxModeShellSource).toContain("setCollapsed(false);\n            select(instance);");
+    // Selection always re-expands, however it was reached.
+    expect(ctoxModeShellSource).toContain("if (selected) setCollapsed(false);");
+  });
+});
+
+describe("CTOX sidebar footer", () => {
+  it("offers Settings and catalog refresh and hides Code-mode-only entries", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "signed_out" }}>
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+    expect(markup).toContain('data-ctox-sidebar-footer=""');
+    expect(markup).toContain('aria-label="Settings"');
+    // Header refresh plus the footer's catalog refresh.
+    expect(markup.match(/aria-label="Refresh instances"/gu)?.length).toBe(2);
+    // Code-mode footer entries whose pages the Business OS surface never
+    // renders would be dead icons here and must not appear.
+    expect(markup).not.toContain('aria-label="Usage"');
+    expect(markup).not.toContain('aria-label="Machines"');
+    expect(markup).not.toContain('aria-label="Pull Requests"');
   });
 });

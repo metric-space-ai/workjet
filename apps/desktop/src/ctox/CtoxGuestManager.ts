@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import type {
   CtoxGuestBounds,
+  CtoxGuestLifecycleState,
   CtoxHostThemeInput,
   CtoxManagedActionResult,
   CtoxManagedGuestResult,
@@ -16,6 +17,7 @@ import { WebContentsView, type BrowserWindow, type Session, type WebContents } f
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { CTOX_GUEST_STATE_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
@@ -95,9 +97,30 @@ interface ActiveGuest {
   readonly release?: () => void;
 }
 
+/**
+ * How many loaded guests stay warm at once. Switching between warm guests only
+ * moves the native view (detach/attach), so it is instant; anything beyond the
+ * limit is destroyed least-recently-used first through the same teardown every
+ * destroyed guest runs. Each warm guest owns one WebContentsView (a renderer
+ * process), so this constant IS the memory bound of the pool.
+ */
+export const CTOX_GUEST_POOL_LIMIT = 4;
+
+interface PooledGuest extends ActiveGuest {
+  /** Monotonic recency stamp for least-recently-used eviction. */
+  readonly lastUsedAt: number;
+}
+
 interface GuestState {
   readonly businessOsModeActive: boolean;
-  readonly active: ActiveGuest | undefined;
+  /** The instance whose guest view is currently attached to the window. */
+  readonly activeId: string | undefined;
+  /**
+   * Live guests by instance id. Detached entries stay warm for instant
+   * re-attachment; every guest that leaves this map is destroyed through
+   * `destroyGuest`, which runs its release hook.
+   */
+  readonly pool: ReadonlyMap<string, PooledGuest>;
 }
 
 interface BeforeRequestDetails {
@@ -416,6 +439,18 @@ function isValidBounds(bounds: CtoxGuestBounds): boolean {
   );
 }
 
+/**
+ * Detaches the guest view from the window WITHOUT destroying it: the
+ * webContents keeps running and the guest stays warm for re-attachment.
+ */
+function detachGuest(guest: ActiveGuest): void {
+  try {
+    guest.window.contentView.removeChildView(guest.view);
+  } catch {
+    // The native hierarchy may already have detached it.
+  }
+}
+
 function destroyGuest(active: ActiveGuest | undefined): void {
   if (active === undefined) return;
   try {
@@ -605,12 +640,36 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
     let latestHostTheme: CtoxHostThemeInput | undefined;
+    let guestUseSequence = 0;
     const stateRef = yield* SynchronizedRef.make<GuestState>({
       businessOsModeActive: false,
-      active: undefined,
+      activeId: undefined,
+      pool: new Map<string, PooledGuest>(),
     });
 
     const preloadPath = `${__dirname}/ctox-guest-preload.cjs`;
+
+    /**
+     * Pushes one instance's guest lifecycle to every renderer window. The
+     * payload is the instance id and the state token only — never guest data.
+     */
+    const emitGuestState = (instanceId: string, guestState: CtoxGuestLifecycleState): void => {
+      void runPromise(
+        electronWindow.sendAll(CTOX_GUEST_STATE_CHANNEL, { instanceId, state: guestState }),
+      ).catch(() => undefined);
+    };
+
+    const destroyPooledGuest = (guest: ActiveGuest): void => {
+      destroyGuest(guest);
+      emitGuestState(guest.instanceId, "none");
+    };
+
+    const destroyAllGuests = (state: GuestState): void => {
+      for (const guest of state.pool.values()) destroyPooledGuest(guest);
+    };
+
+    const attachedGuest = (state: GuestState): PooledGuest | undefined =>
+      state.activeId === undefined ? undefined : state.pool.get(state.activeId);
 
     const enterBusinessOsMode = SynchronizedRef.modifyEffect(stateRef, (state) =>
       Effect.succeed([
@@ -621,29 +680,50 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
     const exitBusinessOsMode = SynchronizedRef.modifyEffect(stateRef, (state) =>
       Effect.sync(() => {
-        destroyGuest(state.active);
+        destroyAllGuests(state);
         return [
           { _tag: "completed" } as const,
-          { businessOsModeActive: false, active: undefined },
+          {
+            businessOsModeActive: false,
+            activeId: undefined,
+            pool: new Map<string, PooledGuest>(),
+          },
         ] as const;
       }),
     );
 
+    // A full release of the mode's guests: warm entries do not survive it, so
+    // logout or a renderer-side selection reset can never leave a live guest.
     const deactivate = SynchronizedRef.modifyEffect(stateRef, (state) =>
       Effect.sync(() => {
-        destroyGuest(state.active);
-        return [{ _tag: "completed" } as const, { ...state, active: undefined }] as const;
+        destroyAllGuests(state);
+        return [
+          { _tag: "completed" } as const,
+          { ...state, activeId: undefined, pool: new Map<string, PooledGuest>() },
+        ] as const;
       }),
     );
 
+    // Destroys the instance's guest whether it is attached or merely warm:
+    // removal of a paired instance must never leave its guest in the pool.
     const deactivateInstance = (instanceId: string) =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.sync(() => {
-          if (state.active?.instanceId !== instanceId) {
+          const guest = state.pool.get(instanceId);
+          if (guest === undefined) {
             return [{ _tag: "completed" } as const, state] as const;
           }
-          destroyGuest(state.active);
-          return [{ _tag: "completed" } as const, { ...state, active: undefined }] as const;
+          destroyPooledGuest(guest);
+          const pool = new Map(state.pool);
+          pool.delete(instanceId);
+          return [
+            { _tag: "completed" } as const,
+            {
+              ...state,
+              activeId: state.activeId === instanceId ? undefined : state.activeId,
+              pool,
+            },
+          ] as const;
         }),
       );
 
@@ -865,26 +945,105 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (!state.businessOsModeActive) {
             return [{ _tag: "failed", code: "not_active" } as const, state] as const;
           }
-          destroyGuest(state.active);
-          const [result, active] = yield* prepareGuest(instanceId, bounds);
-          return [result, { ...state, active }] as const;
+          const stamp = ++guestUseSequence;
+          const outgoing =
+            state.activeId !== undefined && state.activeId !== instanceId
+              ? state.pool.get(state.activeId)
+              : undefined;
+          const pool = new Map(state.pool);
+          const warm = pool.get(instanceId);
+          if (
+            warm !== undefined &&
+            !warm.view.webContents.isDestroyed() &&
+            !warm.window.isDestroyed()
+          ) {
+            // Warm switch: move the native views only. The outgoing guest is
+            // detached without teardown and the warm one re-attached at the
+            // new bounds — no relaunch, no navigation, no loading phase.
+            if (outgoing !== undefined) detachGuest(outgoing);
+            if (!attachGuest(warm.window, warm.view, bounds)) {
+              pool.delete(instanceId);
+              destroyPooledGuest(warm);
+              return [
+                { _tag: "failed", code: "guest_failed" } as const,
+                {
+                  ...state,
+                  activeId: state.activeId === instanceId ? undefined : state.activeId,
+                  pool,
+                },
+              ] as const;
+            }
+            pool.set(instanceId, { ...warm, bounds, lastUsedAt: stamp });
+            return [
+              { _tag: "ready", instanceId } as const,
+              { ...state, activeId: instanceId, pool },
+            ] as const;
+          }
+          if (warm !== undefined) {
+            // A pooled guest whose webContents or window died is unusable;
+            // destroy it through the shared teardown before the cold load.
+            pool.delete(instanceId);
+            destroyPooledGuest(warm);
+          }
+          if (outgoing !== undefined) detachGuest(outgoing);
+          emitGuestState(instanceId, "loading");
+          const [result, prepared] = yield* prepareGuest(instanceId, bounds).pipe(
+            Effect.onInterrupt(() => Effect.sync(() => emitGuestState(instanceId, "none"))),
+          );
+          if (prepared === undefined) {
+            emitGuestState(instanceId, "none");
+            return [
+              result,
+              {
+                ...state,
+                activeId: state.activeId === instanceId ? undefined : state.activeId,
+                pool,
+              },
+            ] as const;
+          }
+          pool.set(instanceId, { ...prepared, lastUsedAt: stamp });
+          // Bound the warm pool: evict the least recently used guest (never
+          // the one that just attached) through the shared teardown.
+          while (pool.size > CTOX_GUEST_POOL_LIMIT) {
+            let victim: PooledGuest | undefined;
+            for (const candidate of pool.values()) {
+              if (candidate.instanceId === instanceId) continue;
+              if (victim === undefined || candidate.lastUsedAt < victim.lastUsedAt) {
+                victim = candidate;
+              }
+            }
+            if (victim === undefined) break;
+            pool.delete(victim.instanceId);
+            destroyPooledGuest(victim);
+          }
+          emitGuestState(instanceId, "warm");
+          return [result, { ...state, activeId: instanceId, pool }] as const;
         }),
       );
 
     const refresh = (sender: WebContents) =>
       SynchronizedRef.modifyEffect(stateRef, (state) => {
-        const active = state.active;
+        const active = attachedGuest(state);
         if (active === undefined || active.view.webContents !== sender || sender.isDestroyed()) {
           return Effect.succeed([undefined, state] as const);
         }
         return Effect.gen(function* () {
           destroyGuest(active);
+          emitGuestState(active.instanceId, "loading");
+          const pool = new Map(state.pool);
+          pool.delete(active.instanceId);
           const [, replacement] = yield* prepareGuest(
             active.instanceId,
             active.bounds,
             active.browserSession,
           );
-          return [undefined, { ...state, active: replacement }] as const;
+          if (replacement === undefined) {
+            emitGuestState(active.instanceId, "none");
+            return [undefined, { ...state, activeId: undefined, pool }] as const;
+          }
+          pool.set(active.instanceId, { ...replacement, lastUsedAt: ++guestUseSequence });
+          emitGuestState(active.instanceId, "warm");
+          return [undefined, { ...state, pool }] as const;
         });
       });
 
@@ -898,18 +1057,21 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (!isValidBounds(bounds)) {
             return [{ _tag: "failed", code: "invalid_input" }, state];
           }
-          const active = state.active;
+          const active = attachedGuest(state);
           if (active === undefined) {
             return [{ _tag: "failed", code: "not_active" }, state];
           }
+          const pool = new Map(state.pool);
           try {
             active.view.setBounds(bounds);
-            return [{ _tag: "completed" }, { ...state, active: { ...active, bounds } }];
+            pool.set(active.instanceId, { ...active, bounds });
+            return [{ _tag: "completed" }, { ...state, pool }];
           } catch {
-            destroyGuest(active);
+            destroyPooledGuest(active);
+            pool.delete(active.instanceId);
             return [
               { _tag: "failed", code: "guest_failed" },
-              { ...state, active: undefined },
+              { ...state, activeId: undefined, pool },
             ];
           }
         }),
@@ -922,7 +1084,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           readonly [CtoxGuestAppsObservation, GuestState],
           never
         > {
-          const active = state.active;
+          const active = attachedGuest(state);
           if (
             active === undefined ||
             active.instanceId !== instanceId ||
@@ -952,12 +1114,14 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "invalid_input" } as const;
         }
         const currentlyActive = yield* SynchronizedRef.get(stateRef).pipe(
-          Effect.map(
-            (state) =>
-              state.active !== undefined &&
-              state.active.instanceId === instanceId &&
-              !state.active.view.webContents.isDestroyed(),
-          ),
+          Effect.map((state) => {
+            const active = attachedGuest(state);
+            return (
+              active !== undefined &&
+              active.instanceId === instanceId &&
+              !active.view.webContents.isDestroyed()
+            );
+          }),
         );
         if (!currentlyActive) {
           const activation = yield* activate(instanceId, bounds);
@@ -974,7 +1138,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             readonly [CtoxManagedActionResult, GuestState],
             never
           > {
-            const active = state.active;
+            const active = attachedGuest(state);
             if (
               active === undefined ||
               active.instanceId !== instanceId ||
@@ -1008,10 +1172,12 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.sync((): readonly [CtoxManagedActionResult, GuestState] => {
           latestHostTheme = theme;
-          const active = state.active;
-          if (active !== undefined && !active.view.webContents.isDestroyed()) {
+          // Warm guests are live pages too: every pooled guest receives the
+          // theme so a warm switch never lands on a stale appearance.
+          for (const guest of state.pool.values()) {
+            if (guest.view.webContents.isDestroyed()) continue;
             try {
-              active.view.webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, theme);
+              guest.view.webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, theme);
             } catch {
               /* guest may be tearing down */
             }

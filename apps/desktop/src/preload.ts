@@ -197,6 +197,23 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         docked,
       }),
     setHostTheme: (theme) => ipcRenderer.invoke(IpcChannels.CTOX_SET_HOST_THEME_CHANNEL, theme),
+    onGuestState: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        if (typeof payload !== "object" || payload === null) return;
+        const { instanceId, state } = payload as {
+          readonly instanceId?: unknown;
+          readonly state?: unknown;
+        };
+        if (typeof instanceId !== "string" || instanceId === "") return;
+        if (state !== "none" && state !== "loading" && state !== "warm") return;
+        listener({ instanceId, state });
+      };
+
+      ipcRenderer.on(IpcChannels.CTOX_GUEST_STATE_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.CTOX_GUEST_STATE_CHANNEL, wrappedListener);
+      };
+    },
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

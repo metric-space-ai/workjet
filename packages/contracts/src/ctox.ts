@@ -282,6 +282,22 @@ export const CtoxManagedActionResult = Schema.Union([
 export type CtoxManagedActionResult = typeof CtoxManagedActionResult.Type;
 
 /**
+ * Lifecycle of an instance's pooled native guest: "none" (no live guest),
+ * "loading" (first load in progress), "warm" (loaded and instantly
+ * attachable). Pushed main → renderer so the sidebar can show which instances
+ * switch without a load.
+ */
+export const CtoxGuestLifecycleState = Schema.Literals(["none", "loading", "warm"]);
+export type CtoxGuestLifecycleState = typeof CtoxGuestLifecycleState.Type;
+
+/** Guest-state change event. Identity and state only — never guest content. */
+export const CtoxGuestStateEvent = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  state: CtoxGuestLifecycleState,
+});
+export type CtoxGuestStateEvent = typeof CtoxGuestStateEvent.Type;
+
+/**
  * A Business OS module surfaced in the sidebar as a directly selectable app —
  * the CTOX analog of a T3 chat session under its project. Docked apps are
  * user-pinned to the rail (taskbar model) and stay listed even while closed

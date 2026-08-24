@@ -105,3 +105,5 @@ export const CTOX_LIST_APPS_CHANNEL = "desktop:ctox-list-apps";
 export const CTOX_OPEN_APP_CHANNEL = "desktop:ctox-open-app";
 export const CTOX_SET_APP_DOCKED_CHANNEL = "desktop:ctox-set-app-docked";
 export const CTOX_SET_HOST_THEME_CHANNEL = "desktop:ctox-set-host-theme";
+/** Main → renderer push: per-instance guest lifecycle ("none"|"loading"|"warm"). */
+export const CTOX_GUEST_STATE_CHANNEL = "desktop:ctox-guest-state";

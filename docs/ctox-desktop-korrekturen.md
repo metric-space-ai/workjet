@@ -217,13 +217,13 @@ Weitere Abgleiche 2026-08-24:
   Verfügbarkeit führt (wie Swift); ein GESETZTER Override bleibt offen
   sichtbar.
 
-FOLGEARBEIT (präzise Naht): Worker-`capabilityIds` beim Thread-Start
-anwenden. Die Schreib-Naht (`runWorkjetConfigChange` →
-`setThreadWorkjetConfig`) existiert NUR auf Server-Threads
-(`activeServerThread`-Guard, ChatView:3787); die Worker-Wahl lebt im
-Draft. Anwendung also nach dem Start: beim Übergang Draft→Server-Thread
-die capabilityIds des gewählten Workers über den vorhandenen
-Per-Id-Toggle setzen. Gleiches Muster später für den Rechner.
+ERLEDIGT 2026-08-24: Worker-`capabilityIds` werden beim Übergang
+Draft→Server-Thread angewendet — EIN Dispatch mit der exakten Liste
+(`executeWorkjetCapabilitySet`; Per-Id-Toggles verlöre der
+In-Flight-Guard). Live belegt: Worker ohne Extras → Tools-Menü des
+gestarteten Threads liest Greppy/Web Search/Web Stack Browser = false,
+der Greppy-Standard korrekt überschrieben. OFFEN bleibt der RECHNER im
+Worker-Modus (Draft-Umgebungswechsel, eigene Naht).
 
 ### (ursprünglich) UI/UX-Generalabgleich gegen die Swift-Vorlage
 

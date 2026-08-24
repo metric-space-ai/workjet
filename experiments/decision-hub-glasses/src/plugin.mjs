@@ -7,11 +7,14 @@
 import { decisionIcons, tabLabel, layoutText } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
 import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, DETAIL_CHARS, LEVEL } from './layout.mjs';
-import { navigate, initialNav, SNOOZE_OPTIONS, OS_EVENT } from './nav.mjs';
+import { navigate, initialNav, caseNav, SNOOZE_OPTIONS, OS_EVENT } from './nav.mjs';
 import { createTiltGate } from './tilt.mjs';
 
 // Meldeweg zum Entwicklungsserver; auf der Brille gibt es keine Konsole.
+const DEV = Boolean(import.meta.env?.DEV);
 const melde = (t) => {
+  if (!DEV) return;   // Produktion: kein Beacon, keine Latenz je Geste
+  try { console.log('[dh]', String(t)); } catch {}
   try { fetch(`${location.origin}/__log`, { method: 'POST', body: String(t) }).catch(() => {}); } catch {}
 };
 
@@ -62,12 +65,18 @@ export function createDecisionHubPlugin({
   let diktat = null;   // { seit, frames } solange das Mikrofon laeuft
   const gesendeteBilder = new Map();  // containerID -> Fingerabdruck
   let letzteStruktur = null;
+  let letzterText = null;
 
   /**
    * Fingerabdruck der SEITENSTRUKTUR — Container, Lage, Groesse. Bleibt er
    * gleich, genuegt ein Textaustausch; erst eine echte Strukturaenderung
    * rechtfertigt den flackernden Neuaufbau.
    */
+  /** Der gesamte Textinhalt einer Seite — fuer den schnellen Malpfad. */
+  function textVon(page) {
+    return (page.textObject || []).map((c) => c.content).join('\u0000');
+  }
+
   function strukturVon(page) {
     return [...(page.textObject || []), ...(page.imageObject || [])]
       .map((c) => `${c.containerID}:${c.xPosition},${c.yPosition},${c.width},${c.height}`)
@@ -136,6 +145,11 @@ export function createDecisionHubPlugin({
       }
       started = true;
       letzteStruktur = strukturVon(page);
+    } else if (signature !== lastSignature
+      && strukturVon(page) === letzteStruktur && textVon(page) === letzterText) {
+      // Nur Bilder haben sich geaendert (Icon-Fokus, Balkenstand):
+      // updateImageRawData zeichnet den Container selbst neu, ein Neuaufbau
+      // ist unnoetig — und Neuaufbauten sind das sichtbare Flackern.
     } else if (signature !== lastSignature) {
       // KEIN textContainerUpgrade: das Geraet zeichnet danach nicht neu — im
       // Simulator blieb die Seite beim Blaettern stehen, obwohl der Zustand
@@ -151,6 +165,7 @@ export function createDecisionHubPlugin({
       gesendeteBilder.clear();
       letzteStruktur = strukturVon(page);
     }
+    letzterText = textVon(page);
     if (signature !== lastSignature) {
       // Ausgeblendet gibt es nichts zu zeichnen — das spart Funk und Strom.
       if (visible) {
@@ -175,8 +190,32 @@ export function createDecisionHubPlugin({
     decisions = (data.decisions || []).filter(filter);
     vorgaenge = new Map((data.vorgaenge || []).map((v) => [v.id, v]));
     if (index >= decisions.length) index = 0;
-    nav = initialNav();
+    // Ebene erhalten: nach einer Entscheidung geht es mit dem naechsten
+    // Vorgang weiter (Triage-Fluss); nur wer auf der Liste war, bleibt dort.
+    nav = nav.level === LEVEL.LISTE ? initialNav() : caseNav();
     await paint();
+  }
+
+  /** Einen Vorgang oeffnen — vom OS-Listenklick wie vom Handy. */
+  async function openCase(i) {
+    if (!decisions.length) return;
+    index = Math.max(0, Math.min(i, decisions.length - 1));
+    nav = caseNav();
+    await paint();
+  }
+
+  /**
+   * Auswahl aus dem OS-Listencontainer. Die Brille bewegt den Rahmen selbst
+   * und meldet erst den Klick; Scroll-Echos (falls das Geraet sie schickt)
+   * duerfen nichts ausloesen — ein Neuaufbau wuerde die OS-Auswahl
+   * zuruecksetzen.
+   */
+  async function handleListSelect(sel) {
+    melde(`listSelect ${JSON.stringify(sel)}`);
+    ruheAnstossen();
+    if (!visible) { visible = true; await paint(); return; }
+    if (!sel?.klick) return;
+    await openCase(sel.index);
   }
 
   /** Eine Entscheidung ausfuehren — von der Brille wie vom Handy. */
@@ -224,7 +263,7 @@ export function createDecisionHubPlugin({
     if (wert === '__vertagt_bestaetigt') {
       decisions.push(decisions.splice(index, 1)[0]);
       index = Math.min(index, Math.max(0, decisions.length - 1));
-      nav = initialNav();
+      nav = caseNav();   // im Triage-Fluss bleiben, nicht auf die Liste
       await paint();
       return;
     }
@@ -234,7 +273,10 @@ export function createDecisionHubPlugin({
 
   async function nextCase() {
     index = (index + 1) % Math.max(1, decisions.length);
-    nav = initialNav();
+    // caseNav, NICHT initialNav: initialNav ist seit dem Umbau die
+    // Listenebene, auf der Gesten dem OS-Container gehoeren — wer dort
+    // landet, ohne es zu wollen, steht in einer Sackgasse (Test gefangen).
+    nav = caseNav();
     await paint();
   }
 
@@ -249,6 +291,7 @@ export function createDecisionHubPlugin({
     ruheUhr = setTimeout(() => {
       // Die Brille traegt man den ganzen Tag; eine liegengebliebene Anzeige
       // im Blickfeld stoert. Sie kommt beim naechsten Handgriff zurueck.
+      melde(`Ruhezeit abgelaufen (${ruhezeitMs}ms)`);
       visible = false;
       paint().catch(() => {});
     }, ruhezeitMs);
@@ -286,6 +329,11 @@ export function createDecisionHubPlugin({
         if (d) d.wiedervorlage_ms = Date.now() + action.option.minutes * 60000;
         await act('__vertagt_bestaetigt');
       }
+      return;
+    }
+    if (action?.type === 'zurListe') {
+      nav = initialNav();
+      await paint();
       return;
     }
     if (action?.type === 'nextCase') {
@@ -340,6 +388,7 @@ export function createDecisionHubPlugin({
   async function handleImu(sample) {
     const change = tilt.feed(sample);
     if (!change) return;
+    melde(`IMU-Gate: ${change} nach ${JSON.stringify(sample)}`);
     visible = change === 'show';
     await paint();
   }
@@ -375,15 +424,13 @@ export function createDecisionHubPlugin({
         id: 'testkarte', kunde_name: 'Test',
         quelle_json: { body_clean: `Testkarte gesendet um ${new Date().toLocaleTimeString('de-DE')}.` },
       }]]);
+      nav = caseNav();
       index = 0;
-      nav = initialNav();
       await paint();
     },
-    async select(i) {
-      index = i;
-      nav = initialNav();
-      await paint();
-    },
+    select: (i) => openCase(i).catch(onError),
+    openCase: (i) => openCase(i).catch(onError),
+    handleListSelect: (sel) => handleListSelect(sel).catch(onError),
     snapshot() {
       return { decisions, index, vorgangOf };
     },

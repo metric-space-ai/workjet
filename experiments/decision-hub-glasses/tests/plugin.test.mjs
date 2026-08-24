@@ -36,21 +36,24 @@ test("the page carries the reading box and one item per rubric", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
+  await plugin.openCase(0);
   const page = sdk.calls.lastPage;
   // Die Vorgangsliste ist ein Bild, kein Text: nur so laesst sich der
   // aktive Eintrag invertieren.
   // Lesekasten plus der winzige Eingabecontainer, der die Gesten annimmt.
-  assert.equal(page.textObject.length, 2, "reading box and the gesture catcher");
+  // Lesekasten, Gesten-Catcher und der Fallname links.
+  assert.equal(page.textObject.length, 3, "reading box, gesture catcher and the case label");
   const box = page.textObject.find((c) => c.containerName === "box-body");
   assert.equal(box.isEventCapture, 0, "the reading box must never capture input …");
   const fang = page.textObject.find((c) => c.containerName === "input");
   assert.equal(fang.isEventCapture, 1, "… the empty catcher does");
   assert.equal(fang.content, "", "and it stays empty, so there is nothing to scroll");
-  assert.ok(page.imageObject.some((c) => c.containerName === "liste"), "the case list is a bitmap");
+  // Die Vorgangsliste lebt seit dem Umbau auf der OS-Listenebene — im
+  // Vorgang zeigen links Fallname (Text) und Aktionsleiste (Bild).
+  assert.ok(page.textObject.some((c) => c.containerName === "fall"), "the case label sits on the left");
   assert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
-  // Die Aktionsleiste ist kein eigener Container mehr: sie sitzt im
-  // Listenbild, auf dem reservierten Platz des aktiven Vorgangs.
-  assert.equal(page.imageObject.length, 3, "case list, scroll indicator and rubric legend");
+  assert.equal(page.imageObject.length, 3, "rail, rubric legend and action bar");
+  assert.ok(page.imageObject.some((c) => c.containerName === "bar"), "the action bar is a bitmap");
   assert.ok(page.imageObject.every((i) => i.width <= 288 && i.height <= 144), "images stay inside the SDK limits");
 });
 
@@ -58,6 +61,7 @@ test("the body never overflows its container", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
+  await plugin.openCase(0);
   const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "box-body");
   assert.ok(body.content.split("\n").length <= CONTENT_LINES + 2);
   // Der Lesekasten darf KEINE Eingaben fangen: ein Eingabecontainer bekommt
@@ -69,6 +73,7 @@ test("bitmaps are repainted when the position changes", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
+  await plugin.openCase(0);
   const before = sdk.calls.image;
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
   assert.ok(sdk.calls.image > before, "the rail must show the new position");
@@ -79,6 +84,7 @@ test("a press on an icon answers exactly once", async () => {
   const answers = [];
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource(answers) });
   await plugin.start();
+  await plugin.openCase(0);
   // bis hinter die letzte Rubrik scrollen, dann steht der Fokus auf dem
   // ersten Icon (Annehmen).
   for (let i = 0; i < 8; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
@@ -94,6 +100,7 @@ test("a press in the overview expands instead of answering", async () => {
   const answers = [];
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource(answers) });
   await plugin.start();
+  await plugin.openCase(0);
   await plugin.handleEvent(OS_EVENT.CLICK);
   assert.equal(answers.length, 0);
   assert.equal(plugin.state.level, "detail");
@@ -107,6 +114,7 @@ test("the page passes the SDK's own validation", async () => {
   const sdk = fakeSdk();
   const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
   await plugin.start();
+  await plugin.openCase(0);
   const page = sdk.calls.lastPage;
   const total = (page.textObject?.length || 0) + (page.imageObject?.length || 0);
   assert.equal(page.containerTotalNum, total, "containerTotalNum must count every container");
@@ -130,21 +138,23 @@ test("every page respects the firmware limits for containers", async () => {
   };
   const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
   await plugin.start();
+  await plugin.openCase(0);
   for (let i = 0; i < 20; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
 
   for (const seite of seiten) {
     const text = seite.textObject || [];
     const bild = seite.imageObject || [];
+    const liste = seite.listObject || [];
     assert.ok(text.length <= 8, `at most 8 text containers, got ${text.length}`);
     assert.ok(bild.length <= 4, `at most 4 image containers, got ${bild.length}`);
-    const gesamt = text.length + bild.length;
+    const gesamt = text.length + bild.length + liste.length;
     assert.ok(gesamt >= 1 && gesamt <= 12, `1..12 containers, got ${gesamt}`);
     assert.equal(seite.containerTotalNum, gesamt, "the announced count must match reality");
     for (const c of bild) {
       assert.ok(c.width >= 20 && c.width <= 288, `image "${c.containerName}" is ${c.width} wide, allowed is 20..288`);
       assert.ok(c.height >= 20 && c.height <= 144, `image "${c.containerName}" is ${c.height} high, allowed is 20..144`);
     }
-    const ids = [...text, ...bild].map((c) => c.containerID);
+    const ids = [...text, ...bild, ...liste].map((c) => c.containerID);
     assert.equal(new Set(ids).size, ids.length, "container ids must be unique across the page");
   }
 });
@@ -153,12 +163,12 @@ test("every page respects the firmware limits for containers", async () => {
 // liegt ueber der oberen Rahmenkante und unterbricht sie genau dort.
 test("the rubric sits in the frame, not inside the box", async () => {
   const { buildPage, CONTAINER, PANEL_CHARS, boxTitle } = await import("../src/layout.mjs");
-  const { initialNav } = await import("../src/nav.mjs");
+  const { caseNav } = await import("../src/nav.mjs");
   const { createSource } = await import("../src/source.mjs");
   const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
   const daten = await createSource().load();
   const nav = {
-    ...initialNav(),
+    ...caseNav(),
     sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
     tabs: [{ titel: "REM", kanal: "mail" }], tabIndex: 0,
     icons: [{ id: "annehmen" }], betreff: "REM", typ: "TRIAGE",
@@ -197,6 +207,7 @@ test("images are resent after a rebuild, or icons vanish", async () => {
   };
   const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
   await plugin.start();
+  await plugin.openCase(0);
   await plugin.handleEvent(OS_EVENT.SCROLL_TOP);          // blendet aus -> leere Seite
   assert.equal(plugin.visible, false);
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);       // kommt zurueck -> Neuaufbau
@@ -222,6 +233,7 @@ test("a page turn actually reaches the display", async () => {
   };
   const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0, ruhezeitMs: 0 });
   await plugin.start();
+  await plugin.openCase(0);
   await plugin.handleEvent(OS_EVENT.CLICK);
   const vorher = gezeichnet.length;
   await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
@@ -234,12 +246,12 @@ test("a page turn actually reaches the display", async () => {
 
 test("the page geometry stays constant across states", async () => {
   const { buildPage, PANEL_CHARS } = await import("../src/layout.mjs");
-  const { initialNav } = await import("../src/nav.mjs");
+  const { caseNav } = await import("../src/nav.mjs");
   const { createSource } = await import("../src/source.mjs");
   const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
   const daten = await createSource().load();
   const basis = {
-    ...initialNav(),
+    ...caseNav(),
     sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
     tabs: [{ titel: "REM", kanal: "mail" }, { titel: "Thesen", kanal: "mail" }],
     tabIndex: 0, icons: [{ id: "a" }, { id: "b" }], betreff: "REM", typ: "TRIAGE",
@@ -256,12 +268,12 @@ test("the page geometry stays constant across states", async () => {
 // Rubriken — das muss man sehen, nicht raten.
 test("the overview shows dots, the long version a bar", async () => {
   const { buildBitmaps, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
-  const { initialNav } = await import("../src/nav.mjs");
+  const { caseNav } = await import("../src/nav.mjs");
   const { createSource } = await import("../src/source.mjs");
   const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
   const daten = await createSource().load();
   const nav = {
-    ...initialNav(),
+    ...caseNav(),
     sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
     tabs: [{ titel: "REM", kanal: "mail" }], tabIndex: 0,
     icons: [{ id: "a" }], betreff: "REM", typ: "TRIAGE",
@@ -300,12 +312,12 @@ test("the action slot is reserved, so nothing jumps when icons appear", async ()
 // ist die Helligkeit (0..4).
 test("the summary is brighter than the full text", async () => {
   const { buildPage, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
-  const { initialNav } = await import("../src/nav.mjs");
+  const { caseNav } = await import("../src/nav.mjs");
   const { createSource } = await import("../src/source.mjs");
   const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
   const daten = await createSource().load();
   const nav = {
-    ...initialNav(),
+    ...caseNav(),
     sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail"], PANEL_CHARS),
     tabs: ["REM"], tabIndex: 0, icons: [{ wert: "annehmen" }], betreff: "REM", typ: "TRIAGE",
   };
@@ -320,12 +332,12 @@ test("the summary is brighter than the full text", async () => {
 // Kante und Rubrikname bleiben stehen, der Kasten waechst nach links.
 test("expanding keeps the right edge and the rubric label in place", async () => {
   const { buildPage, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
-  const { initialNav } = await import("../src/nav.mjs");
+  const { caseNav } = await import("../src/nav.mjs");
   const { createSource } = await import("../src/source.mjs");
   const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
   const daten = await createSource().load();
   const nav = {
-    ...initialNav(),
+    ...caseNav(),
     sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail"], PANEL_CHARS),
     tabs: ["REM"], tabIndex: 0, icons: [{ wert: "annehmen" }], betreff: "REM", typ: "TRIAGE",
   };

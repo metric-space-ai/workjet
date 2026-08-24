@@ -9,7 +9,18 @@ import { LEVEL } from './layout.mjs';
 
 export const OS_EVENT = { CLICK: 0, SCROLL_TOP: 1, SCROLL_BOTTOM: 2, DOUBLE_CLICK: 3 };
 
+/**
+ * Startzustand: die Vorgangsliste. Sie ist ein OS-Listencontainer — die
+ * Brille bewegt den Auswahlrahmen selbst (animiert, ohne Funkverkehr) und
+ * meldet erst den Klick. Deshalb ignoriert navigate() auf dieser Ebene alle
+ * Gesten; die Auswahl kommt als listEvent herein.
+ */
 export function initialNav() {
+  return { sectionIndex: 0, page: 0, level: LEVEL.LISTE, focusIcon: -1, picker: null, pickerIndex: 0 };
+}
+
+/** Zustand beim Betreten eines Vorgangs — erste Rubrik, nichts fokussiert. */
+export function caseNav() {
   return { sectionIndex: 0, page: 0, level: LEVEL.RUBRIK, focusIcon: -1, picker: null, pickerIndex: 0 };
 }
 
@@ -56,6 +67,10 @@ export function navigate(nav, event, dims) {
     }
     return { nav: next, action: null };
   }
+
+  // Auf der Listenebene gehoeren die Gesten dem OS-Listencontainer; hier
+  // kommt hoechstens ein Echo an, das nichts bedeuten darf.
+  if (next.level === LEVEL.LISTE) return { nav: next, action: null };
 
   switch (event) {
     case OS_EVENT.SCROLL_BOTTOM:
@@ -118,7 +133,9 @@ export function navigate(nav, event, dims) {
     case OS_EVENT.DOUBLE_CLICK:
       if (next.focusIcon >= 0) { next.focusIcon = -1; return { nav: next, action: null }; }
       if (next.level === LEVEL.DETAIL) { next.level = LEVEL.RUBRIK; next.page = 0; return { nav: next, action: { type: 'collapse' } }; }
-      return { nav: next, action: null };
+      // Aus dem Vorgang zurueck zur Liste — der Weg nach oben in der
+      // Hierarchie ist immer der Doppeldruck.
+      return { nav: next, action: { type: 'zurListe' } };
 
     default:
       return { nav: next, action: null };

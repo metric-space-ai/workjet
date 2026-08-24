@@ -8,6 +8,31 @@ export function menuItemFrom(detail) {
   return typeof id === "number" ? id : null;
 }
 
+/**
+ * Auswahl aus einem OS-Listencontainer. Der Klick auf ein Listenelement
+ * kommt als listEvent mit currentSelectItemIndex — bei CLICK (0) laesst
+ * Protobuf den eventType weg, genau wie beim sysEvent-Druck. Ein listEvent
+ * mit Index und ohne Typ IST die Auswahl.
+ */
+export function listSelectFrom(detail) {
+  const le = detail?.listEvent;
+  if (!le) return null;
+  // Protobuf laesst Nullwerte weg — das trifft AUCH den Index: ein Klick auf
+  // das OBERSTE Element kommt ohne currentSelectItemIndex an. Wer "fehlt"
+  // als "kein Ereignis" liest, verliert jeden Klick auf den staendig
+  // hervorgehobenen ersten Eintrag (genau so blieb die Liste stumm).
+  const roh = le.currentSelectItemIndex ?? le.CurrentSelect_ItemIndex;
+  const index = roh === undefined ? 0 : Number(roh);
+  if (!Number.isFinite(index)) return null;
+  const typ = le.eventType;
+  return {
+    index,
+    name: le.currentSelectItemName ?? null,
+    // undefined oder 0 = Klick (Auswahl); 1/2 = Scrollmeldung der Liste.
+    klick: typ === undefined || typ === 0,
+  };
+}
+
 /** IMU-Messwerte, wenn die Brille Bewegungsdaten meldet. */
 export function imuFrom(detail) {
   const data = detail?.sysEvent?.imuData || detail?.sysEvent?.IMU_Data || detail?.jsonData?.imuData;

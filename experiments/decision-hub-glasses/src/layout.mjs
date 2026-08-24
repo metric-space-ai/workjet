@@ -17,7 +17,7 @@
 
 import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
 import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { renderCaseList, renderLegend, bitmapPayload, ZEILE_FALL } from './icons.mjs';
+import { renderActionBar, renderLegend, bitmapPayload } from './icons.mjs';
 import { renderDots, renderBar } from './dots.mjs';
 
 // Zeilenhoehe des GERAETEFONTS im Lesekasten. 26 war zu klein gemessen —
@@ -78,7 +78,7 @@ export const CONTAINER = {
 const BRIGHT = 4;
 const DIM = 2;
 
-export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
+export const LEVEL = { LISTE: 'liste', RUBRIK: 'rubrik', DETAIL: 'detail' };
 
 // Eine Zeile Reserve: passt der Inhalt exakt, scrollt die Brille ihn selbst
 // und federt sichtbar zurueck — bei JEDEM Seitenwechsel.
@@ -252,154 +252,181 @@ export function railState(nav) {
 }
 
 export function buildPage(nav) {
-  const seite = bauePage(nav);
-  seite.containerTotalNum = (seite.textObject?.length || 0) + (seite.imageObject?.length || 0);
-  return seite;
+  return bauePage(nav);
 }
 
 function bauePage(nav) {
+  // Drei Ebenen, drei Seiten:
+  //   LISTE   OS-Listencontainer der Vorgaenge. Die Brille bewegt den
+  //           Auswahlrahmen selbst — nativ animiert, ohne Funkverkehr; das
+  //           ist die Dashboard-Anmutung. Kein Bild, kein Catcher: die
+  //           Liste ist der Eingabecontainer.
+  //   RUBRIK  Karten des offenen Vorgangs; links Fallname und Aktionsleiste.
+  //   DETAIL  Volltext ueber die volle Breite, Balken links.
+  // Ein offener Picker (Wiedervorlage) nutzt die Rubrik-Seite: dort halten
+  // WIR die Gesten, nicht die OS-Liste.
+  const ebene = nav.picker ? LEVEL.RUBRIK : nav.level;
   const focused = nav.focusIcon >= 0;
-  const items = itemLines(nav);
-  return {
-    // Fest verdrahtet war das schon einmal falsch: die Firmware weist die
-    // Seite ab, wenn die angekuendigte Zahl nicht zur tatsaechlichen passt.
-    // Wird unten aus den Containern berechnet.
+
+  if (ebene === LEVEL.LISTE) {
+    const eintraege = (nav.tabs || []).map((t) => (typeof t === 'string' ? t : t?.titel || ''));
+    const status = [
+      `${eintraege.length} offene ${eintraege.length === 1 ? 'Entscheidung' : 'Entscheidungen'}`,
+      '',
+      'Wischen wählt, Drücken öffnet.',
+      ...(nav.demo ? ['', 'DEMO — es wird nichts versendet.'] : []),
+    ];
+    return zaehlen({
+      containerTotalNum: 0,
+      listObject: [{
+        containerID: CONTAINER.CHANNELS,
+        containerName: 'fallliste',
+        xPosition: COL_X, yPosition: LIST_Y,
+        width: 190, height: DISPLAY_H - LIST_Y * 2,
+        borderWidth: 0, borderRadius: 8, paddingLength: 4,
+        isEventCapture: 1, zOrderIndex: 1,
+        itemContainer: {
+          itemCount: eintraege.length,
+          itemWidth: 176,
+          isItemSelectBorderEn: 1,
+          itemName: eintraege,
+        },
+      }],
+      textObject: [{
+        containerID: CONTAINER.BOX_BODY,
+        containerName: 'box-body',
+        xPosition: BOX_X, yPosition: BOX_Y,
+        width: BOX_W, height: BOX_H,
+        borderWidth: 1, borderColor: 13, borderRadius: 10, paddingLength: 10,
+        content: status.join('\n'),
+        textColor: 3, isEventCapture: 0, zOrderIndex: 2,
+      }],
+      imageObject: [],
+      // KEIN menuObject auf der Listenebene: das Kontextmenue gehoert zum
+      // geoeffneten Vorgang, und eine Listen-Seite mit Menue blieb im
+      // Simulator bis zur ersten Eingabe schwarz.
+    });
+  }
+
+  return zaehlen({
     containerTotalNum: 0,
     textObject: [
       {
-        // Eine Box, ein Container: der Rahmen ist Text, damit der Titel in
-        // der oberen Kante sitzt. Zugleich der Eingabe-Container — sein
-        // Inhalt passt IMMER auf eine Seite, sonst scrollt ihn die Brille
-        // selbst und die Gesten erreichen die App nicht mehr.
+        // Der Lesekasten. Er waechst im Volltext nach LINKS: rechte Kante,
+        // Titelstreifen und rechte Rahmenteile bleiben exakt stehen — beim
+        // Aufklappen verschiebt sich nur, was sich verschieben muss.
         containerID: CONTAINER.BOX_BODY,
         containerName: 'box-body',
-        // Der Kasten waechst nach LINKS. Rechte Kante, Titel und die obere
-        // wie untere Rahmenkante rechts bleiben damit exakt stehen — beim
-        // Aufklappen verschiebt sich nur, was sich verschieben muss.
-        xPosition: nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X,
+        xPosition: ebene === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X,
         yPosition: BOX_Y,
-        width: (BOX_X + BOX_W) - (nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X),
-        // KONSTANT. Eine inhaltsabhaengige Hoehe waere eine Strukturaenderung
-        // und erzwaenge bei jedem Seitenwechsel einen Neuaufbau — sichtbares
-        // Neuzeichnen. Gegen das Scrollen hilft isEventCapture, nicht die
-        // Hoehe.
+        width: (BOX_X + BOX_W) - (ebene === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X),
+        // KONSTANTE Hoehe: eine inhaltsabhaengige Hoehe waere eine
+        // Strukturaenderung und erzwaenge je Seitenwechsel einen Neuaufbau.
         height: BOX_H,
         borderWidth: 1,
         borderColor: focused ? 5 : 13,
-        // Schriftgroesse gibt es am Geraet nicht (das SDK kennt kein
-        // Schriftfeld). Der einzige Hebel ist die Helligkeit: die
-        // Kurzfassung steht voll, der Volltext eine Stufe darunter — man
-        // liest die Uebersicht im Vorbeigehen, den Volltext bewusst.
         borderRadius: 10,
         paddingLength: 10,
-        content: framedBox(
-          boxHeader(nav, PANEL_CHARS),
-          contentLines(nav),
-          PANEL_CHARS,
-          CONTENT_LINES,
-        ).join('\n'),
-        // Schriftgroesse gibt es am Geraet nicht — das SDK kennt kein
-        // Schriftfeld. Der einzige Hebel fuer Gewichtung ist die Helligkeit:
-        // die Kurzfassung steht voll, der Volltext eine Stufe darunter. Man
-        // ueberfliegt die Uebersicht, den Volltext liest man bewusst.
-        textColor: nav.level === LEVEL.DETAIL ? 3 : 4,
-        // KEINE Eingaben: ein Eingabecontainer bekommt vom Betriebssystem
-        // Scrollverhalten samt Federn — auch dann, wenn gar nichts zu
-        // scrollen ist. Genau das war das Wackeln in der Seitenansicht.
+        content: framedBox(boxHeader(nav, PANEL_CHARS), contentLines(nav), PANEL_CHARS, CONTENT_LINES).join('\n'),
+        // Kurzfassung voll, Volltext eine Stufe darunter — Helligkeit ist
+        // der einzige Gewichtshebel, ein Schriftfeld kennt das SDK nicht.
+        textColor: ebene === LEVEL.DETAIL ? 3 : 4,
+        // KEINE Eingaben: ein Eingabecontainer bekommt vom OS Scrollverhalten
+        // samt Federn, auch ohne Ueberlauf — das war das Wackeln.
         isEventCapture: 0,
         zOrderIndex: 1,
       },
       {
-        // Nimmt die Gesten entgegen, damit die App sie bekommt. Leer und
-        // winzig: was keinen Inhalt hat, kann nicht scrollen.
+        // Nimmt die Gesten entgegen. Leer und winzig: nichts zu scrollen.
         containerID: CONTAINER.BOX_TITLE,
         containerName: 'input',
-        xPosition: 0,
-        yPosition: DISPLAY_H - 2,
-        width: 2,
-        height: 2,
-        content: '',
-        isEventCapture: 1,
-        zOrderIndex: 0,
+        xPosition: 0, yPosition: DISPLAY_H - 2, width: 2, height: 2,
+        content: '', isEventCapture: 1, zOrderIndex: 0,
       },
+      ...(ebene === LEVEL.RUBRIK ? [{
+        // Links steht, WO man ist: der Fallname, darunter ggf. DEMO. Die
+        // Vorgangsliste selbst ist auf der Listenebene — hier lenkt sie ab.
+        containerID: CONTAINER.ITEMS,
+        containerName: 'fall',
+        xPosition: COL_X, yPosition: LIST_Y,
+        width: CH_W + COL_W, height: 60,
+        content: `${nav.betreff || ''}${nav.demo ? '\nDEMO' : ''}`,
+        textColor: 2, isEventCapture: 0, zOrderIndex: 3,
+      }] : []),
     ],
     imageObject: [
-      ...(nav.level === LEVEL.DETAIL ? [] : [{
-        // Icons UND Namen in einem Bild: nur so laesst sich der aktive
-        // Vorgang invertieren, und es spart einen Container.
-        containerID: CONTAINER.CHANNELS,
-        containerName: 'liste',
-        xPosition: COL_X,
-        yPosition: LIST_Y,
-        width: CH_W + COL_W,
-        height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
-        zOrderIndex: 3,
-      }]),
       {
         containerID: CONTAINER.DOTS,
         containerName: 'rail',
-        // Im Volltext gehoert der Leseweg an den rechten Rand, neben den
-        // Text — nicht zwischen Navigation und Kasten. Mittig, weil ein Bild
-        // hoechstens 144 hoch sein darf, der Kasten aber 268.
-        xPosition: nav.level === LEVEL.DETAIL ? 8 : DOTS_X,
-        yPosition: nav.level === LEVEL.DETAIL ? BOX_Y + Math.round((BOX_H - 144) / 2) : BOX_Y + 8,
+        // Rubrik: Punkte zwischen Spalte und Kasten. Volltext: Balken am
+        // linken Rand, damit die rechte Rahmenkante stehen bleibt.
+        xPosition: ebene === LEVEL.DETAIL ? 8 : DOTS_X,
+        yPosition: ebene === LEVEL.DETAIL ? BOX_Y + Math.round((BOX_H - 144) / 2) : BOX_Y + 8,
         width: DOTS_W,
         height: Math.min(144, BOX_H - 16),
         zOrderIndex: 4,
       },
       {
-        // Rubrik-Streifen ueber der oberen Rahmenkante — der Rahmen ist genau
-        // dort unterbrochen, wo der Name steht.
+        // Rubrik-Streifen: unterbricht die obere Rahmenkante genau dort,
+        // wo der Name steht. Feste Lage in beiden Ansichten.
         containerID: CONTAINER.LEGEND,
         containerName: 'legend',
-        // Der Streifen sitzt ueber der oberen Kante des Kastens — und der
-        // steht im Volltext ganz links.
-        xPosition: BOX_X + 14,   // bleibt in beiden Ansichten an derselben Stelle
+        xPosition: BOX_X + 14,
         yPosition: BOX_Y - 10,
-        width: LEGEND_W,
-        height: 20,
+        width: LEGEND_W, height: 20,
         zOrderIndex: 9,
       },
+      ...(ebene === LEVEL.RUBRIK ? [{
+        // Aktionsleiste unter dem Fallnamen — fester Platz, nichts springt.
+        containerID: CONTAINER.BAR,
+        containerName: 'bar',
+        xPosition: COL_X, yPosition: LIST_Y + 66,
+        width: BAR_W, height: BAR_H,
+        zOrderIndex: 5,
+      }] : []),
     ],
     menuObject: {
       menuItems: nav.icons.map((icon, i) => ({ itemID: i + 1, itemName: icon.label || icon.wert })),
     },
-  };
+  });
+}
+
+/** Angekuendigte Container-Zahl aus der Wirklichkeit — nie von Hand. */
+function zaehlen(page) {
+  page.containerTotalNum = (page.listObject?.length || 0)
+    + (page.textObject?.length || 0)
+    + (page.imageObject?.length || 0);
+  return page;
 }
 
 export function buildBitmaps(nav) {
+  const ebene = nav.picker ? LEVEL.RUBRIK : nav.level;
+  // Listenebene: der OS-Container zeichnet alles selbst — null Bilddaten.
+  if (ebene === LEVEL.LISTE) return [];
+
   const titel = boxTitle(nav);
-  const { from, tabs } = visibleCases(nav);
-  return [
+  const bilder = [
     bitmapPayload(
-      renderCaseList({
-        width: CH_W + COL_W,
-        height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
-        // tabLabel liefert einen String, kein Objekt — das kostete die
-        // Namen in der Liste.
-        cases: tabs.map((t, i) => ({
-          titel: typeof t === 'string' ? t : (t.titel || ''),
-          kanal: nav.channels?.[from + i] || (typeof t === 'object' ? t.kanal : null) || 'mail',
-        })),
-        active: nav.tabIndex - from,
-        actions: nav.icons || [],
-        focusAction: nav.focusIcon,
-        demo: nav.demo,
-      }),
-      CONTAINER.CHANNELS,
-    ),
-    bitmapPayload(
-      // Uebersicht: ein Punkt je Rubrik. Langfassung: ein durchgehender
-      // Balken — man muss auf einen Blick unterscheiden koennen, ob man
-      // zwischen Rubriken blaettert oder in einem Text liest.
-      (nav.level === LEVEL.DETAIL ? renderBar : renderDots)({
+      // Rubrik: ein Punkt je Rubrik. Volltext: durchgehender Balken — man
+      // muss sehen, ob man zwischen Rubriken blaettert oder in einem Text
+      // liest.
+      (ebene === LEVEL.DETAIL ? renderBar : renderDots)({
         width: DOTS_W, height: Math.min(144, BOX_H - 16), ...railState(nav),
       }),
       CONTAINER.DOTS,
     ),
-    bitmapPayload(
-      renderLegend({ title: titel, width: LEGEND_W, height: 20 }),
-      CONTAINER.LEGEND,
-    ),
+    bitmapPayload(renderLegend({ title: titel, width: LEGEND_W, height: 20 }), CONTAINER.LEGEND),
   ];
+  if (ebene === LEVEL.RUBRIK) {
+    bilder.push(bitmapPayload(
+      renderActionBar({
+        icons: nav.icons || [],
+        focusIcon: nav.focusIcon,
+        width: BAR_W, height: BAR_H,
+        detail: nav.detail, compact: true,
+      }),
+      CONTAINER.BAR,
+    ));
+  }
+  return bilder;
 }

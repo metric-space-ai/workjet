@@ -170,6 +170,73 @@ describe("ProviderGatewayConfig", () => {
     });
   });
 
+  describe("xAI subscription accounts", () => {
+    // The provider string "xai" names TWO shapes; the credential fields tell
+    // them apart. These tests pin that disambiguation.
+    const xaiSubscription = (patch: Record<string, unknown> = {}) => ({
+      schemaVersion: 1,
+      defaultProvider: "xai",
+      accounts: [
+        {
+          id: "xai-sub",
+          label: "Grok subscription",
+          provider: "xai",
+          enabled: true,
+          priority: 0,
+          weight: 1,
+          models: ["grok-4.6"],
+          accessTokenSecret: secret("account-xai-sub-access-token"),
+          refreshTokenSecret: secret("account-xai-sub-refresh-token"),
+          ...patch,
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+
+    it("decodes by its token references and shows no credential suffix", () => {
+      const decoded = decodeProviderGatewayConfiguration(xaiSubscription());
+      expect(decoded).toBeDefined();
+      const [account] = gatewayCatalog(decoded!).accounts;
+      expect(account?.provider).toBe("xai");
+      expect(account?.credentialSuffix).toBeNull();
+    });
+
+    it("refuses a hybrid record carrying both an API key and token references", () => {
+      expect(
+        decodeProviderGatewayConfiguration(
+          xaiSubscription({ apiKeySecret: secret("account-xai-sub-api-key") }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it("renders an xai_accounts entry without weight, beside empty api_key_accounts", () => {
+      const decoded = decodeProviderGatewayConfiguration(xaiSubscription())!;
+      const host = rustHostConfiguration(decoded, "/private/secrets") as {
+        defaultProvider?: string;
+        runtime: {
+          xai_accounts: ReadonlyArray<Record<string, unknown>>;
+          api_key_accounts: ReadonlyArray<Record<string, unknown>>;
+        };
+      };
+      expect(host.defaultProvider).toBe("xai");
+      expect(host.runtime.api_key_accounts).toEqual([]);
+      // NO weight/websockets: the host struct denies unknown fields.
+      expect(host.runtime.xai_accounts).toEqual([
+        {
+          id: "xai-sub",
+          disabled: false,
+          priority: 0,
+          models: ["grok-4.6"],
+          access_token_secret: secret("account-xai-sub-access-token"),
+          refresh_token_secret: secret("account-xai-sub-refresh-token"),
+          upstream_base_url: "",
+          token_endpoint: "",
+        },
+      ]);
+    });
+  });
+
   describe("environment-scoped credentials", () => {
     /**
      * The gateway's credentials belong to the environment whose secret store

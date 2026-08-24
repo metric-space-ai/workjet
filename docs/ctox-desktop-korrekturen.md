@@ -449,6 +449,14 @@ BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
    `xai-auth-url` (server_management.rs neben den drei vorhandenen),
    UI-Karte: xAI bekommt BEIDE Knöpfe (Add account + Add API key).
    GATE: „Add account" liefert die verification-URL, Poll „pending".
+   → CODE ERLEDIGT 2026-08-24: Route xai-auth-url (Rust), Vertrag
+   WorkjetGatewayOauthProvider+"xai", OAUTH_BEGIN_ROUTES/HOST_PROVIDERS/
+   REQUIRED_SECRET_KEYS/persist-Zweig (Service), Konfig-Schema
+   XaiSubscriptionGatewayAccount (Feld-basiert von API-Key-Konto
+   unterschieden, xai_accounts-Übersetzung ohne weight), xAI-Karte mit
+   BEIDEN Knöpfen. Typecheck server+web grün, Config-Tests 17/17.
+   Live-GATE (verification-URL + Poll pending) offen bis zum Deploy von
+   Server + Host-Binary.
 6. BETREIBER-GATE: Device-Login abschließen, dann Grok-Modell anpinnen
    und Turn fahren.
 
@@ -497,3 +505,44 @@ erweitern, Karte von „Add API key" auf beides umstellen.
   nicht anfassen.
 - Stash `wip: package 9 option A (WorkerDispatch delegation)` liegt
   benannt im Stash; gehört zum Workjet-Plan-Strang, nicht hierher.
+
+## 9 · Betreiber-Meldungen 2026-08-24 (Nachmittag) — NEU, aus Screenshots
+
+Alle sechs direkt aus Chat-Nachrichten mit Screenshots übernommen:
+
+1. Sign-in-Landing-Page war ungestylter Text mit "return to Workjet" →
+   ERLEDIGT im Code (loopback.rs: gestaltete Karte, hell/dunkel,
+   "CTOX Desktop App", Erfolg grün / Fehler rot). NOCH ZU TUN:
+   Host-Release bauen + Binary nach ~/.t3/userdata tauschen (codesign!).
+2. Re-login erzeugt DOPPELTE Accounts (Claude 2×, Codex 2× im
+   Screenshot). Ursache: persistClaimedAccounts pusht immer neu.
+   FIX: gleiche Identität (Provider+Label) → Secrets der bestehenden
+   Referenzen überschreiben, keinen neuen Account anlegen.
+3. Accounts sind NICHT löschbar. FIX: Remove-Aktion je Account
+   (RPC + Konfig-Schreiben + Secrets löschen + Gateway-Reload) + UI.
+4. "Wo sind die unterstützten Modelle?" — Login-Accounts entstehen mit
+   models:[] (Host-record() liefert leer). FIX: Provider-Defaults beim
+   Anlegen (claude→claude-_, codex→gpt-_/codex-_, xai→grok-_) und
+   bestehende leere Accounts heilen.
+5. Refresh-Knopf auf der LLM-providers-Seite tut scheinbar nichts →
+   diagnostizieren (was ruft er, was ändert sich sichtbar?).
+6. Settings-Menü "Computers" zeigt die WORKJET-Seite (Workers-Tabs,
+   Greppy Runtime) statt einer Computers-Seite → Navigation/Inhalt
+   korrigieren.
+7. "Wo sind die default worker aus der Swift-App?" — Antwort: hinter
+   dem einmaligen "Import once" (Legacy import, 14/14 vorbelegt);
+   der Klick ist BETREIBER-Sache und steht noch aus.
+8. "Warum gibt es noch Connections, wenn es Computers gibt?" — zwei
+   Menüpunkte fürs selbe Konzept (Remote environments pairen = Rechner
+   hinzufügen). FIX: Connections-Inhalte (Network access, Tailscale,
+   Remote environments) in die Computers-Seite integrieren, Menüpunkt
+   Connections entfernen.
+9. Legacy-Import-Seite: "lösch das sofort. Du solltest nur die worker
+   aus workjet neu anlegen!!!!" — FIX: Import-UI komplett entfernen;
+   stattdessen die 12 Swift-Worker (config.v1.json, 12 workers,
+   3 computers gelesen 2026-08-24) direkt als Worker anlegen samt
+   Computern gpu3-a4500/gpu1-a6000; Local → dieses Environment.
+10. Prompt-Tab zeigt nicht den GESAMTEN Worker-Prompt wie die
+    Swift-App (dort: Karte je Worker mit Badges + MODELL-Regeln +
+    WORKER-AUFGABE voll ausgeschrieben). FIX: Prompt-Seite baut die
+    vollständige Ansicht nach; Modellregeln (modelPrompts) importieren.

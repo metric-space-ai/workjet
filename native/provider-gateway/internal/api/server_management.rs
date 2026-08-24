@@ -38,6 +38,7 @@ const SWITCH_PREVIEW_MODEL_PATH: &str = "/v0/management/quota-exceeded/switch-pr
 const ANTHROPIC_AUTH_URL_PATH: &str = "/v0/management/anthropic-auth-url";
 const CODEX_AUTH_URL_PATH: &str = "/v0/management/codex-auth-url";
 const ANTIGRAVITY_AUTH_URL_PATH: &str = "/v0/management/antigravity-auth-url";
+const XAI_AUTH_URL_PATH: &str = "/v0/management/xai-auth-url";
 const OAUTH_STATUS_PATH: &str = "/v0/management/oauth/status";
 const OAUTH_SESSION_PREFIX: &str = "/v0/management/oauth/session/";
 const OAUTH_CLAIM_SUFFIX: &str = "/claim";
@@ -797,6 +798,7 @@ fn builtin_oauth_provider_for_path(path: &str) -> Option<&'static str> {
         ANTHROPIC_AUTH_URL_PATH => Some("anthropic"),
         CODEX_AUTH_URL_PATH => Some("codex"),
         ANTIGRAVITY_AUTH_URL_PATH => Some("antigravity"),
+        XAI_AUTH_URL_PATH => Some("xai"),
         _ => None,
     }
 }

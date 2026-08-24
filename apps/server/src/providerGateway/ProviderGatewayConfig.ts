@@ -80,10 +80,24 @@ export interface ApiKeyGatewayAccount extends GatewayAccountBase {
   readonly credentialSuffix?: string;
 }
 
+/**
+ * An xAI subscription (Grok plan) account, created by the device-code login.
+ * Same provider name as the xai API-key account; the shapes are told apart by
+ * their credential fields, never by the provider string.
+ */
+export interface XaiSubscriptionGatewayAccount extends GatewayAccountBase {
+  readonly provider: "xai";
+  readonly accessTokenSecret: GatewaySecretReference;
+  readonly refreshTokenSecret: GatewaySecretReference;
+  readonly upstreamBaseUrl?: string;
+  readonly tokenEndpoint?: string;
+}
+
 export type GatewayAccount =
   | ClaudeGatewayAccount
   | CodexGatewayAccount
   | AntigravityGatewayAccount
+  | XaiSubscriptionGatewayAccount
   | ApiKeyGatewayAccount;
 
 /** Kept in lockstep with the Rust host's `API_KEY_PROVIDERS`. */
@@ -95,7 +109,14 @@ export const isApiKeyProvider = (
   (API_KEY_PROVIDERS as ReadonlyArray<string>).includes(value);
 
 export const isApiKeyAccount = (account: GatewayAccount): account is ApiKeyGatewayAccount =>
-  isApiKeyProvider(account.provider);
+  // Field-based, not provider-based: "xai" names both an API-key account and
+  // a subscription account.
+  isApiKeyProvider(account.provider) && "apiKeySecret" in account;
+
+export const isXaiSubscriptionAccount = (
+  account: GatewayAccount,
+): account is XaiSubscriptionGatewayAccount =>
+  account.provider === "xai" && "accessTokenSecret" in account;
 
 /**
  * Longest suffix kept for recognition. Four characters identify a key for a
@@ -311,11 +332,57 @@ const parseApiKeyAccount = (
   };
 };
 
+const parseXaiSubscriptionAccount = (
+  value: Record<string, unknown>,
+): XaiSubscriptionGatewayAccount | undefined => {
+  if (
+    !hasOnlyKeys(value, [
+      ...ACCOUNT_COMMON_KEYS,
+      ...OAUTH_ACCOUNT_KEYS,
+      "upstreamBaseUrl",
+      "tokenEndpoint",
+    ])
+  ) {
+    return undefined;
+  }
+  const common = parseCommonAccountFields(value);
+  const accessTokenSecret = secretReference(value.accessTokenSecret);
+  const refreshTokenSecret = secretReference(value.refreshTokenSecret);
+  const upstreamBaseUrl =
+    value.upstreamBaseUrl === undefined ? undefined : text(value.upstreamBaseUrl);
+  const tokenEndpoint = value.tokenEndpoint === undefined ? undefined : text(value.tokenEndpoint);
+  if (
+    common === undefined ||
+    accessTokenSecret === undefined ||
+    refreshTokenSecret === undefined ||
+    (value.upstreamBaseUrl !== undefined &&
+      (upstreamBaseUrl === undefined || !upstreamBaseUrl.startsWith("https://"))) ||
+    (value.tokenEndpoint !== undefined &&
+      (tokenEndpoint === undefined || !tokenEndpoint.startsWith("https://")))
+  ) {
+    return undefined;
+  }
+  return {
+    ...common,
+    provider: "xai",
+    accessTokenSecret,
+    refreshTokenSecret,
+    ...(upstreamBaseUrl ? { upstreamBaseUrl } : {}),
+    ...(tokenEndpoint ? { tokenEndpoint } : {}),
+  };
+};
+
 const parseAccount = (value: unknown): GatewayAccount | undefined => {
   if (!isRecord(value)) return undefined;
   const accountProvider = provider(value.provider);
   if (accountProvider === undefined) return undefined;
   if (isApiKeyProvider(accountProvider)) {
+    // "xai" carries two shapes: an API key, or a subscription with OAuth
+    // token references. The record's own credential field decides; a hybrid
+    // record fails both key allow-lists and never decodes.
+    if (accountProvider === "xai" && value.apiKeySecret === undefined) {
+      return parseXaiSubscriptionAccount(value);
+    }
     return parseApiKeyAccount(value, accountProvider);
   }
   const providerKeys =
@@ -755,6 +822,19 @@ export const rustHostConfiguration = (
     // API-key accounts. The base URL is left empty when the user did not
     // override it, so the Rust host applies its own per-provider default (the
     // single place where each endpoint and its evidence level are recorded).
+    // xAI subscription accounts. NO weight/websockets: the host struct
+    // denies unknown fields and its pool reads neither.
+    xai_accounts: configuration.accounts.filter(isXaiSubscriptionAccount).map((account) => ({
+      id: account.id,
+      disabled: !account.enabled,
+      priority: account.priority,
+      models: account.models,
+      access_token_secret: account.accessTokenSecret,
+      refresh_token_secret: account.refreshTokenSecret,
+      upstream_base_url: account.upstreamBaseUrl ?? "",
+      token_endpoint: account.tokenEndpoint ?? "",
+      ...(account.proxyUrlSecret ? { proxy_url_secret: account.proxyUrlSecret } : {}),
+    })),
     api_key_accounts: configuration.accounts.filter(isApiKeyAccount).map((account) => ({
       id: account.id,
       provider: account.provider,

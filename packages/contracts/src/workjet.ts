@@ -484,7 +484,14 @@ export const DEFAULT_WORKJET_THREAD_CONFIG = {
  * Gateway providers whose account is created by an OAuth login in the user's
  * own browser. Workjet never sees the credential.
  */
-export const WorkjetGatewayOauthProvider = Schema.Literals(["claude", "codex", "antigravity"]);
+export const WorkjetGatewayOauthProvider = Schema.Literals([
+  "claude",
+  "codex",
+  "antigravity",
+  // xAI is BOTH kinds: a subscription account arrives by device-code login
+  // (this literal), an API key by paste (WorkjetGatewayApiKeyProvider).
+  "xai",
+]);
 export type WorkjetGatewayOauthProvider = typeof WorkjetGatewayOauthProvider.Type;
 
 /**

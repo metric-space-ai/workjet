@@ -703,11 +703,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       claude: "/v0/management/anthropic-auth-url",
       codex: "/v0/management/codex-auth-url",
       antigravity: "/v0/management/antigravity-auth-url",
+      // Device flow: the returned authorization_url is xAI's verification
+      // page for the device code; polling works exactly like the others.
+      xai: "/v0/management/xai-auth-url",
     };
     const HOST_PROVIDERS: Record<string, WorkjetGatewayOauthProvider> = {
       anthropic: "claude",
       codex: "codex",
       antigravity: "antigravity",
+      xai: "xai",
     };
     const MAX_TOKEN_BYTES = 32 * 1024;
     const textEncoder = new TextEncoder();
@@ -781,6 +785,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       claude: ["access_token_secret", "refresh_token_secret"],
       codex: ["id_token_secret", "access_token_secret", "refresh_token_secret"],
       antigravity: ["access_token_secret", "refresh_token_secret", "state_secret"],
+      xai: ["access_token_secret", "refresh_token_secret"],
     };
 
     const decodeClaim = (value: unknown): ReadonlyArray<ClaimedCredential> => {
@@ -863,6 +868,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           await writeSecret(accessTokenSecret, credential.secrets["access_token_secret"] ?? "");
           await writeSecret(refreshTokenSecret, credential.secrets["refresh_token_secret"] ?? "");
           accounts.push({ ...common, provider: "claude", accessTokenSecret, refreshTokenSecret });
+        } else if (credential.provider === "xai") {
+          const accessTokenSecret = reference("access-token");
+          const refreshTokenSecret = reference("refresh-token");
+          await writeSecret(accessTokenSecret, credential.secrets["access_token_secret"] ?? "");
+          await writeSecret(refreshTokenSecret, credential.secrets["refresh_token_secret"] ?? "");
+          accounts.push({ ...common, provider: "xai", accessTokenSecret, refreshTokenSecret });
         } else if (credential.provider === "codex") {
           const idTokenSecret = reference("id-token");
           const accessTokenSecret = reference("access-token");

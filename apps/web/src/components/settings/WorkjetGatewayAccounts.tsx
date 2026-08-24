@@ -602,27 +602,47 @@ export function WorkjetGatewayAccountsSectionView(
                       <span className="min-w-0 truncate text-sm font-medium text-foreground">
                         {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
                       </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 shrink-0 px-2 text-xs"
-                        disabled={!canAdd || isKeyFormOpen}
-                        onClick={() =>
-                          isApiKey ? setOpenApiKeyProvider(provider) : state.onAddAccount(provider)
-                        }
-                      >
-                        {isApiKey ? (
-                          <KeyRoundIcon className="size-3.5" />
-                        ) : (
-                          <PlusIcon className="size-3.5" />
-                        )}
-                        {accounts.length === 0
-                          ? isApiKey
-                            ? "Add API key"
-                            : "Add account"
-                          : "Add another"}
-                      </Button>
+                      <span className="flex shrink-0 items-center gap-1">
+                        {/* xAI is BOTH kinds of account: a Grok subscription
+                            arrives by device-code browser login, an API key
+                            by paste — so it alone carries both buttons. */}
+                        {provider === "xai" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            disabled={!canAdd}
+                            onClick={() => state.onAddAccount("xai")}
+                          >
+                            <PlusIcon className="size-3.5" />
+                            Add account
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          disabled={!canAdd || isKeyFormOpen}
+                          onClick={() =>
+                            isApiKey
+                              ? setOpenApiKeyProvider(provider)
+                              : state.onAddAccount(provider)
+                          }
+                        >
+                          {isApiKey ? (
+                            <KeyRoundIcon className="size-3.5" />
+                          ) : (
+                            <PlusIcon className="size-3.5" />
+                          )}
+                          {accounts.length === 0
+                            ? isApiKey
+                              ? "Add API key"
+                              : "Add account"
+                            : "Add another"}
+                        </Button>
+                      </span>
                     </div>
 
                     {accounts.map((account) => {

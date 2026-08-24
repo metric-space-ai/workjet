@@ -17,6 +17,7 @@ import {
   COMPOSER_COMPUTER_NOT_PAIRED_HINT,
   ComposerComputerControlView,
   ComposerManualTargetControlsView,
+  ComposerWorkjetCompactMenuContent,
   ComposerSystemPromptControlView,
   composerHarnessOptions,
   gatewayModelsForRoute,
@@ -191,6 +192,62 @@ describe("the manual target controls", () => {
     );
 
     expect(markup).toContain(">Model<");
+  });
+});
+
+describe("the compact overflow menu", () => {
+  /** Element-tree text walk — menu primitives need a live Menu root to DOM-render. */
+  const textOf = (node: unknown): string => {
+    if (typeof node === "string" || typeof node === "number") return String(node);
+    if (Array.isArray(node)) return node.map(textOf).join("");
+    if (node !== null && typeof node === "object" && "props" in node) {
+      return textOf((node as { props: { children?: unknown } }).props.children);
+    }
+    return "";
+  };
+  const manualTarget = {
+    configuredInstanceIds: new Set(["claudeAgent", "codex"]),
+    selectedHarness: "claude-code" as const,
+    onSelectHarness: () => undefined,
+    models: [model("gpt-5.6-sol", ["acc-openai"])],
+    modelsUnavailableReason: null,
+    selectedModelId: "gpt-5.6-sol",
+    onSelectModel: () => undefined,
+  };
+  const base = {
+    workers: [],
+    computers: [],
+    selectedComputerId: null,
+    activeEnvironmentId: envA,
+    selectableEnvironmentIds: [envA],
+    computerDisabledReason: null,
+    onSelectComputer: () => undefined,
+    onSelectWorker: () => undefined,
+  };
+
+  it("offers Harness and Model in Manual mode — compact must not lose the new bar (K-A2)", () => {
+    const text = textOf(
+      ComposerWorkjetCompactMenuContent({
+        ...base,
+        selectedWorkerId: null,
+        manualTarget,
+      }),
+    );
+    expect(text).toContain("Harness");
+    expect(text).toContain("Claude Code");
+    expect(text).toContain("Model");
+    expect(text).toContain("gpt-5.6-sol");
+  });
+
+  it("hides Harness and Model while a worker is selected — the worker bundles both", () => {
+    const text = textOf(
+      ComposerWorkjetCompactMenuContent({
+        ...base,
+        selectedWorkerId: "worker-1",
+        manualTarget,
+      }),
+    );
+    expect(text).not.toContain("Harness");
   });
 });
 

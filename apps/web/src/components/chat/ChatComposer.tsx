@@ -3408,8 +3408,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   existed (measured: scrollWidth 1136 in a 720px row). Chips
                   that don't fit now wrap onto a second line instead. */}
               <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-center gap-1 p-1 ps-3.5">
-                {workerModeActive ? null : !isComposerFooterCompact &&
-                  workjetManualControlsAvailable ? null : noProviderAvailable ? (
+                {/* With Workjet manual controls the retired provider picker
+                    stays hidden in BOTH layouts — compact used to fall back
+                    to it, resurrecting the removed provider chip (K-A2). */}
+                {workerModeActive ? null : workjetManualControlsAvailable ? null : noProviderAvailable ? (
                   <Button
                     type="button"
                     size="sm"
@@ -3468,9 +3470,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           selectableEnvironmentIds={selectableEnvironmentIds}
                           computerDisabledReason={composerComputerDisabledReason}
                           onSelectComputer={handleSelectComposerComputer}
-                          onAddComputer={() => {
-                            window.location.hash = "#/settings/computers";
-                          }}
+                          manualTarget={
+                            workerModeActive || !workjetManualControlsAvailable
+                              ? null
+                              : {
+                                  configuredInstanceIds: configuredProviderInstanceIds,
+                                  selectedHarness: harnessForProviderInstanceId(selectedInstanceId),
+                                  onSelectHarness: handleSelectManualHarness,
+                                  models: manualGatewayModels,
+                                  modelsUnavailableReason:
+                                    manualGatewayModels.length === 0
+                                      ? manualModelsUnavailableReason
+                                      : null,
+                                  selectedModelId: selectedModelForPickerWithCustomFallback,
+                                  onSelectModel: handleSelectManualModel,
+                                }
+                          }
                         />
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}

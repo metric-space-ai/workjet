@@ -979,3 +979,14 @@ Leck). (2) Sol gewählt → Settings → zurück → Leiste steht weiter auf
 Sol (vorher: Rückfall auf Manual). F2 ebenfalls live bestätigt: keine
 „Checking…"-Zeilen mehr, ehrliche Leerzustände. Suiten: chat+store 461,
 Typecheck 0.
+
+## K-A2 GEFIXT — 2026-08-25 ~00:55
+
+Unter dem Compact-Breakpoint (1) erscheint der alte ProviderModelPicker
+nicht mehr, sobald die Workjet-Manual-Leiste verfügbar ist (Gate galt
+vorher nur breit), und (2) das Kompakt-Overflow-Menü bietet jetzt
+Harness- und Modell-Gruppen (Modelle nach Provider gruppiert, gleiche
+Gruppierungslogik wie das breite Mini-Menü, extrahiert als
+groupGatewayModelsByProvider). Im Worker-Modus bleiben beide Gruppen
+aus — der Worker bündelt Harness+Modell. 2 neue Komponententests
+(Manual zeigt Harness/Model, Worker versteckt sie); chat-Suite 384 grün.

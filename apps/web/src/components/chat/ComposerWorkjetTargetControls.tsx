@@ -292,6 +292,24 @@ const GATEWAY_PROVIDER_GROUP_LABELS: Readonly<Record<string, string>> = {
   kimi: "Kimi (Moonshot)",
 };
 
+/**
+ * Group by the model's FIRST provider; a model served by several accounts
+ * still appears once, under its primary provider. Shared by the wide mini
+ * menu and the compact overflow menu so both group identically.
+ */
+function groupGatewayModelsByProvider(
+  models: ReadonlyArray<WorkjetGatewayModelSummary>,
+): Map<string, WorkjetGatewayModelSummary[]> {
+  const groups = new Map<string, WorkjetGatewayModelSummary[]>();
+  for (const model of models) {
+    const key = model.providers[0] ?? "other";
+    const list = groups.get(key) ?? [];
+    list.push(model);
+    groups.set(key, list);
+  }
+  return groups;
+}
+
 export interface ComposerManualTargetControlsProps {
   /** Provider instance ids this turn may actually target. */
   readonly configuredInstanceIds: ReadonlySet<string>;
@@ -319,18 +337,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   const selectedHarnessOption =
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
   const modelInCatalog = props.models.some((model) => model.id === props.selectedModelId);
-  // Group by the model's FIRST provider; a model served by several accounts
-  // still appears once, under its primary provider.
-  const modelGroups = (() => {
-    const groups = new Map<string, WorkjetGatewayModelSummary[]>();
-    for (const model of props.models) {
-      const key = model.providers[0] ?? "other";
-      const list = groups.get(key) ?? [];
-      list.push(model);
-      groups.set(key, list);
-    }
-    return [...groups.entries()];
-  })();
+  const modelGroups = [...groupGatewayModelsByProvider(props.models).entries()];
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
@@ -617,6 +624,21 @@ export interface ComposerWorkjetCompactMenuContentProps {
       overflow menu offers no add entry (navigation from inside a nested
       menu closes over the draft state mid-gesture). */
   readonly onAddComputer?: (() => void) | undefined;
+  /**
+   * Manual-mode Harness and Model choices for the compact menu. Without
+   * them, narrow windows silently fell back to the retired provider picker
+   * and offered no harness at all (Befund K-A2). Null while a worker is
+   * selected — a worker bundles harness and model.
+   */
+  readonly manualTarget?: {
+    readonly configuredInstanceIds: ReadonlySet<string>;
+    readonly selectedHarness: WorkjetHarness | null;
+    readonly onSelectHarness: (harness: WorkjetHarness) => void;
+    readonly models: ReadonlyArray<WorkjetGatewayModelSummary>;
+    readonly modelsUnavailableReason: string | null;
+    readonly selectedModelId: string;
+    readonly onSelectModel: (modelId: string) => void;
+  } | null;
 }
 
 /**
@@ -677,6 +699,58 @@ export function ComposerWorkjetCompactMenuContent(
           </MenuRadioGroup>
         )}
       </MenuGroup>
+      {props.selectedWorkerId === null && props.manualTarget ? (
+        <>
+          <MenuGroup>
+            <MenuGroupLabel>Harness</MenuGroupLabel>
+            <MenuRadioGroup
+              value={props.manualTarget.selectedHarness ?? ""}
+              onValueChange={(value) => {
+                if (typeof value !== "string" || value.length === 0) return;
+                props.manualTarget?.onSelectHarness(value as WorkjetHarness);
+              }}
+            >
+              {composerHarnessOptions(props.manualTarget.configuredInstanceIds).map((option) => (
+                <MenuRadioItem key={option.id} value={option.id} disabled={!option.configured}>
+                  {option.label}
+                  {option.configured ? "" : " — not configured"}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuGroup>
+          <MenuGroup>
+            <MenuGroupLabel>Model</MenuGroupLabel>
+            {props.manualTarget.models.length === 0 ? (
+              <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
+                {props.manualTarget.modelsUnavailableReason ?? "No gateway models available."}
+              </p>
+            ) : (
+              <MenuRadioGroup
+                value={props.manualTarget.selectedModelId}
+                onValueChange={(value) => {
+                  if (typeof value !== "string" || value.length === 0) return;
+                  props.manualTarget?.onSelectModel(value);
+                }}
+              >
+                {[...groupGatewayModelsByProvider(props.manualTarget.models).entries()].map(
+                  ([provider, models]) => (
+                    <Fragment key={provider}>
+                      <MenuGroupLabel>
+                        {GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
+                      </MenuGroupLabel>
+                      {models.map((model) => (
+                        <MenuRadioItem key={model.id} value={model.id}>
+                          {model.id}
+                        </MenuRadioItem>
+                      ))}
+                    </Fragment>
+                  ),
+                )}
+              </MenuRadioGroup>
+            )}
+          </MenuGroup>
+        </>
+      ) : null}
     </>
   );
 }

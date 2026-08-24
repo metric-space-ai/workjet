@@ -863,6 +863,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * A harness this build has no runtime for changes nothing but the label —
    * guessing a runtime would send the turn somewhere unchosen.
    */
+  /**
+   * Worker mode hides the manual controls. A worker BUNDLES harness, model
+   * and effort, so showing pickers beside it displays two sources of truth
+   * for one decision — the operator called that mix a farce, correctly. The
+   * pickers return the moment Manual is chosen. Mid-session switching stays
+   * gated on the session-ownership migration (correction -1); this governs
+   * the draft, where the next turn is composed.
+   */
+  const workerModeActive = selectedWorkjetWorkerId !== null;
   const handleSelectWorkjetWorker = useCallback(
     (workerId: string | null) => {
       setSelectedWorkjetWorkerId(workerId);
@@ -3074,7 +3083,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {noProviderAvailable ? (
+                {workerModeActive ? null : noProviderAvailable ? (
                   <Button
                     type="button"
                     size="sm"
@@ -3153,7 +3162,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     workjetWorkers={workjetWorkers}
                     selectedWorkjetWorkerId={selectedWorkjetWorkerId}
                     onSelectWorkjetWorker={handleSelectWorkjetWorker}
-                    traitsPicker={providerTraitsPicker}
+                    traitsPicker={workerModeActive ? null : providerTraitsPicker}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     interactionMode={interactionMode}
                     runtimeMode={runtimeMode}

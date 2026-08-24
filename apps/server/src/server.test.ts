@@ -347,6 +347,8 @@ const providerGatewayTestLayer = Layer.succeed(
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     addApiKeyAccount: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    removeAccount: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     health: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     discoverModels: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),

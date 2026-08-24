@@ -455,8 +455,12 @@ BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
    XaiSubscriptionGatewayAccount (Feld-basiert von API-Key-Konto
    unterschieden, xai_accounts-Übersetzung ohne weight), xAI-Karte mit
    BEIDEN Knöpfen. Typecheck server+web grün, Config-Tests 17/17.
-   Live-GATE (verification-URL + Poll pending) offen bis zum Deploy von
-   Server + Host-Binary.
+   Live-GATE GRÜN 2026-08-24 ~09:05: Deploy (Server-Bundle, Web,
+   Host-Binary getauscht+signiert), xAI-Karte zeigt beide Knöpfe,
+   "Add account" startete den Device-Flow real — UI: "Finish the xAI
+   (Grok) login in your browser… Login session 9bdd…7124", Poll pending.
+   Schritt 6 (Login-Abschluss im Browser) liegt beim BETREIBER — die
+   Session läuft, "Cancel login" ist sichtbar.
 6. BETREIBER-GATE: Device-Login abschließen, dann Grok-Modell anpinnen
    und Turn fahren.
 
@@ -529,9 +533,15 @@ Alle sechs direkt aus Chat-Nachrichten mit Screenshots übernommen:
 6. Settings-Menü "Computers" zeigt die WORKJET-Seite (Workers-Tabs,
    Greppy Runtime) statt einer Computers-Seite → Navigation/Inhalt
    korrigieren.
-7. "Wo sind die default worker aus der Swift-App?" — Antwort: hinter
-   dem einmaligen "Import once" (Legacy import, 14/14 vorbelegt);
-   der Klick ist BETREIBER-Sache und steht noch aus.
+7. "Wo sind die default worker aus der Swift-App?" — ERLEDIGT direkt:
+   Import-UI gelöscht, die 12 Worker aus config.v1.json direkt angelegt
+   (live verifiziert: alle 12 auf der Worker-Seite sichtbar), dazu
+   Computer gpu3-a4500/gpu1-a6000 (Environment noch unpaired — nach
+   dem Pairing im Editor zuweisen) und Routen Kimi/MiniMax/Z.ai/xAI.
+   Duplikat-Accounts (Claude/Codex je 2×) zusammengeführt — die
+   FRISCHEN Tokens der Re-Login-Duplikate auf die Originale kopiert,
+   Duplikate + deren Secrets entfernt (Backups liegen neben den
+   Dateien). Live: 5 Accounts, je 1 pro Provider, Remove-Knöpfe da.
 8. "Warum gibt es noch Connections, wenn es Computers gibt?" — zwei
    Menüpunkte fürs selbe Konzept (Remote environments pairen = Rechner
    hinzufügen). FIX: Connections-Inhalte (Network access, Tailscale,
@@ -552,3 +562,8 @@ Alle sechs direkt aus Chat-Nachrichten mit Screenshots übernommen:
 12. In BEIDEN Modi fehlt die Rechner-AUSWAHL in der Leiste (nur
     Anzeige). Funktional fehlt damit auch: einen Thread auf einen
     anderen PC schieben.
+13. App-Neustart fordert Re-Login bei allen Providern ("Codex is
+    unauthenticated · Sign in via the CLI", "Updates Available: 3
+    providers"). Gateway-geroutete Instanzen dürfen NIE einen
+    CLI-Login verlangen — Auth kommt vom Gateway. Statusprüfung
+    korrigieren.

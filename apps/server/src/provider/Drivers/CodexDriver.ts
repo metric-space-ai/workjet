@@ -198,6 +198,20 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // updates. Pre-provide `ChildProcessSpawner` so the check fits
       // `makeManagedServerProvider.checkProvider`'s `R = never`.
       const checkProvider = checkCodexProviderStatus(effectiveConfig, undefined, processEnv).pipe(
+        // A gateway-routed instance authenticates through the Workjet
+        // provider gateway at session start; the CLI's own login state is
+        // irrelevant to it. Reporting "unauthenticated" here made every app
+        // restart demand a CLI re-login that the instance never needs.
+        Effect.map((draft) =>
+          routeViaGateway && draft.status === "error" && draft.auth.status === "unauthenticated"
+            ? {
+                ...draft,
+                status: "ready" as const,
+                auth: { status: "authenticated" as const, label: "Workjet provider gateway" },
+                message: undefined,
+              }
+            : draft,
+        ),
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );

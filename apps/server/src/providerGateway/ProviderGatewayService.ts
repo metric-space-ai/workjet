@@ -881,7 +881,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             account.label === credential.label &&
             "accessTokenSecret" in account,
         );
-        if (relogin !== undefined) {
+        if (relogin !== undefined && "accessTokenSecret" in relogin) {
           await writeSecret(
             relogin.accessTokenSecret,
             credential.secrets["access_token_secret"] ?? "",
@@ -1160,7 +1160,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           throw safeError("invalid-configuration");
         });
       for (const reference of accountSecretReferences(account)) {
-        await runPromise(secrets.delete(secretStoreName(reference))).catch(() => undefined);
+        await runPromise(secrets.remove(secretStoreName(reference))).catch(() => undefined);
       }
       try {
         await stopSingleFlight();

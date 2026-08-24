@@ -213,7 +213,15 @@ Provider-Zeilen zeigen Umgebungs-IDs statt Gateway-Konten: das war die
 Computer-Zeile). Je Datensatz einzeln öffnen und wählen, nach jedem
 Schritt den Zähler prüfen.
 
-## 4 · Prompt-Seite fertig nach Vorlage (B5)
+## 4 · Prompt-Seite — Aufgaben-Hälfte ERLEDIGT 2026-08-24
+
+Worker-Aufgaben sind auf der Prompt-Seite bearbeitbar (Speichern bei
+Blur ins Worker-Profil; live verifiziert bis in settings.json). OFFEN
+bleibt die Modellregeln-Hälfte (`modelPrompts`): das Datenmodell kennt
+das Feld nicht, und Speicher dafür zu erfinden wäre der
+Zwei-Ziele-für-eine-Quelle-Fehler. Entscheidung gehört zum Import.
+
+### (ursprünglich) Prompt-Seite fertig nach Vorlage (B5)
 
 Abschnitts-Zerlegung steht (`bfbb02db4`). Es fehlen gegenüber
 `SettingsView.swift`: je Worker eine Karte mit Fakten-Chips

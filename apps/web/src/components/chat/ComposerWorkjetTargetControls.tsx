@@ -36,7 +36,15 @@ import { MANUAL_WORKER_VALUE, providerInstanceIdForHarness } from "./ComposerWor
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { MenuGroup, MenuGroupLabel, MenuRadioGroup, MenuRadioItem } from "../ui/menu";
-import { ClaudeAI, GrokIcon, OpenAI } from "../Icons";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  KimiIcon,
+  MiniMaxIcon,
+  OpenAI,
+  XaiIcon,
+  ZaiIcon,
+} from "../Icons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
@@ -264,9 +272,14 @@ const NO_HARNESS_VALUE = "__no_harness__";
 const GATEWAY_PROVIDER_RAIL_ICONS: Readonly<
   Record<string, React.FC<React.SVGProps<SVGSVGElement>>>
 > = {
+  // The provider marks the Swift app already shipped, ported to Icons.tsx.
   claude: ClaudeAI,
   codex: OpenAI,
-  xai: GrokIcon,
+  xai: XaiIcon,
+  zai: ZaiIcon,
+  kimi: KimiIcon,
+  minimax: MiniMaxIcon,
+  antigravity: AntigravityIcon,
 };
 
 const GATEWAY_PROVIDER_GROUP_LABELS: Readonly<Record<string, string>> = {

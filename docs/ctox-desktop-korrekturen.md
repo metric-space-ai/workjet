@@ -793,3 +793,22 @@ LIVE-BEWEIS: Thesen AG laden → Punkt warm; Welsch laden → 2× warm;
 Rückwechsel auf Thesen: KEIN Lade-UI, beide warm. Suiten: Desktop 831,
 Web-ctox 35, Contracts 510 (davon 6 Fixture-Fixes für modelPrompts +
 xai-als-OAuth — meine Nachzügler, jetzt grün).
+
+## 18. Provider-Icons aus der Swift-App übernommen — UMGESETZT 2026-08-24 ~15:38
+
+Meldung: "irgendwie fehlen die korrekten icons, die waren doch schon in der
+swift app drin, nimm sie doch daraus."
+Quelle: claude-workjet/app/Sources/WorkjetApp/Resources/Providers/\*.svg
+(kimi, minimax, zai, xai, antigravity; anthropic/openai hatte die Web-App
+schon als eigene Marken). Portierung: monochrome Füllungen (#eee/#fff) →
+currentColor für Hell/Dunkel; Marken-Gradienten behalten, IDs eindeutig
+präfixiert; das alte PNG-basierte AntigravityIcon durch den Swift-Vektor
+ersetzt. Eingesetzt in (1) der Provider-Schiene des Mini-Modellmenüs im
+Composer — die Buchstaben-Badges Z/K/M sind weg — und (2) den
+Provider-Zeilen der Models-Settings-Seite.
+LIVE-BEWEIS: Models-Seite listet alle 7 Provider mit Icon (DOM-Probe);
+Mini-Menü-Schiene Claude/OpenAI/Z.ai/xAI/Kimi/MiniMax alle mit echter
+Marke (Screenshot). Suiten: web settings+composer 214 grün, Typecheck 0.
+Lehre (CDP): attach.mjs wählte das ERSTE Page-Target — im BOS-Modus ist
+das ein Kunden-Guest, nicht der Host; Probe-Klicks landeten in der
+Thesen-Instanz. attach.mjs pinnt jetzt default auf t3code://app.

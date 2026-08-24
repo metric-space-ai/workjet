@@ -17,6 +17,16 @@ import {
   TriangleAlertIcon,
   Trash2Icon,
 } from "lucide-react";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  KimiIcon,
+  MiniMaxIcon,
+  OpenAI,
+  XaiIcon,
+  ZaiIcon,
+} from "../Icons";
+import type * as React from "react";
 import { useState, useEffect } from "react";
 
 import { Button } from "../ui/button";
@@ -53,6 +63,19 @@ export const WORKJET_GATEWAY_PROVIDERS: ReadonlyArray<WorkjetGatewayProvider> = 
   ...WORKJET_GATEWAY_OAUTH_PROVIDERS,
   ...WORKJET_GATEWAY_API_KEY_PROVIDERS,
 ];
+
+/** The provider marks the Swift app shipped, ported to Icons.tsx. */
+export const WORKJET_GATEWAY_PROVIDER_ICONS: Readonly<
+  Record<WorkjetGatewayProvider, React.FC<React.SVGProps<SVGSVGElement>>>
+> = {
+  claude: ClaudeAI,
+  codex: OpenAI,
+  antigravity: AntigravityIcon,
+  zai: ZaiIcon,
+  minimax: MiniMaxIcon,
+  xai: XaiIcon,
+  kimi: KimiIcon,
+};
 
 export const WORKJET_GATEWAY_PROVIDER_LABELS: Readonly<Record<WorkjetGatewayProvider, string>> = {
   claude: "Claude",
@@ -621,7 +644,16 @@ export function WorkjetGatewayAccountsSectionView(
                 return (
                   <div key={provider} className="py-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                      <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium text-foreground">
+                        {(() => {
+                          const ProviderIcon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
+                          return (
+                            <ProviderIcon
+                              className="size-4 shrink-0 text-foreground/80"
+                              aria-hidden
+                            />
+                          );
+                        })()}
                         {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
                       </span>
                       <span className="flex shrink-0 items-center gap-1">

@@ -9,6 +9,8 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { toastManager } from "../ui/toast";
+import { legacyImportRecordKey } from "./WorkjetLegacyImport";
+import { suggestLegacyImportAnswer } from "./workjetLegacyImportSuggestions";
 import type {
   WorkjetLegacyImportAnswer,
   WorkjetLegacyImportDraft,
@@ -88,6 +90,33 @@ export function useWorkjetLegacyImportSection(
     setDraft({});
     setError(null);
   }, [environmentId]);
+
+  /**
+   * Pre-select the mechanical answers when the offer arrives. Suggestions are
+   * DEFAULTS on the controls, never an auto-accept: the operator reviews them
+   * on the same screen and still presses Accept. Only untouched records are
+   * filled — an answer the operator already gave is never overwritten, which
+   * the functional setState guarantees by reading the draft at apply time.
+   */
+  const inspectionForSuggestions = query.data ?? null;
+  useEffect(() => {
+    if (inspectionForSuggestions?.state !== "offer") return;
+    const offer = inspectionForSuggestions;
+    setDraft((current) => {
+      const additions: Record<string, WorkjetLegacyImportAnswer> = {};
+      for (const record of offer.pending) {
+        const key = legacyImportRecordKey(record);
+        if (current[key] !== undefined) continue;
+        const suggestion = suggestLegacyImportAnswer(record, offer.bindable);
+        if (suggestion === null) continue;
+        additions[key] =
+          suggestion._tag === "skip"
+            ? { _tag: "skip" }
+            : { _tag: "bind", targetId: suggestion.targetId };
+      }
+      return Object.keys(additions).length === 0 ? current : { ...current, ...additions };
+    });
+  }, [inspectionForSuggestions]);
 
   const onAnswer = useCallback((key: string, answer: WorkjetLegacyImportAnswer) => {
     setError(null);

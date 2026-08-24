@@ -744,3 +744,18 @@ ist ein eigenes Projekt und bewusst nicht Teil dieses Fixes.
 - Aufräumung Testthreads: viele gesettelt; übrig sind Failed-Threads
   und ein hängender Working-Thread (Settle verlangt erst
   Resolve/Interrupt) — Restaufräumung folgt.
+
+Icon-Leiste unten links, live geklickt und verifiziert: Settings →
+#/settings/general ✓, Pull Requests → #/pull-requests ✓, Usage →
+#/usage ✓, Machines → #/machines ✓, Check for updates → läuft ✓.
+
+OFFEN (nächste Iterationen, priorisiert):
+
+1. Modell-Menü als T3-Mini-Menü (Anbieter-Leiste links, Modelle je
+   Anbieter rechts) statt gruppierter Liste.
+2. Business-OS 14–17: Instanz-Warmhalten/Instant-Swap, Status-Punkte,
+   Ein-/Ausklappen, Menüleiste.
+3. Rest-Testthreads (Failed + hängender Working) settlen — die App
+   verlangt Resolve/Interrupt zuerst; Interrupt-Kontrolle im
+   Thread-Actions-Menü war per CDP nicht greifbar.
+4. Betreiber: Grok-Login, gpu-Pairing.

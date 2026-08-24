@@ -385,6 +385,37 @@ Posten 8 (Grok), Umfang nach vollständiger Prüfung 2026-08-24:
   seine Anmeldung im Browser. Bau und Unit-Verifikation gehen vorher;
   „bewiesen" gibt es erst nach seinem Login.
 
+BAUANLEITUNG (Vorlagen 2026-08-24 verifiziert; Reihenfolge = Gates):
+
+1. `internal/runtime/executor/xai_subscription_pool.rs` — Pool über
+   `XaiExecutor` (existiert, spricht Grok-`/responses` nativ) +
+   `XaiSubscriptionAuth.refresh(auth)→Auth` (xai_executor_auth.rs:65).
+   Auth-Konstruktion: `metadata.access_token`/`base_url` — genau was
+   `xai_credentials` (xai_executor_request.rs:63) liest. Modell-Wahl mit
+   `model_entry_matches` (Wildcard-Semantik, scheduler.rs). Refresh bei
+   401, ein Retry. Vorlage klein: `ApiKeyAccountPool`
+   (openai_responses_api_key_handlers.rs:121, ~120 Zeilen) — NICHT das
+   2383-Zeilen-Antigravity-File spiegeln; Credits/Fingerprints entfallen.
+   GATE: Unit-Tests Pool-Auswahl + Refresh-Pfad.
+2. `OpenAiResponsesXaiHandler` im selben Muster wie der ApiKey-Handler
+   (parse model/stream → pool → Stream-Pumpe). GATE: cargo test.
+3. Host `src/config.rs`: Sektion `xai_accounts` (Secrets-Refs wie
+   claude_accounts); `src/runtime.rs`: Pool bauen, im
+   `OpenAiResponsesProviderRouter` als "xai" registrieren, Summary-Zeile.
+   GATE: Host baut, `runtime-status` zeigt xai.
+4. Login: `HostOAuthSource` „xai"-Fall — begin = `start_device_flow`,
+   authorizationUrl = `verification_uri_complete`, KEIN Callback-Port;
+   stattdessen Hintergrund-Task `poll_for_token` → LoginOutcome (Muster:
+   die Callback-Task-Enden in oauth.rs). Identität aus
+   `parse_jwt_identity`. Secrets: access+refresh wie anthropic.
+5. Vertrag `WorkjetGatewayOauthProvider`+`"xai"`, Server
+   `OAUTH_BEGIN_ROUTES`/`HOST_PROVIDERS`, Management-Route
+   `xai-auth-url` (server_management.rs neben den drei vorhandenen),
+   UI-Karte: xAI bekommt BEIDE Knöpfe (Add account + Add API key).
+   GATE: „Add account" liefert die verification-URL, Poll „pending".
+6. BETREIBER-GATE: Device-Login abschließen, dann Grok-Modell anpinnen
+   und Turn fahren.
+
 ## 6 · Sign-in-Ablauf übersichtlich (A4)
 
 Nie angefasst. Erst NACH E1 sinnvoll bewertbar, denn heute funktioniert

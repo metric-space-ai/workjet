@@ -23,7 +23,7 @@ const parameterizedGpt54ConfigOptions: ReadonlyArray<EffectAcpSchema.SessionConf
       { value: "low", name: "Low" },
       { value: "medium", name: "Medium" },
       { value: "high", name: "High" },
-      { value: "extra-high", name: "Extra High" },
+      { value: "extra-high", name: "Extra high" },
     ],
   },
   {

@@ -981,13 +981,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedWorkjetWorkerId,
     workjetWorkers,
   ]);
+  /**
+   * Manual-mode system prompt, parked while a worker is selected: entering
+   * worker mode rightly clears the bar's local edits, but a prompt typed in
+   * Manual must survive a worker round-trip (Befund K-AH1).
+   */
+  const manualInstructionsReturnRef = useRef<string | null>(null);
   const handleSelectWorkjetWorker = useCallback(
     (workerId: string | null) => {
       // A different choice invalidates the local bar edits: extras belong to
       // the newly chosen worker, and a worker carries its own task text.
       setDraftWorkerCapabilityIds(null);
-      setDraftManagedInstructions(null);
+      if (workerId !== null && selectedWorkjetWorkerId === null) {
+        manualInstructionsReturnRef.current = draftManagedInstructions;
+      }
+      setDraftManagedInstructions(workerId === null ? manualInstructionsReturnRef.current : null);
       if (workerId === null) {
+        manualInstructionsReturnRef.current = null;
         // Back to Manual: restore the model that was chosen BEFORE the worker
         // took over the shared selection — without this, the worker's model
         // stays behind masquerading as a manual choice (F1).
@@ -1053,6 +1063,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerDraft.workjetManualReturn,
       composerDraftTarget,
       composerTargetIsThread,
+      draftManagedInstructions,
       environmentId,
       onDraftEnvironmentChange,
       onProviderModelSelect,

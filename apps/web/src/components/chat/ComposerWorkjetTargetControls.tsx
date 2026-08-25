@@ -200,8 +200,14 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
             }
           >
             <ComposerControlIcon icon={MonitorIcon} />
-            <SelectValue>{selected?.label ?? "Computer"}</SelectValue>
-            {props.mismatchNote === null ? null : (
+            {/* An id whose computer was deleted must not masquerade as the
+                neutral placeholder (Befund K-AH4). */}
+            <SelectValue>
+              {selected?.label ??
+                (props.selectedComputerId !== null ? "Missing computer" : "Computer")}
+            </SelectValue>
+            {props.mismatchNote === null &&
+            !(props.selectedComputerId !== null && selected === null) ? null : (
               <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
             )}
           </TooltipTrigger>

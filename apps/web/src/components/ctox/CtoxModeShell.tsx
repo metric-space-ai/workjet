@@ -41,6 +41,9 @@ import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { toastManager } from "../ui/toast";
+import { SidebarProviderUpdatePill } from "../sidebar/SidebarProviderUpdatePill";
+import { SidebarUpdatePill } from "../sidebar/SidebarUpdatePill";
 import {
   SidebarContent,
   SidebarFooter,
@@ -272,6 +275,17 @@ export async function submitCtoxManualPairing(
   }
 }
 
+/**
+ * datetime-local value → epoch ms; empty, unparsable, or past-dated values
+ * yield null so the payload simply omits the field (Befund K-B15).
+ */
+export function ctoxCapabilityExpiryToEpochMs(value: string): number | null {
+  if (value.trim() === "") return null;
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
 export function buildCtoxManualPairingInput(
   values: CtoxManualPairingFormValues,
 ): CtoxManualPairingImportInput {
@@ -285,9 +299,9 @@ export function buildCtoxManualPairingInput(
     roomSecret: values.roomSecret,
     ...(values.instanceId === "" ? {} : { instanceId: values.instanceId }),
     ...(values.capabilityToken === "" ? {} : { capabilityToken: values.capabilityToken }),
-    ...(values.capabilityExpiresAtMs === ""
+    ...(ctoxCapabilityExpiryToEpochMs(values.capabilityExpiresAtMs) === null
       ? {}
-      : { capabilityExpiresAtMs: Number(values.capabilityExpiresAtMs) }),
+      : { capabilityExpiresAtMs: ctoxCapabilityExpiryToEpochMs(values.capabilityExpiresAtMs)! }),
     ...(values.role === "" ? {} : { role: values.role }),
     ...(values.userId === "" ? {} : { userId: values.userId }),
   };
@@ -599,7 +613,15 @@ export function CtoxModeProvider({
       const bounds = guestBoundsRef.current ?? { x: 0, y: 0, width: 1, height: 1 };
       void bridge
         .openApp(instanceId, moduleId, bounds)
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          // Swallowed rejections made a failed open look like a dead click
+          // (Befund K-BH4).
+          toastManager.add({
+            type: "error",
+            title: "Could not open the app",
+            description: error instanceof Error ? error.message : "The instance refused the open.",
+          });
+        })
         .then(() => {
           if (mountedRef.current) setAppRailVersion((current) => current + 1);
         });
@@ -1718,11 +1740,12 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Expiry in Unix milliseconds (optional)
+            Token expiry (optional)
+            {/* A raw Unix-milliseconds number field was operator-hostile and
+                let typos become near-NaN payloads (Befund K-B15); the picker
+                converts to epoch ms in the build step. */}
             <input
-              type="number"
-              min={1}
-              step={1}
+              type="datetime-local"
               className={fieldClassName}
               value={capabilityExpiresAtMs}
               onChange={(event) => setCapabilityExpiresAtMs(event.target.value)}
@@ -1849,6 +1872,10 @@ export function CtoxSidebarFooter() {
   const router = useRouter({ warn: false });
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]" data-ctox-sidebar-footer="">
+      {/* Update visibility must not depend on the mode: app and provider
+          update pills were Code-only, so a Business-OS-resident operator
+          never saw them (Befund K-B11). */}
+      <SidebarProviderUpdatePill />
       <SidebarMenu className="flex-row items-center">
         <SidebarMenuItem className="shrink-0">
           <SidebarMenuButton
@@ -1879,6 +1906,7 @@ export function CtoxSidebarFooter() {
             <RefreshCw className={cn((refreshing || spinHeld) && "animate-spin")} aria-hidden />
           </SidebarMenuButton>
         </SidebarMenuItem>
+        <SidebarUpdatePill />
       </SidebarMenu>
     </SidebarFooter>
   );
@@ -1942,6 +1970,19 @@ export function CtoxSidebarShell() {
             </p>
           ) : null}
 
+          {/* Feedback belongs where the eye is — with long instance trees
+              the row at the LIST END sat below the fold (Befund K-BH3). */}
+          {mutationFeedback === null ? null : (
+            <p
+              className={cn(
+                "mb-2 text-xs",
+                mutationFeedback.ok ? "text-sidebar-foreground" : "text-destructive",
+              )}
+              role={mutationFeedback.ok ? "status" : "alert"}
+            >
+              {mutationFeedback.message}
+            </p>
+          )}
           {discovery !== "loading" && discovery._tag === "failed" ? (
             <p className="text-xs text-destructive" role="alert">
               CTOX instance discovery failed. Try refreshing.
@@ -2022,18 +2063,6 @@ export function CtoxSidebarShell() {
                 </section>
               ))}
             </div>
-          )}
-
-          {mutationFeedback === null ? null : (
-            <p
-              className={cn(
-                "mt-3 text-xs",
-                mutationFeedback.ok ? "text-sidebar-foreground" : "text-destructive",
-              )}
-              role={mutationFeedback.ok ? "status" : "alert"}
-            >
-              {mutationFeedback.message}
-            </p>
           )}
 
           {addOpen ? (
@@ -2212,8 +2241,22 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
     void bridge.setGuestBounds(bounds).catch(() => undefined);
   }, [bounds, bridge, connection]);
 
+  // A connect that never settles used to stand as static text forever
+  // (Befund K-BH1) — after 30s the copy changes to an actionable hint.
+  const [connectingTooLong, setConnectingTooLong] = useState(false);
+  useEffect(() => {
+    if (connection !== "connecting") {
+      setConnectingTooLong(false);
+      return;
+    }
+    const id = setTimeout(() => setConnectingTooLong(true), 30_000);
+    return () => clearTimeout(id);
+  }, [connection]);
+
   const fallback = {
-    connecting: "Connecting to the Business OS guest…",
+    connecting: connectingTooLong
+      ? "Still connecting… the instance may be unreachable. Try selecting it again or refreshing the sidebar."
+      : "Connecting to the Business OS guest…",
     ready: `Business OS guest for ${instance.displayName} is ready.`,
     error: "The Business OS guest could not be opened.",
     revoked: "Access to this instance is no longer available.",
@@ -2229,12 +2272,26 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       data-ctox-connection={connection}
       data-ctox-native-guest-host=""
     >
-      <p
-        className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-muted-foreground"
-        role="status"
-      >
-        {fallback}
-      </p>
+      {/* The native view paints OVER this element once ready; keeping a
+          live role=status "…is ready." underneath was permanent screen-
+          reader noise and a false claim if the view ever vanished
+          (Befund K-BH2) — ready renders no fallback at all. */}
+      {connection === "ready" ? null : (
+        <p
+          className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-muted-foreground"
+          role="status"
+          aria-busy={connection === "connecting"}
+        >
+          {connection === "connecting" ? (
+            <span className="inline-flex items-center gap-2">
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+              {fallback}
+            </span>
+          ) : (
+            fallback
+          )}
+        </p>
+      )}
     </div>
   );
 }

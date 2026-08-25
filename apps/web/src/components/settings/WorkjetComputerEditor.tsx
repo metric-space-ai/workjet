@@ -33,6 +33,9 @@ export interface WorkjetComputerDraft {
   readonly id: string;
   readonly label: string;
   readonly environmentId: string;
+  /** The picked environment's own label — the boundary between "default
+      name" and "operator-typed name" for the custom-label guard (K-AH3). */
+  readonly environmentDefaultLabel: string;
   readonly presentationKind: WorkjetComputerPresentationKind;
   readonly harnesses: ReadonlyArray<{
     readonly harness: WorkjetHarness;
@@ -51,6 +54,7 @@ export function createWorkjetComputerDraft(input: {
     id: input.computer?.id ?? input.id ?? randomUUID(),
     label: input.computer?.label ?? environment?.label ?? "",
     environmentId: input.computer?.environmentId ?? environment?.environmentId ?? "",
+    environmentDefaultLabel: environment?.label ?? "",
     presentationKind: input.computer?.presentationKind ?? environment?.presentationKind ?? "remote",
     harnesses: WORKJET_HARNESS_OPTIONS.map(({ id }) => {
       const configured = input.computer?.harnesses.find((entry) => entry.harness === id);
@@ -67,10 +71,20 @@ export function selectWorkjetComputerEnvironment(
   draft: WorkjetComputerDraft,
   environment: WorkjetEnvironmentTargetOption,
 ): WorkjetComputerDraft {
+  // The environment's label is only a DEFAULT: a name the operator typed
+  // themselves must survive re-picking an environment (Befund K-AH3). Only
+  // an empty label or one that still equals the previous environment's
+  // default gets replaced.
+  const labelWasCustom =
+    draft.label.trim() !== "" &&
+    draft.label !== environment.label &&
+    draft.environmentId !== environment.environmentId &&
+    draft.label !== draft.environmentDefaultLabel;
   return {
     ...draft,
     environmentId: environment.environmentId,
-    label: environment.label,
+    label: labelWasCustom ? draft.label : environment.label,
+    environmentDefaultLabel: environment.label,
     presentationKind: environment.presentationKind,
   };
 }

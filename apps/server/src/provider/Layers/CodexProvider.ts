@@ -56,7 +56,7 @@ const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
   low: "Low",
   medium: "Medium",
   high: "High",
-  xhigh: "Extra High",
+  xhigh: "Extra high",
   max: "Max",
   ultra: "Ultra",
 };

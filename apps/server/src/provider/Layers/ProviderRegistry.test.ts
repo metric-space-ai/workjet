@@ -2071,7 +2071,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               effortDescriptor?.type === "select"
                 ? effortDescriptor.options.find((option) => option.isDefault)
                 : undefined,
-              { id: "xhigh", label: "Extra High", isDefault: true },
+              { id: "xhigh", label: "Extra high", isDefault: true },
             );
           }).pipe(
             Effect.provide(

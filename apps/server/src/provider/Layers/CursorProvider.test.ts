@@ -175,7 +175,7 @@ const parameterizedGpt54ConfigOptions = [
       { name: "Low", value: "low" },
       { name: "Medium", value: "medium" },
       { name: "High", value: "high" },
-      { name: "Extra High", value: "extra-high" },
+      { name: "Extra high", value: "extra-high" },
     ],
     category: "thought_level",
     id: "reasoning",
@@ -380,7 +380,7 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
             { id: "low", label: "Low" },
             { id: "medium", label: "Medium", isDefault: true },
             { id: "high", label: "High" },
-            { id: "xhigh", label: "Extra High" },
+            { id: "xhigh", label: "Extra high" },
           ]),
           selectDescriptor("contextWindow", "Context", [
             { id: "272k", label: "272K", isDefault: true },

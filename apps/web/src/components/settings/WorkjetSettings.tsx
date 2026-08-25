@@ -390,6 +390,48 @@ export function workjetSectionFromHash(hash: string): WorkjetSettingsSectionId |
   return WORKJET_SETTINGS_SECTIONS.find((section) => section.targetId === targetId)?.id ?? null;
 }
 
+/**
+ * Positive-integer input that tolerates EMPTY intermediate states: the old
+ * controlled inputs re-snapped on every keystroke, so clearing the field or
+ * retyping "30"→"1" was impossible (Befund K-AH5). Commits on blur; an
+ * invalid or empty field reverts to the last committed value.
+ */
+function PositiveIntegerInput({
+  value,
+  ariaLabel,
+  className,
+  onCommit,
+}: {
+  readonly value: number;
+  readonly ariaLabel: string;
+  readonly className: string;
+  readonly onCommit: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+  return (
+    <Input
+      nativeInput
+      type="number"
+      min={1}
+      aria-label={ariaLabel}
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => {
+        const parsed = Number(text);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          if (parsed !== value) onCommit(parsed);
+          return;
+        }
+        setText(String(value));
+      }}
+      className={className}
+    />
+  );
+}
+
 function SectionNavigation({
   activeSection,
   onSelect,
@@ -1038,21 +1080,15 @@ export function WorkjetSettingsView({
             description="Keep local Workjet telemetry for this many days. Runtime cleanup must honor this policy."
             control={
               <div className="flex items-center gap-2">
-                <Input
-                  nativeInput
-                  type="number"
-                  min={1}
-                  aria-label="Workjet telemetry retention days"
+                <PositiveIntegerInput
+                  ariaLabel="Workjet telemetry retention days"
                   value={configuration.telemetry.retentionDays}
-                  onChange={(event) => {
-                    const retentionDays = Number(event.target.value);
-                    if (Number.isInteger(retentionDays) && retentionDays > 0) {
-                      onChange({
-                        ...configuration,
-                        telemetry: { ...configuration.telemetry, retentionDays },
-                      });
-                    }
-                  }}
+                  onCommit={(retentionDays) =>
+                    onChange({
+                      ...configuration,
+                      telemetry: { ...configuration.telemetry, retentionDays },
+                    })
+                  }
                   className="w-24"
                 />
                 <span className="text-xs text-muted-foreground">days</span>
@@ -1072,21 +1108,15 @@ export function WorkjetSettingsView({
             title="Probe timeout"
             description="Maximum time for a bounded worker availability probe."
             control={
-              <Input
-                nativeInput
-                type="number"
-                min={1}
-                aria-label="Workjet probe timeout seconds"
+              <PositiveIntegerInput
+                ariaLabel="Workjet probe timeout seconds"
                 value={configuration.execution.probeTimeoutSeconds}
-                onChange={(event) => {
-                  const probeTimeoutSeconds = Number(event.target.value);
-                  if (Number.isInteger(probeTimeoutSeconds) && probeTimeoutSeconds > 0) {
-                    onChange({
-                      ...configuration,
-                      execution: { ...configuration.execution, probeTimeoutSeconds },
-                    });
-                  }
-                }}
+                onCommit={(probeTimeoutSeconds) =>
+                  onChange({
+                    ...configuration,
+                    execution: { ...configuration.execution, probeTimeoutSeconds },
+                  })
+                }
                 className="w-28"
               />
             }
@@ -1095,21 +1125,15 @@ export function WorkjetSettingsView({
             title="Turn timeout"
             description="Maximum runtime for one worker turn before the runtime may stop it."
             control={
-              <Input
-                nativeInput
-                type="number"
-                min={1}
-                aria-label="Workjet turn timeout seconds"
+              <PositiveIntegerInput
+                ariaLabel="Workjet turn timeout seconds"
                 value={configuration.execution.turnTimeoutSeconds}
-                onChange={(event) => {
-                  const turnTimeoutSeconds = Number(event.target.value);
-                  if (Number.isInteger(turnTimeoutSeconds) && turnTimeoutSeconds > 0) {
-                    onChange({
-                      ...configuration,
-                      execution: { ...configuration.execution, turnTimeoutSeconds },
-                    });
-                  }
-                }}
+                onCommit={(turnTimeoutSeconds) =>
+                  onChange({
+                    ...configuration,
+                    execution: { ...configuration.execution, turnTimeoutSeconds },
+                  })
+                }
                 className="w-28"
               />
             }

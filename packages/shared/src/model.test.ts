@@ -21,7 +21,7 @@ const codexCaps: ModelCapabilities = createModelCapabilities({
       label: "Reasoning",
       type: "select",
       options: [
-        { id: "xhigh", label: "Extra High" },
+        { id: "xhigh", label: "Extra high" },
         { id: "high", label: "High", isDefault: true },
       ],
       currentValue: "high",

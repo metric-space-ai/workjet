@@ -82,10 +82,9 @@ export function reconcileBusinessOsHomeLayout(
       return appIds.length > 0 ? [{ ...item, appIds: Object.freeze(appIds) }] : [];
     }),
   );
-  const missing = apps
-    .filter((app) => !app.desktopOnly && !placed.has(app.id))
-    .map((app): BusinessOsHomeItem => ({ kind: "app", id: `app:${app.id}`, appId: app.id }));
-  if (missing.length) pages.push(missing);
+  // Existing device layouts are positional user data. Newly installed apps
+  // stay discoverable through the catalog-backed App Library until the user
+  // explicitly places them; pack updates must never reshuffle Home Desks.
   const dock = layout.dock.filter(
     (appId, index) => known.has(appId) && layout.dock.indexOf(appId) === index,
   );

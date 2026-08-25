@@ -16,18 +16,48 @@ const index = new TextEncoder().encode("<!doctype html><head></head><body>Workje
 const mobileApps = new TextEncoder().encode(
   JSON.stringify({ type: "workjet.business-os-mobile-apps.v1", revision: "test", apps: [] }),
 );
+const iconPaths = [
+  "icons/threads/ios-standard.png",
+  "icons/threads/ios-dark.png",
+  "icons/threads/ios-tinted.png",
+  "icons/threads/android-foreground.png",
+  "icons/threads/android-background.png",
+  "icons/threads/android-monochrome.png",
+  "icons/threads/web.png",
+] as const;
+const mobileIcons = new TextEncoder().encode(
+  JSON.stringify({
+    type: "ctox.business-os-icon-pack.v1",
+    familyVersion: 1,
+    apps: [
+      {
+        appId: "threads",
+        iconAssetId: "workjet.business-os.threads",
+        accessibilityLabel: "Threads",
+        format: "png",
+        pixelSize: { width: 1024, height: 1024 },
+        ios: { standard: iconPaths[0], dark: iconPaths[1], tinted: iconPaths[2] },
+        android: { foreground: iconPaths[3], background: iconPaths[4], monochrome: iconPaths[5] },
+        web: { standard: iconPaths[6] },
+      },
+    ],
+  }),
+);
 
 function pack(): { manifest: BusinessOsShellPackManifest; files: Map<string, Uint8Array> } {
   const files = new Map([
     ["index.html", index],
     ["mobile-apps.json", mobileApps],
+    ["mobile-icons.json", mobileIcons],
+    ...iconPaths.map((path) => [path, Uint8Array.of(137, 80, 78, 71)] as const),
   ]);
+  const assetSize = iconPaths.length * 4;
   const unsigned = {
     type: BUSINESS_OS_SHELL_PACK_TYPE,
     packId: "shell-test",
     businessOsRevision: "revision-a",
     appVersion: "1.2.3",
-    totalSize: index.byteLength + mobileApps.byteLength,
+    totalSize: index.byteLength + mobileApps.byteLength + mobileIcons.byteLength + assetSize,
     files: [
       { path: "index.html", size: index.byteLength, sha256: bytesToHex(sha256(index)) },
       {
@@ -35,6 +65,16 @@ function pack(): { manifest: BusinessOsShellPackManifest; files: Map<string, Uin
         size: mobileApps.byteLength,
         sha256: bytesToHex(sha256(mobileApps)),
       },
+      {
+        path: "mobile-icons.json",
+        size: mobileIcons.byteLength,
+        sha256: bytesToHex(sha256(mobileIcons)),
+      },
+      ...iconPaths.map((path) => ({
+        path,
+        size: 4,
+        sha256: bytesToHex(sha256(Uint8Array.of(137, 80, 78, 71))),
+      })),
     ],
     signingKeyId: "test-key",
   } as const;

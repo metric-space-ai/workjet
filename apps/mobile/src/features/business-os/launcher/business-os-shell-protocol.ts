@@ -81,6 +81,9 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
 }
 
 export function encodeBusinessOsHostCommand(command: BusinessOsHostCommand): string {
+  if ("appId" in command && command.appId === "desktop") {
+    throw new Error("Desktop is the native Business OS home route on mobile.");
+  }
   const raw = JSON.stringify(command);
   if (new TextEncoder().encode(raw).byteLength > BUSINESS_OS_SHELL_MESSAGE_MAX_BYTES) {
     throw new Error("Business OS host command is too large.");

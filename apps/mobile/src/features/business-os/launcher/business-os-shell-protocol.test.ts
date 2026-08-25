@@ -9,12 +9,16 @@ import {
 
 describe("Business OS native shell protocol", () => {
   it("accepts lifecycle and bounded catalog messages", () => {
+    const wireCatalog = {
+      ...BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
+      apps: BUILT_IN_BUSINESS_OS_MOBILE_CATALOG.apps.map(({ icon: _icon, ...app }) => app),
+    };
     expect(
       decodeBusinessOsShellMessage(
         JSON.stringify({
           protocol: BUSINESS_OS_SHELL_PROTOCOL,
           type: "catalog.replace",
-          catalog: BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
+          catalog: wireCatalog,
         }),
       ),
     ).toMatchObject({ type: "catalog.replace" });
@@ -57,5 +61,12 @@ describe("Business OS native shell protocol", () => {
         }),
       ),
     ).toEqual({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.open", appId: "threads" });
+    expect(() =>
+      encodeBusinessOsHostCommand({
+        protocol: BUSINESS_OS_SHELL_PROTOCOL,
+        type: "app.open",
+        appId: "desktop",
+      }),
+    ).toThrowError("native Business OS home route");
   });
 });

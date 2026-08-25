@@ -45,7 +45,7 @@ describe("Business OS native home model", () => {
     expect(moved.pages[0]?.[0]).toMatchObject({ kind: "folder", appIds: ["tickets", "ctox"] });
   });
 
-  it("keeps existing positions and sends new apps to a trailing page", () => {
+  it("keeps existing positions and leaves new apps in the App Library", () => {
     const initial = createDefaultBusinessOsHomeLayout(
       BUILT_IN_BUSINESS_OS_MOBILE_CATALOG.apps.slice(0, 3),
       20,
@@ -55,7 +55,16 @@ describe("Business OS native home model", () => {
       BUILT_IN_BUSINESS_OS_MOBILE_CATALOG.apps.slice(0, 5),
     );
     expect(next.pages[0]?.map((item) => item.id)).toEqual(initial.pages[0]?.map((item) => item.id));
-    expect(next.pages.at(-1)?.map((item) => item.id)).toEqual(["app:knowledge", "app:browser"]);
+    expect(next.pages.flat().map((item) => item.id)).not.toContain("app:knowledge");
+    expect(next.pages.flat().map((item) => item.id)).not.toContain("app:browser");
+  });
+
+  it("ships exactly the 34 native Business OS app identities without desktop", () => {
+    expect(BUILT_IN_BUSINESS_OS_MOBILE_CATALOG.apps).toHaveLength(34);
+    expect(BUILT_IN_BUSINESS_OS_MOBILE_CATALOG.apps.map((app) => app.id)).not.toContain("desktop");
+    expect(
+      new Set(BUILT_IN_BUSINESS_OS_MOBILE_CATALOG.apps.map((app) => app.iconAssetId)).size,
+    ).toBe(34);
   });
 
   it("round-trips a bounded local layout", () => {

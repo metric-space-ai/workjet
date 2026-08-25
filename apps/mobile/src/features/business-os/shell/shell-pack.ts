@@ -2,6 +2,8 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
+import { decodeBusinessOsIconPack, iconPackAssetPaths } from "./business-os-icon-pack";
+
 export const BUSINESS_OS_SHELL_PACK_TYPE = "ctox.mobile.shell-pack.v1";
 
 export interface BusinessOsShellPackFile {
@@ -107,10 +109,22 @@ export function verifyBusinessOsShellPack(input: {
   if (
     !paths.has("index.html") ||
     !paths.has("mobile-apps.json") ||
+    !paths.has("mobile-icons.json") ||
     totalSize !== manifest.totalSize ||
     input.files.size !== paths.size
   ) {
     fail("completeness", "Shell pack is incomplete or contains undeclared files.");
+  }
+  let iconPack;
+  try {
+    iconPack = decodeBusinessOsIconPack(
+      JSON.parse(new TextDecoder().decode(input.files.get("mobile-icons.json"))),
+    );
+  } catch {
+    return fail("icon-pack", "Shell pack icon manifest is invalid.");
+  }
+  if (iconPackAssetPaths(iconPack).some((path) => !paths.has(path))) {
+    fail("icon-pack", "Shell pack icon assets are incomplete.");
   }
   const publicKey = input.publicKeys.get(manifest.signingKeyId);
   if (!publicKey) fail("key", "Shell pack signing key is not trusted.");

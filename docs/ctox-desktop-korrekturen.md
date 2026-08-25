@@ -1444,3 +1444,36 @@ Die neu gebaute Marketingseite wurde in Chrome bei 1440×1000 und 390×844
 geprüft: keine Altidentität, kein horizontales Overflow. Ein dabei sichtbarer
 Logo-Overlap im mobilen Hero wurde korrigiert und erneut visuell abgenommen.
 Endzustand der Desktop-App ist Business OS ohne geöffneten Kunden-Guest.
+
+## Mobile-Abschluss und lokale Legacy-Runtime-Bereinigung — 2026-08-25 ~22:45
+
+Der Mobile-Worker hat die letzte sichtbare Produktidentität als Workjet-Commit
+`0cacd8941` abgeschlossen. Der alte Assetname `T3Mark.svg` ist entfernt;
+App-Oberfläche, Widget, Accessibility-Texte und Fallbacks verwenden Workjet.
+Der dazugehörige additive native Business-OS-Mobile-Host im CTOX-Repo ist als
+`1f8d1a09a` committed. Bewusst erhalten bleiben ausschließlich unsichtbare
+technische Kontinuitätswerte: Bundle-/Package-IDs `com.t3tools.t3code*`, der
+Expo-Slug `t3-code`, persistierte Daten-/Secret-Schlüssel, native Target- und
+Modulnamen sowie eingehende Legacy-Deep-Link-Aliasse. Sie werden nicht als
+Produktname gerendert und verhindern Datenverlust beziehungsweise kaputte alte
+Links.
+
+MOBILE-BEWEISE: 125 Testdateien / 750 Tests, Mobile-Typecheck, fokussiertes
+Lint/Format und der iOS-Simulator-Debugbuild sind grün. Die beiden CTOX-Mobile-
+Host-Tests sind ebenfalls grün. Der Android-Gradlebuild war mangels lokaler
+Java-Runtime nicht ausführbar; reale Galaxy-/iPad-Geräteabnahme benötigt noch
+Operatorfreigabe. Die Produktions-Shell-Aktivierung bleibt wie vorgesehen
+fail-closed, bis echte current+next Ed25519-Keys und ein signiertes
+Distributionsartefakt bereitstehen.
+
+Auf dem Operator-Mac wurden außerdem zwei rein generierte alte Runtime-Bundles
+aus `apps/desktop/.electron-runtime/` entfernt. Zuvor wurden die verwaisten
+Alpha-Prozesse mit den exakten PIDs `72959` und `72960` beendet; der dadurch
+belegte Altserver-Port `3773` ist wieder frei. Die Bundles wurden nicht
+unwiederbringlich gelöscht, sondern nach
+`~/.Trash/Workjet-legacy-runtime-alpha-2026-08-25.app` und
+`~/.Trash/Workjet-legacy-runtime-dev-2026-08-25.app` verschoben. Das einzige
+App-Bundle im Runtime-Verzeichnis ist damit `Workjet.app`; unterstützende
+Metadaten und die Dev-Icon-Quelle bleiben erhalten. Die laufende aktuelle App
+auf CDP-Port 9300 und ihr Backend auf Port 3774 wurden nicht beendet oder
+verändert.

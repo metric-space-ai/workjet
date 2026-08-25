@@ -50,6 +50,7 @@ import {
 } from "./methods/window.ts";
 import * as CtoxIpc from "./methods/ctox.ts";
 import * as PreviewIpc from "./methods/preview.ts";
+import * as ProvisioningIpc from "./methods/provisioning.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
@@ -104,6 +105,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
+  for (const provisioningMethod of ProvisioningIpc.methods) {
+    yield* ipc.handle(provisioningMethod);
+  }
   for (const ctoxMethod of CtoxIpc.methods) {
     yield* ipc.handle(ctoxMethod);
   }

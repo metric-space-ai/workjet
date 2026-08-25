@@ -28,6 +28,7 @@ import {
 import { workjetComputerKindLabel } from "../chat/ComposerWorkjetTargetControls";
 import { workjetHarnessDisplayLabel } from "./WorkjetWorkerEditor";
 import { BusinessOsMobilePairingSection } from "./BusinessOsMobilePairingSection";
+import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
 import { searchableSetting } from "./settingsSearch";
 
 /**
@@ -314,6 +315,7 @@ export function WorkjetComputersSettings() {
         environmentId={environmentId}
         environmentLabel={primaryEnvironment?.label ?? null}
       />
+      <ComputerProvisioningSection />
       <RemoteEnvironmentsSection />
     </SettingsPageContainer>
   );

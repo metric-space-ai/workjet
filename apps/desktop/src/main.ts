@@ -70,6 +70,7 @@ import * as DesktopSupportBundle from "./support/DesktopSupportBundle.ts";
 import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
 import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
+import * as DesktopComputerProvisioner from "./provisioning/DesktopComputerProvisioner.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
@@ -217,6 +218,13 @@ const desktopCtoxControlLayer = Layer.mergeAll(
   Layer.provideMerge(CtoxElectronSessions.layer),
 );
 
+const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
+  // Reuse both the registry and the exact password-prompt instance whose
+  // resolve IPC handler lives in desktopSshLayer.
+  Layer.provideMerge(desktopSshLayer),
+  Layer.provideMerge(desktopCtoxControlLayer),
+);
+
 const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
 const desktopDecisionHubLayer = CtoxDecisionHubProvisioner.layer.pipe(
   Layer.provideMerge(desktopRpcSessionLayer),
@@ -239,6 +247,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopShellEnvironment.layer,
   desktopCtoxLayer,
   desktopSshLayer,
+  desktopProvisioningLayer,
 ).pipe(
   // provideMerge, not mergeAll: the application menu resolves the bundle
   // service, and the IPC handler resolves the same instance from the

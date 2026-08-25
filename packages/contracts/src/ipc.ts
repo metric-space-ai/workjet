@@ -122,6 +122,15 @@ import type {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import type {
+  WorkjetProvisioningGetResult,
+  WorkjetProvisioningPreflightInput,
+  WorkjetProvisioningPreflightResult,
+  WorkjetProvisioningStartInput,
+  WorkjetProvisioningStartResult,
+  WorkjetProvisioningTarget,
+  WorkjetSshHostKeyInspectResult,
+} from "./computerProvisioning.ts";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -1169,6 +1178,16 @@ export interface DesktopBridge {
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
+  inspectProvisioningHostKey?: (
+    target: WorkjetProvisioningTarget,
+  ) => Promise<WorkjetSshHostKeyInspectResult>;
+  preflightProvisioningTarget?: (
+    input: WorkjetProvisioningPreflightInput,
+  ) => Promise<WorkjetProvisioningPreflightResult>;
+  startProvisioningOperation?: (
+    input: WorkjetProvisioningStartInput,
+  ) => Promise<WorkjetProvisioningStartResult>;
+  getProvisioningOperation?: (operationId: string) => Promise<WorkjetProvisioningGetResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the

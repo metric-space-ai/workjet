@@ -29,6 +29,7 @@ export * from "./workjetCrossMode.ts";
 export * from "./workjetDecisionHub.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
+export * from "./computerProvisioning.ts";
 export * from "./t3ProjectFile.ts";
 export * from "./editor.ts";
 export * from "./project.ts";

@@ -154,6 +154,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   checkForUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_CHECK_CHANNEL),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_DOWNLOAD_CHANNEL),
   installUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL_CHANNEL),
+  inspectProvisioningHostKey: (target) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_INSPECT_HOST_KEY_CHANNEL, { target }),
+  preflightProvisioningTarget: (input) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_PREFLIGHT_CHANNEL, input),
+  startProvisioningOperation: (input) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_START_CHANNEL, input),
+  getProvisioningOperation: (operationId) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_GET_CHANNEL, { operationId }),
   onUpdateState: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
       if (typeof state !== "object" || state === null) return;

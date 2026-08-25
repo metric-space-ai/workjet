@@ -359,6 +359,13 @@ jobs:
             arch: x64
             rust_target: x86_64-unknown-linux-gnu
             resource_key: linux-x64
+          - label: Linux arm64
+            runner: ubuntu-24.04-arm
+            platform: linux
+            target: AppImage
+            arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
+            resource_key: linux-arm64
           - label: Windows x64
             runner: blacksmith-32vcpu-windows-2025
             platform: win
@@ -749,6 +756,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -785,6 +794,24 @@ jobs:
               rm -f "$x64_manifest"
             fi
           done
+
+      - name: Generate Workjet install manifest
+        run: |
+          node scripts/generate-workjet-install-manifest.mjs \
+            --assets-dir release-assets \
+            --tag "${{ needs.preflight.outputs.tag }}" \
+            --version "${{ needs.preflight.outputs.version }}" \
+            --repository "${{ github.repository }}" \
+            --output release-assets/workjet-desktop-install-manifest-v1.json
+
+      - name: Attest install manifest and signed desktop artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            release-assets/workjet-desktop-install-manifest-v1.json
+            release-assets/*.dmg
+            release-assets/*.AppImage
+            release-assets/*.exe
 
       # - name: Merge Windows updater manifests
       #   run: |
@@ -833,6 +860,7 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
+            release-assets/workjet-desktop-install-manifest-v1.json
           fail_on_unmatched_files: true
           token: ${{ github.token }}
 
@@ -853,6 +881,7 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
+            release-assets/workjet-desktop-install-manifest-v1.json
           fail_on_unmatched_files: true
           token: ${{ github.token }}
 

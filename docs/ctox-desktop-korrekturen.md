@@ -1213,3 +1213,25 @@ Desktop- und Web-Typecheck exit 0 (Desktop nur vorhandene Effect-Suggestions),
 gezieltes Format und `git diff --check` grün. Die reale UI-/Paket-Abnahme folgt
 nach dem zusammenhängenden QR-/Rechner-Slice ausschließlich im
 `t3code://app`-Target; bis dahin ist dies bewusst kein Live-Abschlussbeleg.
+
+## Business-OS-Mobile-Pairing per QR — 2026-08-25 ~16:45
+
+Settings → Computers enthält jetzt einen eigenen Abschnitt „Mobile pairing".
+Der Bediener wählt keine Signaling-URL, keinen Room und kein Passwort: Workjet
+fordert über die authentifizierte Environment-Session einen fünf Minuten
+gültigen CTOX-Invite an und kodiert exakt dessen typisierte v1-Payload in einen
+kanonischen `workjet://business-os/pair?payload=…`-QR. Die Oberfläche zeigt
+CTOX-Instanz, gewählten Backend-Namen und Ablaufzeit, unterstützt Erneuern sowie
+gezieltes Widerrufen und verweigert QR-Payloads oberhalb der sicheren Größe.
+
+HTTP-Authentifizierung verwendet denselben Cookie-/Bearer-/DPoP-Pfad wie die
+übrigen Environment-Control-Plane-Aufrufe. Invite, Signaling-Passwort und
+Capability-Token bleiben ausschließlich im flüchtigen Komponenten-State und
+werden weder persistiert noch geloggt. Der native CTOX-Principal ist pro Invite
+isoliert; Ablauf und Widerruf greifen beim nativen Auth-Handshake fail-closed.
+
+BEWEISE VOR LIVE-DEPLOY: Contract-/Server-/Codec-Suiten 9/9 grün,
+Client-Runtime- und Web-Typecheck exit 0 (nur eine vorhandene Effect-Suggestion
+in Relay Discovery), gezieltes Format sowie `git diff --check` grün. Reale
+QR-Erzeugung und Scan/Sync werden nach Web-/Server-/Desktop-Deploy gemeinsam im
+Workjet-Renderer und auf Mobile abgenommen.

@@ -9,6 +9,12 @@ import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondab
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import {
+  CtoxMobileInviteCreateInput,
+  CtoxMobileInviteCreateResult,
+  CtoxMobileInviteRevokeInput,
+  CtoxMobileInviteRevokeResult,
+} from "./ctox.ts";
+import {
   AuthAccessTokenResult,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
@@ -90,6 +96,8 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_snapshot_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
+  "mobile_invite_issuance_failed",
+  "mobile_invite_revoke_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -530,6 +538,24 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
+export class EnvironmentBusinessOsHttpApi extends HttpApiGroup.make("businessOs")
+  .add(
+    HttpApiEndpoint.post("createMobileInvite", "/api/ctox/business-os/mobile-invites", {
+      headers: OptionalBearerHeaders,
+      payload: CtoxMobileInviteCreateInput,
+      success: CtoxMobileInviteCreateResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeMobileInvite", "/api/ctox/business-os/mobile-invites/revoke", {
+      headers: OptionalBearerHeaders,
+      payload: CtoxMobileInviteRevokeInput,
+      success: CtoxMobileInviteRevokeResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 /** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */
 export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
   HttpApiEndpoint.post("diff", "/api/pull-requests/diff", {
@@ -610,6 +636,7 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
+  .add(EnvironmentBusinessOsHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentConnectHttpApi) {}

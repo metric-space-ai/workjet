@@ -194,6 +194,60 @@ const CtoxPairingCapabilityToken = CtoxPairingInputText.check(Schema.isMaxLength
 const CtoxPairingUserId = CtoxPairingInputText.check(Schema.isMaxLength(256));
 const CtoxPairingExpirationMs = Schema.Int.check(Schema.isGreaterThan(0));
 
+export const CtoxBusinessOsInviteV1 = Schema.Struct({
+  type: Schema.Literal("ctox-business-os-invite"),
+  version: Schema.Literal(1),
+  display_name: CtoxPairingDisplayName,
+  instance_id: CtoxPairingInstanceIdentity,
+  sync_room: CtoxPairingSyncRoom,
+  native_peer_id: CtoxPairingInstanceIdentity,
+  signaling_urls: Schema.Array(CtoxPairingSignalingUrl).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(16),
+  ),
+  signaling_room_password: CtoxPairingRoomSecret,
+  transport: Schema.Literal("webrtc"),
+  expires_at: CtoxPairingInputText.check(Schema.isMaxLength(64)),
+  data_plane: Schema.Literal("rxdb-webrtc"),
+  http_bridge_available: Schema.Literal(false),
+  secret_value_in_payload: Schema.optionalKey(Schema.Literal(true)),
+  session: Schema.Struct({
+    authenticated: Schema.Literal(true),
+    source: Schema.Literal("mobile_invite"),
+    capability_token: CtoxPairingCapabilityToken,
+    capability_expires_at_ms: CtoxPairingExpirationMs,
+    user: Schema.Struct({
+      id: CtoxPairingUserId,
+      display_name: CtoxPairingDisplayName,
+      role: Schema.Literal("user"),
+      is_admin: Schema.Literal(false),
+    }),
+  }),
+});
+export type CtoxBusinessOsInviteV1 = typeof CtoxBusinessOsInviteV1.Type;
+
+export const CtoxMobileInviteCreateInput = Schema.Struct({
+  ttlSeconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 3_600 })),
+});
+export type CtoxMobileInviteCreateInput = typeof CtoxMobileInviteCreateInput.Type;
+
+export const CtoxMobileInviteCreateResult = Schema.Struct({
+  inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  invite: CtoxBusinessOsInviteV1,
+  expiresAt: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+});
+export type CtoxMobileInviteCreateResult = typeof CtoxMobileInviteCreateResult.Type;
+
+export const CtoxMobileInviteRevokeInput = Schema.Struct({
+  inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+});
+export type CtoxMobileInviteRevokeInput = typeof CtoxMobileInviteRevokeInput.Type;
+
+export const CtoxMobileInviteRevokeResult = Schema.Struct({
+  revoked: Schema.Literal(true),
+});
+export type CtoxMobileInviteRevokeResult = typeof CtoxMobileInviteRevokeResult.Type;
+
 /** A bounded raw invite JSON document or CTOX desktop invite link. */
 export const CtoxPairingInviteImportInput = Schema.Struct({
   invite: Schema.String.check(Schema.isMaxLength(65_536)),

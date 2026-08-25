@@ -40,6 +40,8 @@ function isSafePath(path: string): boolean {
     path.length > 0 &&
     !path.startsWith("/") &&
     !path.includes("\\") &&
+    path !== "vendor/ctox-office" &&
+    !path.startsWith("vendor/ctox-office/") &&
     !path.split("/").some((segment) => !segment || segment === "." || segment === "..")
   );
 }

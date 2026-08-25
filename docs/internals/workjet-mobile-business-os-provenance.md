@@ -95,13 +95,18 @@ The native shell host is present but cannot activate a production shell yet:
   RxDB/WebRTC bootstrap into a no-store `index.html` response.
 
 Activation remains fail-closed because the signed shell distribution endpoint
-and bundled public-key trust map have not landed. The accepted manifest envelope
-is `ctox.mobile.shell-pack.v1`: pack ID, exact Business OS revision, exact app
+is present but its production producer and bundled public-key trust map have not
+landed. Mobile resolves it through the shared DPoP-capable Environment command
+from Workjet commit `9df756456` and validates the
+`ctox.mobile.shell-pack-distribution.v1` response from server commit `12029616d`.
+The adapter refuses before making the authenticated request unless exactly one
+current and one next Ed25519 key are bundled. The accepted manifest envelope is
+`ctox.mobile.shell-pack.v1`: pack ID, exact Business OS revision, exact app
 version, total size, per-file path/size/SHA-256, signing key ID and an Ed25519
-signature over canonical manifest JSON. Unknown keys, traversal, extra or
-missing files, wrong hashes, signatures, versions or revisions are rejected.
-`vendor/ctox-office/**` remains a separate on-demand pack and is not silently
-folded into the base shell.
+signature over canonical manifest JSON. Unknown keys, expired or unsafe artifact
+URLs, traversal, extra or missing files, wrong hashes, signatures, versions or
+revisions are rejected. `vendor/ctox-office/**` remains a separate on-demand
+pack and is rejected from the base shell.
 
 Unit and static guards cover canonical QR roundtrip, expiry, response mismatch,
 atomic re-pair/rollback, multiple independent backends, restart-loaded

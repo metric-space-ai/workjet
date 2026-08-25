@@ -76,11 +76,16 @@ describe("Business OS shell pack", () => {
     );
   });
 
-  it("rejects traversal and packs without an index", () => {
+  it("rejects traversal and Office files in the base shell", () => {
     const value = pack();
     const unsafe = { ...value.manifest.files[0]!, path: "../index.html" };
     expect(() =>
       verify({ ...value, manifest: { ...value.manifest, files: [unsafe] } }),
+    ).toThrowError(expect.objectContaining({ code: "path" }));
+
+    const office = { ...value.manifest.files[0]!, path: "vendor/ctox-office/index.html" };
+    expect(() =>
+      verify({ ...value, manifest: { ...value.manifest, files: [office] } }),
     ).toThrowError(expect.objectContaining({ code: "path" }));
   });
 });

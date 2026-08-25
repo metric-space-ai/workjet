@@ -42,6 +42,17 @@ describe("Business OS native security guards", () => {
     expect(`${launch}\n${ios}\n${android}`).not.toMatch(/ctox_config|\/api\/business-os\/data/iu);
   });
 
+  it("resolves shell packs through the shared DPoP command and preflights trust", () => {
+    const state = read("src/state/business-os-mobile-shell-pack.ts");
+    const resolver = read("src/features/business-os/shell/production-shell-pack-resolver.ts");
+    expect(state).toContain("createBusinessOsMobileShellPackEnvironmentAtoms");
+    expect(resolver).toContain("businessOsMobileShellPackEnvironment.resolve");
+    const core = read("src/features/business-os/shell/shell-pack-resolver-core.ts");
+    expect(core.indexOf("validateBusinessOsShellPackTrustMap")).toBeLessThan(
+      core.indexOf("input.command.execute"),
+    );
+  });
+
   it("redacts protected content on Android screenshots and iOS background capture", () => {
     const android = read(
       "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3NativeControlsModule.kt",

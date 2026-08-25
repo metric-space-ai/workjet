@@ -325,6 +325,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     display: none;
   }
 
+  /* The product-mode switch is the ONLY way between Code and Business OS —
+     it must never vanish with the brand link below 48rem (Befund K-B1). */
+  .product-mode-switch.sidebar-brand {
+    display: flex;
+  }
+
   .sidebar-brand-stage {
     display: none;
   }

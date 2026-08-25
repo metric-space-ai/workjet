@@ -716,7 +716,14 @@ export function ComposerWorkjetCompactMenuContent(
             {props.computers.map((computer) => {
               const paired = isComputerPaired(computer, props.activeEnvironmentId, selectable);
               return (
-                <MenuRadioItem key={computer.id} value={computer.id} disabled={!paired}>
+                <MenuRadioItem
+                  key={computer.id}
+                  value={computer.id}
+                  disabled={!paired}
+                  // Same reason as the wide control's hint, surfaced where a
+                  // short suffix has no room for it (Befund K-B17).
+                  title={paired ? undefined : COMPOSER_COMPUTER_NOT_PAIRED_HINT}
+                >
                   {computer.label}
                   {paired ? "" : " — not paired"}
                 </MenuRadioItem>

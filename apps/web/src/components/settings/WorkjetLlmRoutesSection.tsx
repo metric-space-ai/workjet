@@ -109,7 +109,7 @@ export function WorkjetLlmRoutesSection(props: {
     >
       <SettingsRow
         title="Provider-gateway accounts"
-        description="An LLM route references one Workjet provider-gateway account. Code harness drivers such as Codex, Claude, and Grok are intentionally excluded because they are not LLM accounts. Models remain selected on workers."
+        description="An LLM route references one Workjet provider-gateway account. The Codex, Claude, and Grok CODE HARNESSES are not routes — a route names the account that answers, a harness runs the session. Models remain selected on workers."
       />
       {addingRoute ? routeEditor : null}
       {props.configuration.llmRoutes.map((route) => (

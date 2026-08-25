@@ -1016,11 +1016,14 @@ export function EnvironmentProviderSettings({
                 <span
                   className={cn(
                     "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
+                    // Green = probed available, muted = not probed yet,
+                    // red = probe answered "not available" — two greys made
+                    // failure indistinguishable from unknown (Befund K-B16).
                     piCodeProbe?.availability === "available"
                       ? "bg-emerald-500"
                       : piCodeProbe === null
                         ? "bg-muted-foreground/40"
-                        : "bg-zinc-500",
+                        : "bg-red-500/80",
                   )}
                   aria-hidden
                 />

@@ -26,6 +26,7 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { workjetComputerKindLabel } from "../chat/ComposerWorkjetTargetControls";
+import { workjetHarnessDisplayLabel } from "./WorkjetWorkerEditor";
 import { searchableSetting } from "./settingsSearch";
 
 /**
@@ -224,7 +225,7 @@ export function WorkjetComputersSettingsView({
                         : "not offered"
                       : live.availability === "available"
                         ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
-                        : live.reason;
+                        : humanizeHarnessProbeReason(live.reason);
                   return (
                     <p
                       key={declared.harness}
@@ -241,7 +242,7 @@ export function WorkjetComputersSettingsView({
                         }
                       />
                       <span className="w-28 shrink-0 font-medium text-foreground">
-                        {declared.harness}
+                        {workjetHarnessDisplayLabel(declared.harness)}
                       </span>
                       <span className="min-w-0 truncate">{detail}</span>
                     </p>
@@ -311,4 +312,17 @@ export function WorkjetComputersSettings() {
       <RemoteEnvironmentsSection />
     </SettingsPageContainer>
   );
+}
+
+/** Probe reasons arrive as slugs; the row speaks prose (Befund F11). */
+function humanizeHarnessProbeReason(reason: string): string {
+  const known: Record<string, string> = {
+    "executable-not-found": "Executable not found",
+    "probe-failed": "Probe failed",
+    "not-supported": "Not supported on this computer",
+  };
+  const mapped = known[reason];
+  if (mapped !== undefined) return mapped;
+  const spaced = reason.replace(/-/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

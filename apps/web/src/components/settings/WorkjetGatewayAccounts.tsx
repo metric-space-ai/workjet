@@ -670,7 +670,7 @@ export function WorkjetGatewayAccountsSectionView(
                             onClick={() => state.onAddAccount("xai")}
                           >
                             <PlusIcon className="size-3.5" />
-                            Add account
+                            {accounts.length === 0 ? "Add account" : "Add another"}
                           </Button>
                         ) : null}
                         <Button
@@ -690,11 +690,16 @@ export function WorkjetGatewayAccountsSectionView(
                           ) : (
                             <PlusIcon className="size-3.5" />
                           )}
-                          {accounts.length === 0
-                            ? isApiKey
-                              ? "Add API key"
-                              : "Add account"
-                            : "Add another"}
+                          {/* xAI's second button is ALWAYS the key path —
+                              "Add another" next to "Add another" said
+                              nothing about the difference (Befund F9). */}
+                          {provider === "xai"
+                            ? "Add API key"
+                            : accounts.length === 0
+                              ? isApiKey
+                                ? "Add API key"
+                                : "Add account"
+                              : "Add another"}
                         </Button>
                       </span>
                     </div>
@@ -728,7 +733,7 @@ export function WorkjetGatewayAccountsSectionView(
                                 catalog and a different figure entirely.
                               */}
                               {account.modelIds.length > 0
-                                ? `${account.modelIds.length} ${account.modelIds.length === 1 ? "model" : "models"} recorded · `
+                                ? `${account.modelIds.length} ${account.modelIds.length === 1 ? "model pattern" : "model patterns"} recorded · `
                                 : ""}
                               {gatewayAccountRotationLabel(state.catalog, account) ??
                                 (account.enabled ? "Enabled" : "Disabled")}

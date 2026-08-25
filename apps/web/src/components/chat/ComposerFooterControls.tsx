@@ -199,7 +199,23 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
         {props.manualTargetControls ?? null}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-1">
-        {props.traitsPicker ?? null}
+        {props.traitsPicker ??
+          (props.workerMode ? null : (
+            // Row 2 begins with the Effort slot; a model without effort
+            // metadata used to erase the chip entirely, which read as a
+            // broken bar (Befund F5). A disabled placeholder keeps the
+            // layout stable and says why.
+            <Tooltip>
+              <TooltipTrigger
+                render={<ComposerControl aria-label="Effort" disabled type="button" />}
+              >
+                Effort —
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                This model does not expose an effort setting on this harness
+              </TooltipPopup>
+            </Tooltip>
+          ))}
         {props.systemPromptControl ?? null}
         <ComposerFooterModeControls
           showInteractionModeToggle={props.showInteractionModeToggle}

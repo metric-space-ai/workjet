@@ -169,6 +169,12 @@ interface CtoxModeContextValue {
   readonly appRailVersion: number;
   /** The guest host reports its latest bounds for app-open activations. */
   readonly reportGuestBounds: (bounds: CtoxGuestBounds) => void;
+  /**
+   * Workspace names reported by listApps, shared so the TOPBAR shows the same
+   * identity as the sidebar card — they diverged before (Befund K-B9).
+   */
+  readonly workspaceNames: ReadonlyMap<string, string>;
+  readonly reportWorkspaceName: (instanceId: string, name: string) => void;
 }
 
 const CtoxModeContext = createContext<CtoxModeContextValue | null>(null);
@@ -755,6 +761,16 @@ export function CtoxModeProvider({
     };
   }, [bridge, refresh]);
 
+  const [workspaceNames, setWorkspaceNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const reportWorkspaceName = useCallback((instanceId: string, name: string) => {
+    setWorkspaceNames((current) => {
+      if (current.get(instanceId) === name) return current;
+      const next = new Map(current);
+      next.set(instanceId, name);
+      return next;
+    });
+  }, []);
+
   const value = useMemo<CtoxModeContextValue>(
     () => ({
       discovery,
@@ -779,6 +795,8 @@ export function CtoxModeProvider({
       setAppDocked,
       appRailVersion,
       reportGuestBounds,
+      workspaceNames,
+      reportWorkspaceName,
     }),
     [
       activationKey,
@@ -802,6 +820,8 @@ export function CtoxModeProvider({
       select,
       selectedId,
       setAppDocked,
+      workspaceNames,
+      reportWorkspaceName,
     ],
   );
 
@@ -1257,6 +1277,7 @@ function CtoxInstanceCard({
 }) {
   const { selectedId, connection, guestStates, select } = useCtoxMode();
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const { reportWorkspaceName } = useCtoxMode();
   // Collapse is per-card UI state (defect 16): the chevron folds the app tree
   // without touching the selection; selecting always re-expands.
   const [collapsed, setCollapsed] = useState(false);
@@ -1352,7 +1373,10 @@ function CtoxInstanceCard({
         <CtoxInstanceAppRail
           instance={instance}
           launchable={launchable}
-          onWorkspaceName={setWorkspaceName}
+          onWorkspaceName={(name) => {
+            setWorkspaceName(name);
+            reportWorkspaceName(instance.id, name);
+          }}
         />
       )}
     </div>
@@ -2216,7 +2240,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 }
 
 export function CtoxMainShell() {
-  const { discovery, selectedId, connection, guestStates } = useCtoxMode();
+  const { discovery, selectedId, connection, guestStates, workspaceNames } = useCtoxMode();
   const selected =
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find(
@@ -2270,7 +2294,9 @@ export function CtoxMainShell() {
           )}
         >
           <span className="text-xs font-medium text-muted-foreground/60 wco:pr-[var(--workspace-native-controls-inset)]">
-            {selected === undefined ? "CTOX" : selected.displayName}
+            {selected === undefined
+              ? "CTOX"
+              : (workspaceNames.get(selected.id) ?? selected.displayName)}
           </span>
           {selected !== undefined ? (
             <span className="ml-auto text-xs text-muted-foreground" role="status">

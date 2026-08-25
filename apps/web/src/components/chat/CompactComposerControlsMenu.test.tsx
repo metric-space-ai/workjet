@@ -59,7 +59,8 @@ describe("CompactComposerControlsMenu", () => {
     const text = textContent(menu);
     expect(text).toContain("Mode");
     expect(text).toContain("Plan");
-    expect(text).toContain("Chat");
+    // "Build" matches the wide toggle now — same state, same word (K-A4).
+    expect(text).toContain("Build");
     // Permission is ALWAYS full (operator rule): no Access group exists.
     expect(text).not.toContain("Access");
   });

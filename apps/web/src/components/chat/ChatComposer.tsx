@@ -1225,6 +1225,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       new Set<string>(
         providerInstanceEntries
           .filter((entry) => lockedProvider === null || entry.driverKind === lockedProvider)
+          // A product-disabled instance (Cursor: "not offered for new
+          // sessions") must not look pickable — its menu entry was clickable
+          // with zero effect (Befund F4). Filtered here, the harness option
+          // renders disabled with its reason instead.
+          .filter((entry) => entry.enabled)
           .map((entry) => entry.instanceId),
       ),
     [lockedProvider, providerInstanceEntries],

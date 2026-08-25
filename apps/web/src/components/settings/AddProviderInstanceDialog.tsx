@@ -93,11 +93,9 @@ const COMING_SOON_DRIVER_OPTIONS: readonly ComingSoonDriverOption[] = [
     label: "ACP Registry",
     icon: ACPRegistryIcon,
   },
-  {
-    value: ProviderDriverKind.make("piAgent"),
-    label: "Pi Agent",
-    icon: PiAgentIcon,
-  },
+  // Pi is NOT coming soon: Pi Code is already listed as a usable runtime on
+  // the Harnesses page. Advertising it here again — under a second name with
+  // a second icon — split one product into two brands (Befund K-B7).
 ];
 
 /**

@@ -5,6 +5,10 @@ import { UsersRoundIcon } from "lucide-react";
 import { ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  workjetHarnessDisplayLabel,
+  workjetReasoningDisplayLabel,
+} from "../settings/WorkjetWorkerEditor";
 
 /**
  * Picking a saved Workjet worker for the next turn — the bar's leftmost
@@ -119,7 +123,11 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
                 <span className="font-medium text-foreground">{worker.name}</span>
                 {/* The bundle the choice settles, so picking is not blind. */}
                 <span className="truncate text-xs leading-4 text-muted-foreground">
-                  {[worker.harness, worker.modelId, worker.reasoning].join(" · ")}
+                  {[
+                    workjetHarnessDisplayLabel(worker.harness),
+                    worker.modelId,
+                    workjetReasoningDisplayLabel(worker.reasoning),
+                  ].join(" · ")}
                 </span>
               </div>
             </SelectItem>

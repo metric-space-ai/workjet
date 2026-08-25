@@ -22,6 +22,16 @@ import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
 import { Textarea } from "../ui/textarea";
 
+/** Display name for a harness id — raw slugs kept leaking into lists (K-A11). */
+export function workjetHarnessDisplayLabel(harness: string): string {
+  return WORKJET_HARNESS_OPTIONS.find((option) => option.id === harness)?.label ?? harness;
+}
+
+/** Display name for a reasoning id ("xhigh" → "Extra high"), same reason. */
+export function workjetReasoningDisplayLabel(reasoning: string): string {
+  return REASONING_OPTIONS.find((option) => option.id === reasoning)?.label ?? reasoning;
+}
+
 export const WORKJET_HARNESS_OPTIONS: ReadonlyArray<{
   readonly id: WorkjetHarness;
   readonly label: string;

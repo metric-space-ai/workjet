@@ -83,9 +83,10 @@ describe("the bar's leftmost decision", () => {
     // One choice settles harness, model and effort; the menu says which.
     const text = menuText();
 
-    expect(text).toContain("claude-code");
+    // Display labels, not slugs (K-A11).
+    expect(text).toContain("Claude Code");
     expect(text).toContain("gpt-5.6-sol");
-    expect(text).toContain("high");
+    expect(text).toContain("High");
   });
 
   it("points somewhere when nothing is saved yet", () => {

@@ -596,8 +596,11 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
                       return (
                         <div key={`models-${String(member.accountId)}`} className="space-y-1">
                           <label htmlFor={id} className="block text-xs text-muted-foreground">
-                            Model ids this account serves — the gateway has no catalog for this
-                            provider, so it can serve nothing until they are listed.
+                            {/* The warning applies to an EMPTY list; with ids
+                                present it read as a standing error (F13). */}
+                            {memberDraft.models.trim().length > 0
+                              ? "Model ids this account serves (no provider catalog — this list is authoritative)."
+                              : "Model ids this account serves — the gateway has no catalog for this provider, so it can serve nothing until they are listed."}
                           </label>
                           <input
                             id={id}

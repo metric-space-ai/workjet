@@ -42,7 +42,12 @@ import { toastManager } from "../ui/toast";
 import type { WorkjetEnvironmentTargetOption } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
-import { WorkjetWorkerEditor, workjetHarnessAvailabilityWarning } from "./WorkjetWorkerEditor";
+import {
+  workjetHarnessDisplayLabel,
+  workjetReasoningDisplayLabel,
+  WorkjetWorkerEditor,
+  workjetHarnessAvailabilityWarning,
+} from "./WorkjetWorkerEditor";
 import {
   ConfirmingDeleteButton,
   SettingsPageContainer,
@@ -797,7 +802,7 @@ export function WorkjetSettingsView({
                 <Fragment key={worker.id}>
                   <SettingsRow
                     title={worker.name}
-                    description={`${computer?.label ?? "Missing computer"} · ${worker.harness} · ${route?.label ?? "Missing route"} · ${worker.modelId}`}
+                    description={`${computer?.label ?? "Missing computer"} · ${workjetHarnessDisplayLabel(worker.harness)} · ${route?.label ?? "Missing route"} · ${worker.modelId}`}
                     status={warning ? <span role="alert">{warning}</span> : undefined}
                     control={
                       <ItemActions
@@ -875,87 +880,110 @@ export function WorkjetSettingsView({
               description="Each worker's own instructions, appended to the shared rules above when Workjet composes its prompt."
             >
               <div className="mt-2 space-y-2 pb-3.5">
-                {configuration.workerProfiles.map((worker) => (
-                  <div key={worker.id} className="rounded-lg bg-muted/25 p-2.5">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                      <span className="text-xs font-medium text-foreground">{worker.name}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {[
-                          worker.modelId,
-                          worker.harness,
-                          configuration.computers.find(
-                            (computer) => computer.id === worker.computerId,
-                          )?.label ?? "unknown computer",
-                          worker.reasoning,
-                        ].join(" · ")}
-                      </span>
-                    </div>
-                    {/* Model rules — the Swift page's "MODELL · …" block:
+                {configuration.workerProfiles.map((worker, workerIndex) => {
+                  // The rules are stored PER MODEL — two workers on the same
+                  // model used to render the same stored field as two editors
+                  // (Befund K-A13). Only the first occurrence edits; later
+                  // ones point up.
+                  const firstWithModel = configuration.workerProfiles.findIndex(
+                    (candidate) => candidate.modelId === worker.modelId,
+                  );
+                  const modelRulesEditorHere = firstWithModel === workerIndex;
+                  const modelRulesOwner = modelRulesEditorHere
+                    ? null
+                    : configuration.workerProfiles[firstWithModel];
+                  return (
+                    <div key={worker.id} className="rounded-lg bg-muted/25 p-2.5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                        <span className="text-xs font-medium text-foreground">{worker.name}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {[
+                            worker.modelId,
+                            workjetHarnessDisplayLabel(worker.harness),
+                            configuration.computers.find(
+                              (computer) => computer.id === worker.computerId,
+                            )?.label ?? "unknown computer",
+                            workjetReasoningDisplayLabel(worker.reasoning),
+                          ].join(" · ")}
+                        </span>
+                      </div>
+                      {/* Model rules — the Swift page's "MODELL · …" block:
                         guidance shared by every worker on this model, edited
                         here per model (changing it changes it for all of
                         them) and prepended to the task at dispatch. */}
-                    <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                      Model rules · {worker.modelId}
-                    </div>
-                    <Textarea
-                      key={`${worker.id}-model-${modelPromptFor(configuration, worker.modelId)}`}
-                      defaultValue={modelPromptFor(configuration, worker.modelId)}
-                      rows={Math.min(
-                        8,
-                        Math.max(
-                          2,
-                          modelPromptFor(configuration, worker.modelId).split("\n").length,
-                        ),
+                      <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                        Model rules · {worker.modelId}
+                      </div>
+                      {modelRulesEditorHere ? null : (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Shared with {modelRulesOwner?.name ?? "the worker above"} — edit them
+                          there.
+                        </p>
                       )}
-                      aria-label={`Model rules for ${worker.modelId}`}
-                      placeholder="No model rules — shared guidance for every worker on this model."
-                      className="mt-1 text-[12px]"
-                      onBlur={(event) => {
-                        const prompt = event.target.value;
-                        if (prompt === modelPromptFor(configuration, worker.modelId)) return;
-                        const rest = configuration.modelPrompts.filter(
-                          (entry) => entry.modelId !== worker.modelId,
-                        );
-                        onChange({
-                          ...configuration,
-                          modelPrompts:
-                            prompt.trim() === ""
-                              ? rest
-                              : [...rest, { modelId: worker.modelId, prompt }],
-                        });
-                      }}
-                    />
-                    <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                      Worker task
-                    </div>
-                    {/* Editable in place, like the Swift page's per-worker
+                      {!modelRulesEditorHere ? null : (
+                        <Textarea
+                          key={`${worker.id}-model-${modelPromptFor(configuration, worker.modelId)}`}
+                          defaultValue={modelPromptFor(configuration, worker.modelId)}
+                          rows={Math.min(
+                            8,
+                            Math.max(
+                              2,
+                              modelPromptFor(configuration, worker.modelId).split("\n").length,
+                            ),
+                          )}
+                          aria-label={`Model rules for ${worker.modelId}`}
+                          placeholder="No model rules — shared guidance for every worker on this model."
+                          className="mt-1 text-[12px]"
+                          onBlur={(event) => {
+                            const prompt = event.target.value;
+                            if (prompt === modelPromptFor(configuration, worker.modelId)) return;
+                            const rest = configuration.modelPrompts.filter(
+                              (entry) => entry.modelId !== worker.modelId,
+                            );
+                            onChange({
+                              ...configuration,
+                              modelPrompts:
+                                prompt.trim() === ""
+                                  ? rest
+                                  : [...rest, { modelId: worker.modelId, prompt }],
+                            });
+                          }}
+                        />
+                      )}
+                      <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                        Worker task
+                      </div>
+                      {/* Editable in place, like the Swift page's per-worker
                         Bearbeiten: the task is prompt text, and the prompt
                         page is where prompt text is edited. Saved on blur into
                         the worker profile — same field the worker editor
                         writes, one storage, two doors. */}
-                    <Textarea
-                      key={`${worker.id}-${worker.instructions ?? ""}`}
-                      defaultValue={worker.instructions ?? ""}
-                      rows={Math.min(
-                        10,
-                        Math.max(2, (worker.instructions ?? "").split("\n").length),
-                      )}
-                      aria-label={`Task for worker ${worker.name}`}
-                      placeholder="No task set — describe what this worker takes on."
-                      className="mt-1 text-[12px]"
-                      onBlur={(event) => {
-                        const instructions = event.target.value;
-                        if (instructions === (worker.instructions ?? "")) return;
-                        onChange({
-                          ...configuration,
-                          workerProfiles: configuration.workerProfiles.map((candidate) =>
-                            candidate.id === worker.id ? { ...candidate, instructions } : candidate,
-                          ),
-                        });
-                      }}
-                    />
-                  </div>
-                ))}
+                      <Textarea
+                        key={`${worker.id}-${worker.instructions ?? ""}`}
+                        defaultValue={worker.instructions ?? ""}
+                        rows={Math.min(
+                          10,
+                          Math.max(2, (worker.instructions ?? "").split("\n").length),
+                        )}
+                        aria-label={`Task for worker ${worker.name}`}
+                        placeholder="No task set — describe what this worker takes on."
+                        className="mt-1 text-[12px]"
+                        onBlur={(event) => {
+                          const instructions = event.target.value;
+                          if (instructions === (worker.instructions ?? "")) return;
+                          onChange({
+                            ...configuration,
+                            workerProfiles: configuration.workerProfiles.map((candidate) =>
+                              candidate.id === worker.id
+                                ? { ...candidate, instructions }
+                                : candidate,
+                            ),
+                          });
+                        }}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </SettingsRow>
           )}

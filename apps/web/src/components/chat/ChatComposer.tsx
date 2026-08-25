@@ -3571,6 +3571,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           mismatchNote={composerComputerMismatchNote}
                           onSelectComputer={handleSelectComposerComputer}
                           onAddComputer={() => {
+                            try {
+                              window.sessionStorage.setItem("workjet-computer-create", "1");
+                            } catch {
+                              // Without storage the page still opens.
+                            }
                             window.location.hash = "#/settings/computers";
                           }}
                         />

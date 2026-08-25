@@ -25,7 +25,7 @@ import {
   TriangleAlertIcon,
   WrenchIcon,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
@@ -661,8 +661,27 @@ export function WorkjetSettingsView({
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
     () => workjetSectionFromHash(locationHash) ?? defaultSection,
   );
-  const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
-  const [addingWorker, setAddingWorker] = useState(false);
+  // A stashed draft means the operator left via "Add LLM route…" and came
+  // back — reopen the editor they were in so the stash gets consumed (K-A7).
+  const stashedWorkerEditor = useMemo(() => {
+    try {
+      for (let index = 0; index < window.sessionStorage.length; index += 1) {
+        const key = window.sessionStorage.key(index);
+        if (key?.startsWith("workjet-worker-draft:")) {
+          return key.slice("workjet-worker-draft:".length);
+        }
+      }
+    } catch {
+      // Blocked storage: nothing to restore.
+    }
+    return null;
+    // Read once per mount on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [editingWorkerId, setEditingWorkerId] = useState<string | null>(
+    stashedWorkerEditor !== null && stashedWorkerEditor !== "new" ? stashedWorkerEditor : null,
+  );
+  const [addingWorker, setAddingWorker] = useState(stashedWorkerEditor === "new");
   const promptSections = splitManagedPrompt(configuration.managedSystemPrompt);
   const editingWorker =
     configuration.workerProfiles.find((worker) => worker.id === editingWorkerId) ?? null;
@@ -720,7 +739,19 @@ export function WorkjetSettingsView({
             reasoning, and capability choices.
           </p>
         </div>
-        <SectionNavigation activeSection={activeSection} onSelect={setActiveSection} />
+        <SectionNavigation
+          activeSection={activeSection}
+          onSelect={(section) => {
+            setActiveSection(section);
+            // Keep the URL truthful: after a hash-deep-link the tab click used
+            // to leave the OLD anchor in the address bar, so a reload landed
+            // on the wrong tab (Befund K-A15b).
+            const target = WORKJET_SETTINGS_SECTIONS.find((entry) => entry.id === section);
+            if (target !== undefined) {
+              window.history.replaceState(window.history.state, "", `#${target.targetId}`);
+            }
+          }}
+        />
       </div>
 
       {activeSection === "workers" ? (

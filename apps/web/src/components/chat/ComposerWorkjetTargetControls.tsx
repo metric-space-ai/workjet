@@ -650,10 +650,6 @@ export interface ComposerWorkjetCompactMenuContentProps {
   readonly selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
   readonly computerDisabledReason: string | null;
   readonly onSelectComputer: (computerId: string) => void;
-  /** Accepted for call-site symmetry with the wide control; the compact
-      overflow menu offers no add entry (navigation from inside a nested
-      menu closes over the draft state mid-gesture). */
-  readonly onAddComputer?: (() => void) | undefined;
   /**
    * Manual-mode Harness and Model choices for the compact menu. Without
    * them, narrow windows silently fell back to the retired provider picker

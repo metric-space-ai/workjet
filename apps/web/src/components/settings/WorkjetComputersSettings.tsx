@@ -59,7 +59,19 @@ export function WorkjetComputersSettingsView({
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
-  const [addingComputer, setAddingComputer] = useState(false);
+  const [addingComputer, setAddingComputer] = useState(() => {
+    // Set by the composer's "+ Add computer…" entry: arriving here should
+    // open the create editor, not just the list (Befund F8).
+    try {
+      if (window.sessionStorage.getItem("workjet-computer-create") !== null) {
+        window.sessionStorage.removeItem("workjet-computer-create");
+        return true;
+      }
+    } catch {
+      // Blocked storage: plain list.
+    }
+    return false;
+  });
   const editingComputer =
     configuration.computers.find((computer) => computer.id === editingComputerId) ?? null;
   const computerEditor = (

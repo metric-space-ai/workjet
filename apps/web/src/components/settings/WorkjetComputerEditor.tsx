@@ -173,6 +173,7 @@ export function WorkjetComputerEditor({
 
   return (
     <form
+      data-settings-inline-editor=""
       className="space-y-4 rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4"
       aria-label={computer ? `Edit computer ${computer.label}` : "Add computer"}
       onSubmit={(event) => {

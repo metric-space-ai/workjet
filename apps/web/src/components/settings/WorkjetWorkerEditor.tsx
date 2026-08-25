@@ -233,7 +233,23 @@ export function WorkjetWorkerEditor({
   /** Opens the place where an access is created. Optional so existing callers keep working. */
   readonly onAddRoute?: (() => void) | undefined;
 }) {
-  const [draft, setDraft] = useState(() => createWorkjetWorkerDraft({ worker, computers, routes }));
+  const [draft, setDraft] = useState(() => {
+    // "Add LLM route…" navigates AWAY to the Models page; without this stash
+    // every typed field died with the unmount (Befund K-A7). The stash is
+    // per-worker-identity, read once, and cleared immediately.
+    const stashKey = `workjet-worker-draft:${worker?.id ?? "new"}`;
+    try {
+      const raw = window.sessionStorage.getItem(stashKey);
+      if (raw !== null) {
+        window.sessionStorage.removeItem(stashKey);
+        const stashed = JSON.parse(raw) as Partial<WorkjetWorkerDraft>;
+        return { ...createWorkjetWorkerDraft({ worker, computers, routes }), ...stashed };
+      }
+    } catch {
+      // Blocked storage falls back to a fresh draft.
+    }
+    return createWorkjetWorkerDraft({ worker, computers, routes });
+  });
   const [error, setError] = useState<string | null>(null);
   const warning = useMemo(
     () => workjetHarnessAvailabilityWarning(draft, computers),
@@ -253,6 +269,7 @@ export function WorkjetWorkerEditor({
 
   return (
     <form
+      data-settings-inline-editor=""
       className="space-y-4 rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4"
       aria-label={worker ? `Edit worker ${worker.name}` : "Add worker"}
       onSubmit={(event) => {
@@ -310,7 +327,18 @@ export function WorkjetWorkerEditor({
             size="sm"
             variant="ghost"
             className="h-7 px-2 text-xs"
-            onClick={() => onAddRoute?.()}
+            onClick={() => {
+              try {
+                window.sessionStorage.setItem(
+                  `workjet-worker-draft:${worker?.id ?? "new"}`,
+                  JSON.stringify(draft),
+                );
+              } catch {
+                // Without storage the navigation still works; only the
+                // stash is lost.
+              }
+              onAddRoute?.();
+            }}
           >
             <PlusIcon className="size-3.5" />
             Add LLM route…

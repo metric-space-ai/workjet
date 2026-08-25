@@ -11,6 +11,7 @@ import { searchableSetting } from "./settingsSearch";
 import { ConfirmingDeleteButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { WorkjetGatewayModelRoutes } from "./WorkjetGatewayModelRoutes";
 import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
+import { toastManager } from "../ui/toast";
 
 /**
  * LLM routes, ON THE MODELS PAGE.
@@ -68,6 +69,13 @@ export function WorkjetLlmRoutesSection(props: {
           });
           setAddingRoute(false);
           setEditingRouteId(null);
+          // Same reason as the worker save: the saved row may sit below the
+          // fold, so the viewport needs evidence (Befund K-A14).
+          toastManager.add({
+            type: "success",
+            title: "LLM route saved",
+            description: route.label,
+          });
         }}
       />
     </div>

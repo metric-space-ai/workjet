@@ -85,6 +85,13 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           // The menu's own escape hatch: with nothing saved yet, the control
           // would otherwise be a dropdown with one entry and no way forward.
           if (value === "__configure__") {
+            // An empty stash makes the Worker page open its create editor on
+            // arrival — the jump used to land on the bare list (Befund F8).
+            try {
+              window.sessionStorage.setItem("workjet-worker-draft:new", "{}");
+            } catch {
+              // Without storage the navigation still lands on the page.
+            }
             props.onOpenWorkjetSettings();
             return;
           }

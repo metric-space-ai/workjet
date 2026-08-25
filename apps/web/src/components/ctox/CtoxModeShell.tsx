@@ -1811,6 +1811,14 @@ function ManagedAccountState({
  */
 export function CtoxSidebarFooter() {
   const { refresh, refreshing } = useCtoxMode();
+  const [refreshSpinUntil, setRefreshSpinUntil] = useState(0);
+  const [, forceSpinTick] = useState(0);
+  const spinHeld = Date.now() < refreshSpinUntil;
+  useEffect(() => {
+    if (!spinHeld) return;
+    const id = setTimeout(() => forceSpinTick((tick) => tick + 1), refreshSpinUntil - Date.now());
+    return () => clearTimeout(id);
+  }, [refreshSpinUntil, spinHeld]);
   // Resolved leniently so the shell can render outside a RouterProvider
   // (tests, storybook-style harnesses); without a router the Settings button
   // simply has nowhere to go and stays inert.
@@ -1837,9 +1845,14 @@ export function CtoxSidebarFooter() {
             title="Refresh instances"
             aria-busy={refreshing}
             disabled={refreshing}
-            onClick={refresh}
+            onClick={() => {
+              // The refetch can answer in milliseconds, which read as a dead
+              // button (Befund F7) — hold the spinner long enough to be seen.
+              setRefreshSpinUntil(Date.now() + 600);
+              refresh();
+            }}
           >
-            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+            <RefreshCw className={cn((refreshing || spinHeld) && "animate-spin")} aria-hidden />
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -1880,17 +1893,8 @@ export function CtoxSidebarShell() {
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="text-sm font-medium text-sidebar-foreground">CTOX instances</p>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
-                onClick={refresh}
-                disabled={refreshing}
-                aria-busy={refreshing}
-                aria-label="Refresh instances"
-                title="Refresh"
-              >
-                <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} aria-hidden />
-              </button>
+              {/* Refresh lives ONCE, in the footer strip — the second copy
+                  fifteen lines away confused more than it helped (K-B10). */}
               <button
                 type="button"
                 className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"

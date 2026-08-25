@@ -1090,8 +1090,8 @@ describe("CTOX sidebar footer", () => {
     );
     expect(markup).toContain('data-ctox-sidebar-footer=""');
     expect(markup).toContain('aria-label="Settings"');
-    // Header refresh plus the footer's catalog refresh.
-    expect(markup.match(/aria-label="Refresh instances"/gu)?.length).toBe(2);
+    // Refresh lives exactly once — the header duplicate was removed (K-B10).
+    expect(markup.match(/aria-label="Refresh instances"/gu)?.length).toBe(1);
     // Code-mode footer entries whose pages the Business OS surface never
     // renders would be dead icons here and must not appear.
     expect(markup).not.toContain('aria-label="Usage"');

@@ -1,5 +1,6 @@
 package expo.modules.t3nativecontrols
 
+import android.view.WindowManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -31,6 +32,17 @@ class T3NativeControlsModule : Module() {
         ?.filesDir
         ?.resolve("t3-showcase-ready")
         ?.writeText(scene)
+    }
+
+    Function("setBusinessOsContentProtected") { enabled: Boolean ->
+      appContext.currentActivity?.runOnUiThread {
+        val window = appContext.currentActivity?.window ?: return@runOnUiThread
+        if (enabled) {
+          window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+          window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+      }
     }
   }
 }

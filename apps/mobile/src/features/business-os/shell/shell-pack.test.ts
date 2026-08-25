@@ -1,0 +1,86 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import { describe, expect, it } from "vite-plus/test";
+
+import {
+  BUSINESS_OS_SHELL_PACK_TYPE,
+  shellPackSigningPayload,
+  verifyBusinessOsShellPack,
+  type BusinessOsShellPackManifest,
+} from "./shell-pack";
+
+const privateKey = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+const publicKey = ed25519.getPublicKey(privateKey);
+const index = new TextEncoder().encode("<!doctype html><head></head><body>Workjet</body>");
+
+function pack(): { manifest: BusinessOsShellPackManifest; files: Map<string, Uint8Array> } {
+  const files = new Map([["index.html", index]]);
+  const unsigned = {
+    type: BUSINESS_OS_SHELL_PACK_TYPE,
+    packId: "shell-test",
+    businessOsRevision: "revision-a",
+    appVersion: "1.2.3",
+    totalSize: index.byteLength,
+    files: [{ path: "index.html", size: index.byteLength, sha256: bytesToHex(sha256(index)) }],
+    signingKeyId: "test-key",
+  } as const;
+  return {
+    manifest: {
+      ...unsigned,
+      signature: bytesToHex(ed25519.sign(shellPackSigningPayload(unsigned), privateKey)),
+    },
+    files,
+  };
+}
+
+function verify(value = pack()) {
+  return verifyBusinessOsShellPack({
+    ...value,
+    publicKeys: new Map([["test-key", publicKey]]),
+    expectedAppVersion: "1.2.3",
+    expectedBusinessOsRevision: "revision-a",
+  });
+}
+
+describe("Business OS shell pack", () => {
+  it("accepts a complete, signed, exactly compatible pack", () => {
+    expect(verify().packId).toBe("shell-test");
+  });
+
+  it("rejects hash, signature, revision and completeness failures", () => {
+    const hashFailure = pack();
+    hashFailure.files.set("index.html", new TextEncoder().encode("tampered"));
+    expect(() => verify(hashFailure)).toThrowError(expect.objectContaining({ code: "hash" }));
+
+    const signatureFailure = pack();
+    signatureFailure.manifest = { ...signatureFailure.manifest, signature: "00".repeat(64) };
+    expect(() => verify(signatureFailure)).toThrowError(
+      expect.objectContaining({ code: "signature" }),
+    );
+
+    const revisionFailure = pack();
+    expect(() =>
+      verifyBusinessOsShellPack({
+        ...revisionFailure,
+        publicKeys: new Map([["test-key", publicKey]]),
+        expectedAppVersion: "1.2.3",
+        expectedBusinessOsRevision: "revision-b",
+      }),
+    ).toThrowError(expect.objectContaining({ code: "revision" }));
+
+    const extraFailure = pack();
+    extraFailure.files.set("undeclared.js", new Uint8Array());
+    expect(() => verify(extraFailure)).toThrowError(
+      expect.objectContaining({ code: "completeness" }),
+    );
+  });
+
+  it("rejects traversal and packs without an index", () => {
+    const value = pack();
+    const unsafe = { ...value.manifest.files[0]!, path: "../index.html" };
+    expect(() =>
+      verify({ ...value, manifest: { ...value.manifest, files: [unsafe] } }),
+    ).toThrowError(expect.objectContaining({ code: "path" }));
+  });
+});

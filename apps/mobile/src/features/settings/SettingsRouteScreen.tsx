@@ -539,6 +539,7 @@ function WorkjetModeSettingsSection() {
         value={workjetModeLabel(mode)}
         onPress={() => setMode(nextMode)}
       />
+      <SettingsRow icon="qrcode" label="Business OS verbinden" target="SettingsBusinessOs" />
     </SettingsSection>
   );
 }

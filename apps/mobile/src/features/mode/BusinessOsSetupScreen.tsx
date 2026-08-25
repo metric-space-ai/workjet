@@ -1,8 +1,9 @@
-import { Pressable, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { BrandMark } from "../../components/BrandMark";
+import { BusinessOsSettingsPanel } from "../business-os/components/BusinessOsSettingsPanel";
 import { useWorkjetMode } from "./WorkjetModeProvider";
 
 export function BusinessOsSetupScreen() {
@@ -25,7 +26,12 @@ export function BusinessOsSetupScreen() {
         </View>
       </View>
 
-      <View className="flex-1 justify-center gap-5 self-center w-full max-w-[680px]">
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="w-full max-w-[960px] self-center gap-5 py-8"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) + 20 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View className="gap-2">
           <Text className="text-3xl font-t3-bold text-foreground">Connect a CTOX Backend</Text>
           <Text className="max-w-[560px] text-base leading-normal text-foreground-muted">
@@ -35,13 +41,7 @@ export function BusinessOsSetupScreen() {
         </View>
 
         <View className="gap-3">
-          <View className="rounded-[24px] border-continuous bg-card p-5">
-            <Text className="text-base font-t3-bold text-foreground">Pairing arrives next</Text>
-            <Text className="mt-1 text-sm leading-normal text-foreground-muted">
-              The next Mobile slice adds secure QR scanning, backend selection and the Business OS
-              shell. Signaling credentials will not require manual entry.
-            </Text>
-          </View>
+          <BusinessOsSettingsPanel />
           <Pressable
             accessibilityRole="button"
             onPress={() => setMode("code")}
@@ -50,7 +50,7 @@ export function BusinessOsSetupScreen() {
             <Text className="text-base font-t3-bold text-primary-foreground">Return to Code</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }

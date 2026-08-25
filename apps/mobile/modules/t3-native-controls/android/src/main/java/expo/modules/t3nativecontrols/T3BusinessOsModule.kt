@@ -288,7 +288,10 @@ private fun isValidHostCommand(raw: String): Boolean {
   return when (value.optString("type")) {
     "host.configure" -> value.hasOnlyKeys(setOf("protocol", "type", "platform", "windowClass", "colorScheme", "reducedMotion", "locale"))
     "catalog.request", "navigation.back" -> value.hasOnlyKeys(setOf("protocol", "type"))
-    "app.open", "app.close", "app.suspend", "app.resume" -> value.hasOnlyKeys(setOf("protocol", "type", "appId"))
+    "app.open", "app.close", "app.suspend", "app.resume" ->
+      value.hasOnlyKeys(setOf("protocol", "type", "appId")) &&
+        boundedNotificationToken(value.optString("appId"), 128) != null &&
+        value.optString("appId") != "desktop"
     "action.invoke" -> value.hasOnlyKeys(setOf("protocol", "type", "appId", "actionId"))
     else -> false
   }

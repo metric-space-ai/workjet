@@ -1,5 +1,18 @@
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
+  dependencies {
+    // Expo SDK 56 pins Kotlin 2.1.20 for the generated Android host.
+    classpath 'org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:2.1.20'
+  }
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 group = 'com.t3tools.nativecontrols'
 version = '0.0.0'
@@ -12,9 +25,20 @@ android {
     minSdkVersion rootProject.ext.minSdkVersion
     targetSdkVersion rootProject.ext.targetSdkVersion
   }
+
+  buildFeatures {
+    compose true
+  }
 }
 
 dependencies {
   implementation project(':expo-modules-core')
   implementation 'androidx.webkit:webkit:1.13.0'
+  implementation platform('androidx.compose:compose-bom:2026.08.00')
+  implementation 'androidx.activity:activity-compose'
+  implementation 'androidx.compose.foundation:foundation'
+  implementation 'androidx.compose.material3:material3'
+  implementation 'androidx.compose.ui:ui'
+  implementation 'androidx.compose.ui:ui-tooling-preview'
+  debugImplementation 'androidx.compose.ui:ui-tooling'
 }

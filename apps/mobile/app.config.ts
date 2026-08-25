@@ -327,12 +327,17 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         ios: {
-          deploymentTarget: "18.0",
+          deploymentTarget: "26.0",
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.
           extraPods: [
             { name: "GoogleUtilities", modular_headers: true },
             { name: "RecaptchaInterop", modular_headers: true },
           ],
+        },
+        android: {
+          minSdkVersion: 37,
+          compileSdkVersion: 37,
+          targetSdkVersion: 37,
         },
       },
     ],

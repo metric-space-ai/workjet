@@ -17,6 +17,41 @@ import {
 } from "./business-os-home-layout";
 import { BusinessOsAppIcon } from "./BusinessOsAppIcon";
 import { BusinessOsPlatformDock, BusinessOsPlatformHeader } from "./BusinessOsPlatformChrome";
+import { resolveNativeBusinessOsLauncher } from "./native-business-os-launcher";
+
+const NativeBusinessOsLauncher = resolveNativeBusinessOsLauncher();
+
+function nativeCatalogJson(apps: readonly BusinessOsMobileAppDescriptor[]): string {
+  return JSON.stringify({
+    apps: apps.map(
+      ({
+        id,
+        title,
+        category,
+        iconAssetId,
+        iconFamilyVersion,
+        iconRequired,
+        accent,
+        mobilePresentation,
+        phoneReady,
+        tabletReady,
+        desktopOnly,
+      }) => ({
+        id,
+        title,
+        category,
+        iconAssetId,
+        iconFamilyVersion,
+        iconRequired,
+        accent,
+        mobilePresentation,
+        phoneReady,
+        tabletReady,
+        ...(desktopOnly ? { desktopOnly: true } : {}),
+      }),
+    ),
+  });
+}
 
 function FolderIcon(props: {
   readonly item: Extract<BusinessOsHomeItem, { readonly kind: "folder" }>;
@@ -51,7 +86,7 @@ function FolderIcon(props: {
   );
 }
 
-export function BusinessOsHomeDesk(props: {
+type BusinessOsHomeDeskProps = {
   readonly instance: BusinessOsInstance;
   readonly apps: readonly BusinessOsMobileAppDescriptor[];
   readonly layout: BusinessOsHomeLayout;
@@ -62,7 +97,38 @@ export function BusinessOsHomeDesk(props: {
   readonly onOpenRecents: () => void;
   readonly onOpenSettings: () => void;
   readonly onReturnToCode: () => void;
-}) {
+};
+
+export function BusinessOsHomeDesk(props: BusinessOsHomeDeskProps) {
+  if (NativeBusinessOsLauncher) {
+    return (
+      <NativeBusinessOsLauncher
+        style={{ flex: 1 }}
+        instanceName={props.instance.displayName}
+        catalogJson={nativeCatalogJson(props.apps)}
+        layoutJson={JSON.stringify(props.layout)}
+        badgesJson={JSON.stringify(Object.fromEntries(props.badges))}
+        onOpenApp={(event) => {
+          const app = props.apps.find((candidate) => candidate.id === event.nativeEvent.appId);
+          if (app && app.id !== "desktop") props.onOpenApp(app);
+        }}
+        onOpenSearch={props.onOpenSearch}
+        onOpenRecents={props.onOpenRecents}
+        onOpenSettings={props.onOpenSettings}
+        onReturnToCode={props.onReturnToCode}
+        onLayoutChange={(event) => {
+          const { pageIndex, sourceIndex, targetIndex } = event.nativeEvent;
+          props.onLayoutChange(
+            moveBusinessOsHomeItem({ layout: props.layout, pageIndex, sourceIndex, targetIndex }),
+          );
+        }}
+      />
+    );
+  }
+  return <BusinessOsHomeDeskFallback {...props} />;
+}
+
+function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
   const { width, height } = useWindowDimensions();
   const grid = businessOsHomeGrid({ width, height });
   const pageWidth = width;

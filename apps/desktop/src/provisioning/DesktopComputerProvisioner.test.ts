@@ -23,4 +23,41 @@ describe("DesktopComputerProvisioner helpers", () => {
       workjet_version: "1.2.3=stable",
     });
   });
+
+  it("requires the tools used by the POSIX installer before provisioning", () => {
+    expect(testing.posixPreflightScript).toContain("for tool in curl python3 bash mktemp");
+    expect(testing.posixPreflightScript).toContain(
+      'if [ "$platform" = Linux ] && ! command -v install',
+    );
+    expect(testing.posixPreflightScript).toContain("missing_tools=");
+  });
+
+  it("accepts local Windows administrators through UAC but requires elevated remote SSH", () => {
+    const filteredAdministrator = new Map([
+      ["admin", "false"],
+      ["admin_member", "true"],
+    ]);
+    expect(testing.administratorCapability(filteredAdministrator, "windows", true)).toEqual({
+      capable: true,
+      elevationRequired: true,
+    });
+    expect(testing.administratorCapability(filteredAdministrator, "windows", false)).toEqual({
+      capable: false,
+      elevationRequired: false,
+    });
+    expect(testing.windowsPreflightScript).toContain("S-1-5-32-544");
+    expect(testing.windowsPreflightScript).not.toContain("Read-Host");
+    expect(testing.windowsPreflightScript).not.toContain("ConvertTo-SecureString");
+  });
+
+  it("installs a visible Workjet Linux desktop entry with canonical deep-link handlers", () => {
+    expect(testing.linuxDesktopEntry).toContain("Name=Workjet");
+    expect(testing.linuxDesktopEntry).toContain("Exec=/opt/workjet/Workjet.AppImage %U");
+    expect(testing.linuxDesktopEntry).toContain("x-scheme-handler/workjet;");
+    expect(testing.linuxDesktopEntry).not.toContain("CTOX Desktop");
+    expect(testing.linuxDesktopRegistrationScript).toContain(
+      "/usr/local/share/applications/workjet.desktop",
+    );
+    expect(testing.linuxDesktopRegistrationScript).toContain("install -m 0644");
+  });
 });

@@ -1330,3 +1330,40 @@ bei „Runtime wird geladen“, und ein read-only `ctox status` meldete
 `running: false` sowie `autostart_enabled: false`. Der Dienst wurde für das
 UI-Review nicht gestartet. Endzustand ist Business OS mit sichtbarer
 Instanzliste und ohne ausgewählten Guest; der Coding-Draft blieb unverändert.
+
+## Provisioning-V1: Zielwerkzeuge, Linux-Desktop und Windows-UAC — 2026-08-25 ~18:05
+
+Der Rechner-Preflight prüft auf macOS/Linux jetzt vor dem Download auch die
+tatsächlich vom Installer verwendeten Werkzeuge (`curl`, `python3`, `bash`,
+`mktemp`, auf Linux zusätzlich `install`) und nennt fehlende Werkzeuge als
+eigenen typisierten Fehler. Damit endet beispielsweise ein Ziel ohne Python
+nicht mehr erst mitten in der verifizierten Installation.
+
+Die Linux-Installation legt neben AppImage und CLI-Link nun den systemweiten
+Desktop-Eintrag `/usr/local/share/applications/workjet.desktop` an. Er heißt
+sichtbar Workjet, startet das verifizierte AppImage ohne Autostart und
+registriert ausschließlich die kanonischen Workjet-Deep-Link-Schemas; die
+bestehende interne WM-Klasse bleibt für Profilkontinuität unverändert.
+
+Lokales Windows unterscheidet jetzt zwischen einem bereits erhöhten Prozess
+und einem Mitglied der Administratorengruppe mit gefiltertem UAC-Token. Im
+zweiten Fall ist der Preflight erfolgreich, zeigt die bevorstehende
+Windows-UAC-Bestätigung an und startet ausschließlich den laufenden Vorgang per
+`RunAs`; es werden keine Windows-Kennwörter abgefragt oder gespeichert. Ein
+Windows-Ziel über SSH muss weiterhin bereits als Administrator erhöht sein,
+weil Workjet dort keinen vertrauenswürdigen interaktiven UAC-Desktop bedienen
+kann.
+
+BEWEISE OHNE REALE ZIELMUTATION: fokussierte Desktop-Provisioning-Suite 5/5
+und Settings-Komponentensuite 2/2 grün; gezieltes Lint/Format und
+`git diff --check` grün; Contracts-, Desktop- und Web-Typecheck exit 0 (nur
+vorhandene Effect-Suggestions im Desktop-Paket). Reale Clean-Install-,
+Repair-, Update- und Rollback-Proben auf macOS/Linux/Windows sowie gpu3 bleiben
+weiterhin Operator-Trigger und sind nicht als live verifiziert behauptet.
+
+LIVE-SMOKE NACH MAIN-RESTART: Die neu gebaute Workjet-App stellte genau ein
+`t3code://app`-Target bereit, verband sich wieder und listete die vorhandenen
+Managed-/Local-CTOX-Instanzen. Der bestehende Draft `b15d17e7-...` öffnete mit
+Composer und den gespeicherten Manual-/Rechner-/Harness-/Modell-/Workspace-
+Chips. Anschließend wurde der Endzustand wieder auf Business OS ohne geöffneten
+Guest gestellt. Der Installationsknopf wurde nicht ausgelöst.

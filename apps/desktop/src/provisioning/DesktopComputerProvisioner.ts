@@ -3,11 +3,11 @@
 // @effect-diagnostics globalDate:off globalDateInEffect:off -- timestamps are renderer-safe snapshots, not scheduling decisions.
 // @effect-diagnostics anyUnknownInErrorContext:off globalErrorInEffectFailure:off -- heterogeneous OS/SSH failures are sanitized at this boundary.
 // @effect-diagnostics preferSchemaOverJson:off tryCatchInEffectGen:off -- only bounded installer NDJSON events are parsed and normalized.
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import type {
   DesktopSshEnvironmentTarget,
@@ -24,6 +24,7 @@ import type {
 } from "@t3tools/contracts";
 import { isSshAuthFailure } from "@t3tools/ssh/auth";
 import { runSshCommand, targetConnectionKey } from "@t3tools/ssh/command";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -72,7 +73,7 @@ function runLocalCommand(
   timeoutMs = 30_000,
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], {
+    const child = NodeChildProcess.spawn(command, [...args], {
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -134,9 +135,46 @@ function versionValue(values: Map<string, string>, key: string): string | null {
   return value === "" || value === "none" ? null : value.slice(0, 2_048);
 }
 
+function administratorCapability(
+  values: Map<string, string>,
+  platform: "macos" | "linux" | "windows",
+  localTarget: boolean,
+): { readonly capable: boolean; readonly elevationRequired: boolean } {
+  if (booleanValue(values, "admin")) return { capable: true, elevationRequired: false };
+  if (platform === "windows" && localTarget && booleanValue(values, "admin_member"))
+    return { capable: true, elevationRequired: true };
+  return { capable: false, elevationRequired: false };
+}
+
+const LINUX_DESKTOP_ENTRY = `[Desktop Entry]
+Type=Application
+Name=Workjet
+Comment=Workjet Coding and Business OS
+Exec=/opt/workjet/Workjet.AppImage %U
+TryExec=/opt/workjet/Workjet.AppImage
+Icon=applications-development
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=t3code
+MimeType=x-scheme-handler/workjet;x-scheme-handler/workjet-dev;x-scheme-handler/workjet-preview;
+`;
+
+const LINUX_DESKTOP_REGISTRATION_SCRIPT = `if [ "$(uname -s)" = Linux ]; then
+  cat > "$tmp/workjet.desktop" <<'WORKJET_DESKTOP_ENTRY'
+${LINUX_DESKTOP_ENTRY}WORKJET_DESKTOP_ENTRY
+  run_admin mkdir -p /usr/local/share/applications
+  run_admin install -m 0644 "$tmp/workjet.desktop" /usr/local/share/applications/workjet.desktop
+fi`;
+
 const POSIX_PREFLIGHT_SCRIPT = `set -eu
 platform="$(uname -s 2>/dev/null || true)"
 arch="$(uname -m 2>/dev/null || true)"
+tools=true
+missing_tools=""
+for tool in curl python3 bash mktemp; do
+  if ! command -v "$tool" >/dev/null 2>&1; then tools=false; missing_tools="\${missing_tools}\${missing_tools:+, }\${tool}"; fi
+done
+if [ "$platform" = Linux ] && ! command -v install >/dev/null 2>&1; then tools=false; missing_tools="\${missing_tools}\${missing_tools:+, }install"; fi
 internet=false
 if command -v curl >/dev/null 2>&1 && curl -fsSI --max-time 8 '${CTOX_MANIFEST_URL}' >/dev/null 2>&1; then internet=true; fi
 admin=false
@@ -158,17 +196,19 @@ workjet_version=none
 if [ -f /Applications/Workjet.app/Contents/Info.plist ]; then
   workjet_version="$(defaults read /Applications/Workjet.app/Contents/Info CFBundleShortVersionString 2>/dev/null || true)"
 elif command -v workjet >/dev/null 2>&1; then workjet_version="$(workjet --version 2>/dev/null | head -n 1 || true)"; fi
-printf 'platform=%s\narch=%s\ninternet=%s\nadmin=%s\nadmin_password=%s\ngui=%s\nctox_version=%s\nworkjet_version=%s\n' "$platform" "$arch" "$internet" "$admin" "$admin_password" "$gui" "$ctox_version" "$workjet_version"
+printf 'platform=%s\narch=%s\ntools=%s\nmissing_tools=%s\ninternet=%s\nadmin=%s\nadmin_member=%s\nadmin_password=%s\ngui=%s\nctox_version=%s\nworkjet_version=%s\n' "$platform" "$arch" "$tools" "$missing_tools" "$internet" "$admin" "$admin" "$admin_password" "$gui" "$ctox_version" "$workjet_version"
 `;
 
 const WINDOWS_PREFLIGHT_SCRIPT = `$ErrorActionPreference='Stop'
 $isAdmin = ([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$isAdminMember = $isAdmin
+if (-not $isAdminMember) { try { $isAdminMember = ((& (Join-Path $env:SystemRoot 'System32\\whoami.exe') /groups /fo csv /nh | Out-String) -match 'S-1-5-32-544') } catch {} }
 $internet = $false
 try { Invoke-WebRequest -UseBasicParsing -Method Head -TimeoutSec 8 -Uri '${CTOX_MANIFEST_URL}' | Out-Null; $internet = $true } catch {}
 $ctox = 'none'; $ctoxPath = Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; if (Test-Path $ctoxPath) { try { $ctox = (& $ctoxPath --version | Select-Object -First 1) } catch {} }
 $workjet = 'none'; $workjetPath = Join-Path $env:ProgramFiles 'Workjet\\Workjet.exe'; if (Test-Path $workjetPath) { $workjet = (Get-Item $workjetPath).VersionInfo.ProductVersion }
 $gui = @(Get-Process explorer -ErrorAction SilentlyContinue).Count -gt 0
-Write-Output 'platform=windows'; Write-Output ('arch=' + [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()); Write-Output ('internet=' + $internet.ToString().ToLowerInvariant()); Write-Output ('admin=' + $isAdmin.ToString().ToLowerInvariant()); Write-Output 'admin_password=false'; Write-Output ('gui=' + $gui.ToString().ToLowerInvariant()); Write-Output ('ctox_version=' + $ctox); Write-Output ('workjet_version=' + $workjet)
+Write-Output 'platform=windows'; Write-Output ('arch=' + [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()); Write-Output 'tools=true'; Write-Output 'missing_tools='; Write-Output ('internet=' + $internet.ToString().ToLowerInvariant()); Write-Output ('admin=' + $isAdmin.ToString().ToLowerInvariant()); Write-Output ('admin_member=' + $isAdminMember.ToString().ToLowerInvariant()); Write-Output 'admin_password=false'; Write-Output ('gui=' + $gui.ToString().ToLowerInvariant()); Write-Output ('ctox_version=' + $ctox); Write-Output ('workjet_version=' + $workjet)
 `;
 
 function remoteTargetKey(target: WorkjetProvisioningTarget): string {
@@ -182,6 +222,27 @@ function safeMessage(error: unknown, fallback: string): string {
 
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/gu, `'"'"'`)}'`;
+}
+
+function runLocalElevatedPowerShell(script: string, timeoutMs: number): Promise<CommandResult> {
+  const encodedScript = Buffer.from(
+    `$ErrorActionPreference='Stop'\ntry {\n${script}\n} catch { exit 1 }`,
+    "utf16le",
+  ).toString("base64");
+  const launcher = `$ErrorActionPreference='Stop'
+$process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','${encodedScript}') -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+if ($process.ExitCode -ne 0) { throw ('Elevated provisioning process failed with exit code ' + $process.ExitCode) }
+`;
+  return runLocalCommand(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", "-"],
+    launcher,
+    timeoutMs,
+  ).then(() => ({
+    stdout:
+      '{"phase":"complete","status":"completed","percent":100,"message":"Requested components are ready"}\n',
+    stderr: "",
+  }));
 }
 
 function initialSnapshot(
@@ -231,6 +292,7 @@ export class DesktopComputerProvisioner extends Context.Service<
 export const make = Effect.gen(function* () {
   const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
   const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+  const hostProcessPlatform = yield* HostProcessPlatform;
   const runtimeContext = yield* Effect.context<
     ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
   >();
@@ -297,13 +359,16 @@ export const make = Effect.gen(function* () {
   ) =>
     Effect.acquireUseRelease(
       Effect.tryPromise(async () => {
-        const directory = await mkdtemp(join(tmpdir(), "workjet-known-host-"));
-        const path = join(directory, "known_hosts");
-        await writeFile(path, `${knownHostsLine}\n`, { encoding: "utf8", mode: 0o600 });
+        const directory = await NodeFSP.mkdtemp(
+          NodePath.join(NodeOS.tmpdir(), "workjet-known-host-"),
+        );
+        const path = NodePath.join(directory, "known_hosts");
+        await NodeFSP.writeFile(path, `${knownHostsLine}\n`, { encoding: "utf8", mode: 0o600 });
         return { directory, path };
       }),
       ({ path }) => use(path),
-      ({ directory }) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
+      ({ directory }) =>
+        Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
     );
 
   const runRemoteAuthenticated = <A>(
@@ -366,7 +431,7 @@ export const make = Effect.gen(function* () {
     );
 
   const inspectLocal = () => {
-    const platform = normalizePlatform(process.platform);
+    const platform = normalizePlatform(hostProcessPlatform);
     const script = platform === "windows" ? WINDOWS_PREFLIGHT_SCRIPT : POSIX_PREFLIGHT_SCRIPT;
     return Effect.tryPromise(() =>
       platform === "windows"
@@ -425,25 +490,43 @@ export const make = Effect.gen(function* () {
           code: "unsupported_architecture",
           message: "The target architecture is not supported.",
         } satisfies WorkjetProvisioningPreflightResult;
+      if (!booleanValue(values, "tools"))
+        return {
+          _tag: "failed",
+          code: "required_tool_unavailable",
+          message: `The target is missing required provisioning tools: ${values.get("missing_tools") || "unknown"}.`,
+        } satisfies WorkjetProvisioningPreflightResult;
       if (!booleanValue(values, "internet"))
         return {
           _tag: "failed",
           code: "internet_unavailable",
           message: "The target cannot reach the official CTOX release channel.",
         } satisfies WorkjetProvisioningPreflightResult;
-      if (!booleanValue(values, "admin"))
+      const administrator = administratorCapability(
+        values,
+        platform,
+        input.target._tag === "local",
+      );
+      if (!administrator.capable)
         return {
           _tag: "failed",
           code: "administrator_unavailable",
-          message: "An administrator-capable target account is required.",
+          message:
+            platform === "windows" && input.target._tag === "ssh"
+              ? "A Windows SSH session that is already elevated as an administrator is required."
+              : "An administrator-capable target account is required.",
         } satisfies WorkjetProvisioningPreflightResult;
       const warnings: string[] = [];
       const graphicalSession = booleanValue(values, "gui");
+      if (administrator.elevationRequired)
+        warnings.push(
+          "Windows will show a User Account Control confirmation when installation starts.",
+        );
       if (!graphicalSession)
         warnings.push(
           "No active graphical session was detected; only the CTOX backend can be installed.",
         );
-      const preflightId = randomUUID();
+      const preflightId = NodeCrypto.randomUUID();
       const publicValue: WorkjetProvisioningPreflight = {
         preflightId,
         expiresAt: new Date(Date.now() + PREFLIGHT_TTL_MS).toISOString(),
@@ -453,6 +536,7 @@ export const make = Effect.gen(function* () {
         internetAvailable: true,
         administratorCapable: true,
         administratorPasswordRequired: booleanValue(values, "admin_password"),
+        administratorElevationRequired: administrator.elevationRequired,
         graphicalSession,
         ctoxInstalledVersion: versionValue(values, "ctox_version"),
         workjetInstalledVersion: versionValue(values, "workjet_version"),
@@ -535,7 +619,7 @@ export const make = Effect.gen(function* () {
         action === "status"
           ? `if [ "$(uname -s)" = Darwin ]; then test -d /Applications/Workjet.app; else test -x /opt/workjet/Workjet.AppImage; fi`
           : `printf '{"phase":"download","status":"started","percent":80,"message":"Downloading signed Workjet package"}\\n'\ncurl -fsSL '${WORKJET_MANIFEST_URL}' -o "$tmp/workjet-manifest.json"\npython3 - "$tmp/workjet-manifest.json" "$tmp/workjet-artifact" <<'PY'\nimport hashlib,json,platform,sys,urllib.request\nm=json.load(open(sys.argv[1],encoding='utf-8')); p='macos' if platform.system()=='Darwin' else 'linux'; a={'x86_64':'x64','amd64':'x64','aarch64':'arm64','arm64':'arm64'}.get(platform.machine().lower())\nxs=[x for x in m.get('artifacts',[]) if x.get('platform')==p and x.get('arch')==a]\nif m.get('schema')!='workjet.desktop-install-manifest.v1' or m.get('repository')!='metric-space-ai/workjet' or len(xs)!=1: raise SystemExit('invalid Workjet manifest')\nx=xs[0]\nif not x['url'].startswith('https://github.com/'): raise SystemExit('invalid Workjet artifact URL')\ndata=urllib.request.urlopen(x['url'],timeout=60).read()\nif len(data)!=x['size'] or hashlib.sha256(data).hexdigest()!=x['sha256'].lower(): raise SystemExit('Workjet artifact verification failed')\nopen(sys.argv[2],'wb').write(data)\nPY\nprintf '{"phase":"verification","status":"completed","percent":90,"message":"Workjet package checksum verified"}\\n'\nif [ "$(uname -s)" = Darwin ]; then\n  mount_dir="$tmp/workjet-mount"; mkdir -p "$mount_dir"; hdiutil attach "$tmp/workjet-artifact" -nobrowse -readonly -mountpoint "$mount_dir" >/dev/null; app="$(find "$mount_dir" -maxdepth 1 -name 'Workjet.app' -print -quit)"; test -n "$app"; run_admin rm -rf /Applications/Workjet.app; run_admin cp -R "$app" /Applications/Workjet.app; hdiutil detach "$mount_dir" >/dev/null\nelse\n  run_admin mkdir -p /opt/workjet; run_admin install -m 0755 "$tmp/workjet-artifact" /opt/workjet/Workjet.AppImage; run_admin mkdir -p /usr/local/bin; run_admin ln -sfn /opt/workjet/Workjet.AppImage /usr/local/bin/workjet\nfi`;
-      const posixAction = `set -eu\n${adminPrefix}\ntmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT\n${components.includes("ctox-backend") ? ctoxPosix : ""}\n${components.includes("workjet") ? workjetPosix : ""}\nprintf '{"phase":"complete","status":"completed","percent":100,"message":"Requested components are ready"}\\n'`;
+      const posixAction = `set -eu\n${adminPrefix}\ntmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT\n${components.includes("ctox-backend") ? ctoxPosix : ""}\n${components.includes("workjet") ? `${workjetPosix}\n${action === "status" ? "" : LINUX_DESKTOP_REGISTRATION_SCRIPT}` : ""}\nprintf '{"phase":"complete","status":"completed","percent":100,"message":"Requested components are ready"}\\n'`;
       const ctoxWindows =
         action === "install" || action === "repair"
           ? `$m=Invoke-RestMethod '${CTOX_MANIFEST_URL}'; if($m.schema -ne 'ctox.install-manifest.v1' -or $m.repository -ne 'metric-space-ai/ctox'){throw 'invalid CTOX manifest'}; $b=$m.bootstrap.windows; $script=Join-Path $env:TEMP ('ctox-'+[guid]::NewGuid().ToString('N')+'.ps1'); Invoke-WebRequest -UseBasicParsing $b.url -OutFile $script; if((Get-FileHash $script -Algorithm SHA256).Hash.ToLowerInvariant() -ne $b.sha256.ToLowerInvariant()){throw 'CTOX bootstrap checksum mismatch'}; & $script`
@@ -555,12 +639,14 @@ export const make = Effect.gen(function* () {
       if (record.public.target._tag === "local") {
         result = yield* Effect.tryPromise(() =>
           record.public.platform === "windows"
-            ? runLocalCommand(
-                "powershell.exe",
-                ["-NoProfile", "-NonInteractive", "-Command", "-"],
-                windowsAction,
-                60 * 60 * 1_000,
-              )
+            ? record.public.administratorElevationRequired
+              ? runLocalElevatedPowerShell(windowsAction, 60 * 60 * 1_000)
+              : runLocalCommand(
+                  "powershell.exe",
+                  ["-NoProfile", "-NonInteractive", "-Command", "-"],
+                  windowsAction,
+                  60 * 60 * 1_000,
+                )
             : runLocalCommand("sh", ["-s"], posixAction, 60 * 60 * 1_000),
         );
       } else if (record.knownHostsLine !== null) {
@@ -726,7 +812,7 @@ export const make = Effect.gen(function* () {
           code: "component_unavailable",
           message: "Workjet is unavailable on a headless target.",
         } satisfies WorkjetProvisioningStartResult;
-      const operationId = randomUUID();
+      const operationId = NodeCrypto.randomUUID();
       const entry: MutableOperation = {
         snapshot: initialSnapshot(input, operationId),
         updatedAtMs: Date.now(),
@@ -752,4 +838,13 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(DesktopComputerProvisioner, make);
 
-export const testing = { normalizePlatform, normalizeArchitecture, parseKeyValueOutput };
+export const testing = {
+  normalizePlatform,
+  normalizeArchitecture,
+  parseKeyValueOutput,
+  administratorCapability,
+  posixPreflightScript: POSIX_PREFLIGHT_SCRIPT,
+  windowsPreflightScript: WINDOWS_PREFLIGHT_SCRIPT,
+  linuxDesktopEntry: LINUX_DESKTOP_ENTRY,
+  linuxDesktopRegistrationScript: LINUX_DESKTOP_REGISTRATION_SCRIPT,
+};

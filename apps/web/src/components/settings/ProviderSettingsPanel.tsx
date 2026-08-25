@@ -1009,43 +1009,48 @@ export function EnvironmentProviderSettings({
               runtime this app can run Workjet workers on — so it appears
               here like the other runtimes: mark, status dot, version, and
               the same "Installed · checked" line. */}
-          <div className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
-                <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
-                <span
-                  className={cn(
-                    "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
-                    // Green = probed available, muted = not probed yet,
-                    // red = probe answered "not available" — two greys made
-                    // failure indistinguishable from unknown (Befund K-B16).
-                    piCodeProbe?.availability === "available"
-                      ? "bg-emerald-500"
-                      : piCodeProbe === null
-                        ? "bg-muted-foreground/40"
-                        : "bg-red-500/80",
-                  )}
-                  aria-hidden
-                />
-              </span>
-              <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-                Pi Code
-              </h3>
-              {piCodeProbe?.availability === "available" &&
-              "version" in piCodeProbe &&
-              piCodeProbe.version ? (
-                <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
-                  v{piCodeProbe.version}
-                </code>
-              ) : null}
+          {/* Same silhouette as ProviderInstanceCard's shell — the bordered
+              card broke the list rhythm (Befund F12); missing toggle/chevron
+              stay deliberate, there is no chat driver to configure. */}
+          <div className="rounded-xl transition-colors hover:bg-muted/20">
+            <div className="px-3 py-3 sm:px-4">
+              <div className="flex items-center gap-2">
+                <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+                  <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
+                  <span
+                    className={cn(
+                      "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
+                      // Green = probed available, muted = not probed yet,
+                      // red = probe answered "not available" — two greys made
+                      // failure indistinguishable from unknown (Befund K-B16).
+                      piCodeProbe?.availability === "available"
+                        ? "bg-emerald-500"
+                        : piCodeProbe === null
+                          ? "bg-muted-foreground/40"
+                          : "bg-red-500/80",
+                    )}
+                    aria-hidden
+                  />
+                </span>
+                <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
+                  Pi Code
+                </h3>
+                {piCodeProbe?.availability === "available" &&
+                "version" in piCodeProbe &&
+                piCodeProbe.version ? (
+                  <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+                    v{piCodeProbe.version}
+                  </code>
+                ) : null}
+              </div>
+              <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
+                {piCodeProbe === null
+                  ? "Checking…"
+                  : piCodeProbe.availability === "available"
+                    ? "Installed · available to Workjet workers"
+                    : "Not installed on this machine"}
+              </p>
             </div>
-            <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
-              {piCodeProbe === null
-                ? "Checking…"
-                : piCodeProbe.availability === "available"
-                  ? "Installed · available to Workjet workers"
-                  : "Not installed on this machine"}
-            </p>
           </div>
         </div>
       </SettingsSection>

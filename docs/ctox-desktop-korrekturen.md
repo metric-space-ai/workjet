@@ -1044,3 +1044,49 @@ erzeugen.
   „No computers — add one in Settings → Computers" beide Stellen).
 - Nachzügler: Pools-Test auf „Held back by priority" angepasst (K-A10).
   Suiten: ctox 35, settings+chat+ctox 618 grün, Typecheck 0. Deployt.
+
+## Fix-Runden 3–5 („mach alles") — 2026-08-25 vormittags, KOMPLETT
+
+Alle verbleibenden Review-Befunde umgesetzt, Commits 58c668e17 (Begriffe),
+2864dfd5a (Verluste/Feedback), f582e3ba3 (Marken/tote Controls),
+2730199f3 (Hypothesen) + Schluss-Slice. Deployt; Web-Komponenten-Suite
+komplett gruen (1506 Tests).
+
+Begriffe: LLM route einheitlich im Worker-Editor (K-A6); Web Search
+(K-A5); Build in beiden Layouts (K-A4); Seite heisst Worker, Suche
+liefert EINEN Treffer (K-A12); Environment-Picker heisst Environments
+(K-A3).
+Verluste/Feedback: Worker-Entwurf uebersteht "Add LLM route…" via
+SessionStorage-Stash + Auto-Reopen (K-A7); "+ Add worker/computer…"
+oeffnet den Anlege-Editor (F8); Escape schont offene Inline-Editoren
+(F14, data-settings-inline-editor-Marker); Route-Save-Toast (K-A14);
+"You're up to date"-Toast beim manuellen Update-Check (F7);
+BOS-Refresh einmalig mit Mindest-Spinndauer (F7+K-B10);
+Workjet-Tab-Hash via Router-replace (K-A15b — erste Fassung mit rohem
+replaceState ersetzte im Hash-Router die ROUTE; live nachgemessen und
+korrigiert); tote onAddComputer-Prop entfernt (K-A15a).
+Marken/Controls: Pi-Agent-Karte raus (K-B7), Pi-Punkt rot bei Fehler
+(K-B16), Pi-Zeile in Karten-Silhouette (F12); Cursor nicht mehr
+scheinbar waehlbar (F4); Anzeigelabels statt Slugs ueberall (K-A11,
+F11); "model patterns recorded" (F6); xAI-Buttons benannt (F9);
+Routen-Erklaertext entschaerft (F10); Pool-Hilfetext nur bei leerer
+Liste (F13); Not-paired-Tooltip im Kompaktmenue (K-B17);
+Effort-Platzhalter-Chip (F5); Model-rules-Editor einmal pro Modell
+(K-A13); Mode-Umschalter bleibt unter 768px (K-B1); Topbar =
+Sidebar-Identitaet via geteilter Namens-Map (K-B9).
+Hypothesen: Manual-System-Prompt wird beim Worker-Ausflug geparkt
+(K-AH1); Custom-Computer-Label uebersteht Environment-Wahl (K-AH3);
+Zahlenfelder leerbar, Commit on blur (K-AH5); "Missing computer"
+statt Placeholder (K-AH4); Guest-Connect mit Spinner + 30s-Hinweis
+(K-BH1); kein "ready"-Dauerstatus hinter der nativen View (K-BH2);
+openApp-Fehler als Toast (K-BH4); Sidebar-Feedback oben (K-BH3).
+Entscheidungen umgesetzt: Update-Pills in der BOS-Fussleiste (K-B11).
+K-B8 xAI-Marken: BEWUSST zwei Marken — Grok-Wirbel = das
+Harness-PRODUKT (grok-cli), X-Logo = der PROVIDER xAI; dokumentiert
+statt vereinheitlicht.
+OFFEN (einziger Rest): F15 — leere "Progress Board"-Sektion im
+gespeicherten managedSystemPrompt; Datenbereinigung braucht einen
+Settings-Schreibweg fuer Ueberschriften oder einen sicheren
+Server-Neustart (Killer-Lage) — beim naechsten Neustart erledigen.
+LIVE-SMOKE: Worker-Seite h1+Tabs ok, Pi Code gelistet, BOS mit genau
+EINEM Refresh + Fussleiste; App im Business-OS-Modus hinterlassen.

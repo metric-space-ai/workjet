@@ -792,10 +792,16 @@ export function WorkjetSettingsView({
             setActiveSection(section);
             // Keep the URL truthful: after a hash-deep-link the tab click used
             // to leave the OLD anchor in the address bar, so a reload landed
-            // on the wrong tab (Befund K-A15b).
+            // on the wrong tab (Befund K-A15b). Through the router — a raw
+            // replaceState would replace the ROUTE in this hash-router.
             const target = WORKJET_SETTINGS_SECTIONS.find((entry) => entry.id === section);
             if (target !== undefined) {
-              window.history.replaceState(window.history.state, "", `#${target.targetId}`);
+              void navigate({
+                to: "/settings/workjet",
+                hash: target.targetId,
+                replace: true,
+                hashScrollIntoView: false,
+              });
             }
           }}
         />

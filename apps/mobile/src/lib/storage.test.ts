@@ -177,6 +177,14 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
   });
 
+  it("persists the Workjet root mode in the existing preference identity", async () => {
+    mocks.setPreferencesJson(JSON.stringify({ workjetMode: "business_os" }), 10);
+    await expect(loadPreferences()).resolves.toEqual({ workjetMode: "business_os" });
+    await expect(savePreferencesPatch({ workjetMode: "code" })).resolves.toEqual({
+      workjetMode: "code",
+    });
+  });
+
   it("falls back to secure storage when SQLite cannot save preferences", async () => {
     mocks.setDatabaseFailures(true, true);
     await expect(savePreferencesPatch({ baseFontSize: 19 })).resolves.toEqual({ baseFontSize: 19 });

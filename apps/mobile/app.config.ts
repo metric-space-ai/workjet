@@ -53,7 +53,7 @@ const RELEASE_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidAdaptiveForegroundPng),
-  // Matches the night-blue tile of the CTOX turbofan mark so the
+  // Matches the night-blue tile of the approved Workjet mark so the
   // adaptive-icon mask blends seamlessly.
   androidAdaptiveBackgroundColor: "#0F1925",
   androidMonochromeIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidMonochromePng),
@@ -61,35 +61,33 @@ const RELEASE_ASSETS = {
   androidNotificationColor: "#5C7590",
 } as const;
 
-// CTOX display identity, same split as the desktop rebrand
-// (apps/desktop/src/electron/desktopSchemes.ts): the user-facing name and the
-// preferred deep-link scheme are CTOX, while the legacy t3code scheme stays
-// claimed and the com.t3tools.t3code identifiers stay untouched — signing,
+// Workjet is the one user-facing mobile identity. Legacy CTOX/T3 schemes stay
+// claimed during the soft migration and the com.t3tools.t3code identifiers
+// stay untouched — signing,
 // store listings, push entitlements, app groups, and the Clerk passkey
 // relying party all hang off them, so renaming those is a separate migration.
-// The schemes are deliberately not `ctox:` — that namespace belongs to the
-// CTOX daemon's own pairing/invite links — and not `ctox-desktop*`, which the
-// desktop app claims.
+// `ctox:` remains the backend/daemon namespace. New outbound links always use
+// the first Workjet scheme; the remaining entries are inbound compatibility.
 const VARIANT_CONFIG = {
   development: {
-    appName: "CTOX Dev",
-    schemes: ["ctox-mobile-dev", "t3code-dev"],
+    appName: "Workjet",
+    schemes: ["workjet-dev", "ctox-mobile-dev", "t3code-dev"],
     iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
     relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "CTOX Preview",
-    schemes: ["ctox-mobile-preview", "t3code-preview"],
+    appName: "Workjet",
+    schemes: ["workjet-preview", "ctox-mobile-preview", "t3code-preview"],
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
     relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "CTOX",
-    schemes: ["ctox-mobile", "t3code"],
+    appName: "Workjet",
+    schemes: ["workjet", "ctox-mobile", "ctox-business-os-mobile", "t3code"],
     iosBundleIdentifier: "com.t3tools.t3code",
     androidPackage: "com.t3tools.t3code",
     relyingParty: "clerk.t3.codes",
@@ -132,7 +130,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active CTOX agents.",
+        description: "Shows the current state of active Workjet agents.",
         supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
       },
     ],
@@ -180,7 +178,9 @@ const config: ExpoConfig = {
     // could land on a binary missing the native changes it needs and crash.
     policy: process.env.MOBILE_VERSION_POLICY ?? "fingerprint",
   },
-  orientation: "portrait",
+  // Workjet is a first-class tablet app. Keep both orientations available so
+  // iPad and Android tablets work naturally in 3:4 portrait and 4:3 landscape.
+  orientation: "default",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
@@ -209,7 +209,7 @@ const config: ExpoConfig = {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow CTOX to connect to CTOX servers on your local network or tailnet.",
+        "Allow Workjet to connect to CTOX backends on your local network or tailnet.",
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -303,7 +303,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow CTOX to access your camera so you can scan pairing QR codes.",
+        cameraPermission: "Allow Workjet to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,

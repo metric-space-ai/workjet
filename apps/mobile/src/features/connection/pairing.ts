@@ -1,5 +1,6 @@
 import { readHostedPairingRequest } from "@t3tools/shared/remote";
 import * as Schema from "effect/Schema";
+import { normalizeIncomingWorkjetUrl } from "../../lib/workjetLinks";
 
 const MOBILE_PAIRING_URL_PARAM = "pairingUrl";
 
@@ -77,8 +78,11 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
   }
 
   try {
-    const url = new URL(trimmed);
-    if (url.protocol === "t3code:") {
+    const url = new URL(normalizeIncomingWorkjetUrl(trimmed));
+    if (
+      ["workjet:", "workjet-dev:", "workjet-preview:"].includes(url.protocol) &&
+      url.hostname === "pair"
+    ) {
       const pairingUrl = url.searchParams.get(MOBILE_PAIRING_URL_PARAM)?.trim() ?? "";
       if (pairingUrl.length > 0) {
         return pairingUrl;

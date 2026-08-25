@@ -36,6 +36,8 @@ import { runtime } from "../../lib/runtime";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
+import { workjetModeLabel } from "../mode/workjet-mode";
+import { useWorkjetMode } from "../mode/WorkjetModeProvider";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
@@ -115,6 +117,8 @@ function LocalSettingsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <WorkjetModeSettingsSection />
+
         <SettingsSection title="Configuration">
           <SettingsRow
             icon="desktopcomputer"
@@ -237,7 +241,7 @@ function ConfiguredSettingsRouteScreen() {
       } else {
         Alert.alert(
           "Couldn't finish enabling notifications",
-          "Notification access was granted, but this device could not be registered with T3 Connect. Notifications will start once registration succeeds.",
+          "Notification access was granted, but this device could not be registered with Workjet Connect. Notifications will start once registration succeeds.",
         );
       }
       return;
@@ -267,8 +271,8 @@ function ConfiguredSettingsRouteScreen() {
 
   const promptSignIn = useCallback(() => {
     Alert.alert(
-      "Sign in to T3 Connect",
-      "Live Activity updates require T3 Connect so relay can deliver updates to this device.",
+      "Sign in to Workjet Connect",
+      "Live Activity updates require Workjet Connect so relay can deliver updates to this device.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -340,7 +344,7 @@ function ConfiguredSettingsRouteScreen() {
     } else {
       Alert.alert(
         "Couldn't finish enabling Live Activities",
-        "This device could not be registered with T3 Connect, so Live Activities won't appear yet. They'll start once registration succeeds.",
+        "This device could not be registered with Workjet Connect, so Live Activities won't appear yet. They'll start once registration succeeds.",
       );
     }
   }, [
@@ -362,7 +366,7 @@ function ConfiguredSettingsRouteScreen() {
 
       Alert.alert(
         "Disable notifications",
-        "Notification permission is controlled by iOS. Open Settings to disable notifications for CTOX.",
+        "Notification permission is controlled by iOS. Open Settings to disable notifications for Workjet.",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -448,17 +452,19 @@ function ConfiguredSettingsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <WorkjetModeSettingsSection />
+
         <View className="gap-3">
           <SettingsSection title="Account">
             <SettingsRow
               icon="person.crop.circle"
-              label="T3 Account"
+              label="Workjet Account"
               value={accountLabel}
               onPress={openAccount}
             />
           </SettingsSection>
           <Text className="px-2 text-sm text-foreground-muted">
-            CTOX works locally without signing in. Cloud features are optional.
+            Workjet Code works without a CTOX Backend. Workjet Connect and Business OS are optional.
           </Text>
         </View>
 
@@ -518,6 +524,22 @@ function ConfiguredSettingsRouteScreen() {
         <AppSettingsSection />
       </ScrollView>
     </View>
+  );
+}
+
+function WorkjetModeSettingsSection() {
+  const { mode, setMode } = useWorkjetMode();
+  const nextMode = mode === "code" ? "business_os" : "code";
+
+  return (
+    <SettingsSection title="Workspace">
+      <SettingsRow
+        icon="square.split.2x1"
+        label="Code | Business OS"
+        value={workjetModeLabel(mode)}
+        onPress={() => setMode(nextMode)}
+      />
+    </SettingsSection>
   );
 }
 

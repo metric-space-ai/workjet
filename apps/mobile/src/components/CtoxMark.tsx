@@ -1,13 +1,13 @@
 import { Image } from "expo-image";
 
 /**
- * The CTOX "X" brand mark, matching the desktop sidebar's CtoxMark
- * (apps/web SidebarChrome.tsx): the app-icon raster, slightly rounded.
+ * The approved Workjet mark. The underlying asset path stays unchanged during
+ * the soft migration so store updates retain the released visual identity.
  */
 export function CtoxMark(props: { readonly size: number }) {
   return (
     <Image
-      accessibilityLabel="CTOX"
+      accessibilityLabel="Workjet"
       accessibilityIgnoresInvertColors
       source={require("../../../../assets/ctox/ctox-app-icon.png")}
       style={{

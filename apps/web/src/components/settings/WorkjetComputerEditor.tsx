@@ -337,7 +337,7 @@ export function WorkjetComputerEditor({
 
       {environments.length === 0 ? (
         <p role="status" className="text-xs text-muted-foreground">
-          Waiting for the environment catalog. Add connections in Connections settings.
+          Waiting for the environment catalog. Pair new remote environments in the section below.
         </p>
       ) : null}
       {error ? (

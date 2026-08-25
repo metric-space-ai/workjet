@@ -1027,3 +1027,20 @@ nach ~/.t3/userdata/provider-gateway-host kopiert — laufender Host
 unberührt, greift beim nächsten Gateway-Start). Mobile-Session wird
 informiert, ihre iOS/Android-Ableitungen vom neuen Master neu zu
 erzeugen.
+
+## Fix-Runde 2 — 2026-08-25 ~08:20
+
+- K-B2/K-B3 GEFIXT: BOS-Sidebar „Remove" (Instanz) und „Sign out"
+  (ctox.dev) sind jetzt zweistufig (erster Klick schärft rot
+  „Remove?"/„Sign out?", 4s-Auto-Entschärfung); aria-Namen bleiben
+  instanzspezifisch.
+- K-B4 GEFIXT: BOS-Topbar zeigt „Connecting…/Connected/Connection
+  error/Access revoked" statt roher Enums.
+- K-B5 GEFIXT: presentationKind mit Klartext-Labels („This computer",
+  „T3 Connect", „SSH", „Tailscale") in Composer-Dropdown und
+  Computers-Seite (gemeinsames Mapping workjetComputerKindLabel).
+- K-A8 GEFIXT: veraltete Ortsangaben ersetzt („…managed in Settings →
+  Computers", „Pair new remote environments in the section below",
+  „No computers — add one in Settings → Computers" beide Stellen).
+- Nachzügler: Pools-Test auf „Held back by priority" angepasst (K-A10).
+  Suiten: ctox 35, settings+chat+ctox 618 grün, Typecheck 0. Deployt.

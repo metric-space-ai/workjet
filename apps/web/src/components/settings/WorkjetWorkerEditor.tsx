@@ -481,8 +481,8 @@ export function WorkjetWorkerEditor({
         </p>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        Computer targets and connection secrets are managed in Connections. This profile stores the
-        selected target and declared harness availability.
+        Computer targets and remote environments are managed in Settings → Computers. This profile
+        stores the selected target and declared harness availability.
       </p>
       <div className="flex justify-end gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>

@@ -215,7 +215,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
               >
                 <span className="text-xs text-muted-foreground">
                   {props.computers.length === 0
-                    ? "No computers — set one up in Workjet settings"
+                    ? "No computers — add one in Settings → Computers"
                     : "Not bound to a Workjet computer"}
                 </span>
               </SelectItem>
@@ -233,7 +233,9 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
                   <div className="grid min-w-0 gap-0.5">
                     <span className="font-medium text-foreground">{computer.label}</span>
                     <span className="truncate text-xs leading-4 text-muted-foreground">
-                      {paired ? computer.presentationKind : COMPOSER_COMPUTER_NOT_PAIRED_HINT}
+                      {paired
+                        ? workjetComputerKindLabel(computer.presentationKind)
+                        : COMPOSER_COMPUTER_NOT_PAIRED_HINT}
                     </span>
                   </div>
                 </SelectItem>
@@ -308,6 +310,22 @@ function groupGatewayModelsByProvider(
     groups.set(key, list);
   }
   return groups;
+}
+
+/**
+ * Presentation-kind wording — the raw enum ("t3-connect") leaked into the
+ * computer dropdown and the settings rows (K-B5).
+ */
+export const WORKJET_COMPUTER_KIND_LABELS: Readonly<Record<string, string>> = {
+  local: "This computer",
+  "t3-connect": "T3 Connect",
+  ssh: "SSH",
+  tailscale: "Tailscale",
+  remote: "Remote",
+};
+
+export function workjetComputerKindLabel(kind: string): string {
+  return WORKJET_COMPUTER_KIND_LABELS[kind] ?? kind;
 }
 
 export interface ComposerManualTargetControlsProps {
@@ -689,7 +707,7 @@ export function ComposerWorkjetCompactMenuContent(
           </p>
         ) : props.computers.length === 0 ? (
           <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
-            No computers — set one up in Workjet settings
+            No computers — add one in Settings → Computers
           </p>
         ) : (
           <MenuRadioGroup

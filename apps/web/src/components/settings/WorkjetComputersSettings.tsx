@@ -25,6 +25,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
+import { workjetComputerKindLabel } from "../chat/ComposerWorkjetTargetControls";
 import { searchableSetting } from "./settingsSearch";
 
 /**
@@ -158,8 +159,8 @@ export function WorkjetComputersSettingsView({
                 probedHere
                   ? "This machine"
                   : environmentLabel === null
-                    ? computer.presentationKind
-                    : `${computer.presentationKind} · ${environmentLabel}`
+                    ? workjetComputerKindLabel(computer.presentationKind)
+                    : `${workjetComputerKindLabel(computer.presentationKind)} · ${environmentLabel}`
               }
               control={
                 <div className="flex items-center gap-1">

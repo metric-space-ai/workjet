@@ -116,6 +116,15 @@ const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
   ssh_managed: "SSH managed",
 };
 
+/** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
+const CONNECTION_LABELS: Record<string, string> = {
+  idle: "Idle",
+  connecting: "Connecting…",
+  ready: "Connected",
+  error: "Connection error",
+  revoked: "Access revoked",
+};
+
 const STATUS_LABELS: Record<CtoxManagedInstance["status"], string> = {
   available: "Available",
   offline: "Offline",
@@ -809,6 +818,58 @@ function statusLabel(instance: CtoxManagedInstance): string {
  * always listed (greyed via the disabled instance state while disconnected);
  * undocked apps appear only while open; the open app carries a dock-style dot.
  */
+/**
+ * Two-step destructive TEXT button for the sidebar: the first click arms it
+ * (label turns into a red question), the second within 4s fires. The settings
+ * surfaces got this discipline in the click-review; removing an instance or
+ * signing out destroys visible state just the same (Befunde K-B2/K-B3).
+ */
+function ConfirmingTextAction({
+  label,
+  confirmLabel,
+  ariaLabel,
+  className,
+  disabled,
+  busy,
+  onConfirm,
+}: {
+  readonly label: string;
+  readonly confirmLabel: string;
+  /** Screen-reader name; stays instance-specific while the visible text is short. */
+  readonly ariaLabel: string;
+  readonly className: string;
+  readonly disabled?: boolean;
+  readonly busy?: boolean;
+  readonly onConfirm: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 4_000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return (
+    <button
+      type="button"
+      className={cn(className, armed && "visible font-medium text-destructive")}
+      disabled={disabled}
+      aria-busy={busy}
+      aria-label={armed ? `Confirm: ${ariaLabel}` : ariaLabel}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
+        onConfirm();
+      }}
+    >
+      {armed ? confirmLabel : label}
+    </button>
+  );
+}
+
 function CtoxInstanceAppRail({
   instance,
   launchable,
@@ -1276,19 +1337,15 @@ function CtoxInstanceCard({
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
         {removable && onRemove !== undefined ? (
-          <button
-            type="button"
+          <ConfirmingTextAction
+            label="Remove"
+            confirmLabel="Remove?"
+            ariaLabel={`Remove ${title}`}
             className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground group-hover/ctox-instance:visible hover:text-sidebar-foreground focus-visible:visible disabled:opacity-50"
             disabled={removingId === instance.id}
-            aria-busy={removingId === instance.id}
-            aria-label={`Remove ${title}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRemove(instance);
-            }}
-          >
-            Remove
-          </button>
+            busy={removingId === instance.id}
+            onConfirm={() => onRemove(instance)}
+          />
         ) : null}
       </div>
       {collapsed ? null : (
@@ -1734,14 +1791,14 @@ function ManagedAccountState({
     );
   }
   return (
-    <button
-      type="button"
+    <ConfirmingTextAction
+      label="Sign out"
+      confirmLabel="Sign out?"
+      ariaLabel="Sign out"
       className="text-xs text-sidebar-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
-      onClick={logout}
       disabled={refreshing}
-    >
-      Sign out
-    </button>
+      onConfirm={logout}
+    />
   );
 }
 
@@ -2213,7 +2270,7 @@ export function CtoxMainShell() {
           </span>
           {selected !== undefined ? (
             <span className="ml-auto text-xs text-muted-foreground" role="status">
-              {connection}
+              {CONNECTION_LABELS[connection] ?? connection}
             </span>
           ) : null}
         </header>

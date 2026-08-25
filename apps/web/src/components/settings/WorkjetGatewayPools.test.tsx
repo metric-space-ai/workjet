@@ -134,7 +134,9 @@ describe("gateway pool semantics copy", () => {
 
   it("distinguishes held back from disabled", () => {
     expect(gatewayPoolMemberStateLabel(member("a"))).toBe("In rotation");
-    expect(gatewayPoolMemberStateLabel(member("a", { selectable: false }))).toBe("Held back");
+    expect(gatewayPoolMemberStateLabel(member("a", { selectable: false }))).toBe(
+      "Held back by priority",
+    );
     expect(gatewayPoolMemberStateLabel({ ...member("a"), enabled: false })).toBe("Disabled");
   });
 });

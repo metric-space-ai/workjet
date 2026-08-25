@@ -120,7 +120,7 @@ describe("WorkjetWorkerEditor", () => {
     const sections = [
       "Name / role",
       "Harness",
-      "Provider",
+      "LLM route",
       "Model",
       "Reasoning",
       "task",
@@ -136,7 +136,7 @@ describe("WorkjetWorkerEditor", () => {
     expect(markup).toContain("Claude Code");
     expect(markup).toContain("OpenCode");
     expect(markup).toContain("Web Stack Browser");
-    // With an access chosen the panel names it.
-    expect(markup).toContain("Access: Codex work");
+    // With a route chosen the panel names it.
+    expect(markup).toContain("Route: Codex work");
   });
 });

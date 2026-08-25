@@ -84,8 +84,10 @@ describe("searchSettings", () => {
   });
 
   it("registers the Workjet catalog areas before Greppy runtime", () => {
-    expect(searchSettings("workers")).toEqual([
-      { id: "workjet-workers", title: "Workers", to: "/settings/workjet" },
+    // "workers" still finds the singular-titled entry — the title matches the
+    // page name so the dedupe collapses page + item into ONE result (K-A12).
+    expect(searchSettings("worker")).toEqual([
+      { id: "workjet-workers", title: "Worker", to: "/settings/workjet" },
     ]);
     expect(searchSettings("llm providers")).toEqual([
       { id: "workjet-provider-accounts", title: "LLM providers", to: "/settings/models" },

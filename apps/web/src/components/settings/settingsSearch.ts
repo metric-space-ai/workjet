@@ -201,7 +201,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-workers",
-    title: "Workers",
+    // Singular on purpose: it must title-match the page entry so the search
+    // dedupe collapses both into one result (Befund K-A12).
+    title: "Worker",
     to: "/settings/workjet",
   },
   {

@@ -61,7 +61,7 @@ const CAPABILITY_OPTIONS: ReadonlyArray<{
   },
   {
     id: "web-search",
-    label: "Web Research",
+    label: "Web Search",
     description: "Current-source web research through the configured runtime.",
   },
   {
@@ -295,7 +295,7 @@ export function WorkjetWorkerEditor({
       </div>
 
       <div className="space-y-1.5">
-        <SectionHeader title="Provider" />
+        <SectionHeader title="LLM route" />
         <div className="flex flex-wrap items-center gap-2">
           {routes.map((route) => (
             <ChoiceButton
@@ -313,18 +313,18 @@ export function WorkjetWorkerEditor({
             onClick={() => onAddRoute?.()}
           >
             <PlusIcon className="size-3.5" />
-            Set up access
+            Add LLM route…
           </Button>
         </div>
         {draft.llmRouteId ? (
           <p className="text-[11px] text-muted-foreground">
-            Access: {routes.find((route) => route.id === draft.llmRouteId)?.label}
+            Route: {routes.find((route) => route.id === draft.llmRouteId)?.label}
           </p>
         ) : (
-          // Amber, not grey, and it names the consequence: a worker without an
-          // access cannot run at all.
+          // Amber, not grey, and it names the consequence: a worker without a
+          // route cannot run at all.
           <p className="text-[11px] text-amber-500">
-            No access chosen yet. Pick a provider to make this worker usable.
+            No LLM route chosen yet. Pick one to make this worker usable.
           </p>
         )}
       </div>

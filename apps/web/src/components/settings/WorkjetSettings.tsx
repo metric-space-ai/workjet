@@ -714,7 +714,7 @@ export function WorkjetSettingsView({
     <SettingsPageContainer className="gap-6">
       <div className="space-y-3">
         <div className="px-3 sm:px-4">
-          <h1 className="text-xl font-semibold tracking-[-0.025em]">Workjet</h1>
+          <h1 className="text-xl font-semibold tracking-[-0.025em]">Worker</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Compose reusable workers from independent computer, harness, route, model, prompt,
             reasoning, and capability choices.

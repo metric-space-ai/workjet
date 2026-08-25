@@ -272,7 +272,7 @@ export function ProviderSettingsPanel({
   return (
     <SettingsPageContainer>
       {!onlyPrimaryDevice ? (
-        <SettingsSection title="Computers">
+        <SettingsSection title="Environments">
           {options.length === 0 ? (
             // The catalog hydrates asynchronously, so an empty list before it is
             // ready means "not loaded yet", not "nothing is connected".

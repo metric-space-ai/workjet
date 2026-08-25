@@ -16,19 +16,19 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
 export function resolveLauncherDisplayName(development) {
-  return development ? "CTOX Desktop App (Dev)" : "CTOX Desktop App (Alpha)";
+  return "Workjet";
 }
 
 export const APP_DISPLAY_NAME = resolveLauncherDisplayName(isDevelopment);
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
   : "com.t3tools.t3code";
-// CTOX-branded scheme first, legacy t3code scheme kept so old links still open
-// the app. Mirrors apps/desktop/src/electron/desktopSchemes.ts.
+// Workjet schemes are canonical; CTOX Desktop and t3code remain inbound-only
+// compatibility aliases. Mirrors apps/desktop/src/electron/desktopSchemes.ts.
 const APP_PROTOCOL_SCHEMES = isDevelopment
-  ? ["ctox-desktop-dev", "t3code-dev"]
-  : ["ctox-desktop", "t3code"];
-const LAUNCHER_VERSION = 15;
+  ? ["workjet-dev", "ctox-desktop-dev", "t3code-dev"]
+  : ["workjet", "workjet-preview", "ctox-desktop", "t3code"];
+const LAUNCHER_VERSION = 16;
 const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
 export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
   repoRoot,

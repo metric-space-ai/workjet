@@ -17,11 +17,14 @@ export {
   DESKTOP_DEVELOPMENT_SCHEME,
   DESKTOP_HOST,
   DESKTOP_PRODUCTION_SCHEME,
-  getCtoxDesktopScheme,
+  WORKJET_DEVELOPMENT_SCHEME,
+  WORKJET_PREVIEW_SCHEME,
+  WORKJET_PRODUCTION_SCHEME,
   getDesktopDeepLinkSchemes,
   getDesktopOrigin,
   getDesktopScheme,
   getDesktopUrl,
+  getWorkjetDesktopScheme,
 } from "./desktopSchemes.ts";
 
 export class ElectronProtocolRegistrationError extends Schema.TaggedErrorClass<ElectronProtocolRegistrationError>()(

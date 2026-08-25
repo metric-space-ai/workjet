@@ -30,7 +30,7 @@ const environmentInput = {
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
-const APP_NAME = "CTOX Desktop App";
+const APP_NAME = "Workjet";
 
 const makeElectronAppLayer = (aboutPanelShown: Deferred.Deferred<true>) =>
   Layer.succeed(ElectronApp.ElectronApp, {

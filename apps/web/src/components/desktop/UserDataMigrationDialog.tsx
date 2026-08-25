@@ -14,7 +14,7 @@ import {
 
 /**
  * One-time first-launch offer to import the legacy T3 Code profile into the
- * new CTOX Desktop App user-data directory (docs/workjet-plan.md Wave 6).
+ * historical CTOX Desktop App user-data directory (docs/workjet-plan.md Wave 6).
  *
  * The decision itself lives in the main process (`DesktopUserDataMigration`):
  * this dialog only surfaces the offer the bridge reports and forwards the
@@ -72,9 +72,9 @@ export function UserDataMigrationDialog() {
             <DialogTitle>Import your existing profile?</DialogTitle>
             <DialogDescription>
               A previous T3 Code profile was found. Importing copies your settings and the pairings
-              for connected CTOX instances into CTOX Desktop App; the app restarts once to apply it.
-              The old profile is left untouched. If you skip this, you start with an empty profile
-              and this offer will not appear again.
+              for connected CTOX instances into Workjet; the app restarts once to apply it. The old
+              profile is left untouched. If you skip this, you start with an empty profile and this
+              offer will not appear again.
             </DialogDescription>
           </DialogHeader>
           {responseError ? (

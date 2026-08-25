@@ -24,9 +24,9 @@ describe("branding", () => {
       value: {
         desktopBridge: {
           getAppBranding: () => ({
-            baseName: "CTOX Desktop App",
+            baseName: "Workjet",
             stageLabel: "Nightly",
-            displayName: "CTOX Desktop App (Nightly)",
+            displayName: "Workjet",
           }),
         },
       },
@@ -34,9 +34,9 @@ describe("branding", () => {
 
     const branding = await import("./branding");
 
-    expect(branding.APP_BASE_NAME).toBe("CTOX Desktop App");
+    expect(branding.APP_BASE_NAME).toBe("Workjet");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("CTOX Desktop App (Nightly)");
+    expect(branding.APP_DISPLAY_NAME).toBe("Workjet");
   });
 
   it("normalizes hosted app channel metadata", async () => {
@@ -47,7 +47,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("nightly");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Nightly");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("CTOX Desktop App (Nightly)");
+    expect(branding.APP_DISPLAY_NAME).toBe("Workjet");
   });
 
   it("does not label the latest hosted app channel", async () => {
@@ -58,7 +58,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("latest");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Latest");
     expect(branding.APP_STAGE_LABEL).toBe("Latest");
-    expect(branding.APP_DISPLAY_NAME).toBe("CTOX Desktop App");
+    expect(branding.APP_DISPLAY_NAME).toBe("Workjet");
   });
 
   it("ignores unknown hosted app channels", async () => {

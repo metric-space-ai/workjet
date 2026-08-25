@@ -207,9 +207,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
   });
 
-  it("uses the CTOX package name for every desktop release channel", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "CTOX Desktop App");
-    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "CTOX Desktop App");
+  it("uses the Workjet package name for every desktop release channel", () => {
+    assert.equal(resolveDesktopProductName("0.0.17"), "Workjet");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Workjet");
   });
 
   it("uses CTOX app artwork for every packaged desktop platform", () => {
@@ -683,13 +683,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
         {
-          name: "CTOX Desktop App",
-          schemes: ["ctox-desktop", "ctox-desktop-dev", "t3code", "t3code-dev"],
+          name: "Workjet",
+          schemes: [
+            "workjet",
+            "workjet-dev",
+            "workjet-preview",
+            "ctox-desktop",
+            "ctox-desktop-dev",
+            "t3code",
+            "t3code-dev",
+          ],
         },
       ]);
       for (const config of [mac, linux, win]) {
-        assert.equal(config.productName, "CTOX Desktop App");
-        assert.equal(config.artifactName, "CTOX-Desktop-App-${version}-${arch}.${ext}");
+        assert.equal(config.productName, "Workjet");
+        assert.equal(config.artifactName, "Workjet-${version}-${arch}.${ext}");
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
         assert.deepStrictEqual(config.files, DESKTOP_FILE_EXCLUSIONS);
         assert.deepStrictEqual(
@@ -877,8 +885,16 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
         {
-          name: "CTOX Desktop App",
-          schemes: ["ctox-desktop", "ctox-desktop-dev", "t3code", "t3code-dev"],
+          name: "Workjet",
+          schemes: [
+            "workjet",
+            "workjet-dev",
+            "workjet-preview",
+            "ctox-desktop",
+            "ctox-desktop-dev",
+            "t3code",
+            "t3code-dev",
+          ],
         },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),

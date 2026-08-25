@@ -1,15 +1,8 @@
 export function SplashScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div
-        className="flex size-24 items-center justify-center"
-        aria-label="CTOX Desktop App splash screen"
-      >
-        <img
-          alt="CTOX Desktop App"
-          className="size-16 object-contain"
-          src="/apple-touch-icon.png"
-        />
+      <div className="flex size-24 items-center justify-center" aria-label="Workjet splash screen">
+        <img alt="Workjet" className="size-16 object-contain" src="/apple-touch-icon.png" />
       </div>
     </div>
   );

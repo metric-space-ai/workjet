@@ -1190,3 +1190,26 @@ Command Palette zeigten `⌘N`; Settings → Keybindings zeigte genau eine
 OS wieder CTOX Website Demo, GPU1 A6000, GPU3 A4500 und Meridian Supply Co.;
 Endzustand Business OS. GPU-Pairing, BOS-Warm-Reattach und die
 Regressionswache blieben triggergerecht unverändert.
+
+## Nutzer-App auf Workjet konsolidiert — 2026-08-25 ~16:40
+
+Die sichtbare Desktop-Produktidentität ist in Quelle und Releasekonfiguration
+exakt `Workjet`: Paket-/Fenster-/About-/Splash-/Settings-/Dialogtexte sowie
+Installer- und Artefaktnamen enthalten weder `CTOX Desktop App` noch `Alpha`.
+CTOX bleibt ausschließlich Backend-Bezeichnung. Bundle-ID, Updater-ID,
+Linux-WM-/Executable-Identität und das bestehende Chromium-Datenverzeichnis
+bleiben absichtlich unverändert, damit bestehende Installation, Updates,
+Sessions, Settings und Browser-Storage nicht geforkt werden.
+
+Neue Betriebssystem-Links verwenden `workjet://`, `workjet-dev://` und
+`workjet-preview://`. `ctox-desktop*://` und `t3code*://` bleiben nur als
+eingehende Aliasse registriert; intern wird weiterhin auf den bestehenden
+`t3code://app`-Renderer-Ursprung normalisiert. Damit ist die sichtbare
+Produktidentität migriert, ohne CORS oder persistierten Origin-Storage zu
+brechen.
+
+BEWEISE VOR LIVE-DEPLOY: fokussierte Desktop-/Web-/Release-Suite 128/128 grün,
+Desktop- und Web-Typecheck exit 0 (Desktop nur vorhandene Effect-Suggestions),
+gezieltes Format und `git diff --check` grün. Die reale UI-/Paket-Abnahme folgt
+nach dem zusammenhängenden QR-/Rechner-Slice ausschließlich im
+`t3code://app`-Target; bis dahin ist dies bewusst kein Live-Abschlussbeleg.

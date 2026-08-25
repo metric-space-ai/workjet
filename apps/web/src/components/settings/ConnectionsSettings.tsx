@@ -2959,7 +2959,7 @@ export function ConnectionsSettings() {
         {desktopWslState.enabled ? (
           <SettingsRow
             title="WSL only"
-            description="Stop the Windows backend and run only the WSL backend. Useful if you develop entirely inside WSL and don't want a second backend process. CTOX Desktop App restarts when you change this."
+            description="Stop the Windows backend and run only the WSL backend. Useful if you develop entirely inside WSL and don't want a second backend process. Workjet restarts when you change this."
             className="bg-muted/20 pl-7 sm:pl-8"
             control={
               <Switch
@@ -3190,8 +3190,8 @@ export function ConnectionsSettings() {
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {pendingDesktopServerExposureMode === "network-accessible"
-                    ? "CTOX Desktop App will restart to expose this environment over the network."
-                    : "CTOX Desktop App will restart and limit this environment back to this machine."}
+                    ? "Workjet will restart to expose this environment over the network."
+                    : "Workjet will restart and limit this environment back to this machine."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -3249,15 +3249,15 @@ export function ConnectionsSettings() {
                 <AlertDialogDescription>
                   {pendingWslChange?.kind === "disable"
                     ? pendingWslChange.wasWslOnly
-                      ? "CTOX Desktop App will restart on the Windows backend. Threads and projects opened against WSL stay safe inside the distro and become available again when you re-enable WSL."
-                      : "The WSL backend will stop. Threads and projects opened against WSL stay safe inside the distro, but they'll be unavailable in CTOX Desktop App until you re-enable WSL."
+                      ? "Workjet will restart on the Windows backend. Threads and projects opened against WSL stay safe inside the distro and become available again when you re-enable WSL."
+                      : "The WSL backend will stop. Threads and projects opened against WSL stay safe inside the distro, but they'll be unavailable in Workjet until you re-enable WSL."
                     : pendingWslChange?.kind === "distro"
-                      ? "CTOX Desktop App will restart the WSL backend on the new distro. Sessions still running on the current distro will be interrupted."
+                      ? "Workjet will restart the WSL backend on the new distro. Sessions still running on the current distro will be interrupted."
                       : pendingWslChange?.kind === "enable"
                         ? "Run the WSL backend alongside the Windows one, or stop the Windows backend and use only WSL? You can change this later from Settings."
                         : pendingWslChange?.nextValue
-                          ? "CTOX Desktop App will restart and start only the WSL backend. Your Windows-side projects won't be accessible until you turn this off again."
-                          : "CTOX Desktop App will restart and bring the Windows backend back up alongside WSL."}
+                          ? "Workjet will restart and start only the WSL backend. Your Windows-side projects won't be accessible until you turn this off again."
+                          : "Workjet will restart and bring the Windows backend back up alongside WSL."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -3343,7 +3343,7 @@ export function ConnectionsSettings() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Disable Tailscale HTTPS?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  CTOX Desktop App will restart the local backend without Tailscale Serve.
+                  Workjet will restart the local backend without Tailscale Serve.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -3381,8 +3381,8 @@ export function ConnectionsSettings() {
               <DialogHeader>
                 <DialogTitle>Set up Tailscale HTTPS?</DialogTitle>
                 <DialogDescription>
-                  CTOX Desktop App will restart the local backend with Tailscale Serve enabled and
-                  ask Tailscale to proxy HTTPS traffic to this backend.
+                  Workjet will restart the local backend with Tailscale Serve enabled and ask
+                  Tailscale to proxy HTTPS traffic to this backend.
                 </DialogDescription>
               </DialogHeader>
               <DialogPanel className="space-y-4">

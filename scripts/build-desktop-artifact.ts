@@ -2177,11 +2177,13 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-// Deep-link schemes the packaged app claims. The CTOX-branded pair is the
-// current identity; the legacy t3code pair stays claimed so links in older
-// documents keep opening the app. Kept in sync with
+// Deep-link schemes the packaged app claims. Workjet is the only current
+// identity; CTOX Desktop and t3code stay claimed as inbound aliases. Kept in sync with
 // apps/desktop/src/electron/desktopSchemes.ts (DESKTOP_DEEP_LINK_SCHEMES).
 export const DESKTOP_PROTOCOL_SCHEMES = [
+  "workjet",
+  "workjet-dev",
+  "workjet-preview",
   "ctox-desktop",
   "ctox-desktop-dev",
   "t3code",
@@ -2189,7 +2191,7 @@ export const DESKTOP_PROTOCOL_SCHEMES = [
 ] as const;
 
 export function resolveDesktopProductName(_version: string): string {
-  return desktopPackageJson.productName ?? "CTOX Desktop App";
+  return desktopPackageJson.productName ?? "Workjet";
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2212,7 +2214,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "CTOX-Desktop-App-${version}-${arch}.${ext}",
+    artifactName: "Workjet-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [...DESKTOP_FILE_EXCLUSIONS],
     directories: {
@@ -2247,7 +2249,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "CTOX Desktop App",
+          name: "Workjet",
           schemes: [...DESKTOP_PROTOCOL_SCHEMES],
         },
       ],
@@ -2268,10 +2270,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // ctox-desktop:// (and legacy t3code://) callbacks to the app.
+      // workjet:// and inbound legacy callbacks to the app.
       protocols: [
         {
-          name: "CTOX Desktop App",
+          name: "Workjet",
           schemes: [...DESKTOP_PROTOCOL_SCHEMES],
         },
       ],
@@ -2690,7 +2692,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "CTOX Desktop App build",
+    description: "Workjet desktop build",
     author: "Metric Space AI",
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
@@ -2956,7 +2958,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a CTOX Desktop App artifact."),
+  Command.withDescription("Build a Workjet desktop artifact."),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

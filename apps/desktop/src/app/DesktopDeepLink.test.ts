@@ -9,8 +9,11 @@ import {
 } from "./DesktopDeepLink.ts";
 
 describe("desktop protocol schemes", () => {
-  it("claims the CTOX pair alongside the legacy pair", () => {
+  it("claims Workjet schemes alongside inbound legacy aliases", () => {
     assert.deepEqual(ElectronProtocol.DESKTOP_DEEP_LINK_SCHEMES, [
+      "workjet",
+      "workjet-dev",
+      "workjet-preview",
       "ctox-desktop",
       "ctox-desktop-dev",
       "t3code",
@@ -18,9 +21,14 @@ describe("desktop protocol schemes", () => {
     ]);
   });
 
-  it("prefers the CTOX scheme per build variant and keeps the legacy fallback", () => {
-    assert.deepEqual(ElectronProtocol.getDesktopDeepLinkSchemes(false), ["ctox-desktop", "t3code"]);
+  it("prefers the Workjet scheme per build variant and keeps inbound aliases", () => {
+    assert.deepEqual(ElectronProtocol.getDesktopDeepLinkSchemes(false), [
+      "workjet",
+      "ctox-desktop",
+      "t3code",
+    ]);
     assert.deepEqual(ElectronProtocol.getDesktopDeepLinkSchemes(true), [
+      "workjet-dev",
       "ctox-desktop-dev",
       "t3code-dev",
     ]);
@@ -35,22 +43,25 @@ describe("desktop protocol schemes", () => {
 
 describe("parseDesktopDeepLink", () => {
   it("normalizes both scheme families onto one internal representation", () => {
-    const fromCtox = parseDesktopDeepLink("ctox-desktop://app/settings/connections?tab=ssh#top");
+    const fromWorkjet = parseDesktopDeepLink("workjet://app/settings/connections?tab=ssh#top");
     const fromLegacy = parseDesktopDeepLink("t3code://app/settings/connections?tab=ssh#top");
 
-    assert.isTrue(Option.isSome(fromCtox));
+    assert.isTrue(Option.isSome(fromWorkjet));
     assert.isTrue(Option.isSome(fromLegacy));
     assert.equal(
-      Option.getOrThrow(fromCtox).canonicalUrl,
+      Option.getOrThrow(fromWorkjet).canonicalUrl,
       Option.getOrThrow(fromLegacy).canonicalUrl,
     );
     assert.equal(
-      Option.getOrThrow(fromCtox).canonicalUrl,
+      Option.getOrThrow(fromWorkjet).canonicalUrl,
       "t3code://app/settings/connections?tab=ssh#top",
     );
   });
 
   it.each([
+    ["workjet://app/x", "workjet", false, "t3code://app/x"],
+    ["workjet-dev://app/x", "workjet", true, "t3code-dev://app/x"],
+    ["workjet-preview://app/x", "workjet", false, "t3code://app/x"],
     ["ctox-desktop://app/x", "ctox", false, "t3code://app/x"],
     ["ctox-desktop-dev://app/x", "ctox", true, "t3code-dev://app/x"],
     ["t3code://app/x", "legacy", false, "t3code://app/x"],
@@ -63,30 +74,30 @@ describe("parseDesktopDeepLink", () => {
   });
 
   it("keeps an empty path canonical", () => {
-    const link = Option.getOrThrow(parseDesktopDeepLink("ctox-desktop://app"));
+    const link = Option.getOrThrow(parseDesktopDeepLink("workjet://app"));
     assert.equal(link.path, "/");
     assert.equal(link.canonicalUrl, "t3code://app/");
   });
 
   it("preserves query and fragment separately", () => {
-    const link = Option.getOrThrow(parseDesktopDeepLink("ctox-desktop://app/a/b?x=1&y=2#/deep"));
+    const link = Option.getOrThrow(parseDesktopDeepLink("workjet://app/a/b?x=1&y=2#/deep"));
     assert.equal(link.path, "/a/b");
     assert.equal(link.search, "?x=1&y=2");
     assert.equal(link.hash, "#/deep");
   });
 
   it("accepts an upper-case scheme as delivered by some launchers", () => {
-    const link = Option.getOrThrow(parseDesktopDeepLink("CTOX-DESKTOP://app/x"));
-    assert.equal(link.scheme, "ctox-desktop");
+    const link = Option.getOrThrow(parseDesktopDeepLink("WORKJET://app/x"));
+    assert.equal(link.scheme, "workjet");
     assert.equal(link.canonicalUrl, "t3code://app/x");
   });
 
   it.each([
     "https://app/x",
-    "ctox-desktop:/app/x",
-    "ctox-desktop://evil.example.com/x",
-    "ctox-desktop://app:8080/x",
-    "ctox-desktop://user:pw@app/x",
+    "workjet:/app/x",
+    "workjet://evil.example.com/x",
+    "workjet://app:8080/x",
+    "workjet://user:pw@app/x",
     "t3code-preview://app/x",
     "",
     "://app",
@@ -96,13 +107,13 @@ describe("parseDesktopDeepLink", () => {
 });
 
 describe("resolveDesktopDeepLinkRedirect", () => {
-  it("redirects a CTOX-scheme link onto the renderer origin", () => {
+  it("redirects a Workjet-scheme link onto the renderer origin", () => {
     assert.deepEqual(
-      resolveDesktopDeepLinkRedirect("ctox-desktop://app/threads?id=1"),
+      resolveDesktopDeepLinkRedirect("workjet://app/threads?id=1"),
       Option.some("t3code://app/threads?id=1"),
     );
     assert.deepEqual(
-      resolveDesktopDeepLinkRedirect("ctox-desktop-dev://app/threads"),
+      resolveDesktopDeepLinkRedirect("workjet-dev://app/threads"),
       Option.some("t3code-dev://app/threads"),
     );
   });

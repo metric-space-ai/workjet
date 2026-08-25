@@ -137,7 +137,7 @@ const make = Effect.gen(function* () {
         const session = yield* bootstrapRemoteBearerSession({
           httpBaseUrl: config.value.httpBaseUrl.href,
           credential: config.value.bootstrap.desktopBootstrapToken,
-          clientMetadata: { label: "CTOX Desktop Decision Hub", deviceType: "desktop" },
+          clientMetadata: { label: "Workjet Decision Hub", deviceType: "desktop" },
         });
         return {
           httpBaseUrl: config.value.httpBaseUrl.href,

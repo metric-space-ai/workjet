@@ -160,9 +160,8 @@ function ActiveSshPasswordPrompt({
         <DialogHeader>
           <DialogTitle>SSH Password Required</DialogTitle>
           <DialogDescription>
-            CTOX Desktop App needs your SSH password to connect to <code>{target}</code>. The
-            password is passed to the local SSH process for this connection attempt and is not saved
-            by CTOX Desktop App.
+            Workjet needs your SSH password to connect to <code>{target}</code>. The password is
+            passed to the local SSH process for this connection attempt and is not saved by Workjet.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-3" scrollFade={false}>

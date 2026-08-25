@@ -105,13 +105,13 @@ const emptyRecording = (): RecordedRegistration => ({
 describe("DesktopLinuxUrlHandler", () => {
   it("renders a scheme-handler desktop entry with freedesktop Exec quoting", () => {
     const entry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
-      displayName: "T3 Code (Nightly)",
+      displayName: "Workjet",
       execTarget: '/home/al ice/Apps/T3 "100%" $HOME\\x.AppImage',
-      schemes: ["ctox-desktop", "t3code"],
+      schemes: ["workjet", "ctox-desktop", "t3code"],
     });
 
     assert.include(entry, "[Desktop Entry]");
-    assert.include(entry, "Name=T3 Code (Nightly)");
+    assert.include(entry, "Name=Workjet");
     // Exec composes both escaping layers: a literal backslash becomes four
     // backslashes in the file, a quote three characters, a dollar sign two
     // backslashes plus the sign.
@@ -121,7 +121,10 @@ describe("DesktopLinuxUrlHandler", () => {
     );
     assert.include(entry, "NoDisplay=true");
     assert.notInclude(entry, "StartupWMClass=");
-    assert.include(entry, "MimeType=x-scheme-handler/ctox-desktop;x-scheme-handler/t3code;");
+    assert.include(
+      entry,
+      "MimeType=x-scheme-handler/workjet;x-scheme-handler/ctox-desktop;x-scheme-handler/t3code;",
+    );
   });
 
   it("carries structured context on registration errors", () => {
@@ -169,10 +172,14 @@ describe("DesktopLinuxUrlHandler", () => {
       );
       assert.include(
         recorded.files[0]?.content,
-        "MimeType=x-scheme-handler/ctox-desktop;x-scheme-handler/t3code;",
+        "MimeType=x-scheme-handler/workjet;x-scheme-handler/ctox-desktop;x-scheme-handler/t3code;",
       );
-      // Both the CTOX scheme and the legacy scheme are claimed by the one entry.
+      // Workjet plus both inbound aliases are claimed by the one entry.
       assert.deepEqual(recorded.commands, [
+        {
+          command: "xdg-mime",
+          args: ["default", "t3code-url-handler.desktop", "x-scheme-handler/workjet"],
+        },
         {
           command: "xdg-mime",
           args: ["default", "t3code-url-handler.desktop", "x-scheme-handler/ctox-desktop"],

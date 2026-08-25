@@ -180,14 +180,13 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        assert.deepEqual(calls.setName, ["CTOX Desktop App (Alpha)"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "CTOX Desktop App (Alpha)");
+        assert.deepEqual(calls.setName, ["Workjet"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "Workjet");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);
-        // The CTOX scheme is claimed first; the legacy scheme stays claimed so
-        // t3code:// links in older documents keep opening the app.
-        assert.deepEqual(calls.setAsDefaultProtocolClient, ["ctox-desktop", "t3code"]);
+        // Workjet is canonical; older CTOX Desktop and t3code links stay inbound-compatible.
+        assert.deepEqual(calls.setAsDefaultProtocolClient, ["workjet", "ctox-desktop", "t3code"]);
       }),
       {
         calls,

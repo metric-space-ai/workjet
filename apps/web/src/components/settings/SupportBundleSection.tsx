@@ -34,7 +34,7 @@ export const INITIAL_SUPPORT_BUNDLE_STATE: SupportBundleState = {
 
 /** Shown when the renderer is not hosted by a desktop build that has the bridge. */
 export const SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE =
-  "Support bundles are created by the desktop app. Open this page in the CTOX Desktop App to create one.";
+  "Support bundles are created by the desktop app. Open this page in Workjet to create one.";
 
 export function formatSupportBundleSize(byteLength: number): string {
   if (byteLength < 1024) return `${byteLength} B`;

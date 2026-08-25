@@ -3,11 +3,10 @@ import * as Option from "effect/Option";
 import * as DesktopSchemes from "../electron/desktopSchemes.ts";
 
 /**
- * Which family a deep link arrived on. `ctox` is the current CTOX Desktop App
- * scheme pair; `legacy` is the historical t3code pair, kept claimed so links
- * baked into older documents, OAuth consoles, and shell aliases keep working.
+ * Which family a deep link arrived on. `workjet` is the product identity;
+ * `ctox` and `legacy` are inbound compatibility aliases only.
  */
-export type DesktopDeepLinkFamily = "ctox" | "legacy";
+export type DesktopDeepLinkFamily = "workjet" | "ctox" | "legacy";
 
 export interface DesktopDeepLink {
   /** Scheme exactly as it arrived, without the trailing colon. */
@@ -37,6 +36,9 @@ interface SchemeDescriptor {
 }
 
 const SCHEME_DESCRIPTORS: ReadonlyMap<string, SchemeDescriptor> = new Map([
+  [DesktopSchemes.WORKJET_PRODUCTION_SCHEME, { family: "workjet", isDevelopment: false }],
+  [DesktopSchemes.WORKJET_DEVELOPMENT_SCHEME, { family: "workjet", isDevelopment: true }],
+  [DesktopSchemes.WORKJET_PREVIEW_SCHEME, { family: "workjet", isDevelopment: false }],
   [DesktopSchemes.CTOX_DESKTOP_PRODUCTION_SCHEME, { family: "ctox", isDevelopment: false }],
   [DesktopSchemes.CTOX_DESKTOP_DEVELOPMENT_SCHEME, { family: "ctox", isDevelopment: true }],
   [DesktopSchemes.DESKTOP_PRODUCTION_SCHEME, { family: "legacy", isDevelopment: false }],

@@ -1,10 +1,16 @@
-# Übergabe: CTOX Desktop App — Entwicklungs-Handover
+# Übergabe: Workjet Desktop — Entwicklungs-Handover
 
-Stand: 2026-08-25 ~12:15 · Branch `codex/workjet-native-foundation` · Vorgänger-Session: Claude (Fable), Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
+Stand: 2026-08-25 ~16:40 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
 
 ## Woran du arbeitest
 
-Die CTOX Desktop App = drei Teile in diesem Repo:
+**Produktgrenze:** Die einzige Nutzer-App heißt sichtbar exakt **Workjet** und
+vereint Coding und Business OS. **CTOX** ist ausschließlich das installierbare
+Backend. Nicht mit `ctox/src/apps/business-os-desktop` verwechseln: Diese alte
+Electron-App ist Legacy und kein Release-Ziel. Der Donor
+`ctox/src/apps/business-os-mobile` ist ebenfalls keine Produkt-App.
+
+Workjet Desktop besteht aus drei Teilen in diesem Repo:
 
 - `apps/desktop/` — Electron-Hülle (Guest-Pool für Business OS in `src/ctox/CtoxGuestManager.ts`, IPC in `src/ipc/`)
 - `apps/web/` — das gesamte UI (Composer, Settings, BOS-Sidebar)
@@ -27,7 +33,7 @@ Die App läuft LIVE beim Operator mit `--remote-debugging-port=9300`. Der Operat
 - Server-Bundle: in `apps/server`: `vp pack` + `vp pack src/service-launcher.ts --out-dir dist --no-clean` (NICHT `vp build`).
 - Desktop: `cd apps/desktop && vp pack` → `dist-electron/main.cjs`.
 - Client-Deploy ist im laufenden Betrieb sicher (nur Reload nötig); Server-/Desktop-Änderungen brauchen App-Neustart:
-  `nohup "./apps/desktop/.electron-runtime/CTOX Desktop App (Alpha).app/Contents/MacOS/Electron" ./apps/desktop/dist-electron/main.cjs --remote-debugging-port=9300 &`
+  `nohup "./apps/desktop/.electron-runtime/Workjet.app/Contents/MacOS/Electron" ./apps/desktop/dist-electron/main.cjs --remote-debugging-port=9300 &`
 - Pre-commit (`vp fmt`) formatiert repo-weit; Typecheck: `cd apps/web && pnpm typecheck`; Tests: `pnpm vitest run src/components` (zuletzt 1506 grün).
 
 ## Live-Verifikation (CDP-Harness)
@@ -47,7 +53,7 @@ Attach-Snippet: WebSocket auf `http://127.0.0.1:9300/json/list`, **Target mit UR
 
 ## Koordination
 
-- **CTOX Business OS Mobile App** (paralleler Worker, Scope am 25.08. bestätigt): arbeitet ausschließlich in `/Users/michaelwelsch/Documents/ctox`, insbesondere `src/apps/business-os/` und ggf. `src/apps/business-os-mobile/`, mit Schema `ctox-business-os-mobile://pair`. Er verändert dieses Workjet-Repo und Port 9300 nicht. Der Desktop-Worker hält seinerseits `apps/mobile/**`, `packages/contracts/**` und das gesamte CTOX-Repo frei; bei einer unerwarteten Scope-Änderung ist neu abzustimmen.
+- **Workjet Mobile** (paralleler Worker): arbeitet ausschließlich in `apps/mobile/**` und der Mobile-Provenienz-Doku. Er hat Branding/Links/Moduswechsel als `717b0a4a0` committed und implementiert aktuell Registry, QR-Pairing, SecureStore, Shell-Pack und native WebViews. Desktop-/Server-Dateien freihalten; Shared Contracts nur nach expliziter Übergabe ändern.
 - Workjet-Worker (Kimi-Auditor etc.) für unabhängige Reviews: Brief-Muster und Fallen siehe oben; Review-Läufe read-only halten, Ergebnisse selbst verifizieren (Reports sind Behauptungen).
 
 ## Offene Aufgaben (in dieser Reihenfolge)

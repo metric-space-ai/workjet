@@ -176,7 +176,7 @@ export function readThemePreference(): Theme {
   if (raw !== null && isKnownThemePreference(raw)) {
     return canonicalThemePreference(raw);
   }
-  // CTOX Desktop is dark-first. Existing explicit preferences still win;
+  // Workjet Desktop is dark-first. Existing explicit preferences still win;
   // only a genuinely fresh desktop profile receives the dark default.
   return window.desktopBridge === undefined ? DEFAULT_THEME_SNAPSHOT.theme : "dark";
 }

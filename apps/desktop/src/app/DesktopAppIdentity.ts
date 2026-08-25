@@ -42,7 +42,7 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
 };
 
 /**
- * The live Chromium profile directory. Always the CTOX Desktop App directory —
+ * The live Chromium profile directory. Always the historical CTOX Desktop App directory —
  * a legacy T3 Code directory is never adopted in place. Importing from one is
  * an explicit, one-time, user-confirmed copy (see DesktopUserDataMigration).
  */

@@ -130,7 +130,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
-      "CTOX Desktop App failed to start",
+      "Workjet failed to start",
       `Stage: ${stage}\n${message}${detail}`,
     );
   }

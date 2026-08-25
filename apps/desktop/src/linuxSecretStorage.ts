@@ -112,11 +112,11 @@ export function resolveLinuxSecretStorageUnavailableMessage(input: {
 }
 
 function getGnomeKeyringRemediationMessage(): string {
-  return "CTOX Desktop App could not access GNOME Keyring to save this environment credential. Install and start GNOME Keyring, then restart CTOX Desktop App.";
+  return "Workjet could not access GNOME Keyring to save this environment credential. Install and start GNOME Keyring, then restart Workjet.";
 }
 
 function getKWalletRemediationMessage(): string {
-  return "CTOX Desktop App could not access KWallet to save this environment credential. Enable the KDE wallet subsystem in System Settings, then restart CTOX Desktop App.";
+  return "Workjet could not access KWallet to save this environment credential. Enable the KDE wallet subsystem in System Settings, then restart Workjet.";
 }
 
 // Advisory only: this picks between the GNOME Keyring and KWallet wording in the failure notice. It

@@ -113,7 +113,7 @@ export function DeepLinkConfirmationPrompt({
     >
       <DialogPopup className="max-w-md" data-deep-link-confirmation-dialog showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Open this link in CTOX Desktop App?</DialogTitle>
+          <DialogTitle>Open this link in Workjet?</DialogTitle>
           <DialogDescription>
             A <code>{link.scheme}</code> link was opened from outside the app. Nothing happens
             unless you choose Open.

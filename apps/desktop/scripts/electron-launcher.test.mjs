@@ -9,9 +9,9 @@ import {
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
-  it("uses CTOX display names and Dock artwork", () => {
-    assert.equal(resolveLauncherDisplayName(true), "CTOX Desktop App (Dev)");
-    assert.equal(resolveLauncherDisplayName(false), "CTOX Desktop App (Alpha)");
+  it("uses the Workjet display name and existing Dock artwork", () => {
+    assert.equal(resolveLauncherDisplayName(true), "Workjet");
+    assert.equal(resolveLauncherDisplayName(false), "Workjet");
     assert.match(DEVELOPMENT_MAC_ICON_PATH, /assets\/ctox\/ctox-app-icon\.png$/);
   });
 
@@ -60,18 +60,18 @@ describe("electron development launcher", () => {
 
   it("keeps the native Electron executable name inside the branded macOS bundle", () => {
     const paths = resolveMacLauncherPaths(
-      "/repo/apps/desktop/.electron-runtime/CTOX Desktop App (Dev).app",
-      "CTOX Desktop App (Dev)",
+      "/repo/apps/desktop/.electron-runtime/Workjet.app",
+      "Workjet",
     );
 
-    assert.equal(paths.launcherExecutableName, "CTOX Desktop App (Dev) Launcher");
+    assert.equal(paths.launcherExecutableName, "Workjet Launcher");
     assert.equal(
       paths.launcherBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/CTOX Desktop App (Dev).app/Contents/MacOS/CTOX Desktop App (Dev) Launcher",
+      "/repo/apps/desktop/.electron-runtime/Workjet.app/Contents/MacOS/Workjet Launcher",
     );
     assert.equal(
       paths.runtimeElectronBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/CTOX Desktop App (Dev).app/Contents/MacOS/Electron",
+      "/repo/apps/desktop/.electron-runtime/Workjet.app/Contents/MacOS/Electron",
     );
 
     const script = makeDevelopmentLauncherScript({
@@ -82,7 +82,7 @@ describe("electron development launcher", () => {
     });
     assert.include(
       script,
-      "exec '/repo/apps/desktop/.electron-runtime/CTOX Desktop App (Dev).app/Contents/MacOS/Electron'",
+      "exec '/repo/apps/desktop/.electron-runtime/Workjet.app/Contents/MacOS/Electron'",
     );
     assert.notInclude(script, "node_modules/electron");
   });

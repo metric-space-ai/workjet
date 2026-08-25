@@ -83,7 +83,7 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "CTOX Desktop App";
+const APP_BASE_NAME = "Workjet";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -104,7 +104,7 @@ function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: APP_BASE_NAME,
   };
 }
 
@@ -173,10 +173,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  // The CTOX Desktop App keeps its own Chromium profile directory, distinct
-  // from every T3 Code-era one. Matching the packaged productName means the
-  // explicit setPath below and Electron's own default resolve to the same
-  // place, so the single-instance lock can never create a second profile.
+  // Keep the existing CTOX Desktop profile name as storage identity while the
+  // visible product becomes Workjet. Renaming this directory would silently
+  // fork sessions, settings, and renderer storage for existing installations.
   const userDataDirName = isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App";
   const legacyUserDataDirNames: readonly string[] = isDevelopment
     ? ["t3code-dev", "T3 Code (Dev)"]

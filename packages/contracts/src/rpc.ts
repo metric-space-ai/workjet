@@ -220,6 +220,13 @@ import {
   WorkjetLegacyImportInspection,
 } from "./workjetLegacyImport.ts";
 import {
+  WorkjetSessionImportError,
+  WorkjetSessionImportInput,
+  WorkjetSessionImportInspectInput,
+  WorkjetSessionImportInspection,
+  WorkjetSessionImportResult,
+} from "./workjetSessionImport.ts";
+import {
   WorkjetMailboxAcceptHandoffRpcInput,
   WorkjetMailboxAcceptHandoffRpcResult,
   WorkjetMailboxDelegateTaskRpcInput,
@@ -384,6 +391,11 @@ export const WS_METHODS = {
   // methods answer for this server and take no environment in their payload.
   workjetLegacyImportInspect: "workjet.legacyImport.inspect",
   workjetLegacyImportDecide: "workjet.legacyImport.decide",
+
+  // Repeatable static copies of third-party harness transcripts. Importing
+  // never resumes or mutates the source provider session.
+  workjetSessionImportInspect: "workjet.sessionImport.inspect",
+  workjetSessionImport: "workjet.sessionImport.import",
 
   // Thread-scoped Workjet mailbox sends (orchestrator threads only)
   workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
@@ -769,6 +781,23 @@ export const WsWorkjetLegacyImportDecideRpc = Rpc.make(WS_METHODS.workjetLegacyI
   payload: WorkjetLegacyImportDecideInput,
   success: WorkjetLegacyImportDecisionResult,
   error: WorkjetLegacyImportRpcError,
+});
+
+const WorkjetSessionImportRpcError = Schema.Union([
+  WorkjetSessionImportError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetSessionImportInspectRpc = Rpc.make(WS_METHODS.workjetSessionImportInspect, {
+  payload: WorkjetSessionImportInspectInput,
+  success: WorkjetSessionImportInspection,
+  error: WorkjetSessionImportRpcError,
+});
+
+export const WsWorkjetSessionImportRpc = Rpc.make(WS_METHODS.workjetSessionImport, {
+  payload: WorkjetSessionImportInput,
+  success: WorkjetSessionImportResult,
+  error: WorkjetSessionImportRpcError,
 });
 
 /**
@@ -1565,6 +1594,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,
   WsWorkjetLegacyImportDecideRpc,
+  WsWorkjetSessionImportInspectRpc,
+  WsWorkjetSessionImportRpc,
   WsWorkjetMailboxSendMessageRpc,
   WsWorkjetMailboxDelegateTaskRpc,
   WsWorkjetMailboxReplyRpc,

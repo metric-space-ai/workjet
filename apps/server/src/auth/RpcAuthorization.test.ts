@@ -76,6 +76,15 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("separates session discovery from creating static Workjet copies", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetSessionImportInspect)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetSessionImport)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("reads the mesh roster under orchestration read, never a mailbox write scope", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetMeshRoster)).toBe(
       AuthOrchestrationReadScope,

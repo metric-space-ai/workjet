@@ -67,6 +67,7 @@ import Migration0052 from "./Migrations/052_WorkjetCrossModeLinks.ts";
 import Migration0053 from "./Migrations/053_WorkjetMailboxPeerRevocations.ts";
 import Migration0054 from "./Migrations/054_WorkjetDelegationStateEvents.ts";
 import Migration0055 from "./Migrations/055_WorkjetDecisionHub.ts";
+import Migration0056 from "./Migrations/056_WorkjetSessionImports.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -134,6 +135,7 @@ export const migrationEntries = [
   [53, "WorkjetMailboxPeerRevocations", Migration0053],
   [54, "WorkjetDelegationStateEvents", Migration0054],
   [55, "WorkjetDecisionHub", Migration0055],
+  [56, "WorkjetSessionImports", Migration0056],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

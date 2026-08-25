@@ -1367,3 +1367,37 @@ Managed-/Local-CTOX-Instanzen. Der bestehende Draft `b15d17e7-...` öffnete mit
 Composer und den gespeicherten Manual-/Rechner-/Harness-/Modell-/Workspace-
 Chips. Anschließend wurde der Endzustand wieder auf Business OS ohne geöffneten
 Guest gestellt. Der Installationsknopf wurde nicht ausgelöst.
+
+## Statischer Codex-/Claude-Session-Importer — 2026-08-25 ~21:40
+
+Settings → Harnesses enthält jetzt `Import sessions`. Die Umgebung entdeckt bis
+zu 20 der neuesten lesbaren Codex- und Claude-Code-Verläufe aus den für diese
+Harness-Instanzen konfigurierten Homes. Der Client erhält nur eine opake,
+pfadfreie Candidate-ID plus sichtbare Metadaten; der Server löst die ID bei
+jedem Import erneut gegen die erlaubten Roots auf. Symlinks werden nicht
+verfolgt, einzelne Transcripts sind auf 20 MiB/5.000 sichtbare Nachrichten und
+eine Auswahl auf 20 Sessions begrenzt.
+
+Die Produktgrenze ist absichtlich hart: Der Import erzeugt ausschließlich
+statische `thread.message-sent`-Historie, keinen Provider-Turn, keine native
+Sessionbindung und kein Resume-Token. Quell-Dateien werden nie geschrieben,
+umbenannt oder gesperrt. Wiederholte Imports vergleichen den bereits kopierten
+Präfix inhaltlich und über einen SHA-256; nur ein append-only Suffix wird
+ergänzt. Hat sich der Quellpräfix oder der Workjet-Thread verändert, scheitert
+das Update geschlossen statt die Anwendungen still zu vermischen. Eine
+unterbrochene Operation wird anhand deterministischer Message-IDs idempotent
+fortgesetzt. Subagent-/Sidechain-Transcripts, Developer-/Tool-/Thinking-Blöcke,
+injizierter Codex-Kontext und interne `WORKJET HEALTH PROBE V1`-Sessions werden
+nicht angeboten.
+
+BEWEISE: Contract-, Authorization-, Parser- und Decider-Suite 24/24 grün;
+Contracts-, Client-Runtime-, Web- und Server-Typecheck exit 0, Format und
+`git diff --check` grün. Live im einzigen normalisierten `t3code://app/`-Target:
+20 reale Candidates, keine Health-Probe und kein `<recommended_plugins>`-Text,
+kein horizontaler Overflow bei 1422×866. Eine reale Claude-Session wurde über
+Checkbox und `Import selected` kopiert und direkt erneut importiert: Mapping
+und Projektion blieben bei exakt 201 Nachrichten. Vorher/nachher blieben
+Quell-SHA-256 `4ccc1951…2308`, Mtime und Dateigröße bytegleich; für den neuen
+Thread existieren weder `projection_thread_sessions`- noch
+`provider_session_runtime`-Zeilen. Damit ist die wiederholbare statische Kopie
+belegt, ohne Interferenz mit Claude Code.

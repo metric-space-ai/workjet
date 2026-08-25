@@ -75,6 +75,8 @@ export const RPC_REQUIRED_SCOPES = {
   // carries the same operate scope every other settings write does.
   [WS_METHODS.workjetLegacyImportInspect]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetLegacyImportDecide]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetSessionImportInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetSessionImport]: AuthOrchestrationOperateScope,
   // Sending into another worker's mailbox is a write; the second, narrower
   // check (the SOURCE thread must be an orchestrator thread) lives in the
   // handler, exactly as it does for the equivalent MCP tools.

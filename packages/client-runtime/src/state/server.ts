@@ -112,6 +112,7 @@ export const WORKJET_CROSS_MODE_LINK_STALE_TIME_MS = 30_000;
  * it.
  */
 export const WORKJET_LEGACY_IMPORT_STALE_TIME_MS = 300_000;
+export const WORKJET_SESSION_IMPORT_STALE_TIME_MS = 10_000;
 
 export type ServerUpdateState =
   | { readonly status: "idle" }
@@ -922,6 +923,23 @@ export function createServerEnvironmentAtoms<R, E>(
       }),
   });
 
+  // Repeatable, read-only discovery of native harness transcript files. The
+  // write creates or updates an independent Workjet copy and never resumes the
+  // source application's provider session.
+  const workjetSessionImport = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:session-import:inspect",
+    tag: WS_METHODS.workjetSessionImportInspect,
+    staleTimeMs: WORKJET_SESSION_IMPORT_STALE_TIME_MS,
+  });
+  const importWorkjetSessions = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:session-import:import",
+    tag: WS_METHODS.workjetSessionImport,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+  });
+
   // The recipient roster the composer picks from: a bounded, redacted read of
   // the peers this machine has already exchanged mail with. It is a read, not a
   // send, so it is a query atom family beside the gateway reads rather than one
@@ -1131,6 +1149,8 @@ export function createServerEnvironmentAtoms<R, E>(
     updateWorkjetGatewayRouting,
     workjetLegacyImport,
     decideWorkjetLegacyImport,
+    workjetSessionImport,
+    importWorkjetSessions,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {

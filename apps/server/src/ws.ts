@@ -92,6 +92,7 @@ import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeTh
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
 import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
+import * as WorkjetSessionImport from "./workjet/sessionImport/WorkjetSessionImport.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -389,6 +390,7 @@ const makeWsRpcLayer = (
   workjetDelegationExecutor: WorkjetDelegationExecutor.WorkjetDelegationExecutor["Service"],
   workjetCrossModeLinkStore: WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore["Service"],
   legacyWorkjetImport: LegacyWorkjetImport.LegacyWorkjetImport["Service"],
+  workjetSessionImport: WorkjetSessionImport.WorkjetSessionImport["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1963,6 +1965,18 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "workjet-legacy-import",
             },
           ),
+        [WS_METHODS.workjetSessionImportInspect]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetSessionImportInspect,
+            workjetSessionImport.inspect(input.limit),
+            { "rpc.aggregate": "workjet-session-import" },
+          ),
+        [WS_METHODS.workjetSessionImport]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetSessionImport,
+            workjetSessionImport.importSessions(input),
+            { "rpc.aggregate": "workjet-session-import" },
+          ),
         [WS_METHODS.workjetMailboxSendMessage]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetMailboxSendMessage,
@@ -2879,6 +2893,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // Constructing it is FREE: it resolves its decision lazily on the first
     // inspect, so a server that nobody asks never reads the legacy document.
     const legacyWorkjetImport = yield* LegacyWorkjetImport.LegacyWorkjetImport;
+    const workjetSessionImport = yield* WorkjetSessionImport.WorkjetSessionImport;
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
@@ -2909,6 +2924,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               workjetDelegationExecutor,
               workjetCrossModeLinkStore,
               legacyWorkjetImport,
+              workjetSessionImport,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
@@ -2982,4 +2998,5 @@ export const websocketRpcRouteLayer = Layer.unwrap(
   // only services this route graph already has (server config, filesystem,
   // settings), and building it performs no I/O at all.
   Layer.provide(LegacyWorkjetImport.layer),
+  Layer.provide(WorkjetSessionImport.layer),
 );

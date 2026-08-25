@@ -99,6 +99,7 @@ import {
 import { WorkjetGatewayAccountsSectionView } from "./WorkjetGatewayAccounts";
 import { WorkjetGatewayPoolsSectionView } from "./WorkjetGatewayPools";
 import { WorkjetLlmRoutesSection } from "./WorkjetLlmRoutesSection";
+import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
   buildProviderEnvironmentOptions,
@@ -1054,6 +1055,8 @@ export function EnvironmentProviderSettings({
           </div>
         </div>
       </SettingsSection>
+
+      <SessionImportSection environmentId={environmentId} readOnly={readOnly} />
 
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog

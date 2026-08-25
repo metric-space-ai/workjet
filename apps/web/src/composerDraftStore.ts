@@ -16,6 +16,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -156,6 +157,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   workjetManualReturn: Schema.optionalKey(
     Schema.NullOr(Schema.Struct({ provider: ProviderInstanceId, model: Schema.String })),
   ),
+  workjetConfig: Schema.optionalKey(WorkjetThreadConfig),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -288,6 +290,8 @@ export interface ComposerThreadDraftState {
   workjetWorkerId: string | null;
   /** Manual model to restore when the worker chip returns to Manual. */
   workjetManualReturn: { readonly provider: ProviderInstanceId; readonly model: string } | null;
+  /** Exact first-turn Workjet authority for a draft; null uses the contract default. */
+  workjetConfig: WorkjetThreadConfig | null;
 }
 
 /**
@@ -483,6 +487,10 @@ interface ComposerDraftStoreState {
     workerId: string | null,
     manualReturn: { readonly provider: ProviderInstanceId; readonly model: string } | null,
   ) => void;
+  setWorkjetConfig: (
+    threadRef: ComposerThreadTarget,
+    workjetConfig: WorkjetThreadConfig | null,
+  ) => void;
   setRuntimeMode: (
     threadRef: ComposerThreadTarget,
     runtimeMode: RuntimeMode | null | undefined,
@@ -659,6 +667,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   interactionMode: null,
   workjetWorkerId: null,
   workjetManualReturn: null,
+  workjetConfig: null,
 });
 
 /**
@@ -683,6 +692,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     interactionMode: null,
     workjetWorkerId: null,
     workjetManualReturn: null,
+    workjetConfig: null,
   };
 }
 
@@ -756,7 +766,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
     draft.interactionMode === null &&
-    draft.workjetWorkerId === null
+    draft.workjetWorkerId === null &&
+    draft.workjetConfig === null
   );
 }
 
@@ -1935,7 +1946,8 @@ function partializeComposerDraftStoreState(
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null &&
-      draft.workjetWorkerId == null
+      draft.workjetWorkerId == null &&
+      draft.workjetConfig === null
     ) {
       continue;
     }
@@ -1997,6 +2009,9 @@ function partializeComposerDraftStoreState(
       ...(draft.workjetWorkerId != null ? { workjetWorkerId: draft.workjetWorkerId } : {}),
       ...(draft.workjetManualReturn
         ? { workjetManualReturn: { ...draft.workjetManualReturn } }
+        : {}),
+      ...(draft.workjetConfig
+        ? { workjetConfig: draft.workjetConfig as DeepMutable<WorkjetThreadConfig> }
         : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
@@ -2246,6 +2261,7 @@ function toHydratedThreadDraft(
     interactionMode: persistedDraft.interactionMode ?? null,
     workjetWorkerId: persistedDraft.workjetWorkerId ?? null,
     workjetManualReturn: persistedDraft.workjetManualReturn ?? null,
+    workjetConfig: persistedDraft.workjetConfig ?? null,
   };
 }
 
@@ -2858,6 +2874,18 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             } else {
               nextDraftsByThreadKey[threadKey] = nextDraft;
             }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setWorkjetConfig: (threadRef, workjetConfig) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) return;
+          set((state) => {
+            const base = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = { ...base, workjetConfig };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },

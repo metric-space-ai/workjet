@@ -59,11 +59,12 @@ export const makeWorkjetCrossModeThreadPortWithSources = Effect.fn(
             runtimeMode: host.runtimeMode,
             interactionMode: host.interactionMode,
             workjetConfig: {
-              schemaVersion: 1,
+              schemaVersion: 2,
               role: "standard",
               parent: null,
               managedInstructions: "",
               enabledCapabilityIds: [],
+              capabilityBindings: [],
             },
             branch: null,
             worktreePath: null,

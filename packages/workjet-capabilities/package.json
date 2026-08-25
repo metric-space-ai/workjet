@@ -9,6 +9,7 @@
     }
   },
   "scripts": {
+    "generate:decision-hub-skill": "node scripts/generate-decision-hub-skill.mjs",
     "typecheck": "tsgo --noEmit",
     "test": "vp test run"
   },

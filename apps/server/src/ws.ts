@@ -62,12 +62,14 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
+  WorkjetDecisionHubConnectionError,
   WORKJET_MESH_OVERVIEW_MAX_PEERS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { validateCapabilityActivation } from "@metric-space-ai/workjet-capabilities";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -87,6 +89,7 @@ import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossMod
 import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
 import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
 import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
+import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
 import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
@@ -458,6 +461,21 @@ const makeWsRpcLayer = (
       const usage = yield* UsageService.UsageService;
       const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
       const providerGateway = yield* ProviderGateway.ProviderGatewayService;
+      const decisionHubConnections = yield* Effect.serviceOption(
+        DecisionHubConnectionRegistry.DecisionHubConnectionRegistry,
+      );
+      const withDecisionHubConnections = <A>(
+        use: (
+          registry: DecisionHubConnectionRegistry.DecisionHubConnectionRegistryShape,
+        ) => Effect.Effect<A, WorkjetDecisionHubConnectionError>,
+      ): Effect.Effect<A, WorkjetDecisionHubConnectionError> => {
+        if (Option.isNone(decisionHubConnections)) {
+          return Effect.fail(
+            new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" }),
+          );
+        }
+        return use(decisionHubConnections.value);
+      };
       const relayClient = yield* RelayClient.RelayClient;
       // The client-facing half of the durable Workjet mailbox. It reuses the
       // delivery service and snapshot store the MCP tools use; only the caller
@@ -1068,6 +1086,30 @@ const makeWsRpcLayer = (
 
           const bootstrapProgram = Effect.gen(function* () {
             if (bootstrap?.createThread) {
+              const workjetConfig = bootstrap.createThread.workjetConfig;
+              if (workjetConfig.enabledCapabilityIds.includes("decision-hub")) {
+                const connections = yield* withDecisionHubConnections((registry) => registry.list);
+                const validation = validateCapabilityActivation({
+                  config: workjetConfig,
+                  knownConnectionIds: new Set(connections.map(({ connectionId }) => connectionId)),
+                  reachableConnectionIds: new Set(
+                    connections
+                      .filter(({ status }) => status === "ready")
+                      .map(({ connectionId }) => connectionId),
+                  ),
+                });
+                const issue = validation.issues.find(
+                  ({ capabilityId }) => capabilityId === "decision-hub",
+                );
+                if (issue !== undefined) {
+                  return yield* new WorkjetDecisionHubConnectionError({
+                    reason:
+                      issue.code === "binding-foreign"
+                        ? "foreign-environment"
+                        : "connection-unavailable",
+                  });
+                }
+              }
               yield* orchestrationEngine.dispatch({
                 type: "thread.create",
                 commandId: yield* serverCommandId("bootstrap-thread-create"),
@@ -2004,6 +2046,40 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.workjetCrossModeSubmit, workjetCrossMode.submit(input), {
             "rpc.aggregate": "workjet-crossmode",
           }),
+        [WS_METHODS.workjetDecisionHubListConnections]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubListConnections,
+            withDecisionHubConnections((registry) =>
+              registry.list.pipe(Effect.map((connections) => ({ connections }))),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        // The bearer token crosses this authenticated transport exactly once
+        // and is never attached to instrumentation or returned to the caller.
+        [WS_METHODS.workjetDecisionHubProvisionConnection]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubProvisionConnection,
+            withDecisionHubConnections((registry) => registry.provision(input)).pipe(
+              Effect.map((connection) => ({ connection })),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        [WS_METHODS.workjetDecisionHubProbeConnection]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubProbeConnection,
+            withDecisionHubConnections((registry) => registry.probe(input.connectionId)).pipe(
+              Effect.map((connection) => ({ connection })),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        [WS_METHODS.workjetDecisionHubDisconnectConnection]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubDisconnectConnection,
+            withDecisionHubConnections((registry) => registry.disconnect(input.connectionId)).pipe(
+              Effect.map((disconnected) => ({ connectionId: input.connectionId, disconnected })),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
         // The recipient roster: this environment's own mesh address plus every
         // peer whose key it has pinned. Ids, a first-contact timestamp, and the
         // derived "can this be sealed" flag only — never key material, and

@@ -21,6 +21,7 @@ import {
   type TurnId,
   type KeybindingCommand,
   type WorkjetThreadConfig,
+  type WorkjetCapabilityBinding,
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   ProviderDriverKind,
@@ -3871,6 +3872,7 @@ function ChatViewContent(props: ChatViewProps) {
     (input: {
       readonly capabilityIds?: ReadonlyArray<string>;
       readonly managedInstructions?: string;
+      readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
     }) => {
       runWorkjetConfigChange((run) =>
         executeWorkjetCapabilitySet({
@@ -3885,6 +3887,9 @@ function ChatViewContent(props: ChatViewProps) {
           ...(input.managedInstructions === undefined
             ? {}
             : { managedInstructions: input.managedInstructions }),
+          ...(input.capabilityBindings === undefined
+            ? {}
+            : { capabilityBindings: input.capabilityBindings }),
           notifyFailure: () => {
             toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
           },
@@ -5717,6 +5722,24 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return;
     }
+    const workjetConfigForFirstTurn =
+      useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
+      DEFAULT_WORKJET_THREAD_CONFIG;
+    if (
+      workjetConfigForFirstTurn.enabledCapabilityIds.includes("decision-hub") &&
+      (!("capabilityBindings" in workjetConfigForFirstTurn) ||
+        workjetConfigForFirstTurn.capabilityBindings.filter(
+          (binding) => binding.capabilityId === "decision-hub",
+        ).length !== 1)
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Decision Hub connection required",
+        description: "Choose one MCP-capable CTOX connection before sending.",
+        data: { hideCopyButton: true },
+      });
+      return;
+    }
     if (!activeProject) {
       toastManager.add(
         stackedThreadToast({
@@ -5925,7 +5948,7 @@ function ChatViewContent(props: ChatViewProps) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode,
-                      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                      workjetConfig: workjetConfigForFirstTurn,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
@@ -7168,6 +7191,12 @@ function ChatViewContent(props: ChatViewProps) {
                             onWorkjetConfigApply={handleWorkjetConfigApply}
                             workjetEnabledCapabilityIds={
                               visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
+                            }
+                            workjetCapabilityBindings={
+                              visibleWorkjetConfig !== null &&
+                              "capabilityBindings" in visibleWorkjetConfig
+                                ? visibleWorkjetConfig.capabilityBindings
+                                : undefined
                             }
                             workjetManagedInstructions={
                               visibleWorkjetConfig?.managedInstructions ?? null

@@ -41,6 +41,7 @@
  *   `accepted`, counts a retry, and the next cycle dispatches the SAME command
  *   id again.
  */
+import { resolveDelegatedCapabilities } from "@metric-space-ai/workjet-capabilities";
 import {
   CommandId,
   EventId,
@@ -903,7 +904,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
       return {
         _tag: "grants",
-        capabilityIds: new Set<string>(parent.workjetConfig.enabledCapabilityIds),
+        capabilityIds: new Set<string>(
+          resolveDelegatedCapabilities({
+            parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
+            targetRole: "worker",
+          }).capabilityIds,
+        ),
       } as const;
     });
 

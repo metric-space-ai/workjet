@@ -204,6 +204,13 @@ function normalizeTenant(rawTenant: unknown): CtoxManagedInstance | undefined {
     tenantId;
   const role = safeTextField(rawTenant, "tenantRole", 128);
   const dataPlaneReady = rawTenant.healthStatus === "ok" || rawTenant.status === "active";
+  const rawDecisionHub = isRecord(rawTenant.decisionHub) ? rawTenant.decisionHub : null;
+  const decisionHubDisplayName =
+    rawDecisionHub === null ? undefined : safeTextField(rawDecisionHub, "displayName", 256);
+  const decisionHubInstanceId =
+    rawDecisionHub === null ? undefined : safeTextField(rawDecisionHub, "instanceId", 256);
+  const decisionHubReason =
+    rawDecisionHub === null ? undefined : safeTextField(rawDecisionHub, "reason", 256);
 
   return {
     id,
@@ -212,6 +219,17 @@ function normalizeTenant(rawTenant: unknown): CtoxManagedInstance | undefined {
     status: rawTenant.launchAllowed === false ? "needs_auth" : "available",
     ...(domain === undefined ? {} : { domain }),
     ...(role === undefined ? {} : { role }),
+    ...(rawDecisionHub === null || decisionHubDisplayName === undefined
+      ? {}
+      : {
+          decisionHub: {
+            eligible: rawDecisionHub.eligible === true,
+            mcpEnabled: rawDecisionHub.mcpEnabled === true,
+            instanceId: decisionHubInstanceId ?? null,
+            displayName: decisionHubDisplayName,
+            reason: decisionHubReason ?? null,
+          },
+        }),
     healthSummary: {
       dataPlane: "rxdb-webrtc",
       dataPlaneReady,

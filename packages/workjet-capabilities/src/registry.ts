@@ -2,7 +2,7 @@ import {
   CapabilityIncompatibleVersionError,
   CapabilityUnknownIdError,
   type CapabilityAdapter,
-  type CapabilityManifestV1,
+  type CapabilityManifest,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
@@ -14,26 +14,26 @@ export interface CapabilityResolutionRequest {
 }
 
 export interface CapabilityRegistry {
-  readonly list: () => ReadonlyArray<CapabilityManifestV1>;
-  readonly find: (capabilityId: string) => CapabilityManifestV1 | undefined;
+  readonly list: () => ReadonlyArray<CapabilityManifest>;
+  readonly find: (capabilityId: string) => CapabilityManifest | undefined;
   readonly resolve: (
     request: CapabilityResolutionRequest,
   ) => Effect.Effect<
-    CapabilityManifestV1,
+    CapabilityManifest,
     CapabilityUnknownIdError | CapabilityIncompatibleVersionError
   >;
-  readonly listForAdapter: (adapter: CapabilityAdapter) => ReadonlyArray<CapabilityManifestV1>;
+  readonly listForAdapter: (adapter: CapabilityAdapter) => ReadonlyArray<CapabilityManifest>;
   readonly resolveEnabled: (
     capabilityIds: ReadonlyArray<string>,
     adapter: CapabilityAdapter,
-  ) => ReadonlyArray<CapabilityManifestV1>;
+  ) => ReadonlyArray<CapabilityManifest>;
 }
 
 export const createCapabilityRegistry = (
-  manifests: ReadonlyArray<CapabilityManifestV1>,
+  manifests: ReadonlyArray<CapabilityManifest>,
 ): CapabilityRegistry => {
   const installed = [...manifests];
-  const firstById = new Map<string, CapabilityManifestV1>();
+  const firstById = new Map<string, CapabilityManifest>();
 
   for (const manifest of installed) {
     if (!firstById.has(manifest.id)) {
@@ -41,7 +41,7 @@ export const createCapabilityRegistry = (
     }
   }
 
-  const find = (capabilityId: string): CapabilityManifestV1 | undefined =>
+  const find = (capabilityId: string): CapabilityManifest | undefined =>
     firstById.get(capabilityId);
 
   return {
@@ -70,7 +70,7 @@ export const createCapabilityRegistry = (
       installed.filter((manifest) => manifest.supportedAdapters.includes(adapter)),
     resolveEnabled: (capabilityIds, adapter) => {
       const seen = new Set<string>();
-      const resolved: Array<CapabilityManifestV1> = [];
+      const resolved: Array<CapabilityManifest> = [];
 
       for (const capabilityId of capabilityIds) {
         if (seen.has(capabilityId)) {

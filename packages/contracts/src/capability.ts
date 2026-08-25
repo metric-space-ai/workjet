@@ -1,4 +1,6 @@
 import * as Schema from "effect/Schema";
+import * as Effect from "effect/Effect";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { EnvironmentId, IsoDateTime, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { WorkjetCapabilityId } from "./workjet.ts";
@@ -86,6 +88,58 @@ export const CapabilityManifestV1 = Schema.Struct({
   supportedAdapters: Schema.Array(CapabilityAdapter),
 });
 export type CapabilityManifestV1 = typeof CapabilityManifestV1.Type;
+
+export const CapabilityActivationPolicy = Schema.Struct({
+  allowedRoles: Schema.Array(Schema.Literals(["standard", "orchestrator", "worker"])),
+  childDelegation: Schema.Literals(["allowed", "forbidden"]),
+  requiredBinding: Schema.NullOr(Schema.Literal("ctox-connection")),
+});
+export type CapabilityActivationPolicy = typeof CapabilityActivationPolicy.Type;
+
+export const CapabilityManifestV2 = Schema.Struct({
+  schemaVersion: Schema.Literal(2),
+  id: WorkjetCapabilityId,
+  version: CapabilityVersion,
+  metadata: CapabilityDisplayMetadata,
+  promptContribution: CapabilityPromptContribution,
+  permissionRequirements: Schema.Array(CapabilityPermissionRequirement),
+  secretRequirements: Schema.Array(CapabilitySecretRequirement),
+  inputSchema: CapabilityJsonSchemaDocument,
+  outputSchema: CapabilityJsonSchemaDocument,
+  supportedAdapters: Schema.Array(CapabilityAdapter),
+  activationPolicy: CapabilityActivationPolicy,
+});
+export type CapabilityManifestV2 = typeof CapabilityManifestV2.Type;
+
+/**
+ * Published manifest reader. V1 manifests remain readable, but normalize to a
+ * conservative root-only, non-delegable policy. Built-ins that intentionally
+ * support workers publish V2 and opt into delegation explicitly.
+ */
+export const CapabilityManifest = Schema.Union([CapabilityManifestV2, CapabilityManifestV1]).pipe(
+  Schema.decodeTo(
+    CapabilityManifestV2,
+    SchemaTransformation.transformOrFail({
+      decode: (manifest): Effect.Effect<CapabilityManifestV2> =>
+        Effect.succeed(
+          manifest.schemaVersion === 2
+            ? manifest
+            : {
+                ...manifest,
+                schemaVersion: 2 as const,
+                activationPolicy: {
+                  allowedRoles: ["standard", "orchestrator"] as const,
+                  childDelegation: "forbidden" as const,
+                  requiredBinding: null,
+                },
+              },
+        ),
+      encode: (manifest): Effect.Effect<CapabilityManifestV2 | CapabilityManifestV1> =>
+        Effect.succeed(manifest),
+    }),
+  ),
+);
+export type CapabilityManifest = typeof CapabilityManifest.Type;
 
 export const CapabilityAvailabilityStatus = Schema.Literals([
   "available",

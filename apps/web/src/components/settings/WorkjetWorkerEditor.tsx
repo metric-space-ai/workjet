@@ -1,18 +1,23 @@
 import {
   WorkjetComputerId,
+  WorkjetConnectionId,
   WorkjetLlmRouteId,
   WorkjetWorkerProfileId,
   type WorkjetCapabilityId,
   type WorkjetComputer,
+  type WorkjetCapabilityBinding,
+  type CtoxManagedInstance,
   type WorkjetHarness,
   type WorkjetLlmRoute,
   type WorkjetReasoningSelection,
   type WorkjetWorkerProfile,
 } from "@t3tools/contracts";
 import { PlusIcon } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { randomUUID } from "../../lib/utils";
+import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
@@ -79,6 +84,11 @@ const CAPABILITY_OPTIONS: ReadonlyArray<{
     label: "Web Stack Browser",
     description: "Browser-backed inspection for web applications.",
   },
+  {
+    id: "decision-hub",
+    label: "Decision Hub",
+    description: "Escalate a blocking owner decision to a connected CTOX instance.",
+  },
 ];
 
 export interface WorkjetWorkerDraft {
@@ -90,7 +100,9 @@ export interface WorkjetWorkerDraft {
   readonly llmRouteId: string;
   readonly modelId: string;
   readonly reasoning: WorkjetReasoningSelection;
+  readonly role: "standard" | "orchestrator";
   readonly capabilityIds: ReadonlyArray<WorkjetCapabilityId>;
+  readonly capabilityBindings: ReadonlyArray<WorkjetCapabilityBinding>;
 }
 
 export function createWorkjetWorkerDraft(input: {
@@ -114,7 +126,9 @@ export function createWorkjetWorkerDraft(input: {
     llmRouteId: input.routes[0]?.id ?? "",
     modelId: "",
     reasoning: "automatic",
+    role: "standard",
     capabilityIds: [],
+    capabilityBindings: [],
   };
 }
 
@@ -150,6 +164,12 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
   if (!draft.llmRouteId) throw new Error("Choose an LLM route.");
   if (!modelId) throw new Error("Enter a model ID.");
   const instructions = draft.instructions.trim();
+  const decisionHubBindings = draft.capabilityBindings.filter(
+    (binding) => binding.capabilityId === "decision-hub",
+  );
+  if (draft.capabilityIds.includes("decision-hub") && decisionHubBindings.length !== 1) {
+    throw new Error("Choose exactly one Decision Hub connection for this worker.");
+  }
   return {
     id: WorkjetWorkerProfileId.make(draft.id),
     name,
@@ -159,7 +179,11 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
     llmRouteId: WorkjetLlmRouteId.make(draft.llmRouteId),
     modelId,
     reasoning: draft.reasoning,
+    role: draft.role,
     capabilityIds: [...draft.capabilityIds],
+    capabilityBindings: draft.capabilityIds.includes("decision-hub")
+      ? [...decisionHubBindings]
+      : [],
   };
 }
 
@@ -261,6 +285,11 @@ export function WorkjetWorkerEditor({
     return createWorkjetWorkerDraft({ worker, computers, routes });
   });
   const [error, setError] = useState<string | null>(null);
+  const [decisionHubInstances, setDecisionHubInstances] = useState<
+    ReadonlyArray<CtoxManagedInstance>
+  >([]);
+  const [provisioningTenantId, setProvisioningTenantId] = useState<string | null>(null);
+  const [disconnectingConnectionId, setDisconnectingConnectionId] = useState<string | null>(null);
   const warning = useMemo(
     () => workjetHarnessAvailabilityWarning(draft, computers),
     [computers, draft],
@@ -268,6 +297,44 @@ export function WorkjetWorkerEditor({
   const harnessLabel =
     WORKJET_HARNESS_OPTIONS.find((option) => option.id === draft.harness)?.label ?? draft.harness;
   const chosenComputer = computers.find((computer) => computer.id === draft.computerId) ?? null;
+  const decisionHubConnections = useEnvironmentQuery(
+    chosenComputer === null
+      ? null
+      : serverEnvironment.workjetDecisionHubConnections({
+          environmentId: chosenComputer.environmentId,
+          input: {},
+        }),
+  );
+  const connections = decisionHubConnections.data?.connections ?? [];
+  useEffect(() => {
+    const bridge = window.desktopBridge?.ctox;
+    if (bridge === undefined) return;
+    let cancelled = false;
+    void bridge
+      .refresh()
+      .then((result) => {
+        if (!cancelled && result._tag === "ready") {
+          setDecisionHubInstances(
+            result.instances.filter(
+              (instance) =>
+                (instance.source === "ctox_dev" && instance.decisionHub !== undefined) ||
+                instance.source === "local_daemon",
+            ),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const decisionHubBinding = draft.capabilityBindings.find(
+    (binding) => binding.capabilityId === "decision-hub",
+  );
+  const selectedDecisionHubConnection =
+    connections.find(
+      (connection) => connection.connectionId === decisionHubBinding?.target.connectionId,
+    ) ?? null;
   const harnessStatusLine =
     chosenComputer === null
       ? "No target computer chosen."
@@ -393,6 +460,25 @@ export function WorkjetWorkerEditor({
       </div>
 
       <div className="space-y-1.5">
+        <SectionHeader title="Root role" />
+        <div className="flex flex-wrap gap-2">
+          <ChoiceButton
+            title="Standard"
+            selected={draft.role === "standard"}
+            onClick={() => patchDraft({ role: "standard" })}
+          />
+          <ChoiceButton
+            title="Orchestrator"
+            selected={draft.role === "orchestrator"}
+            onClick={() => patchDraft({ role: "orchestrator" })}
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Orchestrators coordinate child workers. Child workers never inherit Decision Hub.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
         <SectionHeader title="This worker’s task" />
         <Textarea
           id="workjet-worker-instructions"
@@ -422,19 +508,199 @@ export function WorkjetWorkerEditor({
                 </div>
                 <Switch
                   checked={checked}
-                  onCheckedChange={(next) =>
+                  onCheckedChange={(next) => {
+                    const capabilityIds = next
+                      ? [...draft.capabilityIds.filter((id) => id !== capability.id), capability.id]
+                      : draft.capabilityIds.filter((id) => id !== capability.id);
+                    if (capability.id !== "decision-hub") {
+                      patchDraft({ capabilityIds });
+                      return;
+                    }
+                    const automatic = connections.filter(
+                      (connection) => connection.status === "ready",
+                    )[0];
                     patchDraft({
-                      capabilityIds: next
-                        ? [...draft.capabilityIds, capability.id]
-                        : draft.capabilityIds.filter((id) => id !== capability.id),
-                    })
-                  }
+                      capabilityIds,
+                      capabilityBindings: next
+                        ? automatic === undefined
+                          ? []
+                          : [
+                              {
+                                capabilityId: "decision-hub",
+                                target: {
+                                  kind: "ctox-connection",
+                                  connectionId: automatic.connectionId,
+                                },
+                              },
+                            ]
+                        : draft.capabilityBindings.filter(
+                            (binding) => binding.capabilityId !== "decision-hub",
+                          ),
+                    });
+                  }}
                   aria-label={`Skill ${capability.label}`}
                 />
               </div>
             );
           })}
         </div>
+        {draft.capabilityIds.includes("decision-hub") ? (
+          <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+            <Label htmlFor="workjet-decision-hub-connection">CTOX connection</Label>
+            <Select
+              value={decisionHubBinding?.target.connectionId ?? ""}
+              onValueChange={(connectionId) => {
+                if (connectionId === null) return;
+                patchDraft({
+                  capabilityBindings: [
+                    {
+                      capabilityId: "decision-hub",
+                      target: {
+                        kind: "ctox-connection",
+                        connectionId: WorkjetConnectionId.make(connectionId),
+                      },
+                    },
+                  ],
+                });
+              }}
+            >
+              <SelectTrigger id="workjet-decision-hub-connection">
+                <SelectValue placeholder="Choose a CTOX instance" />
+              </SelectTrigger>
+              <SelectPopup>
+                {connections.map((connection) => (
+                  <SelectItem key={connection.connectionId} value={connection.connectionId}>
+                    {connection.displayName} · {connection.status}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            {decisionHubInstances.map((instance) => {
+              const availability = instance.decisionHub;
+              const local = instance.source === "local_daemon";
+              const tenantId = instance.id.startsWith("managed:")
+                ? instance.id.slice("managed:".length)
+                : "";
+              const canProvision =
+                (local
+                  ? instance.status === "available"
+                  : tenantId.length > 0 &&
+                    availability?.eligible === true &&
+                    availability.mcpEnabled &&
+                    availability.instanceId !== null &&
+                    availability.reason === null) &&
+                chosenComputer !== null &&
+                window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
+              return (
+                <div key={instance.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate text-muted-foreground">
+                    {local ? instance.displayName : availability?.displayName}
+                    {local || availability?.reason === null ? "" : ` · ${availability?.reason}`}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!canProvision || provisioningTenantId !== null}
+                    onClick={() => {
+                      if (!canProvision || chosenComputer === null) return;
+                      setProvisioningTenantId(instance.id);
+                      void window.desktopBridge!.ctox!.provisionDecisionHub!({
+                        environmentId: chosenComputer.environmentId,
+                        target: local
+                          ? { _tag: "local_ctox", instanceId: instance.id }
+                          : { _tag: "ctox_dev", tenantId },
+                      })
+                        .then(async (result) => {
+                          if (result._tag !== "completed") {
+                            setError(`Decision Hub connection failed: ${result.code}.`);
+                            return;
+                          }
+                          patchDraft({
+                            capabilityBindings: [
+                              {
+                                capabilityId: "decision-hub",
+                                target: {
+                                  kind: "ctox-connection",
+                                  connectionId: result.connection.connectionId,
+                                },
+                              },
+                            ],
+                          });
+                          decisionHubConnections.refresh();
+                        })
+                        .catch(() => setError("Decision Hub connection failed."))
+                        .finally(() => setProvisioningTenantId(null));
+                    }}
+                  >
+                    {provisioningTenantId === instance.id ? "Connecting…" : "Connect"}
+                  </Button>
+                </div>
+              );
+            })}
+            {connections.length === 0 ? (
+              <p role="alert" className="text-[11px] text-amber-500">
+                No MCP-capable CTOX connection is provisioned on this target computer.
+              </p>
+            ) : selectedDecisionHubConnection === null ? (
+              <p role="alert" className="text-[11px] text-amber-500">
+                Choose a connection before saving.
+              </p>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <p
+                  role="status"
+                  className={cn(
+                    "text-[11px]",
+                    selectedDecisionHubConnection.status === "ready"
+                      ? "text-emerald-500"
+                      : "text-amber-500",
+                  )}
+                >
+                  MCP: {selectedDecisionHubConnection.status}
+                  {selectedDecisionHubConnection.reason
+                    ? ` — ${selectedDecisionHubConnection.reason}`
+                    : ""}
+                </p>
+                {chosenComputer !== null &&
+                window.desktopBridge?.ctox?.disconnectDecisionHub !== undefined ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={disconnectingConnectionId !== null}
+                    onClick={() => {
+                      const connectionId = selectedDecisionHubConnection.connectionId;
+                      setDisconnectingConnectionId(connectionId);
+                      void window.desktopBridge!.ctox!.disconnectDecisionHub!({
+                        environmentId: chosenComputer.environmentId,
+                        connectionId,
+                      })
+                        .then((result) => {
+                          if (result._tag !== "completed") {
+                            setError(`Decision Hub disconnect failed: ${result.code}.`);
+                            return;
+                          }
+                          patchDraft({
+                            capabilityBindings: draft.capabilityBindings.filter(
+                              (binding) => binding.capabilityId !== "decision-hub",
+                            ),
+                          });
+                          decisionHubConnections.refresh();
+                        })
+                        .catch(() => setError("Decision Hub disconnect failed."))
+                        .finally(() => setDisconnectingConnectionId(null));
+                    }}
+                  >
+                    {disconnectingConnectionId === selectedDecisionHubConnection.connectionId
+                      ? "Disconnecting…"
+                      : "Disconnect"}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-1.5">
@@ -445,7 +711,14 @@ export function WorkjetWorkerEditor({
               key={computer.id}
               title={computer.label}
               selected={draft.computerId === computer.id}
-              onClick={() => patchDraft({ computerId: computer.id })}
+              onClick={() =>
+                patchDraft({
+                  computerId: computer.id,
+                  capabilityBindings: draft.capabilityBindings.filter(
+                    (binding) => binding.capabilityId !== "decision-hub",
+                  ),
+                })
+              }
             />
           ))}
         </div>

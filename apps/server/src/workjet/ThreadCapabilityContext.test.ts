@@ -2,7 +2,11 @@ import {
   builtInCapabilityManifests,
   createCapabilityRegistry,
 } from "@metric-space-ai/workjet-capabilities";
-import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfig } from "@t3tools/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  WorkjetConnectionId,
+  type WorkjetThreadConfig,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveThreadCapabilityContext } from "./ThreadCapabilityContext.ts";
@@ -125,5 +129,33 @@ describe("resolveThreadCapabilityContext", () => {
     expect(Object.isFrozen(context)).toBe(true);
     expect(Object.isFrozen(context.mcpCapabilityIds)).toBe(true);
     expect(Object.isFrozen(context.promptCapabilityIds)).toBe(true);
+  });
+
+  it("fails closed for unknown and unavailable Decision Hub bindings", () => {
+    const config = {
+      schemaVersion: 2,
+      role: "standard",
+      parent: null,
+      managedInstructions: "",
+      enabledCapabilityIds: ["decision-hub"],
+      capabilityBindings: [
+        {
+          capabilityId: "decision-hub",
+          target: {
+            kind: "ctox-connection",
+            connectionId: WorkjetConnectionId.make("foreign-connection"),
+          },
+        },
+      ],
+    } as WorkjetThreadConfig;
+
+    const context = resolveThreadCapabilityContext(config, undefined, {
+      knownConnectionIds: new Set(),
+      reachableConnectionIds: new Set(),
+    });
+
+    expect(context.mcpCapabilityIds).not.toContain("decision-hub");
+    expect(context.promptCapabilityIds).not.toContain("decision-hub");
+    expect(context.decisionHubConnectionId).toBeUndefined();
   });
 });

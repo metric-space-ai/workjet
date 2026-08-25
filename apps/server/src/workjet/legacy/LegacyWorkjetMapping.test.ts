@@ -121,7 +121,7 @@ describe("mapLegacyWorkjetConfig without bindings", () => {
 
   it("still imports every setting that has a real destination", () => {
     const result = mapGolden(EMPTY_LEGACY_WORKJET_BINDINGS);
-    assert.strictEqual(result.configuration.schemaVersion, 2);
+    assert.strictEqual(result.configuration.schemaVersion, 3);
     assert.deepEqual(result.configuration.telemetry, {
       claudeCodeEvents: true,
       sidecarEvents: false,

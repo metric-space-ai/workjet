@@ -3,7 +3,7 @@ import type {
   CapabilityAdapter,
   CapabilityAvailability,
   CapabilityCtoxInstanceActivationTarget,
-  CapabilityManifestV1,
+  CapabilityManifest,
   CapabilityThreadActivationTarget,
   WorkjetCapabilityId,
 } from "@t3tools/contracts";
@@ -27,7 +27,7 @@ import { defaultCapabilityRegistry, type CapabilityRegistry } from "./registry.t
 
 export interface CapabilityAvailabilityView {
   /** The catalog entry, by reference. Never a copy of its metadata. */
-  readonly manifest: CapabilityManifestV1;
+  readonly manifest: CapabilityManifest;
   readonly host: CapabilityHostId;
   readonly adapter: CapabilityAdapter;
   /**
@@ -54,7 +54,7 @@ export interface ResolveCapabilityAvailabilityInput {
 }
 
 const availabilityFor = (
-  manifest: CapabilityManifestV1,
+  manifest: CapabilityManifest,
   adapter: CapabilityAdapter,
   requestedVersion: string | undefined,
 ): CapabilityAvailability => {

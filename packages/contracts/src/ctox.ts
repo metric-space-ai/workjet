@@ -2,6 +2,8 @@
 import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId } from "./baseSchemas.ts";
+import { WorkjetConnectionId, WorkjetConnectionSummary } from "./workjet.ts";
 
 const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   for (let index = 0; index < input.length; index += 1) {
@@ -65,6 +67,56 @@ export const CtoxManagedInstanceHealth = Schema.Struct({
 });
 export type CtoxManagedInstanceHealth = typeof CtoxManagedInstanceHealth.Type;
 
+export const CtoxDecisionHubAvailability = Schema.Struct({
+  eligible: Schema.Boolean,
+  mcpEnabled: Schema.Boolean,
+  instanceId: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+  displayName: CtoxManagedInstanceDisplayName,
+  reason: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+});
+export type CtoxDecisionHubAvailability = typeof CtoxDecisionHubAvailability.Type;
+
+export const CtoxDecisionHubProvisionInput = Schema.Struct({
+  environmentId: EnvironmentId,
+  target: Schema.Union([
+    Schema.TaggedStruct("ctox_dev", {
+      tenantId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+    }),
+    Schema.TaggedStruct("local_ctox", {
+      instanceId: CtoxManagedInstanceId,
+    }),
+  ]),
+});
+export type CtoxDecisionHubProvisionInput = typeof CtoxDecisionHubProvisionInput.Type;
+
+export const CtoxDecisionHubProvisionResult = Schema.Union([
+  Schema.TaggedStruct("completed", { connection: WorkjetConnectionSummary }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "signed_out",
+      "grant_unavailable",
+      "environment_unavailable",
+      "provision_failed",
+    ]),
+  }),
+]);
+export type CtoxDecisionHubProvisionResult = typeof CtoxDecisionHubProvisionResult.Type;
+
+export const CtoxDecisionHubDisconnectInput = Schema.Struct({
+  environmentId: EnvironmentId,
+  connectionId: WorkjetConnectionId,
+});
+export type CtoxDecisionHubDisconnectInput = typeof CtoxDecisionHubDisconnectInput.Type;
+
+export const CtoxDecisionHubDisconnectResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "environment_unavailable", "disconnect_failed"]),
+  }),
+]);
+export type CtoxDecisionHubDisconnectResult = typeof CtoxDecisionHubDisconnectResult.Type;
+
 /**
  * The deliberately small instance descriptor which may cross into the
  * renderer. Session partitions and tenant launch identifiers are derived and
@@ -78,6 +130,7 @@ export const CtoxManagedInstance = Schema.Struct({
   status: CtoxManagedInstanceStatus,
   domain: Schema.optionalKey(CtoxManagedInstanceHostname),
   role: Schema.optionalKey(CtoxManagedInstanceRole),
+  decisionHub: Schema.optionalKey(CtoxDecisionHubAvailability),
   healthSummary: CtoxManagedInstanceHealth,
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;

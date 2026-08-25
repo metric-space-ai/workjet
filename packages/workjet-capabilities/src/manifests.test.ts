@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 declare const process: { readonly execPath: string };
 
 import {
-  CapabilityManifestV1,
+  CapabilityManifest,
   type CapabilityAdapter,
   type CapabilityPermissionRequirement,
 } from "@t3tools/contracts";
@@ -130,6 +130,11 @@ const EXPECTED = [
     version: "1.0.0",
     permissions: ["browser.automation", "network.read"],
   },
+  {
+    id: "decision-hub",
+    version: "1.0.0",
+    permissions: ["network.read"],
+  },
 ] as const satisfies ReadonlyArray<{
   readonly id: string;
   readonly version: string;
@@ -187,6 +192,13 @@ describe("canonical Web Stack tool contract", () => {
     );
     expect(() => execFileSync(process.execPath, [generator, "--check"])).not.toThrow();
   });
+
+  it("keeps the Decision Hub prompt generated from its canonical skill", () => {
+    const generator = fileURLToPath(
+      new URL("../scripts/generate-decision-hub-skill.mjs", import.meta.url),
+    );
+    expect(() => execFileSync(process.execPath, [generator, "--check"])).not.toThrow();
+  });
 });
 
 describe("built-in capability manifests", () => {
@@ -209,13 +221,15 @@ describe("built-in capability manifests", () => {
   it("defines the exact permission sets and all supported adapters", () => {
     for (const [index, manifest] of builtInCapabilityManifests.entries()) {
       expect(manifest.permissionRequirements).toEqual(EXPECTED[index]?.permissions);
-      expect(manifest.supportedAdapters).toEqual(ALL_ADAPTERS);
+      expect(manifest.supportedAdapters).toEqual(
+        manifest.id === "decision-hub" ? ["t3-mcp", "t3-prompt"] : ALL_ADAPTERS,
+      );
       expect(manifest.secretRequirements).toEqual([]);
     }
   });
 
-  it("decodes every runtime export through the V1 contract", () => {
-    const decode = Schema.decodeUnknownSync(CapabilityManifestV1);
+  it("decodes every runtime export through the current contract", () => {
+    const decode = Schema.decodeUnknownSync(CapabilityManifest);
 
     for (const manifest of builtInCapabilityManifests) {
       expect(decode(manifest)).toEqual(manifest);
@@ -226,8 +240,8 @@ describe("built-in capability manifests", () => {
   });
 
   it("round-trips every manifest through JSON and the contract", () => {
-    const decode = Schema.decodeUnknownSync(CapabilityManifestV1);
-    const encode = Schema.encodeSync(CapabilityManifestV1);
+    const decode = Schema.decodeUnknownSync(CapabilityManifest);
+    const encode = Schema.encodeSync(CapabilityManifest);
 
     for (const manifest of builtInCapabilityManifests) {
       const wire = encode(manifest);
@@ -241,13 +255,17 @@ describe("built-in capability manifests", () => {
     for (const manifest of builtInCapabilityManifests) {
       expect(manifest.inputSchema.type).toBe("object");
       expect(manifest.inputSchema.additionalProperties).toBe(false);
-      expect(manifest.inputSchema.required).toEqual([
-        manifest.id === "web-search"
-          ? "query"
-          : manifest.id === "web-stack-browser"
-            ? "actions"
-            : "task",
-      ]);
+      expect(manifest.inputSchema.required).toEqual(
+        manifest.id === "decision-hub"
+          ? ["decisionKey", "title", "question", "context", "options", "urgency"]
+          : [
+              manifest.id === "web-search"
+                ? "query"
+                : manifest.id === "web-stack-browser"
+                  ? "actions"
+                  : "task",
+            ],
+      );
       expect(manifest.outputSchema.type).toBe("object");
       expect(manifest.outputSchema.additionalProperties).toBe(false);
       expect(manifest.outputSchema.required).toBeInstanceOf(Array);

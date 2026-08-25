@@ -1,13 +1,13 @@
-import type { CapabilityManifestV1 } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { builtInCapabilityManifests } from "./manifests.ts";
 import { compileCapabilityPrompt } from "./prompt.ts";
 
 const withPrompt = (
-  manifest: CapabilityManifestV1,
+  manifest: CapabilityManifest,
   instructions: string | null,
-): CapabilityManifestV1 => ({
+): CapabilityManifest => ({
   ...manifest,
   promptContribution: instructions === null ? null : { instructions },
 });
@@ -65,7 +65,7 @@ describe("capability prompt compiler", () => {
   });
 
   it("omits permissions, secret references, schemas, adapters, and metadata", () => {
-    const sentinelManifest: CapabilityManifestV1 = {
+    const sentinelManifest: CapabilityManifest = {
       ...builtInCapabilityManifests[0]!,
       metadata: {
         displayName: "DISPLAY_SENTINEL",

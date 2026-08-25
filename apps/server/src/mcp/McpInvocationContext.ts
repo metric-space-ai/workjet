@@ -4,6 +4,7 @@ import {
   type ProviderInstanceId,
   type ThreadId,
   WorkjetCapabilityId,
+  type WorkjetConnectionId,
   type WorkjetThreadRole,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -20,6 +21,7 @@ export interface McpInvocationScope {
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly activeWorkjetMcpCapabilityIds?: ReadonlySet<WorkjetCapabilityId>;
   readonly workjetRole?: WorkjetThreadRole;
+  readonly decisionHubConnectionId?: WorkjetConnectionId;
   readonly cwd?: string;
   readonly issuedAt: number;
 }

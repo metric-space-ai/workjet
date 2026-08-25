@@ -13,8 +13,52 @@ import {
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
 
-export const WorkjetCapabilityId = Schema.Literals(["greppy", "web-search", "web-stack-browser"]);
+export const WorkjetCapabilityId = Schema.Literals([
+  "greppy",
+  "web-search",
+  "web-stack-browser",
+  "decision-hub",
+]);
 export type WorkjetCapabilityId = typeof WorkjetCapabilityId.Type;
+
+export const WorkjetConnectionId = TrimmedNonEmptyString.check(Schema.isMaxLength(256)).pipe(
+  Schema.brand("WorkjetConnectionId"),
+);
+export type WorkjetConnectionId = typeof WorkjetConnectionId.Type;
+
+export const WorkjetConnectionStatus = Schema.Literals([
+  "ready",
+  "needs_auth",
+  "offline",
+  "unsupported",
+  "error",
+]);
+export type WorkjetConnectionStatus = typeof WorkjetConnectionStatus.Type;
+
+export const WorkjetConnectionSource = Schema.Literals(["local_ctox", "ctox_dev"]);
+export type WorkjetConnectionSource = typeof WorkjetConnectionSource.Type;
+
+export const WorkjetConnectionSummary = Schema.Struct({
+  connectionId: WorkjetConnectionId,
+  instanceId: TrimmedNonEmptyString,
+  displayName: TrimmedNonEmptyString,
+  source: WorkjetConnectionSource,
+  status: WorkjetConnectionStatus,
+  reason: Schema.NullOr(TrimmedString),
+});
+export type WorkjetConnectionSummary = typeof WorkjetConnectionSummary.Type;
+
+export const WorkjetCtoxConnectionBindingTarget = Schema.Struct({
+  kind: Schema.Literal("ctox-connection"),
+  connectionId: WorkjetConnectionId,
+});
+export type WorkjetCtoxConnectionBindingTarget = typeof WorkjetCtoxConnectionBindingTarget.Type;
+
+export const WorkjetCapabilityBinding = Schema.Struct({
+  capabilityId: WorkjetCapabilityId,
+  target: WorkjetCtoxConnectionBindingTarget,
+});
+export type WorkjetCapabilityBinding = typeof WorkjetCapabilityBinding.Type;
 
 export const WorkjetComputerId = TrimmedNonEmptyString.pipe(Schema.brand("WorkjetComputerId"));
 export type WorkjetComputerId = typeof WorkjetComputerId.Type;
@@ -174,7 +218,13 @@ export const WorkjetWorkerProfile = Schema.Struct({
   llmRouteId: WorkjetLlmRouteId,
   modelId: TrimmedNonEmptyString,
   reasoning: WorkjetReasoningSelection,
+  role: Schema.Literals(["standard", "orchestrator"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("standard" as const)),
+  ),
   capabilityIds: Schema.Array(WorkjetCapabilityId).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  capabilityBindings: Schema.Array(WorkjetCapabilityBinding).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
 });
@@ -199,19 +249,19 @@ export type WorkjetTelemetryConfiguration = typeof WorkjetTelemetryConfiguration
  * connection details, and per-thread orchestration state intentionally live elsewhere.
  */
 /** Current Workjet configuration schema version. Bumped by migration step 2. */
-export const WORKJET_CONFIGURATION_SCHEMA_VERSION = 2;
+export const WORKJET_CONFIGURATION_SCHEMA_VERSION = 3;
 
 /**
  * Accepts every published configuration version and normalizes to the current
  * one. A stored `1` is upgraded in place by migration step 2, which rewrites the
  * route reference field; there is no other v1/v2 difference.
  */
-const WorkjetConfigurationSchemaVersion = Schema.Literals([1, 2]).pipe(
+const WorkjetConfigurationSchemaVersion = Schema.Literals([1, 2, 3]).pipe(
   Schema.decodeTo(
-    Schema.Literal(2),
+    Schema.Literal(3),
     SchemaTransformation.transformOrFail({
-      decode: (_version: 1 | 2): Effect.Effect<2> => Effect.succeed(2 as const),
-      encode: (_version: 2): Effect.Effect<1 | 2> => Effect.succeed(2 as const),
+      decode: (_version: 1 | 2 | 3): Effect.Effect<3> => Effect.succeed(3 as const),
+      encode: (_version: 3): Effect.Effect<1 | 2 | 3> => Effect.succeed(3 as const),
     }),
   ),
   Schema.withDecodingDefault(Effect.succeed(2 as const)),
@@ -472,6 +522,13 @@ const WorkjetThreadConfigV1BaseFields = {
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
 } as const;
 
+const WorkjetThreadConfigV2BaseFields = {
+  schemaVersion: Schema.Literal(2),
+  managedInstructions: Schema.String,
+  enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
+  capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
+} as const;
+
 export const WorkjetThreadConfig = Schema.Union([
   Schema.Struct({
     ...WorkjetThreadConfigV1BaseFields,
@@ -483,15 +540,50 @@ export const WorkjetThreadConfig = Schema.Union([
     role: Schema.Literal("worker"),
     parent: WorkjetParentThreadReference,
   }),
+  Schema.Struct({
+    ...WorkjetThreadConfigV2BaseFields,
+    role: Schema.Literals(["standard", "orchestrator"]),
+    parent: Schema.Null,
+  }),
+  Schema.Struct({
+    ...WorkjetThreadConfigV2BaseFields,
+    role: Schema.Literal("worker"),
+    parent: WorkjetParentThreadReference,
+  }),
 ]);
 export type WorkjetThreadConfig = typeof WorkjetThreadConfig.Type;
 
+export type WorkjetThreadConfigV2 = Extract<WorkjetThreadConfig, { readonly schemaVersion: 2 }>;
+
+export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): WorkjetThreadConfigV2 {
+  if (config.schemaVersion === 2) return config;
+  if (config.role === "worker") {
+    return {
+      schemaVersion: 2,
+      role: "worker",
+      parent: config.parent,
+      managedInstructions: config.managedInstructions,
+      enabledCapabilityIds: config.enabledCapabilityIds,
+      capabilityBindings: [],
+    };
+  }
+  return {
+    schemaVersion: 2,
+    role: config.role,
+    parent: null,
+    managedInstructions: config.managedInstructions,
+    enabledCapabilityIds: config.enabledCapabilityIds,
+    capabilityBindings: [],
+  };
+}
+
 export const DEFAULT_WORKJET_THREAD_CONFIG = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   role: "standard",
   parent: null,
   managedInstructions: "",
   enabledCapabilityIds: [],
+  capabilityBindings: [],
 } as const satisfies WorkjetThreadConfig;
 
 /**

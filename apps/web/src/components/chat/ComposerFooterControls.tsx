@@ -1,6 +1,7 @@
 import type {
   ProviderInteractionMode,
   WorkjetThreadRole,
+  WorkjetConnectionSummary,
   WorkjetWorkerProfile,
 } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
@@ -118,6 +119,9 @@ export interface ComposerFooterControlsProps {
     | ((capabilityId: string, enabled: boolean) => void)
     | undefined;
   readonly workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
+  readonly decisionHubConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
+  readonly decisionHubConnectionId?: string | null | undefined;
+  readonly onDecisionHubConnectionChange?: ((connectionId: string) => void) | undefined;
   readonly onOpenWorkjetSettings: () => void;
 }
 
@@ -157,6 +161,9 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
           onGreppyEnabledChange={props.onWorkjetGreppyEnabledChange}
           onCapabilityEnabledChange={props.onWorkjetCapabilityEnabledChange}
           enabledCapabilityIds={props.workjetEnabledCapabilityIds}
+          decisionHubConnections={props.decisionHubConnections}
+          decisionHubConnectionId={props.decisionHubConnectionId}
+          onDecisionHubConnectionChange={props.onDecisionHubConnectionChange}
         />
       </>
     );

@@ -48,6 +48,10 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
+import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
+import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
+import * as DecisionHubReconciler from "./workjet/decisionHub/DecisionHubReconciler.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -268,6 +272,21 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
   Layer.provide(ProviderSessionRuntime.layer),
 );
 
+const DecisionHubMcpClientLive = DecisionHubMcpClient.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+);
+const DecisionHubConnectionRegistryLive = DecisionHubConnectionRegistry.layer.pipe(
+  Layer.provide(DecisionHubMcpClientLive),
+);
+const DecisionHubEscalationServiceLive = DecisionHubEscalationService.layer.pipe(
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(DecisionHubMcpClientLive),
+);
+const DecisionHubReconcilerLive = DecisionHubReconciler.layer.pipe(
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(DecisionHubMcpClientLive),
+);
+
 // `ProviderAdapterRegistryLive` is now a facade that resolves kind → adapter
 // by looking up the default `ProviderInstance` per driver in the instance
 // registry. Adapter construction itself moved inside each driver's
@@ -276,6 +295,7 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // `ProviderService` and the per-instance drivers read the same logger pair.
 const ProviderLayerLive = ProviderServiceLive.pipe(
   Layer.provide(ProviderAdapterRegistryLive),
+  Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 
@@ -503,6 +523,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     // MCP tools use — one delivery service, two entrypoints — so it needs the
     // same three services the MCP server below is given.
     websocketRpcRouteLayer.pipe(
+      Layer.provide(DecisionHubConnectionRegistryLive),
       Layer.provide(
         WorkjetMailboxDelivery.layer.pipe(
           Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
@@ -518,6 +539,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
   ),
   McpHttpServer.layer.pipe(
+    Layer.provide(DecisionHubEscalationServiceLive),
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(WorkerDispatch.layer),
     // The durable Workjet mailbox is provided exactly where worker dispatch is:
@@ -559,6 +581,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // transport for the same reason — it is a background loop, not a
   // request-scoped dependency.
   WorkjetDelegationExecutorLive,
+  DecisionHubReconcilerLive,
 ).pipe(
   // One shared, server-lifetime redacted mailbox audit emitter. It is provided
   // ONCE here so the delivery, transport, and executor services and the

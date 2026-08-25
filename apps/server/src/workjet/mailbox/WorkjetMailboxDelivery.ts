@@ -1406,11 +1406,12 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       // settings, not authority, and a worker role would imply a parent that
       // never dispatched it.
       workjetConfig: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         role: "standard",
         parent: null,
         managedInstructions: "",
         enabledCapabilityIds: [],
+        capabilityBindings: [],
       },
       // No worktree and no branch checkout: the handed-over branch may not exist
       // on this machine at all, and fetching it is an explicit operator action.

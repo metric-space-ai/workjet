@@ -293,7 +293,7 @@ describe("WorkjetConfiguration", () => {
       DEFAULT_WORKJET_CONFIGURATION,
     );
     expect(DEFAULT_WORKJET_CONFIGURATION).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       computers: [],
       llmRoutes: [],
       modelPrompts: [],
@@ -314,7 +314,7 @@ describe("WorkjetConfiguration", () => {
 
   it("keeps reusable routes model-free and credential-free", () => {
     const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
-      schemaVersion: 2,
+      schemaVersion: 3,
       llmRoutes: [
         {
           id: "route-main",
@@ -336,7 +336,7 @@ describe("WorkjetConfiguration", () => {
     expect(JSON.stringify(decoded.llmRoutes)).not.toContain("must-not-persist-here");
   });
 
-  it("round trips a v2 configuration through decode and encode", () => {
+  it("normalizes and re-encodes a v2 configuration as v3", () => {
     const encodedInput = {
       schemaVersion: 2,
       computers: [],
@@ -355,7 +355,10 @@ describe("WorkjetConfiguration", () => {
     };
 
     const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)(encodedInput);
-    expect(Schema.encodeUnknownSync(WorkjetConfiguration)(decoded)).toEqual(encodedInput);
+    expect(Schema.encodeUnknownSync(WorkjetConfiguration)(decoded)).toEqual({
+      ...encodedInput,
+      schemaVersion: 3,
+    });
   });
 });
 
@@ -383,7 +386,7 @@ describe("Workjet configuration migration step 2 (LLM route reference retype)", 
       ],
     });
 
-    expect(decoded.schemaVersion).toBe(2);
+    expect(decoded.schemaVersion).toBe(3);
     expect(decoded.llmRoutes).toEqual([
       { id: "route-main", label: "Main account", gatewayAccountId: "account-codex-personal" },
       // A genuinely historical driver-instance id migrates as-is and simply
@@ -404,7 +407,7 @@ describe("Workjet configuration migration step 2 (LLM route reference retype)", 
       readonly llmRoutes: ReadonlyArray<Record<string, unknown>>;
     };
 
-    expect(encoded.schemaVersion).toBe(2);
+    expect(encoded.schemaVersion).toBe(3);
     expect(encoded.llmRoutes[0]).toEqual({
       id: "route-main",
       label: "Main account",

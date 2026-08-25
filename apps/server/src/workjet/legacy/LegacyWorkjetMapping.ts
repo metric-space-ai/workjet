@@ -1142,6 +1142,8 @@ const mapWorker = (input: {
           ? "automatic"
           : REASONING_BY_LEGACY[worker.reasoningEffort],
       capabilityIds,
+      role: "standard",
+      capabilityBindings: [],
     },
   };
 };

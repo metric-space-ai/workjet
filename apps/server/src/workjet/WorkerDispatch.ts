@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { resolveDelegatedCapabilities } from "@metric-space-ai/workjet-capabilities";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
@@ -146,15 +147,24 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         return yield* failure("parent-not-orchestrator");
       }
 
-      const enabledCapabilityIds = input.enabledCapabilityIds
+      const requestedCapabilityIds = input.enabledCapabilityIds
         ? [...input.enabledCapabilityIds]
-        : [...parent.workjetConfig.enabledCapabilityIds];
-      if (input.enabledCapabilityIds) {
-        if (new Set(enabledCapabilityIds).size !== enabledCapabilityIds.length) {
+        : undefined;
+      const delegated = resolveDelegatedCapabilities({
+        parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
+        ...(requestedCapabilityIds ? { requestedCapabilityIds } : {}),
+        targetRole: "worker",
+      });
+      const enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
+      if (requestedCapabilityIds !== undefined) {
+        if (new Set(requestedCapabilityIds).size !== requestedCapabilityIds.length) {
           return yield* failure("duplicate-capabilities");
         }
         const parentGrants = new Set(parent.workjetConfig.enabledCapabilityIds);
-        if (enabledCapabilityIds.some((capabilityId) => !parentGrants.has(capabilityId))) {
+        if (
+          requestedCapabilityIds.some((capabilityId) => !parentGrants.has(capabilityId)) ||
+          delegated.issues.length > 0
+        ) {
           return yield* failure("capability-escalation");
         }
       }
@@ -223,11 +233,12 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         runtimeMode: parent.runtimeMode,
         interactionMode: parent.interactionMode,
         workjetConfig: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           role: "worker",
           parent: parentReference,
           managedInstructions: parent.workjetConfig.managedInstructions,
           enabledCapabilityIds,
+          capabilityBindings: [],
         },
         branch: workerWorktree.refName,
         worktreePath: workerWorktree.path,

@@ -37,6 +37,15 @@ describe("CTOX managed discovery", () => {
             healthStatus: "ok",
             tenantRole: "admin",
             launchAllowed: true,
+            decisionHub: {
+              eligible: true,
+              mcpEnabled: true,
+              instanceId: "tenant-skf.ctox.dev",
+              displayName: "SKF Decision Hub",
+              reason: null,
+              endpoint: "https://gateway.ctox.dev/secret-path",
+              token: "must-also-not-cross",
+            },
             sessionPartition: "persist:server-controlled",
             accessToken: "must-not-cross-the-boundary",
           },
@@ -53,6 +62,13 @@ describe("CTOX managed discovery", () => {
         status: "available",
         domain: "acme.ctox.dev",
         role: "admin",
+        decisionHub: {
+          eligible: true,
+          mcpEnabled: true,
+          instanceId: "tenant-skf.ctox.dev",
+          displayName: "SKF Decision Hub",
+          reason: null,
+        },
         healthSummary: {
           dataPlane: "rxdb-webrtc",
           dataPlaneReady: true,
@@ -63,6 +79,8 @@ describe("CTOX managed discovery", () => {
     ]);
     assert.notInclude(JSON.stringify(instances), "must-not-cross-the-boundary");
     assert.notInclude(JSON.stringify(instances), "server-controlled");
+    assert.notInclude(JSON.stringify(instances), "gateway.ctox.dev");
+    assert.notInclude(JSON.stringify(instances), "must-also-not-cross");
   });
 
   it("maps launch denial to needs_auth and keeps the HTTP bridge disabled", () => {

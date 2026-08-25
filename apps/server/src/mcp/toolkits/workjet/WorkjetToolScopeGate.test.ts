@@ -57,6 +57,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   readonly file: string;
   readonly enforcer: (typeof SCOPE_ENFORCERS)[number];
 }> = [
+  { file: "DecisionHubTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "GreppyTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },

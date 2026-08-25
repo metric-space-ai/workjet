@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   WorkjetComputerId,
+  WorkjetConnectionId,
   WorkjetGatewayAccountId,
   WorkjetLlmRouteId,
   WorkjetWorkerProfileId,
@@ -65,7 +66,9 @@ describe("WorkjetWorkerEditor", () => {
       llmRouteId: routeId,
       modelId: " gpt-5.6-sol ",
       reasoning: "high",
+      role: "standard",
       capabilityIds: ["greppy", "web-search", "web-stack-browser"],
+      capabilityBindings: [],
     });
 
     expect(saved).toEqual({
@@ -77,8 +80,36 @@ describe("WorkjetWorkerEditor", () => {
       llmRouteId: routeId,
       modelId: "gpt-5.6-sol",
       reasoning: "high",
+      role: "standard",
       capabilityIds: ["greppy", "web-search", "web-stack-browser"],
+      capabilityBindings: [],
     });
+  });
+
+  it("requires exactly one Decision Hub binding and persists the root role", () => {
+    const draft = {
+      ...createWorkjetWorkerDraft({ computers: [computer], routes: [route], id: "worker-1" }),
+      name: "Owner coordinator",
+      modelId: "gpt-5.6-sol",
+      role: "orchestrator" as const,
+      capabilityIds: ["decision-hub" as const],
+    };
+    expect(() => saveWorkjetWorkerDraft(draft)).toThrow("exactly one Decision Hub connection");
+
+    const saved = saveWorkjetWorkerDraft({
+      ...draft,
+      capabilityBindings: [
+        {
+          capabilityId: "decision-hub",
+          target: {
+            kind: "ctox-connection",
+            connectionId: WorkjetConnectionId.make("connection-1"),
+          },
+        },
+      ],
+    });
+    expect(saved.role).toBe("orchestrator");
+    expect(saved.capabilityBindings).toHaveLength(1);
   });
 
   it("warns about an unavailable harness without mutating the selected fields", () => {
@@ -91,7 +122,9 @@ describe("WorkjetWorkerEditor", () => {
       llmRouteId: routeId,
       modelId: "gpt-5.6-terra",
       reasoning: "automatic" as const,
+      role: "standard" as const,
       capabilityIds: ["web-search" as const],
+      capabilityBindings: [],
     };
     const before = structuredClone(draft);
 

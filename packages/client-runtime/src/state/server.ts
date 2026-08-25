@@ -791,6 +791,36 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayDiscoverModels,
     staleTimeMs: WORKJET_GATEWAY_MODELS_STALE_TIME_MS,
   });
+  const workjetDecisionHubConnections = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:decision-hub:connections",
+    tag: WS_METHODS.workjetDecisionHubListConnections,
+    staleTimeMs: 5_000,
+  });
+  const refreshDecisionHubConnections = (
+    { environmentId }: { readonly environmentId: EnvironmentId },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => {
+      registry.refresh(workjetDecisionHubConnections({ environmentId, input: {} }));
+    });
+  const probeWorkjetDecisionHubConnection = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:decision-hub:probe",
+    tag: WS_METHODS.workjetDecisionHubProbeConnection,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) => `${environmentId}:${input.connectionId}`,
+    },
+    onSuccess: refreshDecisionHubConnections,
+  });
+  const disconnectWorkjetDecisionHubConnection = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:decision-hub:disconnect",
+    tag: WS_METHODS.workjetDecisionHubDisconnectConnection,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) => `${environmentId}:${input.connectionId}`,
+    },
+    onSuccess: refreshDecisionHubConnections,
+  });
   // Every lifecycle and login transition changes the runtime phase, the
   // configured accounts, the health snapshot, and the model answer, so refresh
   // the set instead of a single read.
@@ -1088,6 +1118,9 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetGatewayHealth,
     workjetGatewayModels,
     workjetHarnessInspect,
+    workjetDecisionHubConnections,
+    probeWorkjetDecisionHubConnection,
+    disconnectWorkjetDecisionHubConnection,
     startWorkjetGateway,
     stopWorkjetGateway,
     startWorkjetGatewayOauth,

@@ -60,6 +60,7 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { resolveThreadCapabilityContext } from "../../workjet/ThreadCapabilityContext.ts";
+import { DecisionHubConnectionRegistry } from "../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const decodeWorkjetThreadConfig = Schema.decodeUnknownOption(WorkjetThreadConfig);
 
@@ -231,6 +232,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+  const decisionHubConnections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const prepareMcpSession = (
@@ -238,21 +240,39 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     providerInstanceId: ProviderInstanceId,
     workjetConfig: WorkjetThreadConfig,
     cwd?: string,
-  ) => {
-    const threadCapabilityContext = resolveThreadCapabilityContext(workjetConfig);
-    return McpSessionRegistry.issueActiveMcpCredential({
-      threadId,
-      providerInstanceId,
-      threadCapabilityContext,
-      ...(cwd ? { cwd } : {}),
-    }).pipe(
-      Effect.tap((credential) =>
-        credential
-          ? Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config))
-          : Effect.void,
-      ),
-    );
-  };
+  ) =>
+    Effect.gen(function* () {
+      const requiresDecisionHub = workjetConfig.enabledCapabilityIds.includes("decision-hub");
+      const summaries = requiresDecisionHub
+        ? yield* Option.match(decisionHubConnections, {
+            onNone: () => Effect.succeed([]),
+            onSome: (connections) => connections.list.pipe(Effect.catch(() => Effect.succeed([]))),
+          })
+        : [];
+      const threadCapabilityContext = resolveThreadCapabilityContext(
+        workjetConfig,
+        undefined,
+        requiresDecisionHub
+          ? {
+              knownConnectionIds: new Set(summaries.map(({ connectionId }) => connectionId)),
+              reachableConnectionIds: new Set(
+                summaries
+                  .filter(({ status }) => status === "ready")
+                  .map(({ connectionId }) => connectionId),
+              ),
+            }
+          : undefined,
+      );
+      const credential = yield* McpSessionRegistry.issueActiveMcpCredential({
+        threadId,
+        providerInstanceId,
+        threadCapabilityContext,
+        ...(cwd ? { cwd } : {}),
+      });
+      if (credential) {
+        yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
+      }
+    });
   const clearMcpSession = (threadId: ThreadId) =>
     McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),

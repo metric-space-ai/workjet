@@ -1,6 +1,6 @@
 import type {
   CapabilityAdapter,
-  CapabilityManifestV1,
+  CapabilityManifest,
   WorkjetCapabilityId,
 } from "@t3tools/contracts";
 
@@ -43,12 +43,12 @@ export const capabilityHostForAdapter = (adapter: CapabilityAdapter): Capability
     : "ctox";
 
 export interface DualHostCapability {
-  readonly manifest: CapabilityManifestV1;
+  readonly manifest: CapabilityManifest;
   readonly adaptersByHost: Readonly<Record<CapabilityHostId, ReadonlyArray<CapabilityAdapter>>>;
 }
 
 const adaptersForHost = (
-  manifest: CapabilityManifestV1,
+  manifest: CapabilityManifest,
   host: CapabilityHostId,
 ): ReadonlyArray<CapabilityAdapter> =>
   manifest.supportedAdapters.filter((adapter) => capabilityHostForAdapter(adapter) === host);
@@ -127,7 +127,7 @@ export interface CapabilityManifestLockProjection {
 }
 
 export const capabilityManifestLockProjection = (
-  manifest: CapabilityManifestV1,
+  manifest: CapabilityManifest,
 ): CapabilityManifestLockProjection => ({
   schemaVersion: manifest.schemaVersion,
   id: manifest.id,
@@ -141,7 +141,7 @@ export interface CapabilitySchemaLockProjection {
 }
 
 export const capabilitySchemaLockProjection = (
-  manifest: CapabilityManifestV1,
+  manifest: CapabilityManifest,
 ): CapabilitySchemaLockProjection => ({
   inputSchema: manifest.inputSchema,
   outputSchema: manifest.outputSchema,

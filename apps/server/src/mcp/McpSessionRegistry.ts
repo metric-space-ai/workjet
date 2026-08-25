@@ -138,6 +138,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         capabilities: new Set(["preview"]),
         activeWorkjetMcpCapabilityIds: new Set(activeWorkjetMcpCapabilityIds),
         workjetRole: request.threadCapabilityContext.workjetRole,
+        ...(request.threadCapabilityContext.decisionHubConnectionId !== undefined
+          ? { decisionHubConnectionId: request.threadCapabilityContext.decisionHubConnectionId }
+          : {}),
         ...(cwd ? { cwd } : {}),
         issuedAt,
       };

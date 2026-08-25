@@ -12,11 +12,16 @@ import type {
   WorkjetThreadRole,
 } from "@t3tools/contracts";
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  normalizeWorkjetThreadConfig,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type WorkjetGatewayModelSummary,
+  WorkjetConnectionId,
+  type WorkjetCapabilityBinding,
+  type WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -504,9 +509,11 @@ export interface ChatComposerProps {
     | ((input: {
         readonly capabilityIds?: ReadonlyArray<string>;
         readonly managedInstructions?: string;
+        readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
       }) => void)
     | undefined;
   workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
+  workjetCapabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding> | undefined;
   /** The thread's managed instructions, `null` on a draft thread. */
   workjetManagedInstructions: string | null;
   /**
@@ -598,6 +605,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onWorkjetCapabilityEnabledChange,
     onWorkjetConfigApply,
     workjetEnabledCapabilityIds,
+    workjetCapabilityBindings,
     workjetManagedInstructions,
     selectableEnvironmentIds,
     onDraftEnvironmentChange,
@@ -608,7 +616,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
   } = props;
-  const isSendDisabled = sendDisabledReason !== null;
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -892,6 +899,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setWorkjetWorkerSelection = useComposerDraftStore(
     (store) => store.setWorkjetWorkerSelection,
   );
+  const setComposerDraftWorkjetConfig = useComposerDraftStore((store) => store.setWorkjetConfig);
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
   /**
    * Choosing a worker must MOVE the turn, not just relabel the bar. A worker
@@ -915,6 +923,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedWorkjetWorkerId === null
       ? null
       : (workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId) ?? null);
+  const normalizedDraftWorkjetConfig = normalizeWorkjetThreadConfig(
+    composerDraft.workjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG,
+  );
+  // A composer draft is always a root thread. Persisted worker configs are
+  // rejected here instead of leaking a child role into first-turn bootstrap.
+  const draftWorkjetConfig =
+    normalizedDraftWorkjetConfig.role === "worker"
+      ? DEFAULT_WORKJET_THREAD_CONFIG
+      : normalizedDraftWorkjetConfig;
   /**
    * Worker-mode EXTRAS on a draft, held locally: the menu edits this list
    * (seeded from the worker's own `capabilityIds`), and the draft→thread
@@ -987,6 +1004,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * Manual must survive a worker round-trip (Befund K-AH1).
    */
   const manualInstructionsReturnRef = useRef<string | null>(null);
+  const manualWorkjetConfigReturnRef = useRef<WorkjetThreadConfig | null>(null);
   const handleSelectWorkjetWorker = useCallback(
     (workerId: string | null) => {
       // A different choice invalidates the local bar edits: extras belong to
@@ -994,6 +1012,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setDraftWorkerCapabilityIds(null);
       if (workerId !== null && selectedWorkjetWorkerId === null) {
         manualInstructionsReturnRef.current = draftManagedInstructions;
+        manualWorkjetConfigReturnRef.current = draftWorkjetConfig;
       }
       setDraftManagedInstructions(workerId === null ? manualInstructionsReturnRef.current : null);
       if (workerId === null) {
@@ -1003,6 +1022,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // stays behind masquerading as a manual choice (F1).
         const manualReturn = composerDraft.workjetManualReturn;
         setWorkjetWorkerSelection(composerDraftTarget, null, null);
+        setComposerDraftWorkjetConfig(
+          composerDraftTarget,
+          manualWorkjetConfigReturnRef.current ?? DEFAULT_WORKJET_THREAD_CONFIG,
+        );
+        manualWorkjetConfigReturnRef.current = null;
         if (manualReturn !== null) {
           onProviderModelSelect(manualReturn.provider, manualReturn.model);
         }
@@ -1010,6 +1034,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
       if (worker === undefined) return;
+      const modelRules = settings.workjet.modelPrompts
+        .find((entry) => entry.modelId === worker.modelId)
+        ?.prompt.trim();
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        schemaVersion: 2,
+        role: worker.role,
+        parent: null,
+        managedInstructions: [modelRules, worker.instructions?.trim()]
+          .filter((part): part is string => part !== undefined && part.length > 0)
+          .join("\n\n"),
+        enabledCapabilityIds: worker.capabilityIds,
+        capabilityBindings: worker.capabilityBindings,
+      });
       // Entering worker mode from Manual snapshots the manual model for the
       // way back; worker-to-worker switches keep the original snapshot.
       setWorkjetWorkerSelection(
@@ -1073,9 +1110,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModel,
       selectedWorkjetWorkerId,
       setProviderModelOptions,
+      setComposerDraftWorkjetConfig,
       setWorkjetWorkerSelection,
       workjetComputers,
       workjetWorkers,
+      settings.workjet.modelPrompts,
+      draftWorkjetConfig,
     ],
   );
 
@@ -1138,37 +1178,118 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const workerDraftExtrasActive = workerModeActive && !composerTargetIsThread;
   const effectiveEnabledCapabilityIds = workerDraftExtrasActive
     ? (draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [])
-    : workjetEnabledCapabilityIds;
+    : composerTargetIsThread
+      ? workjetEnabledCapabilityIds
+      : draftWorkjetConfig.enabledCapabilityIds;
   const effectiveWorkjetGreppyEnabled = workerDraftExtrasActive
     ? (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID)
-    : workjetGreppyEnabled;
+    : composerTargetIsThread
+      ? workjetGreppyEnabled
+      : (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID);
   const handleDraftWorkerCapabilityChange = useCallback(
     (capabilityId: string, enabled: boolean) => {
-      setDraftWorkerCapabilityIds((current) => {
-        const base = current ?? selectedWorkjetWorker?.capabilityIds ?? [];
-        const without = base.filter((id) => id !== capabilityId);
-        return enabled ? [...without, capabilityId] : without;
+      const base = draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [];
+      const without = base.filter((id) => id !== capabilityId);
+      const next = enabled ? [...without, capabilityId] : without;
+      setDraftWorkerCapabilityIds(next);
+      if (selectedWorkjetWorker !== null) {
+        const persisted = normalizeWorkjetThreadConfig(
+          composerDraft.workjetConfig ?? draftWorkjetConfig,
+        );
+        const current = persisted.role === "worker" ? draftWorkjetConfig : persisted;
+        setComposerDraftWorkjetConfig(composerDraftTarget, {
+          ...current,
+          enabledCapabilityIds: next as WorkjetThreadConfig["enabledCapabilityIds"],
+          capabilityBindings: enabled
+            ? current.capabilityBindings
+            : current.capabilityBindings.filter((binding) => binding.capabilityId !== capabilityId),
+        });
+      }
+    },
+    [
+      composerDraft.workjetConfig,
+      composerDraftTarget,
+      draftWorkerCapabilityIds,
+      draftWorkjetConfig,
+      selectedWorkjetWorker,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
+  const handleDraftCapabilityChange = useCallback(
+    (capabilityId: string, enabled: boolean) => {
+      if (workerModeActive) {
+        handleDraftWorkerCapabilityChange(capabilityId, enabled);
+        return;
+      }
+      const without = draftWorkjetConfig.enabledCapabilityIds.filter((id) => id !== capabilityId);
+      const enabledCapabilityIds = enabled
+        ? [...without, capabilityId as (typeof without)[number]]
+        : without;
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        enabledCapabilityIds,
+        capabilityBindings: enabled
+          ? draftWorkjetConfig.capabilityBindings
+          : draftWorkjetConfig.capabilityBindings.filter(
+              (binding) => binding.capabilityId !== capabilityId,
+            ),
       });
     },
-    [selectedWorkjetWorker],
+    [
+      composerDraftTarget,
+      draftWorkjetConfig,
+      handleDraftWorkerCapabilityChange,
+      setComposerDraftWorkjetConfig,
+      workerModeActive,
+    ],
   );
-  const effectiveCapabilityEnabledChange = workerDraftExtrasActive
-    ? handleDraftWorkerCapabilityChange
-    : onWorkjetCapabilityEnabledChange;
+  const effectiveCapabilityEnabledChange = composerTargetIsThread
+    ? onWorkjetCapabilityEnabledChange
+    : handleDraftCapabilityChange;
   const effectiveGreppyEnabledChange = useCallback(
     (enabled: boolean) => {
       if (workerDraftExtrasActive) {
         handleDraftWorkerCapabilityChange(GREPPY_CAPABILITY_ID, enabled);
         return;
       }
+      if (!composerTargetIsThread) {
+        handleDraftCapabilityChange(GREPPY_CAPABILITY_ID, enabled);
+        return;
+      }
       onWorkjetGreppyEnabledChange(enabled);
     },
-    [handleDraftWorkerCapabilityChange, onWorkjetGreppyEnabledChange, workerDraftExtrasActive],
+    [
+      composerTargetIsThread,
+      handleDraftCapabilityChange,
+      handleDraftWorkerCapabilityChange,
+      onWorkjetGreppyEnabledChange,
+      workerDraftExtrasActive,
+    ],
   );
   const effectiveWorkjetCapabilityBusy = workerDraftExtrasActive ? false : workjetCapabilityBusy;
   const effectiveWorkjetCapabilityDisabled = workerDraftExtrasActive
     ? false
     : workjetCapabilityDisabled;
+  const effectiveWorkjetRole = composerTargetIsThread ? workjetRole : draftWorkjetConfig.role;
+  const effectiveWorkjetRoleChange = useCallback(
+    (role: WorkjetSelectableRole) => {
+      if (composerTargetIsThread) {
+        onWorkjetRoleChange(role);
+        return;
+      }
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        role,
+      });
+    },
+    [
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftWorkjetConfig,
+      onWorkjetRoleChange,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
 
   /**
    * Manual mode replaces the single provider/model picker with the Workjet
@@ -1182,6 +1303,61 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} })
       : null,
   );
+  const decisionHubConnectionsQuery = useEnvironmentQuery(
+    serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
+  );
+  const decisionHubConnections = decisionHubConnectionsQuery.data?.connections ?? [];
+  const effectiveCapabilityBindings = composerTargetIsThread
+    ? (workjetCapabilityBindings ?? [])
+    : draftWorkjetConfig.capabilityBindings;
+  const decisionHubConnectionId =
+    effectiveCapabilityBindings.find((binding) => binding.capabilityId === "decision-hub")?.target
+      .connectionId ?? null;
+  const handleDecisionHubConnectionChange = useCallback(
+    (connectionId: string) => {
+      const capabilityBindings: WorkjetCapabilityBinding[] = [
+        ...effectiveCapabilityBindings.filter((binding) => binding.capabilityId !== "decision-hub"),
+        {
+          capabilityId: "decision-hub",
+          target: {
+            kind: "ctox-connection",
+            connectionId: WorkjetConnectionId.make(connectionId),
+          },
+        },
+      ];
+      if (composerTargetIsThread) {
+        onWorkjetConfigApply?.({ capabilityBindings });
+      } else {
+        setComposerDraftWorkjetConfig(composerDraftTarget, {
+          ...draftWorkjetConfig,
+          schemaVersion: 2,
+          capabilityBindings,
+        });
+      }
+    },
+    [
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftWorkjetConfig,
+      effectiveCapabilityBindings,
+      onWorkjetConfigApply,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
+  const selectedDecisionHubConnection = decisionHubConnections.find(
+    (connection) => connection.connectionId === decisionHubConnectionId,
+  );
+  const decisionHubSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("decision-hub")
+    ? null
+    : decisionHubConnectionId === null
+      ? "Choose a Decision Hub CTOX connection before sending"
+      : selectedDecisionHubConnection === undefined
+        ? "The selected Decision Hub connection does not belong to this environment"
+        : selectedDecisionHubConnection.status !== "ready"
+          ? `Decision Hub is ${selectedDecisionHubConnection.status}${selectedDecisionHubConnection.reason ? `: ${selectedDecisionHubConnection.reason}` : ""}`
+          : null;
+  const effectiveSendDisabledReason = sendDisabledReason ?? decisionHubSendDisabledReason;
+  const isSendDisabled = effectiveSendDisabledReason !== null;
   // Live per-provider model discovery — the same source the settings pools
   // use. The catalog alone lists the accounts' route PATTERNS (grok-*), which
   // read as broken entries in the picker; the discovery holds the concrete
@@ -1272,8 +1448,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       setDraftManagedInstructions(text);
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        managedInstructions: text,
+      });
     },
-    [composerTargetIsThread, onWorkjetConfigApply],
+    [
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftWorkjetConfig,
+      onWorkjetConfigApply,
+      setComposerDraftWorkjetConfig,
+    ],
   );
 
   const [composerCursor, setComposerCursor] = useState(() =>
@@ -3128,7 +3314,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showPlanFollowUpPrompt={false}
                       promptHasText={false}
                       isSendBusy={isSendBusy}
-                      sendDisabledReason={sendDisabledReason}
+                      sendDisabledReason={effectiveSendDisabledReason}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={
                         environmentUnavailable !== null ||
@@ -3411,7 +3597,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     showPlanFollowUpPrompt={false}
                     promptHasText={false}
                     isSendBusy={isSendBusy}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={effectiveSendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||
@@ -3538,13 +3724,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
                       workjetRoleMenuContent={
-                        workjetRole === null || workerModeActive ? undefined : (
+                        effectiveWorkjetRole === null || workerModeActive ? undefined : (
                           <WorkjetRoleControl
                             compact
-                            role={workjetRole}
+                            role={effectiveWorkjetRole}
                             busy={workjetCapabilityBusy}
                             disabled={workjetCapabilityDisabled}
-                            onRoleChange={onWorkjetRoleChange}
+                            onRoleChange={effectiveWorkjetRoleChange}
                             onOpenSettings={onOpenWorkjetSettings}
                           />
                         )
@@ -3559,6 +3745,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             onGreppyEnabledChange={effectiveGreppyEnabledChange}
                             onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
                             enabledCapabilityIds={effectiveEnabledCapabilityIds}
+                            decisionHubConnections={decisionHubConnections}
+                            decisionHubConnectionId={decisionHubConnectionId}
+                            onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
                           />
                         )
                       }
@@ -3635,16 +3824,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     traitsPicker={workerModeActive ? null : providerTraitsPicker}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     interactionMode={interactionMode}
-                    workjetRole={workjetRole}
+                    workjetRole={effectiveWorkjetRole}
                     workjetGreppyEnabled={effectiveWorkjetGreppyEnabled}
                     workjetBusy={effectiveWorkjetCapabilityBusy}
                     workjetDisabled={effectiveWorkjetCapabilityDisabled}
                     sendToWorkerControl={workjetSendToWorkerControl?.({ compact: false }) ?? null}
                     onToggleInteractionMode={toggleInteractionMode}
-                    onWorkjetRoleChange={onWorkjetRoleChange}
+                    onWorkjetRoleChange={effectiveWorkjetRoleChange}
                     onWorkjetGreppyEnabledChange={effectiveGreppyEnabledChange}
                     onWorkjetCapabilityEnabledChange={effectiveCapabilityEnabledChange}
                     workjetEnabledCapabilityIds={effectiveEnabledCapabilityIds}
+                    decisionHubConnections={decisionHubConnections}
+                    decisionHubConnectionId={decisionHubConnectionId}
+                    onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
                     onOpenWorkjetSettings={onOpenWorkjetSettings}
                   />
                 )}
@@ -3667,7 +3859,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}
                   promptHasText={prompt.trim().length > 0}
                   isSendBusy={isSendBusy}
-                  sendDisabledReason={sendDisabledReason}
+                  sendDisabledReason={effectiveSendDisabledReason}
                   isConnecting={isConnecting}
                   isEnvironmentUnavailable={
                     environmentUnavailable !== null ||

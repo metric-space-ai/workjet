@@ -105,6 +105,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetCrossModeSubmit]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetCrossModeGetThreadLink]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetCrossModeListLinks]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetDecisionHubListConnections]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetDecisionHubProvisionConnection]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetDecisionHubProbeConnection]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetDecisionHubDisconnectConnection]: AuthOrchestrationOperateScope,
   // The recipient roster is a redacted READ of peers this machine already
   // exchanged mail with: the same orchestration-read scope the audit stream and
   // the gateway status use. It writes nothing and carries no key material.

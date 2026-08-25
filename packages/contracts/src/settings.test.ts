@@ -133,7 +133,7 @@ describe("ClientSettings sidebar", () => {
 describe("ServerSettings Workjet catalog", () => {
   it("hydrates legacy server settings with the empty Workjet configuration", () => {
     expect(decodeServerSettings({}).workjet).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       computers: [],
       llmRoutes: [],
       modelPrompts: [],
@@ -165,7 +165,7 @@ describe("ServerSettings Workjet catalog", () => {
       },
     }).workjet;
 
-    expect(workjet.schemaVersion).toBe(2);
+    expect(workjet.schemaVersion).toBe(3);
     expect(workjet.llmRoutes).toEqual([
       { id: "route-main", label: "Main account", gatewayAccountId: "gateway_account_work" },
     ]);

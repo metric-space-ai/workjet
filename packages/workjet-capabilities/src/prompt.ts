@@ -1,9 +1,9 @@
-import type { CapabilityManifestV1, WorkjetThreadRole } from "@t3tools/contracts";
+import type { CapabilityManifest, WorkjetThreadRole } from "@t3tools/contracts";
 
 export interface CompileCapabilityPromptInput {
   readonly role: WorkjetThreadRole;
   readonly managedInstructions: string;
-  readonly manifests: ReadonlyArray<CapabilityManifestV1>;
+  readonly manifests: ReadonlyArray<CapabilityManifest>;
 }
 
 const roleSection = (role: WorkjetThreadRole): string => {

@@ -220,11 +220,12 @@ it.effect("dispatches exact normal create and turn-start commands with inherited
         runtimeMode: "auto-accept-edits",
         interactionMode: "plan",
         workjetConfig: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           role: "worker",
           parent: { environmentId, threadId: parentThreadId },
           managedInstructions: "Keep changes bounded.",
           enabledCapabilityIds: ["greppy", "web-search"],
+          capabilityBindings: [],
         },
         branch: workerRefFor(ids[0]),
         worktreePath: workerPathFor(ids[0]),
@@ -293,6 +294,46 @@ it.effect("rejects duplicate and escalating capability delegation before creatin
       expect(error.reason).toBe(reason);
       expect(commands).toEqual([]);
     }
+  }),
+);
+
+it.effect("never delegates Decision Hub or its CTOX binding to a child worker", () =>
+  Effect.gen(function* () {
+    const decisionParent = {
+      ...parent,
+      workjetConfig: {
+        schemaVersion: 2,
+        role: "orchestrator",
+        parent: null,
+        managedInstructions: "Keep changes bounded.",
+        enabledCapabilityIds: ["greppy", "decision-hub"],
+        capabilityBindings: [
+          {
+            capabilityId: "decision-hub",
+            target: { kind: "ctox-connection", connectionId: "ctox-dev:tenant-1" },
+          },
+        ],
+      },
+    } as unknown as OrchestrationThread;
+
+    const implicit = makeHarness({ currentParent: decisionParent });
+    const service = yield* implicit.service;
+    const result = yield* service.dispatch(invocation, { task: "Inspect a bounded slice." });
+    expect(result.enabledCapabilityIds).toEqual(["greppy"]);
+    expect(implicit.commands[0]).toMatchObject({
+      workjetConfig: { enabledCapabilityIds: ["greppy"], capabilityBindings: [] },
+    });
+
+    const explicit = makeHarness({ currentParent: decisionParent });
+    const explicitService = yield* explicit.service;
+    const error = yield* explicitService
+      .dispatch(invocation, {
+        task: "Try an explicitly forbidden grant.",
+        enabledCapabilityIds: ["decision-hub"],
+      })
+      .pipe(Effect.flip);
+    expect(error.reason).toBe("capability-escalation");
+    expect(explicit.commands).toEqual([]);
   }),
 );
 

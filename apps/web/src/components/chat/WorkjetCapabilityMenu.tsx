@@ -1,4 +1,10 @@
-import type { WorkjetCapabilityId, WorkjetThreadConfig } from "@t3tools/contracts";
+import type {
+  WorkjetCapabilityBinding,
+  WorkjetCapabilityId,
+  WorkjetConnectionSummary,
+  WorkjetThreadConfig,
+} from "@t3tools/contracts";
+import { normalizeWorkjetThreadConfig } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
@@ -15,6 +21,7 @@ import {
   MenuPopup,
   MenuTrigger,
 } from "../ui/menu";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
 const GREPPY_CAPABILITY_ID = "greppy" satisfies WorkjetCapabilityId;
 
@@ -117,6 +124,7 @@ export async function executeWorkjetCapabilitySet<E>(input: {
   readonly capabilityIds?: ReadonlyArray<WorkjetCapabilityId> | undefined;
   /** Omitted leaves the thread's managed instructions untouched. */
   readonly managedInstructions?: string | undefined;
+  readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding> | undefined;
   readonly dispatch: (nextConfig: WorkjetThreadConfig) => Promise<AtomCommandResult<unknown, E>>;
   readonly setVisibleConfig: (config: WorkjetThreadConfig) => void;
   readonly notifyFailure: () => void;
@@ -134,6 +142,17 @@ export async function executeWorkjetCapabilitySet<E>(input: {
     input.managedInstructions !== nextConfig.managedInstructions
   ) {
     nextConfig = { ...nextConfig, managedInstructions: input.managedInstructions };
+  }
+  if (input.capabilityBindings !== undefined) {
+    nextConfig = normalizeWorkjetThreadConfig(nextConfig);
+    const wanted = input.capabilityBindings;
+    if (JSON.stringify(wanted) !== JSON.stringify(nextConfig.capabilityBindings)) {
+      nextConfig = {
+        ...nextConfig,
+        schemaVersion: 2,
+        capabilityBindings: [...wanted],
+      };
+    }
   }
   if (nextConfig === input.currentConfig) {
     return input.currentConfig;
@@ -212,6 +231,9 @@ export interface WorkjetCapabilityMenuProps {
   readonly onCapabilityEnabledChange?:
     | ((capabilityId: string, enabled: boolean) => void)
     | undefined;
+  readonly decisionHubConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
+  readonly decisionHubConnectionId?: string | null | undefined;
+  readonly onDecisionHubConnectionChange?: ((connectionId: string) => void) | undefined;
 }
 
 export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) {
@@ -250,6 +272,32 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
             <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
               {capability.description}
             </p>
+            {capability.id === "decision-hub" && enabled.has("decision-hub") ? (
+              <div className="px-2 pb-2">
+                <Select
+                  value={props.decisionHubConnectionId ?? ""}
+                  onValueChange={(value) => {
+                    if (value !== null) props.onDecisionHubConnectionChange?.(value);
+                  }}
+                >
+                  <SelectTrigger aria-label="Decision Hub CTOX connection">
+                    <SelectValue placeholder="Choose CTOX instance" />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {(props.decisionHubConnections ?? []).map((connection) => (
+                      <SelectItem key={connection.connectionId} value={connection.connectionId}>
+                        {connection.displayName} · {connection.status}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                {(props.decisionHubConnections ?? []).length === 0 ? (
+                  <p role="alert" className="pt-1 text-xs text-amber-500">
+                    No MCP-capable CTOX connection is available on this computer.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ))}
       </MenuGroup>

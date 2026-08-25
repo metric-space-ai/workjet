@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import {
   CtoxDiscoveryResult,
+  CtoxDecisionHubProvisionInput,
   CtoxGuestBounds,
   CtoxInstanceApp,
   CtoxManagedActivationInput,
@@ -52,6 +53,30 @@ const validManualPairing = {
 } as const;
 
 describe("CTOX renderer contracts", () => {
+  it("routes Decision Hub provisioning by redacted managed or local identity", () => {
+    const decode = Schema.decodeUnknownSync(CtoxDecisionHubProvisionInput, {
+      onExcessProperty: "error",
+    });
+    expect(
+      decode({
+        environmentId: "environment-1",
+        target: { _tag: "ctox_dev", tenantId: "tenant-1" },
+      }).target._tag,
+    ).toBe("ctox_dev");
+    expect(
+      decode({
+        environmentId: "environment-1",
+        target: { _tag: "local_ctox", instanceId: "local:abcdefghijklmnopqrstuv" },
+      }).target._tag,
+    ).toBe("local_ctox");
+    expect(() =>
+      decode({
+        environmentId: "environment-1",
+        target: { _tag: "ssh", instanceId: "ssh:host" },
+      }),
+    ).toThrow();
+  });
+
   it("decodes renderer-safe managed and paired descriptors", () => {
     expect(decodeInstance(validInstance)).toEqual(validInstance);
     const paired = decodeInstance({

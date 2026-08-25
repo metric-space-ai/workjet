@@ -1,14 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { CapabilityManifestV1 } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import { builtInCapabilityManifests } from "./manifests.ts";
 import { createCapabilityRegistry, defaultCapabilityRegistry } from "./registry.ts";
 
 const withoutAdapter = (
-  manifest: CapabilityManifestV1,
+  manifest: CapabilityManifest,
   excluded: "t3-mcp" | "t3-prompt" | "ctox-business-os-mcp" | "ctox-business-command",
-): CapabilityManifestV1 => ({
+): CapabilityManifest => ({
   ...manifest,
   supportedAdapters: manifest.supportedAdapters.filter((adapter) => adapter !== excluded),
 });
@@ -64,7 +64,7 @@ describe("capability registry", () => {
       builtInCapabilityManifests[0],
       withoutAdapter(builtInCapabilityManifests[1]!, "t3-prompt"),
       builtInCapabilityManifests[2],
-    ].filter((manifest): manifest is CapabilityManifestV1 => manifest !== undefined);
+    ].filter((manifest): manifest is CapabilityManifest => manifest !== undefined);
     const registry = createCapabilityRegistry(source);
 
     expect(registry.listForAdapter("t3-prompt").map(({ id }) => id)).toEqual([
@@ -105,7 +105,7 @@ describe("capability registry", () => {
     const source = [...builtInCapabilityManifests];
     const original = [...source];
     const registry = createCapabilityRegistry(source);
-    const listed = registry.list() as Array<CapabilityManifestV1>;
+    const listed = registry.list() as Array<CapabilityManifest>;
 
     listed.reverse();
     source.reverse();

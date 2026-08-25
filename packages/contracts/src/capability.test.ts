@@ -6,6 +6,7 @@ import {
   CapabilityAvailability,
   CapabilityContractError,
   CapabilityIncompatibleVersionError,
+  CapabilityManifest,
   CapabilityManifestV1,
   CapabilityUnknownIdError,
   CapabilityVersion,
@@ -133,6 +134,20 @@ describe("CapabilityManifestV1", () => {
 
     expect(decoded.secretRequirements[0]).not.toHaveProperty("value");
     expect(JSON.stringify(encodeManifest(decoded))).not.toContain(sentinel);
+  });
+});
+
+describe("CapabilityManifest V2 normalization", () => {
+  it("normalizes V1 to conservative root-only non-delegable defaults", () => {
+    const decoded = Schema.decodeUnknownSync(CapabilityManifest)(manifest);
+    expect(decoded).toMatchObject({
+      schemaVersion: 2,
+      activationPolicy: {
+        allowedRoles: ["standard", "orchestrator"],
+        childDelegation: "forbidden",
+        requiredBinding: null,
+      },
+    });
   });
 });
 

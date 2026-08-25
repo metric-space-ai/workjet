@@ -1,4 +1,4 @@
-import type { CapabilityManifestV1 } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -27,10 +27,18 @@ describe("capability availability from one catalog", () => {
       enabledCapabilityIds: ["web-search"],
     });
 
-    expect(capabilityAvailabilityIds(code)).toEqual(capabilityAvailabilityIds(ctox));
-    for (const [index, view] of code.entries()) {
+    expect(capabilityAvailabilityIds(code)).toEqual([
+      "greppy",
+      "web-search",
+      "web-stack-browser",
+      "decision-hub",
+    ]);
+    expect(capabilityAvailabilityIds(ctox)).toEqual(["greppy", "web-search", "web-stack-browser"]);
+    for (const view of code.filter(({ manifest }) => manifest.id !== "decision-hub")) {
       // Not a copy: the very same manifest object both hosts resolve.
-      expect(view.manifest).toBe(ctox[index]?.manifest);
+      expect(view.manifest).toBe(
+        ctox.find(({ manifest }) => manifest.id === view.manifest.id)?.manifest,
+      );
       expect(view.manifest).toBe(
         builtInCapabilityManifests.find(({ id }) => id === view.manifest.id),
       );
@@ -55,6 +63,7 @@ describe("capability availability from one catalog", () => {
       { id: "greppy", status: "available", activated: true },
       { id: "web-search", status: "available", activated: false },
       { id: "web-stack-browser", status: "available", activated: false },
+      { id: "decision-hub", status: "available", activated: false },
     ]);
 
     const ctox = resolveCtoxInstanceCapabilityAvailability({
@@ -83,7 +92,7 @@ describe("capability availability from one catalog", () => {
 
   it("hides a capability from a host whose adapter the manifest does not expose", () => {
     const withoutCtox = builtInCapabilityManifests.map(
-      (manifest): CapabilityManifestV1 =>
+      (manifest): CapabilityManifest =>
         manifest.id === "greppy"
           ? {
               ...manifest,
@@ -113,7 +122,7 @@ describe("capability availability from one catalog", () => {
           registry,
         }),
       ),
-    ).toEqual(["greppy", "web-search", "web-stack-browser"]);
+    ).toEqual(["greppy", "web-search", "web-stack-browser", "decision-hub"]);
   });
 
   it("reports an incompatible pin instead of silently resolving another version", () => {

@@ -11,6 +11,8 @@ import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Socket from "effect/unstable/socket/Socket";
+import { RpcSessionFactoryLive } from "@t3tools/client-runtime/rpc";
 
 import * as Electron from "electron";
 
@@ -24,6 +26,7 @@ import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as CtoxAppRail from "./ctox/CtoxAppRail.ts";
 import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
+import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
@@ -195,6 +198,10 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
+const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
+  Layer.provide(Socket.layerWebSocketConstructorGlobal),
+);
+
 // The local-daemon launch service resolves its target through the one
 // registry instance, so the registry is provided to (and re-exported by) the
 // merged control layer rather than merged beside it.
@@ -211,6 +218,11 @@ const desktopCtoxControlLayer = Layer.mergeAll(
 );
 
 const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
+const desktopDecisionHubLayer = CtoxDecisionHubProvisioner.layer.pipe(
+  Layer.provideMerge(desktopRpcSessionLayer),
+  Layer.provideMerge(desktopBackendLayer),
+  Layer.provideMerge(desktopCtoxControlLayer),
+);
 
 // The support bundle reads the migration decision and the crash-reporter
 // state, so it hangs off the same graph the application menu resolves from;
@@ -232,6 +244,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   // service, and the IPC handler resolves the same instance from the
   // re-exported context.
   Layer.provideMerge(desktopSupportLayer),
+  Layer.provideMerge(desktopDecisionHubLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),

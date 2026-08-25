@@ -256,6 +256,15 @@ import {
   WorkjetCrossModeSubmitRpcInput,
   WorkjetCrossModeSubmitRpcResult,
 } from "./workjetCrossMode.ts";
+import {
+  WorkjetDecisionHubConnectionError,
+  WorkjetDecisionHubConnectionResult,
+  WorkjetDecisionHubDisconnectInput,
+  WorkjetDecisionHubDisconnectResult,
+  WorkjetDecisionHubListResult,
+  WorkjetDecisionHubProbeInput,
+  WorkjetDecisionHubProvisionInput,
+} from "./workjetDecisionHub.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -398,6 +407,13 @@ export const WS_METHODS = {
   workjetCrossModeGetThreadLink: "workjet.crossMode.getThreadLink",
   workjetCrossModeListLinks: "workjet.crossMode.listLinks",
   workjetCrossModeSubmit: "workjet.crossMode.submit",
+
+  // Environment-scoped Decision Hub connection registry. Provisioning is a
+  // write-only desktop-main path: responses contain redacted summaries only.
+  workjetDecisionHubListConnections: "workjet.decisionHub.listConnections",
+  workjetDecisionHubProvisionConnection: "workjet.decisionHub.provisionConnection",
+  workjetDecisionHubProbeConnection: "workjet.decisionHub.probeConnection",
+  workjetDecisionHubDisconnectConnection: "workjet.decisionHub.disconnectConnection",
 
   // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
   workjetMeshRoster: "workjet.mesh.roster",
@@ -906,6 +922,42 @@ export const WsWorkjetCrossModeSubmitRpc = Rpc.make(WS_METHODS.workjetCrossModeS
   success: WorkjetCrossModeSubmitRpcResult,
   error: WorkjetCrossModeRpcError,
 });
+
+export const WsWorkjetDecisionHubListConnectionsRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubListConnections,
+  {
+    payload: Schema.Struct({}),
+    success: WorkjetDecisionHubListResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsWorkjetDecisionHubProvisionConnectionRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubProvisionConnection,
+  {
+    payload: WorkjetDecisionHubProvisionInput,
+    success: WorkjetDecisionHubConnectionResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsWorkjetDecisionHubProbeConnectionRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubProbeConnection,
+  {
+    payload: WorkjetDecisionHubProbeInput,
+    success: WorkjetDecisionHubConnectionResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsWorkjetDecisionHubDisconnectConnectionRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubDisconnectConnection,
+  {
+    payload: WorkjetDecisionHubDisconnectInput,
+    success: WorkjetDecisionHubDisconnectResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
 
 /**
  * ADDITIVE Wave-5 read. The bounded, redacted list of mesh peers this machine
@@ -1526,6 +1578,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetCrossModeGetThreadLinkRpc,
   WsWorkjetCrossModeListLinksRpc,
   WsWorkjetCrossModeSubmitRpc,
+  WsWorkjetDecisionHubListConnectionsRpc,
+  WsWorkjetDecisionHubProvisionConnectionRpc,
+  WsWorkjetDecisionHubProbeConnectionRpc,
+  WsWorkjetDecisionHubDisconnectConnectionRpc,
   WsWorkjetMeshRosterRpc,
   WsWorkjetMeshOverviewRpc,
   WsWorkjetMeshRevokePeerRpc,

@@ -1106,3 +1106,37 @@ verifiziert: Prompt-Tab zeigt genau EINE Progress-board-Sektion. App
 im Business-OS-Modus hinterlassen. DAMIT SIND ALLE BEFUNDE DER
 REVIEW-WELLE GESCHLOSSEN.
 Übergabe-Dokument für Folge-Agenten: docs/uebergabe-desktop-agent.md
+
+## Diagnostics Resource Monitor wiederhergestellt — 2026-08-25 ~11:25
+
+Ursache bestätigt: Der Release-Artefakt-Builder hatte bereits einen
+Cross-Target-Stager für `native/resource-monitor`, der manuelle Live-Workflow
+baute aber nur Web, Server und `apps/desktop/dist-electron/main.cjs`. Direkte
+Desktop-`vp pack`-Builds erzeugten deshalb weder das Rust-Target-Binary noch
+`apps/desktop/prod-resources/resource-monitor/t3-resource-monitor`; der
+unverpackte Alpha-Launcher konnte keinen Sidecar-Pfad an den Server übergeben.
+„NATIVE UNAVAILABLE" und „Sidecar Unavailable · Restarts 5" waren zwei
+Health-Zeilen desselben fehlenden Monitors.
+
+Fix: `apps/desktop/vite.config.ts` führt nach einem erfolgreichen Pack den
+neuen, getesteten Stager `scripts/stage-resource-monitor.mjs` aus. Er baut den
+Host-Monitor mit Cargo locked/release, prüft das erwartete Build-Ergebnis,
+staged nur das plattformspezifische Executable nach `prod-resources` und setzt
+auf Unix das Executable-Bit. Das generierte Staging-Verzeichnis ist ignoriert;
+der bestehende Release-Artefaktpfad bleibt unverändert und überschreibt seinen
+Staging-Baum weiterhin mit dem passenden Cross-Target-Binary.
+
+BEWEISE: fokussierte Vitest-Suite 24/24 grün
+(`stage-resource-monitor.test.mjs` + `DesktopBackendConfiguration.test.ts`),
+Desktop-Typecheck exit 0, gezieltes Lint/Format grün. Ein echter direkter
+`pnpm exec vp pack` baute ein ausführbares arm64-Mach-O (545840 Bytes) und der
+direkte NDJSON-Handshake meldete Protokoll 2, Sidecar 0.1.0, macOS/aarch64.
+
+LIVE nach begründetem Neustart außerhalb der Agenten-Kindprozess-Hygiene via
+macOS LaunchServices: Diagnostics zeigt `NATIVE HEALTHY`, Sidecar
+`0.1.0 · PID 74235`, `Restarts 0`, keinen Retry-Zustand und echte Live-Werte;
+Screenshot visuell geprüft. Interaktiver Smoke: vorhandener Draft
+`b15d17e7-...` öffnet mit sichtbarem Composer; nach Wechsel zu Business OS
+repopulieren CTOX Website Demo, GPU1 A6000, GPU3 A4500 und Meridian Supply Co.
+Der bestehende Draft/Modellzustand wurde nicht verändert, Endzustand ist wieder
+Business OS.

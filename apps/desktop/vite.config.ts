@@ -4,6 +4,10 @@ import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 const repoEnv = loadRepoEnv();
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
+const stageResourceMonitorCommand = "node scripts/stage-resource-monitor.mjs";
+const onPackSuccess = shouldLaunchElectronAfterPack
+  ? `${stageResourceMonitorCommand} && node scripts/dev-electron.mjs`
+  : stageResourceMonitorCommand;
 const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
@@ -47,7 +51,10 @@ export default defineConfig({
       deps: {
         alwaysBundle: (id) => id.startsWith("@t3tools/"),
       },
-      ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
+      // The unpackaged CTOX launcher resolves native resources from
+      // apps/desktop/prod-resources. Keep direct `vp pack` builds aligned with
+      // the release-artifact pipeline, which stages this binary separately.
+      onSuccess: onPackSuccess,
     },
     {
       format: "cjs",

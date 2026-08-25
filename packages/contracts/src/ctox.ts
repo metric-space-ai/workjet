@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { EnvironmentId } from "./baseSchemas.ts";
 import { WorkjetConnectionId, WorkjetConnectionSummary } from "./workjet.ts";
+import { BusinessOsShellUpdateStatus } from "./businessOsShell.ts";
 
 const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   for (let index = 0; index < input.length; index += 1) {
@@ -131,6 +132,7 @@ export const CtoxManagedInstance = Schema.Struct({
   domain: Schema.optionalKey(CtoxManagedInstanceHostname),
   role: Schema.optionalKey(CtoxManagedInstanceRole),
   decisionHub: Schema.optionalKey(CtoxDecisionHubAvailability),
+  shellUpdate: Schema.optionalKey(BusinessOsShellUpdateStatus),
   healthSummary: CtoxManagedInstanceHealth,
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;

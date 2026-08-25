@@ -30,6 +30,7 @@ export * from "./workjetCrossMode.ts";
 export * from "./workjetDecisionHub.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
+export * from "./businessOsShell.ts";
 export * from "./computerProvisioning.ts";
 export * from "./mobileShell.ts";
 export * from "./t3ProjectFile.ts";

@@ -1090,3 +1090,19 @@ Settings-Schreibweg fuer Ueberschriften oder einen sicheren
 Server-Neustart (Killer-Lage) — beim naechsten Neustart erledigen.
 LIVE-SMOKE: Worker-Seite h1+Tabs ok, Pi Code gelistet, BOS mit genau
 EINEM Refresh + Fussleiste; App im Business-OS-Modus hinterlassen.
+
+## F15 ERLEDIGT + „Server-Killer" AUFGEKLÄRT — 2026-08-25 ~11:10
+
+Killer-Aufklärung: Cron-Canary (außerhalb jedes Agenten-Prozessbaums)
+lief unbegrenzt, identische Server aus dem Claude-Baum starben in
+~1,3s → der „Killer" ist die Orphan-Hygiene des Claude-Code-Harness,
+kein Fremdprozess. Produktions-App war nie gefährdet; Neustarts sicher.
+Konsequenz für Agenten: Test-Server via cron/launchd oder stdin-offen
+starten. eslogger-Runde damit obsolet.
+F15: App sauber beendet, settings.json-Backup angelegt, leere
+„## Progress board"-Überschrift aus managedSystemPrompt entfernt, App
+neu gestartet (bringt zugleich das neue Turbofan-Dock-Icon). LIVE
+verifiziert: Prompt-Tab zeigt genau EINE Progress-board-Sektion. App
+im Business-OS-Modus hinterlassen. DAMIT SIND ALLE BEFUNDE DER
+REVIEW-WELLE GESCHLOSSEN.
+Übergabe-Dokument für Folge-Agenten: docs/uebergabe-desktop-agent.md

@@ -1008,3 +1008,22 @@ LIVE-BEWEIS: alle 6 Provider mit echten Listen (Claude 17, Codex 13,
 Z.ai 5, MiniMax 9, xAI 15, Kimi 10 Modelle; Anzeigename + ID), Rail und
 Liste nebeneinander (Screenshot model-menu-fixed.png im Scratchpad).
 Draft-Zustand nach Prüfung wiederhergestellt (Codex CLI · claude-fable-5).
+
+## Neues CTOX-Logo — FREIGEGEBEN + EINGEBAUT 2026-08-25 ~07:50
+
+Operator-Auftrag: neues Logo („das bisherige sieht echt nicht gut aus",
+„CTO in the Box", 1:1-Format, „mächtige Turbinenschaufel"). Nach vier
+verworfenen Richtungen (Symbol-Kacheln, Wortmarke, Negativraum,
+4-Blatt-Cartoon) freigegeben: die neu konstruierte Turbine — vier
+mathematisch berechnete wide-chord-Sichelschaufeln (X-Lesbarkeit),
+Stahl-Verläufe, präziser Mantelring, Spinner mit Teal-Drallmarke;
+Workjet-Familienerbe bleibt erkennbar. Master: assets/ctox/ctox-logo.svg.
+Abgeleitet + ersetzt: ctox-app-icon.png (650², Dock-Icon, greift beim
+nächsten App-Start), ctox-app-icon.icns (voller iconset), Favicons
+16/32/ico, Apple-Touch 180, ctox-windows.ico. Alte Fassungen unter
+assets/ctox/legacy-2026-08-17/. Sign-in-Landingpage des Gateway-Hosts
+zeigt das Logo inline (loopback.rs; Host-Binary gebaut, signiert und
+nach ~/.t3/userdata/provider-gateway-host kopiert — laufender Host
+unberührt, greift beim nächsten Gateway-Start). Mobile-Session wird
+informiert, ihre iOS/Android-Ableitungen vom neuen Master neu zu
+erzeugen.

@@ -91,4 +91,25 @@ describe("Business OS native security guards", () => {
     expect(ios).toContain("willResignActiveNotification");
     expect(ios).toContain("capturedDidChangeNotification");
   });
+
+  it("uses native SwiftUI and Compose launchers before the React Native fallback", () => {
+    const home = read("src/features/business-os/launcher/BusinessOsHomeDesk.tsx");
+    const ios = read("modules/t3-native-controls/ios/T3BusinessOsLauncherModule.swift");
+    const android = read(
+      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsLauncherModule.kt",
+    );
+    expect(home.indexOf("if (NativeBusinessOsLauncher)")).toBeLessThan(
+      home.indexOf("BusinessOsHomeDeskFallback"),
+    );
+    expect(ios).toContain("UIHostingController<WorkjetNativeLauncher>");
+    expect(ios).toContain("TabView");
+    expect(ios).toContain(".onDrag");
+    expect(ios).toContain(".onDrop");
+    expect(ios).toContain(".glassEffect");
+    expect(android).toContain("ComposeView");
+    expect(android).toContain("HorizontalPager");
+    expect(android).toContain("LazyVerticalGrid");
+    expect(android).toContain("dynamicDarkColorScheme");
+    expect(`${ios}\n${android}`).not.toContain('id = "desktop"');
+  });
 });

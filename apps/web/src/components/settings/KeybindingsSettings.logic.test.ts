@@ -160,7 +160,7 @@ describe("KeybindingsSettings.logic", () => {
     expect(unknownWhenVariables(parsed.ok ? parsed.value : undefined)).toEqual(["terminalFoc"]);
   });
 
-  it("marks each default shortcut for multi-binding commands as default", () => {
+  it("marks the removed duplicate new-chat shortcut as custom", () => {
     const rows = buildKeybindingRows(
       [
         {
@@ -197,7 +197,8 @@ describe("KeybindingsSettings.logic", () => {
       "",
     );
 
-    expect(rows.map((row) => row.source)).toEqual(["Default", "Default"]);
+    expect(rows.map((row) => row.source)).toEqual(["Default", "Custom"]);
+    expect(rows.map((row) => row.defaultKey)).toEqual(["mod+n", "mod+n"]);
   });
 
   it("reports conflicting shortcuts that share an active when context", () => {

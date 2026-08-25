@@ -1162,3 +1162,31 @@ Hilfesteuerungen auf Pools und Accounts, sichtbare Katalog-/Musterlabels und
 der vollständige gemeinsame Tooltip interaktiv nachgewiesen; Screenshot
 `output/playwright/model-counts-help.png`. Danach vorhandenen Draft
 `b15d17e7-...` wieder geöffnet und die App im Business-OS-Modus hinterlassen.
+
+## Doppeltes „Chat: New“-Keybinding bereinigt — 2026-08-25 ~12:15
+
+Der kanonische Default für `chat.new` ist jetzt ausschließlich `mod+n`
+(`⌘N`/`Ctrl+N`); der redundante Default `mod+shift+o` wurde entfernt. Die
+Server-Startup-Migration ist bewusst eng: Sie entfernt die exakte Altregel nur,
+wenn zugleich die exakte kanonische `mod+n`-Regel persistiert ist. Eine allein
+vorhandene Altregel gilt als Nutzerentscheidung und bleibt ebenso erhalten wie
+eine nur ähnlich konfigurierte Regel. Dadurch verwenden Settings, Sidebar und
+Command Palette dieselbe wirksame Shared-Konfiguration.
+
+BEWEISE: Shared-, Server-Migrations- und Web-Suiten 91/91 grün; gezieltes
+Format/Lint grün; Web- und Server-Typecheck exit 0 (nur bereits vorhandene
+Effect-Suggestions im Server); Produktions-Web-Build sowie beide Server-Packs
+grün. Die reale Operator-Datei enthielt vor dem Neustart genau das alte Paar
+und wurde unter
+`~/.t3/userdata/keybindings.json.before-chat-new-migration-20260825-1213`
+gesichert. Nach dem begründeten LaunchServices-Neustart enthält sie genau
+`mod+n` für `chat.new`.
+
+LIVE ausschließlich im `t3code://app`-Target: vorhandener Draft
+`b15d17e7-...` öffnete mit einem sichtbaren Composer; Sidebar-Tooltip und
+Command Palette zeigten `⌘N`; Settings → Keybindings zeigte genau eine
+`Chat: New`-Zeile mit `⌘N` und ohne `O`. Screenshot
+`output/playwright/keybindings-chat-new-canonical.png`. Danach listete Business
+OS wieder CTOX Website Demo, GPU1 A6000, GPU3 A4500 und Meridian Supply Co.;
+Endzustand Business OS. GPU-Pairing, BOS-Warm-Reattach und die
+Regressionswache blieben triggergerecht unverändert.

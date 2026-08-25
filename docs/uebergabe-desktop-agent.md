@@ -2,6 +2,23 @@
 
 Stand: 2026-08-25 ~23:00 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
 
+## Shell-Release-Fortführung — 2026-08-26 ~01:20
+
+CTOX-Commits `9b96cd5a8`, `8b1acc89d` und `a79a83ce7` führen den
+deterministischen, signierten Shell-Release-v2-Pfad, eine einzige Designschicht,
+kurze Shell-Version/Status und den begrenzten Chat-Dock ein. Der echte Stable-
+Tag `business-os-shell-v0.1.0` ist gepusht; Actions-Lauf `32909885557` steht
+noch ohne gestarteten Step in der GitHub-Runner-Queue. Workjet darf erst nach
+erfolgreichem Abschluss vom gepinnten RC.12 auf Stable wechseln.
+
+Workjet-Commit `19a367db3` enthält die öffentlichen Release-v2-/Channel-/
+Updateverträge und die fail-closed Ed25519-Verifikation mit genau einem
+current- und next-Key. Die privaten Schlüssel liegen ausschließlich als CTOX-
+Repository-Secrets. Offen bleiben: Download/Stage/Activate/Rollback im
+Desktop-Main-Prozess, IPC/Fleet-Tabelle, gestaffelter realer Rollout und
+CDP-Abnahme des gebauten Stable-Artefakts. Diese Punkte nicht als erledigt
+melden, solange der Release-Lauf beziehungsweise reale Instanzproben fehlen.
+
 ## Woran du arbeitest
 
 **Produktgrenze:** Die einzige Nutzer-App heißt sichtbar exakt **Workjet** und

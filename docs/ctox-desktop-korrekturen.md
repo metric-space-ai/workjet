@@ -1513,3 +1513,30 @@ MCP, Nutzer, Aktivität und Module. Der Footer zeigte nur Settings und genau
 einen Instanz-Refresh. Host und Drawer passten bei 1422×866 ohne Overflow; im
 beobachteten Abnahmepfad traten keine Console- oder Page-Errors auf. Kein
 Kunden-Guest wurde bedient. Endzustand ist Business OS.
+
+## Signierte Shell-Releases und kompakter Shell-Chrome — 2026-08-26 ~01:20
+
+CTOX baut Business-OS-Shell-Artefakte nun deterministisch, erzeugt ein
+vollständiges SPDX-2.3-Inventar und signiert sowohl das unveränderliche
+`ctox.business-os-shell.release.v2`-Manifest als auch den kleinen
+`ctox.business-os-shell.channel.v1`-Pointer separat mit Ed25519. Der Workflow
+ordnet reine SemVer-Tags Stable, RC/Beta-Tags Beta und Nightly-Tags Nightly zu.
+Die privaten current-/next-Keys befinden sich ausschließlich in GitHub-
+Repository-Secrets; Workjet bündelt nur die öffentlichen SPKI-Schlüssel und
+prüft Schema, Signatur, Pointer-Hash, Kanal und Version fail-closed.
+
+Die Shell besitzt nur noch eine Designschicht. Im Header wird ausschließlich
+die kurze Shell-Version mit einem immer sichtbaren Statussymbol angezeigt;
+interne RxDB-/WebRTC-, Commit- und `business-os-shell-*`-Texte sind aus dem
+Chrome entfernt. Der Chat-Dock bleibt bei null, einem, wenigen und vielen Chats
+inhaltsbreit beziehungsweise auf 860 px begrenzt und zeichnet keine Border-
+oder Hintergrundfläche mehr bis zum rechten Fensterrand.
+
+BEWEISE: CTOX-Artefakt-/SBOM-/Signatur-Suite 12/12, Shell-Status 2/2,
+Business-Chat 49/49 und Layout-Guard grün. Workjet Contracts 2/2,
+Release-Trust 2/2 sowie Contracts-/Desktop-Typecheck grün. Commits:
+CTOX `9b96cd5a8`, `8b1acc89d`, `a79a83ce7`; Workjet `19a367db3`.
+Der unveränderliche Stable-Tag `business-os-shell-v0.1.0` wurde gepusht.
+Actions-Lauf `32909885557` wartet zum Zeitpunkt dieses Eintrags ohne gestarteten
+Step in der GitHub-Runner-Queue. Deshalb sind Stable-Pin, Download/Aktivierung,
+Fleet-Rollout und reale CDP-/RxDB-WebRTC-Abnahme ausdrücklich noch offen.

@@ -1,6 +1,6 @@
 # Übergabe: Workjet Desktop — Entwicklungs-Handover
 
-Stand: 2026-08-25 ~18:05 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
+Stand: 2026-08-25 ~22:30 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
 
 ## Woran du arbeitest
 
@@ -53,7 +53,7 @@ Attach-Snippet: WebSocket auf `http://127.0.0.1:9300/json/list`, **Target mit UR
 
 ## Koordination
 
-- **Workjet Mobile** (paralleler Worker): Branding/Links/Moduswechsel sind als `717b0a4a0`, sichere Pairing-/Registry-/WebView-/Shell-Pack-Grundlage als `1c1d99a74` und die DPoP-fähige Resolve-Anbindung als `87d7d92e4` committed. Shared-Helper: `9df756456`. Der Slice ist abgeschlossen und `apps/mobile/**` sauber. Reale Shell-Aktivierung wartet nur noch auf echte current+next Ed25519-Trust-Keys, den CTOX-Producer und ein signiertes Artefakt.
+- **Workjet Mobile** (paralleler Worker): Branding/Links/Moduswechsel sind als `717b0a4a0`, sichere Pairing-/Registry-/WebView-/Shell-Pack-Grundlage als `1c1d99a74` und die DPoP-fähige Resolve-Anbindung als `87d7d92e4` committed. Shared-Helper: `9df756456`. Der Worker besitzt aktuell sämtliche uncommitteten Änderungen unter `apps/mobile/**` und führt dort den letzten alten Logo-/Namens-Audit sowie Mobile-Shell-Arbeit durch; diese Pfade nicht anfassen oder stagen. Reale Shell-Aktivierung wartet weiter auf echte current+next Ed25519-Trust-Keys, den CTOX-Producer und ein signiertes Artefakt.
 - Workjet-Worker (Kimi-Auditor etc.) für unabhängige Reviews: Brief-Muster und Fallen siehe oben; Review-Läufe read-only halten, Ergebnisse selbst verifizieren (Reports sind Behauptungen).
 
 ## Offene Aufgaben (in dieser Reihenfolge)
@@ -70,6 +70,7 @@ Attach-Snippet: WebSocket auf `http://127.0.0.1:9300/json/list`, **Target mit UR
 10. **IMPLEMENTIERT, PRODUKTIONSSCHLÜSSEL OFFEN — Mobile Shell-Pack Resolve:** Contract `packages/contracts/src/mobileShell.ts`, Endpoint `businessOs.resolveMobileShellPack` / `POST /api/ctox/business-os/mobile-shell-packs/resolve`. Mobile bleibt fail-closed, bis current+next Ed25519-Public-Keys gebündelt und der passende private Release-Key außerhalb des Repos konfiguriert ist. Keine Test- oder erfundene Produktionssignatur eintragen.
 11. **ERLEDIGT 2026-08-25 ~17:50 — vollständige reale UI-Abnahme:** Native Workjet-Menüs, alle Settings, Coding-Sonderseiten und der lokale Business-OS-Shell/App-Pfad wurden interaktiv im einzigen `t3code://app/`-Target geprüft; keine Kunden-Guests geöffnet. Dabei Standard-Theme sichtbar auf Workjet und Machines-Leertext auf Settings → Computers/QR aktualisiert (22/22 Tests, Web-Typecheck/Build, Live-Reload grün). Diagnostics live `NATIVE HEALTHY`, Restarts 0. Der lokale Decision Hub bleibt bei ausgeschaltetem CTOX-Dienst (`running: false`, WebRTC unavailable) erwartbar nicht ladbar; Dienststart und echte Sync-Abnahme brauchen einen gesonderten Operator-Trigger.
 12. **ERLEDIGT 2026-08-25 ~21:40 — statischer Harness-Session-Importer:** Settings → Harnesses erkennt lokale Codex- und Claude-Code-JSONL-Verläufe und erzeugt daraus unabhängige Workjet-Threads. Der Import liest Quellen ausschließlich, speichert weder Quellpfad noch native Resume-ID und startet keinen Provider-Turn; Wiederholung ergänzt nur einen unveränderten Präfix. Interne Health-Probes, Codex-Inject-Kontext, Subagents, Claude-Sidechains sowie Tool-/Thinking-Blöcke werden fail-closed ausgeschlossen. Live wurde eine reale Claude-Session zweimal importiert: 201 Nachrichten nach Erstimport und weiterhin exakt 201 nach Wiederholung; Quellhash, Mtime und Größe blieben bytegleich; `projection_thread_sessions` und `provider_session_runtime` blieben beide leer. Endzustand Business OS.
+13. **ERLEDIGT 2026-08-25 ~22:30 — Workjet-Identität und Logo-Guard:** Aktuelle Desktop-/Web-/Server-/Marketing-/Release-Flächen verwenden nur noch Workjet; CTOX bleibt Backendbegriff. Stable zeigt kein Alpha mehr. Alle ausgelieferten Desktop-, Web- und Marketing-Icons stammen bytegleich aus `assets/workjet/`; alte T3-Marketing-Screenshots sind entfernt. Ein Guard verbietet retired Produktnamen in aktuellen Flächen und verhindert die Rückkehr der Screenshots. Live wurden Code, Business OS und alle elf Settings-Seiten im einzigen `t3code://app/`-Target sowie Marketing in Desktop-/Mobile-Viewport geprüft. Nur die eng getesteten historischen Datenordner-IDs bleiben unsichtbar für Profilmigration erhalten. Mobile wird separat vom Mobile-Worker abgeschlossen.
 
 ## Was NICHT zu tun ist
 

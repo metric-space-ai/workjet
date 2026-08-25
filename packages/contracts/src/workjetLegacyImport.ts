@@ -103,7 +103,7 @@ export type WorkjetLegacyTransport = typeof WorkjetLegacyTransport.Type;
  * A legacy computer with no bound Code environment.
  *
  * `host` is shown so the operator can RECOGNIZE the machine, and is explicitly
- * not imported: T3 environments remain the transport authority.
+ * not imported: Workjet environments remain the transport authority.
  */
 export const WorkjetLegacyImportPendingComputer = Schema.Struct({
   kind: Schema.Literal("computer-environment"),

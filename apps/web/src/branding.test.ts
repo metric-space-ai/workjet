@@ -76,7 +76,7 @@ describe("branding logic", () => {
     expect(
       resolveServerBackedAppStageLabel({
         primaryServerVersion: "0.0.28-nightly.20260616.12",
-        fallbackStageLabel: "Alpha",
+        fallbackStageLabel: "Latest",
       }),
     ).toBe("Nightly");
   });
@@ -84,33 +84,33 @@ describe("branding logic", () => {
   it("updates the display name for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "T3 Code",
-        fallbackDisplayName: "T3 Code (Alpha)",
-        fallbackStageLabel: "Alpha",
+        baseName: "Workjet",
+        fallbackDisplayName: "Workjet",
+        fallbackStageLabel: "Latest",
         primaryServerVersion: "0.0.28-nightly.20260616.12",
       }),
-    ).toBe("T3 Code (Nightly)");
+    ).toBe("Workjet (Nightly)");
   });
 
   it("keeps the fallback display name for stable primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "T3 Code",
-        fallbackDisplayName: "T3 Code (Alpha)",
-        fallbackStageLabel: "Alpha",
+        baseName: "Workjet",
+        fallbackDisplayName: "Workjet",
+        fallbackStageLabel: "Latest",
         primaryServerVersion: "0.0.27",
       }),
-    ).toBe("T3 Code (Alpha)");
+    ).toBe("Workjet");
   });
 
   it("keeps the fallback display name for malformed nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "T3 Code",
-        fallbackDisplayName: "T3 Code (Alpha)",
-        fallbackStageLabel: "Alpha",
+        baseName: "Workjet",
+        fallbackDisplayName: "Workjet",
+        fallbackStageLabel: "Latest",
         primaryServerVersion: "0.0.28-nightly.20260616",
       }),
-    ).toBe("T3 Code (Alpha)");
+    ).toBe("Workjet");
   });
 });

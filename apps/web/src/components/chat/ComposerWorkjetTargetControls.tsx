@@ -324,7 +324,7 @@ function groupGatewayModelsByProvider(
  */
 export const WORKJET_COMPUTER_KIND_LABELS: Readonly<Record<string, string>> = {
   local: "This computer",
-  "t3-connect": "T3 Connect",
+  "t3-connect": "Workjet Connect",
   ssh: "SSH",
   tailscale: "Tailscale",
   remote: "Remote",

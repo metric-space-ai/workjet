@@ -8,7 +8,7 @@ import * as IpcChannels from "../channels.ts";
 import { makeIpcMethod } from "../DesktopIpc.ts";
 
 /**
- * Payload for the one-time "import your previous T3 Code data?" prompt. Null
+ * Payload for the one-time "import your previous app data?" prompt. Null
  * means: nothing to offer (fresh install, or already decided once).
  */
 export const DesktopUserDataMigrationOfferSchema = Schema.NullOr(

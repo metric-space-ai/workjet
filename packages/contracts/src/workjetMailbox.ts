@@ -12,7 +12,7 @@
  *   here may model relay-side accounts, endpoints, or credentials.
  * - Mesh membership is CTOX room pairing (room + room password + signaling
  *   URLs) plus the engine's capability/session layer and device-scoped
- *   revocation. T3 Connect account/DPoP identities are explicitly NOT reused,
+ *   revocation. Workjet Connect account/DPoP identities are explicitly NOT reused,
  *   so the mesh workspace identity here is a bounded opaque id, never an
  *   account, user, or device credential.
  * - History/worktree portability uses the HANDOFF-SNAPSHOT model: an immutable

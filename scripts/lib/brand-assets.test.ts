@@ -10,90 +10,83 @@ import {
 } from "./brand-assets.ts";
 
 describe("brand-assets", () => {
-  it("maps production web assets into the server package", () => {
-    expect(resolveWebIconOverrides("production", "dist/client")).toEqual([
+  it("maps Workjet web assets into the server package", () => {
+    expect(resolveWebIconOverrides("workjet", "dist/client")).toEqual([
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.productionWebFaviconIco,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFaviconIco,
         targetRelativePath: "dist/client/favicon.ico",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.productionWebFavicon16Png,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFavicon16Png,
         targetRelativePath: "dist/client/favicon-16x16.png",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.productionWebFavicon32Png,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFavicon32Png,
         targetRelativePath: "dist/client/favicon-32x32.png",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebAppleTouchIconPng,
         targetRelativePath: "dist/client/apple-touch-icon.png",
       },
     ]);
   });
 
-  it("maps the desktop renderer to CTOX icons", () => {
+  it("maps the desktop renderer to Workjet icons", () => {
     expect(DEVELOPMENT_ICON_OVERRIDES[0]).toEqual({
-      sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFaviconIco,
+      sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFaviconIco,
       targetRelativePath: "dist/client/favicon.ico",
     });
   });
 
-  it("maps CTOX web assets to the development splash and favicon files", () => {
+  it("maps Workjet web assets to the development splash and favicon files", () => {
     expect(DEVELOPMENT_PUBLIC_ICON_OVERRIDES).toEqual([
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFaviconIco,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFaviconIco,
         targetRelativePath: "apps/web/public/favicon.ico",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFavicon16Png,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFavicon16Png,
         targetRelativePath: "apps/web/public/favicon-16x16.png",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebFavicon32Png,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebFavicon32Png,
         targetRelativePath: "apps/web/public/favicon-32x32.png",
       },
       {
-        sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebAppleTouchIconPng,
+        sourceRelativePath: BRAND_ASSET_PATHS.workjetWebAppleTouchIconPng,
         targetRelativePath: "apps/web/public/apple-touch-icon.png",
       },
     ]);
   });
 
   it("can target hosted web dist directly", () => {
-    expect(resolveWebIconOverrides("production", "apps/web/dist")).toContainEqual({
-      sourceRelativePath: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
+    expect(resolveWebIconOverrides("workjet", "apps/web/dist")).toContainEqual({
+      sourceRelativePath: BRAND_ASSET_PATHS.workjetWebAppleTouchIconPng,
       targetRelativePath: "apps/web/dist/apple-touch-icon.png",
     });
   });
 
-  it("maps hosted nightly web assets to nightly icons", () => {
-    expect(resolveWebIconOverrides("nightly", "apps/web/dist")).toContainEqual({
-      sourceRelativePath: BRAND_ASSET_PATHS.nightlyWebFaviconIco,
-      targetRelativePath: "apps/web/dist/favicon.ico",
-    });
+  it("maps every hosted release channel to Workjet assets", () => {
+    expect(resolveWebAssetBrandForChannel("latest")).toBe("workjet");
+    expect(resolveWebAssetBrandForChannel("nightly")).toBe("workjet");
   });
 
-  it("maps hosted release channels to web asset brands", () => {
-    expect(resolveWebAssetBrandForChannel("latest")).toBe("production");
-    expect(resolveWebAssetBrandForChannel("nightly")).toBe("nightly");
+  it("maps every package version to Workjet assets", () => {
+    expect(resolveWebAssetBrandForPackageVersion("0.0.29")).toBe("workjet");
+    expect(resolveWebAssetBrandForPackageVersion("0.0.29-nightly.20260723.882")).toBe("workjet");
   });
 
-  it("maps package versions to web asset brands", () => {
-    expect(resolveWebAssetBrandForPackageVersion("0.0.29")).toBe("production");
-    expect(resolveWebAssetBrandForPackageVersion("0.0.29-nightly.20260723.882")).toBe("nightly");
-  });
-
-  it("declares CTOX macOS and renderer artwork", () => {
-    expect(BRAND_ASSET_PATHS.ctoxAppIconPng).toBe("assets/ctox/ctox-app-icon.png");
-    expect(BRAND_ASSET_PATHS.ctoxMacIconIcns).toBe("assets/ctox/ctox-app-icon.icns");
-    expect(BRAND_ASSET_PATHS.ctoxWindowsIconIco).toBe("assets/ctox/ctox-windows.ico");
-    expect(resolveWebIconOverrides("ctox", "dist/client")).toContainEqual({
-      sourceRelativePath: BRAND_ASSET_PATHS.ctoxWebAppleTouchIconPng,
+  it("declares Workjet desktop and renderer artwork", () => {
+    expect(BRAND_ASSET_PATHS.workjetAppIconPng).toBe("assets/workjet/workjet-app-icon.png");
+    expect(BRAND_ASSET_PATHS.workjetMacIconIcns).toBe("assets/workjet/workjet-app-icon.icns");
+    expect(BRAND_ASSET_PATHS.workjetWindowsIconIco).toBe("assets/workjet/workjet-windows.ico");
+    expect(resolveWebIconOverrides("workjet", "dist/client")).toContainEqual({
+      sourceRelativePath: BRAND_ASSET_PATHS.workjetWebAppleTouchIconPng,
       targetRelativePath: "dist/client/apple-touch-icon.png",
     });
   });
 
-  it("keeps development, nightly, and production icon families separate", () => {
+  it("retains legacy icon-composer inputs only for compatibility exports", () => {
     expect([
       BRAND_ASSET_PATHS.developmentIconComposerProject,
       BRAND_ASSET_PATHS.nightlyIconComposerProject,

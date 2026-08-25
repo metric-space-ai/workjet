@@ -1,5 +1,10 @@
 # CTOX Desktop App — implementation plan
 
+> **Historischer Planstand:** Die hier verwendete frühere App-Bezeichnung ist
+> kein aktueller Produktname und kein Release-Ziel. Die einzige Nutzer-App heißt
+> heute **Workjet**; **CTOX** bezeichnet ausschließlich das Backend. Aktueller
+> Betriebsstand: `docs/uebergabe-desktop-agent.md`.
+
 Status date: 2026-08-20 (whole-document reconciliation audit)
 
 Checklist progress: 79.3% (`280/353` complete, `73` open).

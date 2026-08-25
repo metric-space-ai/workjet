@@ -1,4 +1,12 @@
 export const BRAND_ASSET_PATHS = {
+  workjetAppIconPng: "assets/workjet/workjet-app-icon.png",
+  workjetMacIconIcns: "assets/workjet/workjet-app-icon.icns",
+  workjetWindowsIconIco: "assets/workjet/workjet-windows.ico",
+  workjetWebFaviconIco: "assets/workjet/workjet-web-favicon.ico",
+  workjetWebFavicon16Png: "assets/workjet/workjet-web-favicon-16x16.png",
+  workjetWebFavicon32Png: "assets/workjet/workjet-web-favicon-32x32.png",
+  workjetWebAppleTouchIconPng: "assets/workjet/workjet-web-apple-touch-180.png",
+
   developmentIconComposerProject: "assets/dev/app-icon.icon",
   developmentIosIconPng: "assets/dev/blueprint-ios-1024.png",
   developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
@@ -46,18 +54,20 @@ export const BRAND_ASSET_PATHS = {
   developmentWebAppleTouchIconPng: "assets/dev/blueprint-web-apple-touch-180.png",
 } as const;
 
-export type WebAssetBrand = "ctox" | "development" | "nightly" | "production";
+export type WebAssetBrand = "workjet";
 
 export const WEB_ASSET_CHANNELS = ["latest", "nightly"] as const;
 
 export type WebAssetChannel = (typeof WEB_ASSET_CHANNELS)[number];
 
 export function resolveWebAssetBrandForChannel(channel: WebAssetChannel): WebAssetBrand {
-  return channel === "nightly" ? "nightly" : "production";
+  void channel;
+  return "workjet";
 }
 
 export function resolveWebAssetBrandForPackageVersion(version: string): WebAssetBrand {
-  return version.includes("-nightly.") ? "nightly" : "production";
+  void version;
+  return "workjet";
 }
 
 export interface IconOverride {
@@ -73,29 +83,11 @@ const WEB_ICON_TARGET_FILENAMES = {
 } as const;
 
 const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
-  ctox: {
-    faviconIco: BRAND_ASSET_PATHS.ctoxWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.ctoxWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.ctoxWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.ctoxWebAppleTouchIconPng,
-  },
-  development: {
-    faviconIco: BRAND_ASSET_PATHS.developmentWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
-  },
-  nightly: {
-    faviconIco: BRAND_ASSET_PATHS.nightlyWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.nightlyWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.nightlyWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.nightlyWebAppleTouchIconPng,
-  },
-  production: {
-    faviconIco: BRAND_ASSET_PATHS.productionWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.productionWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.productionWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
+  workjet: {
+    faviconIco: BRAND_ASSET_PATHS.workjetWebFaviconIco,
+    favicon16Png: BRAND_ASSET_PATHS.workjetWebFavicon16Png,
+    favicon32Png: BRAND_ASSET_PATHS.workjetWebFavicon32Png,
+    appleTouchIconPng: BRAND_ASSET_PATHS.workjetWebAppleTouchIconPng,
   },
 } as const satisfies Record<WebAssetBrand, Record<keyof typeof WEB_ICON_TARGET_FILENAMES, string>>;
 
@@ -124,6 +116,9 @@ export function resolveWebIconOverrides(
   ];
 }
 
-export const DEVELOPMENT_ICON_OVERRIDES = resolveWebIconOverrides("ctox", "dist/client");
+export const DEVELOPMENT_ICON_OVERRIDES = resolveWebIconOverrides("workjet", "dist/client");
 
-export const DEVELOPMENT_PUBLIC_ICON_OVERRIDES = resolveWebIconOverrides("ctox", "apps/web/public");
+export const DEVELOPMENT_PUBLIC_ICON_OVERRIDES = resolveWebIconOverrides(
+  "workjet",
+  "apps/web/public",
+);

@@ -1401,3 +1401,46 @@ Quell-SHA-256 `4ccc1951…2308`, Mtime und Dateigröße bytegleich; für den neu
 Thread existieren weder `projection_thread_sessions`- noch
 `provider_session_runtime`-Zeilen. Damit ist die wiederholbare statische Kopie
 belegt, ohne Interferenz mit Claude Code.
+
+## Abschließende Workjet-Produktidentität und Logo-Guard — 2026-08-25 ~22:30
+
+Desktop, Web, Server, Marketing, Release-Metadaten und aktuelle Nutzerdoku
+verwenden sichtbar nur noch **Workjet**. CTOX bleibt ausschließlich an Stellen
+sichtbar, die tatsächlich ein Backend, eine Backend-Instanz oder eine
+Business-OS-Funktion bezeichnen. Die Stable-Stufe heißt nicht mehr Alpha. Die
+alten Marketing-Screenshots mit T3-Wortmarke wurden entfernt und durch eine
+statische, datenneutrale Workjet-Produktvorschau ersetzt; die früheren
+Endorsement-Zitate wurden statt einer inhaltlich falschen Umbenennung entfernt.
+
+`assets/workjet/` ist nun die semantische Quelle für den abgenommenen
+Turbofan. Electron-Ressourcen, Web-Favicons/Apple-Touch-Icon und Marketing-
+Icons sind bytegleich daraus abgeleitet. Hosted Web und Desktop wählen für
+Stable, Nightly und Dev ausschließlich die Workjet-Familie; die CLI zum
+Kopieren der Web-Assets akzeptiert ebenfalls nur noch Workjet. Die historischen
+Icon-Composer-Quellen bleiben lediglich als nicht auswählbare
+Kompatibilitätseingaben bestehen. Drei alte Namen in
+`DesktopEnvironment.ts` bleiben absichtlich als eng getestete Datenordner-
+Migrationswerte erhalten; sie werden nicht gerendert und verhindern den Verlust
+bestehender Profile.
+
+Ein neuer Repository-Guard scannt aktuelle Produktflächen, Release-Workflow
+und Nutzerdoku auf die retired App-Namen und verhindert das Wiedereinchecken der
+beiden alten Marketing-Screenshots. Ein separater Hash-Guard vergleicht alle
+ausgelieferten Icon-Kopien mit der Workjet-Quelle.
+
+BEWEISE: 22 fokussierte Testdateien / 278 Tests grün; Contracts-, Client-
+Runtime-, SSH-, Scripts-, Desktop-, Server-, Web- und Marketing-Typecheck ohne
+Fehler. Der Shared-Typecheck bleibt vor diesem Slice an einem vorhandenen,
+unveränderten Test-Fixture-Befund (`workerProfiles` ohne `role` und
+`capabilityBindings`) rot. Web-, Server-, Desktop- und Marketing-Build sind
+grün; die ausgelieferten PNG-/ICNS-/ICO-/Apple-Touch-Dateien haben den
+Workjet-Quellhash.
+
+LIVE: Im einzigen `t3code://app/`-Target lautet der Dokumenttitel `Workjet`.
+Code, Business OS und alle elf Settings-Seiten enthalten keinen alten
+Produktnamen. Settings → Computers trennt korrekt Workjet-App und CTOX-Backend;
+Business OS zeigt `Workjet` als App und `CTOX instances` als Backend-Liste.
+Die neu gebaute Marketingseite wurde in Chrome bei 1440×1000 und 390×844
+geprüft: keine Altidentität, kein horizontales Overflow. Ein dabei sichtbarer
+Logo-Overlap im mobilen Hero wurde korrigiert und erneut visuell abgenommen.
+Endzustand der Desktop-App ist Business OS ohne geöffneten Kunden-Guest.

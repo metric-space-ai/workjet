@@ -2352,7 +2352,7 @@ export function CtoxMainShell() {
         >
           <span className="text-xs font-medium text-muted-foreground/60 wco:pr-[var(--workspace-native-controls-inset)]">
             {selected === undefined
-              ? "CTOX"
+              ? "Workjet"
               : (workspaceNames.get(selected.id) ?? selected.displayName)}
           </span>
           {selected !== undefined ? (

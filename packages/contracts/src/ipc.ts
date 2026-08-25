@@ -181,7 +181,7 @@ export type DesktopUpdateStatus =
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 export type DesktopUpdateChannel = "latest" | "nightly";
-export type DesktopAppStageLabel = "Alpha" | "Dev" | "Nightly";
+export type DesktopAppStageLabel = "Latest" | "Dev" | "Nightly";
 
 export const DesktopUpdateStatusSchema = Schema.Literals([
   "disabled",
@@ -196,7 +196,7 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
 export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
 export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
 export const DesktopUpdateChannelSchema = Schema.Literals(["latest", "nightly"]);
-export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Dev", "Nightly"]);
+export const DesktopAppStageLabelSchema = Schema.Literals(["Latest", "Dev", "Nightly"]);
 
 export interface DesktopAppBranding {
   baseName: string;
@@ -501,14 +501,13 @@ export const DesktopWslDistroSchema = Schema.Struct({
 });
 
 /**
- * One-time offer to import a legacy T3 Code user-data directory into the CTOX
- * Desktop App directory. The import is a copy; the legacy directory is never
- * modified or removed.
+ * One-time offer to copy a compatible previous user-data directory into the
+ * current Workjet profile. The source directory is never modified or removed.
  */
 export interface DesktopUserDataMigrationOffer {
   /** Absolute path of the legacy directory the data would be copied from. */
   legacyPath: string;
-  /** Absolute path of the current CTOX Desktop App user-data directory. */
+  /** Absolute path of the current Workjet user-data directory. */
   targetPath: string;
   /** Top-level entries the import would copy. Caches are never copied. */
   entries: readonly string[];
@@ -1122,8 +1121,8 @@ export interface DesktopBridge {
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
   /**
-   * One-time offer to import a legacy T3 Code user-data directory into the
-   * CTOX Desktop App directory. Null means nothing to offer. Optional: older
+   * One-time offer to import a compatible previous user-data directory into the
+   * current Workjet profile. Null means nothing to offer. Optional: older
    * desktop builds do not expose it.
    */
   getUserDataMigrationOffer?: () => Promise<DesktopUserDataMigrationOffer | null>;

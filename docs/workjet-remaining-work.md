@@ -1,5 +1,10 @@
 # CTOX Desktop App — the remaining work
 
+> **Historischer Reviewstand:** Die hier verwendete frühere App-Bezeichnung ist
+> kein aktueller Produktname und kein Release-Ziel. Die einzige Nutzer-App heißt
+> heute **Workjet**; **CTOX** bezeichnet ausschließlich das Backend. Aktueller
+> Betriebsstand: `docs/uebergabe-desktop-agent.md`.
+
 Produced 2026-08-20 by a whole-document reconciliation audit of
 [`docs/workjet-plan.md`](workjet-plan.md). Every one of that document's open
 boxes was re-read against the code and its tests, ticked only against named
@@ -334,6 +339,7 @@ finishes. Scope estimates are rough and name the files.
    tested and mutation-verified — the error message is built from the method
    and a validated numeric code, never the page's own text, which is
    attacker-influenced on any page the app has navigated to.
+
 2. ~~**Web Stack SSRF, redirect cap, and the untested stdout budget.**~~
    **ALREADY DONE — verified 2026-08-20 by running it.** §7 and §12.
    `SsrfResolver` is installed on all three `scholarly_search.rs` agents
@@ -488,6 +494,7 @@ finishes. Scope estimates are rough and name the files.
     connecting dispatch to worker profiles AT ALL, which is an architectural
     step the estimate does not appear to include. Re-scope accordingly before
     starting, and expect the dispatch half to be the larger one.
+
 9.  **Settle `workjet_dispatch_worker`.** §8 — one decision closes three boxes
     (bounded dispatch/cancel/retry/timeout/result, durable worker status, and
     completion-as-an-event). Option A: route it through the delegation machinery
@@ -544,41 +551,41 @@ finishes. Scope estimates are rough and name the files.
     required turned six round-trip tests red, which is exactly what an older
     sender's payload would do on a newer receiver. Mutation-verified.
 
-        **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
-        the server's ONLY Greppy surface is
-        `greppy search --root <cwd> --json … <task>`
-        (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
-        entry point to reference instead. Since the plan requires that "remote
-        servers resolve references against their own authorized environment
-        state", a Greppy reference must be RE-RUNNABLE, which means carrying that
-        free text. That would be the first prose channel in a contract whose stated
-        discipline is bounded ids and closed literals with no field a payload can
-        travel in. Either accept a bounded query field as a deliberate, documented
-        exception, or add a symbol-shaped Greppy entry point first and reference
-        that. Not a schema addition.
+            **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
+            the server's ONLY Greppy surface is
+            `greppy search --root <cwd> --json … <task>`
+            (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
+            entry point to reference instead. Since the plan requires that "remote
+            servers resolve references against their own authorized environment
+            state", a Greppy reference must be RE-RUNNABLE, which means carrying that
+            free text. That would be the first prose channel in a contract whose stated
+            discipline is bounded ids and closed literals with no field a payload can
+            travel in. Either accept a bounded query field as a deliberate, documented
+            exception, or add a symbol-shaped Greppy entry point first and reference
+            that. Not a schema addition.
 
-        **`paths` DONE 2026-08-21, commit 8f3bad5ef.** Results now carry the
-        repository-relative paths the turn changed, as references — the source
-        learns which files moved and reads them from the branch, so no
-        contents travel. `isWorkjetRepositoryPath` (new in contracts) refuses
-        absolute and traversing entries, and the producer resolves git's
-        rename syntax to its DESTINATION: `old -> new` otherwise passes the
-        path pattern outright and would brand a string that is not a path.
-        Mutation-verified.
+            **`paths` DONE 2026-08-21, commit 8f3bad5ef.** Results now carry the
+            repository-relative paths the turn changed, as references — the source
+            learns which files moved and reads them from the branch, so no
+            contents travel. `isWorkjetRepositoryPath` (new in contracts) refuses
+            absolute and traversing entries, and the producer resolves git's
+            rename syntax to its DESTINATION: `old -> new` otherwise passes the
+            path pattern outright and would brand a string that is not a path.
+            Mutation-verified.
 
-        **RECEIVING-SIDE RESOLUTION DONE 2026-08-21, commit c330acda3.**
-        `WorkjetArtifactResolution.ts` answers a peer's references from THIS
-        machine's state, never from the claim. Three states, and `unchecked` is
-        deliberately distinct from `absent`: "I could not look" and "I looked
-        and it is not here" lead an operator to different actions, and
-        collapsing them reports a peer's work as missing when nothing was
-        checked. No network — a commit that exists only on a remote is `absent`
-        here. Bounded below the contract's caps so a peer cannot turn one
-        result into hundreds of local reads, and the summary line is built from
-        counts only, never from peer-supplied text. Mutation-verified.
+            **RECEIVING-SIDE RESOLUTION DONE 2026-08-21, commit c330acda3.**
+            `WorkjetArtifactResolution.ts` answers a peer's references from THIS
+            machine's state, never from the claim. Three states, and `unchecked` is
+            deliberately distinct from `absent`: "I could not look" and "I looked
+            and it is not here" lead an operator to different actions, and
+            collapsing them reports a peer's work as missing when nothing was
+            checked. No network — a commit that exists only on a remote is `absent`
+            here. Bounded below the contract's caps so a peer cannot turn one
+            result into hundreds of local reads, and the summary line is built from
+            counts only, never from peer-supplied text. Mutation-verified.
 
-        **Item 13 is now complete** except the Greppy reference kind, which is
-        the owner decision recorded above.
+            **Item 13 is now complete** except the Greppy reference kind, which is
+            the owner decision recorded above.
 
 14. **Handoff head commit and acknowledgement envelope.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new

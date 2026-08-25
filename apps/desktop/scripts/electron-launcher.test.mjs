@@ -9,10 +9,10 @@ import {
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
-  it("uses the Workjet display name and existing Dock artwork", () => {
+  it("uses the Workjet display name and Workjet Dock artwork", () => {
     assert.equal(resolveLauncherDisplayName(true), "Workjet");
     assert.equal(resolveLauncherDisplayName(false), "Workjet");
-    assert.match(DEVELOPMENT_MAC_ICON_PATH, /assets\/ctox\/ctox-app-icon\.png$/);
+    assert.match(DEVELOPMENT_MAC_ICON_PATH, /assets\/workjet\/workjet-app-icon\.png$/);
   });
 
   it("uses captured values only as fallbacks for a live runner environment", () => {

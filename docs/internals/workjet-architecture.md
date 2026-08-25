@@ -126,7 +126,7 @@ registries.
 
 ## License policy
 
-T3 Code is MIT-licensed. CTOX and the current Rust port mark CTOX modifications
+Workjet is MIT-licensed. CTOX and the current Rust port mark CTOX modifications
 as AGPL-3.0-only. Metric Space AI has authorized CTOX-owned components shared
 with Workjet under `MIT OR AGPL-3.0-only`. Workjet can therefore use the MIT
 option while CTOX continues to be distributed under AGPL. Imported files must

@@ -212,20 +212,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Workjet");
   });
 
-  it("uses CTOX app artwork for every packaged desktop platform", () => {
+  it("uses Workjet artwork for every packaged desktop platform", () => {
     const expected = {
-      macIconPng: BRAND_ASSET_PATHS.ctoxAppIconPng,
-      macIconIcns: BRAND_ASSET_PATHS.ctoxMacIconIcns,
-      linuxIconPng: BRAND_ASSET_PATHS.ctoxAppIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.ctoxWindowsIconIco,
+      macIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+      macIconIcns: BRAND_ASSET_PATHS.workjetMacIconIcns,
+      linuxIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.workjetWindowsIconIco,
     };
     assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), expected);
     assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), expected);
   });
 
-  it("uses CTOX splash and favicon artwork for every desktop release channel", () => {
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "ctox");
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "ctox");
+  it("uses Workjet splash and favicon artwork for every desktop release channel", () => {
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "workjet");
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "workjet");
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
@@ -270,7 +270,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   );
 
   // The packaged update feed carries the product identity: a CTOX build must
-  // resolve to the CTOX repository, never to an inherited T3 Code feed. The
+  // resolve to the CTOX repository, never to an inherited Workjet feed. The
   // slug is environment-derived by design, so the release pipeline MUST set
   // T3CODE_DESKTOP_UPDATE_REPOSITORY to the CTOX `owner/repo` (or run in the
   // CTOX repository, which supplies the same slug through the GitHub Actions

@@ -13,9 +13,9 @@ const defaultInput = {
   platform: "darwin",
   processArch: "arm64",
   appVersion: "0.0.22",
-  appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
+  appPath: "/Applications/Workjet.app/Contents/Resources/app.asar",
   isPackaged: false,
-  resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
+  resourcesPath: "/Applications/Workjet.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
@@ -69,7 +69,10 @@ describe("DesktopEnvironment", () => {
         displayName: "Workjet",
       });
       assert.equal(environment.displayName, "Workjet");
-      assert.equal(environment.developmentDockIconPath, "/repo/assets/ctox/ctox-app-icon.png");
+      assert.equal(
+        environment.developmentDockIconPath,
+        "/repo/assets/workjet/workjet-app-icon.png",
+      );
       assert.equal(environment.rootDir, "/repo");
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
@@ -104,7 +107,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
       assert.deepEqual(environment.branding, {
         baseName: "Workjet",
-        stageLabel: "Alpha",
+        stageLabel: "Latest",
         displayName: "Workjet",
       });
     }),

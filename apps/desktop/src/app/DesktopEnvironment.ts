@@ -93,7 +93,7 @@ function resolveDesktopAppStageLabel(input: {
     return "Dev";
   }
 
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
+  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Latest";
 }
 
 function resolveDesktopAppBranding(input: {
@@ -268,7 +268,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       path.join(resourcesPath, "resources", fileName),
       path.join(resourcesPath, fileName),
     ],
-    developmentDockIconPath: path.join(rootDir, "assets", "ctox", "ctox-app-icon.png"),
+    developmentDockIconPath: path.join(rootDir, "assets", "workjet", "workjet-app-icon.png"),
   });
 });
 

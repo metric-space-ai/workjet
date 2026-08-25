@@ -69,8 +69,8 @@ export function RelayClientInstallDialog() {
           </DialogTitle>
           <DialogDescription>
             {isInstalling
-              ? "Workjet is preparing this environment for secure access through T3 Connect."
-              : "Workjet needs the relay client to make this environment available through T3 Connect."}
+              ? "Workjet is preparing this environment for secure access through Workjet Connect."
+              : "Workjet needs the relay client to make this environment available through Workjet Connect."}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel scrollFade={false}>

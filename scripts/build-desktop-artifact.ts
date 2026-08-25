@@ -749,7 +749,7 @@ interface StagePackageJson {
 export const STAGE_INSTALL_ARGS = ["install", "--prod", "--frozen-lockfile"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
-  // T3 Code always passes the user's installed Claude executable to the SDK,
+  // Workjet always passes the user's installed Claude executable to the SDK,
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
@@ -2148,15 +2148,15 @@ export function resolveDesktopUpdateChannel(version: string): "latest" | "nightl
 }
 
 export function resolveDesktopWebAssetBrand(_version: string): WebAssetBrand {
-  return "ctox";
+  return "workjet";
 }
 
 export function resolveDesktopBuildIconAssets(_version: string): DesktopBuildIconAssets {
   return {
-    macIconPng: BRAND_ASSET_PATHS.ctoxAppIconPng,
-    macIconIcns: BRAND_ASSET_PATHS.ctoxMacIconIcns,
-    linuxIconPng: BRAND_ASSET_PATHS.ctoxAppIconPng,
-    windowsIconIco: BRAND_ASSET_PATHS.ctoxWindowsIconIco,
+    macIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+    macIconIcns: BRAND_ASSET_PATHS.workjetMacIconIcns,
+    linuxIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+    windowsIconIco: BRAND_ASSET_PATHS.workjetWindowsIconIco,
   };
 }
 

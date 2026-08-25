@@ -42,9 +42,9 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
 };
 
 /**
- * The live Chromium profile directory. Always the historical CTOX Desktop App directory —
- * a legacy T3 Code directory is never adopted in place. Importing from one is
- * an explicit, one-time, user-confirmed copy (see DesktopUserDataMigration).
+ * The live Chromium profile directory. Its historical on-disk name is retained
+ * only as a storage compatibility key. A previous profile is never adopted in
+ * place; importing is an explicit user-confirmed copy (see DesktopUserDataMigration).
  */
 export const resolveUserDataPath = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;

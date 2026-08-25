@@ -13,7 +13,7 @@ import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { resolveWorkjetProductMode, type WorkjetProductMode } from "../../workjetProductMode";
-import ctoxMarkUrl from "../../../../../assets/ctox/ctox-app-icon.png";
+import workjetMarkUrl from "../../../../../assets/workjet/workjet-app-icon.png";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -217,26 +217,26 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <CtoxMark />
+      <WorkjetMark />
       <span
         className={cn(
           "-translate-y-px truncate text-sm font-medium tracking-tight",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        Code
+        Workjet
       </span>
     </Link>
   );
 }
 
-function CtoxMark() {
+function WorkjetMark() {
   return (
     <img
-      alt="CTOX"
+      alt="Workjet"
       className="size-3.5 shrink-0 rounded-[2px] object-contain"
       draggable={false}
-      src={ctoxMarkUrl}
+      src={workjetMarkUrl}
     />
   );
 }

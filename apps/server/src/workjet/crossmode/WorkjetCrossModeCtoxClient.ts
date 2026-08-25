@@ -346,7 +346,7 @@ export const makeWorkjetCrossModeCtoxPortWithSources = Effect.fn(
     module_id: command.moduleId,
     action_id: CTOX_DELEGATE_TASK_ACTION_ID,
     record_id: command.objectId,
-    title: `T3 Code: ${command.operation}`,
+    title: `Workjet: ${command.operation}`,
     objective: command.summary,
     payload: {
       source: "t3_cross_mode",

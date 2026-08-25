@@ -33,8 +33,8 @@ const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
 export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
   repoRoot,
   "assets",
-  "ctox",
-  "ctox-app-icon.png",
+  "workjet",
+  "workjet-app-icon.png",
 );
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
 const hostPlatform = NodeOS.platform();

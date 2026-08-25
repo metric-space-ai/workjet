@@ -53,12 +53,12 @@ const RELEASE_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidAdaptiveForegroundPng),
-  // Matches the near-white background baked into the CTOX mark so the
+  // Matches the night-blue tile of the CTOX turbofan mark so the
   // adaptive-icon mask blends seamlessly.
-  androidAdaptiveBackgroundColor: "#FEFEFE",
+  androidAdaptiveBackgroundColor: "#0F1925",
   androidMonochromeIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidMonochromePng),
   androidNotificationIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidNotificationPng),
-  androidNotificationColor: "#0B7EBC",
+  androidNotificationColor: "#5C7590",
 } as const;
 
 // CTOX display identity, same split as the desktop rebrand

@@ -7,6 +7,7 @@ import {
   EnvironmentHttpApi,
   type AuthEnvironmentScope,
   type CtoxMobileInviteCreateResult,
+  type CtoxMobileShellPackResolveResult,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,6 +15,7 @@ import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vite-plus/test";
 
 import { CtoxMobileInviteService } from "./CtoxMobileInviteService.ts";
+import { CtoxMobileShellPackService } from "./CtoxMobileShellPackService.ts";
 import { businessOsHttpApiLayer, MOBILE_INVITE_RESPONSE_HEADERS } from "./http.ts";
 
 const expiresAt = "2099-08-25T12:05:00.000Z";
@@ -56,6 +58,32 @@ const mobileInviteLayer = Layer.succeed(
   }),
 );
 
+const resolvedShellPack: CtoxMobileShellPackResolveResult = {
+  type: "ctox.mobile.shell-pack-distribution.v1",
+  manifest: {
+    type: "ctox.mobile.shell-pack.v1",
+    packId: "pack-a",
+    businessOsRevision: "revision-a",
+    appVersion: "1.0.0",
+    totalSize: 1,
+    files: [{ path: "index.html", size: 1, sha256: "a".repeat(64) }],
+    signingKeyId: "key-current",
+    signature: "b".repeat(128),
+  },
+  artifact: {
+    url: "https://releases.example.test/pack.tar.zst",
+    size: 1,
+    sha256: "c".repeat(64),
+    contentType: "application/zstd",
+    expiresAt: "2099-08-25T12:05:00.000Z",
+  },
+};
+
+const mobileShellPackLayer = Layer.succeed(
+  CtoxMobileShellPackService,
+  CtoxMobileShellPackService.of({ resolve: () => Effect.succeed(resolvedShellPack) }),
+);
+
 const authenticatedAuth = (scopes: ReadonlySet<AuthEnvironmentScope>) =>
   EnvironmentAuthenticatedAuth.of((httpEffect) =>
     httpEffect.pipe(
@@ -83,7 +111,10 @@ async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
     HttpApiTest.groups(EnvironmentHttpApi, ["businessOs"]).pipe(
       Effect.provide([
         NodeHttpServer.layerHttpServices,
-        businessOsHttpApiLayer.pipe(Layer.provide(mobileInviteLayer)),
+        businessOsHttpApiLayer.pipe(
+          Layer.provide(mobileInviteLayer),
+          Layer.provide(mobileShellPackLayer),
+        ),
       ]),
       Effect.provideService(EnvironmentAuthenticatedAuth, auth),
       Effect.scoped,
@@ -91,8 +122,8 @@ async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
   );
 }
 
-describe("Business OS mobile invite HTTP safety", () => {
-  it("disables caches and referrers for create and revoke responses", () => {
+describe("Business OS mobile control-plane HTTP safety", () => {
+  it("disables caches and referrers for invite and shell-pack responses", () => {
     expect(MOBILE_INVITE_RESPONSE_HEADERS).toEqual({
       "cache-control": "no-store",
       pragma: "no-cache",
@@ -138,5 +169,27 @@ describe("Business OS mobile invite HTTP safety", () => {
         }),
       ),
     ).resolves.toEqual({ revoked: true });
+  });
+
+  it("requires read access and resolves the exact shell-pack distribution", async () => {
+    const unauthenticated = await clientFor(unauthenticatedAuth);
+    await expect(
+      Effect.runPromise(
+        unauthenticated.businessOs.resolveMobileShellPack({
+          headers: {},
+          payload: { businessOsRevision: "revision-a", appVersion: "1.0.0" },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
+
+    const readOnly = await clientFor(authenticatedAuth(new Set(["access:read"])));
+    await expect(
+      Effect.runPromise(
+        readOnly.businessOs.resolveMobileShellPack({
+          headers: {},
+          payload: { businessOsRevision: "revision-a", appVersion: "1.0.0" },
+        }),
+      ),
+    ).resolves.toEqual(resolvedShellPack);
   });
 });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { AuthAccessWriteScope, EnvironmentHttpApi } from "@t3tools/contracts";
+import { AuthAccessReadScope, AuthAccessWriteScope, EnvironmentHttpApi } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -11,6 +11,7 @@ import {
   requireEnvironmentScope,
 } from "../auth/http.ts";
 import { CtoxMobileInviteService } from "./CtoxMobileInviteService.ts";
+import { CtoxMobileShellPackService } from "./CtoxMobileShellPackService.ts";
 
 export const MOBILE_INVITE_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -28,6 +29,7 @@ export const businessOsHttpApiLayer = HttpApiBuilder.group(
   "businessOs",
   Effect.fnUntraced(function* (handlers) {
     const mobileInvites = yield* CtoxMobileInviteService;
+    const mobileShellPacks = yield* CtoxMobileShellPackService;
     return handlers
       .handle(
         "createMobileInvite",
@@ -55,6 +57,21 @@ export const businessOsHttpApiLayer = HttpApiBuilder.group(
             .pipe(
               Effect.catchTag("CtoxMobileInviteServiceError", () =>
                 failEnvironmentInternal("mobile_invite_revoke_failed"),
+              ),
+            );
+        }),
+      )
+      .handle(
+        "resolveMobileShellPack",
+        Effect.fn("environment.businessOs.resolveMobileShellPack")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthAccessReadScope);
+          yield* appendMobileInviteResponseHeaders;
+          return yield* mobileShellPacks
+            .resolve(args.payload.businessOsRevision, args.payload.appVersion)
+            .pipe(
+              Effect.catchTag("CtoxMobileShellPackServiceError", () =>
+                failEnvironmentInternal("mobile_shell_pack_resolve_failed"),
               ),
             );
         }),

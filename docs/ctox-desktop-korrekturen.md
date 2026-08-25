@@ -1235,3 +1235,58 @@ Client-Runtime- und Web-Typecheck exit 0 (nur eine vorhandene Effect-Suggestion
 in Relay Discovery), gezieltes Format sowie `git diff --check` grün. Reale
 QR-Erzeugung und Scan/Sync werden nach Web-/Server-/Desktop-Deploy gemeinsam im
 Workjet-Renderer und auf Mobile abgenommen.
+
+## Rechner-Provisionierung in Workjet — 2026-08-25 ~17:20
+
+Settings → Computers besitzt jetzt einen Desktop-only Assistenten für diesen
+Rechner oder einen SSH-Zielrechner. Ein unbekannter SSH-Host wird nicht
+stillschweigend akzeptiert: Workjet liest zuerst den öffentlichen Host-Key,
+zeigt Algorithmus und SHA-256-Fingerprint und verlangt eine ausdrückliche
+Bestätigung. Vor der ersten Authentifizierung wird der Key erneut gelesen und
+exakt verglichen; die Verbindung verwendet eine vorgangseigene
+`known_hosts`-Datei mit `StrictHostKeyChecking=yes` und verändert die globale
+SSH-Konfiguration nicht.
+
+Der Preflight prüft Zielplattform/Architektur, Internetzugang zum offiziellen
+Releasekanal, Administratorfähigkeit und grafische Sitzung. CTOX ist die
+verpflichtende Komponente; Workjet ist nur bei grafischer Sitzung auswählbar.
+Beide Downloads erfolgen auf dem Ziel, werden gegen maschinenlesbare
+Release-Manifeste und SHA-256 geprüft und erst danach installiert. Der
+Workjet-Releaseworkflow erzeugt/attestiert dafür
+`workjet-desktop-install-manifest-v1.json`; Linux arm64 ist in die
+Release-Matrix aufgenommen. Eine entfernte GUI wird nie automatisch gestartet.
+CTOX-Lifecycle unterstützt Installieren, Status, Start, Stop, Neustart,
+Reparatur, Update und Rollback; nach Neuinstallation wird im Main-Prozess ein
+Desktop-Invite erzeugt und in die bestehende sichere Backend-Registry
+importiert. Operationen laufen unter einer opaken ID, die UI pollt nur
+sanitisierte Phasen/Prozent/Ergebnisse; Kennwörter und rohe Prozessausgaben
+gelangen nicht in den Renderer.
+
+BEWEISE VOR LIVE-DEPLOY: Provisioning-/UI-/Manifest-Tests 5/5 grün innerhalb
+der gemeinsamen fokussierten Suite; Contracts-, Desktop-, Web- und
+Server-Typecheck exit 0 (nur vorhandene Effect-Suggestions); der
+Manifestgenerator deckt macOS arm64/x64, Linux arm64/x64 und Windows x64 ab.
+Die echte Installation auf temporären Zielen und gpu3 bleibt bis zur
+freigegebenen Operator-Probe offen und darf nicht als live verifiziert gelten.
+
+## Signierter Mobile-Shell-Resolve-Vertrag — 2026-08-25 ~17:20
+
+Der Shared Contract bildet exakt `ctox.mobile.shell-pack.v1` und
+`ctox.mobile.shell-pack-distribution.v1` ab: kanonische Ed25519-Feldreihenfolge,
+per-Datei SHA-256/Größe, Gesamtgröße, Signing-Key-ID sowie ein HTTPS-Artefakt
+mit Hash, Größe, Content-Type, Ablauf und optionalem ETag. Absolute,
+traversierende, doppelte oder Office-Pack-Pfade werden abgewiesen.
+
+Der authentifizierte Control-Plane-Endpunkt
+`POST /api/ctox/business-os/mobile-shell-packs/resolve` benötigt
+`access:read`, antwortet no-store/no-cache/no-referrer und ruft den nativen CTOX
+Resolver mit exakt Business-OS-Revision und App-Version auf. Doppelte Pfade,
+fehlendes `index.html`, falsche Gesamtgröße oder abgelaufene Deskriptoren
+scheitern serverseitig geschlossen. Bis reale Ed25519-Produktionsschlüssel
+(current+next) und die CTOX-Distribution konfiguriert sind, bleibt die Mobile-
+Aktivierung absichtlich geschlossen; der Vertrag allein wird nicht als
+ausgelieferter Shell-Pack behauptet.
+
+BEWEISE: fokussierte Contract-/Server-/HTTP-Suite zusammen mit Provisioning
+15/15 grün; Contracts- und Server-Typecheck exit 0. Reale Download-, Signatur-,
+IndexedDB-/RxDB-/WebRTC- und Restart/Resync-Abnahme bleibt offen.

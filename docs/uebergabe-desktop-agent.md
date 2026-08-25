@@ -1,6 +1,6 @@
 # Übergabe: Workjet Desktop — Entwicklungs-Handover
 
-Stand: 2026-08-25 ~16:40 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
+Stand: 2026-08-25 ~17:20 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
 
 ## Woran du arbeitest
 
@@ -53,7 +53,7 @@ Attach-Snippet: WebSocket auf `http://127.0.0.1:9300/json/list`, **Target mit UR
 
 ## Koordination
 
-- **Workjet Mobile** (paralleler Worker): arbeitet ausschließlich in `apps/mobile/**` und der Mobile-Provenienz-Doku. Er hat Branding/Links/Moduswechsel als `717b0a4a0` committed und implementiert aktuell Registry, QR-Pairing, SecureStore, Shell-Pack und native WebViews. Desktop-/Server-Dateien freihalten; Shared Contracts nur nach expliziter Übergabe ändern.
+- **Workjet Mobile** (paralleler Worker): Branding/Links/Moduswechsel sind als `717b0a4a0`, sichere Pairing-/Registry-/WebView-/Shell-Pack-Grundlage als `1c1d99a74` committed. Der Slice ist abgeschlossen und `apps/mobile/**` sauber. Reale Shell-Aktivierung wartet auf den serverseitigen Resolve-Vertrag plus reale Ed25519-Trust-Key-Distribution.
 - Workjet-Worker (Kimi-Auditor etc.) für unabhängige Reviews: Brief-Muster und Fallen siehe oben; Review-Läufe read-only halten, Ergebnisse selbst verifizieren (Reports sind Behauptungen).
 
 ## Offene Aufgaben (in dieser Reihenfolge)
@@ -66,6 +66,8 @@ Attach-Snippet: WebSocket auf `http://127.0.0.1:9300/json/list`, **Target mit UR
 6. **ERLEDIGT 2026-08-25 ~12:15 — Keybindings-Doppel:** `chat.new` hat nur noch den kanonischen Default `mod+n`; `mod+shift+o` wurde aus den Defaults entfernt. Die Startup-Migration entfernt die Altbindung ausschließlich beim exakten alten Paar, bewusste alleinige oder abweichende Nutzerbindungen bleiben erhalten. Reale Operator-Konfiguration vorher gesichert, anschließend exakt migriert. Shared-/Server-/Web-Suiten 91/91, beide Typechecks, Lint/Format sowie Web-/Server-Builds grün. LIVE nach LaunchServices-Neustart: Settings genau eine Zeile `Chat: New · ⌘N`, Sidebar und Command Palette ebenfalls `⌘N`; Draft/Composer und BOS-Liste geprüft, Endzustand Business OS.
 7. **Nice-to-have aus den Reviews, bewusst nicht gemacht:** Kompakt-Menü ohne „+ Add computer…"-Eintrag (absichtlich, Begründung im Code); xAI-Doppelmarke (absichtlich: Wirbel = Grok-CLI-Produkt, X = Provider xAI — dokumentiert, nicht ändern ohne Operator).
 8. **ERLEDIGT 2026-08-25 ~16:45 — sicherer Mobile-Invite-Vertrag und Desktop-QR:** CTOX-Commit `44bbfa61a` erzeugt pro Invite einen eigenen kurzlebigen Capability-Principal und widerruft exakt diesen. Workjet-Server-Commit `8e2160b5b` stellt authentifizierte `access:write`-Endpunkte `POST /api/ctox/business-os/mobile-invites` und `/revoke` bereit. Settings → Computers erzeugt daraus ausschließlich einen kanonischen `workjet://business-os/pair?payload=…`-QR, zeigt Instanz/Ablauf und kann erneuern/widerrufen; keine manuellen Signaling-/Room-/Passwortfelder und keine Payload-Persistenz/Logs.
+9. **IMPLEMENTIERT, LIVE-E2E OFFEN — Rechner-Provisionierung:** Settings → Computers installiert CTOX lokal oder per SSH und optional Workjet auf grafischen Zielen. Host-Key wird vor Auth explizit bestätigt und erneut verglichen; Ziel lädt und verifiziert offizielle Releaseartefakte selbst. Typen/IPC/Main-Service/UI liegen in `packages/contracts/src/computerProvisioning.ts`, `apps/desktop/src/provisioning/` und `apps/web/src/components/settings/ComputerProvisioningSection.tsx`. Reale temporäre macOS/Linux/Windows-Proben sowie gpu3 erst nach Operatorfreigabe ausführen.
+10. **IMPLEMENTIERT, PRODUKTIONSSCHLÜSSEL OFFEN — Mobile Shell-Pack Resolve:** Contract `packages/contracts/src/mobileShell.ts`, Endpoint `businessOs.resolveMobileShellPack` / `POST /api/ctox/business-os/mobile-shell-packs/resolve`. Mobile bleibt fail-closed, bis current+next Ed25519-Public-Keys gebündelt und der passende private Release-Key außerhalb des Repos konfiguriert ist. Keine Test- oder erfundene Produktionssignatur eintragen.
 
 ## Was NICHT zu tun ist
 

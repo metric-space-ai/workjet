@@ -101,6 +101,7 @@ import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as CtoxMobileInviteService from "./ctox/CtoxMobileInviteService.ts";
+import * as CtoxMobileShellPackService from "./ctox/CtoxMobileShellPackService.ts";
 import { businessOsHttpApiLayer } from "./ctox/http.ts";
 import {
   connectHttpApiLayer,
@@ -512,7 +513,12 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
-      Layer.provide(businessOsHttpApiLayer.pipe(Layer.provide(CtoxMobileInviteService.layer()))),
+      Layer.provide(
+        businessOsHttpApiLayer.pipe(
+          Layer.provide(CtoxMobileInviteService.layer()),
+          Layer.provide(CtoxMobileShellPackService.layer()),
+        ),
+      ),
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),

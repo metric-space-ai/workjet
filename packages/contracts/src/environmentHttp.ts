@@ -15,6 +15,10 @@ import {
   CtoxMobileInviteRevokeResult,
 } from "./ctox.ts";
 import {
+  CtoxMobileShellPackResolveInput,
+  CtoxMobileShellPackResolveResult,
+} from "./mobileShell.ts";
+import {
   AuthAccessTokenResult,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
@@ -98,6 +102,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_dispatch_failed",
   "mobile_invite_issuance_failed",
   "mobile_invite_revoke_failed",
+  "mobile_shell_pack_resolve_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -554,6 +559,18 @@ export class EnvironmentBusinessOsHttpApi extends HttpApiGroup.make("businessOs"
       success: CtoxMobileInviteRevokeResult,
       error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "resolveMobileShellPack",
+      "/api/ctox/business-os/mobile-shell-packs/resolve",
+      {
+        headers: OptionalBearerHeaders,
+        payload: CtoxMobileShellPackResolveInput,
+        success: CtoxMobileShellPackResolveResult,
+        error: EnvironmentScopedOperationErrors,
+      },
+    ).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
 /** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */

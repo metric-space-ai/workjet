@@ -1332,6 +1332,38 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("opens the real settings action only in the active Business OS guest", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.openGuestSettings(descriptor.id), {
+        _tag: "failed",
+        code: "not_active",
+      });
+
+      yield* manager.activate(descriptor.id, bounds);
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: unknown) =>
+        String(expression).includes("data-open-settings") ? { ok: true } : undefined,
+      );
+
+      assert.deepEqual(yield* manager.openGuestSettings(descriptor.id), { _tag: "completed" });
+      const settingsExpression = String(harness.views[0]?.executeJavaScript.mock.calls.at(-1)?.[0]);
+      assert.include(settingsExpression, "CTOX_BUSINESS_OS_APP");
+      assert.include(settingsExpression, "data-open-settings");
+      assert.notInclude(settingsExpression, descriptor.id);
+
+      const callCount = harness.views[0]?.executeJavaScript.mock.calls.length;
+      assert.deepEqual(yield* manager.openGuestSettings("managed:other"), {
+        _tag: "failed",
+        code: "not_active",
+      });
+      expect(harness.views[0]?.executeJavaScript).toHaveBeenCalledTimes(callCount ?? 0);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   /**
    * THE NAVIGATION POLICY IS WIRED, NOT MERELY WRITTEN
    * (docs/workjet-plan.md → "Security invariants": "Deny untrusted guest

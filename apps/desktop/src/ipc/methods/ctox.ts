@@ -518,6 +518,30 @@ export const openApp: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGu
     }),
 };
 
+export const openSettings: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
+  channel: IpcChannels.CTOX_OPEN_SETTINGS_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const input = yield* Schema.decodeUnknownEffect(CtoxInstanceAppsInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxAppActionResult, { _tag: "failed", code: "invalid_input" });
+      }
+      const result = yield* guests.openGuestSettings(input.value.instanceId);
+      return yield* encodeSafe(
+        CtoxAppActionResult,
+        result._tag === "completed"
+          ? { _tag: "completed" }
+          : {
+              _tag: "failed",
+              code: result.code === "not_active" ? "not_active" : "guest_failed",
+            },
+      );
+    }),
+};
+
 export const setAppDocked: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxAppRail.CtoxAppRail | CtoxInstanceRegistry.CtoxInstanceRegistry
@@ -589,6 +613,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   setGuestBounds,
   listApps,
   openApp,
+  openSettings,
   setAppDocked,
   setHostTheme,
 ];

@@ -96,6 +96,7 @@ function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBri
       apps: [],
     }),
     openApp: async () => ({ _tag: "completed" }),
+    openSettings: async () => ({ _tag: "completed" }),
     setAppDocked: async () => ({ _tag: "completed" }),
     setHostTheme: async () => ({ _tag: "completed" }),
     ...overrides,
@@ -1092,6 +1093,9 @@ describe("CTOX sidebar footer", () => {
     expect(markup).toContain('aria-label="Settings"');
     // Refresh lives exactly once — the header duplicate was removed (K-B10).
     expect(markup.match(/aria-label="Refresh instances"/gu)?.length).toBe(1);
+    expect(markup).not.toContain("Check for updates");
+    expect(markup).not.toContain("Provider update");
+    expect(ctoxModeShellSource).not.toContain('navigate({ to: "/settings" })');
     // Code-mode footer entries whose pages the Business OS surface never
     // renders would be dead icons here and must not appear.
     expect(markup).not.toContain('aria-label="Usage"');

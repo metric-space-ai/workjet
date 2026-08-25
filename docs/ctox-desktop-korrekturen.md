@@ -1477,3 +1477,39 @@ App-Bundle im Runtime-Verzeichnis ist damit `Workjet.app`; unterstützende
 Metadaten und die Dev-Icon-Quelle bleiben erhalten. Die laufende aktuelle App
 auf CDP-Port 9300 und ihr Backend auf Port 3774 wurden nicht beendet oder
 verändert.
+
+## Getrennte Business-OS-Einstellungen und Footer-Aktionen — 2026-08-25 ~23:00
+
+Die Business-OS-Modusgrenze gilt jetzt auch auf einer noch offenen
+`/settings/*`-Route. Zuvor schaltete jede Settings-Route den
+`CtoxModeProvider` ab und setzte ungeachtet des ausgewählten Produktmodus die
+Code-Settings-Sidebar ein. Deshalb zeigte der Modusschalter zwar Business OS,
+die Fläche enthielt aber weiterhin Code-Einstellungen wie `Project grouping`.
+Business OS hat nun Vorrang vor der Code-Settings-Route; eine solche Alt-Route
+wird nach `/` ersetzt und als Anforderung verstanden, die Einstellungen des
+ausgewählten CTOX-Guests zu öffnen.
+
+Die Desktop-Brücke besitzt dafür eine schmale `openSettings`-Operation. Der
+Main-Prozess führt ausschließlich im bereits aktiven, exakt ausgewählten Guest
+eine feste, eingabefreie Aktion aus: bevorzugt die stabile Business-OS-App-API,
+mit dem vorhandenen `[data-open-settings]`-Button als Kompatibilitätsfallback.
+Es gibt keine zweite Host-Kopie der CTOX-Einstellungen. Ohne aktiven Guest
+scheitert die Aktion geschlossen.
+
+Der Business-OS-Footer enthält jetzt ausschließlich zwei passende Aktionen:
+die eigenen Business-OS-Einstellungen und den Refresh der CTOX-Instanzliste.
+Der zweite, optisch ebenfalls als Refresh gerenderte Workjet-Updater sowie der
+Code-spezifische Provider-Updater wurden aus diesem Footer entfernt; sie
+bleiben Code-Funktionen.
+
+BEWEISE: Vier fokussierte Testdateien / 93 Tests grün; Contracts-, Desktop- und
+Web-Typecheck sowie Desktop-Pack und Web-Build grün. LIVE im exakten
+`t3code://app/`-Target wurde zuerst der normale Footer-Settings-Klick und dann
+der ursprüngliche Fehlerpfad `Code Settings → Business OS` durchgespielt. In
+beiden Fällen blieb beziehungsweise wechselte die Host-Route auf die
+Business-OS-Shell, `Project grouping` war nicht vorhanden und im lokalen
+`127.0.0.1`-Guest öffnete der echte Drawer mit Runtime, Channels, Sync, Design,
+MCP, Nutzer, Aktivität und Module. Der Footer zeigte nur Settings und genau
+einen Instanz-Refresh. Host und Drawer passten bei 1422×866 ohne Overflow; im
+beobachteten Abnahmepfad traten keine Console- oder Page-Errors auf. Kein
+Kunden-Guest wurde bedient. Endzustand ist Business OS.

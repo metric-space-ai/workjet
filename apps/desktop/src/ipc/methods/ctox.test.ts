@@ -18,6 +18,7 @@ import {
   listApps,
   login,
   openApp,
+  openSettings,
   refresh,
   removePairedInstance,
   addSshManagedInstance,
@@ -81,6 +82,7 @@ function removalCleanupLayer(
     setBounds: () => Effect.die("unused"),
     readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
     openGuestApp: () => Effect.die("unused"),
+    openGuestSettings: () => Effect.die("unused"),
     setHostTheme: () => Effect.succeed({ _tag: "completed" }),
   });
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
@@ -106,6 +108,7 @@ describe("CTOX IPC methods", () => {
       setBounds: () => Effect.succeed({ _tag: "completed" }),
       readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
       openGuestApp: () => Effect.die("unused"),
+      openGuestSettings: () => Effect.die("unused"),
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
     });
 
@@ -440,6 +443,7 @@ describe("CTOX app rail IPC methods", () => {
       setBounds: () => Effect.die("unused"),
       readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
       openGuestApp: () => Effect.die("unused"),
+      openGuestSettings: () => Effect.die("unused"),
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       ...overrides,
     });
@@ -628,6 +632,26 @@ describe("CTOX app rail IPC methods", () => {
       ),
     ),
   );
+
+  it.effect("opens settings only through the active guest manager", () => {
+    const openGuestSettings = vi.fn(() => Effect.succeed({ _tag: "completed" as const }));
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* openSettings.handler({ instanceId: "" }), {
+        _tag: "failed",
+        code: "invalid_input",
+      });
+      expect(openGuestSettings).not.toHaveBeenCalled();
+
+      assert.deepEqual(yield* openSettings.handler({ instanceId: "managed:alpha" }), {
+        _tag: "completed",
+      });
+      expect(openGuestSettings).toHaveBeenCalledExactlyOnceWith("managed:alpha");
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(CtoxGuestManager.CtoxGuestManager, guestsWithApps({ openGuestSettings })),
+      ),
+    );
+  });
 
   it.effect("persists dock toggles and reports persistence failures", () => {
     const setDocked = vi.fn(() => Effect.void);

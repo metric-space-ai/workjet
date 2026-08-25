@@ -202,6 +202,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_LIST_APPS_CHANNEL, { instanceId }),
     openApp: (instanceId, moduleId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_OPEN_APP_CHANNEL, { instanceId, moduleId, bounds }),
+    openSettings: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_OPEN_SETTINGS_CHANNEL, { instanceId }),
     setAppDocked: (instanceId, moduleId, docked) =>
       ipcRenderer.invoke(IpcChannels.CTOX_SET_APP_DOCKED_CHANNEL, {
         instanceId,

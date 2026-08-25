@@ -1230,6 +1230,8 @@ export interface DesktopCtoxBridge {
     moduleId: string,
     bounds: CtoxGuestBounds,
   ) => Promise<CtoxAppActionResult>;
+  /** Open the active CTOX instance's own Business OS settings drawer. */
+  openSettings?: (instanceId: string) => Promise<CtoxAppActionResult>;
   /** Pin or unpin an app on the instance's rail (taskbar model). */
   setAppDocked: (
     instanceId: string,

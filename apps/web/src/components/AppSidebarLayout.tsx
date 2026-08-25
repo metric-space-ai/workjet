@@ -147,6 +147,19 @@ function CtoxModeBoundary({ active, children }: { active: boolean; children: Rea
   return active ? <CtoxModeProvider>{children}</CtoxModeProvider> : children;
 }
 
+export type AppSidebarSurface = "business-os" | "code" | "settings";
+
+export function resolveAppSidebarSurface({
+  productMode,
+  isOnSettings,
+}: {
+  readonly productMode: "code" | "ctox";
+  readonly isOnSettings: boolean;
+}): AppSidebarSurface {
+  if (productMode === "ctox") return "business-os";
+  return isOnSettings ? "settings" : "code";
+}
+
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
@@ -159,7 +172,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
-  const isCtoxShell = !isOnSettings && productMode === "ctox";
+  // Business OS owns its own settings inside the selected CTOX guest. A
+  // /settings route must never swap it for Code settings merely because both
+  // modes share the outer Workjet shell.
+  const sidebarSurface = resolveAppSidebarSurface({ productMode, isOnSettings });
+  const isCtoxShell = sidebarSurface === "business-os";
+  const [businessOsSettingsRequestKey, setBusinessOsSettingsRequestKey] = useState(0);
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -213,6 +231,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
 
     const unsubscribe = onMenuAction((action) => {
       if (action === "open-settings") {
+        if (isCtoxShell) {
+          setBusinessOsSettingsRequestKey((key) => key + 1);
+          if (isOnSettings) void navigate({ to: "/", replace: true });
+          return;
+        }
         const isSettingsRoute = /^\/settings(\/|$)/.test(pathname);
         if (!isSettingsRoute) {
           void navigate({ to: "/settings" });
@@ -223,7 +246,13 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     return () => {
       unsubscribe?.();
     };
-  }, [navigate, pathname]);
+  }, [isCtoxShell, isOnSettings, navigate, pathname]);
+
+  useEffect(() => {
+    if (!isCtoxShell || !isOnSettings) return;
+    setBusinessOsSettingsRequestKey((key) => key + 1);
+    void navigate({ to: "/", replace: true });
+  }, [isCtoxShell, isOnSettings, navigate]);
 
   return (
     <SidebarProvider
@@ -249,13 +278,13 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             onResize: setSidebarWidth,
           }}
         >
-          {isOnSettings ? (
+          {sidebarSurface === "business-os" ? (
+            <CtoxSidebarShell />
+          ) : sidebarSurface === "settings" ? (
             <>
               <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
             </>
-          ) : isCtoxShell ? (
-            <CtoxSidebarShell />
           ) : legacySidebarEnabled ? (
             <LegacyThreadSidebar />
           ) : (
@@ -263,7 +292,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
-        {isCtoxShell ? <CtoxMainShell /> : children}
+        {isCtoxShell ? (
+          <CtoxMainShell openSettingsRequestKey={businessOsSettingsRequestKey} />
+        ) : (
+          children
+        )}
         <SidebarControl />
       </CtoxModeBoundary>
     </SidebarProvider>

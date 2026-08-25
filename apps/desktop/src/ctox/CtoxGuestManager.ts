@@ -161,6 +161,8 @@ export class CtoxGuestManager extends Context.Service<
       moduleId: string,
       bounds: CtoxGuestBounds,
     ) => Effect.Effect<CtoxManagedActionResult>;
+    /** Open settings inside the already-active Business OS guest. */
+    readonly openGuestSettings: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
     /** Project the host appearance theme into the guest (persists across guests). */
     readonly setHostTheme: (theme: CtoxHostThemeInput) => Effect.Effect<CtoxManagedActionResult>;
   }
@@ -255,6 +257,21 @@ function buildGuestOpenModuleExpression(moduleId: string): string {
   return { ok: true };
 })()`;
 }
+
+// Fixed and input-free. Current CTOX shells expose a stable settings action;
+// the data attribute keeps older supported shells operable without turning
+// their settings into a second, host-owned implementation.
+const GUEST_OPEN_SETTINGS_EXPRESSION = `(async () => {
+  const app = globalThis.CTOX_BUSINESS_OS_APP;
+  if (app && typeof app.openSettings === "function") {
+    await app.openSettings();
+    return { ok: true };
+  }
+  const button = document.querySelector("[data-open-settings]");
+  if (!(button instanceof HTMLElement)) return { ok: false };
+  button.click();
+  return { ok: true };
+})()`;
 
 function stripControlCharacters(value: string): string {
   let out = "";
@@ -1168,6 +1185,39 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         );
       });
 
+    const openGuestSettings = (instanceId: string): Effect.Effect<CtoxManagedActionResult> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxManagedActionResult, GuestState],
+          never
+        > {
+          const active = attachedGuest(state);
+          if (
+            active === undefined ||
+            active.instanceId !== instanceId ||
+            active.view.webContents.isDestroyed()
+          ) {
+            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
+          }
+          const opened = yield* Effect.tryPromise({
+            try: () =>
+              active.view.webContents.executeJavaScript(GUEST_OPEN_SETTINGS_EXPRESSION, true),
+            catch: () => undefined,
+          }).pipe(Effect.orElseSucceed(() => undefined));
+          const succeeded =
+            typeof opened === "object" &&
+            opened !== null &&
+            (opened as { readonly ok?: unknown }).ok === true;
+          return [
+            succeeded
+              ? ({ _tag: "completed" } as const)
+              : ({ _tag: "failed", code: "guest_failed" } as const),
+            state,
+          ] as const;
+        }),
+      );
+
     const setHostTheme = (theme: CtoxHostThemeInput): Effect.Effect<CtoxManagedActionResult> =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.sync((): readonly [CtoxManagedActionResult, GuestState] => {
@@ -1195,6 +1245,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       setBounds,
       readGuestApps,
       openGuestApp,
+      openGuestSettings,
       setHostTheme,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));

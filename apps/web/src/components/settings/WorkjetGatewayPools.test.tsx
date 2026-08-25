@@ -215,6 +215,9 @@ describe("WorkjetGatewayPoolsSectionView", () => {
 
     expect(enabledAt).toBeGreaterThan(claudeAt);
     expect(enabledAt).toBeLessThan(zaiAt);
+    expect(markup).toContain("1 catalog model");
+    expect(markup).toContain("1 account pattern");
+    expect(markup).toContain("Explain gateway model counts");
     expect(markup).toContain("no gateway catalog");
   });
 

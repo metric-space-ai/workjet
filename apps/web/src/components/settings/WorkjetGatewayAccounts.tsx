@@ -34,6 +34,10 @@ import { Spinner } from "../ui/spinner";
 import { cn } from "~/lib/utils";
 import { ConfirmingDeleteButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import {
+  formatWorkjetGatewayAccountPatternCount,
+  WorkjetGatewayModelCountsHelp,
+} from "./WorkjetGatewayModelCountsHelp";
 
 /**
  * The gateway's own provider catalog. These are LLM accounts owned by the
@@ -732,9 +736,18 @@ export function WorkjetGatewayAccountsSectionView(
                                 the provider serves, which is the gateway
                                 catalog and a different figure entirely.
                               */}
-                              {account.modelIds.length > 0
-                                ? `${account.modelIds.length} ${account.modelIds.length === 1 ? "model pattern" : "model patterns"} recorded · `
-                                : ""}
+                              {account.modelIds.length > 0 ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1">
+                                    {formatWorkjetGatewayAccountPatternCount(
+                                      account.modelIds.length,
+                                    )}{" "}
+                                    recorded
+                                    <WorkjetGatewayModelCountsHelp />
+                                  </span>{" "}
+                                  ·{" "}
+                                </>
+                              ) : null}
                               {gatewayAccountRotationLabel(state.catalog, account) ??
                                 (account.enabled ? "Enabled" : "Disabled")}
                             </span>

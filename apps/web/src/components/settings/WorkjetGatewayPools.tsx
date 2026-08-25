@@ -17,6 +17,11 @@ import { Spinner } from "../ui/spinner";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { WORKJET_GATEWAY_PROVIDER_LABELS } from "./WorkjetGatewayAccounts";
+import {
+  formatWorkjetGatewayAccountPatternCount,
+  formatWorkjetGatewayCatalogModelCount,
+  WorkjetGatewayModelCountsHelp,
+} from "./WorkjetGatewayModelCountsHelp";
 
 export const WORKJET_GATEWAY_ROUTING_STRATEGIES: ReadonlyArray<WorkjetGatewayRoutingStrategy> = [
   "round-robin",
@@ -533,20 +538,35 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
           const providerModels = state.models?.providers.find(
             (entry) => entry.provider === pool.provider,
           );
+          const catalogModelCount =
+            providerModels?.models.filter((model) => model.source === "gateway-catalog").length ??
+            0;
+          const accountPatternCount =
+            providerModels?.models.filter((model) => model.source === "account-configuration")
+              .length ?? 0;
+          const modelFact =
+            providerModels === undefined
+              ? null
+              : providerModels.catalogAvailable
+                ? [
+                    formatWorkjetGatewayCatalogModelCount(catalogModelCount),
+                    accountPatternCount > 0
+                      ? formatWorkjetGatewayAccountPatternCount(accountPatternCount)
+                      : null,
+                  ]
+                    .filter((entry): entry is string => entry !== null)
+                    .join(" · ")
+                : accountPatternCount > 0
+                  ? formatWorkjetGatewayAccountPatternCount(accountPatternCount)
+                  : "no gateway catalog";
           const facts = [
             providerHealth === undefined
               ? null
               : `${providerHealth.enabledAccountCount} of ${providerHealth.accountCount} enabled · ${providerHealth.phase}`,
-            providerModels === undefined
-              ? null
-              : providerModels.catalogAvailable
-                ? `${providerModels.models.length} models`
-                : providerModels.models.length > 0
-                  ? // Account-recorded models serve fine without a host catalog;
-                    // hiding them behind "no gateway catalog" made a freshly
-                    // configured Z.ai account look as dead as an empty one.
-                    `${providerModels.models.length} account models`
-                  : "no gateway catalog",
+            // Account-recorded patterns serve fine without a host catalog;
+            // hiding them behind "no gateway catalog" made a freshly
+            // configured Z.ai account look as dead as an empty one.
+            modelFact,
           ].filter((entry): entry is string => entry !== null);
 
           return (
@@ -556,7 +576,10 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
                   {WORKJET_GATEWAY_PROVIDER_LABELS[pool.provider]}
                 </h4>
                 {facts.length === 0 ? null : (
-                  <span className="text-xs text-muted-foreground">{facts.join(" · ")}</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    {facts.join(" · ")}
+                    {providerModels === undefined ? null : <WorkjetGatewayModelCountsHelp />}
+                  </span>
                 )}
               </div>
               <div className="space-y-2 pt-1.5 pb-3">

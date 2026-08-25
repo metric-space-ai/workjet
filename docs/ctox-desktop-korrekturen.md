@@ -1140,3 +1140,25 @@ Screenshot visuell geprüft. Interaktiver Smoke: vorhandener Draft
 repopulieren CTOX Website Demo, GPU1 A6000, GPU3 A4500 und Meridian Supply Co.
 Der bestehende Draft/Modellzustand wurde nicht verändert, Endzustand ist wieder
 Business OS.
+
+## Gateway-Modellzahlen erklärt — 2026-08-25 ~12:10
+
+Pools und Provider Accounts verwenden jetzt dieselbe Hilfe für ihre
+Modellzahlen. Die sichtbaren Kennzahlen heißen eindeutig `catalog model(s)`
+beziehungsweise `account pattern(s)`: Katalogmodelle sind vom Gateway
+gelistete Modelle, Account-Muster sind gespeicherte Routingmuster eines
+Accounts. Der gemeinsame Tooltip stellt klar, dass beide Summen verschiedene
+Dinge messen, nicht übereinstimmen müssen und weder Live-Verfügbarkeit noch
+Kapazität ausdrücken. Die Änderung bleibt vollständig in der Web-Darstellung;
+Contracts, Gateway und Datenmodell sind unverändert.
+
+BEWEISE: fokussierte Komponentensuite 37/37 grün (Accounts, Pools und
+gemeinsame Hilfe einschließlich Singular/Plural), Web-Typecheck exit 0,
+gezieltes Format grün, Produktions-Web-Build grün. Der gezielte Lintlauf war
+erfolgreich und meldete nur drei bereits vorhandene Unused-Warnungen in den
+beiden berührten Bestandskomponenten. LIVE nach Client-Deploy und Reload
+ausschließlich im `t3code://app`-Target geprüft: zwölf gemeinsam gerenderte
+Hilfesteuerungen auf Pools und Accounts, sichtbare Katalog-/Musterlabels und
+der vollständige gemeinsame Tooltip interaktiv nachgewiesen; Screenshot
+`output/playwright/model-counts-help.png`. Danach vorhandenen Draft
+`b15d17e7-...` wieder geöffnet und die App im Business-OS-Modus hinterlassen.

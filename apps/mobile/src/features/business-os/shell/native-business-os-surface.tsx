@@ -15,7 +15,19 @@ export interface NativeBusinessOsSurfaceProps extends ViewProps {
   readonly sessionJson: string;
   readonly configJson: string;
   readonly launchKey: string;
+  readonly commandJson?: string;
   readonly onError?: (event: NativeSyntheticEvent<{ readonly code: string }>) => void;
+  readonly onNotification?: (
+    event: NativeSyntheticEvent<{
+      readonly kind: string;
+      readonly title: string;
+      readonly body: string;
+      readonly tag?: string;
+      readonly recordId?: string;
+      readonly urgency?: string;
+    }>,
+  ) => void;
+  readonly onShellMessage?: (event: NativeSyntheticEvent<{ readonly message: string }>) => void;
 }
 
 let cachedView: ComponentType<NativeBusinessOsSurfaceProps> | null | undefined;

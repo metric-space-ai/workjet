@@ -27,12 +27,15 @@ import { OverlayPortalHost } from "./components/OverlayPortal";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
 import { useThemeColor } from "./lib/useThemeColor";
 import { isBusinessOsPairLink, normalizeIncomingWorkjetUrl } from "./lib/workjetLinks";
+import { configureNotificationPresentation } from "./features/business-os/notifications/decision-hub-notifications";
 
 import "../global.css";
 
 if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   prepareNativeShowcaseCapture();
 }
+
+configureNotificationPresentation();
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // The native module can be unavailable in non-native test environments.

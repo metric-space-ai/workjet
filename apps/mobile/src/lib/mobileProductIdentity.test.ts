@@ -7,6 +7,18 @@ function read(relativePath: string): string {
   return NodeFS.readFileSync(NodeURL.fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
 }
 
+function readProductionTree(relativePath: string): string {
+  const root = NodeURL.fileURLToPath(new URL(relativePath, import.meta.url));
+  const visit = (path: string): string[] =>
+    NodeFS.readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
+      const next = `${path}/${entry.name}`;
+      if (entry.isDirectory()) return visit(next);
+      if (!/\.(?:ts|tsx)$/u.test(entry.name) || /\.test\.(?:ts|tsx)$/u.test(entry.name)) return [];
+      return [NodeFS.readFileSync(next, "utf8")];
+    });
+  return visit(root).join("\n");
+}
+
 describe("Workjet Mobile product identity", () => {
   it("keeps one visible app name while preserving update identities", () => {
     const config = read("../../app.config.ts");
@@ -35,12 +47,30 @@ describe("Workjet Mobile product identity", () => {
       read("../features/cloud/ConnectOnboardingRouteScreen.tsx"),
       read("../features/settings/SettingsRouteScreen.tsx"),
       read("../features/mode/BusinessOsSetupScreen.tsx"),
+      readProductionTree("../features/business-os/"),
     ].join("\n");
 
-    expect(surfaces).not.toMatch(/CTOX Mobile|CTOX Business OS|Desktop App|T3 Code Mobile/u);
+    expect(surfaces).not.toMatch(
+      /CTOX Desktop App|CTOX Mobile|CTOX Business OS App|T3 Code|T3Code|\bAlpha\b/u,
+    );
     expect(surfaces).not.toContain('label="T3 Account"');
     expect(surfaces).not.toContain("T3 Connect");
     expect(surfaces).not.toContain('accessibilityLabel="CTOX"');
     expect(surfaces).not.toContain('stage="Alpha"');
+  });
+
+  it("pins generated native display names to Workjet without renaming technical identities", () => {
+    const config = read("../../app.config.ts");
+    const mark = read("../components/CtoxMark.tsx");
+    const widget = read("../widgets/AgentActivity.tsx");
+    const widgetPlugin = read("../../plugins/withWidgetLogoAsset.cjs");
+
+    expect(config.match(/appName: "Workjet"/gu)).toHaveLength(3);
+    expect(config).not.toMatch(/appName: "(?:CTOX|T3 Code|T3Code|Alpha)"/u);
+    expect(config).toContain("Allow Workjet to connect to CTOX backends");
+    expect(mark).toContain('accessibilityLabel="Workjet"');
+    expect(mark).not.toContain('accessibilityLabel="CTOX"');
+    expect(`${widget}\n${widgetPlugin}`).not.toContain("T3Mark");
+    expect(`${widget}\n${widgetPlugin}`).toContain("WorkjetMark");
   });
 });

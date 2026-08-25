@@ -21,7 +21,10 @@ describe("Business OS native security guards", () => {
       "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
     );
     expect(android).toContain("WebViewFeature.MULTI_PROFILE");
+    expect(android).toContain("WebViewFeature.WEB_MESSAGE_LISTENER");
     expect(android).toContain("WebViewCompat.setProfile");
+    expect(android).toContain("WebViewCompat.addWebMessageListener");
+    expect(android).not.toContain("addJavascriptInterface");
     expect(android).toContain("https://appassets.androidplatform.net/business-os/index.html");
     expect(android).toContain("MIXED_CONTENT_NEVER_ALLOW");
     expect(android).toContain("request.deny()");
@@ -40,6 +43,32 @@ describe("Business OS native security guards", () => {
     );
     expect(launch).toContain("http_bridge_available: false");
     expect(`${launch}\n${ios}\n${android}`).not.toMatch(/ctox_config|\/api\/business-os\/data/iu);
+  });
+
+  it("bounds the native Decision Hub notification bridge on both platforms", () => {
+    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const android = read(
+      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+    );
+    expect(ios).toContain("workjetBusinessOsNotification");
+    expect(ios).toContain('payload["kind"] as? String == "decision_hub"');
+    expect(ios).toContain("maxLength: 240");
+    expect(android).toContain('payload.optString("kind") != "decision_hub"');
+    expect(android).toContain("if (raw.toByteArray().size > 1_024) return null");
+  });
+
+  it("keeps the lifecycle bridge origin-bound and metadata-only", () => {
+    const protocol = read("src/features/business-os/launcher/business-os-shell-protocol.ts");
+    const android = read(
+      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+    );
+    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    expect(protocol).toContain('"workjet.business-os-shell.v1"');
+    expect(protocol).not.toContain("roomPassword");
+    expect(protocol).not.toContain("capabilityToken");
+    expect(android).toContain("setOf(BUSINESS_OS_ORIGIN)");
+    expect(ios).toContain("businessOsShellMessageMaxBytes = 65_536");
+    expect(`${android}\n${ios}`).not.toContain("businessRecords");
   });
 
   it("resolves shell packs through the shared DPoP command and preflights trust", () => {

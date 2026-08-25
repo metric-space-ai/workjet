@@ -93,6 +93,17 @@ The native shell host is present but cannot activate a production shell yet:
 - Both hosts deny media/geolocation requests, externalize only explicit HTTPS
   link activations, disable mixed content/file access and inject the direct
   RxDB/WebRTC bootstrap into a no-store `index.html` response.
+- Both hosts expose a write-only `workjetBusinessOsNotify` entry for Decision
+  Hub. iOS uses a named `WKScriptMessageHandler`; Android uses the same
+  origin-bound AndroidX WebMessage channel as the lifecycle contract and does
+  not expose `addJavascriptInterface`. The entry accepts only a bounded title/body, opaque decision/tag tokens
+  and urgency; context, options, credentials and arbitrary navigation targets
+  cannot cross it. Workjet schedules a native local notification on iOS and on
+  Android's high-importance `decision-hub` channel after the user has granted
+  device notification permission. Delivery is immediate while the isolated
+  Business OS shell is active and syncing. The durable CTOX unread-notification
+  row provides catch-up after reconnect; this bridge is not a replacement for
+  a remote APNs/FCM push when the app is fully suspended or terminated.
 
 Activation remains fail-closed because the signed shell distribution endpoint
 is present but its production producer and bundled public-key trust map have not
@@ -105,7 +116,8 @@ current and one next Ed25519 key are bundled. The accepted manifest envelope is
 version, total size, per-file path/size/SHA-256, signing key ID and an Ed25519
 signature over canonical manifest JSON. Unknown keys, expired or unsafe artifact
 URLs, traversal, extra or missing files, wrong hashes, signatures, versions or
-revisions are rejected. `vendor/ctox-office/**` remains a separate on-demand
+revisions are rejected. `index.html` and `mobile-apps.json` are mandatory signed
+pack members. `vendor/ctox-office/**` remains a separate on-demand
 pack and is rejected from the base shell.
 
 Unit and static guards cover canonical QR roundtrip, expiry, response mismatch,
@@ -113,11 +125,60 @@ atomic re-pair/rollback, multiple independent backends, restart-loaded
 selection, paste clearing, background/screenshot protection hooks, canonical
 origins, `MULTI_PROFILE`, direct-data-plane guards, signature/hash/revision
 failure, download consent/cancel/offline/retry states and the 3:4/4:3 breakpoint.
-The complete Mobile unit suite currently passes with 120 files and 730 tests;
-the focused Business OS suite contributes 10 files and 33 tests. The iOS native
+The complete Mobile unit suite currently passes with 125 files and 750 tests;
+the focused native-shell and branding verification contributes 6 files and 35 tests. The iOS native
 module target also compiles with the new Business OS scheme handler included.
 Real IndexedDB/WebRTC offline/restart/resync and Office delivery E2E remain open
 until a production shell artifact can be acquired.
+
+## Native Mobile-OS shell slice
+
+The Business OS root no longer renders the desktop shell as its launcher. It
+now owns a native route model for Setup, Home, App, Search/App Library, Recents
+and Settings while keeping Code navigation isolated and usable without a CTOX
+Backend.
+
+- Home uses adaptive, horizontally paged desks, a platform-specific dock,
+  folders, badges, haptic edit/drag mode and local per-instance placement.
+- iOS uses the existing native glass material only for the dock and transient
+  controls. Android uses an extended reachable header, adaptive icon geometry,
+  edge-to-edge safe-area spacing and the hardware/predictive-back entry point.
+- Compact, medium and expanded grids cover phone, 3:4 portrait and 4:3
+  landscape. App descriptors declare phone/tablet readiness and one of
+  `list-detail`, `feed`, `form`, `canvas` or `document`.
+- Search/App Library and Recents are native. Recents persist only app ID and
+  timestamp; no WebView screenshot, record or secret crosses the native
+  boundary.
+- The per-instance layout, dock, folders and Recents live in the existing
+  `t3code-client.db` data identity. Forgetting an instance deletes this row in
+  addition to its secrets and isolated WebView profile.
+- The versioned `workjet.business-os-shell.v1` bridge accepts only host
+  configuration, catalog, app lifecycle, back, declared action and aggregate
+  badge metadata. TypeScript, Swift and Kotlin reject unknown top-level fields,
+  oversized messages and unsupported types. Android is bound to
+  `https://appassets.androidplatform.net`; iOS uses a named
+  `WKScriptMessageHandler`.
+- The signed CTOX shell adds `mobile-apps.json`, `mobile-host.js` and
+  `mobile-host.css`. In mobile-host mode it removes the desktop topbar,
+  start/task surfaces, open-app tabs, window headers/resizers and side panes;
+  Desktop behavior is untouched when the native bootstrap attribute is absent.
+- Runtime icons never cross as SVG, HTML or remote URLs. The native catalog
+  maps known apps to trusted packaged symbols and uses a deterministic local
+  fallback for unknown apps.
+
+The App Canvas is permanently mounted for the selected instance once a native,
+verified pack activation exists. Until real current+next production Ed25519
+keys and a real distribution are bundled, the activation input remains absent
+and the App route displays a native fail-closed state. This slice therefore does
+not yet claim real-device RxDB/WebRTC parity, background catch-up or completed
+module-by-module phone/tablet approval. Mobile is a client only and never
+registers itself as a selectable worker.
+
+Visible Mobile identity is guarded as `Workjet` in Expo-generated iOS/Android
+display metadata, primary surfaces, accessibility labels and widget metadata.
+The approved existing mark is retained. Technical bundle/package identifiers,
+SQLite/SecureStore keys, CocoaPods/Xcode target names and inbound legacy URL
+aliases remain unchanged for update and data continuity.
 
 ## Release gate for the donor
 

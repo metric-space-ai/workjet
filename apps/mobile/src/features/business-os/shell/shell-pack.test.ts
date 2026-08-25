@@ -13,16 +13,29 @@ import {
 const privateKey = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
 const publicKey = ed25519.getPublicKey(privateKey);
 const index = new TextEncoder().encode("<!doctype html><head></head><body>Workjet</body>");
+const mobileApps = new TextEncoder().encode(
+  JSON.stringify({ type: "workjet.business-os-mobile-apps.v1", revision: "test", apps: [] }),
+);
 
 function pack(): { manifest: BusinessOsShellPackManifest; files: Map<string, Uint8Array> } {
-  const files = new Map([["index.html", index]]);
+  const files = new Map([
+    ["index.html", index],
+    ["mobile-apps.json", mobileApps],
+  ]);
   const unsigned = {
     type: BUSINESS_OS_SHELL_PACK_TYPE,
     packId: "shell-test",
     businessOsRevision: "revision-a",
     appVersion: "1.2.3",
-    totalSize: index.byteLength,
-    files: [{ path: "index.html", size: index.byteLength, sha256: bytesToHex(sha256(index)) }],
+    totalSize: index.byteLength + mobileApps.byteLength,
+    files: [
+      { path: "index.html", size: index.byteLength, sha256: bytesToHex(sha256(index)) },
+      {
+        path: "mobile-apps.json",
+        size: mobileApps.byteLength,
+        sha256: bytesToHex(sha256(mobileApps)),
+      },
+    ],
     signingKeyId: "test-key",
   } as const;
   return {

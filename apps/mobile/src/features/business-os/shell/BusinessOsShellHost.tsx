@@ -7,6 +7,7 @@ import type { BusinessOsInstance } from "../registry/business-os-registry";
 import { loadBusinessOsLaunchSecrets } from "../registry/business-os-registry";
 import { nativeBusinessOsSecretStore } from "../registry/native-business-os-registry";
 import { setBusinessOsContentProtected } from "../security/content-protection";
+import { deliverDecisionHubNotification } from "../notifications/decision-hub-notifications";
 import { buildBusinessOsLaunchContext } from "./launch-context";
 import {
   isNativeBusinessOsSurfaceSupported,
@@ -22,6 +23,8 @@ export function BusinessOsShellHost(props: {
   readonly instance: BusinessOsInstance;
   readonly shellRootUri: string;
   readonly packId: string;
+  readonly commandJson?: string;
+  readonly onShellMessage?: (raw: string) => void;
 }) {
   const [launch, setLaunch] = useState<LaunchState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,8 +79,19 @@ export function BusinessOsShellHost(props: {
       shellRootUri={props.shellRootUri}
       sessionJson={launch.sessionJson}
       configJson={launch.configJson}
+      commandJson={props.commandJson}
       launchKey={`${props.packId}:${props.instance.updatedAtMs}`}
       onError={() => setError("Das Business-OS-Paket konnte nicht geladen werden.")}
+      onShellMessage={(event) => props.onShellMessage?.(event.nativeEvent.message)}
+      onNotification={(event) => {
+        void deliverDecisionHubNotification({
+          storageIdentity: props.instance.storageIdentity,
+          payload: event.nativeEvent,
+        }).catch(() => {
+          // Permission and delivery errors are reflected by the device-level
+          // notification setting; the isolated Business OS surface stays usable.
+        });
+      }}
     />
   );
 }

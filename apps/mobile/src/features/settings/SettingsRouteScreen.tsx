@@ -169,7 +169,7 @@ function ConfiguredSettingsRouteScreen() {
   }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress]);
 
   const refreshNotifications = useCallback(async () => {
-    if (process.env.EXPO_OS !== "ios") {
+    if (process.env.EXPO_OS !== "ios" && process.env.EXPO_OS !== "android") {
       setNotificationStatus("unsupported");
       return;
     }
@@ -231,17 +231,15 @@ function ConfiguredSettingsRouteScreen() {
     }
     if (result.value.type === "granted") {
       setNotificationStatus("enabled");
-      // Permission alone is not enough: the switch stays off until the relay
-      // registration succeeds, so tell the user the truth about which happened.
       if (getAgentAwarenessRegistrationStatus() === "registered") {
         Alert.alert(
           "Notifications enabled",
-          "Live Activity notifications are enabled for this device.",
+          "Device notifications and Workjet Connect updates are enabled.",
         );
       } else {
         Alert.alert(
-          "Couldn't finish enabling notifications",
-          "Notification access was granted, but this device could not be registered with Workjet Connect. Notifications will start once registration succeeds.",
+          "Notifications enabled",
+          "Device notifications are enabled. Workjet Connect updates will also appear after this device is linked.",
         );
       }
       return;
@@ -250,7 +248,7 @@ function ConfiguredSettingsRouteScreen() {
       setNotificationStatus("unsupported");
       Alert.alert(
         "Notifications unavailable",
-        "Live Activity notifications are only available on iOS.",
+        "Device notifications are unavailable on this platform.",
       );
       return;
     }
@@ -478,17 +476,8 @@ function ConfiguredSettingsRouteScreen() {
           <SettingsSwitchRow
             icon="bell.badge"
             label="Device Notifications"
-            disabled={
-              !agentAwarenessPushAvailable ||
-              notificationStatus === "checking" ||
-              notificationStatus === "unsupported"
-            }
-            // Only reads as on when this device is actually registered with the
-            // relay; otherwise notifications cannot be delivered regardless of
-            // the local iOS permission.
-            value={
-              agentAwarenessPushAvailable && notificationStatus === "enabled" && deviceRegistered
-            }
+            disabled={notificationStatus === "checking" || notificationStatus === "unsupported"}
+            value={notificationStatus === "enabled"}
             onValueChange={handleDeviceNotificationsChange}
           />
           <SettingsSwitchRow

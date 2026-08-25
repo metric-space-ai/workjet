@@ -106,6 +106,7 @@ export function verifyBusinessOsShellPack(input: {
   }
   if (
     !paths.has("index.html") ||
+    !paths.has("mobile-apps.json") ||
     totalSize !== manifest.totalSize ||
     input.files.size !== paths.size
   ) {

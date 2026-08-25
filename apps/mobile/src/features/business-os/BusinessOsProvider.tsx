@@ -24,6 +24,7 @@ import {
   nativeBusinessOsSelection,
 } from "./registry/native-business-os-registry";
 import { nativeBusinessOsProfileStore } from "./shell/native-business-os-surface";
+import { nativeBusinessOsHomeStore } from "./launcher/native-business-os-home-store";
 
 interface BusinessOsContextValue {
   readonly instances: readonly BusinessOsInstance[];
@@ -103,6 +104,7 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   const forget = useCallback(
     async (instance: BusinessOsInstance) => {
       await forgetBusinessOsInstance(instance, dependencies);
+      await nativeBusinessOsHomeStore.remove(instance.id);
       await refresh();
     },
     [refresh],

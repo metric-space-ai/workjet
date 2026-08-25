@@ -3,6 +3,8 @@ import type {
   CtoxMobileInviteCreateResult,
   CtoxMobileInviteRevokeInput,
   CtoxMobileInviteRevokeResult,
+  CtoxMobileShellPackResolveInput,
+  CtoxMobileShellPackResolveResult,
 } from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -24,6 +26,7 @@ import {
 import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.ts";
 
 const MOBILE_INVITE_REQUEST_TIMEOUT_MS = 10_000;
+const MOBILE_SHELL_PACK_REQUEST_TIMEOUT_MS = 10_000;
 
 export class EnvironmentNotConnectedForMobileInviteError extends Data.TaggedError(
   "EnvironmentNotConnectedForMobileInviteError",
@@ -35,10 +38,24 @@ export class EnvironmentNotConnectedForMobileInviteError extends Data.TaggedErro
   }
 }
 
+export class EnvironmentNotConnectedForMobileShellPackError extends Data.TaggedError(
+  "EnvironmentNotConnectedForMobileShellPackError",
+)<{
+  readonly message: string;
+}> {
+  constructor() {
+    super({ message: "The selected CTOX backend is not connected." });
+  }
+}
+
 const withCurrentEnvironmentConnection = Effect.fn(
-  "clientRuntime.businessOsMobileInvite.withCurrentEnvironmentConnection",
+  "clientRuntime.businessOsMobileControl.withCurrentEnvironmentConnection",
 )(function* <A, E>(
   path: string,
+  timeoutMs: number,
+  notConnectedError:
+    | EnvironmentNotConnectedForMobileInviteError
+    | EnvironmentNotConnectedForMobileShellPackError,
   request: (input: {
     readonly client: Effect.Success<ReturnType<typeof makeEnvironmentHttpApiClient>>;
     readonly headers: EnvironmentHttpAuthHeaders;
@@ -47,7 +64,7 @@ const withCurrentEnvironmentConnection = Effect.fn(
   const supervisor = yield* EnvironmentSupervisor;
   const prepared = yield* SubscriptionRef.get(supervisor.prepared);
   if (Option.isNone(prepared)) {
-    return yield* new EnvironmentNotConnectedForMobileInviteError();
+    return yield* notConnectedError;
   }
   const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
   const requestUrl = environmentEndpointUrl(prepared.value.httpBaseUrl, path);
@@ -60,7 +77,7 @@ const withCurrentEnvironmentConnection = Effect.fn(
   );
   return yield* executeEnvironmentHttpRequest(
     requestUrl,
-    MOBILE_INVITE_REQUEST_TIMEOUT_MS,
+    timeoutMs,
     withEnvironmentCredentials(prepared.value.httpAuthorization, request({ client, headers })),
   );
 });
@@ -72,8 +89,11 @@ export const createBusinessOsMobileInvite = (
   unknown,
   EnvironmentSupervisor | HttpClient.HttpClient | ManagedRelayDpopSigner
 > =>
-  withCurrentEnvironmentConnection("/api/ctox/business-os/mobile-invites", ({ client, headers }) =>
-    client.businessOs.createMobileInvite({ headers, payload: input }),
+  withCurrentEnvironmentConnection(
+    "/api/ctox/business-os/mobile-invites",
+    MOBILE_INVITE_REQUEST_TIMEOUT_MS,
+    new EnvironmentNotConnectedForMobileInviteError(),
+    ({ client, headers }) => client.businessOs.createMobileInvite({ headers, payload: input }),
   );
 
 export const revokeBusinessOsMobileInvite = (
@@ -85,7 +105,23 @@ export const revokeBusinessOsMobileInvite = (
 > =>
   withCurrentEnvironmentConnection(
     "/api/ctox/business-os/mobile-invites/revoke",
+    MOBILE_INVITE_REQUEST_TIMEOUT_MS,
+    new EnvironmentNotConnectedForMobileInviteError(),
     ({ client, headers }) => client.businessOs.revokeMobileInvite({ headers, payload: input }),
+  );
+
+export const resolveBusinessOsMobileShellPack = (
+  input: CtoxMobileShellPackResolveInput,
+): Effect.Effect<
+  CtoxMobileShellPackResolveResult,
+  unknown,
+  EnvironmentSupervisor | HttpClient.HttpClient | ManagedRelayDpopSigner
+> =>
+  withCurrentEnvironmentConnection(
+    "/api/ctox/business-os/mobile-shell-packs/resolve",
+    MOBILE_SHELL_PACK_REQUEST_TIMEOUT_MS,
+    new EnvironmentNotConnectedForMobileShellPackError(),
+    ({ client, headers }) => client.businessOs.resolveMobileShellPack({ headers, payload: input }),
   );
 
 export function createBusinessOsMobileInviteEnvironmentAtoms<R, E>(
@@ -111,6 +147,26 @@ export function createBusinessOsMobileInviteEnvironmentAtoms<R, E>(
       execute: revokeBusinessOsMobileInvite,
       scheduler,
       concurrency,
+    }),
+  };
+}
+
+export function createBusinessOsMobileShellPackEnvironmentAtoms<R, E>(
+  runtime: Atom.AtomRuntime<
+    EnvironmentRegistry | HttpClient.HttpClient | ManagedRelayDpopSigner | R,
+    E
+  >,
+) {
+  const scheduler = createAtomCommandScheduler();
+  return {
+    resolve: createEnvironmentCommand(runtime, {
+      label: "environment-control:business-os-mobile-shell-pack:resolve",
+      execute: resolveBusinessOsMobileShellPack,
+      scheduler,
+      concurrency: {
+        mode: "serial" as const,
+        key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
+      },
     }),
   };
 }

@@ -334,6 +334,8 @@ private func isValidHostCommand(_ raw: String) -> Bool {
     return hasOnlyKeys(value, ["protocol", "type"])
   case "app.open", "app.close", "app.suspend", "app.resume":
     return hasOnlyKeys(value, ["protocol", "type", "appId"])
+      && boundedNotificationToken(value["appId"], maxLength: 128) != nil
+      && value["appId"] as? String != "desktop"
   case "action.invoke":
     return hasOnlyKeys(value, ["protocol", "type", "appId", "actionId"])
   default:

@@ -168,7 +168,10 @@ describe("MachinesPageView", () => {
     });
 
     expect(markup).toContain("No other machines have exchanged mail with this one yet.");
-    expect(markup).toContain("CTOX room invite");
+    expect(markup).toContain("Settings → Computers");
+    expect(markup).toContain("Mobile Business OS sync uses the QR code shown there");
+    expect(markup).not.toContain("room password");
+    expect(markup).not.toContain("signaling URLs");
     // The local machine is still shown; the mesh being empty is not the same as
     // there being nothing to display.
     expect(markup).toContain("This machine");

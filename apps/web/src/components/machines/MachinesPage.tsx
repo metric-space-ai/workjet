@@ -482,9 +482,10 @@ export function MachinesPageView(props: MachinesPageViewProps) {
 
         {!props.isPending && props.environments.length > 0 && !anyPeers ? (
           <p data-testid="machines-empty" className="text-sm text-muted-foreground">
-            No other machines have exchanged mail with this one yet. Pair another machine through
-            the CTOX room invite (room, room password, and signaling URLs) in Settings → Workjet,
-            then send it a message from an orchestrator thread to establish first contact.
+            No other machines have exchanged mail with this one yet. Pair the other Workjet app
+            through the guided flow in Settings → Computers, then send it a message from an
+            orchestrator thread to establish first contact. Mobile Business OS sync uses the QR code
+            shown there; signaling credentials never need to be entered manually.
           </p>
         ) : null}
 

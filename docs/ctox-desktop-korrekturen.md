@@ -1290,3 +1290,43 @@ ausgelieferter Shell-Pack behauptet.
 BEWEISE: fokussierte Contract-/Server-/HTTP-Suite zusammen mit Provisioning
 15/15 grün; Contracts- und Server-Typecheck exit 0. Reale Download-, Signatur-,
 IndexedDB-/RxDB-/WebRTC- und Restart/Resync-Abnahme bleibt offen.
+
+## Vollständige Workjet-UI-Abnahme und letzte Alttexte — 2026-08-25 ~17:50
+
+Der aktuelle Produktionsstand wurde neu als Web, Server und Desktop gebaut,
+über LaunchServices aus der gebrandeten `Workjet.app` gestartet und
+ausschließlich im einzigen `t3code://app/`-Target interaktiv geprüft. Native
+App-Menüs heißen durchgängig Workjet. Geprüft wurden alle Workjet-Settings
+(General, Appearance, Keybindings, Harnesses, Models, Computers, Worker samt
+Prompt/Telemetry/Execution, Source Control, Connections, Diagnostics und
+Archive), die Coding-Seiten Draft/Composer, Command Palette, Pull Requests,
+Usage und Machines sowie Business-OS-Instanzliste, Start-/App-Menü, interne
+Settings-Bereiche und die lokalen Apps Credentials, CTOX, Threads und Decision
+Hub. Kein Managed-/Kunden-Guest wurde geöffnet.
+
+Zwei reproduzierbare Alttexte wurden direkt korrigiert: Das eingebaute
+Standard-Theme heißt sichtbar nun Workjet statt CTOX, ohne seine persistierte
+ID `default` zu ändern. Die Machines-Leerseite verweist nicht länger auf eine
+alte Settings-Route und manuelle Room-/Passwort-/Signaling-Eingaben, sondern auf
+Settings → Computers, den geführten Rechner-Pairing-Pfad und den dortigen
+Mobile-QR. Fokussierte Tests: 22/22 grün; Web-Typecheck und Produktionsbuild
+exit 0. Nach Client-Deploy und Reload zeigte Appearance ausschließlich
+`Use Workjet …`/`Duplicate Workjet`; Machines zeigte den QR-/Computers-Hinweis
+und weder `room password` noch `signaling URLs`.
+
+LIVE-BEFUNDE: Settings → Computers zeigt `Show QR code`, `No manual signaling
+setup`, lokalen/SSH-Provisioning-Assistenten und den WebRTC-Datenhinweis.
+Settings → Keybindings und Command Palette zeigen `⌘N` für den neuen Thread.
+Diagnostics wechselte nach fünf Sekunden auf `NATIVE HEALTHY`, Sidecar 0.1.0,
+Restarts 0 und `No reported errors`. Der vorhandene Draft
+`b15d17e7-...` öffnete mit Composer, Manual/MacBook/Codex- und
+Workspace-Chips; das Modellmenü ließ sich öffnen, der gespeicherte Draft hat
+aber aktuell kein ausgewähltes Modell, daher bleibt Effort korrekt deaktiviert.
+
+Der lokale Decision Hub zeigte reproduzierbar „konnte nicht geladen werden“;
+dies ist im geprüften Zustand kein belegter Renderer-Regressionsfix: Die lokale
+Instanz meldete gleichzeitig `WebRTC unavailable`, die CTOX-System-App blieb
+bei „Runtime wird geladen“, und ein read-only `ctox status` meldete
+`running: false` sowie `autostart_enabled: false`. Der Dienst wurde für das
+UI-Review nicht gestartet. Endzustand ist Business OS mit sichtbarer
+Instanzliste und ohne ausgewählten Guest; der Coding-Draft blieb unverändert.

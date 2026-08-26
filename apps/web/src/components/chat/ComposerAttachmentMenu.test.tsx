@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
+import chatComposerSource from "./ChatComposer.tsx?raw";
 
 describe("ComposerAttachmentMenu", () => {
   it("keeps one compact entry point for image uploads and project-file references", () => {
@@ -22,5 +23,15 @@ describe("ComposerAttachmentMenu", () => {
     );
 
     expect(markup).toContain("disabled");
+  });
+
+  it("uses new-thread copy before any disconnected follow-up copy", () => {
+    const newThreadCopy = chatComposerSource.indexOf(
+      "Describe what you want to build, or add images and project files",
+    );
+    const followUpCopy = chatComposerSource.indexOf("Ask for follow-up changes or attach images");
+
+    expect(newThreadCopy).toBeGreaterThan(0);
+    expect(followUpCopy).toBeGreaterThan(newThreadCopy);
   });
 });

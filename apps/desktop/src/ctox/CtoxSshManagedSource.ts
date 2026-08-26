@@ -196,6 +196,7 @@ export const CTOX_SSH_INVITE_FAILURE_MARKER = "__t3_ctox_invite_failed__";
 export const CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER = "__workjet_shell_update_failed__";
 export const CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER = "__workjet_service_restart_failed__";
 export const CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER = "__workjet_data_plane_status_failed__";
+export const CTOX_SSH_VERSION_FAILURE_MARKER = "__workjet_version_failed__";
 export type CtoxShellUpdateCliAction = "status" | "check" | "stage" | "activate" | "rollback";
 
 /** Fixed, bounded remote control command. No renderer value reaches the shell. */
@@ -231,6 +232,21 @@ export function buildCtoxSshDataPlaneStatusCommand(stateRoot?: string): readonly
     `${assignment}; export CTOX_STATE_ROOT="$CTOX_ROOT"; ` +
       `{ "\${CTOX_BIN:-ctox}" business-os rxdb status --json || ` +
       `echo ${singleQuote(CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER)} >&2; } | head -c 65536`,
+  ];
+}
+
+/** Reads the bounded, machine-readable CTOX install/version document. */
+export function buildCtoxSshVersionCommand(stateRoot?: string): readonly string[] {
+  const assignment =
+    stateRoot === undefined
+      ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
+      : `CTOX_ROOT=${singleQuote(stateRoot)}`;
+  return [
+    "sh",
+    "-c",
+    `${assignment}; export CTOX_STATE_ROOT="$CTOX_ROOT"; ` +
+      `{ "\${CTOX_BIN:-ctox}" version || ` +
+      `echo ${singleQuote(CTOX_SSH_VERSION_FAILURE_MARKER)} >&2; } | head -c 65536`,
   ];
 }
 

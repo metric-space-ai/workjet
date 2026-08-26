@@ -191,7 +191,7 @@ case "$platform" in
   Linux) if [ -n "\${DISPLAY:-}\${WAYLAND_DISPLAY:-}" ] || pgrep -f 'Xorg|Xwayland|wayland|gnome-shell|plasmashell' >/dev/null 2>&1; then gui=true; fi ;;
 esac
 ctox_version=none
-if command -v ctox >/dev/null 2>&1; then ctox_version="$(ctox --version 2>/dev/null | head -n 1 || true)"; fi
+if command -v ctox >/dev/null 2>&1; then ctox_version="$(ctox version 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", "none"))' 2>/dev/null || true)"; fi
 workjet_version=none
 if [ -f /Applications/Workjet.app/Contents/Info.plist ]; then
   workjet_version="$(defaults read /Applications/Workjet.app/Contents/Info CFBundleShortVersionString 2>/dev/null || true)"
@@ -205,7 +205,7 @@ $isAdminMember = $isAdmin
 if (-not $isAdminMember) { try { $isAdminMember = ((& (Join-Path $env:SystemRoot 'System32\\whoami.exe') /groups /fo csv /nh | Out-String) -match 'S-1-5-32-544') } catch {} }
 $internet = $false
 try { Invoke-WebRequest -UseBasicParsing -Method Head -TimeoutSec 8 -Uri '${CTOX_MANIFEST_URL}' | Out-Null; $internet = $true } catch {}
-$ctox = 'none'; $ctoxPath = Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; if (Test-Path $ctoxPath) { try { $ctox = (& $ctoxPath --version | Select-Object -First 1) } catch {} }
+$ctox = 'none'; $ctoxPath = Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; if (Test-Path $ctoxPath) { try { $ctox = ((& $ctoxPath version | ConvertFrom-Json).version) } catch {} }
 $workjet = 'none'; $workjetPath = Join-Path $env:ProgramFiles 'Workjet\\Workjet.exe'; if (Test-Path $workjetPath) { $workjet = (Get-Item $workjetPath).VersionInfo.ProductVersion }
 $gui = @(Get-Process explorer -ErrorAction SilentlyContinue).Count -gt 0
 Write-Output 'platform=windows'; Write-Output ('arch=' + [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()); Write-Output 'tools=true'; Write-Output 'missing_tools='; Write-Output ('internet=' + $internet.ToString().ToLowerInvariant()); Write-Output ('admin=' + $isAdmin.ToString().ToLowerInvariant()); Write-Output ('admin_member=' + $isAdminMember.ToString().ToLowerInvariant()); Write-Output 'admin_password=false'; Write-Output ('gui=' + $gui.ToString().ToLowerInvariant()); Write-Output ('ctox_version=' + $ctox); Write-Output ('workjet_version=' + $workjet)

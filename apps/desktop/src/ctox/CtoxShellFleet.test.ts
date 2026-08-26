@@ -6,9 +6,18 @@ import { expect } from "vite-plus/test";
 import {
   ctoxShellFleetRowFromStatus,
   CTOX_SHELL_FLEET_ROLLOUT_POLICY,
+  parseCtoxBackendVersion,
   parseCtoxDataPlaneProbe,
   planCtoxShellRolloutWaves,
 } from "./CtoxShellFleet.ts";
+
+describe("parseCtoxBackendVersion", () => {
+  it("accepts the CTOX version document and rejects display text", () => {
+    expect(parseCtoxBackendVersion(JSON.stringify({ version: "0.3.22" }))).toBe("0.3.22");
+    expect(() => parseCtoxBackendVersion("ctox 0.3.22")).toThrow();
+    expect(() => parseCtoxBackendVersion(JSON.stringify({ version: "latest" }))).toThrow();
+  });
+});
 
 function row(
   instanceId: string,

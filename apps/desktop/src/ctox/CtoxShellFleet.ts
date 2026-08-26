@@ -38,10 +38,12 @@ import {
   buildCtoxSshDataPlaneStatusCommand,
   buildCtoxSshShellUpdateCommand,
   buildCtoxSshServiceRestartCommand,
+  buildCtoxSshVersionCommand,
   type CtoxShellUpdateCliAction,
   CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER,
   CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER,
   CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER,
+  CTOX_SSH_VERSION_FAILURE_MARKER,
   makeCtoxSshExec,
 } from "./CtoxSshManagedSource.ts";
 
@@ -122,6 +124,19 @@ function parseStatus(raw: string): BusinessOsShellUpdateStatus {
   return Schema.decodeUnknownSync(BusinessOsShellUpdateStatus)(JSON.parse(raw), {
     onExcessProperty: "error",
   });
+}
+
+export function parseCtoxBackendVersion(raw: string): string {
+  if (Buffer.byteLength(raw, "utf8") > MAX_OUTPUT_BYTES) throw new Error("oversized");
+  const value = JSON.parse(raw) as unknown;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("invalid_response");
+  }
+  const version = (value as Record<string, unknown>).version;
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.test(version)) {
+    throw new Error("invalid_version");
+  }
+  return version;
 }
 
 export interface CtoxDataPlaneProbe {
@@ -343,6 +358,32 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
   const localCommand = (action: CtoxShellUpdateCliAction) =>
     localExec(["business-os", "shell-update", action]);
 
+  const readBackendVersion = Effect.fn("CtoxShellFleet.readBackendVersion")(function* (
+    instance: CtoxManagedInstance,
+  ) {
+    let stdout: string;
+    if (instance.source === "local_daemon") {
+      stdout = yield* localExec(["version"]);
+    } else if (instance.source === "ssh_managed") {
+      const target = yield* registry.resolveSshManagedTarget(instance.id);
+      const result = yield* sshExec({
+        host: target.host,
+        argv: buildCtoxSshVersionCommand(target.stateRoot),
+        timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
+      });
+      if (result.stderr?.includes(CTOX_SSH_VERSION_FAILURE_MARKER)) {
+        return yield* Effect.fail("command_failed" as const);
+      }
+      stdout = result.stdout;
+    } else {
+      return yield* Effect.fail("not_administrable" as const);
+    }
+    return yield* Effect.try({
+      try: () => parseCtoxBackendVersion(stdout),
+      catch: () => "invalid_response" as const,
+    });
+  });
+
   const probeDataPlane = Effect.fn("CtoxShellFleet.probeDataPlane")(function* (
     instance: CtoxManagedInstance,
   ) {
@@ -475,10 +516,12 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         return Effect.all({
           shell: run(instance, "status"),
           dataPlane: probeDataPlane(instance),
+          backendVersion: readBackendVersion(instance),
         }).pipe(
-          Effect.map(({ shell, dataPlane }) =>
-            ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
-          ),
+          Effect.map(({ shell, dataPlane, backendVersion }) => ({
+            ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
+            backendVersion,
+          })),
           Effect.orElseSucceed(() =>
             blockedRow(instance, "backend_unavailable", "CTOX aktualisieren und erneut prüfen."),
           ),
@@ -510,7 +553,10 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       if (input.action === "check") {
         shell = yield* run(instance, "check");
       } else if (input.action === "rollback") {
-        shell = yield* run(instance, "rollback");
+        yield* run(instance, "rollback");
+        yield* restartBackend(instance);
+        yield* Effect.sleep("2 seconds");
+        shell = yield* run(instance, "status");
       } else {
         yield* run(instance, "check");
         yield* run(instance, "stage");
@@ -519,16 +565,15 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         yield* Effect.sleep("2 seconds");
         shell = yield* run(instance, "status");
       }
+      const [backendVersion, dataPlane] = yield* Effect.all([
+        readBackendVersion(instance).pipe(Effect.orElseSucceed(() => null)),
+        probeDataPlane(instance).pipe(
+          Effect.orElseSucceed(() => ({ nativePeerObserved: false, dataPlaneReady: false })),
+        ),
+      ]);
       const row: CtoxShellFleetRow = {
-        instanceId: instance.id,
-        displayName: instance.displayName,
-        source: instance.source,
-        reachable: true,
-        backendVersion: null,
-        shell,
-        blocker: null,
-        requiredOperatorStep:
-          shell.phase === "restart" ? "CTOX Backend neu starten und Sync-Health bestätigen." : null,
+        ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
+        backendVersion,
       };
       const current = yield* inventory;
       if (current._tag === "completed") {

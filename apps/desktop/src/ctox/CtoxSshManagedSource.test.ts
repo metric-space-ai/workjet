@@ -12,6 +12,7 @@ import {
   buildCtoxSshDescriptorCommand,
   buildCtoxSshServiceRestartCommand,
   buildCtoxSshShellUpdateCommand,
+  buildCtoxSshVersionCommand,
   CTOX_SSH_MANAGED_ID_PATTERN,
   ctoxSshManagedInstanceId,
   CtoxSshExecError,
@@ -94,6 +95,9 @@ describe("CtoxSshManagedSource command construction", () => {
     assert.include(health[2] ?? "", "business-os rxdb status --json");
     assert.include(health[2] ?? "", "head -c 65536");
     assert.include(update[2] ?? "", "head -c 65536");
+    const version = buildCtoxSshVersionCommand("/srv/ctox");
+    assert.include(version[2] ?? "", '"${CTOX_BIN:-ctox}" version');
+    assert.include(version[2] ?? "", "head -c 65536");
     const restart = buildCtoxSshServiceRestartCommand("/srv/ctox");
     assert.include(restart[2] ?? "", '"${CTOX_BIN:-ctox}" stop');
     assert.include(restart[2] ?? "", '"${CTOX_BIN:-ctox}" start');

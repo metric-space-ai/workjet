@@ -152,5 +152,28 @@ describe("ctoxShellFleetRowFromStatus", () => {
     expect(result.shell.activeVersion).toBe("0.1.5");
     expect(result.shell.recoveryShell).toBe(false);
     expect(result.blocker).toBe("data_plane_degraded");
+    expect(result.shell.health).toBe("degraded");
+  });
+
+  it("reports healthy after the authenticated browser data channel probe succeeds", () => {
+    const current = row("local", "Local CTOX", "local_daemon");
+    const result = ctoxShellFleetRowFromStatus({
+      instance: {
+        id: current.instanceId,
+        displayName: current.displayName,
+        source: current.source,
+        status: "available",
+        healthSummary: {
+          dataPlane: "rxdb-webrtc",
+          dataPlaneReady: true,
+          httpDataProxy: false,
+          nativePeerObserved: true,
+        },
+      },
+      shell: { ...current.shell, health: "degraded" },
+      dataPlane: { nativePeerObserved: true, dataPlaneReady: true },
+    });
+    expect(result.blocker).toBeNull();
+    expect(result.shell.health).toBe("healthy");
   });
 });

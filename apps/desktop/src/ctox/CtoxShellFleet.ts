@@ -168,7 +168,10 @@ export function ctoxShellFleetRowFromStatus(input: {
     source: input.instance.source,
     reachable: true,
     backendVersion: null,
-    shell: input.shell,
+    shell: {
+      ...input.shell,
+      health: input.dataPlane.dataPlaneReady ? "healthy" : "degraded",
+    },
     blocker,
     requiredOperatorStep,
   };

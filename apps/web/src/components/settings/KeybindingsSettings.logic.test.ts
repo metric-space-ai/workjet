@@ -7,6 +7,7 @@ import {
   buildWhenVariableOptions,
   commandLabel,
   keybindingConflictLabels,
+  keybindingPillParts,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
   shortcutToKeybindingInput,
@@ -15,6 +16,13 @@ import {
 } from "./KeybindingsSettings.logic";
 
 describe("KeybindingsSettings.logic", () => {
+  it("gives repeated empty shortcut segments stable unique render keys", () => {
+    expect(keybindingPillParts("mod++")).toEqual([
+      { key: "0:mod", value: "mod" },
+      { key: "1:", value: "" },
+      { key: "2:", value: "" },
+    ]);
+  });
   it("builds searchable rows with readable key and when values", () => {
     const rows = buildKeybindingRows(
       [

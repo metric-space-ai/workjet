@@ -61,6 +61,7 @@ import {
   DEFAULT_WHEN_VARIABLE,
   isKnownWhenVariable,
   keybindingConflictLabels,
+  keybindingPillParts,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
   type KeybindingCommandOption,
@@ -75,26 +76,26 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 function KeybindingPill({ value }: { value: string }) {
-  const parts = value.split("+");
+  const parts = keybindingPillParts(value);
   return (
     <KbdGroup className="bg-transparent p-0 shadow-none">
       {parts.map((part) => (
-        <Kbd key={part} className="min-w-6 justify-center px-1.5">
-          {part === "mod"
+        <Kbd key={part.key} className="min-w-6 justify-center px-1.5">
+          {part.value === "mod"
             ? navigator.platform.toLowerCase().includes("mac")
               ? "⌘"
               : "Ctrl"
-            : part === "shift"
+            : part.value === "shift"
               ? "⇧"
-              : part === "alt"
+              : part.value === "alt"
                 ? navigator.platform.toLowerCase().includes("mac")
                   ? "⌥"
                   : "Alt"
-                : part === "ctrl"
+                : part.value === "ctrl"
                   ? "⌃"
-                  : part.length === 1
-                    ? part.toUpperCase()
-                    : part}
+                  : part.value.length === 1
+                    ? part.value.toUpperCase()
+                    : part.value}
         </Kbd>
       ))}
     </KbdGroup>
@@ -814,8 +815,8 @@ function KeybindingTableRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
-      <div className="min-w-0 pr-4">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-2 text-sm even:bg-muted/15 hover:bg-accent/40 @[44rem]/keybindings-table:grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] @[44rem]/keybindings-table:gap-0 @[44rem]/keybindings-table:py-1.5">
+      <div className="min-w-0 @[44rem]/keybindings-table:pr-4">
         <div className="flex min-w-0 items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger
@@ -832,7 +833,7 @@ function KeybindingTableRow({
           </Tooltip>
         </div>
       </div>
-      <div className="flex min-w-0 items-center gap-2 pr-4">
+      <div className="flex min-w-0 items-center justify-end gap-2 @[44rem]/keybindings-table:justify-start @[44rem]/keybindings-table:pr-4">
         {showPill ? (
           <button
             type="button"
@@ -873,7 +874,10 @@ function KeybindingTableRow({
           </Button>
         ) : null}
       </div>
-      <div className="pr-4">
+      <div className="min-w-0 @[44rem]/keybindings-table:pr-4">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground @[44rem]/keybindings-table:hidden">
+          When
+        </div>
         <Popover>
           <PopoverTrigger
             className={cn(
@@ -895,7 +899,7 @@ function KeybindingTableRow({
           </PopoverContent>
         </Popover>
       </div>
-      <div className="flex items-center justify-end gap-1">
+      <div className="flex items-end justify-end gap-1 self-stretch @[44rem]/keybindings-table:items-center">
         <KeybindingConflictWarning labels={conflictLabels} />
         {hasRowActions ? (
           <Menu>
@@ -986,8 +990,8 @@ function NewKeybindingTableRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
-      <div className="min-w-0 pr-4">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-2 text-sm even:bg-muted/15 hover:bg-accent/40 @[44rem]/keybindings-table:grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] @[44rem]/keybindings-table:gap-0 @[44rem]/keybindings-table:py-1.5">
+      <div className="min-w-0 @[44rem]/keybindings-table:pr-4">
         <Select
           value={commandDraft}
           onValueChange={(value) => setCommandDraft(value as KeybindingCommand)}
@@ -1011,7 +1015,7 @@ function NewKeybindingTableRow({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex min-w-0 items-center gap-2 pr-4">
+      <div className="flex min-w-0 items-center justify-end gap-2 @[44rem]/keybindings-table:justify-start @[44rem]/keybindings-table:pr-4">
         <Input
           data-keybinding-capture=""
           aria-label={`Keybinding for ${commandLabelText}`}
@@ -1035,7 +1039,10 @@ function NewKeybindingTableRow({
           {isSaving ? "Saving" : "Save"}
         </Button>
       </div>
-      <div className="pr-4">
+      <div className="min-w-0 @[44rem]/keybindings-table:pr-4">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground @[44rem]/keybindings-table:hidden">
+          When
+        </div>
         <Popover>
           <PopoverTrigger
             className={cn(
@@ -1057,7 +1064,7 @@ function NewKeybindingTableRow({
           </PopoverContent>
         </Popover>
       </div>
-      <div className="flex items-center justify-end gap-1">
+      <div className="flex items-end justify-end gap-1 self-stretch @[44rem]/keybindings-table:items-center">
         <KeybindingConflictWarning labels={conflictLabels} />
         <Tooltip>
           <TooltipTrigger
@@ -1294,15 +1301,15 @@ export function KeybindingsSettingsPanel() {
           chainVerticalScroll
           scrollFade
           hideScrollbars
-          className="w-full max-w-full rounded-none"
+          className="@container/keybindings-table w-full max-w-full rounded-none"
         >
-          <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground @[44rem]/keybindings-table:grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px]">
             <div>Command</div>
-            <div>Keybinding</div>
-            <div>When</div>
-            <div>Status</div>
+            <div className="text-right @[44rem]/keybindings-table:text-left">Keybinding</div>
+            <div className="hidden @[44rem]/keybindings-table:block">When</div>
+            <div className="hidden @[44rem]/keybindings-table:block">Status</div>
           </div>
-          <div className="min-w-[680px] divide-y divide-border/60">
+          <div className="divide-y divide-border/60">
             {isAddingBinding ? (
               <NewKeybindingTableRow
                 commandOptions={commandOptions}

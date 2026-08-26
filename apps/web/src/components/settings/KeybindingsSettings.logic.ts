@@ -29,6 +29,13 @@ export interface KeybindingRow {
 export type WhenVariableOption = string;
 export type KeybindingCommandOption = KeybindingCommand;
 
+export function keybindingPillParts(value: string): ReadonlyArray<{
+  readonly key: string;
+  readonly value: string;
+}> {
+  return value.split("+").map((part, index) => ({ key: `${index}:${part}`, value: part }));
+}
+
 const CORE_WHEN_VARIABLES = ["terminalFocus", "terminalOpen", "true", "false"] as const;
 
 const DEFAULT_WHEN_VARIABLES = new Set<string>(CORE_WHEN_VARIABLES);

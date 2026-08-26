@@ -104,6 +104,19 @@ describe("CtoxSshManagedSource command construction", () => {
     assert.notInclude(restart[2] ?? "", "password");
   });
 
+  it("uses PowerShell and the installed Windows service paths for Windows targets", () => {
+    const descriptor = buildCtoxSshDescriptorCommand(undefined, "windows");
+    const update = buildCtoxSshShellUpdateCommand("stage", undefined, "windows");
+    const health = buildCtoxSshDataPlaneStatusCommand(undefined, "windows");
+    const restart = buildCtoxSshServiceRestartCommand(undefined, "windows");
+    assert.equal(descriptor[0], "powershell");
+    assert.include(descriptor.at(-1) ?? "", "ProgramData");
+    assert.include(update.at(-1) ?? "", "CTOX\\current\\bin\\ctox.exe");
+    assert.include(update.at(-1) ?? "", "business-os shell-update stage");
+    assert.include(health.at(-1) ?? "", "business-os rxdb status --json");
+    assert.include(restart.at(-1) ?? "", "& $ctox start");
+  });
+
   it("derives ids that are stable, opaque, and destination-specific", () => {
     const first = ctoxSshManagedInstanceId("build-box");
     assert.match(first, CTOX_SSH_MANAGED_ID_PATTERN);
@@ -159,6 +172,32 @@ describe("CtoxSshManagedSource configuration", () => {
       removeCtoxSshManagedEntry(added.document, ctoxSshManagedInstanceId("other"))._tag,
       "not_found",
     );
+  });
+
+  it("persists credential-free SSH identity, host-key pin and platform facts", () => {
+    const knownHostsLine = "gpu3 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest";
+    const added = addCtoxSshManagedEntry(emptyDocument(), {
+      host: "gpu3",
+      displayName: "GPU3 A4500",
+      username: "operator",
+      port: 2222,
+      platform: "linux",
+      architecture: "x64",
+      knownHostsLine,
+    });
+    assert.equal(added._tag, "updated");
+    if (added._tag !== "updated") return;
+    assert.deepInclude(added.document.instances[0]!, {
+      username: "operator",
+      port: 2222,
+      platform: "linux",
+      architecture: "x64",
+      knownHostsLine,
+    });
+    const serialized = encodeUnknownJson(added.document).toLowerCase();
+    for (const forbidden of ["password", "privatekey", "capability_token", "room_secret"]) {
+      assert.notInclude(serialized, forbidden);
+    }
   });
 
   it("rejects an entry whose id does not match its own destination", () => {
@@ -273,6 +312,29 @@ describe("CtoxSshManagedSource discovery", () => {
         nowEpochMs: () => NOW,
       });
       assert.include(calls[0]?.argv[2] ?? "", "CTOX_ROOT='/srv/ctox'");
+    }),
+  );
+
+  it.effect("passes the approved SSH identity and platform into discovery", () =>
+    Effect.gen(function* () {
+      const { exec, calls } = fakeExec({ gpu3: descriptorJson() });
+      const discovered = yield* discoverCtoxSshManagedInstances(
+        [
+          entry("gpu3", {
+            username: "operator",
+            port: 2222,
+            platform: "linux",
+            architecture: "x64",
+            knownHostsLine: "gpu3 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest",
+          }),
+        ],
+        { exec, nowEpochMs: () => NOW },
+      );
+      assert.equal(calls[0]?.username, "operator");
+      assert.equal(calls[0]?.port, 2222);
+      assert.include(calls[0]?.knownHostsLine ?? "", "ssh-ed25519");
+      assert.equal(discovered[0]?.instance.platform, "linux");
+      assert.equal(discovered[0]?.instance.architecture, "x64");
     }),
   );
 

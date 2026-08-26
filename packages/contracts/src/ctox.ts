@@ -56,6 +56,12 @@ export const CtoxManagedInstanceStatus = Schema.Literals([
 ]);
 export type CtoxManagedInstanceStatus = typeof CtoxManagedInstanceStatus.Type;
 
+export const CtoxHostPlatform = Schema.Literals(["macos", "linux", "windows", "unknown"]);
+export type CtoxHostPlatform = typeof CtoxHostPlatform.Type;
+
+export const CtoxHostArchitecture = Schema.Literals(["arm64", "x64", "unknown"]);
+export type CtoxHostArchitecture = typeof CtoxHostArchitecture.Type;
+
 /**
  * Renderer-safe health metadata. CTOX Business OS data always remains on its
  * native RxDB/WebRTC plane; Workjet must never introduce an HTTP data proxy.
@@ -131,6 +137,8 @@ export const CtoxManagedInstance = Schema.Struct({
   status: CtoxManagedInstanceStatus,
   domain: Schema.optionalKey(CtoxManagedInstanceHostname),
   role: Schema.optionalKey(CtoxManagedInstanceRole),
+  platform: Schema.optionalKey(CtoxHostPlatform),
+  architecture: Schema.optionalKey(CtoxHostArchitecture),
   decisionHub: Schema.optionalKey(CtoxDecisionHubAvailability),
   shellUpdate: Schema.optionalKey(BusinessOsShellUpdateStatus),
   healthSummary: CtoxManagedInstanceHealth,
@@ -153,6 +161,14 @@ export const CtoxShellFleetRow = Schema.Struct({
   displayName: CtoxManagedInstanceDisplayName,
   source: CtoxManagedInstanceSource,
   reachable: Schema.Boolean,
+  platform: CtoxHostPlatform,
+  architecture: CtoxHostArchitecture,
+  administrativeAccess: Schema.Literals([
+    "available",
+    "authentication_required",
+    "unavailable",
+    "unknown",
+  ]),
   backendVersion: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
   shell: BusinessOsShellUpdateStatus,
   blocker: Schema.NullOr(CtoxShellFleetBlocker),
@@ -222,6 +238,8 @@ export const CtoxShellFleetRolloutStatus = Schema.Struct({
   completedInstanceIds: Schema.Array(CtoxManagedInstanceId).check(Schema.isMaxLength(1_000)),
   failedInstanceId: Schema.NullOr(CtoxManagedInstanceId),
   errorCode: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
+  pauseReason: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+  pausedAt: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
 });
 export type CtoxShellFleetRolloutStatus = typeof CtoxShellFleetRolloutStatus.Type;
 
@@ -420,6 +438,19 @@ export const CtoxSshManagedStateRoot = TrimmedNonEmptyString.check(
 );
 export type CtoxSshManagedStateRoot = typeof CtoxSshManagedStateRoot.Type;
 
+const CtoxSshManagedUsername = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(255),
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/),
+);
+const CtoxSshManagedPort = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(65_535),
+);
+const CtoxSshKnownHostsLine = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(8_192),
+  Schema.isPattern(/^[^\r\n]+$/),
+);
+
 /**
  * Configuration of one SSH-managed CTOX instance. It carries no credential:
  * authentication stays with the user's existing SSH agent, keys, and
@@ -429,6 +460,12 @@ export const CtoxSshManagedInstanceAddInput = Schema.Struct({
   host: CtoxSshManagedHost,
   displayName: Schema.optionalKey(CtoxManagedInstanceDisplayName),
   stateRoot: Schema.optionalKey(CtoxSshManagedStateRoot),
+  username: Schema.optionalKey(CtoxSshManagedUsername),
+  port: Schema.optionalKey(CtoxSshManagedPort),
+  platform: Schema.optionalKey(CtoxHostPlatform),
+  architecture: Schema.optionalKey(CtoxHostArchitecture),
+  /** Credential-free host-key pin confirmed during the provisioning preflight. */
+  knownHostsLine: Schema.optionalKey(CtoxSshKnownHostsLine),
 });
 export type CtoxSshManagedInstanceAddInput = typeof CtoxSshManagedInstanceAddInput.Type;
 

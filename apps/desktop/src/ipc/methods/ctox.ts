@@ -696,6 +696,20 @@ export const shellFleetRolloutStatus: DesktopIpc.DesktopIpcMethod<
     }),
 };
 
+export const shellFleetRolloutResume: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxShellFleet.CtoxShellFleet
+> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_RESUME_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet.resumeRollout.pipe(
+        Effect.flatMap((status) => encodeSafe(CtoxShellFleetRolloutStatus, status)),
+      );
+    }),
+};
+
 type CtoxIpcServices =
   | CtoxAppRail.CtoxAppRail
   | CtoxDevAuth.CtoxDevAuth
@@ -732,4 +746,5 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   shellFleetResume,
   shellFleetRolloutStart,
   shellFleetRolloutStatus,
+  shellFleetRolloutResume,
 ];

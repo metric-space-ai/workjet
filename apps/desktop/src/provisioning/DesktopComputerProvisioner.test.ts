@@ -60,4 +60,65 @@ describe("DesktopComputerProvisioner helpers", () => {
     );
     expect(testing.linuxDesktopRegistrationScript).toContain("install -m 0644");
   });
+
+  it("turns an approved remote preflight into a credential-free managed Fleet target", () => {
+    const result = testing.sshManagedInputFromPreflight(
+      {
+        preflightId: "preflight-1",
+        expiresAt: "2026-08-26T12:00:00Z",
+        target: {
+          _tag: "ssh",
+          ssh: {
+            alias: "gpu3",
+            hostname: "10.0.0.3",
+            username: "operator",
+            port: 2222,
+          },
+        },
+        platform: "linux",
+        architecture: "x64",
+        internetAvailable: true,
+        administratorCapable: true,
+        administratorPasswordRequired: false,
+        administratorElevationRequired: false,
+        graphicalSession: true,
+        ctoxInstalledVersion: null,
+        workjetInstalledVersion: null,
+        warnings: [],
+      },
+      "gpu3 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest",
+    );
+    expect(result).toEqual({
+      host: "gpu3",
+      displayName: "gpu3",
+      username: "operator",
+      port: 2222,
+      platform: "linux",
+      architecture: "x64",
+      knownHostsLine: "gpu3 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest",
+    });
+    expect(JSON.stringify(result)).not.toContain("password");
+    expect(
+      testing.sshManagedInputFromPreflight(
+        {
+          ...{
+            preflightId: "local",
+            expiresAt: "2026-08-26T12:00:00Z",
+            target: { _tag: "local" as const },
+            platform: "macos" as const,
+            architecture: "arm64" as const,
+            internetAvailable: true,
+            administratorCapable: true,
+            administratorPasswordRequired: false,
+            administratorElevationRequired: false,
+            graphicalSession: true,
+            ctoxInstalledVersion: null,
+            workjetInstalledVersion: null,
+            warnings: [],
+          },
+        },
+        null,
+      ),
+    ).toBeNull();
+  });
 });

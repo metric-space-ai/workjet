@@ -118,6 +118,7 @@ export const CTOX_SHELL_FLEET_PAUSE_CHANNEL = "desktop:ctox-shell-fleet-pause";
 export const CTOX_SHELL_FLEET_RESUME_CHANNEL = "desktop:ctox-shell-fleet-resume";
 export const CTOX_SHELL_FLEET_ROLLOUT_START_CHANNEL = "desktop:ctox-shell-fleet-rollout-start";
 export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL = "desktop:ctox-shell-fleet-rollout-status";
+export const CTOX_SHELL_FLEET_ROLLOUT_RESUME_CHANNEL = "desktop:ctox-shell-fleet-rollout-resume";
 export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT = "desktop:ctox-shell-fleet-rollout-event";
 /** Main → renderer push: per-instance guest lifecycle ("none"|"loading"|"warm"). */
 export const CTOX_GUEST_STATE_CHANNEL = "desktop:ctox-guest-state";

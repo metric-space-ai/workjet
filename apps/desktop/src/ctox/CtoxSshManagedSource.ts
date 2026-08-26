@@ -75,6 +75,20 @@ const ConfiguredStateRoot = SafeText.check(
   Schema.isPattern(/^\/[A-Za-z0-9._\-/]{0,1023}$/),
 );
 const ConfiguredDisplayName = SafeText.check(Schema.isMaxLength(256));
+const ConfiguredUsername = SafeText.check(
+  Schema.isMaxLength(255),
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/),
+);
+const ConfiguredPort = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(65_535),
+);
+const ConfiguredPlatform = Schema.Literals(["macos", "linux", "windows", "unknown"]);
+const ConfiguredArchitecture = Schema.Literals(["arm64", "x64", "unknown"]);
+const ConfiguredKnownHostsLine = SafeText.check(
+  Schema.isMaxLength(8_192),
+  Schema.isPattern(/^[^\r\n]+$/),
+);
 
 /**
  * One configured SSH-managed instance. This document is public by design: it
@@ -86,6 +100,11 @@ export const CtoxSshManagedConfigEntry = Schema.Struct({
   host: ConfiguredHost,
   displayName: ConfiguredDisplayName,
   stateRoot: Schema.optionalKey(ConfiguredStateRoot),
+  username: Schema.optionalKey(ConfiguredUsername),
+  port: Schema.optionalKey(ConfiguredPort),
+  platform: Schema.optionalKey(ConfiguredPlatform),
+  architecture: Schema.optionalKey(ConfiguredArchitecture),
+  knownHostsLine: Schema.optionalKey(ConfiguredKnownHostsLine),
 });
 export type CtoxSshManagedConfigEntry = typeof CtoxSshManagedConfigEntry.Type;
 
@@ -160,7 +179,22 @@ function singleQuote(value: string): string {
  * the quoted state root, and `head -c` bounds the response at the source so a
  * hostile or broken remote cannot stream unbounded output at the desktop.
  */
-export function buildCtoxSshDescriptorCommand(stateRoot?: string): readonly string[] {
+export function buildCtoxSshDescriptorCommand(
+  stateRoot?: string,
+  platform?: "macos" | "linux" | "windows" | "unknown",
+): readonly string[] {
+  if (platform === "windows") {
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$root=if($env:CTOX_STATE_ROOT){$env:CTOX_STATE_ROOT}else{Join-Path $env:ProgramData 'CTOX'}; " +
+        "$path=Join-Path $root 'instance.json'; if(Test-Path $path){" +
+        `$bytes=[IO.File]::ReadAllBytes($path); if($bytes.Length -gt ${MAX_CTOX_DAEMON_DESCRIPTOR_BYTES}){exit 65}; ` +
+        "[Console]::Out.Write([Text.Encoding]::UTF8.GetString($bytes))}",
+    ];
+  }
   const assignment =
     stateRoot === undefined
       ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
@@ -203,7 +237,18 @@ export type CtoxShellUpdateCliAction = "status" | "check" | "stage" | "activate"
 export function buildCtoxSshShellUpdateCommand(
   action: CtoxShellUpdateCliAction,
   stateRoot?: string,
+  platform?: "macos" | "linux" | "windows" | "unknown",
 ): readonly string[] {
+  if (platform === "windows") {
+    const command = `$ctox=Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; & $ctox business-os shell-update ${action}`;
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `$env:CTOX_STATE_ROOT=Join-Path $env:ProgramData 'CTOX'; ${command}; if($LASTEXITCODE -ne 0){[Console]::Error.Write('${CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER}'); exit 1}`,
+    ];
+  }
   const assignment =
     stateRoot === undefined
       ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
@@ -221,7 +266,19 @@ export function buildCtoxSshShellUpdateCommand(
  * Reads only the native RxDB/WebRTC health document. The result is consumed in
  * Electron Main and reduced to booleans before it can reach the renderer.
  */
-export function buildCtoxSshDataPlaneStatusCommand(stateRoot?: string): readonly string[] {
+export function buildCtoxSshDataPlaneStatusCommand(
+  stateRoot?: string,
+  platform?: "macos" | "linux" | "windows" | "unknown",
+): readonly string[] {
+  if (platform === "windows") {
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `$env:CTOX_STATE_ROOT=Join-Path $env:ProgramData 'CTOX'; $ctox=Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; & $ctox business-os rxdb status --json; if($LASTEXITCODE -ne 0){[Console]::Error.Write('${CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER}'); exit 1}`,
+    ];
+  }
   const assignment =
     stateRoot === undefined
       ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
@@ -236,7 +293,19 @@ export function buildCtoxSshDataPlaneStatusCommand(stateRoot?: string): readonly
 }
 
 /** Reads the bounded, machine-readable CTOX install/version document. */
-export function buildCtoxSshVersionCommand(stateRoot?: string): readonly string[] {
+export function buildCtoxSshVersionCommand(
+  stateRoot?: string,
+  platform?: "macos" | "linux" | "windows" | "unknown",
+): readonly string[] {
+  if (platform === "windows") {
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `$ctox=Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; & $ctox version; if($LASTEXITCODE -ne 0){[Console]::Error.Write('${CTOX_SSH_VERSION_FAILURE_MARKER}'); exit 1}`,
+    ];
+  }
   const assignment =
     stateRoot === undefined
       ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
@@ -251,7 +320,19 @@ export function buildCtoxSshVersionCommand(stateRoot?: string): readonly string[
 }
 
 /** Fixed service restart after atomic slot activation; emits no remote output. */
-export function buildCtoxSshServiceRestartCommand(stateRoot?: string): readonly string[] {
+export function buildCtoxSshServiceRestartCommand(
+  stateRoot?: string,
+  platform?: "macos" | "linux" | "windows" | "unknown",
+): readonly string[] {
+  if (platform === "windows") {
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `$ctox=Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; & $ctox stop; if($LASTEXITCODE -eq 0){& $ctox start}; if($LASTEXITCODE -ne 0){[Console]::Error.Write('${CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER}'); exit 1}`,
+    ];
+  }
   const assignment =
     stateRoot === undefined
       ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
@@ -273,7 +354,19 @@ export function buildCtoxSshServiceRestartCommand(stateRoot?: string): readonly 
  * `CTOX_BIN` is honoured exactly as the local launch path honours it, so a
  * remote with the binary outside `PATH` behaves the same way.
  */
-export function buildCtoxSshInviteCommand(stateRoot?: string): readonly string[] {
+export function buildCtoxSshInviteCommand(
+  stateRoot?: string,
+  platform?: "macos" | "linux" | "windows" | "unknown",
+): readonly string[] {
+  if (platform === "windows") {
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `$env:CTOX_STATE_ROOT=Join-Path $env:ProgramData 'CTOX'; $ctox=Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; & $ctox business-os desktop invite --format json --ttl-hours ${SSH_INVITE_TTL_HOURS}; if($LASTEXITCODE -ne 0){[Console]::Error.Write('${CTOX_SSH_INVITE_FAILURE_MARKER}'); exit 1}`,
+    ];
+  }
   const assignment =
     stateRoot === undefined
       ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
@@ -289,6 +382,9 @@ export function buildCtoxSshInviteCommand(stateRoot?: string): readonly string[]
 
 export interface CtoxSshExecInput {
   readonly host: string;
+  readonly username?: string;
+  readonly port?: number;
+  readonly knownHostsLine?: string;
   readonly argv: readonly string[];
   readonly timeoutMs: number;
 }
@@ -335,6 +431,11 @@ export interface CtoxSshManagedInstance {
   readonly host: string;
   /** The configured state root, when one was configured. It stays in the main process. */
   readonly stateRoot?: string;
+  readonly username?: string;
+  readonly port?: number;
+  readonly platform?: "macos" | "linux" | "windows" | "unknown";
+  readonly architecture?: "arm64" | "x64" | "unknown";
+  readonly knownHostsLine?: string;
   readonly runtimeStatus: CtoxLocalDaemonRuntimeStatus;
 }
 
@@ -355,14 +456,33 @@ export function makeCtoxSshExec(services: {
     const target: DesktopSshEnvironmentTarget = {
       alias: input.host,
       hostname: input.host,
-      username: null,
-      port: null,
+      username: input.username ?? null,
+      port: input.port ?? null,
     };
-    return runSshCommand(target, {
-      remoteCommandArgs: [...input.argv],
-      timeoutMs: input.timeoutMs,
-      batchMode: "yes",
+    return Effect.gen(function* () {
+      let preHostArgs: readonly string[] | undefined;
+      if (input.knownHostsLine !== undefined) {
+        const directory = yield* services.fileSystem.makeTempDirectoryScoped({
+          prefix: "workjet-ctox-known-host-",
+        });
+        const knownHostsPath = services.path.join(directory, "known_hosts");
+        yield* services.fileSystem.writeFileString(knownHostsPath, `${input.knownHostsLine}\n`);
+        yield* services.fileSystem.chmod(knownHostsPath, 0o600);
+        preHostArgs = [
+          "-o",
+          `UserKnownHostsFile=${knownHostsPath}`,
+          "-o",
+          "StrictHostKeyChecking=yes",
+        ];
+      }
+      return yield* runSshCommand(target, {
+        ...(preHostArgs === undefined ? {} : { preHostArgs }),
+        remoteCommandArgs: [...input.argv],
+        timeoutMs: input.timeoutMs,
+        batchMode: "yes",
+      });
     }).pipe(
+      Effect.scoped,
       Effect.map(
         (result): CtoxSshExecResult => ({
           stdout: result.stdout,
@@ -398,7 +518,10 @@ const discoverOne = Effect.fn("CtoxSshManagedSource.discoverOne")(function* (
       ? undefined
       : yield* exec({
           host: entry.host,
-          argv: buildCtoxSshDescriptorCommand(entry.stateRoot),
+          ...(entry.username === undefined ? {} : { username: entry.username }),
+          ...(entry.port === undefined ? {} : { port: entry.port }),
+          ...(entry.knownHostsLine === undefined ? {} : { knownHostsLine: entry.knownHostsLine }),
+          argv: buildCtoxSshDescriptorCommand(entry.stateRoot, entry.platform),
           timeoutMs: SSH_DESCRIPTOR_TIMEOUT_MS,
         }).pipe(
           Effect.map((result): string | undefined => result.stdout),
@@ -413,6 +536,8 @@ const discoverOne = Effect.fn("CtoxSshManagedSource.discoverOne")(function* (
       source: "ssh_managed",
       displayName: entry.displayName,
       status: instanceStatus(runtimeStatus),
+      ...(entry.platform === undefined ? {} : { platform: entry.platform }),
+      ...(entry.architecture === undefined ? {} : { architecture: entry.architecture }),
       healthSummary: {
         dataPlane: "rxdb-webrtc",
         dataPlaneReady: false,
@@ -422,6 +547,11 @@ const discoverOne = Effect.fn("CtoxSshManagedSource.discoverOne")(function* (
     },
     host: entry.host,
     ...(entry.stateRoot === undefined ? {} : { stateRoot: entry.stateRoot }),
+    ...(entry.username === undefined ? {} : { username: entry.username }),
+    ...(entry.port === undefined ? {} : { port: entry.port }),
+    ...(entry.platform === undefined ? {} : { platform: entry.platform }),
+    ...(entry.architecture === undefined ? {} : { architecture: entry.architecture }),
+    ...(entry.knownHostsLine === undefined ? {} : { knownHostsLine: entry.knownHostsLine }),
     runtimeStatus,
   } satisfies CtoxSshManagedInstance;
 });
@@ -482,6 +612,11 @@ export function addCtoxSshManagedEntry(
     host: input.host,
     displayName: input.displayName ?? input.host,
     ...(input.stateRoot === undefined ? {} : { stateRoot: input.stateRoot }),
+    ...(input.username === undefined ? {} : { username: input.username }),
+    ...(input.port === undefined ? {} : { port: input.port }),
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+    ...(input.architecture === undefined ? {} : { architecture: input.architecture }),
+    ...(input.knownHostsLine === undefined ? {} : { knownHostsLine: input.knownHostsLine }),
   };
   if (!Schema.is(CtoxSshManagedConfigEntry)(entry)) return { _tag: "invalid" };
   const retained = document.instances.filter((existing) => existing.id !== entry.id);
@@ -523,6 +658,8 @@ export function ctoxSshManagedDescriptor(entry: CtoxSshManagedConfigEntry): Ctox
     source: "ssh_managed",
     displayName: entry.displayName,
     status: "offline",
+    ...(entry.platform === undefined ? {} : { platform: entry.platform }),
+    ...(entry.architecture === undefined ? {} : { architecture: entry.architecture }),
     healthSummary: {
       dataPlane: "rxdb-webrtc",
       dataPlaneReady: false,

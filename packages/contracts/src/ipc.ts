@@ -1254,6 +1254,7 @@ export interface DesktopCtoxBridge {
   resumeShellFleetInstance?: (instanceId: string) => Promise<CtoxShellFleetInventoryResult>;
   startShellFleetRollout?: () => Promise<CtoxShellFleetRolloutResult>;
   getShellFleetRolloutStatus?: () => Promise<CtoxShellFleetRolloutStatus>;
+  resumeShellFleetRollout?: () => Promise<CtoxShellFleetRolloutStatus>;
   onShellFleetRolloutStatus?: (
     listener: (status: CtoxShellFleetRolloutStatus) => void,
   ) => () => void;

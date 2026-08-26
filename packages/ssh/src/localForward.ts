@@ -78,6 +78,8 @@ export interface SshLocalForwardSpawnInput {
   readonly localPort: number;
   readonly remotePort: number;
   readonly authOptions?: SshAuthOptions;
+  /** Host-key pinning or other options inserted before the destination. */
+  readonly preHostArgs?: ReadonlyArray<string>;
 }
 
 export interface SshLocalForwardProcess {
@@ -139,6 +141,7 @@ export const spawnSshLocalForwardProcess = Effect.fn(
     "-N",
     "-L",
     `${input.localPort}:${LOOPBACK_HOST}:${input.remotePort}`,
+    ...(input.preHostArgs ?? []),
     hostSpec,
   ];
   const sshCommand = yield* resolveSshCommand;
@@ -267,6 +270,8 @@ export const tcpConnectProbe: SshLocalForwardProbe = (port) =>
 
 export interface SshLocalForwardOptions {
   readonly authOptions?: SshAuthOptions;
+  /** Host-key pinning or other options inserted before the destination. */
+  readonly preHostArgs?: ReadonlyArray<string>;
   /** Bounded wait for `ssh` to bind the local end. Default 10s. */
   readonly startupTimeoutMs?: number;
   /** Overridable so tests need neither a real `ssh` nor a real listener. */
@@ -338,6 +343,7 @@ export const openSshLocalForward = Effect.fn("ssh/localForward.openSshLocalForwa
     localPort,
     remotePort,
     ...(options.authOptions === undefined ? {} : { authOptions: options.authOptions }),
+    ...(options.preHostArgs === undefined ? {} : { preHostArgs: options.preHostArgs }),
   }).pipe(
     Effect.provideService(Scope.Scope, forwardScope),
     Effect.mapError(

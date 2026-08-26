@@ -10,6 +10,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import type {
+  CtoxSshManagedInstanceAddInput,
   DesktopSshEnvironmentTarget,
   WorkjetProvisioningEvent,
   WorkjetProvisioningGetResult,
@@ -213,6 +214,24 @@ Write-Output 'platform=windows'; Write-Output ('arch=' + [Runtime.InteropService
 
 function remoteTargetKey(target: WorkjetProvisioningTarget): string {
   return target._tag === "local" ? "local" : targetConnectionKey(target.ssh);
+}
+
+function sshManagedInputFromPreflight(
+  preflight: WorkjetProvisioningPreflight,
+  knownHostsLine: string | null,
+): CtoxSshManagedInstanceAddInput | null {
+  if (preflight.target._tag !== "ssh" || knownHostsLine === null) return null;
+  const target = preflight.target.ssh;
+  const host = target.alias.trim() || target.hostname.trim();
+  return {
+    host,
+    displayName: host,
+    ...(target.username === null ? {} : { username: target.username }),
+    ...(target.port === null ? {} : { port: target.port }),
+    platform: preflight.platform,
+    architecture: preflight.architecture,
+    knownHostsLine,
+  };
 }
 
 function safeMessage(error: unknown, fallback: string): string {
@@ -721,9 +740,8 @@ export const make = Effect.gen(function* () {
         });
         const posixInvite = `ctox_bin="$(command -v ctox || printf '%s' "$HOME/.local/bin/ctox")"\n"$ctox_bin" business-os desktop invite --format json --ttl-hours 168 --display-name Workjet`;
         const windowsInvite = `$ctox=Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; & $ctox business-os desktop invite --format json --ttl-hours 168 --display-name Workjet`;
-        let inviteResult: CommandResult;
         if (record.public.target._tag === "local") {
-          inviteResult = yield* Effect.tryPromise(() =>
+          const inviteResult = yield* Effect.tryPromise(() =>
             record.public.platform === "windows"
               ? runLocalCommand(
                   "powershell.exe",
@@ -732,30 +750,22 @@ export const make = Effect.gen(function* () {
                 )
               : runLocalCommand("sh", ["-s"], posixInvite),
           );
+          yield* registry.importInvite(inviteResult.stdout.trim());
         } else if (record.knownHostsLine !== null) {
-          const target = record.public.target.ssh;
-          inviteResult = yield* runRemoteAuthenticated(
-            target,
-            record.knownHostsLine,
-            (knownHostsPath, authSecret) =>
-              record.public.platform === "windows"
-                ? sshCommand(
-                    target,
-                    knownHostsPath,
-                    authSecret,
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
-                    windowsInvite,
-                  )
-                : sshCommand(target, knownHostsPath, authSecret, ["sh", "-s"], posixInvite),
-          );
+          const managedInput = sshManagedInputFromPreflight(record.public, record.knownHostsLine);
+          if (managedInput === null)
+            return yield* Effect.fail(new Error("Approved SSH target is missing."));
+          yield* registry.addSshManagedInstance(managedInput);
         } else
           return yield* Effect.fail(new Error("Approved SSH host key is missing for pairing."));
-        yield* registry.importInvite(inviteResult.stdout.trim());
         appendEvent(entry, {
           phase: "pairing",
           status: "completed",
           percent: 98,
-          message: "CTOX backend paired with Workjet",
+          message:
+            record.public.target._tag === "local"
+              ? "CTOX backend paired with Workjet"
+              : "CTOX backend registered as an SSH-managed Workjet instance",
         });
       }
       if (
@@ -847,4 +857,5 @@ export const testing = {
   windowsPreflightScript: WINDOWS_PREFLIGHT_SCRIPT,
   linuxDesktopEntry: LINUX_DESKTOP_ENTRY,
   linuxDesktopRegistrationScript: LINUX_DESKTOP_REGISTRATION_SCRIPT,
+  sshManagedInputFromPreflight,
 };

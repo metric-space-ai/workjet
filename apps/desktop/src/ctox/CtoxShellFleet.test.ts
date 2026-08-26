@@ -6,9 +6,12 @@ import { expect } from "vite-plus/test";
 import {
   ctoxShellFleetRowFromStatus,
   CTOX_SHELL_FLEET_ROLLOUT_POLICY,
+  isCtoxShellFleetRowEligible,
+  isCtoxShellFleetRowHealthy,
   parseCtoxBackendVersion,
   parseCtoxDataPlaneProbe,
   planCtoxShellRolloutWaves,
+  recoverInterruptedCtoxShellRollout,
 } from "./CtoxShellFleet.ts";
 
 describe("parseCtoxBackendVersion", () => {
@@ -29,6 +32,9 @@ function row(
     displayName,
     source,
     reachable: true,
+    platform: source === "local_daemon" ? "macos" : "linux",
+    architecture: "arm64",
+    administrativeAccess: "available",
     backendVersion: "0.3.22",
     shell: {
       activeVersion: "0.1.0",
@@ -58,6 +64,17 @@ describe("planCtoxShellRolloutWaves", () => {
       row("other", "Office"),
     ];
     expect(planCtoxShellRolloutWaves(rows)).toEqual([["local"], ["gpu3"], ["gpu1"], ["other"]]);
+  });
+
+  it("chooses one canary per supported remote platform before ordinary waves", () => {
+    const local = row("local", "Local CTOX", "local_daemon");
+    const linuxGpu3 = row("gpu3", "GPU3 A4500");
+    const linuxOther = row("linux-2", "Linux Office");
+    const mac = { ...row("mac-1", "Mac Studio"), platform: "macos" as const };
+    const windows = { ...row("win-1", "Windows Workstation"), platform: "windows" as const };
+    const waves = planCtoxShellRolloutWaves([local, linuxOther, windows, linuxGpu3, mac]);
+    expect(waves.slice(0, 4)).toEqual([["local"], ["gpu3"], ["win-1"], ["mac-1"]]);
+    expect(waves.flat()).toContain("linux-2");
   });
 
   it("excludes current, paused and non-administrable rows", () => {
@@ -175,5 +192,88 @@ describe("ctoxShellFleetRowFromStatus", () => {
     });
     expect(result.blocker).toBeNull();
     expect(result.shell.health).toBe("healthy");
+  });
+
+  it("blocks protocol-incompatible releases even when the data plane is healthy", () => {
+    const current = row("legacy", "Legacy CTOX");
+    const result = ctoxShellFleetRowFromStatus({
+      instance: {
+        id: current.instanceId,
+        displayName: current.displayName,
+        source: current.source,
+        status: "available",
+        healthSummary: {
+          dataPlane: "rxdb-webrtc",
+          dataPlaneReady: true,
+          httpDataProxy: false,
+          nativePeerObserved: true,
+        },
+      },
+      shell: { ...current.shell, phase: "incompatible" },
+      dataPlane: { nativePeerObserved: true, dataPlaneReady: true },
+    });
+    expect(result.blocker).toBe("incompatible");
+    expect(result.requiredOperatorStep).toContain("Protokollversion");
+    expect(isCtoxShellFleetRowEligible(result)).toBe(false);
+  });
+
+  it("fails rollout health closed for offline, blocked and non-current rows", () => {
+    const current = {
+      ...row("current", "Current"),
+      shell: { ...row("x", "x").shell, phase: "current" as const },
+    };
+    expect(isCtoxShellFleetRowHealthy(current)).toBe(true);
+    expect(isCtoxShellFleetRowHealthy({ ...current, reachable: false })).toBe(false);
+    expect(isCtoxShellFleetRowHealthy({ ...current, blocker: "paused" })).toBe(false);
+    expect(
+      isCtoxShellFleetRowHealthy({
+        ...current,
+        shell: { ...current.shell, health: "degraded" },
+      }),
+    ).toBe(false);
+    expect(isCtoxShellFleetRowHealthy(undefined)).toBe(false);
+  });
+});
+
+describe("recoverInterruptedCtoxShellRollout", () => {
+  it("restores an interrupted rollout as an explicit operator-resumable pause", () => {
+    const interrupted = {
+      phase: "observing" as const,
+      releaseVersion: "0.1.9",
+      startedAt: "2026-08-26T00:00:00Z",
+      updatedAt: "2026-08-26T00:01:00Z",
+      currentWave: 2,
+      totalWaves: 4,
+      instanceIds: ["local", "gpu3"],
+      completedInstanceIds: ["local"],
+      failedInstanceId: null,
+      errorCode: null,
+      pauseReason: null,
+      pausedAt: null,
+    };
+    const recovered = recoverInterruptedCtoxShellRollout(interrupted, "2026-08-26T00:02:00Z");
+    expect(recovered?.phase).toBe("paused");
+    expect(recovered?.currentWave).toBe(2);
+    expect(recovered?.completedInstanceIds).toEqual(["local"]);
+    expect(recovered?.errorCode).toBe("desktop_restart_interrupted_rollout");
+    expect(recovered?.pauseReason).toContain("bewusst fortsetzen");
+  });
+
+  it("does not rewrite terminal rollout states", () => {
+    const terminal = {
+      phase: "completed" as const,
+      releaseVersion: "0.1.9",
+      startedAt: null,
+      updatedAt: "2026-08-26T00:00:00Z",
+      currentWave: 0,
+      totalWaves: 0,
+      instanceIds: [],
+      completedInstanceIds: [],
+      failedInstanceId: null,
+      errorCode: null,
+      pauseReason: null,
+      pausedAt: null,
+    };
+    expect(recoverInterruptedCtoxShellRollout(terminal, terminal.updatedAt)).toBeNull();
   });
 });

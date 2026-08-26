@@ -265,6 +265,12 @@ export interface CtoxSshManagedTarget {
   readonly descriptor: CtoxManagedInstance;
   readonly host: string;
   readonly stateRoot?: string;
+  readonly username?: string;
+  readonly port?: number;
+  readonly platform?: "macos" | "linux" | "windows" | "unknown";
+  readonly architecture?: "arm64" | "x64" | "unknown";
+  /** Main-process-only credential-free host-key pin. */
+  readonly knownHostsLine?: string;
 }
 
 export interface CtoxPairedInstanceRemoval {
@@ -1238,6 +1244,11 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         host: target.host,
         ...(target.stateRoot === undefined ? {} : { stateRoot: target.stateRoot }),
+        ...(target.username === undefined ? {} : { username: target.username }),
+        ...(target.port === undefined ? {} : { port: target.port }),
+        ...(target.platform === undefined ? {} : { platform: target.platform }),
+        ...(target.architecture === undefined ? {} : { architecture: target.architecture }),
+        ...(target.knownHostsLine === undefined ? {} : { knownHostsLine: target.knownHostsLine }),
       } satisfies CtoxSshManagedTarget;
     },
   );

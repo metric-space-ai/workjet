@@ -75,7 +75,9 @@ function isShellFleetRolloutStatus(value: unknown): value is CtoxShellFleetRollo
     isIdList(status.instanceIds) &&
     isIdList(status.completedInstanceIds) &&
     nullableString(status.failedInstanceId, 256) &&
-    nullableString(status.errorCode, 128)
+    nullableString(status.errorCode, 128) &&
+    nullableString(status.pauseReason, 256) &&
+    nullableString(status.pausedAt, 64)
   );
 }
 
@@ -275,6 +277,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_START_CHANNEL),
     getShellFleetRolloutStatus: () =>
       ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL),
+    resumeShellFleetRollout: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_RESUME_CHANNEL),
     onShellFleetRolloutStatus: (listener) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, status: unknown) => {
         if (!isShellFleetRolloutStatus(status)) return;

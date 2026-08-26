@@ -156,11 +156,17 @@ export interface CtoxSshForward {
  */
 export type CtoxSshForwardOpener = (input: {
   readonly host: string;
+  readonly username?: string;
+  readonly port?: number;
+  readonly knownHostsLine?: string;
   readonly remotePort: number;
 }) => Effect.Effect<CtoxSshForward, CtoxSshManagedLaunchError, Scope.Scope>;
 
 export interface CtoxSshInviteExecInput {
   readonly host: string;
+  readonly username?: string;
+  readonly port?: number;
+  readonly knownHostsLine?: string;
   readonly argv: readonly string[];
   readonly timeoutMs: number;
 }
@@ -205,9 +211,39 @@ export interface CtoxSshManagedLaunchOptions {
   readonly nowEpochMs?: () => number;
 }
 
-function sshTarget(host: string): DesktopSshEnvironmentTarget {
-  return { alias: host, hostname: host, username: null, port: null };
+function sshTarget(input: {
+  readonly host: string;
+  readonly username?: string;
+  readonly port?: number;
+}): DesktopSshEnvironmentTarget {
+  return {
+    alias: input.host,
+    hostname: input.host,
+    username: input.username ?? null,
+    port: input.port ?? null,
+  };
 }
+
+const withPinnedKnownHost = <A, E, R>(
+  services: { readonly fileSystem: FileSystem.FileSystem; readonly path: Path.Path },
+  knownHostsLine: string | undefined,
+  use: (preHostArgs: readonly string[] | undefined) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    if (knownHostsLine === undefined) return yield* use(undefined);
+    const directory = yield* services.fileSystem.makeTempDirectoryScoped({
+      prefix: "workjet-ctox-known-host-",
+    });
+    const knownHostsPath = services.path.join(directory, "known_hosts");
+    yield* services.fileSystem.writeFileString(knownHostsPath, `${knownHostsLine}\n`);
+    yield* services.fileSystem.chmod(knownHostsPath, 0o600);
+    return yield* use([
+      "-o",
+      `UserKnownHostsFile=${knownHostsPath}`,
+      "-o",
+      "StrictHostKeyChecking=yes",
+    ]);
+  });
 
 /**
  * The production invite mint. `runSshCommand` is reused unchanged, so target
@@ -220,11 +256,15 @@ export function makeCtoxSshInviteExec(services: {
   readonly path: Path.Path;
 }): CtoxSshInviteExec {
   return (input) =>
-    runSshCommand(sshTarget(input.host), {
-      remoteCommandArgs: [...input.argv],
-      timeoutMs: input.timeoutMs,
-      batchMode: "yes",
-    }).pipe(
+    withPinnedKnownHost(services, input.knownHostsLine, (preHostArgs) =>
+      runSshCommand(sshTarget(input), {
+        ...(preHostArgs === undefined ? {} : { preHostArgs }),
+        remoteCommandArgs: [...input.argv],
+        timeoutMs: input.timeoutMs,
+        batchMode: "yes",
+      }),
+    ).pipe(
+      Effect.scoped,
       Effect.map(
         (result): CtoxSshInviteExecResult => ({ stdout: result.stdout, stderr: result.stderr }),
       ),
@@ -243,9 +283,12 @@ export function makeCtoxSshForwardOpener(services: {
   readonly net: NetService.NetService["Service"];
 }): CtoxSshForwardOpener {
   return (input) =>
-    openSshLocalForward(sshTarget(input.host), input.remotePort, {
-      authOptions: { batchMode: "yes", interactiveAuth: false },
-    }).pipe(
+    withPinnedKnownHost(services, input.knownHostsLine, (preHostArgs) =>
+      openSshLocalForward(sshTarget(input), input.remotePort, {
+        ...(preHostArgs === undefined ? {} : { preHostArgs }),
+        authOptions: { batchMode: "yes", interactiveAuth: false },
+      }),
+    ).pipe(
       Effect.map((forward): CtoxSshForward => ({ localPort: forward.localPort })),
       Effect.mapError(() => launchError("forward_failed")),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, services.spawner),
@@ -297,10 +340,17 @@ export const make = Effect.fn("CtoxSshManagedLaunch.make")(function* (
   const mintInvite = Effect.fn("CtoxSshManagedLaunch.mintInvite")(function* (target: {
     readonly host: string;
     readonly stateRoot?: string;
+    readonly username?: string;
+    readonly port?: number;
+    readonly knownHostsLine?: string;
+    readonly platform?: "macos" | "linux" | "windows" | "unknown";
   }) {
     const result = yield* exec({
       host: target.host,
-      argv: buildCtoxSshInviteCommand(target.stateRoot),
+      ...(target.username === undefined ? {} : { username: target.username }),
+      ...(target.port === undefined ? {} : { port: target.port }),
+      ...(target.knownHostsLine === undefined ? {} : { knownHostsLine: target.knownHostsLine }),
+      argv: buildCtoxSshInviteCommand(target.stateRoot, target.platform),
       timeoutMs: CTOX_SSH_INVITE_TIMEOUT_MS,
     });
     // The pipeline's exit status is `head`'s, so the CLI announces its own
@@ -325,6 +375,10 @@ export const make = Effect.fn("CtoxSshManagedLaunch.make")(function* (
     const invite = yield* mintInvite({
       host: target.host,
       ...(target.stateRoot === undefined ? {} : { stateRoot: target.stateRoot }),
+      ...(target.username === undefined ? {} : { username: target.username }),
+      ...(target.port === undefined ? {} : { port: target.port }),
+      ...(target.knownHostsLine === undefined ? {} : { knownHostsLine: target.knownHostsLine }),
+      ...(target.platform === undefined ? {} : { platform: target.platform }),
     });
     const now = yield* currentTimeMillis;
     // The registry's one invite decoder: same bounds, same normalization, same
@@ -343,9 +397,13 @@ export const make = Effect.fn("CtoxSshManagedLaunch.make")(function* (
     const signalingUrls = yield* Effect.gen(function* () {
       const portMapping = new Map<number, number>();
       for (const remotePort of remotePorts) {
-        const forward = yield* openForward({ host: target.host, remotePort }).pipe(
-          Effect.provideService(Scope.Scope, forwardScope),
-        );
+        const forward = yield* openForward({
+          host: target.host,
+          ...(target.username === undefined ? {} : { username: target.username }),
+          ...(target.port === undefined ? {} : { port: target.port }),
+          ...(target.knownHostsLine === undefined ? {} : { knownHostsLine: target.knownHostsLine }),
+          remotePort,
+        }).pipe(Effect.provideService(Scope.Scope, forwardScope));
         portMapping.set(remotePort, forward.localPort);
       }
       const rewritten = rewriteCtoxSshSignalingUrls(pairing.signalingUrls, portMapping);

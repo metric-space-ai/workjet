@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 
 import {
   BusinessOsShellUpdateStatus,
+  CtoxShellFleetRolloutStatus,
   type CtoxManagedInstance,
   type CtoxShellFleetActionInput,
   type CtoxShellFleetActionResult,
@@ -13,7 +14,6 @@ import {
   type CtoxShellFleetPauseInput,
   type CtoxShellFleetRow,
   type CtoxShellFleetRolloutResult,
-  type CtoxShellFleetRolloutStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -50,6 +50,8 @@ import {
 const MAX_OUTPUT_BYTES = 65_536;
 const COMMAND_TIMEOUT = Duration.minutes(15);
 const PAUSE_FILE = "ctox-shell-fleet-pauses.json";
+const RELEASE_PAUSE_FILE = "ctox-shell-fleet-release-pause.json";
+const ROLLOUT_STATE_FILE = "ctox-shell-fleet-rollout.json";
 export const CTOX_SHELL_FLEET_STATUS_FILE = "ctox/shell-fleet-status.json";
 export const CTOX_SHELL_FLEET_ROLLOUT_POLICY = Object.freeze({
   startupDelay: "30 seconds",
@@ -58,13 +60,44 @@ export const CTOX_SHELL_FLEET_ROLLOUT_POLICY = Object.freeze({
   waveObservation: "15 minutes",
   automaticRetryCount: 1,
 });
+const RUNNING_ROLLOUT_PHASES = new Set<CtoxShellFleetRolloutStatus["phase"]>([
+  "inventory",
+  "local_canary",
+  "platform_canary",
+  "wave",
+  "observing",
+]);
 
 interface PauseRecord {
   readonly reason: string;
   readonly expiresAt: string;
 }
 
+interface ReleasePauseRecord {
+  readonly releaseVersion: string;
+  readonly reason: string;
+  readonly pausedAt: string;
+}
+
 type PauseMap = Readonly<Record<string, PauseRecord>>;
+
+function hostPlatform(instance: CtoxManagedInstance): CtoxShellFleetRow["platform"] {
+  if (instance.platform !== undefined) return instance.platform;
+  if (instance.source !== "local_daemon") return "unknown";
+  return process.platform === "darwin"
+    ? "macos"
+    : process.platform === "win32"
+      ? "windows"
+      : process.platform === "linux"
+        ? "linux"
+        : "unknown";
+}
+
+function hostArchitecture(instance: CtoxManagedInstance): CtoxShellFleetRow["architecture"] {
+  if (instance.architecture !== undefined) return instance.architecture;
+  if (instance.source !== "local_daemon") return "unknown";
+  return process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : "unknown";
+}
 
 export class CtoxShellFleet extends Context.Service<
   CtoxShellFleet,
@@ -79,6 +112,7 @@ export class CtoxShellFleet extends Context.Service<
     readonly resume: (instanceId: string) => Effect.Effect<CtoxShellFleetInventoryResult>;
     readonly rolloutStatus: Effect.Effect<CtoxShellFleetRolloutStatus>;
     readonly startRollout: Effect.Effect<CtoxShellFleetRolloutResult>;
+    readonly resumeRollout: Effect.Effect<CtoxShellFleetRolloutStatus>;
     readonly subscribeRollout: (
       listener: (status: CtoxShellFleetRolloutStatus) => void,
     ) => Effect.Effect<() => void>;
@@ -112,6 +146,14 @@ function blockedRow(
     displayName: instance.displayName,
     source: instance.source,
     reachable: instance.status !== "offline",
+    platform: hostPlatform(instance),
+    architecture: hostArchitecture(instance),
+    administrativeAccess:
+      instance.source === "local_daemon" || instance.source === "ssh_managed"
+        ? instance.status === "offline"
+          ? "unknown"
+          : "available"
+        : "unavailable",
     backendVersion: null,
     shell: blockedStatus(false),
     blocker,
@@ -151,22 +193,29 @@ export function ctoxShellFleetRowFromStatus(input: {
 }): CtoxShellFleetRow {
   const blocker: CtoxShellFleetBlocker | null = !input.shell.administrable
     ? "no_administrative_access"
-    : input.dataPlane.dataPlaneReady
-      ? null
-      : "data_plane_degraded";
+    : input.shell.phase === "incompatible"
+      ? "incompatible"
+      : input.dataPlane.dataPlaneReady
+        ? null
+        : "data_plane_degraded";
   const requiredOperatorStep =
     blocker === "no_administrative_access"
       ? "Administratorzugriff herstellen."
-      : blocker === "data_plane_degraded"
-        ? input.dataPlane.nativePeerObserved
-          ? "Workjet mit der Instanz verbinden und den authentifizierten RxDB/WebRTC-Datenkanal prüfen."
-          : "CTOX Sync Engine starten, Heartbeat und Health reparieren."
-        : null;
+      : blocker === "incompatible"
+        ? "Kompatible Workjet- und CTOX-Protokollversion installieren."
+        : blocker === "data_plane_degraded"
+          ? input.dataPlane.nativePeerObserved
+            ? "Workjet mit der Instanz verbinden und den authentifizierten RxDB/WebRTC-Datenkanal prüfen."
+            : "CTOX Sync Engine starten, Heartbeat und Health reparieren."
+          : null;
   return {
     instanceId: input.instance.id,
     displayName: input.instance.displayName,
     source: input.instance.source,
     reachable: true,
+    platform: hostPlatform(input.instance),
+    architecture: hostArchitecture(input.instance),
+    administrativeAccess: input.shell.administrable ? "available" : "unavailable",
     backendVersion: null,
     shell: {
       ...input.shell,
@@ -236,24 +285,85 @@ function collectBounded<E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<
   );
 }
 
-export function planCtoxShellRolloutWaves(rows: readonly CtoxShellFleetRow[]): readonly string[][] {
-  const eligible = rows.filter(
-    (row) =>
-      row.blocker === null &&
-      row.reachable &&
-      row.shell.administrable &&
-      row.shell.phase !== "current",
-  );
-  const waves: string[][] = [];
+export interface CtoxShellRolloutWave {
+  readonly kind: "local_canary" | "platform_canary" | "wave";
+  readonly platform: CtoxShellFleetRow["platform"] | null;
+  readonly instanceIds: readonly string[];
+}
+
+export function planCtoxShellRollout(
+  rows: readonly CtoxShellFleetRow[],
+): readonly CtoxShellRolloutWave[] {
+  const eligible = rows.filter((row) => isCtoxShellFleetRowEligible(row));
+  const waves: CtoxShellRolloutWave[] = [];
   const remaining = [...eligible];
   const localIndex = remaining.findIndex((row) => row.source === "local_daemon");
-  if (localIndex >= 0) waves.push([remaining.splice(localIndex, 1)[0]!.instanceId]);
-  const gpu3Index = remaining.findIndex((row) => /gpu\s*3/i.test(row.displayName));
-  if (gpu3Index >= 0) waves.push([remaining.splice(gpu3Index, 1)[0]!.instanceId]);
+  if (localIndex >= 0) {
+    const local = remaining.splice(localIndex, 1)[0]!;
+    waves.push({ kind: "local_canary", platform: local.platform, instanceIds: [local.instanceId] });
+  }
+  const platforms = [
+    ...new Set(remaining.map((row) => row.platform).filter((value) => value !== "unknown")),
+  ];
+  for (const platform of platforms) {
+    const samePlatform = remaining
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.platform === platform);
+    const preferred =
+      samePlatform.find(({ row }) => /gpu\s*3/i.test(row.displayName)) ?? samePlatform[0];
+    if (preferred === undefined) continue;
+    const canary = remaining.splice(preferred.index, 1)[0]!;
+    waves.push({ kind: "platform_canary", platform, instanceIds: [canary.instanceId] });
+  }
   const waveSize = Math.max(1, Math.min(3, Math.floor(Math.max(rows.length, 1) * 0.25)));
-  while (remaining.length > 0)
-    waves.push(remaining.splice(0, waveSize).map((row) => row.instanceId));
+  while (remaining.length > 0) {
+    waves.push({
+      kind: "wave",
+      platform: null,
+      instanceIds: remaining.splice(0, waveSize).map((row) => row.instanceId),
+    });
+  }
   return waves;
+}
+
+export function isCtoxShellFleetRowEligible(row: CtoxShellFleetRow): boolean {
+  return (
+    row.blocker === null &&
+    row.reachable &&
+    row.shell.administrable &&
+    row.shell.phase !== "current" &&
+    row.shell.phase !== "incompatible"
+  );
+}
+
+export function isCtoxShellFleetRowHealthy(row: CtoxShellFleetRow | undefined): boolean {
+  return (
+    row !== undefined &&
+    row.reachable &&
+    row.blocker === null &&
+    row.shell.phase === "current" &&
+    row.shell.health === "healthy"
+  );
+}
+
+export function recoverInterruptedCtoxShellRollout(
+  status: CtoxShellFleetRolloutStatus,
+  pausedAt: string,
+): CtoxShellFleetRolloutStatus | null {
+  if (!RUNNING_ROLLOUT_PHASES.has(status.phase)) return null;
+  return {
+    ...status,
+    phase: "paused",
+    updatedAt: pausedAt,
+    errorCode: "desktop_restart_interrupted_rollout",
+    pauseReason:
+      "Workjet wurde während des Rollouts neu gestartet. Inventar erneut prüfen und Rollout bewusst fortsetzen.",
+    pausedAt,
+  };
+}
+
+export function planCtoxShellRolloutWaves(rows: readonly CtoxShellFleetRow[]): readonly string[][] {
+  return planCtoxShellRollout(rows).map((wave) => [...wave.instanceIds]);
 }
 
 export const make = Effect.fn("CtoxShellFleet.make")(function* () {
@@ -266,6 +376,8 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
   const path = yield* Path.Path;
   const parentScope = yield* Scope.Scope;
   const pausePath = NodePath.join(environment.stateDir, PAUSE_FILE);
+  const releasePausePath = NodePath.join(environment.stateDir, RELEASE_PAUSE_FILE);
+  const rolloutStatePath = NodePath.join(environment.stateDir, ROLLOUT_STATE_FILE);
   const statusPath = NodePath.join(environment.stateDir, CTOX_SHELL_FLEET_STATUS_FILE);
   const nowIso = () => DateTime.formatIso(DateTime.nowUnsafe());
   const initialRolloutStatus: CtoxShellFleetRolloutStatus = {
@@ -279,11 +391,30 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     completedInstanceIds: [],
     failedInstanceId: null,
     errorCode: null,
+    pauseReason: null,
+    pausedAt: null,
   };
   const rolloutRef = yield* SynchronizedRef.make(initialRolloutStatus);
   const rolloutListeners = new Set<(status: CtoxShellFleetRolloutStatus) => void>();
+  const writeRolloutState = async (status: CtoxShellFleetRolloutStatus): Promise<void> => {
+    await NodeFSP.mkdir(NodePath.dirname(rolloutStatePath), { recursive: true });
+    const temporary = `${rolloutStatePath}.${process.pid}.tmp`;
+    await NodeFSP.writeFile(temporary, `${JSON.stringify(status, null, 2)}\n`, { mode: 0o600 });
+    await NodeFSP.rename(temporary, rolloutStatePath);
+  };
+  const readRolloutState = async (): Promise<CtoxShellFleetRolloutStatus | null> => {
+    try {
+      return Schema.decodeUnknownSync(CtoxShellFleetRolloutStatus)(
+        JSON.parse(await NodeFSP.readFile(rolloutStatePath, "utf8")),
+        { onExcessProperty: "error" },
+      );
+    } catch {
+      return null;
+    }
+  };
   const publishRollout = (status: CtoxShellFleetRolloutStatus) =>
-    SynchronizedRef.set(rolloutRef, status).pipe(
+    Effect.promise(() => writeRolloutState(status)).pipe(
+      Effect.andThen(SynchronizedRef.set(rolloutRef, status)),
       Effect.andThen(
         Effect.sync(() => {
           for (const listener of rolloutListeners) listener(status);
@@ -322,6 +453,43 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     const temporary = `${pausePath}.${process.pid}.tmp`;
     await NodeFSP.writeFile(temporary, `${JSON.stringify(pauses, null, 2)}\n`, { mode: 0o600 });
     await NodeFSP.rename(temporary, pausePath);
+  };
+
+  const readReleasePause = async (): Promise<ReleasePauseRecord | null> => {
+    try {
+      const value = JSON.parse(await NodeFSP.readFile(releasePausePath, "utf8")) as unknown;
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+      const record = value as Record<string, unknown>;
+      if (
+        typeof record.releaseVersion !== "string" ||
+        record.releaseVersion.length === 0 ||
+        record.releaseVersion.length > 128 ||
+        typeof record.reason !== "string" ||
+        record.reason.length === 0 ||
+        record.reason.length > 256 ||
+        typeof record.pausedAt !== "string" ||
+        !Number.isFinite(Date.parse(record.pausedAt))
+      )
+        return null;
+      return {
+        releaseVersion: record.releaseVersion,
+        reason: record.reason,
+        pausedAt: record.pausedAt,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const writeReleasePause = async (record: ReleasePauseRecord): Promise<void> => {
+    await NodeFSP.mkdir(NodePath.dirname(releasePausePath), { recursive: true });
+    const temporary = `${releasePausePath}.${process.pid}.tmp`;
+    await NodeFSP.writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+    await NodeFSP.rename(temporary, releasePausePath);
+  };
+
+  const clearReleasePause = async (): Promise<void> => {
+    await NodeFSP.rm(releasePausePath, { force: true });
   };
 
   const writeStatuses = async (rows: readonly CtoxShellFleetRow[]): Promise<void> => {
@@ -369,11 +537,9 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       stdout = yield* localExec(["version"]);
     } else if (instance.source === "ssh_managed") {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
-      const result = yield* sshExec({
-        host: target.host,
-        argv: buildCtoxSshVersionCommand(target.stateRoot),
-        timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
-      });
+      const result = yield* sshExec(
+        sshInput(target, buildCtoxSshVersionCommand(target.stateRoot, target.platform)),
+      );
       if (result.stderr?.includes(CTOX_SSH_VERSION_FAILURE_MARKER)) {
         return yield* Effect.fail("command_failed" as const);
       }
@@ -395,11 +561,9 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       stdout = yield* localExec(["business-os", "rxdb", "status", "--json"]);
     } else if (instance.source === "ssh_managed") {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
-      const result = yield* sshExec({
-        host: target.host,
-        argv: buildCtoxSshDataPlaneStatusCommand(target.stateRoot),
-        timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
-      });
+      const result = yield* sshExec(
+        sshInput(target, buildCtoxSshDataPlaneStatusCommand(target.stateRoot, target.platform)),
+      );
       if (result.stderr?.includes(CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER)) {
         return yield* Effect.fail("command_failed" as const);
       }
@@ -419,6 +583,18 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     path,
   });
 
+  const sshInput = (
+    target: CtoxInstanceRegistry.CtoxSshManagedTarget,
+    argv: readonly string[],
+  ) => ({
+    host: target.host,
+    ...(target.username === undefined ? {} : { username: target.username }),
+    ...(target.port === undefined ? {} : { port: target.port }),
+    ...(target.knownHostsLine === undefined ? {} : { knownHostsLine: target.knownHostsLine }),
+    argv,
+    timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
+  });
+
   const run = Effect.fn("CtoxShellFleet.run")(function* (
     instance: CtoxManagedInstance,
     action: CtoxShellUpdateCliAction,
@@ -434,12 +610,8 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     }
     if (instance.source === "ssh_managed") {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
-      const command = buildCtoxSshShellUpdateCommand(action, target.stateRoot);
-      const result = yield* sshExec({
-        host: target.host,
-        argv: command,
-        timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
-      });
+      const command = buildCtoxSshShellUpdateCommand(action, target.stateRoot, target.platform);
+      const result = yield* sshExec(sshInput(target, command));
       if (result.stderr?.includes(CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER)) {
         return yield* Effect.fail("command_failed" as const);
       }
@@ -461,17 +633,27 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     }
     if (instance.source === "ssh_managed") {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
-      const result = yield* sshExec({
-        host: target.host,
-        argv: buildCtoxSshServiceRestartCommand(target.stateRoot),
-        timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
-      });
+      const result = yield* sshExec(
+        sshInput(target, buildCtoxSshServiceRestartCommand(target.stateRoot, target.platform)),
+      );
       if (result.stderr?.includes(CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER)) {
         return yield* Effect.fail("command_failed" as const);
       }
       return;
     }
     return yield* Effect.fail("not_administrable" as const);
+  });
+
+  const awaitDataPlane = Effect.fn("CtoxShellFleet.awaitDataPlane")(function* (
+    instance: CtoxManagedInstance,
+  ) {
+    let latest: CtoxDataPlaneProbe = { nativePeerObserved: false, dataPlaneReady: false };
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      latest = yield* probeDataPlane(instance).pipe(Effect.orElseSucceed(() => latest));
+      if (latest.dataPlaneReady) return latest;
+      yield* Effect.sleep("2 seconds");
+    }
+    return latest;
   });
 
   const discover = Effect.gen(function* () {
@@ -553,26 +735,29 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         return { _tag: "failed", code: "not_administrable" } as const;
       }
       let shell: BusinessOsShellUpdateStatus;
+      let postRestartDataPlane: CtoxDataPlaneProbe | undefined;
       if (input.action === "check") {
         shell = yield* run(instance, "check");
       } else if (input.action === "rollback") {
         yield* run(instance, "rollback");
         yield* restartBackend(instance);
-        yield* Effect.sleep("2 seconds");
+        postRestartDataPlane = yield* awaitDataPlane(instance);
         shell = yield* run(instance, "status");
       } else {
         yield* run(instance, "check");
         yield* run(instance, "stage");
         yield* run(instance, "activate");
         yield* restartBackend(instance);
-        yield* Effect.sleep("2 seconds");
+        postRestartDataPlane = yield* awaitDataPlane(instance);
         shell = yield* run(instance, "status");
       }
       const [backendVersion, dataPlane] = yield* Effect.all([
         readBackendVersion(instance).pipe(Effect.orElseSucceed(() => null)),
-        probeDataPlane(instance).pipe(
-          Effect.orElseSucceed(() => ({ nativePeerObserved: false, dataPlaneReady: false })),
-        ),
+        postRestartDataPlane === undefined
+          ? probeDataPlane(instance).pipe(
+              Effect.orElseSucceed(() => ({ nativePeerObserved: false, dataPlaneReady: false })),
+            )
+          : Effect.succeed(postRestartDataPlane),
       ]);
       const row: CtoxShellFleetRow = {
         ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
@@ -612,21 +797,14 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       await writePauses(pauses);
     }).pipe(Effect.andThen(inventory));
 
-  const runningPhases = new Set<CtoxShellFleetRolloutStatus["phase"]>([
-    "inventory",
-    "local_canary",
-    "platform_canary",
-    "wave",
-    "observing",
-  ]);
-
   const executeRollout = Effect.fn("CtoxShellFleet.executeRollout")(function* (
-    waves: readonly (readonly string[])[],
+    waves: readonly CtoxShellRolloutWave[],
     started: CtoxShellFleetRolloutStatus,
   ) {
     const completed: string[] = [];
-    for (const [waveIndex, wave] of waves.entries()) {
-      const phase = waveIndex === 0 ? "local_canary" : waveIndex === 1 ? "platform_canary" : "wave";
+    for (const [waveIndex, wavePlan] of waves.entries()) {
+      const wave = wavePlan.instanceIds;
+      const phase = wavePlan.kind;
       yield* publishRollout({
         ...started,
         phase,
@@ -644,15 +822,32 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
           result = yield* action({ instanceId, action: "update" });
         }
         if (result._tag === "failed") {
-          yield* action({ instanceId, action: "rollback" }).pipe(Effect.ignore);
+          yield* Effect.forEach(wave, (id) => action({ instanceId: id, action: "rollback" }), {
+            concurrency: 1,
+            discard: true,
+          }).pipe(Effect.ignore);
+          const pausedAt = nowIso();
+          const pauseReason =
+            "Update nach einem automatischen Wiederholungsversuch fehlgeschlagen.";
+          if (started.releaseVersion !== null) {
+            yield* Effect.promise(() =>
+              writeReleasePause({
+                releaseVersion: started.releaseVersion!,
+                reason: pauseReason,
+                pausedAt,
+              }),
+            );
+          }
           yield* publishRollout({
             ...started,
             phase: "failed",
-            updatedAt: nowIso(),
+            updatedAt: pausedAt,
             currentWave: waveIndex + 1,
             completedInstanceIds: [...completed],
             failedInstanceId: instanceId,
             errorCode: "update_failed_after_retry",
+            pauseReason,
+            pausedAt,
           });
           return;
         }
@@ -666,7 +861,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         completedInstanceIds: [...completed],
       });
       yield* Effect.sleep(
-        waveIndex === 0
+        wavePlan.kind === "local_canary"
           ? CTOX_SHELL_FLEET_ROLLOUT_POLICY.localCanaryObservation
           : CTOX_SHELL_FLEET_ROLLOUT_POLICY.waveObservation,
       );
@@ -675,24 +870,49 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         observed._tag === "completed"
           ? wave.find((instanceId) => {
               const row = observed.rows.find((candidate) => candidate.instanceId === instanceId);
-              return (
-                row === undefined ||
-                row.blocker !== null ||
-                row.shell.phase !== "current" ||
-                row.shell.health !== "healthy"
-              );
+              return !isCtoxShellFleetRowHealthy(row);
             })
           : wave[0];
       if (unhealthy !== undefined) {
         yield* action({ instanceId: unhealthy, action: "rollback" }).pipe(Effect.ignore);
+        const retry = yield* action({ instanceId: unhealthy, action: "update" });
+        let recovered = false;
+        if (retry._tag === "completed") {
+          yield* Effect.sleep(CTOX_SHELL_FLEET_ROLLOUT_POLICY.waveObservation);
+          const retryInventory = yield* inventory;
+          const retryRow =
+            retryInventory._tag === "completed"
+              ? retryInventory.rows.find((candidate) => candidate.instanceId === unhealthy)
+              : undefined;
+          recovered = isCtoxShellFleetRowHealthy(retryRow);
+        }
+        if (recovered) continue;
+        yield* Effect.forEach(wave, (id) => action({ instanceId: id, action: "rollback" }), {
+          concurrency: 1,
+          discard: true,
+        }).pipe(Effect.ignore);
+        const pausedAt = nowIso();
+        const pauseReason =
+          "Health- oder RxDB/WebRTC-Beobachtung blieb nach einem Wiederholungsversuch fehlerhaft.";
+        if (started.releaseVersion !== null) {
+          yield* Effect.promise(() =>
+            writeReleasePause({
+              releaseVersion: started.releaseVersion!,
+              reason: pauseReason,
+              pausedAt,
+            }),
+          );
+        }
         yield* publishRollout({
           ...started,
           phase: "failed",
-          updatedAt: nowIso(),
+          updatedAt: pausedAt,
           currentWave: waveIndex + 1,
           completedInstanceIds: completed.filter((id) => id !== unhealthy),
           failedInstanceId: unhealthy,
           errorCode: "health_observation_failed",
+          pauseReason,
+          pausedAt,
         });
         return;
       }
@@ -708,7 +928,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
 
   const startRollout = Effect.gen(function* () {
     const current = yield* SynchronizedRef.get(rolloutRef);
-    if (runningPhases.has(current.phase)) {
+    if (RUNNING_ROLLOUT_PHASES.has(current.phase)) {
       return { _tag: "already_running", status: current } as const;
     }
     const checking: CtoxShellFleetRolloutStatus = {
@@ -728,16 +948,29 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       });
       return { _tag: "failed", code: "inventory_failed" } as const;
     }
-    const waves = planCtoxShellRolloutWaves(currentInventory.rows);
+    const waves = planCtoxShellRollout(currentInventory.rows);
     if (waves.length === 0) {
       yield* publishRollout({ ...checking, phase: "completed", updatedAt: nowIso() });
       return { _tag: "failed", code: "no_eligible_instances" } as const;
     }
-    const ids = waves.flat();
+    const ids = waves.flatMap((wave) => wave.instanceIds);
     const releaseVersion =
       currentInventory.rows
         .map((row) => row.shell.latestCompatibleVersion)
         .find((version): version is string => version !== null) ?? null;
+    const releasePause = yield* Effect.promise(readReleasePause);
+    if (releasePause !== null && releasePause.releaseVersion === releaseVersion) {
+      const paused: CtoxShellFleetRolloutStatus = {
+        ...checking,
+        phase: "paused",
+        releaseVersion,
+        updatedAt: nowIso(),
+        pauseReason: releasePause.reason,
+        pausedAt: releasePause.pausedAt,
+      };
+      yield* publishRollout(paused);
+      return { _tag: "failed", code: "rollout_failed" } as const;
+    }
     const started: CtoxShellFleetRolloutStatus = {
       ...checking,
       releaseVersion,
@@ -759,6 +992,34 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       return () => rolloutListeners.delete(listener);
     });
 
+  const resumeRollout = Effect.gen(function* () {
+    yield* Effect.promise(clearReleasePause);
+    const idle = { ...initialRolloutStatus, updatedAt: nowIso() };
+    yield* publishRollout(idle);
+    yield* startRollout.pipe(Effect.forkIn(parentScope));
+    return idle;
+  });
+
+  const persistedReleasePause = yield* Effect.promise(readReleasePause);
+  if (persistedReleasePause !== null) {
+    yield* publishRollout({
+      ...initialRolloutStatus,
+      phase: "paused",
+      releaseVersion: persistedReleasePause.releaseVersion,
+      updatedAt: nowIso(),
+      pauseReason: persistedReleasePause.reason,
+      pausedAt: persistedReleasePause.pausedAt,
+    });
+  } else {
+    const persistedRollout = yield* Effect.promise(readRolloutState);
+    if (persistedRollout !== null) {
+      const pausedAt = nowIso();
+      const recovered = recoverInterruptedCtoxShellRollout(persistedRollout, pausedAt);
+      if (recovered === null) yield* SynchronizedRef.set(rolloutRef, persistedRollout);
+      else yield* publishRollout(recovered);
+    }
+  }
+
   yield* Effect.gen(function* () {
     yield* Effect.sleep(CTOX_SHELL_FLEET_ROLLOUT_POLICY.startupDelay);
     while (true) {
@@ -774,6 +1035,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     resume,
     rolloutStatus: SynchronizedRef.get(rolloutRef),
     startRollout,
+    resumeRollout,
     subscribeRollout,
   });
 });

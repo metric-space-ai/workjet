@@ -34,7 +34,8 @@ android {
 dependencies {
   implementation project(':expo-modules-core')
   implementation 'androidx.webkit:webkit:1.13.0'
-  implementation platform('androidx.compose:compose-bom:2026.08.00')
+  // Keep Compose aligned with Clerk and Expo's AGP 8.12-compatible dependency line.
+  implementation platform('androidx.compose:compose-bom:2026.06.01')
   implementation 'androidx.activity:activity-compose'
   implementation 'androidx.compose.foundation:foundation'
   implementation 'androidx.compose.material3:material3'

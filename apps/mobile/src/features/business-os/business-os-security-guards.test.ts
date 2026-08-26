@@ -14,6 +14,9 @@ describe("Business OS native security guards", () => {
     expect(settings).toContain("QR-Code scannen");
     expect(settings).toContain("Erneuern");
     expect(settings).toContain("Widerrufen");
+    expect(settings).toContain("workjetDeviceInviteEnvironment");
+    expect(settings).toContain("importPairingPayload");
+    expect(settings).not.toContain("businessOsMobileInviteEnvironment");
   });
 
   it("requires isolated native profiles and canonical app origins", () => {

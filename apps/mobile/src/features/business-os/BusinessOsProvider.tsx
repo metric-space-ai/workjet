@@ -12,7 +12,13 @@ import { Alert } from "react-native";
 
 import { isBusinessOsPairLink } from "../../lib/workjetLinks";
 import { uuidv4 } from "../../lib/uuid";
-import { commitBusinessOsPairing, prepareBusinessOsPairing } from "./pairing/import-flow";
+import {
+  commitBusinessOsPairing,
+  prepareBusinessOsPairing,
+  prepareValidatedBusinessOsPairing,
+  type PreparedBusinessOsPairing,
+} from "./pairing/import-flow";
+import type { ValidatedBusinessOsInvite } from "./pairing/invite";
 import {
   forgetBusinessOsInstance,
   type BusinessOsInstance,
@@ -32,6 +38,10 @@ interface BusinessOsContextValue {
   readonly isReady: boolean;
   readonly select: (id: string) => Promise<void>;
   readonly importLink: (raw: string) => Promise<BusinessOsInstance | null>;
+  readonly importInvite: (
+    invite: ValidatedBusinessOsInvite,
+    options?: { readonly confirm?: boolean },
+  ) => Promise<BusinessOsInstance | null>;
   readonly forget: (instance: BusinessOsInstance) => Promise<void>;
   readonly refresh: () => Promise<void>;
 }
@@ -89,16 +99,26 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
     await nativeBusinessOsSelection.save(id);
   }, []);
 
-  const importLink = useCallback(
-    async (raw: string) => {
-      const prepared = prepareBusinessOsPairing(raw);
-      if (!(await confirmPairing(prepared))) return null;
+  const commitPrepared = useCallback(
+    async (prepared: PreparedBusinessOsPairing, shouldConfirm: boolean) => {
+      if (shouldConfirm && !(await confirmPairing(prepared))) return null;
       const instance = await commitBusinessOsPairing(prepared, dependencies);
       await nativeBusinessOsSelection.save(instance.id);
       await refresh();
       return instance;
     },
     [refresh],
+  );
+
+  const importLink = useCallback(
+    (raw: string) => commitPrepared(prepareBusinessOsPairing(raw), true),
+    [commitPrepared],
+  );
+
+  const importInvite = useCallback(
+    (invite: ValidatedBusinessOsInvite, options: { readonly confirm?: boolean } = {}) =>
+      commitPrepared(prepareValidatedBusinessOsPairing(invite), options.confirm !== false),
+    [commitPrepared],
   );
 
   const forget = useCallback(
@@ -127,8 +147,8 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
 
   const selected = instances.find((instance) => instance.id === selectedId) ?? null;
   const value = useMemo(
-    () => ({ forget, importLink, instances, isReady, refresh, select, selected }),
-    [forget, importLink, instances, isReady, refresh, select, selected],
+    () => ({ forget, importInvite, importLink, instances, isReady, refresh, select, selected }),
+    [forget, importInvite, importLink, instances, isReady, refresh, select, selected],
   );
   return <BusinessOsContext.Provider value={value}>{props.children}</BusinessOsContext.Provider>;
 }

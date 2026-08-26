@@ -17,6 +17,8 @@ const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 export interface Preferences {
   /** Persistent root navigation choice. Existing installations default to Code. */
   readonly workjetMode?: "code" | "business_os";
+  /** Explicit opt-out keeps unpaired, device-local Code usable after first launch. */
+  readonly workjetPairingOnboardingDismissed?: boolean;
   readonly liveActivitiesEnabled?: boolean;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
@@ -81,6 +83,7 @@ export class MobilePreferencesStore extends Context.Service<
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
     workjetMode?: "code" | "business_os";
+    workjetPairingOnboardingDismissed?: boolean;
     liveActivitiesEnabled?: boolean;
     baseFontSize?: number;
     terminalFontSize?: number | null;
@@ -98,6 +101,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (parsed.workjetMode === "code" || parsed.workjetMode === "business_os") {
     preferences.workjetMode = parsed.workjetMode;
+  }
+  if (typeof parsed.workjetPairingOnboardingDismissed === "boolean") {
+    preferences.workjetPairingOnboardingDismissed = parsed.workjetPairingOnboardingDismissed;
   }
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;

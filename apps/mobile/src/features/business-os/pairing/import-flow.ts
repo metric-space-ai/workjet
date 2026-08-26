@@ -20,7 +20,12 @@ export function prepareBusinessOsPairing(
   raw: string,
   options: { readonly now?: number } = {},
 ): PreparedBusinessOsPairing {
-  const invite = parseWorkjetBusinessOsPairLink(raw, options);
+  return prepareValidatedBusinessOsPairing(parseWorkjetBusinessOsPairLink(raw, options));
+}
+
+export function prepareValidatedBusinessOsPairing(
+  invite: ValidatedBusinessOsInvite,
+): PreparedBusinessOsPairing {
   return Object.freeze({
     invite,
     confirmation: Object.freeze({

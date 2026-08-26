@@ -8,46 +8,46 @@ import { AppText as Text } from "../../../components/AppText";
 import { ErrorBanner } from "../../../components/ErrorBanner";
 import { cn } from "../../../lib/cn";
 import { ConnectionSheetButton } from "../../connection/ConnectionSheetButton";
-import { businessOsMobileInviteEnvironment } from "../../../state/business-os-mobile-invite";
+import { workjetDeviceInviteEnvironment } from "../../../state/workjet-device-invite";
 import { useSavedRemoteConnections } from "../../../state/use-remote-environment-registry";
 import { useAtomCommand } from "../../../state/use-atom-command";
+import { useWorkjetDevicePairing } from "../../pairing/WorkjetDevicePairingProvider";
+import {
+  makeWorkjetDeviceInviteControl,
+  resolveWorkjetDevicePairingConnection,
+  unavailableWorkjetDeviceInviteControl,
+  type CreatedWorkjetDeviceInvite,
+  type WorkjetDeviceInviteControlPort,
+} from "../../pairing/workjet-device-invite-control";
 import { useBusinessOs } from "../BusinessOsProvider";
-import {
-  unavailableBusinessOsMobileInviteControl,
-  type BusinessOsMobileInviteControlPort,
-  type CreatedBusinessOsMobileInvite,
-} from "../invites/mobile-invite-control";
-import {
-  makeBusinessOsMobileInviteControl,
-  resolveBusinessOsControlConnection,
-} from "../invites/production-mobile-invite-control-core";
 import { setBusinessOsContentProtected } from "../security/content-protection";
 import { CredentialQrCode } from "./CredentialQrCode";
 
 function safeMessage(error: unknown): string {
-  return error instanceof Error && error.name === "BusinessOsInviteControlUnavailableError"
-    ? "Diese Workjet-Version kann auf diesem Backend noch keinen QR-Code erzeugen."
+  return error instanceof Error && error.name === "WorkjetDeviceInviteControlUnavailableError"
+    ? "Für dieses Backend ist keine vom Mobilgerät erreichbare Workjet-Verbindung verfügbar."
     : "Die Aktion konnte nicht abgeschlossen werden. Bitte erneut versuchen.";
 }
 
 export function BusinessOsSettingsPanel(props: {
-  readonly inviteControl?: BusinessOsMobileInviteControlPort;
+  readonly inviteControl?: WorkjetDeviceInviteControlPort;
 }) {
-  const { forget, importLink, instances, isReady, select, selected } = useBusinessOs();
+  const { forget, instances, isReady, select, selected } = useBusinessOs();
+  const { importPairingPayload } = useWorkjetDevicePairing();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const createInviteCommand = useAtomCommand(businessOsMobileInviteEnvironment.create, {
+  const createInviteCommand = useAtomCommand(workjetDeviceInviteEnvironment.create, {
     reportFailure: false,
   });
-  const revokeInviteCommand = useAtomCommand(businessOsMobileInviteEnvironment.revoke, {
+  const revokeInviteCommand = useAtomCommand(workjetDeviceInviteEnvironment.revoke, {
     reportFailure: false,
   });
+  const connection = useMemo(
+    () => resolveWorkjetDevicePairingConnection(selected, Object.values(savedConnectionsById)),
+    [savedConnectionsById, selected],
+  );
   const productionControl = useMemo(() => {
-    const connection = resolveBusinessOsControlConnection(
-      selected,
-      Object.values(savedConnectionsById),
-    );
-    if (!connection) return unavailableBusinessOsMobileInviteControl;
-    return makeBusinessOsMobileInviteControl({
+    if (!connection) return unavailableWorkjetDeviceInviteControl;
+    return makeWorkjetDeviceInviteControl({
       async create(input) {
         const result = await createInviteCommand({
           environmentId: connection.environmentId,
@@ -65,13 +65,11 @@ export function BusinessOsSettingsPanel(props: {
         return result.value;
       },
     });
-  }, [createInviteCommand, revokeInviteCommand, savedConnectionsById, selected]);
+  }, [connection, createInviteCommand, revokeInviteCommand]);
   const inviteControl = props.inviteControl ?? productionControl;
   const { width } = useWindowDimensions();
   const tabletLayout = width >= 720;
-  const [generatedInvite, setGeneratedInvite] = useState<CreatedBusinessOsMobileInvite | null>(
-    null,
-  );
+  const [generatedInvite, setGeneratedInvite] = useState<CreatedWorkjetDeviceInvite | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -106,48 +104,48 @@ export function BusinessOsSettingsPanel(props: {
   }, [generatedInvite]);
 
   const createInvite = useCallback(async () => {
-    if (!selected) return;
+    if (!connection) return;
     setBusy(true);
     setError(null);
     try {
-      setGeneratedInvite(await inviteControl.create({ backend: selected, ttlSeconds: 300 }));
+      setGeneratedInvite(await inviteControl.create({ connection, ttlSeconds: 300 }));
     } catch (cause) {
       setError(safeMessage(cause));
     } finally {
       setBusy(false);
     }
-  }, [inviteControl, selected]);
+  }, [connection, inviteControl]);
 
   const revokeInvite = useCallback(async () => {
-    if (!selected || !generatedInvite) return;
+    if (!connection || !generatedInvite) return;
     setBusy(true);
     setError(null);
     try {
-      await inviteControl.revoke({ backend: selected, inviteId: generatedInvite.inviteId });
+      await inviteControl.revoke({ connection, inviteId: generatedInvite.inviteId });
       setGeneratedInvite(null);
     } catch (cause) {
       setError(safeMessage(cause));
     } finally {
       setBusy(false);
     }
-  }, [generatedInvite, inviteControl, selected]);
+  }, [connection, generatedInvite, inviteControl]);
 
   const renewInvite = useCallback(async () => {
-    if (!selected) return;
+    if (!connection) return;
     setBusy(true);
     setError(null);
     try {
       if (generatedInvite) {
-        await inviteControl.revoke({ backend: selected, inviteId: generatedInvite.inviteId });
+        await inviteControl.revoke({ connection, inviteId: generatedInvite.inviteId });
       }
-      setGeneratedInvite(await inviteControl.create({ backend: selected, ttlSeconds: 300 }));
+      setGeneratedInvite(await inviteControl.create({ connection, ttlSeconds: 300 }));
     } catch (cause) {
       setGeneratedInvite(null);
       setError(safeMessage(cause));
     } finally {
       setBusy(false);
     }
-  }, [generatedInvite, inviteControl, selected]);
+  }, [connection, generatedInvite, inviteControl]);
 
   const openScanner = useCallback(async () => {
     if (cameraPermission?.granted) {
@@ -168,15 +166,15 @@ export function BusinessOsSettingsPanel(props: {
     async (raw: string) => {
       setError(null);
       try {
-        const result = await importLink(raw);
+        const result = await importPairingPayload(raw);
         if (result) setShowScanner(false);
-        return result !== null;
+        return result;
       } catch {
         setError("Der QR-Code oder Link ist ungültig oder abgelaufen.");
         return false;
       }
     },
-    [importLink],
+    [importPairingPayload],
   );
 
   const scan = useCallback(
@@ -245,8 +243,8 @@ export function BusinessOsSettingsPanel(props: {
             <View className="gap-1">
               <Text className="text-lg font-t3-bold text-foreground">CTOX Backends</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
-                Business OS verbindet sich direkt per RxDB und WebRTC. Code bleibt ohne Backend
-                nutzbar.
+                Ein Workjet-Pairing verbindet Code und Business OS. Geschäftsdaten synchronisieren
+                weiterhin ausschließlich direkt per RxDB und WebRTC.
               </Text>
             </View>
 
@@ -302,9 +300,10 @@ export function BusinessOsSettingsPanel(props: {
 
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
             <View className="gap-1">
-              <Text className="text-lg font-t3-bold text-foreground">Pairing weitergeben</Text>
+              <Text className="text-lg font-t3-bold text-foreground">Weiteres Gerät verbinden</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
-                Der QR-Code ist ein kurzlebiger Zugangsnachweis. Zeige ihn nur der Zielperson.
+                Ein kurzlebiger QR-Code verbindet auf dem Zielgerät gemeinsam Code und Business OS.
+                Zeige ihn nur der Zielperson.
               </Text>
             </View>
 
@@ -312,7 +311,9 @@ export function BusinessOsSettingsPanel(props: {
               <>
                 <CredentialQrCode value={generatedInvite.link} size={tabletLayout ? 240 : 264} />
                 <View className="items-center gap-1">
-                  <Text className="font-t3-bold text-foreground">{selected?.displayName}</Text>
+                  <Text className="font-t3-bold text-foreground">
+                    {generatedInvite.displayName}
+                  </Text>
                   <Text className="text-sm text-foreground-muted">
                     Gültig bis {new Date(generatedInvite.expiresAt).toLocaleTimeString()}
                   </Text>
@@ -338,7 +339,7 @@ export function BusinessOsSettingsPanel(props: {
                 icon="qrcode"
                 label="QR-Code anzeigen"
                 tone="primary"
-                disabled={busy || !selected}
+                disabled={busy || !connection}
                 onPress={() => void createInvite()}
               />
             )}

@@ -70,3 +70,17 @@ export function isBusinessOsPairLink(raw: string): boolean {
     return false;
   }
 }
+
+export function isWorkjetDevicePairLink(raw: string): boolean {
+  try {
+    const url = new URL(normalizeIncomingWorkjetUrl(raw));
+    return (
+      Object.values(CANONICAL_SCHEMES).includes(url.protocol.slice(0, -1)) &&
+      url.hostname === "pair" &&
+      (!url.pathname || url.pathname === "/") &&
+      url.searchParams.has("payload")
+    );
+  } catch {
+    return false;
+  }
+}

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildWorkjetUrl, isBusinessOsPairLink, normalizeIncomingWorkjetUrl } from "./workjetLinks";
+import {
+  buildWorkjetUrl,
+  isBusinessOsPairLink,
+  isWorkjetDevicePairLink,
+  normalizeIncomingWorkjetUrl,
+} from "./workjetLinks";
 
 describe("Workjet links", () => {
   it("only generates canonical Workjet schemes", () => {
@@ -29,6 +34,12 @@ describe("Workjet links", () => {
     expect(isBusinessOsPairLink("ctox-business-os-mobile://pair?payload=opaque-credential")).toBe(
       true,
     );
+  });
+
+  it("distinguishes the unified device invite from legacy Code-only pairing", () => {
+    expect(isWorkjetDevicePairLink("workjet://pair?payload=opaque-credential")).toBe(true);
+    expect(isWorkjetDevicePairLink("ctox-mobile://pair?payload=opaque-credential")).toBe(true);
+    expect(isWorkjetDevicePairLink("workjet://pair?pairingUrl=https%3A%2F%2Fhost")).toBe(false);
   });
 
   it("preserves unsupported legacy components for fail-closed validation", () => {

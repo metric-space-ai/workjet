@@ -12,10 +12,10 @@ import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../../components/AppText";
-import { BrandMark } from "../../../components/BrandMark";
 import { SymbolView } from "../../../components/AppSymbol";
 import { useThemeColor } from "../../../lib/useThemeColor";
 import { useWorkjetMode } from "../../mode/WorkjetModeProvider";
+import { useRegisterWorkjetProductSidebar } from "../../mode/WorkjetProductChromeProvider";
 import { useBusinessOs } from "../BusinessOsProvider";
 import { BusinessOsSettingsPanel } from "../components/BusinessOsSettingsPanel";
 import { BusinessOsShellHost } from "../shell/BusinessOsShellHost";
@@ -56,24 +56,12 @@ export interface BusinessOsActivatedShellPack {
 
 function SetupRoute() {
   const insets = useSafeAreaInsets();
-  const { setMode } = useWorkjetMode();
   return (
     <View
       className="flex-1 bg-screen px-5"
       style={{ paddingBottom: Math.max(insets.bottom, 20), paddingTop: Math.max(insets.top, 20) }}
     >
       <View className="w-full max-w-[920px] flex-1 self-center">
-        <View className="flex-row items-center justify-between">
-          <BrandMark compact />
-          <Pressable
-            accessibilityLabel="In Code wechseln"
-            accessibilityRole="button"
-            className="min-h-12 justify-center rounded-full bg-subtle-strong px-4 active:opacity-70"
-            onPress={() => setMode("code")}
-          >
-            <Text className="font-t3-bold">Code</Text>
-          </Pressable>
-        </View>
         <View className="pb-6 pt-10">
           <Text className="text-4xl font-t3-bold">Workjet einrichten</Text>
           <Text className="mt-3 max-w-[620px] text-base leading-normal text-foreground-muted">
@@ -85,6 +73,88 @@ function SetupRoute() {
           <BusinessOsSettingsPanel />
         </ScrollView>
       </View>
+    </View>
+  );
+}
+
+function BusinessOsSidebarButton(props: {
+  readonly icon: "folder.fill" | "magnifyingglass" | "clock" | "gearshape";
+  readonly label: string;
+  readonly selected: boolean;
+  readonly onPress: () => void;
+}) {
+  const foreground = useThemeColor("--color-foreground");
+  const muted = useThemeColor("--color-foreground-muted");
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: props.selected }}
+      className={
+        props.selected
+          ? "min-h-12 flex-row items-center gap-3 rounded-[13px] bg-subtle-strong px-3"
+          : "min-h-12 flex-row items-center gap-3 rounded-[13px] px-3 active:bg-subtle-strong/70"
+      }
+      onPress={props.onPress}
+    >
+      <SymbolView
+        name={props.icon}
+        size={20}
+        tintColor={props.selected ? foreground : muted}
+        type="monochrome"
+      />
+      <Text
+        className={
+          props.selected
+            ? "text-sm font-t3-bold text-foreground"
+            : "text-sm font-t3-medium text-foreground-muted"
+        }
+      >
+        {props.label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function BusinessOsNavigationSidebar(props: {
+  readonly instanceName: string;
+  readonly route: BusinessOsRoute;
+  readonly onSelect: (route: Exclude<BusinessOsRoute, "app">) => void;
+}) {
+  return (
+    <View
+      accessibilityLabel="Business OS Navigation"
+      className="w-[252px] border-r border-border bg-sidebar px-3 py-4"
+    >
+      <Text className="px-3 text-xs font-t3-bold uppercase tracking-[0.8px] text-foreground-muted">
+        {props.instanceName}
+      </Text>
+      <View className="mt-3 gap-1">
+        <BusinessOsSidebarButton
+          icon="folder.fill"
+          label="Home"
+          selected={props.route === "home"}
+          onPress={() => props.onSelect("home")}
+        />
+        <BusinessOsSidebarButton
+          icon="magnifyingglass"
+          label="Apps"
+          selected={props.route === "search"}
+          onPress={() => props.onSelect("search")}
+        />
+        <BusinessOsSidebarButton
+          icon="clock"
+          label="Zuletzt verwendet"
+          selected={props.route === "recents"}
+          onPress={() => props.onSelect("recents")}
+        />
+      </View>
+      <View className="flex-1" />
+      <BusinessOsSidebarButton
+        icon="gearshape"
+        label="Einstellungen"
+        selected={props.route === "settings"}
+        onPress={() => props.onSelect("settings")}
+      />
     </View>
   );
 }
@@ -152,6 +222,8 @@ function UnavailableShell(props: { readonly app: BusinessOsMobileAppDescriptor |
 }
 
 export function BusinessOsMobileRoot(props: {
+  /** Hidden mode roots stay mounted, but only the active one may own back/lifecycle events. */
+  readonly active: boolean;
   /** Set only by the native verified-pack lifecycle. Production currently stays fail-closed. */
   readonly activatedShellPack?: BusinessOsActivatedShellPack | null;
 }) {
@@ -160,6 +232,7 @@ export function BusinessOsMobileRoot(props: {
   const reducedMotion = useReducedMotion();
   const { setMode } = useWorkjetMode();
   const { isReady, selected } = useBusinessOs();
+  const [sidebarVisible, setSidebarVisible] = useState(true);
   const [route, setRoute] = useState<BusinessOsRoute>("home");
   const [layout, setLayout] = useState<BusinessOsHomeLayout | null>(null);
   const [recents, setRecents] = useState<readonly BusinessOsRecentApp[]>([]);
@@ -185,6 +258,13 @@ export function BusinessOsMobileRoot(props: {
   );
   const apps = useMemo(() => mergeBusinessOsMobileCatalog(catalog).apps, [catalog]);
   const activeApp = apps.find((app) => app.id === activeAppId) ?? null;
+  const sidebarAvailable = selected !== null && width >= 600;
+  const toggleSidebar = useCallback(() => setSidebarVisible((current) => !current), []);
+  useRegisterWorkjetProductSidebar("business_os", {
+    available: sidebarAvailable,
+    visible: sidebarAvailable && sidebarVisible,
+    toggle: toggleSidebar,
+  });
 
   useEffect(() => {
     setRoute("home");
@@ -254,12 +334,22 @@ export function BusinessOsMobileRoot(props: {
   }, [route, send, setMode, shellState?.canGoBack]);
 
   useEffect(() => {
+    if (!props.active) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
       goBack();
       return true;
     });
     return () => subscription.remove();
-  }, [goBack]);
+  }, [goBack, props.active]);
+
+  useEffect(() => {
+    if (!activeAppId) return;
+    send({
+      protocol: BUSINESS_OS_SHELL_PROTOCOL,
+      type: props.active ? "app.resume" : "app.suspend",
+      appId: activeAppId,
+    });
+  }, [activeAppId, props.active, send]);
 
   const onShellMessage = useCallback((raw: string) => {
     let message: BusinessOsShellMessage;
@@ -297,54 +387,72 @@ export function BusinessOsMobileRoot(props: {
   }
 
   return (
-    <View className="flex-1 bg-screen">
-      <View
-        className="absolute inset-0 bg-screen"
-        pointerEvents={route === "app" ? "auto" : "none"}
-        style={{ opacity: route === "app" ? 1 : 0 }}
-      >
-        <AppCanvasHeader
-          app={activeApp}
-          canGoBack={shellState?.canGoBack === true}
-          onBack={goBack}
-          onHome={goHome}
+    <View className="flex-1 flex-row bg-screen">
+      {sidebarAvailable && sidebarVisible ? (
+        <BusinessOsNavigationSidebar
+          instanceName={selected.displayName}
+          route={route}
+          onSelect={(nextRoute) => {
+            if (activeAppId && route === "app") {
+              send({
+                protocol: BUSINESS_OS_SHELL_PROTOCOL,
+                type: "app.suspend",
+                appId: activeAppId,
+              });
+            }
+            setRoute(nextRoute);
+          }}
         />
-        <View className="flex-1">
-          {props.activatedShellPack ? (
-            <BusinessOsShellHost
-              commandJson={commandJson}
-              instance={selected}
-              onShellMessage={onShellMessage}
-              packId={props.activatedShellPack.packId}
-              shellRootUri={props.activatedShellPack.rootUri}
-            />
-          ) : (
-            <UnavailableShell app={activeApp} />
-          )}
+      ) : null}
+      <View className="flex-1 bg-screen">
+        <View
+          className="absolute inset-0 bg-screen"
+          pointerEvents={route === "app" ? "auto" : "none"}
+          style={{ opacity: route === "app" ? 1 : 0 }}
+        >
+          <AppCanvasHeader
+            app={activeApp}
+            canGoBack={shellState?.canGoBack === true}
+            onBack={goBack}
+            onHome={goHome}
+          />
+          <View className="flex-1">
+            {props.activatedShellPack ? (
+              <BusinessOsShellHost
+                commandJson={commandJson}
+                instance={selected}
+                onShellMessage={onShellMessage}
+                packId={props.activatedShellPack.packId}
+                shellRootUri={props.activatedShellPack.rootUri}
+              />
+            ) : (
+              <UnavailableShell app={activeApp} />
+            )}
+          </View>
         </View>
-      </View>
 
-      {route === "home" ? (
-        <BusinessOsHomeDesk
-          apps={apps}
-          badges={badges}
-          instance={selected}
-          layout={layout}
-          onLayoutChange={setLayout}
-          onOpenApp={openApp}
-          onOpenRecents={() => setRoute("recents")}
-          onOpenSearch={() => setRoute("search")}
-          onOpenSettings={() => setRoute("settings")}
-          onReturnToCode={() => setMode("code")}
-        />
-      ) : null}
-      {route === "search" ? (
-        <BusinessOsAppLibrary apps={apps} onBack={goHome} onOpenApp={openApp} />
-      ) : null}
-      {route === "recents" ? (
-        <BusinessOsRecents apps={apps} onBack={goHome} onOpenApp={openApp} recents={recents} />
-      ) : null}
-      {route === "settings" ? <BusinessOsNativeSettings onBack={goHome} /> : null}
+        {route === "home" ? (
+          <BusinessOsHomeDesk
+            apps={apps}
+            badges={badges}
+            instance={selected}
+            layout={layout}
+            onLayoutChange={setLayout}
+            onOpenApp={openApp}
+            onOpenRecents={() => setRoute("recents")}
+            onOpenSearch={() => setRoute("search")}
+            onOpenSettings={() => setRoute("settings")}
+            onReturnToCode={() => setMode("code")}
+          />
+        ) : null}
+        {route === "search" ? (
+          <BusinessOsAppLibrary apps={apps} onBack={goHome} onOpenApp={openApp} />
+        ) : null}
+        {route === "recents" ? (
+          <BusinessOsRecents apps={apps} onBack={goHome} onOpenApp={openApp} recents={recents} />
+        ) : null}
+        {route === "settings" ? <BusinessOsNativeSettings onBack={goHome} /> : null}
+      </View>
     </View>
   );
 }

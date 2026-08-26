@@ -46,6 +46,7 @@ import {
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
 import { HomeListOptionsProvider } from "../home/home-list-options";
+import { useRegisterWorkjetProductSidebar } from "../mode/WorkjetProductChromeProvider";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
@@ -349,6 +350,11 @@ function AdaptiveWorkspaceLayoutContent(
     }
     setPrimarySidebarPreferredVisible((current) => !current);
   }, [panes.primarySidebarSuppressedByAuxiliary, panes.primarySidebarVisible]);
+  useRegisterWorkjetProductSidebar("code", {
+    available: shouldRenderPrimarySidebar && layout.listPaneWidth !== null,
+    visible: panes.primarySidebarVisible,
+    toggle: togglePrimarySidebar,
+  });
   const revealPrimarySidebar = useCallback(() => {
     if (panes.primarySidebarSuppressedByAuxiliary) {
       setFileInspectorPreferredVisible(false);

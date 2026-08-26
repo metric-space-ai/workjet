@@ -215,7 +215,7 @@ describe("ComposerFooterControls", () => {
 
     expect(markup).toContain('data-composer-manual-responsive-flow="true"');
     expect(markup).toContain("flex-wrap");
-    expect(markup).toContain("gap-x-0.5");
+    expect(markup).toContain("gap-x-1");
     expect(markup).not.toContain("grid-cols-[max-content_max-content]");
     expect(markup).not.toContain("flex-col gap-1");
     expect(markup).toContain('data-composer-mode-cluster="true"');

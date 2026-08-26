@@ -290,7 +290,7 @@ const AUDIT_EXPRESSION = String.raw`(() => {
   };
   const selector = 'button,a[href],input,select,textarea,[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])';
   const interactive = [...document.querySelectorAll(selector)].filter(visible);
-  const intentionalEdgeControl = (element) => element.getAttribute("aria-label") === "Resize Sidebar";
+  const intentionalEdgeControl = (element) => element.matches('[data-sidebar="rail"]');
   const clipRect = (element) => {
     let result = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
@@ -317,6 +317,7 @@ const AUDIT_EXPRESSION = String.raw`(() => {
   }).slice(0, 40);
   const actionGroups = new Map();
   for (const element of interactive) {
+    if (intentionalEdgeControl(element)) continue;
     const label = text(element).toLocaleLowerCase();
     if (label.length === 0) continue;
     const values = actionGroups.get(label) || [];
@@ -329,7 +330,7 @@ const AUDIT_EXPRESSION = String.raw`(() => {
     const value = element.getBoundingClientRect();
     return value.width < 24 || value.height < 24;
   }).map((element) => ({ label: text(element), rect: rect(element) })).slice(0, 40);
-  const truncatedText = [...document.querySelectorAll('button,a,label,h1,h2,h3,p,span,td,th')].filter((element) => visible(element) && element.scrollWidth > element.clientWidth + 1 && /(hidden|clip)/.test(getComputedStyle(element).overflow + getComputedStyle(element).textOverflow)).map((element) => ({ label: text(element), rect: rect(element), hiddenPixels: element.scrollWidth - element.clientWidth })).slice(0, 60);
+  const truncatedText = [...document.querySelectorAll('button,a,label,h1,h2,h3,p,span,td,th')].filter((element) => text(element).length > 0 && visible(element) && element.scrollWidth > element.clientWidth + 1 && /(hidden|clip)/.test(getComputedStyle(element).overflow + getComputedStyle(element).textOverflow)).map((element) => ({ label: text(element), rect: rect(element), hiddenPixels: element.scrollWidth - element.clientWidth })).slice(0, 60);
   return {
     location: location.hash,
     title: document.title,
@@ -375,18 +376,19 @@ async function pressKey(client: CdpClient, key: string, modifiers = 0): Promise<
   await client.command("Input.dispatchKeyEvent", { type: "keyUp", key, modifiers });
 }
 
-async function ensureMainSidebarVisible(client: CdpClient): Promise<void> {
+async function ensureMainSidebarVisible(client: CdpClient): Promise<boolean> {
   const visible = await client.evaluate(`(() => {
     const sidebar = document.querySelector('[data-sidebar="sidebar"]');
     if (!(sidebar instanceof HTMLElement)) return false;
     const rect = sidebar.getBoundingClientRect();
     return rect.width > 1 && rect.height > 1 && rect.right > 0 && rect.left < innerWidth;
   })()`);
-  if (visible === true) return;
+  if (visible === true) return true;
   await client.evaluate(
-    `document.querySelector('button[aria-label="Toggle main sidebar"]')?.click()`,
+    `([...document.querySelectorAll('button[data-sidebar="trigger"]')].find((button) => button.getBoundingClientRect().width > 1))?.click()`,
   );
   await settle(client);
+  return false;
 }
 
 async function prepareState(
@@ -452,12 +454,19 @@ const BUSINESS_SETTINGS_LABELS = {
 } as const;
 
 async function prepareProductMode(client: CdpClient, mode: AuditState["mode"]): Promise<void> {
-  await ensureMainSidebarVisible(client);
+  const sidebarWasVisible = await ensureMainSidebarVisible(client);
   const label = mode === "business-os" ? "Business OS" : "Code";
   await client.evaluate(
     `([...document.querySelectorAll("button")].find((element) => (element.textContent || "").trim() === ${JSON.stringify(label)}))?.click()`,
   );
   await settle(client);
+  const shouldCollapse = await client.evaluate("innerWidth < 768");
+  if (!sidebarWasVisible || shouldCollapse === true) {
+    await client.evaluate(
+      `([...document.querySelectorAll('button[data-sidebar="trigger"]')].find((button) => button.getBoundingClientRect().width > 1))?.click()`,
+    );
+    await settle(client);
+  }
 }
 
 async function prepareBusinessState(

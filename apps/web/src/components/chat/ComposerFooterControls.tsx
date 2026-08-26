@@ -168,8 +168,13 @@ export interface ComposerFooterControlsProps {
 export const ComposerFooterControls = memo(function ComposerFooterControls(
   props: ComposerFooterControlsProps,
 ) {
-  const separator = <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />;
   const rowCount = props.rowCount ?? 1;
+  const separator = (
+    <Separator
+      orientation="vertical"
+      className={cn("mx-0.5 h-4", rowCount === 1 ? "hidden sm:block" : "hidden")}
+    />
+  );
   const contextWindowControl = props.contextWindowControl ? (
     <span className="inline-flex shrink-0 items-center gap-1" data-composer-context-window="true">
       {separator}
@@ -187,10 +192,10 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
     rowCount === 1
       ? undefined
       : ({
-          "--composer-control-height": rowCount === 2 ? "1.625rem" : "1.5rem",
-          "--composer-control-font-size": rowCount === 2 ? "12px" : "11px",
-          "--composer-control-gap": rowCount === 2 ? "0.0625rem" : "0rem",
-          "--composer-control-padding": rowCount === 2 ? "0.25rem" : "0.1875rem",
+          "--composer-control-height": "1.625rem",
+          "--composer-control-font-size": rowCount === 2 ? "12px" : "11.5px",
+          "--composer-control-gap": "0.125rem",
+          "--composer-control-padding": rowCount === 2 ? "0.3125rem" : "0.25rem",
         } as CSSProperties);
   const workerControl =
     props.workjetWorkers === undefined || props.onSelectWorkjetWorker === undefined ? null : (
@@ -248,7 +253,7 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
   // columns and created the broken checkerboard layout seen in the app.
   return (
     <div
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1.5"
       data-composer-control-density={rowCount === 1 ? "comfortable" : "compact"}
       data-composer-manual-responsive-flow="true"
       style={controlDensityStyle}

@@ -1,122 +1,362 @@
-import { BriefcaseBusinessIcon, CircleAlertIcon } from "lucide-react";
+import type {
+  CtoxDiscoveryResult,
+  CtoxManagedInstance,
+  DesktopCtoxBridge,
+} from "@t3tools/contracts";
+import {
+  BriefcaseBusinessIcon,
+  CircleAlertIcon,
+  LaptopIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SmartphoneIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
+import { usePrimarySettings } from "../../hooks/useSettings";
+import { Button } from "../ui/button";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
-/**
- * Settings never invent an instance from the Code environment or the primary
- * server. Until the shared persisted binding lands, the Business OS selection
- * memory is the only renderer state that truthfully names the active backend.
- */
+type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
+
+/** SSH-managed hosts are computers inside a Business OS, never Business-OS instances. */
+export function visibleBusinessOsInstances(
+  discovery: BusinessOsDiscovery,
+): readonly CtoxManagedInstance[] {
+  if (discovery === "loading" || discovery._tag !== "ready") return [];
+  return discovery.instances
+    .filter((instance) => instance.source !== "ssh_managed")
+    .toSorted((left, right) => left.displayName.localeCompare(right.displayName));
+}
+
 export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null): string | null {
   return target?.mode === "business-os" && target.ctoxInstanceId !== undefined
     ? target.ctoxInstanceId
     : null;
 }
 
+function instanceStatus(instance: CtoxManagedInstance): string {
+  if (instance.status === "available" || instance.status === "paired") {
+    return instance.healthSummary.dataPlaneReady
+      ? "Verbunden und synchron"
+      : "Verbunden, Synchronisierung beeinträchtigt";
+  }
+  if (instance.status === "needs_auth") return "Anmeldung erforderlich";
+  if (instance.status === "pairing_expired") return "Gerätefreigabe abgelaufen";
+  if (instance.status === "offline") return "Nicht erreichbar";
+  if (instance.status === "installing") return "Wird eingerichtet";
+  return "Verbindung fehlerhaft";
+}
+
 export function BusinessOsSettingsView({
+  instances,
   activeInstanceId,
+  loading = false,
+  refreshDisabled = false,
+  addDisabledReason = null,
+  computerCount = 0,
+  onSelectInstance,
+  onRefresh,
+  onAddBusinessOs,
 }: {
+  readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
+  readonly loading?: boolean;
+  readonly refreshDisabled?: boolean;
+  readonly addDisabledReason?: string | null;
+  readonly computerCount?: number;
+  readonly onSelectInstance?: (instanceId: string) => void;
+  readonly onRefresh?: () => void;
+  readonly onAddBusinessOs?: (invite: string) => Promise<string | null>;
 }) {
+  const [adding, setAdding] = useState(false);
+  const [invite, setInvite] = useState("");
+  const [addingError, setAddingError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
+
+  const submitInvite = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (onAddBusinessOs === undefined) return;
+    setAddingError(null);
+    setSubmitting(true);
+    void onAddBusinessOs(invite)
+      .then((error) => {
+        if (error !== null) {
+          setAddingError(error);
+          return;
+        }
+        setInvite("");
+        setAdding(false);
+      })
+      .finally(() => setSubmitting(false));
+  };
+
   return (
     <SettingsPageContainer className="gap-6">
       <div className="px-3 sm:px-4">
         <h1 className="text-xl font-semibold tracking-[-0.025em]">Business OS</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Einstellungen für die aktive Business-OS-Instanz. Der Wechsel zwischen Code und Business
-          OS ändert die ausgewählte Instanz nicht.
+          Wähle die Business-OS-Instanz, die Code und Business OS gemeinsam verwenden. Ein
+          Moduswechsel ändert diese Auswahl nicht.
         </p>
       </div>
 
-      <SettingsSection title="Aktive Business-OS-Instanz">
-        {activeInstanceId === null ? (
-          <div
-            className="flex max-w-2xl items-start gap-3 rounded-lg border border-warning/35 bg-warning/8 p-4"
-            role="status"
-          >
-            <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                Keine Business-OS-Instanz ausgewählt
-              </p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                Wähle zuerst in Business OS eine Instanz aus. Instanzbezogene Einstellungen bleiben
-                bis dahin gesperrt, damit Workjet keine Daten verschiedener Instanzen vermischt.
-              </p>
-            </div>
+      <SettingsSection
+        title="Business-OS-Instanz"
+        headerAction={
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRefresh}
+              disabled={refreshDisabled || onRefresh === undefined}
+            >
+              <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
+              Aktualisieren
+            </Button>
+            <Button size="sm" onClick={() => setAdding((current) => !current)}>
+              <PlusIcon aria-hidden />
+              Business OS hinzufügen
+            </Button>
           </div>
-        ) : (
-          <div
-            className="flex max-w-2xl items-start gap-3 rounded-lg border border-border bg-muted/20 p-4"
-            data-active-ctox-instance={activeInstanceId}
-          >
-            <BriefcaseBusinessIcon
-              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Instanz ausgewählt</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                Alle instanzbezogenen Einstellungen auf dieser Seite gelten ausschließlich für die
-                aktive Business-OS-Instanz.
-              </p>
+        }
+      >
+        <div className="max-w-2xl rounded-lg border border-border bg-muted/10 p-4">
+          {loading ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Business-OS-Instanzen werden geladen …
+            </p>
+          ) : instances.length === 0 ? (
+            <div className="flex items-start gap-3" role="status">
+              <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <div>
+                <p className="text-sm font-medium">Keine Business-OS-Instanz verbunden</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Füge eine Business OS über eine sichere Backend-Einladung hinzu.
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <label className="block text-sm font-medium text-foreground">
+              Aktive Instanz
+              <select
+                className="mt-2 h-10 w-full rounded-md border border-input bg-popover px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={selected?.id ?? ""}
+                onChange={(event) => onSelectInstance?.(event.target.value)}
+                aria-label="Aktive Business-OS-Instanz"
+              >
+                {selected === null ? <option value="">Instanz auswählen</option> : null}
+                {instances.map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.displayName}
+                  </option>
+                ))}
+              </select>
+              {selected === null ? null : (
+                <span className="mt-2 flex items-center gap-2 text-sm font-normal text-muted-foreground">
+                  <BriefcaseBusinessIcon className="size-4" aria-hidden />
+                  {instanceStatus(selected)}
+                  {selected.domain === undefined ? null : ` · ${selected.domain}`}
+                </span>
+              )}
+            </label>
+          )}
+
+          {adding ? (
+            <form className="mt-4 border-t border-border pt-4" onSubmit={submitInvite}>
+              <label className="block text-sm font-medium">
+                Backend-Einladung
+                <textarea
+                  className="mt-2 min-h-24 w-full resize-y rounded-md border border-input bg-popover p-3 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={invite}
+                  onChange={(event) => setInvite(event.target.value)}
+                  autoComplete="off"
+                  maxLength={65_536}
+                  required
+                  aria-describedby="business-os-add-help"
+                />
+              </label>
+              <p id="business-os-add-help" className="mt-2 text-xs text-muted-foreground">
+                Fügt eine echte CTOX-Backend-Instanz hinzu. SSH-Rechner werden unter Computers
+                eingerichtet und erscheinen hier nicht als eigene Business OS.
+              </p>
+              {addDisabledReason === null ? null : (
+                <p className="mt-2 text-xs text-destructive" role="alert">
+                  {addDisabledReason}
+                </p>
+              )}
+              {addingError === null ? null : (
+                <p className="mt-2 text-xs text-destructive" role="alert">
+                  {addingError}
+                </p>
+              )}
+              <div className="mt-3 flex gap-2">
+                <Button type="submit" size="sm" disabled={submitting || addDisabledReason !== null}>
+                  {submitting ? "Wird hinzugefügt …" : "Einladung verwenden"}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>
+                  Abbrechen
+                </Button>
+              </div>
+            </form>
+          ) : null}
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Workjet-Geräte">
         <div className="max-w-2xl rounded-lg border border-border p-4">
-          <p className="text-sm font-medium text-foreground">
-            {activeInstanceId === null ? "Keine Instanz ausgewählt" : "Geräte dieser Instanz"}
-          </p>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {activeInstanceId === null
-              ? "Gerätefreigaben werden erst angezeigt, nachdem eine Business-OS-Instanz ausgewählt wurde."
-              : "Gerätefreigaben werden hier erst angezeigt, sobald Workjet sie eindeutig dieser Instanz zuordnen kann."}
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <SmartphoneIcon
+                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <div>
+                <p className="text-sm font-medium">
+                  {selected === null ? "Instanz auswählen" : `Geräte für ${selected.displayName}`}
+                </p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                  {selected === null
+                    ? "Wähle zuerst die Business-OS-Instanz, für die ein Workjet-Gerät freigegeben werden soll."
+                    : "Gerätefreigaben werden nach der serverautoritativen Zuordnung hier mit Ablauf und Widerruf angezeigt."}
+                </p>
+              </div>
+            </div>
+            <Button size="sm" disabled title="Sicherer Gerätevertrag noch nicht verfügbar">
+              <PlusIcon aria-hidden />
+              Gerät hinzufügen
+            </Button>
+          </div>
+          {selected === null ? null : (
+            <p className="mt-3 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Der QR-Code bleibt gesperrt, bis Einmal-Code, Geräteidentität, Widerruf und
+              Backend-Scope serverseitig sicher gebunden sind. Dadurch werden keine unsicheren
+              Zugangsdaten angezeigt.
+            </p>
+          )}
         </div>
       </SettingsSection>
 
       <SettingsSection title="Rechner für Code">
         <div className="max-w-2xl rounded-lg border border-border p-4">
-          <p className="text-sm font-medium text-foreground">Rechner getrennt verwalten</p>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            Rechner und ihre Coding-Werkzeuge werden unter „Computers“ verwaltet. Eine Zuordnung zu
-            dieser Business-OS-Instanz wird nur angezeigt, wenn Workjet sie ausdrücklich kennt.
-          </p>
-          <a
-            className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
-            href="#/settings/computers"
-          >
-            Rechner öffnen
-          </a>
+          <div className="flex items-start gap-3">
+            <LaptopIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <div>
+              <p className="text-sm font-medium">
+                {selected === null ? "Instanz auswählen" : `Zuweisungen zu ${selected.displayName}`}
+              </p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                {computerCount === 0
+                  ? "Im globalen Computer-Inventar sind noch keine Rechner eingerichtet."
+                  : `${computerCount} Rechner im globalen Inventar. Die eindeutige Instanzzuordnung wird nach serverseitiger Freigabe hier verwaltet.`}
+              </p>
+              <a
+                className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+                href="#/settings/computers"
+              >
+                Computer-Inventar öffnen
+              </a>
+            </div>
+          </div>
         </div>
       </SettingsSection>
 
       <SettingsSection title="Diagnose">
-        <div className="max-w-2xl rounded-lg border border-border p-4">
-          <p className="text-sm font-medium text-foreground">Technischer Instanz-Scope</p>
-          {activeInstanceId === null ? (
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Ohne aktive Business-OS-Instanz sind keine technischen CTOX-Backend-Details verfügbar.
-            </p>
+        <details className="max-w-2xl rounded-lg border border-border p-4">
+          <summary className="cursor-pointer text-sm font-medium text-foreground">
+            Technische Details
+          </summary>
+          {selected === null ? (
+            <p className="mt-2 text-sm text-muted-foreground">Keine Instanz ausgewählt.</p>
           ) : (
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-              Technische CTOX-Backend-ID: {activeInstanceId}
-            </p>
+            <div className="mt-2 space-y-1 break-all font-mono text-xs text-muted-foreground">
+              <p>Backend-ID: {selected.id}</p>
+              <p>Quelle: {selected.source}</p>
+              <p>Status: {selected.status}</p>
+            </div>
           )}
-        </div>
+        </details>
       </SettingsSection>
     </SettingsPageContainer>
   );
 }
 
+function useBusinessOsDiscovery(bridge: DesktopCtoxBridge | undefined) {
+  const [discovery, setDiscovery] = useState<BusinessOsDiscovery>("loading");
+  const refresh = useCallback(async () => {
+    if (bridge === undefined) {
+      setDiscovery({ _tag: "failed", code: "network_error" });
+      return;
+    }
+    setDiscovery("loading");
+    try {
+      setDiscovery(await bridge.refresh());
+    } catch {
+      setDiscovery({ _tag: "failed", code: "network_error" });
+    }
+  }, [bridge]);
+  useEffect(() => void refresh(), [refresh]);
+  return { discovery, refresh };
+}
+
 export function BusinessOsSettings() {
-  const activeInstanceId = resolveActiveBusinessOsInstanceId(
+  const settings = usePrimarySettings();
+  const bridge = window.desktopBridge?.ctox;
+  const { discovery, refresh } = useBusinessOsDiscovery(bridge);
+  const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
+  const rememberedId = resolveActiveBusinessOsInstanceId(
     crossModeSelectionMemory.read("business-os"),
   );
-  return <BusinessOsSettingsView activeInstanceId={activeInstanceId} />;
+  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(rememberedId);
+
+  useEffect(() => {
+    if (instances.length === 0) return;
+    const next = instances.some((instance) => instance.id === activeInstanceId)
+      ? activeInstanceId
+      : (instances[0]?.id ?? null);
+    if (next === null || next === activeInstanceId) return;
+    setActiveInstanceId(next);
+    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: next });
+  }, [activeInstanceId, instances]);
+
+  const selectInstance = (instanceId: string) => {
+    if (!instances.some((instance) => instance.id === instanceId)) return;
+    setActiveInstanceId(instanceId);
+    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: instanceId });
+  };
+
+  const addBusinessOs = async (invite: string): Promise<string | null> => {
+    if (bridge === undefined)
+      return "Diese Workjet-Ausgabe kann keine Backend-Einladung importieren.";
+    try {
+      const result = await bridge.importInvite(invite);
+      if (result._tag !== "completed") return "Die Backend-Einladung ist ungültig oder abgelaufen.";
+      crossModeSelectionMemory.remember({
+        mode: "business-os",
+        ctoxInstanceId: result.instance.id,
+      });
+      setActiveInstanceId(result.instance.id);
+      await refresh();
+      return null;
+    } catch {
+      return "Business OS konnte nicht hinzugefügt werden. Bitte Verbindung und Einladung prüfen.";
+    }
+  };
+
+  return (
+    <BusinessOsSettingsView
+      instances={instances}
+      activeInstanceId={activeInstanceId}
+      loading={discovery === "loading"}
+      refreshDisabled={bridge === undefined}
+      addDisabledReason={bridge === undefined ? "Nur in Workjet Desktop verfügbar." : null}
+      computerCount={settings.workjet.computers.length}
+      onSelectInstance={selectInstance}
+      onRefresh={() => void refresh()}
+      onAddBusinessOs={addBusinessOs}
+    />
+  );
 }

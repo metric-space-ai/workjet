@@ -34,13 +34,14 @@ describe("shared Workjet product shell", () => {
     const pairing = read("../pairing/WorkjetDevicePairingProvider.tsx");
 
     expect(onboarding).toContain("Ein Pairing für Code und Business OS");
-    expect(onboarding).toContain("Footer der linken Seitenleiste");
-    expect(onboarding).toMatch(/Gerät\s+verbinden/u);
+    expect(onboarding).toContain("Einstellungen → Business OS");
+    expect(onboarding).toContain("Gerät hinzufügen");
+    expect(onboarding).not.toContain("Footer der linken Seitenleiste");
     expect(onboarding).toContain("<CameraView");
     expect(onboarding).not.toContain("<TextInput");
     expect(onboarding).not.toMatch(/placeholder=.*(?:server|host|passwort|password)/iu);
     expect(app).toContain("<WorkjetDevicePairingProvider>");
-    expect(pairing).toContain("parseWorkjetDevicePairLink(payload)");
+    expect(pairing).toContain("parseWorkjetDevicePairingLink(payload)");
     expect(pairing).toContain("connectCodePairingUrl(prepared.environment.pairingUrl)");
     expect(pairing).toContain("importBusinessOsInvite(prepared.businessOs");
     expect(pairing).toContain("removeCodeEnvironment(environmentId)");

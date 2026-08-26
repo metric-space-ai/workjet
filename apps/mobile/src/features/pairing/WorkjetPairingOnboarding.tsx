@@ -93,11 +93,11 @@ export function WorkjetPairingOnboarding(props: {
         </View>
 
         <View className="mt-8 rounded-[24px] bg-card p-5">
-          <Text className="text-lg font-t3-bold">QR-Code in Workjet Desktop öffnen</Text>
+          <Text className="text-lg font-t3-bold">QR-Code in Workjet öffnen</Text>
           <Text className="mt-3 text-base leading-normal text-foreground-muted">
-            Öffne Workjet Desktop und wähle im Footer der linken Seitenleiste „Gerät verbinden“.
-            Zeige dort den kurzlebigen QR-Code an und scanne ihn hier. Workjet übernimmt
-            CTOX-Signaling, Geräteidentität und Synchronisierung automatisch – ohne Server- oder
+            Öffne auf einem bereits verbundenen Gerät Einstellungen → Business OS. Wähle die
+            gewünschte Instanz und dann „Gerät hinzufügen“. Scanne den kurzlebigen QR-Code hier. Ein
+            QR-Code verbindet genau diese Business OS mit Code und Business OS – ohne Server- oder
             Passworteingabe.
           </Text>
         </View>

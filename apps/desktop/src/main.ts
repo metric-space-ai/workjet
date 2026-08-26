@@ -215,7 +215,18 @@ const desktopCtoxControlLayer = Layer.mergeAll(
   CtoxLocalDaemonLaunch.layer(),
   CtoxSshManagedLaunch.layer(),
 ).pipe(
-  Layer.provideMerge(CtoxInstanceRegistry.layer()),
+  Layer.provideMerge(
+    CtoxInstanceRegistry.layer({
+      localDaemon: {
+        probe: (url, { signal }) =>
+          Electron.net
+            .fetch(url, { method: "GET", redirect: "error", signal })
+            .then((response) => ({
+              ok: response.ok,
+            })),
+      },
+    }),
+  ),
   Layer.provideMerge(CtoxElectronSessions.layer),
 );
 

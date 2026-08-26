@@ -189,13 +189,14 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
     );
   }
 
-  // Manual mode is one responsive flow. It remains one line while space is
-  // available, then wraps to two or three rows before the outer composer
-  // switches to its compact menu. Do not hard-code row breaks: that wastes
-  // wide layouts and is what previously orphaned Tools on a third line.
+  // Manual mode is one strictly ordered responsive flow. It remains one line
+  // while space is available, then wraps whole controls to two or (only at
+  // the narrowest non-compact width) three rows. A grid is deliberately not
+  // used here: auto-placement turned the controls into unrelated vertical
+  // columns and created the broken checkerboard layout seen in the app.
   return (
     <div
-      className="grid min-w-0 flex-1 grid-cols-[max-content_max-content] items-center gap-1 @lg/composer-controls:flex @lg/composer-controls:flex-wrap"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1"
       data-composer-manual-responsive-flow="true"
     >
       {workerControl === null ? null : (
@@ -228,14 +229,24 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
             </TooltipPopup>
           </Tooltip>
         ))}
-      {props.systemPromptControl ?? null}
-      <ComposerFooterModeControls
-        showInteractionModeToggle={props.showInteractionModeToggle}
-        interactionMode={props.interactionMode}
-        onToggleInteractionMode={props.onToggleInteractionMode}
-      />
-      {capabilityMenu}
-      {props.sendToWorkerControl}
+      {props.systemPromptControl ||
+      props.showInteractionModeToggle ||
+      capabilityMenu ||
+      props.sendToWorkerControl ? (
+        <span
+          className="inline-flex shrink-0 items-center gap-0.5"
+          data-composer-secondary-cluster="true"
+        >
+          {props.systemPromptControl ?? null}
+          <ComposerFooterModeControls
+            showInteractionModeToggle={props.showInteractionModeToggle}
+            interactionMode={props.interactionMode}
+            onToggleInteractionMode={props.onToggleInteractionMode}
+          />
+          {capabilityMenu}
+          {props.sendToWorkerControl}
+        </span>
+      ) : null}
     </div>
   );
 });

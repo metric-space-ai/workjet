@@ -156,12 +156,13 @@ describe("ComposerFooterControls", () => {
     const markup = render();
 
     expect(markup).toContain('data-composer-manual-responsive-flow="true"');
-    expect(markup).toContain("grid-cols-[max-content_max-content]");
-    expect(markup).toContain("@lg/composer-controls:flex");
-    expect(markup).toContain("@lg/composer-controls:flex-wrap");
+    expect(markup).toContain("flex-wrap");
+    expect(markup).toContain("gap-x-0.5");
+    expect(markup).not.toContain("grid-cols-[max-content_max-content]");
     expect(markup).not.toContain("flex-col gap-1");
     expect(markup).toContain('data-composer-mode-cluster="true"');
     expect(markup).toContain('data-composer-tools-cluster="true"');
+    expect(markup).toContain('data-composer-secondary-cluster="true"');
     expect(markup).toMatch(/class="[^"]*shrink-0[^"]*" data-composer-tools-cluster="true"/);
   });
 });

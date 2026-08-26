@@ -545,7 +545,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                     key={model.id}
                     type="button"
                     className={
-                      "rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted " +
+                      "rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted " +
                       (model.id === props.selectedModelId
                         ? "bg-accent text-accent-foreground"
                         : "text-foreground")
@@ -557,7 +557,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                   >
                     <span className="block truncate font-medium">{model.displayName}</span>
                     {model.displayName === model.id ? null : (
-                      <span className="block truncate text-xs text-muted-foreground">
+                      <span className="block truncate text-[11px] text-muted-foreground">
                         {model.id}
                       </span>
                     )}
@@ -566,11 +566,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                 {showCurrentCustomModel ? (
                   <button
                     type="button"
-                    className="rounded-md bg-accent px-2 py-1.5 text-left text-sm text-accent-foreground"
+                    className="rounded-md bg-accent px-2 py-1.5 text-left text-[13px] text-accent-foreground"
                     onClick={() => setModelMenuOpen(false)}
                   >
                     <span className="block truncate font-medium">{props.selectedModelId}</span>
-                    <span className="block text-xs text-muted-foreground">
+                    <span className="block text-[11px] text-muted-foreground">
                       Current custom model
                     </span>
                   </button>

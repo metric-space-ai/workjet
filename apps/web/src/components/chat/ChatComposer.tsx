@@ -99,6 +99,7 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerFooterControls } from "./ComposerFooterControls";
+import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
   COMPOSER_COMPUTER_LOCKED_REASON,
   ComposerComputerControl,
@@ -1709,10 +1710,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
     }
-    return composerTriggerKind === "path"
-      ? "No matching files or folders."
-      : "No matching command.";
-  }, [composerTriggerKind]);
+    if (composerTriggerKind === "path") {
+      return pathTriggerQuery.length === 0
+        ? "Type to search project files."
+        : "No matching files or folders.";
+    }
+    return "No matching command.";
+  }, [composerTriggerKind, pathTriggerQuery.length]);
 
   // ------------------------------------------------------------------
   // Provider traits UI
@@ -3229,7 +3233,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     <form
       ref={composerFormRef}
       onSubmit={submitComposer}
-      className="mx-auto w-full min-w-0 max-w-3xl"
+      className="mx-auto w-full min-w-0 max-w-5xl"
       data-chat-composer-form="true"
     >
       <div
@@ -3688,7 +3692,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   prompt chips invisible past the right edge with no cue they
                   existed (measured: scrollWidth 1136 in a 720px row). Chips
                   that don't fit now wrap onto a second line instead. */}
-              <div className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-center gap-1 p-1 ps-3.5">
+              <div className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-start gap-1 p-1 ps-3.5">
+                {!isComposerApprovalState && pendingUserInputs.length === 0 ? (
+                  <ComposerAttachmentMenu
+                    disabled={projectSelectionRequired || isConnecting}
+                    onAttachImages={(files) => void addComposerImages(files)}
+                    onAddProjectFile={() => {
+                      insertComposerTextAtEnd("@", { ensureLeadingBoundary: true });
+                    }}
+                  />
+                ) : null}
                 {/* With Workjet manual controls the retired provider picker
                     stays hidden in BOTH layouts — compact used to fall back
                     to it, resurrecting the removed provider chip (K-A2). */}

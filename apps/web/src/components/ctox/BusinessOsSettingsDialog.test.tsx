@@ -23,7 +23,7 @@ describe("BusinessOsSettingsDialog", () => {
 
     for (const category of [
       "Allgemein",
-      "Backends &amp; Sync",
+      "Backends &amp; Synchronisierung",
       "Apps",
       "Updates",
       "Darstellung",
@@ -39,6 +39,28 @@ describe("BusinessOsSettingsDialog", () => {
     expect(dialogSource).toContain('"workjet.business-os.settings.last-page"');
   });
 
+  it("keeps normal settings copy free of implementation terms", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsDialog
+        bridge={undefined}
+        discovery={{ _tag: "ready", instances: [] }}
+        selectedId={null}
+        onClose={() => undefined}
+      />,
+    );
+    const textAndExposedAttributes = [
+      markup.replace(/<[^>]*>/gu, " "),
+      ...[...markup.matchAll(/(?:aria-label|title)="([^"]*)"/gu)].map((match) => match[1]),
+    ].join(" ");
+
+    expect(textAndExposedAttributes).not.toMatch(
+      /\b(?:guest|webcontentsview|sidecar|native|binary|room|signaling|rxdb|webrtc)\b/iu,
+    );
+    expect(markup).toContain('aria-label="Business OS-Einstellungen"');
+    expect(markup).toContain("Backends &amp; Synchronisierung");
+    expect(dialogSource).not.toContain("RxDB/WebRTC ·");
+  });
+
   it("keeps QR pairing exclusively in Business OS settings", () => {
     expect(dialogSource).toContain("BusinessOsMobilePairingSection");
     expect(computersSettingsSource).not.toContain("BusinessOsMobilePairingSection");
@@ -48,7 +70,7 @@ describe("BusinessOsSettingsDialog", () => {
   });
 
   it("keeps empty fleet updates responsive and actionable", () => {
-    expect(dialogSource).toContain("Keine CTOX-Instanzen registriert");
+    expect(dialogSource).toContain("Keine CTOX Backends registriert");
     expect(dialogSource).toContain("Backend auswählen");
     expect(dialogSource).toContain("Backend verbinden");
     expect(dialogSource).toContain("rolloutStatus.instanceIds.length > 0");
@@ -65,13 +87,13 @@ describe("BusinessOsSettingsDialog", () => {
 
   it("offers the fleet columns and explicit blocked-state operator guidance", () => {
     for (const column of [
-      "Instanz",
+      "Backend",
       "Erreichbarkeit",
-      "Health",
+      "Zustand",
       "Plattform",
-      "Admin",
-      "CTOX",
-      "Shell",
+      "Zugriff",
+      "CTOX Backend",
+      "Business OS",
       "Kanal",
       "Status",
       "Letzte Prüfung",
@@ -80,8 +102,8 @@ describe("BusinessOsSettingsDialog", () => {
       expect(dialogSource).toContain(column);
     }
     expect(dialogSource).toContain("requiredOperatorStep");
-    expect(dialogSource).toContain("Blockierte Instanzen zählen nicht als");
-    expect(dialogSource).toContain('data_plane_degraded: "Sync beeinträchtigt"');
+    expect(dialogSource).toContain("Blockierte Backends zählen nicht als");
+    expect(dialogSource).toContain('data_plane_degraded: "Synchronisierung beeinträchtigt"');
     expect(dialogSource).toContain("row.blocker === null ? PHASE_LABELS[row.shell.phase]");
     expect(dialogSource).toContain('row.blocker !== "paused"');
     expect(dialogSource).toContain("Release wieder freigeben");
@@ -93,7 +115,7 @@ describe("BusinessOsSettingsDialog", () => {
 
   it("keeps opaque pairing ids out of the fleet table", () => {
     expect(fleetInstanceDisplayTitle("biz_2a75d5c5-da16-4a17-90d2-a941ad53f095")).toBe(
-      "Backend · 2a75d5c5",
+      "CTOX Backend · 2a75d5c5",
     );
     expect(fleetInstanceDisplayTitle("GPU3 A4500")).toBe("GPU3 A4500");
   });

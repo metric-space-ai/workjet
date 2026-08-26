@@ -93,55 +93,57 @@ export interface CtoxSshManagedFormValues {
   readonly stateRoot: string;
 }
 
-export const CTOX_IMPORT_SUCCESS_MESSAGE = "Instance added.";
+export const CTOX_IMPORT_SUCCESS_MESSAGE = "CTOX Backend hinzugefügt.";
 export const CTOX_IMPORT_ERROR_MESSAGE =
-  "Instance could not be added. Check the entry and try again.";
-export const CTOX_REMOVE_SUCCESS_MESSAGE = "Paired instance removed.";
-export const CTOX_REMOVE_ERROR_MESSAGE = "Paired instance could not be removed. Try again.";
-export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH instance removed.";
-export const CTOX_SSH_REMOVE_ERROR_MESSAGE = "SSH instance could not be removed. Try again.";
+  "CTOX Backend konnte nicht hinzugefügt werden. Eingaben prüfen und erneut versuchen.";
+export const CTOX_REMOVE_SUCCESS_MESSAGE = "Verbindung entfernt.";
+export const CTOX_REMOVE_ERROR_MESSAGE =
+  "Verbindung konnte nicht entfernt werden. Erneut versuchen.";
+export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH-Backend entfernt.";
+export const CTOX_SSH_REMOVE_ERROR_MESSAGE =
+  "SSH-Backend konnte nicht entfernt werden. Erneut versuchen.";
 /**
  * SSH-managed instances are discovered and listed, but not launchable: the
  * remote daemon's signaling endpoints live on the remote loopback interface,
  * which the desktop cannot reach without an SSH port forward.
  */
-export const CTOX_SSH_LAUNCH_PENDING_HINT = "This SSH host is not reachable right now.";
+export const CTOX_SSH_LAUNCH_PENDING_HINT = "Dieses SSH-Backend ist derzeit nicht erreichbar.";
 
 const SOURCE_GROUP_DEFINITIONS: readonly {
   readonly key: CtoxSourceGroupKey;
   readonly label: string;
 }[] = [
-  { key: "managed", label: "Managed" },
-  { key: "paired", label: "Paired" },
-  { key: "local", label: "Local" },
-  { key: "ssh", label: "SSH" },
+  { key: "managed", label: "CTOX Backend" },
+  { key: "paired", label: "Verbundene Backends" },
+  { key: "local", label: "Lokale Backends" },
+  { key: "ssh", label: "SSH-Backends" },
 ];
 
 const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
-  ctox_dev: "ctox.dev",
-  pairing_invite: "Desktop invite",
-  manual_pairing: "Manual pairing",
-  local_daemon: "Local daemon",
-  ssh_managed: "SSH managed",
+  ctox_dev: "CTOX Backend",
+  pairing_invite: "Desktop-Einladung",
+  manual_pairing: "Manuell verbunden",
+  local_daemon: "Lokales Backend",
+  ssh_managed: "SSH-Backend",
 };
 
 /** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
 const CONNECTION_LABELS: Record<string, string> = {
-  idle: "Idle",
-  connecting: "Connecting…",
-  ready: "Connected",
-  error: "Connection error",
-  revoked: "Access revoked",
+  idle: "Nicht verbunden",
+  connecting: "Wird verbunden…",
+  ready: "Verbunden",
+  error: "Verbindungsfehler",
+  revoked: "Zugriff entzogen",
 };
 
 const STATUS_LABELS: Record<CtoxManagedInstance["status"], string> = {
-  available: "Available",
+  available: "Verfügbar",
   offline: "Offline",
-  needs_auth: "Needs authentication",
-  pairing_expired: "Pairing expired",
-  paired: "Paired",
-  installing: "Installing",
-  error: "Error",
+  needs_auth: "Anmeldung erforderlich",
+  pairing_expired: "Verbindung abgelaufen",
+  paired: "Verbunden",
+  installing: "Wird eingerichtet",
+  error: "Fehler",
 };
 
 interface CtoxModeContextValue {
@@ -639,13 +641,13 @@ export function CtoxModeProvider({
       const bounds = guestBoundsRef.current ?? { x: 0, y: 0, width: 1, height: 1 };
       void bridge
         .openApp(instanceId, moduleId, bounds)
-        .catch((error: unknown) => {
+        .catch(() => {
           // Swallowed rejections made a failed open look like a dead click
           // (Befund K-BH4).
           toastManager.add({
             type: "error",
-            title: "Could not open the app",
-            description: error instanceof Error ? error.message : "The instance refused the open.",
+            title: "App konnte nicht geöffnet werden",
+            description: "Bitte Verbindung prüfen und erneut versuchen.",
           });
         })
         .then(() => {
@@ -687,8 +689,8 @@ export function CtoxModeProvider({
       }
       toastManager.add({
         type: "error",
-        title: "Could not open Business OS settings",
-        description: "The active Business OS surface could not be hidden safely.",
+        title: "Business OS-Einstellungen konnten nicht geöffnet werden",
+        description: "Die aktive Business OS-Oberfläche konnte nicht sicher ausgeblendet werden.",
       });
     });
   }, [bridge]);
@@ -907,7 +909,9 @@ export function CtoxModeProvider({
 
 export function ctoxInstanceStatusLabel(instance: CtoxManagedInstance, connected = false): string {
   const health =
-    connected || instance.healthSummary.dataPlaneReady ? "WebRTC ready" : "WebRTC unavailable";
+    connected || instance.healthSummary.dataPlaneReady
+      ? "Synchronisierung bereit"
+      : "Synchronisierung nicht verfügbar";
   return `${STATUS_LABELS[instance.status]} · ${health}`;
 }
 
@@ -952,7 +956,7 @@ function ConfirmingTextAction({
       className={cn(className, armed && "visible font-medium text-destructive")}
       disabled={disabled}
       aria-busy={busy}
-      aria-label={armed ? `Confirm: ${ariaLabel}` : ariaLabel}
+      aria-label={armed ? `Bestätigen: ${ariaLabel}` : ariaLabel}
       onClick={(event) => {
         event.stopPropagation();
         if (!armed) {
@@ -1164,7 +1168,7 @@ function CtoxAppRailRow({
         data-ctox-app-id={app.id}
         data-ctox-app-open={open}
         data-ctox-app-docked={app.docked}
-        title={launchable ? undefined : "This instance is not available."}
+        title={launchable ? undefined : "Dieses Backend ist nicht verfügbar."}
         onClick={() => onOpen(app.id)}
       >
         <span
@@ -1179,11 +1183,11 @@ function CtoxAppRailRow({
       <button
         type="button"
         className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-app:visible"
-        title={app.docked ? "Undock app" : "Dock app"}
-        aria-label={`${app.docked ? "Undock" : "Dock"} ${appLabel(app)}`}
+        title={app.docked ? "App aus dem Dock lösen" : "App anheften"}
+        aria-label={`${app.docked ? "App aus dem Dock lösen" : "App anheften"}: ${appLabel(app)}`}
         onClick={() => onToggleDock(app.id, !app.docked)}
       >
-        {app.docked ? "Unpin" : "Pin"}
+        {app.docked ? "Lösen" : "Anheften"}
       </button>
     </li>
   );
@@ -1263,7 +1267,7 @@ function CtoxAppRailCategory({
                 data-ctox-app-category-more={group.category}
                 onClick={() => setExpanded((value) => !value)}
               >
-                {expanded ? "Show less" : `Show more (${hidden})`}
+                {expanded ? "Weniger anzeigen" : `Mehr anzeigen (${hidden})`}
               </button>
             </li>
           ) : null}
@@ -1295,7 +1299,10 @@ export function CtoxAppRailList({
   const stale = !instanceReady || source === "cache";
   const { docked, categories } = groupCtoxRailApps(apps);
   return (
-    <ul className="space-y-px pb-1 pl-7 pr-1" aria-label={`Apps of ${instance.displayName}`}>
+    <ul
+      className="space-y-px pb-1 pl-7 pr-1"
+      aria-label={`Business OS-Apps für ${instance.displayName}`}
+    >
       {docked.map((app) => (
         <CtoxAppRailRow
           key={app.id}
@@ -1329,11 +1336,11 @@ export function CtoxAppRailList({
  * like any other instance.
  */
 export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
-  if (instance.source === "local_daemon") return "This local daemon is not running.";
+  if (instance.source === "local_daemon") return "Dieses lokale Backend läuft nicht.";
   if (instance.source === "ssh_managed") {
     return instance.status === "available" ? undefined : CTOX_SSH_LAUNCH_PENDING_HINT;
   }
-  return isPairedCtoxInstance(instance) ? "This pairing is not available." : undefined;
+  return isPairedCtoxInstance(instance) ? "Diese Verbindung ist nicht verfügbar." : undefined;
 }
 
 /**
@@ -1368,7 +1375,7 @@ export function ctoxInstanceDisplayTitle(
   const displayName = instance.displayName.trim();
   if (/^biz_[a-z0-9-]+$/i.test(displayName)) {
     const shortId = displayName.slice(4).split("-")[0]?.slice(0, 8) || displayName.slice(4, 12);
-    return `Backend · ${shortId}`;
+    return `CTOX Backend · ${shortId}`;
   }
   return displayName;
 }
@@ -1433,7 +1440,7 @@ function CtoxInstanceCard({
           type="button"
           className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           aria-expanded={!collapsed}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} apps of ${title}`}
+          aria-label={`${collapsed ? "Apps einblenden" : "Apps ausblenden"}: ${title}`}
           data-ctox-instance-collapse=""
           data-ctox-instance-collapsed={collapsed}
           onClick={() => setCollapsed((value) => !value)}
@@ -1480,7 +1487,7 @@ function CtoxInstanceCard({
           <Menu>
             <MenuTrigger
               className="invisible inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-instance:visible data-popup-open:visible"
-              aria-label={`Actions for ${title}`}
+              aria-label={`Aktionen für ${title}`}
               disabled={removingId === instance.id}
             >
               <EllipsisIcon aria-hidden className="size-3.5" />
@@ -1500,7 +1507,7 @@ function CtoxInstanceCard({
                 }}
               >
                 <UnplugIcon aria-hidden />
-                {removeConfirming ? "Confirm removal" : "Remove pairing…"}
+                {removeConfirming ? "Entfernen bestätigen" : "Verbindung entfernen…"}
               </MenuItem>
             </MenuPopup>
           </Menu>
@@ -1550,7 +1557,7 @@ export function CtoxManagedInstanceList({
 }: {
   readonly instances: readonly CtoxManagedInstance[];
 }) {
-  return <CtoxInstanceList instances={instances} label="Managed CTOX instances" />;
+  return <CtoxInstanceList instances={instances} label="CTOX Backends" />;
 }
 
 const fieldClassName =
@@ -1664,13 +1671,13 @@ export function PairingAddSurface({
   return (
     <div className="mt-3 rounded-lg border border-sidebar-border/70 bg-sidebar-accent/10 p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-sidebar-foreground">Add instance</p>
+        <p className="text-sm font-medium text-sidebar-foreground">CTOX Backend hinzufügen</p>
         <button
           type="button"
           className="text-xs text-sidebar-muted-foreground hover:text-sidebar-foreground"
           onClick={close}
         >
-          Cancel
+          Abbrechen
         </button>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-sidebar-accent/30 p-1">
@@ -1685,7 +1692,7 @@ export function PairingAddSurface({
           aria-pressed={choice === "invite"}
           onClick={() => choose("invite")}
         >
-          Invite
+          Einladung
         </button>
         <button
           type="button"
@@ -1698,7 +1705,7 @@ export function PairingAddSurface({
           aria-pressed={choice === "manual"}
           onClick={() => choose("manual")}
         >
-          Manual pairing
+          Manuell
         </button>
         <button
           type="button"
@@ -1718,7 +1725,7 @@ export function PairingAddSurface({
       {choice === "ssh" ? (
         <form className="mt-3 space-y-2" onSubmit={submitSsh}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            SSH host or alias
+            SSH-Host oder Alias
             <input
               className={fieldClassName}
               value={sshHost}
@@ -1731,7 +1738,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Display name (optional)
+            Anzeigename (optional)
             <input
               className={fieldClassName}
               value={sshDisplayName}
@@ -1741,7 +1748,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            CTOX state root on that host (optional)
+            CTOX-Datenordner auf diesem Host (optional)
             <input
               className={fieldClassName}
               value={sshStateRoot}
@@ -1753,7 +1760,8 @@ export function PairingAddSurface({
             />
           </label>
           <p className="text-[11px] leading-snug text-sidebar-muted-foreground">
-            Uses your existing SSH configuration and keys. No credential is stored here.
+            Deine SSH-Konfiguration und Schlüssel werden verwendet. Es werden keine Zugangsdaten
+            gespeichert.
           </p>
           <button
             type="submit"
@@ -1761,13 +1769,13 @@ export function PairingAddSurface({
             disabled={submitting}
             aria-busy={submitting}
           >
-            Add SSH instance
+            SSH-Backend hinzufügen
           </button>
         </form>
       ) : choice === "invite" ? (
         <form className="mt-3" onSubmit={submitInvite}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Invite JSON or CTOX desktop invite link
+            Einladungs-JSON oder CTOX-Desktop-Einladungslink
             <textarea
               className={cn(fieldClassName, "min-h-20 resize-y")}
               value={invite}
@@ -1783,13 +1791,13 @@ export function PairingAddSurface({
             disabled={submitting}
             aria-busy={submitting}
           >
-            Add from invite
+            Aus Einladung hinzufügen
           </button>
         </form>
       ) : (
         <form className="mt-3 space-y-2" onSubmit={submitManual}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Display name
+            Anzeigename
             <input
               className={fieldClassName}
               value={displayName}
@@ -1800,7 +1808,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Instance ID (optional)
+            Instanz-ID (optional)
             <input
               className={fieldClassName}
               value={instanceId}
@@ -1810,7 +1818,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Sync room
+            Synchronisierungskennung
             <input
               className={fieldClassName}
               value={syncRoom}
@@ -1821,7 +1829,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Signaling URLs (one per line or comma-separated)
+            Verbindungsadressen (eine pro Zeile oder durch Komma getrennt)
             <textarea
               className={cn(fieldClassName, "min-h-16 resize-y")}
               value={signalingUrls}
@@ -1832,7 +1840,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Room secret
+            Verbindungsschlüssel
             <input
               type="password"
               className={fieldClassName}
@@ -1844,7 +1852,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Capability token (optional)
+            Berechtigungstoken (optional)
             <input
               type="password"
               className={fieldClassName}
@@ -1855,7 +1863,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Token expiry (optional)
+            Token-Ablauf (optional)
             {/* A raw Unix-milliseconds number field was operator-hostile and
                 let typos become near-NaN payloads (Befund K-B15); the picker
                 converts to epoch ms in the build step. */}
@@ -1867,7 +1875,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Role (optional)
+            Rolle (optional)
             <input
               className={fieldClassName}
               value={role}
@@ -1877,7 +1885,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            User ID (optional)
+            Benutzer-ID (optional)
             <input
               className={fieldClassName}
               value={userId}
@@ -1892,7 +1900,7 @@ export function PairingAddSurface({
             disabled={submitting}
             aria-busy={submitting}
           >
-            Add manual pairing
+            Manuelle Verbindung hinzufügen
           </button>
         </form>
       )}
@@ -1923,14 +1931,16 @@ function ManagedAccountState({
   if (state === "loading") {
     return (
       <p className="text-sm text-sidebar-muted-foreground" role="status">
-        Loading ctox.dev instances…
+        CTOX Backends werden geladen…
       </p>
     );
   }
   if (state === "signed_out") {
     return (
       <div className="flex items-center justify-between gap-2 px-2 py-1">
-        <p className="truncate text-xs text-sidebar-muted-foreground">Signed out of ctox.dev</p>
+        <p className="truncate text-xs text-sidebar-muted-foreground">
+          Nicht bei ctox.dev angemeldet
+        </p>
         <button
           type="button"
           className="shrink-0 text-xs font-medium text-sidebar-primary underline-offset-2 hover:underline disabled:opacity-50"
@@ -1938,7 +1948,7 @@ function ManagedAccountState({
           disabled={refreshing}
           aria-busy={refreshing}
         >
-          Sign in
+          Anmelden
         </button>
       </div>
     );
@@ -1947,16 +1957,16 @@ function ManagedAccountState({
     return (
       <p className="px-2 py-1 text-xs text-destructive" role="alert">
         {hasPairedInstances
-          ? "ctox.dev discovery failed. Paired instances remain available."
-          : "ctox.dev discovery failed. Try refreshing."}
+          ? "CTOX Backend konnte nicht geladen werden. Verbundene Backends bleiben verfügbar."
+          : "CTOX Backend konnte nicht geladen werden. Bitte erneut versuchen."}
       </p>
     );
   }
   return (
     <ConfirmingTextAction
-      label="Sign out"
-      confirmLabel="Sign out?"
-      ariaLabel="Sign out"
+      label="Abmelden"
+      confirmLabel="Abmelden?"
+      ariaLabel="Abmelden"
       className="text-xs text-sidebar-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
       disabled={refreshing}
       onConfirm={logout}
@@ -1986,9 +1996,9 @@ export function CtoxSidebarFooter() {
       <SidebarMenu className="flex-row items-center">
         <SidebarMenuItem className="shrink-0">
           <SidebarMenuButton
-            aria-label="Settings"
+            aria-label="Business OS-Einstellungen"
             size="icon"
-            title="Business OS settings"
+            title="Business OS-Einstellungen"
             onClick={openSettings}
           >
             <SettingsIcon />
@@ -1996,9 +2006,9 @@ export function CtoxSidebarFooter() {
         </SidebarMenuItem>
         <SidebarMenuItem className="shrink-0">
           <SidebarMenuButton
-            aria-label="Refresh instances"
+            aria-label="Backends aktualisieren"
             size="icon"
-            title="Refresh instances"
+            title="Backends aktualisieren"
             aria-busy={refreshing}
             disabled={refreshing}
             onClick={() => {
@@ -2046,7 +2056,7 @@ export function CtoxSidebarShell() {
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
           <div className="mb-4 flex items-center justify-between gap-2 px-1">
-            <p className="text-sm font-semibold text-sidebar-foreground">Backends</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">CTOX Backends</p>
             <div className="flex items-center gap-1">
               {/* Refresh lives ONCE, in the footer strip — the second copy
                   fifteen lines away confused more than it helped (K-B10). */}
@@ -2058,9 +2068,9 @@ export function CtoxSidebarShell() {
                   setAddOpen((open) => !open);
                 }}
                 disabled={bridge === undefined}
-                aria-label="Add instance"
+                aria-label="CTOX Backend hinzufügen"
                 aria-expanded={addOpen}
-                title="Add instance"
+                title="CTOX Backend hinzufügen"
               >
                 <Plus className="size-3.5" aria-hidden />
               </button>
@@ -2069,7 +2079,7 @@ export function CtoxSidebarShell() {
 
           {bridge === undefined ? (
             <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
-              CTOX desktop services are unavailable.
+              CTOX Backend-Dienste sind nicht verfügbar.
             </p>
           ) : null}
 
@@ -2088,7 +2098,7 @@ export function CtoxSidebarShell() {
           )}
           {discovery !== "loading" && discovery._tag === "failed" ? (
             <p className="text-xs text-destructive" role="alert">
-              CTOX instance discovery failed. Try refreshing.
+              CTOX Backends konnten nicht geladen werden. Bitte aktualisieren.
             </p>
           ) : (
             <div className="space-y-3">
@@ -2098,7 +2108,7 @@ export function CtoxSidebarShell() {
                     id="ctox-managed-heading"
                     className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
                   >
-                    Managed
+                    CTOX Backend
                   </h2>
                   {managedState === "ready" ? (
                     <ManagedAccountState
@@ -2110,7 +2120,7 @@ export function CtoxSidebarShell() {
                 {managedState === "ready" ? (
                   managed.instances.length === 0 ? (
                     <p className="text-xs text-sidebar-muted-foreground" role="status">
-                      No managed instances are available.
+                      Keine CTOX Backends verfügbar.
                     </p>
                   ) : (
                     <CtoxManagedInstanceList instances={managed.instances} />
@@ -2129,7 +2139,7 @@ export function CtoxSidebarShell() {
                     id="ctox-paired-heading"
                     className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
                   >
-                    Paired
+                    Verbundene Backends
                   </h2>
                   {paired.instances.length > 0 ? (
                     <span className="text-[10px] tabular-nums text-sidebar-muted-foreground/60">
@@ -2139,17 +2149,17 @@ export function CtoxSidebarShell() {
                 </div>
                 {discovery === "loading" ? (
                   <p className="text-xs text-sidebar-muted-foreground" role="status">
-                    Loading paired instances…
+                    Verbundene Backends werden geladen…
                   </p>
                 ) : paired.instances.length === 0 ? (
                   <p className="text-xs text-sidebar-muted-foreground" role="status">
-                    No paired instances.
+                    Keine verbundenen Backends.
                   </p>
                 ) : (
                   <>
                     <CtoxInstanceList
                       instances={paired.instances}
-                      label="Paired CTOX instances"
+                      label="Verbundene Backends"
                       removingId={removingId}
                       onRemove={remove}
                     />
@@ -2172,7 +2182,7 @@ export function CtoxSidebarShell() {
                   </div>
                   <CtoxInstanceList
                     instances={group.instances}
-                    label={`${group.label} CTOX instances`}
+                    label={group.label}
                     {...(group.key === "ssh" ? { removingId, onRemove: remove } : {})}
                   />
                 </section>
@@ -2370,12 +2380,12 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 
   const fallback = {
     connecting: connectingTooLong
-      ? "Still connecting… the instance may be unreachable. Try selecting it again or refreshing the sidebar."
-      : "Connecting to the Business OS guest…",
-    ready: `Business OS guest for ${instance.displayName} is ready.`,
-    error: "The Business OS guest could not be opened.",
-    revoked: "Access to this instance is no longer available.",
-    idle: "Select an instance to connect.",
+      ? "Die Verbindung dauert länger als erwartet. Das Backend ist möglicherweise nicht erreichbar. Bitte erneut auswählen oder die Backends aktualisieren."
+      : "Business OS wird verbunden…",
+    ready: "Business OS ist bereit.",
+    error: "Business OS konnte nicht geöffnet werden.",
+    revoked: "Zugriff auf dieses Backend ist nicht mehr verfügbar.",
+    idle: "CTOX Backend auswählen, um Business OS zu öffnen.",
   }[connection];
 
   return (
@@ -2383,7 +2393,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       ref={hostRef}
       className="relative min-h-0 flex-1 overflow-hidden bg-background"
       role="region"
-      aria-label={`Business OS guest: ${instance.displayName}`}
+      aria-label={`Business OS: ${instance.displayName}`}
       data-ctox-connection={connection}
       data-ctox-native-guest-host=""
     >
@@ -2445,22 +2455,23 @@ export function CtoxMainShell({
   const emptyState =
     connection === "revoked"
       ? {
-          title: "Access revoked",
-          description: "Access to the selected instance is no longer available.",
+          title: "Zugriff entzogen",
+          description: "Zugriff auf das ausgewählte Backend ist nicht mehr verfügbar.",
         }
       : discovery !== "loading" && discovery._tag === "failed"
         ? {
-            title: "CTOX is unavailable",
-            description: "Instance discovery could not be completed. Try refreshing the sidebar.",
+            title: "CTOX Backend nicht verfügbar",
+            description:
+              "CTOX Backends konnten nicht geladen werden. Bitte aktualisieren Sie die Seitenleiste.",
           }
         : discovery === "loading"
           ? {
-              title: "Loading CTOX instances",
-              description: "Discovery is still in progress.",
+              title: "CTOX Backends werden geladen",
+              description: "Die Backends werden noch geladen.",
             }
           : {
-              title: "No instance selected",
-              description: "Select an available instance from the sidebar to open Business OS.",
+              title: "Kein Backend ausgewählt",
+              description: "Wählen Sie ein verfügbares Backend aus, um Business OS zu öffnen.",
             };
 
   // Business OS brings its own full shell header; while the guest is ready
@@ -2490,7 +2501,7 @@ export function CtoxMainShell({
           <span className="text-xs font-medium text-muted-foreground/60 wco:pr-[var(--workspace-native-controls-inset)]">
             {selected === undefined
               ? "Workjet"
-              : (workspaceNames.get(selected.id) ?? selected.displayName)}
+              : ctoxInstanceDisplayTitle(selected, workspaceNames.get(selected.id) ?? null)}
           </span>
           {selected !== undefined ? (
             <span className="ml-auto text-xs text-muted-foreground" role="status">

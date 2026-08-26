@@ -7,8 +7,9 @@ import type {
   WorkjetComputerPresentationKind,
   WorkjetConfiguration,
   WorkjetWorkerProfile,
+  WorkjetWorkerProfileId,
 } from "@t3tools/contracts";
-import { WS_METHODS } from "@t3tools/contracts";
+import { compileWorkjetWorkerPersonaPrompt, WS_METHODS } from "@t3tools/contracts";
 import {
   createEnvironmentRpcCommand,
   isAtomCommandInterrupted,
@@ -48,6 +49,7 @@ import {
   WorkjetWorkerEditor,
   workjetHarnessAvailabilityWarning,
 } from "./WorkjetWorkerEditor";
+import { sanitizeWorkjetWorkerGraph, WorkjetWorkerOrganigram } from "./WorkjetWorkerOrganigram";
 import {
   ConfirmingDeleteButton,
   SettingsPageContainer,
@@ -361,7 +363,12 @@ function replaceCatalogItem<T extends { readonly id: string }>(
   return items.map((candidate) => (candidate.id === item.id ? item : candidate));
 }
 
-export type WorkjetSettingsSectionId = "workers" | "prompt" | "telemetry" | "execution";
+export type WorkjetSettingsSectionId =
+  | "workers"
+  | "organigram"
+  | "prompt"
+  | "telemetry"
+  | "execution";
 
 function modelPromptFor(configuration: WorkjetConfiguration, modelId: string): string {
   return configuration.modelPrompts.find((entry) => entry.modelId === modelId)?.prompt ?? "";
@@ -372,11 +379,12 @@ export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   readonly targetId: string;
   readonly label: string;
 }> = [
-  // Four tabs, mirroring the Swift original's settings page after the
+  // Settings stay shallow: Workers owns profiles, Organigram owns their graph.
   // operator's re-mapping: Computers is a TOP-LEVEL settings page, provider
   // accounts and LLM routes live on Models beside the accounts they
   // reference, and capabilities are toggled inside the worker editor.
   { id: "workers", targetId: "workjet-workers", label: "Workers" },
+  { id: "organigram", targetId: "workjet-organigram", label: "Organigram" },
   { id: "prompt", targetId: "workjet-prompt", label: "Prompt" },
   { id: "telemetry", targetId: "workjet-telemetry", label: "Telemetry" },
   { id: "execution", targetId: "workjet-execution", label: "Execution" },
@@ -729,6 +737,9 @@ export function WorkjetSettingsView({
     stashedWorkerEditor !== null && stashedWorkerEditor !== "new" ? stashedWorkerEditor : null,
   );
   const [addingWorker, setAddingWorker] = useState(stashedWorkerEditor === "new");
+  const [pendingWorkerParentId, setPendingWorkerParentId] = useState<WorkjetWorkerProfileId | null>(
+    null,
+  );
   const promptSections = splitManagedPrompt(configuration.managedSystemPrompt);
   const editingWorker =
     configuration.workerProfiles.find((worker) => worker.id === editingWorkerId) ?? null;
@@ -751,14 +762,34 @@ export function WorkjetSettingsView({
         onCancel={() => {
           setAddingWorker(false);
           setEditingWorkerId(null);
+          setPendingWorkerParentId(null);
         }}
         onSave={(worker: WorkjetWorkerProfile) => {
+          const workerProfiles = replaceCatalogItem(configuration.workerProfiles, worker);
+          const cleanGraph = sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles);
+          const workerGraph =
+            pendingWorkerParentId === null ||
+            cleanGraph.dependencies.some(
+              (dependency) =>
+                dependency.fromWorkerId === pendingWorkerParentId &&
+                dependency.toWorkerId === worker.id,
+            )
+              ? cleanGraph
+              : {
+                  ...cleanGraph,
+                  dependencies: [
+                    ...cleanGraph.dependencies,
+                    { fromWorkerId: pendingWorkerParentId, toWorkerId: worker.id },
+                  ],
+                };
           onChange({
             ...configuration,
-            workerProfiles: replaceCatalogItem(configuration.workerProfiles, worker),
+            workerProfiles,
+            workerGraph,
           });
           setAddingWorker(false);
           setEditingWorkerId(null);
+          setPendingWorkerParentId(null);
           // The saved row can sit below the fold; without this the viewport
           // shows no evidence the save happened (interactive-review finding).
           toastManager.add({
@@ -819,6 +850,7 @@ export function WorkjetSettingsView({
               onClick={() => {
                 setEditingWorkerId(null);
                 setAddingWorker(true);
+                setPendingWorkerParentId(null);
               }}
             >
               <PlusIcon className="size-3.5" />
@@ -858,15 +890,21 @@ export function WorkjetSettingsView({
                         onEdit={() => {
                           setAddingWorker(false);
                           setEditingWorkerId(worker.id);
+                          setPendingWorkerParentId(null);
                         }}
-                        onDelete={() =>
+                        onDelete={() => {
+                          const workerProfiles = configuration.workerProfiles.filter(
+                            (candidate) => candidate.id !== worker.id,
+                          );
                           onChange({
                             ...configuration,
-                            workerProfiles: configuration.workerProfiles.filter(
-                              (candidate) => candidate.id !== worker.id,
+                            workerProfiles,
+                            workerGraph: sanitizeWorkjetWorkerGraph(
+                              configuration.workerGraph,
+                              workerProfiles,
                             ),
-                          })
-                        }
+                          });
+                        }}
                       />
                     }
                   />
@@ -876,6 +914,50 @@ export function WorkjetSettingsView({
             })
           )}
         </SettingsSection>
+      ) : null}
+
+      {activeSection === "organigram" ? (
+        <div id="workjet-organigram" className="px-3 sm:px-4">
+          <WorkjetWorkerOrganigram
+            workers={configuration.workerProfiles}
+            graph={configuration.workerGraph}
+            onChange={(workerGraph) => onChange({ ...configuration, workerGraph })}
+            onAddWorker={(parentId) => {
+              setPendingWorkerParentId(parentId);
+              setEditingWorkerId(null);
+              setAddingWorker(true);
+              setActiveSection("workers");
+              void navigate({
+                to: "/settings/workjet",
+                hash: "workjet-workers",
+                replace: true,
+                hashScrollIntoView: false,
+              });
+            }}
+            onEditWorker={(workerId) => {
+              setPendingWorkerParentId(null);
+              setAddingWorker(false);
+              setEditingWorkerId(workerId);
+              setActiveSection("workers");
+              void navigate({
+                to: "/settings/workjet",
+                hash: "workjet-workers",
+                replace: true,
+                hashScrollIntoView: false,
+              });
+            }}
+            onDeleteWorker={(workerId) => {
+              const workerProfiles = configuration.workerProfiles.filter(
+                (worker) => worker.id !== workerId,
+              );
+              onChange({
+                ...configuration,
+                workerProfiles,
+                workerGraph: sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles),
+              });
+            }}
+          />
+        </div>
       ) : null}
 
       {activeSection === "prompt" ? (
@@ -1028,6 +1110,16 @@ export function WorkjetSettingsView({
                             ),
                           });
                         }}
+                      />
+                      <div className="mt-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                        Persona system prompt
+                      </div>
+                      <Textarea
+                        value={compileWorkjetWorkerPersonaPrompt(worker)}
+                        readOnly
+                        rows={20}
+                        aria-label={`Complete persona system prompt for ${worker.name}`}
+                        className="mt-1 font-mono text-[11px] leading-relaxed"
                       />
                     </div>
                   );

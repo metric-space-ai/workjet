@@ -12,6 +12,7 @@ import type {
   WorkjetThreadRole,
 } from "@t3tools/contracts";
 import {
+  composeWorkjetWorkerManagedInstructions,
   DEFAULT_WORKJET_THREAD_CONFIG,
   normalizeWorkjetThreadConfig,
   ProviderDriverKind,
@@ -975,9 +976,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ?.prompt.trim();
       payload = {
         capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
-        managedInstructions: [modelRules, worker.instructions?.trim()]
-          .filter((part): part is string => part !== undefined && part.length > 0)
-          .join("\n\n"),
+        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules),
       };
     } else if (draftManagedInstructions !== null) {
       payload = { managedInstructions: draftManagedInstructions };
@@ -1040,9 +1039,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         schemaVersion: 2,
         role: worker.role,
         parent: null,
-        managedInstructions: [modelRules, worker.instructions?.trim()]
-          .filter((part): part is string => part !== undefined && part.length > 0)
-          .join("\n\n"),
+        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules),
         enabledCapabilityIds: worker.capabilityIds,
         capabilityBindings: worker.capabilityBindings,
       });

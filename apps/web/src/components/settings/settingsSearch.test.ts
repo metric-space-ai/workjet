@@ -116,9 +116,10 @@ describe("searchSettings", () => {
     );
     // Computers is its own page, provider accounts and LLM routes live on
     // /settings/models, and capabilities are toggled in the worker editor —
-    // only the four tabs plus their nested anchors resolve to the Worker page.
+    // only the five tabs plus their nested anchors resolve to the Worker page.
     expect(workjetIds).toEqual([
       "workjet-workers",
+      "workjet-organigram",
       "workjet-prompt",
       "workjet-telemetry",
       "workjet-execution",

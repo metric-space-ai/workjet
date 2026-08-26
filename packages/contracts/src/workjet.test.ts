@@ -13,6 +13,10 @@ import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 import {
   DEFAULT_WORKJET_CONFIGURATION,
   DEFAULT_WORKJET_THREAD_CONFIG,
+  activeWorkjetWorkerPersonaPrompt,
+  compileWorkjetWorkerPersonaPrompt,
+  composeWorkjetWorkerManagedInstructions,
+  createDefaultWorkjetWorkerPersonalization,
   GreppyRuntimeSnapshot,
   WorkjetConfiguration,
   WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
@@ -288,16 +292,57 @@ describe("Workjet provider gateway RPC contract", () => {
 });
 
 describe("WorkjetConfiguration", () => {
+  it("builds the complete six-by-three persona prompt and dispatches it only when enabled", () => {
+    const personalization = createDefaultWorkjetWorkerPersonalization();
+    expect(personalization.groups).toHaveLength(6);
+    expect(personalization.groups.flatMap((group) => group.details)).toHaveLength(18);
+    expect(personalization.metaToDetailWeights).toHaveLength(18);
+    expect(personalization.detailInfluenceWeights).toHaveLength(18);
+
+    const worker = {
+      name: "Research partner",
+      instructions: "Check evidence before recommending a decision.",
+      personalization,
+    };
+    const readable = compileWorkjetWorkerPersonaPrompt(worker);
+    const json = JSON.parse(readable.slice(readable.indexOf("{"))) as {
+      readonly personalization: {
+        readonly enabled: boolean;
+        readonly profile: { readonly meta: unknown[]; readonly details: unknown[] };
+      };
+    };
+    expect(json.personalization.enabled).toBe(false);
+    expect(json.personalization.profile.meta).toHaveLength(6);
+    expect(json.personalization.profile.details).toHaveLength(18);
+    expect(readable).toContain("Die Gegenseite ist nicht verboten");
+    expect(activeWorkjetWorkerPersonaPrompt(worker)).toBe("");
+    expect(
+      activeWorkjetWorkerPersonaPrompt({
+        ...worker,
+        personalization: { ...personalization, enabled: true },
+      }),
+    ).toContain('"enabled": true');
+    const composed = composeWorkjetWorkerManagedInstructions(
+      { ...worker, personalization: { ...personalization, enabled: true } },
+      "Model rule",
+    );
+    expect(composed.indexOf("Model rule")).toBeLessThan(composed.indexOf("Interpretiere das JSON"));
+    expect(composed.indexOf("Interpretiere das JSON")).toBeLessThan(
+      composed.lastIndexOf("Check evidence"),
+    );
+  });
+
   it("decodes missing legacy catalog data to a valid empty configuration", () => {
     expect(Schema.decodeUnknownSync(WorkjetConfiguration)({})).toEqual(
       DEFAULT_WORKJET_CONFIGURATION,
     );
     expect(DEFAULT_WORKJET_CONFIGURATION).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       computers: [],
       llmRoutes: [],
       modelPrompts: [],
       workerProfiles: [],
+      workerGraph: { positions: [], dependencies: [] },
       managedSystemPrompt: "",
       telemetry: {
         claudeCodeEvents: true,
@@ -336,7 +381,7 @@ describe("WorkjetConfiguration", () => {
     expect(JSON.stringify(decoded.llmRoutes)).not.toContain("must-not-persist-here");
   });
 
-  it("normalizes and re-encodes a v2 configuration as v3", () => {
+  it("normalizes and re-encodes a v2 configuration as v4", () => {
     const encodedInput = {
       schemaVersion: 2,
       computers: [],
@@ -357,7 +402,8 @@ describe("WorkjetConfiguration", () => {
     const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)(encodedInput);
     expect(Schema.encodeUnknownSync(WorkjetConfiguration)(decoded)).toEqual({
       ...encodedInput,
-      schemaVersion: 3,
+      schemaVersion: 4,
+      workerGraph: { positions: [], dependencies: [] },
     });
   });
 });
@@ -386,7 +432,7 @@ describe("Workjet configuration migration step 2 (LLM route reference retype)", 
       ],
     });
 
-    expect(decoded.schemaVersion).toBe(3);
+    expect(decoded.schemaVersion).toBe(4);
     expect(decoded.llmRoutes).toEqual([
       { id: "route-main", label: "Main account", gatewayAccountId: "account-codex-personal" },
       // A genuinely historical driver-instance id migrates as-is and simply
@@ -407,7 +453,7 @@ describe("Workjet configuration migration step 2 (LLM route reference retype)", 
       readonly llmRoutes: ReadonlyArray<Record<string, unknown>>;
     };
 
-    expect(encoded.schemaVersion).toBe(3);
+    expect(encoded.schemaVersion).toBe(4);
     expect(encoded.llmRoutes[0]).toEqual({
       id: "route-main",
       label: "Main account",

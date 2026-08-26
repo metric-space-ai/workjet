@@ -1011,6 +1011,7 @@ export function mapLegacyWorkjetConfig(input: {
     modelPrompts: [],
     llmRoutes,
     workerProfiles,
+    workerGraph: { positions: [], dependencies: [] },
     managedSystemPrompt: composeManagedSystemPrompt(config),
     telemetry: {
       claudeCodeEvents: config.telemetryClaudeCodeEvents,

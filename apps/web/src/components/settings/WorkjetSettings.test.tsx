@@ -115,7 +115,7 @@ describe("Workjet configuration settings", () => {
       />,
     );
 
-    // Four tabs, mirroring the Swift original after the operator's
+    // Five tabs, with the editable worker graph beside the profile catalog.
     // re-mapping: Computers is a top-level settings page, provider accounts
     // and LLM routes live on Models, capabilities are toggled in the worker
     // editor, and the one-shot legacy import surface is gone. Every section
@@ -249,6 +249,7 @@ describe("Workjet configuration settings", () => {
     // Computers is its own page now; its anchor no longer selects a tab here.
     expect(workjetSectionFromHash("#workjet-computers")).toBeNull();
     expect(workjetSectionFromHash("workjet-telemetry")).toBe("telemetry");
+    expect(workjetSectionFromHash("#workjet-organigram")).toBe("organigram");
     expect(workjetSectionFromHash("#greppy-runtime")).toBe("workers");
     expect(workjetSectionFromHash("#unknown")).toBeNull();
   });

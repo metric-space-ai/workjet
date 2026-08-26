@@ -233,6 +233,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/models",
   },
   {
+    id: "workjet-organigram",
+    title: "Organigram",
+    to: "/settings/workjet",
+  },
+  {
     id: "workjet-prompt",
     title: "Prompt",
     to: "/settings/workjet",

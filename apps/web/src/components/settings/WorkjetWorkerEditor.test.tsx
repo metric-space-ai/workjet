@@ -5,6 +5,7 @@ import {
   WorkjetGatewayAccountId,
   WorkjetLlmRouteId,
   WorkjetWorkerProfileId,
+  createDefaultWorkjetWorkerPersonalization,
   type WorkjetComputer,
   type WorkjetLlmRoute,
 } from "@t3tools/contracts";
@@ -57,6 +58,7 @@ describe("WorkjetWorkerEditor", () => {
   });
 
   it("saves every independent field and capability toggle", () => {
+    const personalization = createDefaultWorkjetWorkerPersonalization();
     const saved = saveWorkjetWorkerDraft({
       id: "worker-1",
       name: " Completion Engine ",
@@ -69,6 +71,7 @@ describe("WorkjetWorkerEditor", () => {
       role: "standard",
       capabilityIds: ["greppy", "web-search", "web-stack-browser"],
       capabilityBindings: [],
+      personalization,
     });
 
     expect(saved).toEqual({
@@ -83,6 +86,7 @@ describe("WorkjetWorkerEditor", () => {
       role: "standard",
       capabilityIds: ["greppy", "web-search", "web-stack-browser"],
       capabilityBindings: [],
+      personalization,
     });
   });
 
@@ -125,6 +129,7 @@ describe("WorkjetWorkerEditor", () => {
       role: "standard" as const,
       capabilityIds: ["web-search" as const],
       capabilityBindings: [],
+      personalization: createDefaultWorkjetWorkerPersonalization(),
     };
     const before = structuredClone(draft);
 
@@ -151,12 +156,13 @@ describe("WorkjetWorkerEditor", () => {
     // reasoning and target computer as visible option sets rather than
     // dropdowns that hide them.
     const sections = [
+      "Profile",
       "Name / role",
+      "task",
       "Harness",
       "LLM route",
       "Model",
       "Reasoning",
-      "task",
       "Skills",
       "Target computer",
       "Technical details",

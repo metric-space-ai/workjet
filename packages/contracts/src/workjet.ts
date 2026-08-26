@@ -209,6 +209,30 @@ export const WorkjetReasoningSelection = Schema.Literals([
 ]);
 export type WorkjetReasoningSelection = typeof WorkjetReasoningSelection.Type;
 
+export const WorkjetPersonalizationAxis = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  left: TrimmedNonEmptyString,
+  right: TrimmedNonEmptyString,
+  value: Schema.Number,
+});
+export type WorkjetPersonalizationAxis = typeof WorkjetPersonalizationAxis.Type;
+
+export const WorkjetPersonalizationGroup = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+  meta: WorkjetPersonalizationAxis,
+  details: Schema.Array(WorkjetPersonalizationAxis),
+});
+export type WorkjetPersonalizationGroup = typeof WorkjetPersonalizationGroup.Type;
+
+export const WorkjetWorkerPersonalization = Schema.Struct({
+  enabled: Schema.Boolean,
+  groups: Schema.Array(WorkjetPersonalizationGroup),
+  metaToDetailWeights: Schema.Array(Schema.Array(Schema.Number)),
+  detailInfluenceWeights: Schema.Array(Schema.Array(Schema.Number)),
+});
+export type WorkjetWorkerPersonalization = typeof WorkjetWorkerPersonalization.Type;
+
 export const WorkjetWorkerProfile = Schema.Struct({
   id: WorkjetWorkerProfileId,
   name: TrimmedNonEmptyString,
@@ -227,8 +251,32 @@ export const WorkjetWorkerProfile = Schema.Struct({
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  personalization: Schema.optionalKey(WorkjetWorkerPersonalization),
 });
 export type WorkjetWorkerProfile = typeof WorkjetWorkerProfile.Type;
+
+export const WorkjetWorkerGraphPosition = Schema.Struct({
+  workerId: WorkjetWorkerProfileId,
+  x: Schema.Number,
+  y: Schema.Number,
+});
+export type WorkjetWorkerGraphPosition = typeof WorkjetWorkerGraphPosition.Type;
+
+export const WorkjetWorkerDependency = Schema.Struct({
+  fromWorkerId: WorkjetWorkerProfileId,
+  toWorkerId: WorkjetWorkerProfileId,
+});
+export type WorkjetWorkerDependency = typeof WorkjetWorkerDependency.Type;
+
+export const WorkjetWorkerGraph = Schema.Struct({
+  positions: Schema.Array(WorkjetWorkerGraphPosition).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  dependencies: Schema.Array(WorkjetWorkerDependency).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type WorkjetWorkerGraph = typeof WorkjetWorkerGraph.Type;
 
 export const WorkjetExecutionConfiguration = Schema.Struct({
   probeTimeoutSeconds: PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(120))),
@@ -249,22 +297,22 @@ export type WorkjetTelemetryConfiguration = typeof WorkjetTelemetryConfiguration
  * connection details, and per-thread orchestration state intentionally live elsewhere.
  */
 /** Current Workjet configuration schema version. Bumped by migration step 2. */
-export const WORKJET_CONFIGURATION_SCHEMA_VERSION = 3;
+export const WORKJET_CONFIGURATION_SCHEMA_VERSION = 4;
 
 /**
  * Accepts every published configuration version and normalizes to the current
  * one. A stored `1` is upgraded in place by migration step 2, which rewrites the
  * route reference field; there is no other v1/v2 difference.
  */
-const WorkjetConfigurationSchemaVersion = Schema.Literals([1, 2, 3]).pipe(
+const WorkjetConfigurationSchemaVersion = Schema.Literals([1, 2, 3, 4]).pipe(
   Schema.decodeTo(
-    Schema.Literal(3),
+    Schema.Literal(4),
     SchemaTransformation.transformOrFail({
-      decode: (_version: 1 | 2 | 3): Effect.Effect<3> => Effect.succeed(3 as const),
-      encode: (_version: 3): Effect.Effect<1 | 2 | 3> => Effect.succeed(3 as const),
+      decode: (_version: 1 | 2 | 3 | 4): Effect.Effect<4> => Effect.succeed(4 as const),
+      encode: (_version: 4): Effect.Effect<1 | 2 | 3 | 4> => Effect.succeed(4 as const),
     }),
   ),
-  Schema.withDecodingDefault(Effect.succeed(2 as const)),
+  Schema.withDecodingDefault(Effect.succeed(4 as const)),
 );
 
 /** Whole-object value schema without an outer default, used by patch contracts. */
@@ -291,6 +339,7 @@ export const WorkjetConfigurationValue = Schema.Struct({
   workerProfiles: Schema.Array(WorkjetWorkerProfile).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  workerGraph: WorkjetWorkerGraph,
   managedSystemPrompt: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   telemetry: WorkjetTelemetryConfiguration,
   execution: WorkjetExecutionConfiguration,
@@ -301,6 +350,265 @@ export const WorkjetConfiguration = WorkjetConfigurationValue.pipe(
   Schema.withDecodingDefault(Effect.succeed({})),
 );
 export type WorkjetConfiguration = typeof WorkjetConfiguration.Type;
+
+const DEFAULT_PERSONALIZATION_GROUPS = [
+  {
+    id: "frame",
+    title: "Rahmen & Alltag",
+    meta: {
+      id: "meta-frame",
+      left: "Konstanter, verlässlicher Rahmen",
+      right: "Gestaltbarer, beweglicher Spielraum",
+      value: 50,
+    },
+    details: [
+      {
+        id: "routine",
+        left: "Fester, gut planbarer Alltag",
+        right: "Situativ anpassbarer Alltag",
+        value: 50,
+      },
+      {
+        id: "location",
+        left: "Überwiegend an einem festen Ort",
+        right: "Hohe räumliche Beweglichkeit",
+        value: 50,
+      },
+      {
+        id: "reward",
+        left: "Stabiles Vergütungsfundament",
+        right: "Leistungsorientiertes Plus-Paket",
+        value: 50,
+      },
+    ],
+  },
+  {
+    id: "tasks",
+    title: "Aufgaben & Rolle",
+    meta: {
+      id: "meta-tasks",
+      left: "Fokussierte Kernaufgaben",
+      right: "Vielfältige Aufgabenlandschaft",
+      value: 50,
+    },
+    details: [
+      {
+        id: "expertise",
+        left: "Konzentrierte Expertenarbeit",
+        right: "Fachliche Breite mit Tiefgang",
+        value: 50,
+      },
+      {
+        id: "communication",
+        left: "Ruhiger Fokus mit ausgewählter Kommunikation",
+        right: "Hohe Kommunikationsdichte",
+        value: 50,
+      },
+      {
+        id: "autonomy",
+        left: "Sorgfältige Mitgestaltung im eigenen Bereich",
+        right: "Weitreichende Entscheidungsfreiheit",
+        value: 50,
+      },
+    ],
+  },
+  {
+    id: "future",
+    title: "Wachstum & Zukunft",
+    meta: {
+      id: "meta-future",
+      left: "Stabiles Heute",
+      right: "Mutige Zukunftsgestaltung",
+      value: 50,
+    },
+    details: [
+      {
+        id: "change",
+        left: "Stetiges, gut dosiertes Wachstum",
+        right: "Hohe Dynamik und Innovationsdrang",
+        value: 50,
+      },
+      {
+        id: "learning",
+        left: "Praxisnahe Weiterentwicklung im Alltag",
+        right: "Strukturiertes Entwicklungsprogramm",
+        value: 50,
+      },
+      {
+        id: "roles",
+        left: "Lange Verweildauer in Rollen",
+        right: "Regelmäßige Rollen- und Themenwechsel",
+        value: 50,
+      },
+    ],
+  },
+  {
+    id: "culture",
+    title: "Mensch & Organisation",
+    meta: {
+      id: "meta-culture",
+      left: "Vertrautes, eingespieltes Miteinander",
+      right: "Vielfältige, sich verändernde Kultur",
+      value: 50,
+    },
+    details: [
+      {
+        id: "organization",
+        left: "Deutlich definierte Organisation",
+        right: "Struktur mit Gestaltungsspielraum",
+        value: 50,
+      },
+      {
+        id: "agility",
+        left: "Planbare Veränderungszyklen",
+        right: "Spürbar agiles Umfeld",
+        value: 50,
+      },
+      {
+        id: "feedback",
+        left: "Ruhiges, vertrauensvolles Miteinander",
+        right: "Aktive Lern- und Feedbackkultur",
+        value: 50,
+      },
+    ],
+  },
+  {
+    id: "structure",
+    title: "Aufbau & Lesefluss",
+    meta: {
+      id: "meta-structure",
+      left: "Schnell erfassbarer Aufbau",
+      right: "Zusammenhängender Erzählfluss",
+      value: 50,
+    },
+    details: [
+      { id: "result-context", left: "Ergebnis zuerst", right: "Kontext zuerst", value: 50 },
+      {
+        id: "linear-networked",
+        left: "Linear Schritt für Schritt",
+        right: "Vernetzt und zusammenhängend",
+        value: 50,
+      },
+      { id: "lists-prose", left: "Scannbare Listen", right: "Fließender Prosatext", value: 50 },
+    ],
+  },
+  {
+    id: "expression",
+    title: "Ausdruck & Signatur",
+    meta: {
+      id: "meta-expression",
+      left: "Klarer, ruhiger Ausdruck",
+      right: "Eigenständiger, lebendiger Ausdruck",
+      value: 50,
+    },
+    details: [
+      {
+        id: "plain-distinctive",
+        left: "Schlicht und unmissverständlich",
+        right: "Eigenständig und unverwechselbar",
+        value: 50,
+      },
+      {
+        id: "calm-rhythmic",
+        left: "Ruhig und gleichmäßig",
+        right: "Dynamisch und rhythmisch",
+        value: 50,
+      },
+      {
+        id: "standard-natural",
+        left: "Gepflegte Standardsprache",
+        right: "Natürliche Umgangssprache",
+        value: 50,
+      },
+    ],
+  },
+] as const;
+
+export function createDefaultWorkjetWorkerPersonalization(): WorkjetWorkerPersonalization {
+  const groups = DEFAULT_PERSONALIZATION_GROUPS.map((group) => ({
+    ...group,
+    meta: { ...group.meta },
+    details: group.details.map((detail) => ({ ...detail })),
+  }));
+  const detailCount = groups.reduce((sum, group) => sum + group.details.length, 0);
+  const metaToDetailWeights = groups.flatMap((group, groupIndex) =>
+    group.details.map(() => groups.map((_, index) => (index === groupIndex ? 1 : 0))),
+  );
+  const detailInfluenceWeights = Array.from({ length: detailCount }, (_, row) =>
+    Array.from({ length: detailCount }, (_, column) =>
+      row !== column && Math.floor(row / 3) === Math.floor(column / 3) ? 0.2 : 0,
+    ),
+  );
+  return { enabled: false, groups, metaToDetailWeights, detailInfluenceWeights };
+}
+
+const clampPersonaValue = (value: number): number =>
+  Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 50)));
+
+function personaAxisJson(axis: WorkjetPersonalizationAxis) {
+  const value = clampPersonaValue(axis.value);
+  const side = value < 40 ? "left" : value > 60 ? "right" : "balanced";
+  return {
+    id: axis.id,
+    value,
+    left: axis.left,
+    right: axis.right,
+    interpretation: {
+      preferred:
+        side === "left"
+          ? axis.left
+          : side === "right"
+            ? axis.right
+            : "situativ beide positive Stärken",
+      do_not_default_to:
+        side === "left"
+          ? axis.right
+          : side === "right"
+            ? axis.left
+            : "keine Seite pauschal ausschließen",
+      intensity:
+        value <= 20 || value >= 80 ? "strong" : value < 40 || value > 60 ? "clear" : "balanced",
+    },
+  };
+}
+
+export const WORKJET_PERSONA_META_PROMPT =
+  "Interpretiere das JSON nur bei personalization.enabled=true als Präferenzprofil für Verhalten und Schreibweise. 0 bevorzugt die linke positive Stärke, 50 verbindet beide situativ, 100 bevorzugt die rechte. Die Gegenseite ist nicht verboten, aber nicht der Standard. Folge starken Ausschlägen deutlich und erwähne Profil, Zahlen oder JSON nie. Höherrangige Regeln, Sicherheit, Fakten und verlangte Ausgabeformate haben Vorrang.";
+
+/** Complete readable prompt. Callers decide whether a disabled profile is dispatched. */
+export function compileWorkjetWorkerPersonaPrompt(
+  worker: Pick<WorkjetWorkerProfile, "name" | "instructions" | "personalization">,
+): string {
+  const personalization = worker.personalization ?? createDefaultWorkjetWorkerPersonalization();
+  const json = {
+    schema: "workjet.worker_personalization.v1",
+    worker: { name: worker.name, task: worker.instructions ?? "" },
+    personalization: {
+      enabled: personalization.enabled,
+      scale: { min: 0, balanced: 50, max: 100 },
+      profile: {
+        meta: personalization.groups.map((group) => personaAxisJson(group.meta)),
+        details: personalization.groups.flatMap((group) => group.details.map(personaAxisJson)),
+      },
+    },
+  };
+  return `${WORKJET_PERSONA_META_PROMPT}\n\n${JSON.stringify(json, null, 2)}`;
+}
+
+export function activeWorkjetWorkerPersonaPrompt(
+  worker: Pick<WorkjetWorkerProfile, "name" | "instructions" | "personalization">,
+): string {
+  return worker.personalization?.enabled ? compileWorkjetWorkerPersonaPrompt(worker) : "";
+}
+
+export function composeWorkjetWorkerManagedInstructions(
+  worker: Pick<WorkjetWorkerProfile, "name" | "instructions" | "personalization">,
+  modelRules?: string,
+): string {
+  return [modelRules?.trim(), activeWorkjetWorkerPersonaPrompt(worker), worker.instructions?.trim()]
+    .filter((part): part is string => part !== undefined && part.length > 0)
+    .join("\n\n");
+}
 
 export const DEFAULT_WORKJET_CONFIGURATION: WorkjetConfiguration = Schema.decodeSync(
   WorkjetConfiguration,

@@ -3,6 +3,7 @@ import {
   WorkjetConnectionId,
   WorkjetLlmRouteId,
   WorkjetWorkerProfileId,
+  createDefaultWorkjetWorkerPersonalization,
   type WorkjetCapabilityId,
   type WorkjetComputer,
   type WorkjetCapabilityBinding,
@@ -11,6 +12,7 @@ import {
   type WorkjetLlmRoute,
   type WorkjetReasoningSelection,
   type WorkjetWorkerProfile,
+  type WorkjetWorkerPersonalization,
 } from "@t3tools/contracts";
 import { PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -26,6 +28,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
 import { Textarea } from "../ui/textarea";
+import { WorkjetWorkerPersonalizationEditor } from "./WorkjetWorkerPersonalization";
 
 /** Display name for a harness id — raw slugs kept leaking into lists (K-A11). */
 export function workjetHarnessDisplayLabel(harness: string): string {
@@ -103,6 +106,7 @@ export interface WorkjetWorkerDraft {
   readonly role: "standard" | "orchestrator";
   readonly capabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly capabilityBindings: ReadonlyArray<WorkjetCapabilityBinding>;
+  readonly personalization: WorkjetWorkerPersonalization;
 }
 
 export function createWorkjetWorkerDraft(input: {
@@ -115,6 +119,7 @@ export function createWorkjetWorkerDraft(input: {
     return {
       ...input.worker,
       instructions: input.worker.instructions ?? "",
+      personalization: input.worker.personalization ?? createDefaultWorkjetWorkerPersonalization(),
     };
   }
   return {
@@ -129,6 +134,7 @@ export function createWorkjetWorkerDraft(input: {
     role: "standard",
     capabilityIds: [],
     capabilityBindings: [],
+    personalization: createDefaultWorkjetWorkerPersonalization(),
   };
 }
 
@@ -184,6 +190,7 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
     capabilityBindings: draft.capabilityIds.includes("decision-hub")
       ? [...decisionHubBindings]
       : [],
+    personalization: draft.personalization,
   };
 }
 
@@ -358,20 +365,33 @@ export function WorkjetWorkerEditor({
         }
       }}
     >
-      {/* Order, controls and wording follow the Swift Workjet worker panel:
-          name → harness → provider → model → reasoning → task → skills →
-          target computer → technical details. One column, because each choice
-          narrows the next; a two-column grid put harness beside computer and
-          broke that chain. */}
-      <div className="space-y-1.5">
-        <SectionHeader title="Name / role" />
-        <Input
-          id="workjet-worker-name"
-          nativeInput
-          value={draft.name}
-          onChange={(event) => patchDraft({ name: event.target.value })}
-          placeholder="e.g. Completion engine"
+      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(16rem,0.72fr)]">
+        <WorkjetWorkerPersonalizationEditor
+          value={draft.personalization}
+          onChange={(personalization) => patchDraft({ personalization })}
         />
+        <div className="space-y-4 rounded-xl border border-border/60 bg-background/20 p-3">
+          <div className="space-y-1.5">
+            <SectionHeader title="Name / role" />
+            <Input
+              id="workjet-worker-name"
+              nativeInput
+              value={draft.name}
+              onChange={(event) => patchDraft({ name: event.target.value })}
+              placeholder="e.g. Completion engine"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <SectionHeader title="This worker’s task" />
+            <Textarea
+              id="workjet-worker-instructions"
+              value={draft.instructions}
+              onChange={(event) => patchDraft({ instructions: event.target.value })}
+              placeholder="What should this worker take on?"
+              rows={5}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="space-y-1.5">
@@ -475,20 +495,6 @@ export function WorkjetWorkerEditor({
         </div>
         <p className="text-[11px] text-muted-foreground">
           Orchestrators coordinate child workers. Child workers never inherit Decision Hub.
-        </p>
-      </div>
-
-      <div className="space-y-1.5">
-        <SectionHeader title="This worker’s task" />
-        <Textarea
-          id="workjet-worker-instructions"
-          value={draft.instructions}
-          onChange={(event) => patchDraft({ instructions: event.target.value })}
-          placeholder="What should this worker take on?"
-          rows={4}
-        />
-        <p className="text-[11px] text-muted-foreground">
-          For this worker only; it goes into the system prompt as the worker’s task.
         </p>
       </div>
 

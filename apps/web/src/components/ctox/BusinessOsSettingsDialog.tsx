@@ -207,7 +207,10 @@ function UpdatesPage({
   };
 
   return (
-    <section aria-labelledby="business-os-updates-title">
+    <section
+      aria-labelledby="business-os-updates-title"
+      className={rows.length === 0 ? "mx-auto max-w-3xl" : undefined}
+    >
       <div className="mb-6 flex flex-col items-start justify-between gap-4 xl:flex-row">
         <div>
           <h2 id="business-os-updates-title" className="text-xl font-semibold">
@@ -552,7 +555,7 @@ export function BusinessOsSettingsDialog({
               className={cn(
                 "w-full rounded-md px-3 py-2 text-left text-sm",
                 page === id
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-border"
                   : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
               )}
               onClick={() => choosePage(id)}

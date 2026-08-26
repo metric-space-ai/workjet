@@ -39,13 +39,13 @@ signaling credentials and invite payloads are forbidden in the binding table.
 - [x] Roll back newly created partial state when either half fails.
 - [x] Selecting a CTOX instance selects its Code environment everywhere.
 - [x] Selecting a bound Code environment selects the same CTOX instance.
-- [ ] Hide the cross-instance `All environments` view after managed bindings
+- [x] Hide the cross-instance `All environments` view after managed bindings
       exist; Code must not mix data from different active instances.
 - [x] Show one shared instance selector in Code and Business OS, including the
       left pane on Fold/tablet layouts.
 - [x] Pair each additional CTOX instance through its own short-lived Workjet QR
       code or explicit paste action.
-- [ ] Show connection state and per-instance actions without separate Machine,
+- [x] Show connection state and per-instance actions without separate Machine,
       Backend and Pairing lists.
 - [x] Forget/revoke exactly one installation/instance edge and preserve all
       other bindings.

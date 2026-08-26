@@ -1618,3 +1618,58 @@ diesem Slice an der vorhandenen Mail-Modul-HTTP-Fundstelle rot; die neue
 Launch-Context-Reihenfolge wurde in einem sauberen Detached-Worktree separat
 verifiziert. Relevante Workjet-Commits: `b7425eccb`, `a2bf27219`, `3c6883868`,
 `11c67a7d9`, `633db1aff`, `cf404e954`, `eb370566e`.
+
+## Stable v0.1.9, Live-Health und abschließende Fleet-Abnahme — 2026-08-26 ~06:45
+
+Der Release-Strang wurde nach v0.1.4 nicht als bloßer UI-Erfolg stehen
+gelassen. Reale Restart-/Sync-Proben deckten nacheinander drei Recovery-Lücken
+auf: verbrauchte Collection-Reconnect-Timer, serviceeigene Zwischenphasen und
+eine diagnostisch aktive Demand-Collection, die aus der kurzlebigen Active-
+Set-Projektion gefallen war. CTOX `cf2c63285`, `4e40509e4` und `08f07261c`
+beheben diese Fälle begrenzt im bestehenden RxDB/WebRTC-Repair-Pfad. Die
+Shell-Statusfläche wurde mit `fe9805fcb` und `61393a947` um vollständige
+Release-Metadaten und live gemessenen Datenplane-Health ergänzt.
+
+Der aktuelle unveränderliche Stable `business-os-shell-v0.1.9` wurde vom
+grünen GitHub-Actions-Lauf `32930025575` aus CTOX-Commit
+`08f07261cadbcd2733ee3da2af3badedeb6edec0` veröffentlicht. Das signierte
+Release-v2-Manifest hat SHA-256
+`c48cf990704310fc270bac8061360ccd5d92ed1f6411e7d11fe986dfd00f8901`,
+der signierte Stable-Pointer
+`8b86d295840c9992258cdf71be63c4f1291ea0ac32a59445106fbaf3875b1755`.
+Das 122284998 Byte große Artefakt hat SHA-256
+`6913da4ddd9cf711336c90e9e5789903748a68dcc63f81639a22ab75b4dfb3f2`,
+enthält 1651 reguläre Dateien und verlangt Workjet mindestens 0.0.33 sowie
+CTOX mindestens 0.3.22.
+
+LIVE-E2E: Workjet löste für die lokale CTOX-Instanz den aktiven verifizierten
+v0.1.9-Slot auf. Der Shell-Header zeigte nur `v0.1.9` plus Statussymbol. Das
+Panel zeigte Version, Angebot, Kanal, Health, Veröffentlichung,
+Kompatibilität, letzte Prüfung und Aktion. Alle zehn Collections waren
+verbunden. Nach einem echten CTOX-Service-Neustart wechselte der native Peer
+von der alten auf eine neue Session und erneut waren 10/10 Collections
+verbunden. Über den authentifizierten Business-Command-Pfad wurde der
+Workspace-Name temporär auf `Meridian Supply Co. · v0.1.9 Probe` gesetzt und
+anschließend wieder auf `Meridian Supply Co.` zurückgesetzt; beide Commands
+endeten `completed`. Die dabei kurzzeitig reconnectende Demand-Collection
+`ctox_queue_tasks` kehrte selbstständig auf `connected` zurück. Es wurden keine
+neuen Guest-Console-, Page-, Request-, HTTP- oder Ressourcenfehler beobachtet
+und kein HTTP-Business-Datenfallback verwendet.
+
+Die Desktop-Fleet-Zeile verwendet nun ebenfalls den authentifiziert gemessenen
+Datenpfad statt eines veralteten Aktivierungs-Snapshots (`fae7fb805`). Nach
+Desktop-Rebuild, Neustart und der Aktion „Alle prüfen“ zeigte Business OS →
+Updates für die lokale Instanz `healthy`, CTOX `0.3.22`, Shell `v0.1.9`,
+Angebot `v0.1.9`, Stable und `Aktuell`. Eine nur über Invite bekannte Instanz
+stand sichtbar auf `unknown`/`Recovery`/„Kein administrativer Zugriff“ und
+zählte nicht als aktuell. Es wurde keine Remote- oder Kundeninstanz bedient.
+GPU3 bleibt bis zur expliziten SSH-Verwaltung, Host-Key-Bestätigung und
+Adminfreigabe ein Operator-Trigger; GPU1/GPU4 bleiben bis zum gesunden
+Datenplane-Nachweis aus dem Rollout ausgeschlossen.
+
+VERIFIKATION: `CtoxShellFleet.test.ts` 9/9 grün, Desktop-Typecheck exit 0,
+Desktop-Pack grün und `git diff --check` grün. Die laufende App auf CDP 9300
+wurde neu gestartet und im Business-OS-Modus mit der lokalen v0.1.9-Shell
+hinterlassen. Relevante Workjet-Fortsetzungscommits: `fb5270633`, `2fd2f03bc`,
+`2324a3e9c`, `489a22026`, `e4af40739`, `20687f081`, `bdfa5833e`,
+`346893638`, `fae7fb805`.

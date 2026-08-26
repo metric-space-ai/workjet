@@ -1333,7 +1333,7 @@ export function ctoxInstanceDisplayTitle(
   const displayName = instance.displayName.trim();
   if (/^biz_[a-z0-9-]+$/i.test(displayName)) {
     const shortId = displayName.slice(4).split("-")[0]?.slice(0, 8) || displayName.slice(4, 12);
-    return `Paired backend · ${shortId}`;
+    return `Backend · ${shortId}`;
   }
   return displayName;
 }

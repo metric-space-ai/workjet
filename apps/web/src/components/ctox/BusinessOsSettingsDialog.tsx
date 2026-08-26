@@ -69,7 +69,7 @@ export function fleetInstanceDisplayTitle(displayName: string): string {
   const normalized = displayName.trim();
   if (!/^biz_[a-z0-9-]+$/i.test(normalized)) return normalized;
   const shortId = normalized.slice(4).split("-")[0]?.slice(0, 8) || normalized.slice(4, 12);
-  return `Paired backend · ${shortId}`;
+  return `Backend · ${shortId}`;
 }
 
 export function businessOsInstanceDataPlaneReady(

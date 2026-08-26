@@ -7,6 +7,7 @@ import { vi } from "vite-plus/test";
 vi.mock("electron", () => ({}));
 
 import {
+  buildCtoxSshDataPlaneStatusCommand,
   addCtoxSshManagedEntry,
   buildCtoxSshDescriptorCommand,
   buildCtoxSshServiceRestartCommand,
@@ -89,6 +90,9 @@ describe("CtoxSshManagedSource command construction", () => {
   it("builds bounded shell-update and service-restart commands without renderer input", () => {
     const update = buildCtoxSshShellUpdateCommand("stage", "/srv/ctox");
     assert.include(update[2] ?? "", "business-os shell-update 'stage'");
+    const health = buildCtoxSshDataPlaneStatusCommand("/srv/ctox state");
+    assert.include(health[2] ?? "", "business-os rxdb status --json");
+    assert.include(health[2] ?? "", "head -c 65536");
     assert.include(update[2] ?? "", "head -c 65536");
     const restart = buildCtoxSshServiceRestartCommand("/srv/ctox");
     assert.include(restart[2] ?? "", '"${CTOX_BIN:-ctox}" stop');

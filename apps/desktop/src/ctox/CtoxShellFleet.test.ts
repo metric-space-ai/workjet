@@ -3,7 +3,11 @@ import type { CtoxShellFleetRow } from "@t3tools/contracts";
 import { describe, it } from "@effect/vitest";
 import { expect } from "vite-plus/test";
 
-import { CTOX_SHELL_FLEET_ROLLOUT_POLICY, planCtoxShellRolloutWaves } from "./CtoxShellFleet.ts";
+import {
+  CTOX_SHELL_FLEET_ROLLOUT_POLICY,
+  parseCtoxDataPlaneProbe,
+  planCtoxShellRolloutWaves,
+} from "./CtoxShellFleet.ts";
 
 function row(
   instanceId: string,
@@ -74,5 +78,44 @@ describe("planCtoxShellRolloutWaves", () => {
       waveObservation: "15 minutes",
       automaticRetryCount: 1,
     });
+  });
+});
+
+describe("parseCtoxDataPlaneProbe", () => {
+  const status = {
+    running: true,
+    replicationUp: true,
+    heartbeat: { fresh: true },
+    health: { errorTotal: 0 },
+    health_stages: {
+      process_alive: true,
+      signaling_socket_connected: true,
+      signaling_join_accepted: true,
+      peer_authenticated: true,
+      data_channel_open: true,
+      command_consumer_alive: true,
+    },
+  };
+
+  it("requires the authenticated browser data channel, not replicationUp alone", () => {
+    expect(parseCtoxDataPlaneProbe(JSON.stringify(status))).toEqual({
+      nativePeerObserved: true,
+      dataPlaneReady: true,
+    });
+    expect(
+      parseCtoxDataPlaneProbe(
+        JSON.stringify({
+          ...status,
+          health_stages: { ...status.health_stages, data_channel_open: false },
+        }),
+      ),
+    ).toEqual({ nativePeerObserved: true, dataPlaneReady: false });
+  });
+
+  it("fails closed for stale or unhealthy native peers", () => {
+    expect(
+      parseCtoxDataPlaneProbe(JSON.stringify({ ...status, heartbeat: { fresh: false } })),
+    ).toEqual({ nativePeerObserved: false, dataPlaneReady: false });
+    expect(() => parseCtoxDataPlaneProbe("[]")).toThrow();
   });
 });

@@ -35,10 +35,12 @@ import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
 import {
+  buildCtoxSshDataPlaneStatusCommand,
   buildCtoxSshShellUpdateCommand,
   buildCtoxSshServiceRestartCommand,
   type CtoxShellUpdateCliAction,
   CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER,
+  CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER,
   CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER,
   makeCtoxSshExec,
 } from "./CtoxSshManagedSource.ts";
@@ -120,6 +122,57 @@ function parseStatus(raw: string): BusinessOsShellUpdateStatus {
   return Schema.decodeUnknownSync(BusinessOsShellUpdateStatus)(JSON.parse(raw), {
     onExcessProperty: "error",
   });
+}
+
+export interface CtoxDataPlaneProbe {
+  readonly nativePeerObserved: boolean;
+  readonly dataPlaneReady: boolean;
+}
+
+function readBoolean(object: unknown, key: string): boolean {
+  return (
+    typeof object === "object" &&
+    object !== null &&
+    !Array.isArray(object) &&
+    (object as Record<string, unknown>)[key] === true
+  );
+}
+
+/**
+ * Reduces the secret-free native peer health document to the two facts the
+ * fleet controller needs. A coarse `replicationUp` bit alone is deliberately
+ * insufficient: a rollout is healthy only after the authenticated browser
+ * peer and its command consumer are actually connected.
+ */
+export function parseCtoxDataPlaneProbe(raw: string): CtoxDataPlaneProbe {
+  if (Buffer.byteLength(raw, "utf8") > MAX_OUTPUT_BYTES) throw new Error("oversized");
+  const value = JSON.parse(raw) as unknown;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("invalid_response");
+  }
+  const record = value as Record<string, unknown>;
+  const heartbeat = record.heartbeat;
+  const health = record.health;
+  const stages = record.health_stages;
+  const nativePeerObserved =
+    readBoolean(record, "running") &&
+    readBoolean(heartbeat, "fresh") &&
+    typeof health === "object" &&
+    health !== null &&
+    !Array.isArray(health) &&
+    (health as Record<string, unknown>).errorTotal === 0 &&
+    readBoolean(stages, "process_alive");
+  return {
+    nativePeerObserved,
+    dataPlaneReady:
+      nativePeerObserved &&
+      readBoolean(record, "replicationUp") &&
+      readBoolean(stages, "signaling_socket_connected") &&
+      readBoolean(stages, "signaling_join_accepted") &&
+      readBoolean(stages, "peer_authenticated") &&
+      readBoolean(stages, "data_channel_open") &&
+      readBoolean(stages, "command_consumer_alive"),
+  };
 }
 
 function collectBounded<E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> {
@@ -260,6 +313,32 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
   const localCommand = (action: CtoxShellUpdateCliAction) =>
     localExec(["business-os", "shell-update", action]);
 
+  const probeDataPlane = Effect.fn("CtoxShellFleet.probeDataPlane")(function* (
+    instance: CtoxManagedInstance,
+  ) {
+    let stdout: string;
+    if (instance.source === "local_daemon") {
+      stdout = yield* localExec(["business-os", "rxdb", "status", "--json"]);
+    } else if (instance.source === "ssh_managed") {
+      const target = yield* registry.resolveSshManagedTarget(instance.id);
+      const result = yield* sshExec({
+        host: target.host,
+        argv: buildCtoxSshDataPlaneStatusCommand(target.stateRoot),
+        timeoutMs: Duration.toMillis(COMMAND_TIMEOUT),
+      });
+      if (result.stderr?.includes(CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER)) {
+        return yield* Effect.fail("command_failed" as const);
+      }
+      stdout = result.stdout;
+    } else {
+      return yield* Effect.fail("not_administrable" as const);
+    }
+    return yield* Effect.try({
+      try: () => parseCtoxDataPlaneProbe(stdout),
+      catch: () => "invalid_response" as const,
+    });
+  });
+
   const sshExec = makeCtoxSshExec({
     spawner,
     fileSystem,
@@ -354,15 +433,6 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
             blockedRow(instance, "offline", "Rechner starten oder Netzwerk prüfen."),
           );
         }
-        if (!instance.healthSummary.dataPlaneReady) {
-          return Effect.succeed(
-            blockedRow(
-              instance,
-              "data_plane_degraded",
-              "RxDB/WebRTC-Datenpfad reparieren und Health erneut bestätigen.",
-            ),
-          );
-        }
         if (instance.source !== "local_daemon" && instance.source !== "ssh_managed") {
           return Effect.succeed(
             blockedRow(
@@ -372,18 +442,34 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
             ),
           );
         }
-        return run(instance, "status").pipe(
+        return probeDataPlane(instance).pipe(
+          Effect.flatMap((probe) =>
+            probe.dataPlaneReady
+              ? run(instance, "status")
+              : Effect.succeed<BusinessOsShellUpdateStatus | CtoxDataPlaneProbe>(probe),
+          ),
           Effect.map(
-            (shell): CtoxShellFleetRow => ({
-              instanceId: instance.id,
-              displayName: instance.displayName,
-              source: instance.source,
-              reachable: true,
-              backendVersion: null,
-              shell,
-              blocker: shell.administrable ? null : "no_administrative_access",
-              requiredOperatorStep: shell.administrable ? null : "Administratorzugriff herstellen.",
-            }),
+            (result): CtoxShellFleetRow =>
+              "dataPlaneReady" in result
+                ? blockedRow(
+                    instance,
+                    "data_plane_degraded",
+                    result.nativePeerObserved
+                      ? "Workjet mit der Instanz verbinden und den authentifizierten RxDB/WebRTC-Datenkanal prüfen."
+                      : "CTOX Sync Engine starten, Heartbeat und Health reparieren.",
+                  )
+                : {
+                    instanceId: instance.id,
+                    displayName: instance.displayName,
+                    source: instance.source,
+                    reachable: true,
+                    backendVersion: null,
+                    shell: result,
+                    blocker: result.administrable ? null : "no_administrative_access",
+                    requiredOperatorStep: result.administrable
+                      ? null
+                      : "Administratorzugriff herstellen.",
+                  },
           ),
           Effect.orElseSucceed(() =>
             blockedRow(instance, "backend_unavailable", "CTOX aktualisieren und erneut prüfen."),

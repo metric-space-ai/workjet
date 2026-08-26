@@ -4,6 +4,7 @@ import { describe, it } from "@effect/vitest";
 import { expect } from "vite-plus/test";
 
 import {
+  ctoxShellFleetRowFromStatus,
   CTOX_SHELL_FLEET_ROLLOUT_POLICY,
   parseCtoxDataPlaneProbe,
   planCtoxShellRolloutWaves,
@@ -117,5 +118,30 @@ describe("parseCtoxDataPlaneProbe", () => {
       parseCtoxDataPlaneProbe(JSON.stringify({ ...status, heartbeat: { fresh: false } })),
     ).toEqual({ nativePeerObserved: false, dataPlaneReady: false });
     expect(() => parseCtoxDataPlaneProbe("[]")).toThrow();
+  });
+});
+
+describe("ctoxShellFleetRowFromStatus", () => {
+  it("preserves the active shell while the data plane is degraded", () => {
+    const current = row("local", "Local CTOX", "local_daemon");
+    const result = ctoxShellFleetRowFromStatus({
+      instance: {
+        id: current.instanceId,
+        displayName: current.displayName,
+        source: current.source,
+        status: "available",
+        healthSummary: {
+          dataPlane: "rxdb-webrtc",
+          dataPlaneReady: false,
+          httpDataProxy: false,
+          nativePeerObserved: false,
+        },
+      },
+      shell: { ...current.shell, activeVersion: "0.1.5", phase: "restart" },
+      dataPlane: { nativePeerObserved: true, dataPlaneReady: false },
+    });
+    expect(result.shell.activeVersion).toBe("0.1.5");
+    expect(result.shell.recoveryShell).toBe(false);
+    expect(result.blocker).toBe("data_plane_degraded");
   });
 });

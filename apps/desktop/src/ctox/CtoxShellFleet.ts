@@ -129,6 +129,36 @@ export interface CtoxDataPlaneProbe {
   readonly dataPlaneReady: boolean;
 }
 
+export function ctoxShellFleetRowFromStatus(input: {
+  readonly instance: CtoxManagedInstance;
+  readonly shell: BusinessOsShellUpdateStatus;
+  readonly dataPlane: CtoxDataPlaneProbe;
+}): CtoxShellFleetRow {
+  const blocker: CtoxShellFleetBlocker | null = !input.shell.administrable
+    ? "no_administrative_access"
+    : input.dataPlane.dataPlaneReady
+      ? null
+      : "data_plane_degraded";
+  const requiredOperatorStep =
+    blocker === "no_administrative_access"
+      ? "Administratorzugriff herstellen."
+      : blocker === "data_plane_degraded"
+        ? input.dataPlane.nativePeerObserved
+          ? "Workjet mit der Instanz verbinden und den authentifizierten RxDB/WebRTC-Datenkanal prüfen."
+          : "CTOX Sync Engine starten, Heartbeat und Health reparieren."
+        : null;
+  return {
+    instanceId: input.instance.id,
+    displayName: input.instance.displayName,
+    source: input.instance.source,
+    reachable: true,
+    backendVersion: null,
+    shell: input.shell,
+    blocker,
+    requiredOperatorStep,
+  };
+}
+
 function readBoolean(object: unknown, key: string): boolean {
   return (
     typeof object === "object" &&
@@ -442,34 +472,12 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
             ),
           );
         }
-        return probeDataPlane(instance).pipe(
-          Effect.flatMap((probe) =>
-            probe.dataPlaneReady
-              ? run(instance, "status")
-              : Effect.succeed<BusinessOsShellUpdateStatus | CtoxDataPlaneProbe>(probe),
-          ),
-          Effect.map(
-            (result): CtoxShellFleetRow =>
-              "dataPlaneReady" in result
-                ? blockedRow(
-                    instance,
-                    "data_plane_degraded",
-                    result.nativePeerObserved
-                      ? "Workjet mit der Instanz verbinden und den authentifizierten RxDB/WebRTC-Datenkanal prüfen."
-                      : "CTOX Sync Engine starten, Heartbeat und Health reparieren.",
-                  )
-                : {
-                    instanceId: instance.id,
-                    displayName: instance.displayName,
-                    source: instance.source,
-                    reachable: true,
-                    backendVersion: null,
-                    shell: result,
-                    blocker: result.administrable ? null : "no_administrative_access",
-                    requiredOperatorStep: result.administrable
-                      ? null
-                      : "Administratorzugriff herstellen.",
-                  },
+        return Effect.all({
+          shell: run(instance, "status"),
+          dataPlane: probeDataPlane(instance),
+        }).pipe(
+          Effect.map(({ shell, dataPlane }) =>
+            ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
           ),
           Effect.orElseSucceed(() =>
             blockedRow(instance, "backend_unavailable", "CTOX aktualisieren und erneut prüfen."),

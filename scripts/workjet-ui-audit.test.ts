@@ -5,6 +5,7 @@ import {
   BUSINESS_OS_AUDIT_STATES,
   createReviewBatches,
   parseAuditArguments,
+  readAuditSourceState,
   selectWorkjetTarget,
   summarizeAudit,
 } from "./workjet-ui-audit.ts";
@@ -156,5 +157,11 @@ describe("Workjet UI audit configuration", () => {
       [9],
     ]);
     expect(() => createReviewBatches([1], 5)).toThrow("1 through 4");
+  });
+
+  it("records the source revision used for audit evidence", () => {
+    const source = readAuditSourceState();
+    expect(source.commit).toMatch(/^[0-9a-f]{40}$/u);
+    expect(typeof source.dirty).toBe("boolean");
   });
 });

@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import * as NodeChildProcess from "node:child_process";
 
 import { CdpClient, MAX_CDP_MESSAGE_BYTES } from "./lib/cdpClient.ts";
 
@@ -152,6 +153,25 @@ interface StateResult {
   readonly truncatedText: readonly unknown[];
   readonly consoleErrors: readonly unknown[];
   readonly modalViolations: readonly string[];
+}
+
+export interface AuditSourceState {
+  readonly commit: string;
+  readonly dirty: boolean;
+}
+
+export function readAuditSourceState(
+  repository = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), ".."),
+): AuditSourceState {
+  const git = (args: readonly string[]) =>
+    NodeChildProcess.execFileSync("git", ["-C", repository, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  return {
+    commit: git(["rev-parse", "HEAD"]),
+    dirty: git(["status", "--porcelain"]).length > 0,
+  };
 }
 
 function defaultOutput(now = new Date()): string {
@@ -669,9 +689,10 @@ async function runAudit(args: AuditArguments): Promise<void> {
     client.close();
   }
   const summary = summarizeAudit(results);
+  const source = readAuditSourceState();
   NodeFS.writeFileSync(
     NodePath.join(args.output, "audit.json"),
-    JSON.stringify({ summary, results }, null, 2) + "\n",
+    JSON.stringify({ source, summary, results }, null, 2) + "\n",
   );
   NodeFS.writeFileSync(
     NodePath.join(args.output, "review-batches.json"),
@@ -686,6 +707,8 @@ async function runAudit(args: AuditArguments): Promise<void> {
   const markdown = [
     "# Workjet UI audit",
     "",
+    `- Source commit: ${source.commit}`,
+    `- Source dirty: ${source.dirty ? "yes" : "no"}`,
     `- Captures: ${summary.captures}`,
     `- Captures with blocking findings: ${summary.failingCaptures}`,
     `- Blocking findings: ${summary.findings}`,

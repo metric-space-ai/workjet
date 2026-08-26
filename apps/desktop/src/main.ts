@@ -32,6 +32,7 @@ import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
+import * as CtoxShellFleet from "./ctox/CtoxShellFleet.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronCrashReporter from "./electron/ElectronCrashReporter.ts";
@@ -226,6 +227,9 @@ const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
 );
 
 const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
+const desktopCtoxFleetLayer = CtoxShellFleet.layer().pipe(
+  Layer.provideMerge(desktopCtoxControlLayer),
+);
 const desktopDecisionHubLayer = CtoxDecisionHubProvisioner.layer.pipe(
   Layer.provideMerge(desktopRpcSessionLayer),
   Layer.provideMerge(desktopBackendLayer),
@@ -246,6 +250,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopDeepLinkRouter.layer,
   DesktopShellEnvironment.layer,
   desktopCtoxLayer,
+  desktopCtoxFleetLayer,
   desktopSshLayer,
   desktopProvisioningLayer,
 ).pipe(

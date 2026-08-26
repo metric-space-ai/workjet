@@ -193,6 +193,42 @@ export const CTOX_SSH_INVITE_TIMEOUT_MS = 25_000;
  * is never logged, kept, or surfaced.
  */
 export const CTOX_SSH_INVITE_FAILURE_MARKER = "__t3_ctox_invite_failed__";
+export const CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER = "__workjet_shell_update_failed__";
+export const CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER = "__workjet_service_restart_failed__";
+export type CtoxShellUpdateCliAction = "status" | "check" | "stage" | "activate" | "rollback";
+
+/** Fixed, bounded remote control command. No renderer value reaches the shell. */
+export function buildCtoxSshShellUpdateCommand(
+  action: CtoxShellUpdateCliAction,
+  stateRoot?: string,
+): readonly string[] {
+  const assignment =
+    stateRoot === undefined
+      ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
+      : `CTOX_ROOT=${singleQuote(stateRoot)}`;
+  const command = `"\${CTOX_BIN:-ctox}" business-os shell-update ${singleQuote(action)}`;
+  return [
+    "sh",
+    "-c",
+    `${assignment}; export CTOX_STATE_ROOT="$CTOX_ROOT"; ` +
+      `{ ${command} || echo ${singleQuote(CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER)} >&2; } | head -c 65536`,
+  ];
+}
+
+/** Fixed service restart after atomic slot activation; emits no remote output. */
+export function buildCtoxSshServiceRestartCommand(stateRoot?: string): readonly string[] {
+  const assignment =
+    stateRoot === undefined
+      ? 'CTOX_ROOT="${CTOX_STATE_ROOT:-$HOME/.local/state/ctox}"'
+      : `CTOX_ROOT=${singleQuote(stateRoot)}`;
+  return [
+    "sh",
+    "-c",
+    `${assignment}; export CTOX_STATE_ROOT="$CTOX_ROOT"; ` +
+      `"\${CTOX_BIN:-ctox}" stop >/dev/null 2>&1 && "\${CTOX_BIN:-ctox}" start >/dev/null 2>&1 || ` +
+      `echo ${singleQuote(CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER)} >&2`,
+  ];
+}
 
 /**
  * The remote command that mints one desktop invite. Like the descriptor

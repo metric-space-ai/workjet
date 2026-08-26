@@ -9,6 +9,8 @@ vi.mock("electron", () => ({}));
 import {
   addCtoxSshManagedEntry,
   buildCtoxSshDescriptorCommand,
+  buildCtoxSshServiceRestartCommand,
+  buildCtoxSshShellUpdateCommand,
   CTOX_SSH_MANAGED_ID_PATTERN,
   ctoxSshManagedInstanceId,
   CtoxSshExecError,
@@ -82,6 +84,16 @@ describe("CtoxSshManagedSource command construction", () => {
     // second, independent guarantee.
     const command = buildCtoxSshDescriptorCommand("/srv/it's");
     assert.include(command[2] ?? "", `CTOX_ROOT='/srv/it'\\''s'`);
+  });
+
+  it("builds bounded shell-update and service-restart commands without renderer input", () => {
+    const update = buildCtoxSshShellUpdateCommand("stage", "/srv/ctox");
+    assert.include(update[2] ?? "", "business-os shell-update 'stage'");
+    assert.include(update[2] ?? "", "head -c 65536");
+    const restart = buildCtoxSshServiceRestartCommand("/srv/ctox");
+    assert.include(restart[2] ?? "", '"${CTOX_BIN:-ctox}" stop');
+    assert.include(restart[2] ?? "", '"${CTOX_BIN:-ctox}" start');
+    assert.notInclude(restart[2] ?? "", "password");
   });
 
   it("derives ids that are stable, opaque, and destination-specific", () => {

@@ -137,6 +137,103 @@ export const CtoxManagedInstance = Schema.Struct({
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;
 
+export const CtoxShellFleetBlocker = Schema.Literals([
+  "offline",
+  "no_administrative_access",
+  "backend_unavailable",
+  "data_plane_degraded",
+  "incompatible",
+  "paused",
+  "unknown_instance",
+]);
+export type CtoxShellFleetBlocker = typeof CtoxShellFleetBlocker.Type;
+
+export const CtoxShellFleetRow = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  displayName: CtoxManagedInstanceDisplayName,
+  source: CtoxManagedInstanceSource,
+  reachable: Schema.Boolean,
+  backendVersion: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
+  shell: BusinessOsShellUpdateStatus,
+  blocker: Schema.NullOr(CtoxShellFleetBlocker),
+  requiredOperatorStep: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+});
+export type CtoxShellFleetRow = typeof CtoxShellFleetRow.Type;
+
+export const CtoxShellFleetInventoryResult = Schema.Union([
+  Schema.TaggedStruct("completed", {
+    checkedAt: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+    rows: Schema.Array(CtoxShellFleetRow).check(Schema.isMaxLength(1_000)),
+  }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["inventory_failed", "invalid_response"]),
+  }),
+]);
+export type CtoxShellFleetInventoryResult = typeof CtoxShellFleetInventoryResult.Type;
+
+export const CtoxShellFleetActionInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  action: Schema.Literals(["check", "update", "rollback"]),
+});
+export type CtoxShellFleetActionInput = typeof CtoxShellFleetActionInput.Type;
+
+export const CtoxShellFleetActionResult = Schema.Union([
+  Schema.TaggedStruct("completed", { row: CtoxShellFleetRow }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "unknown_instance",
+      "not_administrable",
+      "operation_failed",
+      "health_check_failed",
+    ]),
+  }),
+]);
+export type CtoxShellFleetActionResult = typeof CtoxShellFleetActionResult.Type;
+
+export const CtoxShellFleetPauseInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  reason: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  expiresAt: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+});
+export type CtoxShellFleetPauseInput = typeof CtoxShellFleetPauseInput.Type;
+
+export const CtoxShellFleetRolloutPhase = Schema.Literals([
+  "idle",
+  "inventory",
+  "local_canary",
+  "platform_canary",
+  "wave",
+  "observing",
+  "completed",
+  "paused",
+  "failed",
+]);
+export type CtoxShellFleetRolloutPhase = typeof CtoxShellFleetRolloutPhase.Type;
+
+export const CtoxShellFleetRolloutStatus = Schema.Struct({
+  phase: CtoxShellFleetRolloutPhase,
+  releaseVersion: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
+  startedAt: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
+  updatedAt: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  currentWave: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  totalWaves: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  instanceIds: Schema.Array(CtoxManagedInstanceId).check(Schema.isMaxLength(1_000)),
+  completedInstanceIds: Schema.Array(CtoxManagedInstanceId).check(Schema.isMaxLength(1_000)),
+  failedInstanceId: Schema.NullOr(CtoxManagedInstanceId),
+  errorCode: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
+});
+export type CtoxShellFleetRolloutStatus = typeof CtoxShellFleetRolloutStatus.Type;
+
+export const CtoxShellFleetRolloutResult = Schema.Union([
+  Schema.TaggedStruct("started", { status: CtoxShellFleetRolloutStatus }),
+  Schema.TaggedStruct("already_running", { status: CtoxShellFleetRolloutStatus }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["inventory_failed", "no_eligible_instances", "rollout_failed"]),
+  }),
+]);
+export type CtoxShellFleetRolloutResult = typeof CtoxShellFleetRolloutResult.Type;
+
 export const CtoxManagedDiscoveryFailureCode = Schema.Literals([
   "invalid_base_url",
   "network_error",

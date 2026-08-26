@@ -113,6 +113,12 @@ import type {
   CtoxSshManagedInstanceAddInput,
   CtoxSshManagedInstanceAddResult,
   CtoxSshManagedInstanceRemoveResult,
+  CtoxShellFleetActionInput,
+  CtoxShellFleetActionResult,
+  CtoxShellFleetInventoryResult,
+  CtoxShellFleetPauseInput,
+  CtoxShellFleetRolloutResult,
+  CtoxShellFleetRolloutStatus,
 } from "./ctox.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -1240,6 +1246,17 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxAppActionResult>;
   /** Project the host appearance theme into the Business OS guest. */
   setHostTheme: (theme: CtoxHostThemeInput) => Promise<CtoxManagedActionResult>;
+  getShellFleetInventory?: () => Promise<CtoxShellFleetInventoryResult>;
+  runShellFleetAction?: (input: CtoxShellFleetActionInput) => Promise<CtoxShellFleetActionResult>;
+  pauseShellFleetInstance?: (
+    input: CtoxShellFleetPauseInput,
+  ) => Promise<CtoxShellFleetInventoryResult>;
+  resumeShellFleetInstance?: (instanceId: string) => Promise<CtoxShellFleetInventoryResult>;
+  startShellFleetRollout?: () => Promise<CtoxShellFleetRolloutResult>;
+  getShellFleetRolloutStatus?: () => Promise<CtoxShellFleetRolloutStatus>;
+  onShellFleetRolloutStatus?: (
+    listener: (status: CtoxShellFleetRolloutStatus) => void,
+  ) => () => void;
   /**
    * Subscribe to per-instance guest lifecycle changes ("none" | "loading" |
    * "warm"); returns the unsubscribe. The payload carries the instance id and

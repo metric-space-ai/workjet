@@ -24,6 +24,12 @@ import {
   CtoxSshManagedInstanceAddResult,
   CtoxSshManagedInstanceRemoveInput,
   CtoxSshManagedInstanceRemoveResult,
+  CtoxShellFleetActionInput,
+  CtoxShellFleetActionResult,
+  CtoxShellFleetInventoryResult,
+  CtoxShellFleetPauseInput,
+  CtoxShellFleetRolloutResult,
+  CtoxShellFleetRolloutStatus,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -37,6 +43,7 @@ import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvision
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
+import * as CtoxShellFleet from "../../ctox/CtoxShellFleet.ts";
 import * as IpcChannels from "../channels.ts";
 import type * as DesktopIpc from "../DesktopIpc.ts";
 
@@ -587,13 +594,116 @@ export const setHostTheme: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.C
     }),
 };
 
+export const shellFleetInventory: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxShellFleet.CtoxShellFleet
+> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_INVENTORY_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet.inventory.pipe(
+        Effect.flatMap((result) => encodeSafe(CtoxShellFleetInventoryResult, result)),
+      );
+    }),
+};
+
+export const shellFleetAction: DesktopIpc.DesktopIpcMethod<never, CtoxShellFleet.CtoxShellFleet> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_ACTION_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxShellFleetActionInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxShellFleetActionResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet
+        .action(input.value)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxShellFleetActionResult, result)));
+    }),
+};
+
+export const shellFleetPause: DesktopIpc.DesktopIpcMethod<never, CtoxShellFleet.CtoxShellFleet> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_PAUSE_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxShellFleetPauseInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxShellFleetInventoryResult, {
+          _tag: "failed",
+          code: "invalid_response",
+        });
+      }
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet
+        .pause(input.value)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxShellFleetInventoryResult, result)));
+    }),
+};
+
+export const shellFleetResume: DesktopIpc.DesktopIpcMethod<never, CtoxShellFleet.CtoxShellFleet> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_RESUME_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxPairedInstanceRemoveInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxShellFleetInventoryResult, {
+          _tag: "failed",
+          code: "invalid_response",
+        });
+      }
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet
+        .resume(input.value.instanceId)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxShellFleetInventoryResult, result)));
+    }),
+};
+
+export const shellFleetRolloutStart: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxShellFleet.CtoxShellFleet
+> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_START_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet.startRollout.pipe(
+        Effect.flatMap((result) => encodeSafe(CtoxShellFleetRolloutResult, result)),
+      );
+    }),
+};
+
+export const shellFleetRolloutStatus: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxShellFleet.CtoxShellFleet
+> = {
+  channel: IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const fleet = yield* CtoxShellFleet.CtoxShellFleet;
+      return yield* fleet.rolloutStatus.pipe(
+        Effect.flatMap((status) => encodeSafe(CtoxShellFleetRolloutStatus, status)),
+      );
+    }),
+};
+
 type CtoxIpcServices =
   | CtoxAppRail.CtoxAppRail
   | CtoxDevAuth.CtoxDevAuth
   | CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
   | CtoxElectronSessions.CtoxElectronSessions
   | CtoxGuestManager.CtoxGuestManager
-  | CtoxInstanceRegistry.CtoxInstanceRegistry;
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
+  | CtoxShellFleet.CtoxShellFleet;
 
 export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcServices>[] = [
   refresh,
@@ -616,4 +726,10 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   openSettings,
   setAppDocked,
   setHostTheme,
+  shellFleetInventory,
+  shellFleetAction,
+  shellFleetPause,
+  shellFleetResume,
+  shellFleetRolloutStart,
+  shellFleetRolloutStatus,
 ];

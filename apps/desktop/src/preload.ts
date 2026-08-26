@@ -1,9 +1,11 @@
-import type {
-  DesktopBridge,
-  DesktopPreviewPointerEvent,
-  DesktopPreviewRecordingFrame,
-  DesktopPreviewTabState,
+import {
+  CtoxShellFleetRolloutStatus,
+  type DesktopBridge,
+  type DesktopPreviewPointerEvent,
+  type DesktopPreviewRecordingFrame,
+  type DesktopPreviewTabState,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -211,6 +213,37 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         docked,
       }),
     setHostTheme: (theme) => ipcRenderer.invoke(IpcChannels.CTOX_SET_HOST_THEME_CHANNEL, theme),
+    getShellFleetInventory: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_INVENTORY_CHANNEL),
+    runShellFleetAction: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ACTION_CHANNEL, input),
+    pauseShellFleetInstance: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_PAUSE_CHANNEL, input),
+    resumeShellFleetInstance: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_RESUME_CHANNEL, { instanceId }),
+    startShellFleetRollout: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_START_CHANNEL),
+    getShellFleetRolloutStatus: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL),
+    onShellFleetRolloutStatus: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, status: unknown) => {
+        try {
+          listener(
+            Schema.decodeUnknownSync(CtoxShellFleetRolloutStatus)(status, {
+              onExcessProperty: "error",
+            }),
+          );
+        } catch {
+          // Fail closed: malformed main-process events never cross into the renderer.
+        }
+      };
+      ipcRenderer.on(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(
+          IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT,
+          wrappedListener,
+        );
+    },
     onGuestState: (listener) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         if (typeof payload !== "object" || payload === null) return;

@@ -6,7 +6,6 @@ import type {
 } from "@t3tools/contracts";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
-import type { BusinessOsInstance } from "../business-os/registry/business-os-registry";
 import { encodeWorkjetDevicePairLink, parseWorkjetDevicePairLink } from "./workjet-device-invite";
 
 export interface CreatedWorkjetDeviceInvite {
@@ -53,16 +52,11 @@ export const unavailableWorkjetDeviceInviteControl: WorkjetDeviceInviteControlPo
 };
 
 export function resolveWorkjetDevicePairingConnection(
-  backend: BusinessOsInstance | null,
+  environmentId: SavedRemoteConnection["environmentId"] | null,
   connections: readonly SavedRemoteConnection[],
 ): SavedRemoteConnection | null {
-  if (!backend) return null;
-  const exact = connections.filter(
-    (connection) =>
-      connection.environmentLabel.trim().toLowerCase() === backend.displayName.trim().toLowerCase(),
-  );
-  if (exact.length === 1) return exact[0]!;
-  return connections.length === 1 ? connections[0]! : null;
+  if (!environmentId) return null;
+  return connections.find((connection) => connection.environmentId === environmentId) ?? null;
 }
 
 function shareableConnectionUrl(connection: SavedRemoteConnection): string {
@@ -95,16 +89,19 @@ export function makeWorkjetDeviceInviteControl(
         ttlSeconds,
         connectionUrl: shareableConnectionUrl(connection),
       });
-      const link = encodeWorkjetDevicePairLink(response.invite);
-      const parsed = parseWorkjetDevicePairLink(link, { now: options.now?.() });
-      if (Date.parse(response.expiresAt) !== Date.parse(parsed.confirmation.expiresAt)) {
+      const link = encodeWorkjetDevicePairLink(response.reference);
+      const parsedInvite = parseWorkjetDevicePairLink(
+        encodeWorkjetDevicePairLink(response.invite),
+        { now: options.now?.() },
+      );
+      if (Date.parse(response.expiresAt) !== Date.parse(parsedInvite.confirmation.expiresAt)) {
         throw new Error("Device invite response expiry does not match its credentials.");
       }
       return Object.freeze({
         inviteId: response.inviteId,
         link,
-        expiresAt: parsed.confirmation.expiresAt,
-        displayName: parsed.confirmation.displayName,
+        expiresAt: parsedInvite.confirmation.expiresAt,
+        displayName: parsedInvite.confirmation.displayName,
       });
     },
     async revoke({ inviteId }) {

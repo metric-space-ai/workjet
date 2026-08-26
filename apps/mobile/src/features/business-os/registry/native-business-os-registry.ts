@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
+import { EnvironmentId } from "@t3tools/contracts";
 
 import { uuidv4 } from "../../../lib/uuid";
 import { MOBILE_DATABASE_NAME } from "../../../persistence/mobile-database";
@@ -9,6 +10,10 @@ import {
   type BusinessOsRegistryPort,
   type BusinessOsSecretStorePort,
 } from "./business-os-registry";
+import {
+  createBusinessOsEnvironmentBinding,
+  type BusinessOsEnvironmentBinding,
+} from "./business-os-environment-binding";
 
 const SECRET_PREFIX = "workjet.business-os.secret.";
 let databasePromise: ReturnType<typeof SQLite.openDatabaseAsync> | null = null;
@@ -27,6 +32,12 @@ async function database() {
       singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
       selected_instance_id TEXT,
       updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS business_os_environment_bindings (
+      business_os_instance_id TEXT PRIMARY KEY NOT NULL,
+      environment_id TEXT NOT NULL UNIQUE,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (business_os_instance_id) REFERENCES business_os_instances(id) ON DELETE CASCADE
     );
   `);
   return value;
@@ -95,6 +106,53 @@ export const nativeBusinessOsSelection = {
          updated_at = excluded.updated_at`,
       instanceId,
       Date.now(),
+    );
+  },
+};
+
+export const nativeBusinessOsEnvironmentBindings = {
+  async list(): Promise<readonly BusinessOsEnvironmentBinding[]> {
+    const rows = await (
+      await database()
+    ).getAllAsync<{
+      readonly businessOsInstanceId: string;
+      readonly environmentId: string;
+    }>(
+      `SELECT business_os_instance_id AS businessOsInstanceId,
+              environment_id AS environmentId
+       FROM business_os_environment_bindings
+       ORDER BY updated_at DESC`,
+    );
+    return rows.map((row) =>
+      createBusinessOsEnvironmentBinding(
+        row.businessOsInstanceId,
+        EnvironmentId.make(row.environmentId),
+      ),
+    );
+  },
+  async save(binding: BusinessOsEnvironmentBinding): Promise<void> {
+    await (
+      await database()
+    ).runAsync(
+      `INSERT INTO business_os_environment_bindings (
+         business_os_instance_id,
+         environment_id,
+         updated_at
+       ) VALUES (?, ?, ?)
+       ON CONFLICT (business_os_instance_id) DO UPDATE SET
+         environment_id = excluded.environment_id,
+         updated_at = excluded.updated_at`,
+      binding.businessOsInstanceId,
+      binding.environmentId,
+      Date.now(),
+    );
+  },
+  async removeByBusinessOsInstanceId(businessOsInstanceId: string): Promise<void> {
+    await (
+      await database()
+    ).runAsync(
+      "DELETE FROM business_os_environment_bindings WHERE business_os_instance_id = ?",
+      businessOsInstanceId,
     );
   },
 };

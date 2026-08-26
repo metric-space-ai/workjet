@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   encodeWorkjetDevicePairLink,
   parseWorkjetDevicePairLink,
+  parseWorkjetDevicePairingLink,
+  redeemWorkjetDeviceInviteReference,
   WorkjetDeviceInviteValidationError,
 } from "./workjet-device-invite";
 
@@ -40,8 +42,8 @@ function encodePayload(value: unknown): string {
   return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
 }
 
-function link(overrides: Record<string, unknown> = {}): string {
-  const payload = {
+function deviceInvite(overrides: Record<string, unknown> = {}) {
+  return {
     type: "workjet-device-invite",
     version: 1,
     device_pairing_id: "device-a",
@@ -53,7 +55,10 @@ function link(overrides: Record<string, unknown> = {}): string {
     business_os: businessOsInvite(),
     ...overrides,
   };
-  return `workjet://pair?payload=${encodePayload(payload)}`;
+}
+
+function link(overrides: Record<string, unknown> = {}): string {
+  return `workjet://pair?payload=${encodePayload(deviceInvite(overrides))}`;
 }
 
 describe("Workjet device invite v1", () => {
@@ -101,6 +106,61 @@ describe("Workjet device invite v1", () => {
       parseWorkjetDevicePairLink(`ctox-mobile://pair?payload=${payload}`, { now: NOW })
         .devicePairingId,
     ).toBe("device-a");
+  });
+
+  it("parses a compact one-time reference without putting credentials in the QR code", () => {
+    const compact = encodeWorkjetDevicePairLink({
+      type: "workjet-device-invite-ref",
+      version: 1,
+      endpoint: "https://workjet.example.test",
+      code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+      expires_at: "2026-08-25T12:45:00Z",
+    });
+    const parsed = parseWorkjetDevicePairingLink(compact, { now: NOW });
+    expect(parsed).toMatchObject({
+      kind: "reference",
+      reference: {
+        endpoint: "https://workjet.example.test",
+        expiresAt: "2026-08-25T12:45:00.000Z",
+      },
+    });
+    expect(compact.length).toBeLessThanOrEqual(320);
+    expect(compact).not.toMatch(/bootstrap|room-secret|capability-token/iu);
+  });
+
+  it("redeems a compact reference once in memory and validates the combined invite", async () => {
+    const compact = parseWorkjetDevicePairingLink(
+      encodeWorkjetDevicePairLink({
+        type: "workjet-device-invite-ref",
+        version: 1,
+        endpoint: "https://workjet.example.test",
+        code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+        expires_at: "2026-08-25T12:45:00Z",
+      }),
+      { now: NOW },
+    );
+    if (compact.kind !== "reference") throw new Error("expected compact reference");
+    const requests: Array<{ readonly url: string; readonly init?: RequestInit }> = [];
+    const redeemed = await redeemWorkjetDeviceInviteReference(compact.reference, {
+      now: NOW,
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), init });
+        return new Response(JSON.stringify(deviceInvite()), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: "https://workjet.example.test/api/workjet/device-invites/redeem",
+      init: {
+        method: "POST",
+        body: JSON.stringify({ code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ" }),
+      },
+    });
+    expect(redeemed.environment.baseUrl).toBe("https://workjet.example.test");
+    expect(redeemed.businessOs.instanceId).toBe("instance-a");
   });
 
   it("fails closed for expired credentials, unsafe environment URLs and extra parameters", () => {

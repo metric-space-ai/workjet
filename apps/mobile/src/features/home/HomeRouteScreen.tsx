@@ -20,6 +20,7 @@ import { buildHomeProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
@@ -29,6 +30,7 @@ export function HomeRouteScreen() {
   const threads = useThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const { environmentBindings, hasEnvironmentBindings } = useBusinessOs();
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -51,21 +53,29 @@ export function HomeRouteScreen() {
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
   const environments = useMemo(() => {
+    const boundEnvironmentIds = new Set(
+      environmentBindings.map((binding) => binding.environmentId),
+    );
     const connectionStateByEnvironmentId = new Map(
       workspaceEnvironments.map(
         (environment) => [environment.environmentId, environment.connectionState] as const,
       ),
     );
     return Arr.sort(
-      Object.values(savedConnectionsById).map((connection) => ({
-        environmentId: connection.environmentId,
-        label: connection.environmentLabel,
-        connectionState:
-          connectionStateByEnvironmentId.get(connection.environmentId) ?? "available",
-      })),
+      Object.values(savedConnectionsById)
+        .filter(
+          (connection) =>
+            !hasEnvironmentBindings || boundEnvironmentIds.has(connection.environmentId),
+        )
+        .map((connection) => ({
+          environmentId: connection.environmentId,
+          label: connection.environmentLabel,
+          connectionState:
+            connectionStateByEnvironmentId.get(connection.environmentId) ?? "available",
+        })),
       Order.mapInput(Order.String, (environment: { readonly label: string }) => environment.label),
     );
-  }, [savedConnectionsById, workspaceEnvironments]);
+  }, [environmentBindings, hasEnvironmentBindings, savedConnectionsById, workspaceEnvironments]);
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
@@ -142,6 +152,7 @@ export function HomeRouteScreen() {
           })}
         />
         <HomeHeader
+          allowAllEnvironments={!hasEnvironmentBindings}
           environments={environments}
           projects={projectFilterOptions}
           searchQuery={searchQuery}

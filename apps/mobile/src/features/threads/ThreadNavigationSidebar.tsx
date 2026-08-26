@@ -38,6 +38,7 @@ import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import {
   hasCustomHomeListOptions,
   PROJECT_SORT_OPTIONS,
@@ -197,6 +198,7 @@ function ThreadNavigationSidebarPane(
   const threads = useThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const { environmentBindings, hasEnvironmentBindings } = useBusinessOs();
   const [headerIsOverContent, setHeaderIsOverContent] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
   const searchBarRef = useRef<SearchBarCommands>(null);
@@ -222,16 +224,21 @@ function ThreadNavigationSidebarPane(
     preferencesResult.value.autoSettleOnMerge !== false;
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
-  const environments = useMemo(
-    () =>
-      Object.values(savedConnectionsById)
-        .map((connection) => ({
-          environmentId: connection.environmentId,
-          label: connection.environmentLabel,
-        }))
-        .sort((left, right) => left.label.localeCompare(right.label)),
-    [savedConnectionsById],
-  );
+  const environments = useMemo(() => {
+    const boundEnvironmentIds = new Set(
+      environmentBindings.map((binding) => binding.environmentId),
+    );
+    return Object.values(savedConnectionsById)
+      .filter(
+        (connection) =>
+          !hasEnvironmentBindings || boundEnvironmentIds.has(connection.environmentId),
+      )
+      .map((connection) => ({
+        environmentId: connection.environmentId,
+        label: connection.environmentLabel,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [environmentBindings, hasEnvironmentBindings, savedConnectionsById]);
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
@@ -648,14 +655,19 @@ function ThreadNavigationSidebarPane(
     () => [
       {
         id: "environment",
-        title: "Environment",
+        title: "CTOX instance",
         subactions: [
-          {
-            id: "environment:all",
-            title: "All environments",
-            subtitle: "Show threads from every environment",
-            state: options.selectedEnvironmentId === null ? "on" : "off",
-          },
+          ...(hasEnvironmentBindings
+            ? []
+            : [
+                {
+                  id: "environment:all",
+                  title: "All environments",
+                  subtitle: "Show threads from every environment",
+                  state:
+                    options.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
+                },
+              ]),
           ...environments.map((environment) => ({
             id: `environment:${environment.environmentId}`,
             title: environment.label,
@@ -713,7 +725,14 @@ function ThreadNavigationSidebarPane(
             },
           ] satisfies MenuAction[])),
     ],
-    [environments, options, projectFilterOptions, selectedProjectKey, threadListV2Enabled],
+    [
+      environments,
+      hasEnvironmentBindings,
+      options,
+      projectFilterOptions,
+      selectedProjectKey,
+      threadListV2Enabled,
+    ],
   );
   const handleListMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -1160,6 +1179,7 @@ function ThreadNavigationSidebarPane(
   const filterMenu = useMemo(
     () =>
       buildHomeListFilterMenu({
+        allowAllEnvironments: !hasEnvironmentBindings,
         environments,
         projects: projectFilterOptions,
         selectedEnvironmentId: options.selectedEnvironmentId,
@@ -1174,6 +1194,7 @@ function ThreadNavigationSidebarPane(
       }),
     [
       environments,
+      hasEnvironmentBindings,
       options,
       projectFilterOptions,
       selectedProjectKey,

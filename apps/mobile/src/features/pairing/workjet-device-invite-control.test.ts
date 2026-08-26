@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { EnvironmentId, WorkjetDeviceInviteV1 } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  WorkjetDeviceInviteRefV1,
+  WorkjetDeviceInviteV1,
+} from "@t3tools/contracts";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
 import {
   makeWorkjetDeviceInviteControl,
+  resolveWorkjetDevicePairingConnection,
   WorkjetDeviceInviteControlUnavailableError,
 } from "./workjet-device-invite-control";
 
@@ -58,7 +63,31 @@ const invite: WorkjetDeviceInviteV1 = {
   },
 };
 
+const reference: WorkjetDeviceInviteRefV1 = {
+  type: "workjet-device-invite-ref",
+  version: 1,
+  endpoint: "https://workjet.example.test",
+  code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+  expires_at: "2026-08-25T12:45:00Z",
+};
+
 describe("Workjet device invite control", () => {
+  it("resolves the exact Code environment bound to the selected CTOX instance", () => {
+    const selected = connection();
+    const other = {
+      ...connection("https://other.example.test"),
+      environmentId: "environment-b" as EnvironmentId,
+      environmentLabel: "Operations",
+    };
+    expect(resolveWorkjetDevicePairingConnection(selected.environmentId, [other, selected])).toBe(
+      selected,
+    );
+    expect(resolveWorkjetDevicePairingConnection(null, [selected])).toBeNull();
+    expect(
+      resolveWorkjetDevicePairingConnection("missing" as EnvironmentId, [selected]),
+    ).toBeNull();
+  });
+
   it("creates and revokes one combined Code and Business OS invite", async () => {
     const createInputs: unknown[] = [];
     const revokeInputs: unknown[] = [];
@@ -66,7 +95,12 @@ describe("Workjet device invite control", () => {
       {
         async create(input) {
           createInputs.push(input);
-          return { inviteId: "invite-a", invite, expiresAt: "2026-08-25T12:45:00Z" };
+          return {
+            inviteId: "invite-a",
+            reference,
+            invite,
+            expiresAt: "2026-08-25T12:45:00Z",
+          };
         },
         async revoke(input) {
           revokeInputs.push(input);
@@ -81,6 +115,8 @@ describe("Workjet device invite control", () => {
       { ttlSeconds: 300, connectionUrl: "https://workjet.example.test" },
     ]);
     expect(created.link).toMatch(/^workjet:\/\/pair\?payload=/u);
+    expect(created.link).not.toContain("synthetic-bootstrap-credential");
+    expect(created.link.length).toBeLessThanOrEqual(320);
     expect(created.displayName).toBe("Operations");
     await control.revoke({ connection: connection(), inviteId: created.inviteId });
     expect(revokeInputs).toEqual([{ inviteId: "invite-a" }]);

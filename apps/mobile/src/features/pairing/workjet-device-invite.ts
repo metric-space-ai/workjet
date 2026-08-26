@@ -1,4 +1,4 @@
-import { WorkjetDeviceInviteV1 } from "@t3tools/contracts";
+import { WorkjetDeviceInviteRefV1, WorkjetDeviceInviteV1 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import { buildPairingUrl } from "../connection/pairing";
@@ -28,6 +28,25 @@ export interface ValidatedWorkjetDeviceInvite {
     readonly signalingHosts: readonly string[];
   };
 }
+
+export interface ValidatedWorkjetDeviceInviteReference {
+  readonly endpoint: string;
+  readonly code: string;
+  readonly expiresAt: string;
+  readonly expiresAtMs: number;
+}
+
+export type ParsedWorkjetDevicePairingLink =
+  | {
+      readonly kind: "invite";
+      readonly attemptId: string;
+      readonly invite: ValidatedWorkjetDeviceInvite;
+    }
+  | {
+      readonly kind: "reference";
+      readonly attemptId: string;
+      readonly reference: ValidatedWorkjetDeviceInviteReference;
+    };
 
 export class WorkjetDeviceInviteValidationError extends Error {
   constructor(
@@ -80,14 +99,41 @@ function encodeBase64Url(value: string): string {
   return encoded;
 }
 
-export function encodeWorkjetDevicePairLink(invite: typeof WorkjetDeviceInviteV1.Type): string {
-  const payload = encodeBase64Url(JSON.stringify(invite));
+export function encodeWorkjetDevicePairLink(
+  input: typeof WorkjetDeviceInviteV1.Type | typeof WorkjetDeviceInviteRefV1.Type,
+): string {
+  const payload = encodeBase64Url(JSON.stringify(input));
   const search = new URLSearchParams([["payload", payload]]);
   const link = `workjet://pair?${search.toString()}`;
   if (new TextEncoder().encode(link).byteLength > 2_300) {
     throw new Error("Workjet device invite is too large for a reliable QR code.");
   }
   return link;
+}
+
+function decodeWorkjetDevicePairPayload(raw: string): unknown {
+  let url: URL;
+  try {
+    url = new URL(normalizeIncomingWorkjetUrl(raw));
+  } catch {
+    return fail("url", "Workjet pairing link is invalid.");
+  }
+  if (!["workjet:", "workjet-dev:", "workjet-preview:"].includes(url.protocol)) {
+    fail("scheme", "Workjet pairing scheme is unsupported.");
+  }
+  if (url.hostname !== DEVICE_INVITE_ROUTE || (url.pathname && url.pathname !== "/")) {
+    fail("route", "Workjet pairing route is unsupported.");
+  }
+  if (url.username || url.password || url.hash) {
+    fail("url", "Workjet pairing link contains unsupported components.");
+  }
+  const keys = [...url.searchParams.keys()];
+  if (keys.length !== 1 || keys[0] !== "payload") {
+    fail("query", "Workjet pairing link must contain only payload.");
+  }
+  const encoded = url.searchParams.get("payload");
+  if (!encoded) fail("payload", "Workjet pairing payload is missing.");
+  return decodeBase64UrlJson(encoded);
 }
 
 function validateEnvironmentBaseUrl(raw: string): string {
@@ -114,31 +160,10 @@ export function parseWorkjetDevicePairLink(
   options: { readonly now?: number } = {},
 ): ValidatedWorkjetDeviceInvite {
   const now = options.now ?? Date.now();
-  let url: URL;
-  try {
-    url = new URL(normalizeIncomingWorkjetUrl(raw));
-  } catch {
-    return fail("url", "Workjet pairing link is invalid.");
-  }
-  if (!["workjet:", "workjet-dev:", "workjet-preview:"].includes(url.protocol)) {
-    fail("scheme", "Workjet pairing scheme is unsupported.");
-  }
-  if (url.hostname !== DEVICE_INVITE_ROUTE || (url.pathname && url.pathname !== "/")) {
-    fail("route", "Workjet pairing route is unsupported.");
-  }
-  if (url.username || url.password || url.hash) {
-    fail("url", "Workjet pairing link contains unsupported components.");
-  }
-  const keys = [...url.searchParams.keys()];
-  if (keys.length !== 1 || keys[0] !== "payload") {
-    fail("query", "Workjet pairing link must contain only payload.");
-  }
-  const encoded = url.searchParams.get("payload");
-  if (!encoded) fail("payload", "Workjet pairing payload is missing.");
-
+  const payload = decodeWorkjetDevicePairPayload(raw);
   let invite: typeof WorkjetDeviceInviteV1.Type;
   try {
-    invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(decodeBase64UrlJson(encoded));
+    invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(payload);
   } catch {
     return fail("schema", "Workjet pairing payload has an unsupported schema.");
   }
@@ -168,4 +193,104 @@ export function parseWorkjetDevicePairLink(
       ),
     }),
   });
+}
+
+function validateReferenceEndpoint(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return fail("reference_endpoint", "Workjet pairing server is invalid.");
+  }
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    fail("reference_endpoint", "Workjet pairing server is not allowed.");
+  }
+  return url.toString().replace(/\/$/u, "");
+}
+
+export function parseWorkjetDevicePairingLink(
+  raw: string,
+  options: { readonly now?: number } = {},
+): ParsedWorkjetDevicePairingLink {
+  const now = options.now ?? Date.now();
+  const payload = decodeWorkjetDevicePairPayload(raw);
+  try {
+    const invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(payload);
+    const parsed = parseWorkjetDevicePairLink(raw, { now });
+    return Object.freeze({
+      kind: "invite" as const,
+      attemptId: `invite:${invite.device_pairing_id}`,
+      invite: parsed,
+    });
+  } catch (error) {
+    if (error instanceof WorkjetDeviceInviteValidationError && error.code !== "schema") {
+      throw error;
+    }
+  }
+
+  let reference: typeof WorkjetDeviceInviteRefV1.Type;
+  try {
+    reference = Schema.decodeUnknownSync(WorkjetDeviceInviteRefV1)(payload);
+  } catch {
+    return fail("schema", "Workjet pairing payload has an unsupported schema.");
+  }
+  const expiresAtMs = Date.parse(reference.expires_at);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
+    fail("expired", "Workjet pairing link is expired.");
+  }
+  return Object.freeze({
+    kind: "reference" as const,
+    attemptId: `reference:${reference.code}`,
+    reference: Object.freeze({
+      endpoint: validateReferenceEndpoint(reference.endpoint),
+      code: reference.code,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      expiresAtMs,
+    }),
+  });
+}
+
+export async function redeemWorkjetDeviceInviteReference(
+  reference: ValidatedWorkjetDeviceInviteReference,
+  options: {
+    readonly fetch?: typeof globalThis.fetch;
+    readonly now?: number;
+    readonly timeoutMs?: number;
+  } = {},
+): Promise<ValidatedWorkjetDeviceInvite> {
+  const now = options.now ?? Date.now();
+  if (reference.expiresAtMs <= now) fail("expired", "Workjet pairing link is expired.");
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
+  try {
+    const response = await fetchImpl(`${reference.endpoint}/api/workjet/device-invites/redeem`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: reference.code }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      fail("reference_unavailable", "Workjet pairing code is unavailable or expired.");
+    }
+    let invite: typeof WorkjetDeviceInviteV1.Type;
+    try {
+      invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(await response.json());
+    } catch {
+      return fail("reference_response", "Workjet pairing response is invalid.");
+    }
+    return parseWorkjetDevicePairLink(encodeWorkjetDevicePairLink(invite), { now });
+  } catch (error) {
+    if (error instanceof WorkjetDeviceInviteValidationError) throw error;
+    return fail("reference_network", "Workjet pairing server could not be reached.");
+  } finally {
+    clearTimeout(timeout);
+  }
 }

@@ -75,6 +75,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import { resolvePendingTaskInteractionMode } from "./legacy-plan-mode";
 import { useLegacyPlanModeState } from "./use-legacy-plan-mode-enabled";
 import {
@@ -191,6 +192,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const projects = useProjects();
   const threads = useThreadShells();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const {
+    hasEnvironmentBindings,
+    selectedEnvironmentId: activeBusinessOsEnvironmentId,
+    selectEnvironment: selectBusinessOsEnvironment,
+  } = useBusinessOs();
   const groupingSettings = useMobileProjectGroupingSettings();
   const { enabled: planModeEnabled, loaded: planModePreferenceLoaded } = useLegacyPlanModeState();
   const projectScopes = useMemo(
@@ -198,22 +204,29 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       sortHomeProjectScopes({
         scopes: buildHomeProjectScopes({
           projects,
-          environmentId: null,
+          environmentId: hasEnvironmentBindings ? activeBusinessOsEnvironmentId : null,
           projectGroupingMode: groupingSettings.sidebarProjectGroupingMode,
         }),
         threads,
         pendingTasks: [],
         projectSortOrder: "updated_at",
       }),
-    [groupingSettings.sidebarProjectGroupingMode, projects, threads],
+    [
+      activeBusinessOsEnvironmentId,
+      groupingSettings.sidebarProjectGroupingMode,
+      hasEnvironmentBindings,
+      projects,
+      threads,
+    ],
   );
 
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
-  const selectedEnvironmentId =
-    selectedEnvironmentIdOverride !== null &&
-    projects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
+  const selectedEnvironmentId = hasEnvironmentBindings
+    ? activeBusinessOsEnvironmentId
+    : selectedEnvironmentIdOverride !== null &&
+        projects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
       ? selectedEnvironmentIdOverride
       : (projects[0]?.environmentId ?? null);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
@@ -320,6 +333,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       );
     };
     for (const project of projects) {
+      if (hasEnvironmentBindings && project.environmentId !== activeBusinessOsEnvironmentId) {
+        continue;
+      }
       if (!hostsSelectedRepository(project)) {
         continue;
       }
@@ -338,6 +354,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
     return result;
   }, [
+    activeBusinessOsEnvironmentId,
+    hasEnvironmentBindings,
     projects,
     savedConnectionsById,
     selectedRepositoryKey,
@@ -577,9 +595,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         void copyComposerDraftContentIfEmpty(selectedProjectDraftKey, nextDraftKey);
       }
       setSelectedEnvironmentId(project.environmentId);
+      if (hasEnvironmentBindings) void selectBusinessOsEnvironment(project.environmentId);
       setSelectedProjectKey(nextProjectKey);
     },
-    [selectedProjectDraftKey],
+    [hasEnvironmentBindings, selectBusinessOsEnvironment, selectedProjectDraftKey],
   );
 
   const selectEnvironment = useCallback(
@@ -608,9 +627,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           ? projectsOnTarget.find((project) => project.title === selectedProject.title)
           : undefined);
       setSelectedEnvironmentId(environmentId);
+      if (hasEnvironmentBindings) void selectBusinessOsEnvironment(environmentId);
       setSelectedProjectKey(match ? scopedProjectKey(match.environmentId, match.id) : null);
     },
-    [projects, selectedProject],
+    [hasEnvironmentBindings, projects, selectBusinessOsEnvironment, selectedProject],
   );
 
   const setWorkspaceMode = useCallback(

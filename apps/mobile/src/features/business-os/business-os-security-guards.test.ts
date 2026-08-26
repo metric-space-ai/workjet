@@ -12,11 +12,39 @@ describe("Business OS native security guards", () => {
     expect(settings).not.toMatch(/Signaling-URL eingeben|Raum eingeben|Passwort eingeben/iu);
     expect(settings).toContain("QR-Code anzeigen");
     expect(settings).toContain("QR-Code scannen");
+    expect(settings).toContain("CTOX Instanzen");
+    expect(settings).toContain("separat verbunden");
+    expect(settings).toContain("gemeinsam für Code und Business OS");
+    expect(settings).toContain("nur das aktuell ausgewählte CTOX");
+    expect(settings).toContain("Weitere Backends werden unabhängig");
     expect(settings).toContain("Erneuern");
     expect(settings).toContain("Widerrufen");
     expect(settings).toContain("workjetDeviceInviteEnvironment");
     expect(settings).toContain("importPairingPayload");
     expect(settings).not.toContain("businessOsMobileInviteEnvironment");
+  });
+
+  it("persists only the CTOX-instance to Code-environment relation", () => {
+    const registry = read("src/features/business-os/registry/native-business-os-registry.ts");
+    const binding = read("src/features/business-os/registry/business-os-environment-binding.ts");
+    expect(registry).toContain("business_os_environment_bindings");
+    expect(registry).toContain("business_os_instance_id");
+    expect(registry).toContain("environment_id");
+    expect(binding).toContain("businessOsInstanceId");
+    expect(binding).toContain("environmentId");
+    expect(binding).not.toMatch(/password|capabilityToken|roomSecret|businessRecords/iu);
+  });
+
+  it("uses the active CTOX instance as the Code scope across entry points", () => {
+    const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
+    const layout = read("src/features/layout/AdaptiveWorkspaceLayout.tsx");
+    const newTask = read("src/features/threads/new-task-flow-provider.tsx");
+    const project = read("src/features/projects/AddProjectScreen.tsx");
+    expect(pairing).toContain("bindEnvironment(businessOsInstance.id, environmentId)");
+    expect(layout).toContain("selectedEnvironmentId={");
+    expect(layout).toContain("selectEnvironment(environmentId)");
+    expect(newTask).toContain("activeBusinessOsEnvironmentId");
+    expect(project).toContain("connection.environmentId === selectedEnvironmentId");
   });
 
   it("requires isolated native profiles and canonical app origins", () => {

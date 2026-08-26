@@ -17,6 +17,7 @@ import { useThemeColor } from "../../../lib/useThemeColor";
 import { useWorkjetMode } from "../../mode/WorkjetModeProvider";
 import { useRegisterWorkjetProductSidebar } from "../../mode/WorkjetProductChromeProvider";
 import { useBusinessOs } from "../BusinessOsProvider";
+import type { BusinessOsInstance } from "../registry/business-os-registry";
 import { BusinessOsSettingsPanel } from "../components/BusinessOsSettingsPanel";
 import { BusinessOsShellHost } from "../shell/BusinessOsShellHost";
 import {
@@ -116,7 +117,9 @@ function BusinessOsSidebarButton(props: {
 }
 
 function BusinessOsNavigationSidebar(props: {
-  readonly instanceName: string;
+  readonly instances: readonly BusinessOsInstance[];
+  readonly selectedInstanceId: string;
+  readonly onSelectInstance: (instanceId: string) => void;
   readonly route: BusinessOsRoute;
   readonly onSelect: (route: Exclude<BusinessOsRoute, "app">) => void;
 }) {
@@ -126,9 +129,46 @@ function BusinessOsNavigationSidebar(props: {
       className="w-[252px] border-r border-border bg-sidebar px-3 py-4"
     >
       <Text className="px-3 text-xs font-t3-bold uppercase tracking-[0.8px] text-foreground-muted">
-        {props.instanceName}
+        CTOX Instanz
       </Text>
-      <View className="mt-3 gap-1">
+      <ScrollView
+        className="mt-2 max-h-[220px]"
+        contentContainerClassName="gap-1"
+        showsVerticalScrollIndicator={false}
+      >
+        {props.instances.map((instance) => {
+          const selected = instance.id === props.selectedInstanceId;
+          return (
+            <Pressable
+              key={instance.id}
+              accessibilityLabel={`${instance.displayName}${selected ? ", aktiv" : ""}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              className={
+                selected
+                  ? "min-h-12 justify-center rounded-[13px] bg-subtle-strong px-3"
+                  : "min-h-12 justify-center rounded-[13px] px-3 active:bg-subtle-strong/70"
+              }
+              onPress={() => props.onSelectInstance(instance.id)}
+            >
+              <Text
+                className={
+                  selected
+                    ? "text-sm font-t3-bold text-foreground"
+                    : "text-sm font-t3-medium text-foreground-muted"
+                }
+                numberOfLines={1}
+              >
+                {instance.displayName}
+              </Text>
+              <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+                {new URL(instance.signalingUrls[0]!).host}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <View className="mt-3 border-t border-border pt-3 gap-1">
         <BusinessOsSidebarButton
           icon="folder.fill"
           label="Home"
@@ -231,7 +271,16 @@ export function BusinessOsMobileRoot(props: {
   const colorScheme = useColorScheme();
   const reducedMotion = useReducedMotion();
   const { setMode } = useWorkjetMode();
-  const { isReady, selected } = useBusinessOs();
+  const { environmentBindings, instances, isReady, select, selected } = useBusinessOs();
+  const selectableInstances = useMemo(
+    () =>
+      instances.filter(
+        (instance) =>
+          environmentBindings.length === 0 ||
+          environmentBindings.some((binding) => binding.businessOsInstanceId === instance.id),
+      ),
+    [environmentBindings, instances],
+  );
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [route, setRoute] = useState<BusinessOsRoute>("home");
   const [layout, setLayout] = useState<BusinessOsHomeLayout | null>(null);
@@ -390,7 +439,9 @@ export function BusinessOsMobileRoot(props: {
     <View className="flex-1 flex-row bg-screen">
       {sidebarAvailable && sidebarVisible ? (
         <BusinessOsNavigationSidebar
-          instanceName={selected.displayName}
+          instances={selectableInstances}
+          selectedInstanceId={selected.id}
+          onSelectInstance={(instanceId) => void select(instanceId)}
           route={route}
           onSelect={(nextRoute) => {
             if (activeAppId && route === "app") {

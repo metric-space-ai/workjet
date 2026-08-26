@@ -10,7 +10,11 @@ import { useWorkjetMode } from "../mode/WorkjetModeProvider";
 import { isWorkjetDevicePairLink } from "../../lib/workjetLinks";
 import { updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { parseWorkjetDevicePairLink } from "./workjet-device-invite";
+import {
+  parseWorkjetDevicePairingLink,
+  redeemWorkjetDeviceInviteReference,
+  type ParsedWorkjetDevicePairingLink,
+} from "./workjet-device-invite";
 
 interface WorkjetDevicePairingContextValue {
   readonly importPairingPayload: (payload: string) => Promise<boolean>;
@@ -18,13 +22,19 @@ interface WorkjetDevicePairingContextValue {
 
 const WorkjetDevicePairingContext = createContext<WorkjetDevicePairingContextValue | null>(null);
 
-function confirmDevicePairing(input: ReturnType<typeof parseWorkjetDevicePairLink>) {
+function confirmDevicePairing(input: ParsedWorkjetDevicePairingLink) {
+  const description =
+    input.kind === "reference"
+      ? `Server: ${new URL(input.reference.endpoint).host}\nGültig bis: ${new Date(
+          input.reference.expiresAt,
+        ).toLocaleString()}\n\nDer Einmal-Code gibt genau ein CTOX Backend frei.`
+      : `${input.invite.confirmation.displayName}\nSignaling: ${input.invite.confirmation.signalingHosts.join(
+          ", ",
+        )}\nGültig bis: ${new Date(input.invite.confirmation.expiresAt).toLocaleString()}`;
   return new Promise<boolean>((resolve) => {
     Alert.alert(
       "Workjet verbinden?",
-      `${input.confirmation.displayName}\nSignaling: ${input.confirmation.signalingHosts.join(
-        ", ",
-      )}\nGültig bis: ${new Date(input.confirmation.expiresAt).toLocaleString()}`,
+      description,
       [
         { text: "Abbrechen", style: "cancel", onPress: () => resolve(false) },
         { text: "Code und Business OS verbinden", onPress: () => resolve(true) },
@@ -37,7 +47,12 @@ function confirmDevicePairing(input: ReturnType<typeof parseWorkjetDevicePairLin
 export function WorkjetDevicePairingProvider(props: { readonly children: ReactNode }) {
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const { setMode } = useWorkjetMode();
-  const { importInvite: importBusinessOsInvite } = useBusinessOs();
+  const {
+    bindEnvironment,
+    forget: forgetBusinessOsInstance,
+    importInvite: importBusinessOsInvite,
+    instances: businessOsInstances,
+  } = useBusinessOs();
   const { connectPairingUrl: connectCodePairingUrl, removeEnvironment: removeCodeEnvironment } =
     useConnectionController();
   const { savedConnectionsById } = useSavedRemoteConnections();
@@ -51,8 +66,12 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
       if (pairingInFlight.current) return false;
       pairingInFlight.current = true;
       try {
-        const prepared = parseWorkjetDevicePairLink(payload);
-        if (!(await confirmDevicePairing(prepared))) return false;
+        const candidate = parseWorkjetDevicePairingLink(payload);
+        if (!(await confirmDevicePairing(candidate))) return false;
+        const prepared =
+          candidate.kind === "reference"
+            ? await redeemWorkjetDeviceInviteReference(candidate.reference)
+            : candidate.invite;
 
         const codePairing = await connectCodePairingUrl(prepared.environment.pairingUrl);
         if (!AsyncResult.isSuccess(codePairing)) {
@@ -62,11 +81,22 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
         }
         const environmentId = codePairing.value;
         const wasAlreadyPaired = Object.hasOwn(savedConnectionsById, environmentId);
+        const businessOsWasAlreadyPaired = businessOsInstances.some(
+          (instance) => instance.instanceId === prepared.businessOs.instanceId,
+        );
         try {
           const businessOsInstance = await importBusinessOsInvite(prepared.businessOs, {
             confirm: false,
           });
           if (!businessOsInstance) throw new Error("Business OS pairing was cancelled.");
+          try {
+            await bindEnvironment(businessOsInstance.id, environmentId);
+          } catch {
+            if (!businessOsWasAlreadyPaired) {
+              await forgetBusinessOsInstance(businessOsInstance).catch(() => undefined);
+            }
+            throw new Error("Workjet instance binding could not be stored.");
+          }
         } catch {
           if (!wasAlreadyPaired) {
             await removeCodeEnvironment(environmentId).catch(() => undefined);
@@ -84,7 +114,10 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
       }
     },
     [
+      bindEnvironment,
+      businessOsInstances,
       connectCodePairingUrl,
+      forgetBusinessOsInstance,
       importBusinessOsInvite,
       removeCodeEnvironment,
       savePreferences,
@@ -96,9 +129,9 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
   useEffect(() => {
     const handleUrl = (url: string | null) => {
       if (!url || !isWorkjetDevicePairLink(url)) return;
-      let devicePairingId: string;
+      let pairingAttemptId: string;
       try {
-        devicePairingId = parseWorkjetDevicePairLink(url).devicePairingId;
+        pairingAttemptId = parseWorkjetDevicePairingLink(url).attemptId;
       } catch {
         if (handledInvalidIncomingPairing.current) return;
         handledInvalidIncomingPairing.current = true;
@@ -106,15 +139,15 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
         return;
       }
       if (
-        pendingIncomingDevicePairingIds.current.has(devicePairingId) ||
-        completedIncomingDevicePairingIds.current.has(devicePairingId)
+        pendingIncomingDevicePairingIds.current.has(pairingAttemptId) ||
+        completedIncomingDevicePairingIds.current.has(pairingAttemptId)
       ) {
         return;
       }
-      pendingIncomingDevicePairingIds.current.add(devicePairingId);
+      pendingIncomingDevicePairingIds.current.add(pairingAttemptId);
       void importPairingPayload(url)
         .then((completed) => {
-          if (completed) completedIncomingDevicePairingIds.current.add(devicePairingId);
+          if (completed) completedIncomingDevicePairingIds.current.add(pairingAttemptId);
         })
         .catch((cause) => {
           Alert.alert(
@@ -124,7 +157,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
               : "Der Workjet-QR-Code ist ungültig oder abgelaufen.",
           );
         })
-        .finally(() => pendingIncomingDevicePairingIds.current.delete(devicePairingId));
+        .finally(() => pendingIncomingDevicePairingIds.current.delete(pairingAttemptId));
     };
     void Linking.getInitialURL().then(handleUrl);
     const subscription = Linking.addEventListener("url", ({ url }) => handleUrl(url));

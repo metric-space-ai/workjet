@@ -36,6 +36,7 @@ import {
 export type HomeHeaderEnvironment = HomeListFilterMenuEnvironment;
 
 export function HomeHeader(props: {
+  readonly allowAllEnvironments?: boolean;
   readonly environments: ReadonlyArray<HomeHeaderEnvironment>;
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly searchQuery: string;
@@ -81,13 +82,17 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     () => [
       {
         id: "environment",
-        title: "Environment",
+        title: "CTOX instance",
         subactions: [
-          {
-            id: "environment:all",
-            title: "All environments",
-            state: checkedMenuState(props.selectedEnvironmentId === null),
-          },
+          ...(props.allowAllEnvironments === false
+            ? []
+            : [
+                {
+                  id: "environment:all",
+                  title: "All environments",
+                  state: checkedMenuState(props.selectedEnvironmentId === null),
+                },
+              ]),
           ...props.environments.map((environment) => ({
             id: `environment:${environment.environmentId}`,
             title: environment.label,
@@ -140,6 +145,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     ],
     [
       props.environments,
+      props.allowAllEnvironments,
       props.projectSortOrder,
       props.projects,
       props.selectedEnvironmentId,
@@ -393,15 +399,17 @@ function IosHomeHeader(props: HomeHeaderProps) {
             title="Thread list options"
             separateBackground
           >
-            <NativeHeaderToolbar.Menu title="Environment">
-              <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.selectedEnvironmentId === null}
-                onPress={() => props.onEnvironmentChange(null)}
-                subtitle="Show threads from every environment"
-              >
-                <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
+            <NativeHeaderToolbar.Menu title="CTOX instance">
+              <NativeHeaderToolbar.Label>CTOX instance</NativeHeaderToolbar.Label>
+              {props.allowAllEnvironments === false ? null : (
+                <NativeHeaderToolbar.MenuAction
+                  isOn={props.selectedEnvironmentId === null}
+                  onPress={() => props.onEnvironmentChange(null)}
+                  subtitle="Show threads from every environment"
+                >
+                  <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
+                </NativeHeaderToolbar.MenuAction>
+              )}
               {props.environments.map((environment) => (
                 <NativeHeaderToolbar.MenuAction
                   key={environment.environmentId}

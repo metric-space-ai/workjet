@@ -1,12 +1,16 @@
+import type { MenuAction } from "@react-native-menu/menu";
+import { useMemo } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
+import { ControlPillMenu } from "../../components/ControlPill";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useWorkjetMode } from "./WorkjetModeProvider";
 import { useWorkjetProductChrome } from "./WorkjetProductChromeProvider";
 import type { WorkjetMode } from "./workjet-mode";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 
 function ModeButton(props: {
   readonly label: string;
@@ -45,9 +49,25 @@ export function WorkjetProductChrome() {
   const foreground = useThemeColor("--color-foreground");
   const muted = useThemeColor("--color-foreground-muted");
   const { mode, setMode } = useWorkjetMode();
+  const { environmentBindings, instances, select, selected } = useBusinessOs();
   const { sidebar } = useWorkjetProductChrome();
   const showWordmark = width >= 720;
   const sidebarAvailable = sidebar?.available === true;
+  const instanceActions = useMemo<MenuAction[]>(
+    () =>
+      instances
+        .filter(
+          (instance) =>
+            environmentBindings.length === 0 ||
+            environmentBindings.some((binding) => binding.businessOsInstanceId === instance.id),
+        )
+        .map((instance) => ({
+          id: `instance:${instance.id}`,
+          title: instance.displayName,
+          state: instance.id === selected?.id ? "on" : "off",
+        })),
+    [environmentBindings, instances, selected?.id],
+  );
 
   return (
     <View
@@ -82,6 +102,29 @@ export function WorkjetProductChrome() {
           onSelect={setMode}
         />
       </View>
+
+      {selected ? (
+        <ControlPillMenu
+          actions={instanceActions}
+          onPressAction={(event) => {
+            const id = event.nativeEvent.event;
+            if (!id.startsWith("instance:")) return;
+            void select(id.slice("instance:".length));
+          }}
+        >
+          <Pressable
+            accessibilityLabel={`Aktive CTOX Instanz: ${selected.displayName}`}
+            accessibilityRole="button"
+            className="min-h-10 max-w-[240px] flex-row items-center gap-2 rounded-[11px] bg-subtle px-3 active:bg-subtle-strong"
+          >
+            <View className="size-2 rounded-full bg-primary" />
+            <Text className="min-w-0 flex-1 text-sm font-t3-bold" numberOfLines={1}>
+              {selected.displayName}
+            </Text>
+            <SymbolView name="chevron.down" size={13} tintColor={muted} type="monochrome" />
+          </Pressable>
+        </ControlPillMenu>
+      ) : null}
 
       <View className="flex-1" />
       {showWordmark ? <Text className="pb-2 text-sm font-t3-bold">Workjet</Text> : null}

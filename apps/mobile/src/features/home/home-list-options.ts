@@ -61,6 +61,7 @@ function defaultHomeListOptions(): HomeListOptions {
 interface HomeListOptionsContextValue {
   readonly options: HomeListOptions;
   readonly setOptions: Dispatch<SetStateAction<HomeListOptions>>;
+  readonly setSelectedEnvironmentId: (environmentId: EnvironmentId | null) => void;
   readonly projectGroupingMode: SidebarProjectGroupingMode;
 }
 
@@ -69,14 +70,41 @@ const HomeListOptionsContext = createContext<HomeListOptionsContextValue | null>
 /** Keeps list preferences stable while the app moves between compact and split shells. */
 export function HomeListOptionsProvider({
   children,
+  onSelectedEnvironmentChange,
   projectGroupingMode,
+  selectedEnvironmentId,
 }: PropsWithChildren<{
   readonly projectGroupingMode: SidebarProjectGroupingMode;
+  readonly selectedEnvironmentId?: EnvironmentId | null;
+  readonly onSelectedEnvironmentChange?: (environmentId: EnvironmentId | null) => void;
 }>) {
   const [options, setOptions] = useState<HomeListOptions>(defaultHomeListOptions);
+  const setSelectedEnvironmentId = useCallback(
+    (environmentId: EnvironmentId | null) => {
+      if (onSelectedEnvironmentChange) {
+        onSelectedEnvironmentChange(environmentId);
+        return;
+      }
+      setOptions((current) => ({ ...current, selectedEnvironmentId: environmentId }));
+    },
+    [onSelectedEnvironmentChange],
+  );
+  const resolvedOptions = useMemo(
+    () => ({
+      ...options,
+      selectedEnvironmentId:
+        selectedEnvironmentId === undefined ? options.selectedEnvironmentId : selectedEnvironmentId,
+    }),
+    [options, selectedEnvironmentId],
+  );
   const value = useMemo(
-    () => ({ options, setOptions, projectGroupingMode }),
-    [options, projectGroupingMode],
+    () => ({
+      options: resolvedOptions,
+      setOptions,
+      setSelectedEnvironmentId,
+      projectGroupingMode,
+    }),
+    [projectGroupingMode, resolvedOptions, setSelectedEnvironmentId],
   );
   return createElement(HomeListOptionsContext, { value }, children);
 }
@@ -117,9 +145,16 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
     projectGroupingMode: shared?.projectGroupingMode ?? "repository",
   };
 
-  const setSelectedEnvironmentId = useCallback((value: EnvironmentId | null) => {
-    setOptions((current) => ({ ...current, selectedEnvironmentId: value }));
-  }, []);
+  const setSelectedEnvironmentId = useCallback(
+    (value: EnvironmentId | null) => {
+      if (shared) {
+        shared.setSelectedEnvironmentId(value);
+        return;
+      }
+      setOptions((current) => ({ ...current, selectedEnvironmentId: value }));
+    },
+    [setOptions, shared],
+  );
   const setProjectSortOrder = useCallback((value: HomeProjectSortOrder) => {
     setOptions((current) => ({ ...current, projectSortOrder: value }));
   }, []);

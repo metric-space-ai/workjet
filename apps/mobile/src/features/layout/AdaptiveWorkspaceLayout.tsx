@@ -48,6 +48,7 @@ import {
 import { HomeListOptionsProvider } from "../home/home-list-options";
 import { useRegisterWorkjetProductSidebar } from "../mode/WorkjetProductChromeProvider";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
 
@@ -218,6 +219,7 @@ function AdaptiveWorkspaceLayoutContent(
     readonly projectGroupingMode: SidebarProjectGroupingMode;
   },
 ) {
+  const { hasEnvironmentBindings, selectedEnvironmentId, selectEnvironment } = useBusinessOs();
   const projectGroupingMode = props.projectGroupingMode;
   const { width, height } = useWindowDimensions();
   const pathname = props.pathname;
@@ -520,7 +522,17 @@ function AdaptiveWorkspaceLayoutContent(
   );
 
   return (
-    <HomeListOptionsProvider projectGroupingMode={projectGroupingMode}>
+    <HomeListOptionsProvider
+      projectGroupingMode={projectGroupingMode}
+      selectedEnvironmentId={hasEnvironmentBindings ? selectedEnvironmentId : undefined}
+      onSelectedEnvironmentChange={
+        hasEnvironmentBindings
+          ? (environmentId) => {
+              if (environmentId) void selectEnvironment(environmentId);
+            }
+          : undefined
+      }
+    >
       <AdaptiveWorkspaceContext.Provider value={contextValue}>
         <View testID="adaptive-workspace-layout" className="flex-1 flex-row">
           {shouldRenderPrimarySidebar && layout.listPaneWidth !== null ? (

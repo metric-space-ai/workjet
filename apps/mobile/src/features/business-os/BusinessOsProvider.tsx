@@ -1,4 +1,5 @@
 import * as Linking from "expo-linking";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   createContext,
   use,
@@ -9,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { Alert } from "react-native";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { isBusinessOsPairLink } from "../../lib/workjetLinks";
 import { uuidv4 } from "../../lib/uuid";
@@ -25,18 +27,29 @@ import {
   type BusinessOsRegistryDependencies,
 } from "./registry/business-os-registry";
 import {
+  nativeBusinessOsEnvironmentBindings,
   nativeBusinessOsRegistry,
   nativeBusinessOsSecretStore,
   nativeBusinessOsSelection,
 } from "./registry/native-business-os-registry";
+import type { BusinessOsEnvironmentBinding } from "./registry/business-os-environment-binding";
 import { nativeBusinessOsProfileStore } from "./shell/native-business-os-surface";
 import { nativeBusinessOsHomeStore } from "./launcher/native-business-os-home-store";
+import { useConnectionController } from "../connection/useConnectionController";
 
 interface BusinessOsContextValue {
   readonly instances: readonly BusinessOsInstance[];
   readonly selected: BusinessOsInstance | null;
+  readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly environmentBindings: readonly BusinessOsEnvironmentBinding[];
+  readonly hasEnvironmentBindings: boolean;
   readonly isReady: boolean;
   readonly select: (id: string) => Promise<void>;
+  readonly selectEnvironment: (environmentId: EnvironmentId) => Promise<void>;
+  readonly bindEnvironment: (
+    businessOsInstanceId: string,
+    environmentId: EnvironmentId,
+  ) => Promise<void>;
   readonly importLink: (raw: string) => Promise<BusinessOsInstance | null>;
   readonly importInvite: (
     invite: ValidatedBusinessOsInvite,
@@ -72,19 +85,37 @@ function confirmPairing(input: ReturnType<typeof prepareBusinessOsPairing>): Pro
 }
 
 export function BusinessOsProvider(props: { readonly children: ReactNode }) {
+  const { removeEnvironment: removeCodeEnvironment } = useConnectionController();
   const [instances, setInstances] = useState<readonly BusinessOsInstance[]>([]);
+  const [environmentBindings, setEnvironmentBindings] = useState<
+    readonly BusinessOsEnvironmentBinding[]
+  >([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [nextInstances, persistedSelection] = await Promise.all([
+    const [nextInstances, nextBindings, persistedSelection] = await Promise.all([
       nativeBusinessOsRegistry.list(),
+      nativeBusinessOsEnvironmentBindings.list(),
       nativeBusinessOsSelection.load(),
     ]);
     setInstances(nextInstances);
-    const validSelection = nextInstances.some((instance) => instance.id === persistedSelection)
+    setEnvironmentBindings(
+      nextBindings.filter((binding) =>
+        nextInstances.some((instance) => instance.id === binding.businessOsInstanceId),
+      ),
+    );
+    const selectableInstances =
+      nextBindings.length > 0
+        ? nextInstances.filter((instance) =>
+            nextBindings.some((binding) => binding.businessOsInstanceId === instance.id),
+          )
+        : nextInstances;
+    const validSelection = selectableInstances.some(
+      (instance) => instance.id === persistedSelection,
+    )
       ? persistedSelection
-      : (nextInstances[0]?.id ?? null);
+      : (selectableInstances[0]?.id ?? null);
     setSelectedId(validSelection);
     if (validSelection !== persistedSelection) await nativeBusinessOsSelection.save(validSelection);
     setIsReady(true);
@@ -94,10 +125,47 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
     void refresh().catch(() => setIsReady(true));
   }, [refresh]);
 
-  const select = useCallback(async (id: string) => {
-    setSelectedId(id);
-    await nativeBusinessOsSelection.save(id);
-  }, []);
+  const select = useCallback(
+    async (id: string) => {
+      if (!instances.some((instance) => instance.id === id)) {
+        throw new Error("Die ausgewählte CTOX Instanz ist auf diesem Gerät nicht eingerichtet.");
+      }
+      if (
+        environmentBindings.length > 0 &&
+        !environmentBindings.some((binding) => binding.businessOsInstanceId === id)
+      ) {
+        throw new Error("Verbinde diese CTOX Instanz erneut mit Workjet, bevor du sie aktivierst.");
+      }
+      setSelectedId(id);
+      await nativeBusinessOsSelection.save(id);
+    },
+    [environmentBindings, instances],
+  );
+
+  const selectEnvironment = useCallback(
+    async (environmentId: EnvironmentId) => {
+      const binding = environmentBindings.find(
+        (candidate) => candidate.environmentId === environmentId,
+      );
+      if (!binding) {
+        throw new Error("Diese Code-Environment ist keiner CTOX Instanz zugeordnet.");
+      }
+      await select(binding.businessOsInstanceId);
+    },
+    [environmentBindings, select],
+  );
+
+  const bindEnvironment = useCallback(
+    async (businessOsInstanceId: string, environmentId: EnvironmentId) => {
+      await nativeBusinessOsEnvironmentBindings.save({
+        businessOsInstanceId,
+        environmentId,
+      });
+      await nativeBusinessOsSelection.save(businessOsInstanceId);
+      await refresh();
+    },
+    [refresh],
+  );
 
   const commitPrepared = useCallback(
     async (prepared: PreparedBusinessOsPairing, shouldConfirm: boolean) => {
@@ -123,11 +191,21 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
 
   const forget = useCallback(
     async (instance: BusinessOsInstance) => {
+      const binding = environmentBindings.find(
+        (candidate) => candidate.businessOsInstanceId === instance.id,
+      );
+      if (binding) {
+        const codeRemoval = await removeCodeEnvironment(binding.environmentId);
+        if (!AsyncResult.isSuccess(codeRemoval)) {
+          throw new Error("Die gebundene Code-Environment konnte nicht entfernt werden.");
+        }
+      }
       await forgetBusinessOsInstance(instance, dependencies);
+      await nativeBusinessOsEnvironmentBindings.removeByBusinessOsInstanceId(instance.id);
       await nativeBusinessOsHomeStore.remove(instance.id);
       await refresh();
     },
-    [refresh],
+    [environmentBindings, refresh, removeCodeEnvironment],
   );
 
   useEffect(() => {
@@ -146,9 +224,39 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   }, [importLink]);
 
   const selected = instances.find((instance) => instance.id === selectedId) ?? null;
+  const selectedEnvironmentId =
+    environmentBindings.find((binding) => binding.businessOsInstanceId === selected?.id)
+      ?.environmentId ?? null;
   const value = useMemo(
-    () => ({ forget, importInvite, importLink, instances, isReady, refresh, select, selected }),
-    [forget, importInvite, importLink, instances, isReady, refresh, select, selected],
+    () => ({
+      bindEnvironment,
+      environmentBindings,
+      forget,
+      hasEnvironmentBindings: environmentBindings.length > 0,
+      importInvite,
+      importLink,
+      instances,
+      isReady,
+      refresh,
+      select,
+      selectEnvironment,
+      selected,
+      selectedEnvironmentId,
+    }),
+    [
+      bindEnvironment,
+      environmentBindings,
+      forget,
+      importInvite,
+      importLink,
+      instances,
+      isReady,
+      refresh,
+      select,
+      selectEnvironment,
+      selected,
+      selectedEnvironmentId,
+    ],
   );
   return <BusinessOsContext.Provider value={value}>{props.children}</BusinessOsContext.Provider>;
 }

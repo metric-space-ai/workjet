@@ -1,5 +1,5 @@
 import { useRoute, type RouteProp } from "@react-navigation/native";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   EnvironmentId,
   type OrchestrationThread,
@@ -17,6 +17,7 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnection,
 } from "./use-remote-environment-registry";
+import { useBusinessOs } from "../features/business-os/BusinessOsProvider";
 type ThreadSelectionRouteParams = {
   readonly environmentId?: string | string[];
   readonly threadId?: string | string[];
@@ -73,6 +74,11 @@ function threadDetailToShell(
 }
 
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
+  const {
+    environmentBindings,
+    selectedEnvironmentId: activeBusinessOsEnvironmentId,
+    selectEnvironment,
+  } = useBusinessOs();
   const routeParams = params ?? {};
   const routeThreadRef = useMemo<ScopedThreadRef | null>(() => {
     const environmentId = firstRouteParam(routeParams.environmentId);
@@ -91,6 +97,22 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     lastRouteThreadRef.current = routeThreadRef;
   }
   const selectedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
+  useEffect(() => {
+    const environmentId = routeThreadRef?.environmentId;
+    if (
+      !environmentId ||
+      environmentId === activeBusinessOsEnvironmentId ||
+      !environmentBindings.some((binding) => binding.environmentId === environmentId)
+    ) {
+      return;
+    }
+    void selectEnvironment(environmentId);
+  }, [
+    activeBusinessOsEnvironmentId,
+    environmentBindings,
+    routeThreadRef?.environmentId,
+    selectEnvironment,
+  ]);
   const selectedThreadShell = useThreadShell(selectedThreadRef);
   const selectedThreadDetailState = useEnvironmentThread(
     selectedThreadRef?.environmentId ?? null,

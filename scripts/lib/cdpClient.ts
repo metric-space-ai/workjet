@@ -45,8 +45,13 @@ export class CdpClient {
   private nextId = 1;
   private readonly pending = new Map<
     number,
-    { readonly resolve: (value: unknown) => void; readonly reject: (error: Error) => void }
+    {
+      readonly method: string;
+      readonly resolve: (value: unknown) => void;
+      readonly reject: (error: Error) => void;
+    }
   >();
+  private readonly eventListeners = new Map<string, Set<(params: unknown) => void>>();
   private constructor(socket: WebSocket) {
     this.socket = socket;
     socket.addEventListener("message", (event: { readonly data: unknown }) => {
@@ -64,12 +69,18 @@ export class CdpClient {
       }
       if (typeof value !== "object" || value === null) return;
       const response = value as Record<string, unknown>;
-      if (typeof response.id !== "number") return;
+      if (typeof response.id !== "number") {
+        if (typeof response.method !== "string") return;
+        for (const listener of this.eventListeners.get(response.method) ?? []) {
+          listener(response.params);
+        }
+        return;
+      }
       const waiter = this.pending.get(response.id);
       if (waiter === undefined) return;
       this.pending.delete(response.id);
       if (response.error !== undefined)
-        waiter.reject(cdpCommandError("Runtime.evaluate", response.error));
+        waiter.reject(cdpCommandError(waiter.method, response.error));
       else waiter.resolve(response.result);
     });
     socket.addEventListener("close", () => this.rejectAll(new Error("CDP connection closed")));
@@ -104,7 +115,7 @@ export class CdpClient {
     return new CdpClient(socket);
   }
   async evaluate(expression: string, timeoutMs = 4_000): Promise<unknown> {
-    const result = await this.send(
+    const result = await this.command(
       "Runtime.evaluate",
       {
         expression,
@@ -123,11 +134,11 @@ export class CdpClient {
       throw new Error("CDP evaluation returned no value");
     return (remote as Record<string, unknown>).value;
   }
-  private send(
-    method: string,
-    params: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<unknown> {
+  /**
+   * Send one bounded CDP command. Callers still inherit the connection-level
+   * frame cap and must validate command-specific result shapes before use.
+   */
+  command(method: string, params: Record<string, unknown>, timeoutMs = 4_000): Promise<unknown> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -135,6 +146,7 @@ export class CdpClient {
         reject(new Error("CDP command timed out"));
       }, timeoutMs);
       this.pending.set(id, {
+        method,
         resolve: (value) => {
           clearTimeout(timer);
           resolve(value);
@@ -146,6 +158,15 @@ export class CdpClient {
       });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
+  }
+  on(method: string, listener: (params: unknown) => void): () => void {
+    const listeners = this.eventListeners.get(method) ?? new Set();
+    listeners.add(listener);
+    this.eventListeners.set(method, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.eventListeners.delete(method);
+    };
   }
   private rejectAll(error: Error): void {
     for (const waiter of this.pending.values()) waiter.reject(error);

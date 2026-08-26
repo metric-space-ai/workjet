@@ -5,6 +5,7 @@
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "vp test run",
+    "audit:ui": "node workjet-ui-audit.ts",
     "smoke:desktop:ctox-packaged": "node ctox-packaged-smoke.ts",
     "smoke:keychain": "node keychain-smoke.ts"
   },

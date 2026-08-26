@@ -364,7 +364,7 @@ export function ComputerProvisioningSection() {
         </div>
       </SettingsRow>
       <SettingsRow
-        title="Business data stays on WebRTC"
+        title="Business data stays in sync"
         description="Provisioning uses HTTP only for signed release metadata, health and pairing control. Business OS records are never proxied over HTTP."
       />
     </SettingsSection>

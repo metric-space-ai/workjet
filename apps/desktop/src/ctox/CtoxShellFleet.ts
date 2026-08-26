@@ -205,7 +205,7 @@ export function ctoxShellFleetRowFromStatus(input: {
         ? "Kompatible Workjet- und CTOX-Protokollversion installieren."
         : blocker === "data_plane_degraded"
           ? input.dataPlane.nativePeerObserved
-            ? "Workjet mit der Instanz verbinden und den authentifizierten RxDB/WebRTC-Datenkanal prüfen."
+            ? "Workjet mit der Instanz verbinden und die authentifizierte Synchronisierung prüfen."
             : "CTOX Sync Engine starten, Heartbeat und Health reparieren."
           : null;
   return {
@@ -893,7 +893,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         }).pipe(Effect.ignore);
         const pausedAt = nowIso();
         const pauseReason =
-          "Health- oder RxDB/WebRTC-Beobachtung blieb nach einem Wiederholungsversuch fehlerhaft.";
+          "Health- oder Datensynchronisierungsprüfung blieb nach einem Wiederholungsversuch fehlerhaft.";
         if (started.releaseVersion !== null) {
           yield* Effect.promise(() =>
             writeReleasePause({

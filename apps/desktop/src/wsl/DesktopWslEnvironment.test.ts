@@ -92,7 +92,7 @@ describe("formatNodePtyProbeFailureReason", () => {
   it("identifies a packaged build that omitted the Linux node-pty prebuild", () => {
     const reason = formatNodePtyProbeFailureReason(4);
 
-    expect(reason).toContain("packaged Linux node-pty binary was not included");
+    expect(reason).toContain("packaged Linux node-pty component was not included");
     expect(reason).toContain("--wsl-prebuild");
   });
 

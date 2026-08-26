@@ -96,7 +96,7 @@ export function BusinessOsMobilePairingSection({
     <SettingsSection title="Mobiles Pairing">
       <SettingsRow
         title="Workjet mit diesem CTOX-Backend verbinden"
-        description="Scanne in Workjet auf iOS oder Android einen kurzlebigen QR-Code. Signaling und Zugangsdaten sind sicher enthalten; eine manuelle Eingabe ist nicht nötig."
+        description="Scanne in Workjet auf iOS oder Android einen kurzlebigen QR-Code. Verbindungs- und Zugangsdaten sind sicher enthalten; eine manuelle Eingabe ist nicht nötig."
         control={
           invite === null ? (
             <Button type="button" size="sm" onClick={() => void create()} disabled={disabled}>
@@ -166,8 +166,8 @@ export function BusinessOsMobilePairingSection({
         ) : null}
       </SettingsRow>
       <SettingsRow
-        title="Kein manuelles Signaling"
-        description="Workjet fragt weder nach Signaling-Server, Raum noch Passwort. Das CTOX-Backend erzeugt den vollständigen, widerrufbaren Handshake."
+        title="Keine manuelle Verbindungskonfiguration"
+        description="Workjet fragt weder nach Verbindungsserver, Kennung noch Passwort. Das CTOX-Backend erzeugt den vollständigen, widerrufbaren Handshake."
       />
     </SettingsSection>
   );

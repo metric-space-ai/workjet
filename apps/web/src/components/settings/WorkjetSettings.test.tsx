@@ -152,7 +152,7 @@ describe("Workjet configuration settings", () => {
       />,
     );
     expect(telemetryMarkup).toContain("Claude Code events");
-    expect(telemetryMarkup).toContain("Sidecar events");
+    expect(telemetryMarkup).toContain("Worker runtime events");
     expect(telemetryMarkup).toContain("Workjet telemetry retention days");
     expect(telemetryMarkup).not.toContain("Greppy Runtime");
 

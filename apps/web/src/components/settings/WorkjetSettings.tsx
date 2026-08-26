@@ -1161,8 +1161,8 @@ export function WorkjetSettingsView({
             }
           />
           <SettingsRow
-            title="Sidecar events"
-            description="Collect Workjet sidecar events used to correlate worker starts, exits, and failures."
+            title="Worker runtime events"
+            description="Collect Workjet worker runtime events used to correlate worker starts, exits, and failures."
             control={
               <Switch
                 checked={configuration.telemetry.sidecarEvents}
@@ -1175,7 +1175,7 @@ export function WorkjetSettingsView({
                     },
                   })
                 }
-                aria-label="Collect Workjet sidecar events"
+                aria-label="Collect Workjet worker runtime events"
               />
             }
           />

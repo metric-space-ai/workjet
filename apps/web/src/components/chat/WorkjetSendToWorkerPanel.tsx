@@ -300,8 +300,8 @@ export function orderWorkjetRosterPeers(
  */
 export function workjetPeerTrustLabel(binding: WorkjetMeshPeerBinding): string {
   return binding === "self-signed"
-    ? "This peer signed for its own keys, so no other machine in the room could have substituted them. It is still the machine that claimed this environment id first."
-    : "Keys pinned on first contact only, without a signed key binding. Trust here rests on CTOX room membership alone.";
+    ? "This peer signed for its own keys, so no other machine in the connection could have substituted them. It is still the machine that claimed this environment id first."
+    : "Keys pinned on first contact only, without a signed key binding. Trust here rests on the authenticated CTOX connection alone.";
 }
 
 /** `2026-08-18T10:00:00.000Z` → `2026-08-18`, the honest resolution for a pin date. */
@@ -648,7 +648,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
             <p className="text-[11px] text-muted-foreground">
               {selectedPeer.sealedDeliveryReady
                 ? "This peer's encryption key is pinned, so the payload is sealed."
-                : "No encryption key pinned yet, so the first envelope travels unsealed inside the CTOX room."}
+                : "No encryption key pinned yet, so the first envelope travels unsealed inside the CTOX connection."}
             </p>
             <p className="text-[11px] text-muted-foreground">
               {workjetPeerTrustLabel(selectedPeer.binding)}

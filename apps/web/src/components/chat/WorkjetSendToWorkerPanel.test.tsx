@@ -656,12 +656,12 @@ describe("WorkjetSendToWorkerPanelContent remote recipients", () => {
       }).props.children,
     );
     expect(unbound).toContain("without a signed key binding");
-    expect(unbound).toContain("CTOX room membership alone");
+    expect(unbound).toContain("authenticated CTOX connection alone");
   });
 
   it("labels both trust levels without overclaiming either", () => {
-    expect(workjetPeerTrustLabel("tofu")).toContain("room membership alone");
-    expect(workjetPeerTrustLabel("self-signed")).toContain("no other machine in the room");
+    expect(workjetPeerTrustLabel("tofu")).toContain("authenticated CTOX connection alone");
+    expect(workjetPeerTrustLabel("self-signed")).toContain("no other machine in the connection");
   });
 
   it("leaves the same-machine thread list untouched", () => {

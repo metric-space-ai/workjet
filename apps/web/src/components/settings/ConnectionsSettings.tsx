@@ -1054,7 +1054,7 @@ const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderActio
               <Input
                 value={pairingLabel}
                 onChange={(event) => setPairingLabel(event.target.value)}
-                placeholder="e.g. Living room iPad"
+                placeholder="e.g. Office iPad"
                 disabled={isCreatingPairingLink}
                 autoFocus
               />

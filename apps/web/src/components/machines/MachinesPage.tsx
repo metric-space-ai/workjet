@@ -490,8 +490,8 @@ export function MachinesPageView(props: MachinesPageViewProps) {
             <p className="text-sm text-muted-foreground">
               No other machines have exchanged mail with this one yet. Pair the other Workjet app,
               then send it a message from an orchestrator thread to establish first contact. Mobile
-              Business OS sync uses the QR code in Computers; signaling credentials never need to be
-              entered manually.
+              Business OS sync uses the QR code in Computers; connection credentials never need to
+              be entered manually.
             </p>
             {props.onOpenComputers ? (
               <Button className="mt-4" size="sm" onClick={props.onOpenComputers}>

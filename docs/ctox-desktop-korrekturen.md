@@ -1726,3 +1726,14 @@ bestätigtem Host-Key und administratorfähiger Authentifizierung registriert.
 Die bekannten SSH-Benutzer wurden ohne Credential abgewiesen. Deshalb wurde
 keine Remote-Instanz verändert. GPU3 bleibt der nächste reale Linux-Canary;
 GPU1/GPU4 bleiben bis zum gesunden Datenplane-Nachweis blockiert.
+
+## Fleet-Namenskontinuität und finale Live-Abnahme — 2026-08-26 ~08:52
+
+Die freundliche Kurzbezeichnung `Paired backend · 2a75d5c5` wird nun auch in
+Business OS → Updates verwendet; die rohe `biz_…`-ID erscheint weder in der
+Backend-Navigation noch als sichtbarer Fleet-Name. Der fokussierte Test ist
+5/5 grün, der Web-Typecheck exit 0. LIVE sind Business-OS-Settings mit allen
+acht Kategorien, Fleet `v0.1.10`/`Aktuell`, Shell-Statuspanel `Gesund`, alle
+zwölf Code-Worker und der Composer in der vereinbarten Reihenfolge geprüft.
+Endzustand: Business OS, `Meridian Supply Co.` ausgewählt, WebRTC bereit,
+vollständiger App-Katalog geladen. Commit: `3d72dc828`.

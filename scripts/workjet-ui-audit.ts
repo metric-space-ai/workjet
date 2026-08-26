@@ -25,6 +25,7 @@ export interface AuditViewport {
 export interface AuditState {
   readonly name: string;
   readonly hash: string;
+  readonly mode?: "business-os" | "code";
   readonly interaction?:
     | "attachment"
     | "command-palette"
@@ -37,6 +38,18 @@ export interface AuditState {
     | "terminal"
     | "tools"
     | "worker";
+  readonly businessInteraction?:
+    | "add-instance"
+    | "expand-instance"
+    | "instance-actions"
+    | "settings-about"
+    | "settings-appearance"
+    | "settings-apps"
+    | "settings-backends"
+    | "settings-diagnostics"
+    | "settings-general"
+    | "settings-notifications"
+    | "settings-updates";
 }
 
 export const AUDIT_VIEWPORTS: readonly AuditViewport[] = [
@@ -72,6 +85,50 @@ export const CODE_AUDIT_STATES: readonly AuditState[] = [
   { name: "draft-command-palette", hash: "#/", interaction: "command-palette" },
   { name: "draft-terminal", hash: "#/", interaction: "terminal" },
   { name: "draft-right-panel", hash: "#/", interaction: "right-panel" },
+];
+
+export const BUSINESS_OS_AUDIT_STATES: readonly AuditState[] = [
+  { name: "business-home", hash: "#/", mode: "business-os" },
+  {
+    name: "business-add-instance",
+    hash: "#/",
+    mode: "business-os",
+    businessInteraction: "add-instance",
+  },
+  {
+    name: "business-instance-actions",
+    hash: "#/",
+    mode: "business-os",
+    businessInteraction: "instance-actions",
+  },
+  {
+    name: "business-expanded-instance",
+    hash: "#/",
+    mode: "business-os",
+    businessInteraction: "expand-instance",
+  },
+  ...(
+    [
+      ["general", "settings-general"],
+      ["backends", "settings-backends"],
+      ["apps", "settings-apps"],
+      ["updates", "settings-updates"],
+      ["appearance", "settings-appearance"],
+      ["notifications", "settings-notifications"],
+      ["diagnostics", "settings-diagnostics"],
+      ["about", "settings-about"],
+    ] as const
+  ).map(([name, interaction]) => ({
+    name: `business-settings-${name}`,
+    hash: "#/",
+    mode: "business-os" as const,
+    businessInteraction: interaction,
+  })),
+];
+
+export const ALL_AUDIT_STATES: readonly AuditState[] = [
+  ...CODE_AUDIT_STATES,
+  ...BUSINESS_OS_AUDIT_STATES,
 ];
 
 interface CdpTarget {
@@ -118,7 +175,7 @@ export function parseAuditArguments(argv: readonly string[], now = new Date()): 
       output = NodePath.resolve(value);
     } else if (flag === "--states") {
       states = value.split(",").filter(Boolean);
-      const known = new Set(CODE_AUDIT_STATES.map(({ name }) => name));
+      const known = new Set(ALL_AUDIT_STATES.map(({ name }) => name));
       if (states.length === 0 || states.some((state) => !known.has(state)))
         throw new Error("states contains an unknown audit state");
     } else if (flag === "--viewports") {
@@ -222,7 +279,11 @@ const AUDIT_EXPRESSION = String.raw`(() => {
   const visible = (element) => {
     const style = getComputedStyle(element);
     const value = element.getBoundingClientRect();
-    return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0 && value.width > 0 && value.height > 0 && value.right > 0 && value.bottom > 0 && value.left < innerWidth && value.top < innerHeight;
+    if (style.visibility === "hidden" || style.display === "none" || Number(style.opacity) <= 0 || value.width <= 1 || value.height <= 1 || style.clip === "rect(0px, 0px, 0px, 0px)" || value.right <= 0 || value.bottom <= 0 || value.left >= innerWidth || value.top >= innerHeight) return false;
+    const centerX = Math.max(0, Math.min(innerWidth - 1, value.left + value.width / 2));
+    const centerY = Math.max(0, Math.min(innerHeight - 1, value.top + value.height / 2));
+    const topmost = document.elementFromPoint(centerX, centerY);
+    return topmost !== null && (topmost === element || element.contains(topmost));
   };
   const selector = 'button,a[href],input,select,textarea,[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])';
   const interactive = [...document.querySelectorAll(selector)].filter(visible);
@@ -230,6 +291,11 @@ const AUDIT_EXPRESSION = String.raw`(() => {
     let result = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
       const style = getComputedStyle(ancestor);
+      if (style.position === "fixed") {
+        const value = ancestor.getBoundingClientRect();
+        result = { left: Math.max(result.left, value.left), top: Math.max(result.top, value.top), right: Math.min(result.right, value.right), bottom: Math.min(result.bottom, value.bottom) };
+        break;
+      }
       if (!/(auto|scroll|hidden|clip)/.test(style.overflow + style.overflowX + style.overflowY)) continue;
       const value = ancestor.getBoundingClientRect();
       result = { left: Math.max(result.left, value.left), top: Math.max(result.top, value.top), right: Math.min(result.right, value.right), bottom: Math.min(result.bottom, value.bottom) };
@@ -338,6 +404,59 @@ async function prepareState(
   );
 }
 
+const BUSINESS_SETTINGS_LABELS = {
+  "settings-about": "Über",
+  "settings-appearance": "Darstellung",
+  "settings-apps": "Apps",
+  "settings-backends": "Backends & Sync",
+  "settings-diagnostics": "Diagnostik",
+  "settings-general": "Allgemein",
+  "settings-notifications": "Benachrichtigungen",
+  "settings-updates": "Updates",
+} as const;
+
+async function prepareProductMode(client: CdpClient, mode: AuditState["mode"]): Promise<void> {
+  const label = mode === "business-os" ? "Business OS" : "Code";
+  await client.evaluate(
+    `([...document.querySelectorAll("button")].find((element) => (element.textContent || "").trim() === ${JSON.stringify(label)}))?.click()`,
+  );
+  await settle(client);
+}
+
+async function prepareBusinessState(
+  client: CdpClient,
+  interaction: AuditState["businessInteraction"],
+): Promise<void> {
+  await pressKey(client, "Escape");
+  await pressKey(client, "Escape");
+  await client.evaluate(
+    `([...document.querySelectorAll("button")].find((element) => element.getAttribute("aria-label") === "Einstellungen schließen"))?.click()`,
+  );
+  if (interaction === undefined) return;
+  if (interaction === "add-instance") {
+    await client.evaluate(`document.querySelector('button[aria-label="Add instance"]')?.click()`);
+    return;
+  }
+  if (interaction === "instance-actions") {
+    await client.evaluate(
+      `([...document.querySelectorAll('button[aria-label^="Actions for "]')][0])?.click()`,
+    );
+    return;
+  }
+  if (interaction === "expand-instance") {
+    await client.evaluate(
+      `([...document.querySelectorAll('button[aria-label^="Expand apps of "]')][0])?.click()`,
+    );
+    return;
+  }
+  await client.evaluate(`document.querySelector('button[aria-label="Settings"]')?.click()`);
+  await settle(client);
+  const label = BUSINESS_SETTINGS_LABELS[interaction];
+  await client.evaluate(
+    `([...document.querySelectorAll("button")].find((element) => (element.textContent || "").trim() === ${JSON.stringify(label)}))?.click()`,
+  );
+}
+
 async function waitForRoute(client: CdpClient, hash: string): Promise<void> {
   const deadline = performance.now() + 3_000;
   while (performance.now() < deadline) {
@@ -376,8 +495,8 @@ async function runAudit(args: AuditArguments): Promise<void> {
         : AUDIT_VIEWPORTS.filter(({ name }) => args.viewports.includes(name));
     const states =
       args.states.length === 0
-        ? CODE_AUDIT_STATES
-        : CODE_AUDIT_STATES.filter(({ name }) => args.states.includes(name));
+        ? ALL_AUDIT_STATES
+        : ALL_AUDIT_STATES.filter(({ name }) => args.states.includes(name));
     for (const viewport of viewports) {
       await client.command("Emulation.setDeviceMetricsOverride", {
         width: viewport.width,
@@ -387,10 +506,13 @@ async function runAudit(args: AuditArguments): Promise<void> {
       });
       for (const state of states) {
         const consoleAtStart = consoleErrors.length;
+        await prepareProductMode(client, state.mode ?? "code");
         await client.evaluate(`location.hash = ${JSON.stringify(state.hash)}`);
         await waitForRoute(client, state.hash);
         await settle(client);
-        await prepareState(client, state.interaction);
+        if (state.mode === "business-os")
+          await prepareBusinessState(client, state.businessInteraction);
+        else await prepareState(client, state.interaction);
         await settle(client);
         await client.evaluate(
           `document.querySelectorAll('[data-sonner-toast] button[aria-label]').forEach((button) => button.click())`,

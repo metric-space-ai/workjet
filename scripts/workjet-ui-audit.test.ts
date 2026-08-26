@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   CODE_AUDIT_STATES,
+  BUSINESS_OS_AUDIT_STATES,
   createReviewBatches,
   parseAuditArguments,
   selectWorkjetTarget,
@@ -37,6 +38,23 @@ describe("Workjet UI audit configuration", () => {
       "draft-command-palette",
       "draft-terminal",
       "draft-right-panel",
+    ]);
+  });
+
+  it("covers Workjet-owned Business OS chrome and every settings category", () => {
+    expect(BUSINESS_OS_AUDIT_STATES.map(({ name }) => name)).toEqual([
+      "business-home",
+      "business-add-instance",
+      "business-instance-actions",
+      "business-expanded-instance",
+      "business-settings-general",
+      "business-settings-backends",
+      "business-settings-apps",
+      "business-settings-updates",
+      "business-settings-appearance",
+      "business-settings-notifications",
+      "business-settings-diagnostics",
+      "business-settings-about",
     ]);
   });
 

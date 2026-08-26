@@ -22,6 +22,33 @@ interface ShellState {
   readonly expected?: string;
 }
 
+function appState(title: string): ShellState {
+  return {
+    name: `app-${title
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, "-")
+      .replaceAll(/(^-|-$)/g, "")}`,
+    action: `app:${title}`,
+    expected: ".shell-window, [data-module-host]",
+  };
+}
+
+export function createDiscoveredAppStates(
+  titles: readonly string[],
+  existingStates: readonly ShellState[] = SHELL_STATES,
+): readonly ShellState[] {
+  const existingTitles = new Set(
+    existingStates
+      .map((state) => state.action)
+      .filter((action): action is string => Boolean(action?.startsWith("app:")))
+      .map((action) => action.slice("app:".length)),
+  );
+  return [...new Set(titles.map((title) => title.trim()).filter(Boolean))]
+    .filter((title) => !existingTitles.has(title))
+    .sort((left, right) => left.localeCompare(right))
+    .map(appState);
+}
+
 interface ShellAuditResult {
   readonly viewport: string;
   readonly state: string;
@@ -30,6 +57,7 @@ interface ShellAuditResult {
     readonly documentOverflowX: number;
     readonly clippedControls: readonly unknown[];
     readonly unnamedControls: readonly unknown[];
+    readonly openWindows: readonly unknown[];
   };
   readonly consoleErrors: readonly unknown[];
   readonly networkFailures: readonly unknown[];
@@ -57,11 +85,7 @@ const SHELL_STATES: readonly ShellState[] = [
       expected: `[data-drawer-right]:not([hidden]) [data-settings-tab="${tab}"]`,
     }),
   ),
-  ...["CTOX", "Tickets", "Files", "Knowledge", "App Store"].map((title) => ({
-    name: `app-${title.toLowerCase().replaceAll(" ", "-")}`,
-    action: `app:${title}`,
-    expected: ".shell-window, [data-module-host]",
-  })),
+  ...["CTOX", "Tickets", "Files", "Knowledge", "App Store"].map(appState),
   { name: "chat", action: "[data-chat-open]", expected: ".ctox-chat-window" },
   {
     name: "history",
@@ -165,7 +189,14 @@ async function prepareState(client: CdpClient, state: ShellState): Promise<void>
   } else if (state.action.startsWith("app:")) {
     const title = state.action.slice("app:".length);
     await client.evaluate(
-      `([...document.querySelectorAll('button')].find((button) => button.title === ${JSON.stringify(title)}))?.click()`,
+      `(() => {
+        const title = ${JSON.stringify(title)};
+        const tab = [...document.querySelectorAll('button')].find((button) => button.title === title);
+        if (tab) return tab.click();
+        const icon = [...document.querySelectorAll('.desktop-icon')].find((node) => node.title === title);
+        if (!icon) return;
+        icon.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
+      })()`,
     );
   } else {
     await client.evaluate(`document.querySelector(${JSON.stringify(state.action)})?.click()`);
@@ -248,6 +279,16 @@ const AUDIT_EXPRESSION = `(() => {
       const rect = node.getBoundingClientRect();
       return (rect.width < 24 || rect.height < 24) && !node.matches('input[type="file"],input[type="date"]');
     }).map(describe).slice(0, 60),
+    openWindows: [...document.querySelectorAll('.shell-window')].filter(visible).map((windowNode) => ({
+      title: windowNode.querySelector('.shell-window-title-text')?.textContent?.trim() || '',
+      busy: Boolean(windowNode.querySelector('[aria-busy="true"], [data-loading="true"], .is-loading')),
+      statusText: [...windowNode.querySelectorAll('[role="status"], [role="alert"], .empty-state, .module-loading-shadow-pane')]
+        .filter(visible)
+        .map((node) => (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 240))
+        .filter(Boolean)
+        .slice(0, 8),
+      text: (windowNode.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 1200),
+    })),
     visibleText: (document.body.innerText || '').slice(0, 4000),
   };
 })()`;
@@ -298,6 +339,11 @@ async function run(): Promise<void> {
   await client.command("Runtime.enable", {});
   await client.command("Page.enable", {});
   await client.command("Network.enable", {});
+  const discoveredAppStates = createDiscoveredAppStates(
+    (await client.evaluate(
+      "[...document.querySelectorAll('.desktop-icon[title]')].map((node) => node.title)",
+    )) as readonly string[],
+  );
   const results: ShellAuditResult[] = [];
   try {
     for (const viewport of VIEWPORTS) {
@@ -306,7 +352,9 @@ async function run(): Promise<void> {
         deviceScaleFactor: 1,
         mobile: false,
       });
-      for (const state of SHELL_STATES) {
+      const states =
+        viewport.name === "wide" ? [...SHELL_STATES, ...discoveredAppStates] : SHELL_STATES;
+      for (const state of states) {
         const consoleStart = consoleErrors.length;
         const networkStart = networkFailures.length;
         await prepareState(client, state);

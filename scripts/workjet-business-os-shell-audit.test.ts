@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  createDiscoveredAppStates,
   createReviewBatches,
   selectLocalBusinessOsTarget,
 } from "./workjet-business-os-shell-audit.ts";
@@ -35,5 +36,13 @@ describe("Business OS shell audit safety", () => {
     const batches = createReviewBatches(Array.from({ length: 19 }, (_, index) => index));
     expect(batches.flat()).toHaveLength(19);
     expect(Math.max(...batches.map((batch) => batch.length))).toBe(4);
+  });
+
+  it("adds every discovered desktop app exactly once without duplicating pinned apps", () => {
+    expect(
+      createDiscoveredAppStates(["Tickets", "Mail", "Mail", "  Browser  "]).map(
+        (state) => state.action,
+      ),
+    ).toEqual(["app:Browser", "app:Mail"]);
   });
 });

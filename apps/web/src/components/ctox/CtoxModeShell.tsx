@@ -38,6 +38,7 @@ import {
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
+import { BusinessOsSettingsDialog } from "./BusinessOsSettingsDialog";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { toastManager } from "../ui/toast";
@@ -163,8 +164,10 @@ interface CtoxModeContextValue {
   readonly setConnection: (state: CtoxConnectionState) => void;
   /** Open a Business OS app: activates the instance guest if needed. */
   readonly openApp: (instance: CtoxManagedInstance, moduleId: string) => void;
-  /** Open the selected instance's native Business OS settings. */
+  /** Open Workjet's Business OS settings tree. */
   readonly openSettings: () => void;
+  readonly closeSettings: () => void;
+  readonly settingsOpen: boolean;
   /** Pin or unpin an app on the instance rail (taskbar model). */
   readonly setAppDocked: (instance: CtoxManagedInstance, moduleId: string, docked: boolean) => void;
   /** Bumped whenever rail-relevant state changed; app rails reload on it. */
@@ -436,6 +439,7 @@ export function CtoxModeProvider({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activationKey, setActivationKey] = useState(0);
   const [connection, setConnection] = useState<CtoxConnectionState>("idle");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [modeReady, setModeReady] = useState(bridge === undefined);
   const [guestStates, setGuestStates] = useState(EMPTY_GUEST_STATES);
   const mountedRef = useRef(true);
@@ -644,29 +648,8 @@ export function CtoxModeProvider({
     [dispatchOpenApp, select],
   );
 
-  const openSettings = useCallback(() => {
-    const instanceId = selectedIdRef.current;
-    if (bridge?.openSettings === undefined || instanceId === null || connection !== "ready") {
-      return;
-    }
-    void bridge.openSettings(instanceId).then(
-      (result) => {
-        if (result._tag === "completed") return;
-        toastManager.add({
-          type: "error",
-          title: "Could not open Business OS settings",
-          description: "The selected CTOX instance did not expose its settings.",
-        });
-      },
-      (error: unknown) => {
-        toastManager.add({
-          type: "error",
-          title: "Could not open Business OS settings",
-          description: error instanceof Error ? error.message : "The instance refused the action.",
-        });
-      },
-    );
-  }, [bridge, connection]);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   useEffect(() => {
     if (connection !== "ready") {
@@ -838,6 +821,8 @@ export function CtoxModeProvider({
       setConnection,
       openApp,
       openSettings,
+      closeSettings,
+      settingsOpen,
       setAppDocked,
       appRailVersion,
       reportGuestBounds,
@@ -850,6 +835,7 @@ export function CtoxModeProvider({
       appRailVersion,
       bridge,
       connection,
+      closeSettings,
       discovery,
       guestStates,
       importInvite,
@@ -866,6 +852,7 @@ export function CtoxModeProvider({
       reportGuestBounds,
       select,
       selectedId,
+      settingsOpen,
       setAppDocked,
       workspaceNames,
       reportWorkspaceName,
@@ -1882,7 +1869,7 @@ function ManagedAccountState({
  * instance's own settings and refreshing the instance catalog.
  */
 export function CtoxSidebarFooter() {
-  const { bridge, connection, openSettings, refresh, refreshing, selectedId } = useCtoxMode();
+  const { openSettings, refresh, refreshing } = useCtoxMode();
   const [refreshSpinUntil, setRefreshSpinUntil] = useState(0);
   const [, forceSpinTick] = useState(0);
   const spinHeld = Date.now() < refreshSpinUntil;
@@ -1898,10 +1885,7 @@ export function CtoxSidebarFooter() {
           <SidebarMenuButton
             aria-label="Settings"
             size="icon"
-            title={selectedId === null ? "Select a CTOX instance first" : "Business OS settings"}
-            disabled={
-              selectedId === null || connection !== "ready" || bridge?.openSettings === undefined
-            }
+            title="Business OS settings"
             onClick={openSettings}
           >
             <SettingsIcon />
@@ -2317,20 +2301,25 @@ export function CtoxMainShell({
 }: {
   readonly openSettingsRequestKey?: number;
 }) {
-  const { discovery, selectedId, connection, guestStates, openSettings, workspaceNames } =
-    useCtoxMode();
+  const {
+    bridge,
+    closeSettings,
+    discovery,
+    selectedId,
+    connection,
+    guestStates,
+    openSettings,
+    settingsOpen,
+    workspaceNames,
+  } = useCtoxMode();
   const handledSettingsRequestKey = useRef(0);
   useEffect(() => {
-    if (
-      openSettingsRequestKey <= handledSettingsRequestKey.current ||
-      selectedId === null ||
-      connection !== "ready"
-    ) {
+    if (openSettingsRequestKey <= handledSettingsRequestKey.current || settingsOpen) {
       return;
     }
     handledSettingsRequestKey.current = openSettingsRequestKey;
     openSettings();
-  }, [connection, openSettings, openSettingsRequestKey, selectedId]);
+  }, [openSettings, openSettingsRequestKey, settingsOpen]);
   const selected =
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find(
@@ -2406,9 +2395,17 @@ export function CtoxMainShell({
             </EmptyHeader>
           </div>
         </Empty>
-      ) : (
+      ) : settingsOpen ? null : (
         <CtoxGuestHost instance={selected} />
       )}
+      {settingsOpen ? (
+        <BusinessOsSettingsDialog
+          bridge={bridge}
+          discovery={discovery}
+          selectedId={selectedId}
+          onClose={closeSettings}
+        />
+      ) : null}
     </SidebarInset>
   );
 }

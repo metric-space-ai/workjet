@@ -27,7 +27,6 @@ import {
 } from "./settingsLayout";
 import { workjetComputerKindLabel } from "../chat/ComposerWorkjetTargetControls";
 import { workjetHarnessDisplayLabel } from "./WorkjetWorkerEditor";
-import { BusinessOsMobilePairingSection } from "./BusinessOsMobilePairingSection";
 import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
 import { searchableSetting } from "./settingsSearch";
 
@@ -310,10 +309,6 @@ export function WorkjetComputersSettings() {
         harnessInspection={harnessInspectQuery.data ?? null}
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
-      />
-      <BusinessOsMobilePairingSection
-        environmentId={environmentId}
-        environmentLabel={primaryEnvironment?.label ?? null}
       />
       <ComputerProvisioningSection />
       <RemoteEnvironmentsSection />

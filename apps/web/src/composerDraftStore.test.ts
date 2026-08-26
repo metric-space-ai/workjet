@@ -547,6 +547,53 @@ describe("composerDraftStore terminal contexts", () => {
     ]);
   });
 
+  it("hydrates the selected Workjet worker and its managed instructions", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const mergedState = persistApi.getOptions().merge(
+      {
+        draftsByThreadKey: {
+          [threadId]: {
+            prompt: "",
+            attachments: [],
+            workjetWorkerId: "worker-personalized",
+            workjetManualReturn: { provider: "codex", model: "gpt-5.6-sol" },
+            workjetConfig: {
+              schemaVersion: 2,
+              role: "orchestrator",
+              parent: null,
+              managedInstructions: "Your name is E2E-Lead.",
+              enabledCapabilityIds: [],
+              capabilityBindings: [],
+            },
+          },
+        },
+        draftThreadsByThreadKey: {},
+        logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+
+    expect(mergedState.draftsByThreadKey[threadId]).toMatchObject({
+      workjetWorkerId: "worker-personalized",
+      workjetManualReturn: { provider: "codex", model: "gpt-5.6-sol" },
+      workjetConfig: {
+        schemaVersion: 2,
+        role: "orchestrator",
+        parent: null,
+        managedInstructions: "Your name is E2E-Lead.",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
+      },
+    });
+  });
+
   it("sanitizes malformed persisted drafts during merge", () => {
     const persistApi = useComposerDraftStore.persist as unknown as {
       getOptions: () => {

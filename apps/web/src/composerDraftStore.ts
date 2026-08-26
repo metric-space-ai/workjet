@@ -57,6 +57,7 @@ import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewC
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
+const isWorkjetThreadConfig = Schema.is(WorkjetThreadConfig);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 const COMPOSER_DRAFT_STORAGE_VERSION = 8;
@@ -1753,6 +1754,29 @@ function normalizePersistedDraftsByThreadId(
       draftCandidate.interactionMode === "plan" || draftCandidate.interactionMode === "default"
         ? draftCandidate.interactionMode
         : null;
+    const workjetWorkerId =
+      typeof draftCandidate.workjetWorkerId === "string" &&
+      draftCandidate.workjetWorkerId.length > 0
+        ? draftCandidate.workjetWorkerId
+        : null;
+    const manualReturnCandidate = draftCandidate.workjetManualReturn;
+    const manualReturnProvider =
+      manualReturnCandidate !== null && typeof manualReturnCandidate === "object"
+        ? normalizeProviderInstanceId(manualReturnCandidate.provider)
+        : null;
+    const workjetManualReturn =
+      manualReturnCandidate !== null &&
+      typeof manualReturnCandidate === "object" &&
+      manualReturnProvider !== null &&
+      typeof manualReturnCandidate.model === "string"
+        ? {
+            provider: manualReturnProvider,
+            model: manualReturnCandidate.model,
+          }
+        : null;
+    const workjetConfig = isWorkjetThreadConfig(draftCandidate.workjetConfig)
+      ? draftCandidate.workjetConfig
+      : null;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1813,7 +1837,10 @@ function normalizePersistedDraftsByThreadId(
       reviewComments.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
-      !interactionMode
+      !interactionMode &&
+      workjetWorkerId === null &&
+      workjetManualReturn === null &&
+      workjetConfig === null
     ) {
       continue;
     }
@@ -1843,6 +1870,11 @@ function normalizePersistedDraftsByThreadId(
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
+      ...(workjetWorkerId !== null ? { workjetWorkerId } : {}),
+      ...(workjetManualReturn !== null ? { workjetManualReturn } : {}),
+      ...(workjetConfig !== null
+        ? { workjetConfig: workjetConfig as DeepMutable<WorkjetThreadConfig> }
+        : {}),
     };
   }
 

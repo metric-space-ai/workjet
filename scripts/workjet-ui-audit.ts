@@ -128,6 +128,9 @@ export const BUSINESS_OS_AUDIT_STATES: readonly AuditState[] = [
   })),
 ];
 
+export const REASONING_CONTROL_LABEL_PATTERN =
+  /^(?:Effort\s+)?(?:Low|Medium|High|Extra high|Max|Ultra)(?:\s*·\s*(?:Context\s+)?[^·]+)?$/u;
+
 export const ALL_AUDIT_STATES: readonly AuditState[] = [
   ...CODE_AUDIT_STATES,
   ...BUSINESS_OS_AUDIT_STATES,
@@ -451,8 +454,9 @@ async function prepareState(
   })()`);
   await settle(client);
   if (interaction === "reasoning") {
+    const pattern = REASONING_CONTROL_LABEL_PATTERN.source;
     await client.evaluate(
-      `([...document.querySelectorAll("button")].filter((element) => element.getBoundingClientRect().width > 0).find((element) => /^(Low|Medium|High|Extra high|Max|Ultra)(?:\\s|·)/u.test((element.textContent || "").trim())))?.click()`,
+      `([...document.querySelectorAll("button")].filter((element) => element.getBoundingClientRect().width > 0).find((element) => new RegExp(${JSON.stringify(pattern)}, "u").test((element.textContent || "").trim())))?.click()`,
     );
     return;
   }
@@ -498,6 +502,17 @@ async function prepareBusinessState(
   await client.evaluate(
     `([...document.querySelectorAll("button")].find((element) => element.getAttribute("aria-label") === "Einstellungen schließen"))?.click()`,
   );
+  await client.evaluate(`(() => {
+    const cancel = [...document.querySelectorAll("button")].find((button) => {
+      if ((button.textContent || "").trim() !== "Abbrechen") return false;
+      const panel = button.parentElement?.parentElement;
+      return [...(panel?.querySelectorAll("p") || [])].some(
+        (label) => (label.textContent || "").trim() === "CTOX Backend hinzufügen",
+      );
+    });
+    cancel?.click();
+  })()`);
+  await settle(client);
   if (interaction === undefined) return;
   if (interaction === "add-instance") {
     await client.evaluate(

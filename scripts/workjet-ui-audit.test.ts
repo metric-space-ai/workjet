@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   CODE_AUDIT_STATES,
   BUSINESS_OS_AUDIT_STATES,
+  REASONING_CONTROL_LABEL_PATTERN,
   createReviewBatches,
   parseAuditArguments,
   readAuditSourceState,
@@ -57,6 +58,12 @@ describe("Workjet UI audit configuration", () => {
       "business-settings-diagnostics",
       "business-settings-about",
     ]);
+  });
+
+  it("recognizes the current reasoning control copy", () => {
+    expect(REASONING_CONTROL_LABEL_PATTERN.test("Effort High · Context 1M")).toBe(true);
+    expect(REASONING_CONTROL_LABEL_PATTERN.test("High · 1M")).toBe(true);
+    expect(REASONING_CONTROL_LABEL_PATTERN.test("Claude Fable 5")).toBe(false);
   });
 
   it("parses a bounded loopback port and absolute output", () => {

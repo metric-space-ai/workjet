@@ -122,9 +122,31 @@ describe("Workjet UI audit configuration", () => {
           tinyControls: [],
           truncatedText: [{ label: "deliberate" }],
           consoleErrors: [],
+          modalViolations: [],
         },
       ]),
     ).toEqual({ captures: 1, failingCaptures: 0, findings: 0, warnings: 1 });
+  });
+
+  it("treats modal focus and accessibility failures as blocking findings", () => {
+    expect(
+      summarizeAudit([
+        {
+          state: "business-settings-general",
+          viewport: "narrow",
+          screenshot: "narrow-business-settings-general.png",
+          location: "#/",
+          title: "Workjet",
+          documentOverflowX: 0,
+          clippedInteractive: [],
+          duplicateActions: [],
+          tinyControls: [],
+          truncatedText: [],
+          consoleErrors: [],
+          modalViolations: ["settings trigger did not regain focus"],
+        },
+      ]),
+    ).toEqual({ captures: 1, failingCaptures: 1, findings: 1, warnings: 0 });
   });
 
   it("never assigns more than four screenshots to one visual review batch", () => {

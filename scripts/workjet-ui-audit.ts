@@ -150,6 +150,7 @@ interface StateResult {
   readonly tinyControls: readonly unknown[];
   readonly truncatedText: readonly unknown[];
   readonly consoleErrors: readonly unknown[];
+  readonly modalViolations: readonly string[];
 }
 
 function defaultOutput(now = new Date()): string {
@@ -203,7 +204,8 @@ export function summarizeAudit(results: readonly StateResult[]): {
     const count =
       (result.documentOverflowX > 1 ? 1 : 0) +
       result.clippedInteractive.length +
-      result.consoleErrors.length;
+      result.consoleErrors.length +
+      result.modalViolations.length;
     if (count > 0) failingCaptures += 1;
     findings += count;
     warnings +=
@@ -468,12 +470,71 @@ async function prepareBusinessState(
     );
     return;
   }
-  await client.evaluate(`document.querySelector('button[aria-label="Settings"]')?.click()`);
+  await client.evaluate(`(() => {
+    const trigger = document.querySelector('button[aria-label="Settings"]');
+    trigger?.setAttribute("data-ui-audit-settings-trigger", "");
+    trigger?.click();
+  })()`);
   await settle(client);
   const label = BUSINESS_SETTINGS_LABELS[interaction];
   await client.evaluate(
     `([...document.querySelectorAll("button")].find((element) => (element.textContent || "").trim() === ${JSON.stringify(label)}))?.click()`,
   );
+}
+
+async function probeBusinessSettingsDialog(
+  client: CdpClient,
+  interaction: AuditState["businessInteraction"],
+): Promise<readonly string[]> {
+  if (!interaction?.startsWith("settings-")) return [];
+  const violations = await client.evaluate(`(() => {
+    const violations = [];
+    const popup = document.querySelector('[data-business-os-settings]');
+    if (!(popup instanceof HTMLElement)) return ["settings dialog is not mounted"];
+    if (popup.getAttribute("role") !== "dialog") violations.push("settings popup has no dialog role");
+    if (popup.getAttribute("aria-modal") !== "true") violations.push("settings popup is not aria-modal");
+    const labelledBy = popup.getAttribute("aria-labelledby");
+    if (!popup.getAttribute("aria-label") && (!labelledBy || !document.getElementById(labelledBy))) {
+      violations.push("settings popup has no accessible title");
+    }
+    if (!popup.contains(document.activeElement)) violations.push("initial focus is outside settings popup");
+    const popupRect = popup.getBoundingClientRect();
+    if (popupRect.left < -1 || popupRect.top < -1 || popupRect.right > innerWidth + 1 || popupRect.bottom > innerHeight + 1) {
+      violations.push("settings popup exceeds the viewport");
+    }
+    const main = popup.querySelector("main");
+    if (!(main instanceof HTMLElement)) violations.push("settings main content is missing");
+    else if (main.getBoundingClientRect().width < Math.min(320, innerWidth - 32)) {
+      violations.push("settings main content is too narrow");
+    }
+    const aside = popup.querySelector("aside");
+    if (!(aside instanceof HTMLElement)) violations.push("settings navigation is missing");
+    else if (aside.scrollHeight > aside.clientHeight + 1 && !/(auto|scroll)/u.test(getComputedStyle(aside).overflowY)) {
+      violations.push("settings navigation cannot scroll vertically");
+    }
+    return violations;
+  })()`);
+  if (!Array.isArray(violations)) throw new Error("settings modal probe returned no result");
+  await pressKey(client, "Tab");
+  await settle(client);
+  const focusStayedInside = await client.evaluate(
+    `document.querySelector('[data-business-os-settings]')?.contains(document.activeElement) === true`,
+  );
+  if (focusStayedInside !== true) violations.push("Tab moved focus outside settings popup");
+  await pressKey(client, "Escape");
+  await settle(client);
+  const closeState = await client.evaluate(`(() => ({
+    closed: !document.querySelector('[data-business-os-settings]'),
+    restored: document.activeElement?.matches('[data-ui-audit-settings-trigger]') === true,
+  }))()`);
+  if (typeof closeState !== "object" || closeState === null)
+    throw new Error("settings close probe returned no result");
+  const closeRecord = closeState as Record<string, unknown>;
+  if (closeRecord.closed !== true) violations.push("Escape did not close settings popup");
+  if (closeRecord.restored !== true) violations.push("settings trigger did not regain focus");
+  await prepareBusinessState(client, interaction);
+  await settle(client);
+  return violations.filter((value): value is string => typeof value === "string");
 }
 
 async function waitForRoute(client: CdpClient, hash: string): Promise<void> {
@@ -533,6 +594,10 @@ async function runAudit(args: AuditArguments): Promise<void> {
           await prepareBusinessState(client, state.businessInteraction);
         else await prepareState(client, state.interaction);
         await settle(client);
+        const modalViolations =
+          state.mode === "business-os"
+            ? await probeBusinessSettingsDialog(client, state.businessInteraction)
+            : [];
         await client.evaluate(
           `document.querySelectorAll('[data-sonner-toast] button[aria-label]').forEach((button) => button.click())`,
         );
@@ -563,8 +628,12 @@ async function runAudit(args: AuditArguments): Promise<void> {
           state: state.name,
           viewport: viewport.name,
           screenshot,
-          ...(audit as Omit<StateResult, "state" | "viewport" | "screenshot" | "consoleErrors">),
+          ...(audit as Omit<
+            StateResult,
+            "state" | "viewport" | "screenshot" | "consoleErrors" | "modalViolations"
+          >),
           consoleErrors: consoleErrors.slice(consoleAtStart),
+          modalViolations,
         });
         process.stdout.write(`captured ${viewport.name}/${state.name}\n`);
       }
@@ -598,11 +667,11 @@ async function runAudit(args: AuditArguments): Promise<void> {
     "",
     "Truncation is inventoried separately because some labels intentionally ellipsize.",
     "",
-    "| Viewport | State | Overflow | Clipped | Duplicate actions | Tiny controls | Console errors | Truncated text |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Viewport | State | Overflow | Clipped | Modal | Duplicate actions | Tiny controls | Console errors | Truncated text |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...results.map(
       (result) =>
-        `| ${result.viewport} | ${result.state} | ${result.documentOverflowX} | ${result.clippedInteractive.length} | ${result.duplicateActions.length} | ${result.tinyControls.length} | ${result.consoleErrors.length} | ${result.truncatedText.length} |`,
+        `| ${result.viewport} | ${result.state} | ${result.documentOverflowX} | ${result.clippedInteractive.length} | ${result.modalViolations.length} | ${result.duplicateActions.length} | ${result.tinyControls.length} | ${result.consoleErrors.length} | ${result.truncatedText.length} |`,
     ),
     "",
   ].join("\n");

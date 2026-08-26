@@ -930,6 +930,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               state: launch.value.recoveryShell
                 ? "recovery"
                 : (authoritativeDescriptor.shellUpdate?.phase ?? "current"),
+              offeredVersion: authoritativeDescriptor.shellUpdate?.latestCompatibleVersion ?? null,
+              publishedAt: launch.value.shellRelease?.publishedAt ?? null,
+              compatibility: launch.value.shellRelease?.compatibility ?? null,
+              health: authoritativeDescriptor.shellUpdate?.health ?? "unknown",
+              administrable: authoritativeDescriptor.shellUpdate?.administrable ?? false,
+              lastCheckedAt: authoritativeDescriptor.shellUpdate?.lastCheckedAt ?? null,
+              errorCode: authoritativeDescriptor.shellUpdate?.errorCode ?? null,
             };
             void webContents
               .executeJavaScript(

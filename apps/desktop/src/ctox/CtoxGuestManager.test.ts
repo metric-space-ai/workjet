@@ -1022,6 +1022,71 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("forwards sanitized release and lifecycle details to the shell status panel", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const shellUpdate = {
+      activeVersion: "1.2.3",
+      desiredVersion: "1.2.4",
+      latestCompatibleVersion: "1.2.4",
+      channel: "stable" as const,
+      phase: "available" as const,
+      health: "healthy" as const,
+      administrable: true,
+      recoveryShell: false,
+      lastCheckedAt: "2026-08-26T05:30:00+02:00",
+      lastActivatedAt: "2026-08-26T05:00:00+02:00",
+      errorCode: null,
+      pause: null,
+    };
+    const instance = { ...localDescriptor, shellUpdate };
+    harness.setLocalInstances([instance]);
+    harness.setDiscovery({ _tag: "signed_out" });
+    harness.shellLaunch.mockImplementation(() =>
+      Effect.succeed({
+        launchUrl: "http://127.0.0.1:41700/?ctox_config=paired-packed-secret",
+        launchOrigin: "http://127.0.0.1:41700",
+        shellVersion: "1.2.3",
+        recoveryShell: false,
+        shellRelease: {
+          publishedAt: "2026-08-26T05:29:12+02:00",
+          compatibility: {
+            workjetMinVersion: "0.0.33",
+            workjetMaxVersion: null,
+            ctoxMinVersion: "0.3.22",
+            ctoxMaxVersion: null,
+            shellProtocol: "workjet.business-os-shell.v1",
+          },
+        },
+      }),
+    );
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(instance.id, bounds), {
+        _tag: "ready",
+        instanceId: instance.id,
+      });
+      expect(harness.shellLaunch).toHaveBeenCalledExactlyOnceWith(localConfig, shellUpdate);
+
+      harness.views[0]?.finishLoad();
+      const expression = String(
+        harness.views[0]?.executeJavaScript.mock.calls.find(([candidate]) =>
+          String(candidate).includes("workjet:shell-update-status"),
+        )?.[0],
+      );
+      assert.include(expression, '"offeredVersion":"1.2.4"');
+      assert.include(expression, '"publishedAt":"2026-08-26T05:29:12+02:00"');
+      assert.include(expression, '"workjetMinVersion":"0.0.33"');
+      assert.include(expression, '"ctoxMinVersion":"0.3.22"');
+      assert.include(expression, '"health":"healthy"');
+      assert.include(expression, '"administrable":true');
+      assert.notInclude(expression, "paired-packed-secret");
+      assert.notInclude(expression, "local-room-secret");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("launches a running SSH-managed daemon through forwarded signaling", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };

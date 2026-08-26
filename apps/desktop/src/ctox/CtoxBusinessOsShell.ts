@@ -124,6 +124,10 @@ export interface CtoxBusinessOsLaunch {
   readonly launchOrigin: string;
   readonly shellVersion?: string;
   readonly recoveryShell?: boolean;
+  readonly shellRelease?: {
+    readonly publishedAt: string;
+    readonly compatibility: BusinessOsShellReleaseManifestV2["compatibility"];
+  };
 }
 
 export class CtoxBusinessOsShellError extends Schema.TaggedErrorClass<CtoxBusinessOsShellError>()(
@@ -150,12 +154,14 @@ interface RunningShellServer {
   readonly server: NodeHttp.Server;
   readonly version: string;
   readonly recoveryShell: boolean;
+  readonly shellRelease?: CtoxBusinessOsLaunch["shellRelease"];
 }
 
 interface ResolvedShellRoot {
   readonly root: string;
   readonly release: CtoxBusinessOsShellReleaseManifest;
   readonly recoveryShell: boolean;
+  readonly shellRelease?: CtoxBusinessOsLaunch["shellRelease"];
 }
 
 const INSTANCE_MODULE_PREFIXES = ["installed-modules/", "local-modules/"] as const;
@@ -572,6 +578,7 @@ function startServer(
           server,
           version: resolved.release.version,
           recoveryShell: resolved.recoveryShell,
+          ...(resolved.shellRelease === undefined ? {} : { shellRelease: resolved.shellRelease }),
         }),
       );
     });
@@ -622,7 +629,15 @@ export const make = Effect.gen(function* () {
         const prepared = await prepareCtoxBusinessOsShellRelease(release, {
           dependencyRoot: cacheRoot,
         });
-        return { root: prepared.installPath, release, recoveryShell: false };
+        return {
+          root: prepared.installPath,
+          release,
+          recoveryShell: false,
+          shellRelease: {
+            publishedAt: signed.publishedAt,
+            compatibility: signed.compatibility,
+          },
+        };
       },
       catch: () => new CtoxBusinessOsShellError(),
     });
@@ -663,6 +678,7 @@ export const make = Effect.gen(function* () {
           launchOrigin: running.origin,
           shellVersion: running.version,
           recoveryShell: running.recoveryShell,
+          ...(running.shellRelease === undefined ? {} : { shellRelease: running.shellRelease }),
         };
       }).pipe(Effect.mapError(() => new CtoxBusinessOsShellError())),
   });

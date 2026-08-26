@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { CtoxMobileInviteCreateInput, CtoxMobileInviteCreateResult } from "./ctox.ts";
+import {
+  CtoxMobileInviteCreateInput,
+  CtoxMobileInviteCreateResult,
+  WorkjetDeviceInviteCreateInput,
+  WorkjetDeviceInviteCreateResult,
+} from "./ctox.ts";
 import {
   EnvironmentAuthInvalidError,
   EnvironmentInternalError,
@@ -108,5 +113,65 @@ describe("Business OS mobile invite HTTP contract", () => {
     });
     expect(result.invite.data_plane).toBe("rxdb-webrtc");
     expect(result.invite.http_bridge_available).toBe(false);
+  });
+});
+
+describe("Workjet device invite HTTP contract", () => {
+  it("binds Code and Business OS to one short-lived device pairing identity", () => {
+    expect(
+      Schema.decodeUnknownSync(WorkjetDeviceInviteCreateInput)({
+        ttlSeconds: 300,
+        connectionUrl: "https://workjet.example.test",
+      }),
+    ).toEqual({ ttlSeconds: 300, connectionUrl: "https://workjet.example.test" });
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetDeviceInviteCreateInput)({
+        ttlSeconds: 30,
+        connectionUrl: "https://workjet.example.test",
+      }),
+    ).toThrow();
+
+    const combined = Schema.decodeUnknownSync(WorkjetDeviceInviteCreateResult)({
+      inviteId: "opaque-composite-id",
+      expiresAt: "2099-08-25T12:05:00.000Z",
+      invite: {
+        type: "workjet-device-invite",
+        version: 1,
+        device_pairing_id: "device-a",
+        environment: {
+          base_url: "https://workjet.example.test",
+          bootstrap_credential: "synthetic-bootstrap",
+          expires_at: "2099-08-25T12:05:00.000Z",
+        },
+        business_os: {
+          type: "ctox-business-os-invite",
+          version: 1,
+          display_name: "Operations",
+          instance_id: "instance-a",
+          sync_room: "ctox-business-os:instance-a",
+          native_peer_id: "native-a",
+          signaling_urls: ["wss://signal.example.test/socket"],
+          signaling_room_password: "synthetic-room-secret",
+          transport: "webrtc",
+          expires_at: "2099-08-25T12:05:00.000Z",
+          data_plane: "rxdb-webrtc",
+          http_bridge_available: false,
+          session: {
+            authenticated: true,
+            source: "mobile_invite",
+            capability_token: "synthetic-capability",
+            capability_expires_at_ms: Date.parse("2099-08-25T12:05:00.000Z"),
+            user: {
+              id: "mobile-a",
+              display_name: "Workjet Mobile",
+              role: "user",
+              is_admin: false,
+            },
+          },
+        },
+      },
+    });
+    expect(combined.invite.device_pairing_id).toBe("device-a");
+    expect(combined.invite.business_os.instance_id).toBe("instance-a");
   });
 });

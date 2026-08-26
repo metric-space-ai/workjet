@@ -4,6 +4,7 @@ import {
   GitPullRequestIcon,
   MonitorSmartphoneIcon,
   SettingsIcon,
+  SmartphoneIcon,
 } from "lucide-react";
 import { memo, useCallback, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -26,6 +27,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { openWorkjetDevicePairing } from "../settings/WorkjetDevicePairingDialog";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -275,6 +277,25 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
           </SidebarMenuItem>
         ) : (
           <>
+            <SidebarMenuItem className="shrink-0">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      aria-label="Mobilgerät verbinden"
+                      onClick={() => {
+                        closeMobileSidebar();
+                        openWorkjetDevicePairing();
+                      }}
+                      size="icon"
+                    >
+                      <SmartphoneIcon />
+                    </SidebarMenuButton>
+                  }
+                />
+                <TooltipPopup side="top">Mobilgerät verbinden</TooltipPopup>
+              </Tooltip>
+            </SidebarMenuItem>
             <SidebarMenuItem className="shrink-0">
               <Tooltip>
                 <TooltipTrigger

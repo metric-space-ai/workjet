@@ -1,4 +1,4 @@
-import type { CtoxBusinessOsInviteV1 } from "@t3tools/contracts";
+import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteV1 } from "@t3tools/contracts";
 
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -25,6 +25,16 @@ export function encodeWorkjetBusinessOsPairingLink(invite: CtoxBusinessOsInviteV
   const link = `workjet://business-os/pair?${search.toString()}`;
   if (new TextEncoder().encode(link).byteLength > 2_300) {
     throw new Error("The pairing invite is too large for a reliable QR code.");
+  }
+  return link;
+}
+
+export function encodeWorkjetDevicePairingLink(invite: WorkjetDeviceInviteV1): string {
+  const payload = encodeBase64Url(JSON.stringify(invite));
+  const search = new URLSearchParams([["payload", payload]]);
+  const link = `workjet://pair?${search.toString()}`;
+  if (new TextEncoder().encode(link).byteLength > 2_300) {
+    throw new Error("The device pairing invite is too large for a reliable QR code.");
   }
   return link;
 }

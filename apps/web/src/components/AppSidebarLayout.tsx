@@ -47,6 +47,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
+import { WorkjetDevicePairingDialog } from "./settings/WorkjetDevicePairingDialog";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -299,6 +300,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
           children
         )}
         <SidebarControl />
+        <WorkjetDevicePairingDialog />
       </CtoxModeBoundary>
     </SidebarProvider>
   );

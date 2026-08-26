@@ -10,13 +10,21 @@ import {
   type CtoxMobileShellPackResolveResult,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vite-plus/test";
 
 import { CtoxMobileInviteService } from "./CtoxMobileInviteService.ts";
 import { CtoxMobileShellPackService } from "./CtoxMobileShellPackService.ts";
-import { businessOsHttpApiLayer, MOBILE_INVITE_RESPONSE_HEADERS } from "./http.ts";
+import { EnvironmentAuth } from "../auth/EnvironmentAuth.ts";
+import {
+  businessOsHttpApiLayer,
+  decodeDeviceInviteId,
+  MOBILE_INVITE_RESPONSE_HEADERS,
+  normalizeDeviceConnectionUrl,
+} from "./http.ts";
 
 const expiresAt = "2099-08-25T12:05:00.000Z";
 const created: CtoxMobileInviteCreateResult = {
@@ -84,6 +92,23 @@ const mobileShellPackLayer = Layer.succeed(
   CtoxMobileShellPackService.of({ resolve: () => Effect.succeed(resolvedShellPack) }),
 );
 
+const environmentAuthLayer = Layer.succeed(
+  EnvironmentAuth,
+  EnvironmentAuth.of({
+    createPairingLink: () =>
+      Effect.succeed({
+        id: "workjet-link-a",
+        credential: "synthetic-workjet-bootstrap",
+        scopes: ["access:read", "orchestration:read"],
+        subject: "workjet-device:test",
+        label: "Workjet mobile device",
+        createdAt: Option.getOrThrow(DateTime.make("2099-08-25T12:00:00.000Z")),
+        expiresAt: Option.getOrThrow(DateTime.make(expiresAt)),
+      }),
+    revokePairingLink: () => Effect.succeed(true),
+  } as never),
+);
+
 const authenticatedAuth = (scopes: ReadonlySet<AuthEnvironmentScope>) =>
   EnvironmentAuthenticatedAuth.of((httpEffect) =>
     httpEffect.pipe(
@@ -114,6 +139,7 @@ async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
         businessOsHttpApiLayer.pipe(
           Layer.provide(mobileInviteLayer),
           Layer.provide(mobileShellPackLayer),
+          Layer.provide(environmentAuthLayer),
         ),
       ]),
       Effect.provideService(EnvironmentAuthenticatedAuth, auth),
@@ -123,6 +149,43 @@ async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
 }
 
 describe("Business OS mobile control-plane HTTP safety", () => {
+  it("normalizes safe pairing targets and rejects credential-bearing URLs", () => {
+    expect(normalizeDeviceConnectionUrl("https://workjet.example.test/")).toBe(
+      "https://workjet.example.test",
+    );
+    expect(normalizeDeviceConnectionUrl("https://user:secret@example.test")).toBeNull();
+    expect(normalizeDeviceConnectionUrl("workjet://pair")).toBeNull();
+  });
+
+  it("creates and jointly revokes one Workjet device pairing", async () => {
+    const writable = await clientFor(authenticatedAuth(new Set(["access:write"])));
+    const result = await Effect.runPromise(
+      writable.businessOs.createDeviceInvite({
+        headers: {},
+        payload: { ttlSeconds: 300, connectionUrl: "https://workjet.example.test/" },
+      }),
+    );
+    expect(result.invite.type).toBe("workjet-device-invite");
+    expect(result.invite.environment).toMatchObject({
+      base_url: "https://workjet.example.test",
+      bootstrap_credential: "synthetic-workjet-bootstrap",
+    });
+    expect(result.invite.business_os).toEqual(created.invite);
+    expect(decodeDeviceInviteId(result.inviteId)).toEqual({
+      version: 1,
+      workjetPairingId: "workjet-link-a",
+      ctoxInviteId: "opaque-id",
+    });
+    await expect(
+      Effect.runPromise(
+        writable.businessOs.revokeDeviceInvite({
+          headers: {},
+          payload: { inviteId: result.inviteId },
+        }),
+      ),
+    ).resolves.toEqual({ revoked: true });
+  });
+
   it("disables caches and referrers for invite and shell-pack responses", () => {
     expect(MOBILE_INVITE_RESPONSE_HEADERS).toEqual({
       "cache-control": "no-store",

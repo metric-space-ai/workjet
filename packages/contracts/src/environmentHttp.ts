@@ -13,6 +13,10 @@ import {
   CtoxMobileInviteCreateResult,
   CtoxMobileInviteRevokeInput,
   CtoxMobileInviteRevokeResult,
+  WorkjetDeviceInviteCreateInput,
+  WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceInviteRevokeInput,
+  WorkjetDeviceInviteRevokeResult,
 } from "./ctox.ts";
 import {
   CtoxMobileShellPackResolveInput,
@@ -72,6 +76,7 @@ export const EnvironmentRequestInvalidReason = Schema.Literals([
   "invalid_scope",
   "scope_not_granted",
   "invalid_command",
+  "invalid_device_connection_url",
 ]);
 export type EnvironmentRequestInvalidReason = typeof EnvironmentRequestInvalidReason.Type;
 
@@ -103,6 +108,8 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "mobile_invite_issuance_failed",
   "mobile_invite_revoke_failed",
   "mobile_shell_pack_resolve_failed",
+  "device_invite_issuance_failed",
+  "device_invite_revoke_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -544,6 +551,22 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   ) {}
 
 export class EnvironmentBusinessOsHttpApi extends HttpApiGroup.make("businessOs")
+  .add(
+    HttpApiEndpoint.post("createDeviceInvite", "/api/workjet/device-invites", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetDeviceInviteCreateInput,
+      success: WorkjetDeviceInviteCreateResult,
+      error: EnvironmentPairingCredentialErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeDeviceInvite", "/api/workjet/device-invites/revoke", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetDeviceInviteRevokeInput,
+      success: WorkjetDeviceInviteRevokeResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
   .add(
     HttpApiEndpoint.post("createMobileInvite", "/api/ctox/business-os/mobile-invites", {
       headers: OptionalBearerHeaders,

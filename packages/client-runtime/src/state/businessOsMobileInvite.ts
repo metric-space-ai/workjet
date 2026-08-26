@@ -5,6 +5,10 @@ import type {
   CtoxMobileInviteRevokeResult,
   CtoxMobileShellPackResolveInput,
   CtoxMobileShellPackResolveResult,
+  WorkjetDeviceInviteCreateInput,
+  WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceInviteRevokeInput,
+  WorkjetDeviceInviteRevokeResult,
 } from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -25,7 +29,10 @@ import {
 } from "./environmentHttpAuth.ts";
 import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.ts";
 
-const MOBILE_INVITE_REQUEST_TIMEOUT_MS = 10_000;
+// The server deliberately gives the supervised CTOX CLI up to 20 seconds.
+// The client budget must be larger or it can abandon a valid invite while the
+// server is still finishing the fail-closed capability issuance.
+const MOBILE_INVITE_REQUEST_TIMEOUT_MS = 30_000;
 const MOBILE_SHELL_PACK_REQUEST_TIMEOUT_MS = 10_000;
 
 export class EnvironmentNotConnectedForMobileInviteError extends Data.TaggedError(
@@ -96,6 +103,34 @@ export const createBusinessOsMobileInvite = (
     ({ client, headers }) => client.businessOs.createMobileInvite({ headers, payload: input }),
   );
 
+export const createWorkjetDeviceInvite = (
+  input: WorkjetDeviceInviteCreateInput,
+): Effect.Effect<
+  WorkjetDeviceInviteCreateResult,
+  unknown,
+  EnvironmentSupervisor | HttpClient.HttpClient | ManagedRelayDpopSigner
+> =>
+  withCurrentEnvironmentConnection(
+    "/api/workjet/device-invites",
+    MOBILE_INVITE_REQUEST_TIMEOUT_MS,
+    new EnvironmentNotConnectedForMobileInviteError(),
+    ({ client, headers }) => client.businessOs.createDeviceInvite({ headers, payload: input }),
+  );
+
+export const revokeWorkjetDeviceInvite = (
+  input: WorkjetDeviceInviteRevokeInput,
+): Effect.Effect<
+  WorkjetDeviceInviteRevokeResult,
+  unknown,
+  EnvironmentSupervisor | HttpClient.HttpClient | ManagedRelayDpopSigner
+> =>
+  withCurrentEnvironmentConnection(
+    "/api/workjet/device-invites/revoke",
+    MOBILE_INVITE_REQUEST_TIMEOUT_MS,
+    new EnvironmentNotConnectedForMobileInviteError(),
+    ({ client, headers }) => client.businessOs.revokeDeviceInvite({ headers, payload: input }),
+  );
+
 export const revokeBusinessOsMobileInvite = (
   input: CtoxMobileInviteRevokeInput,
 ): Effect.Effect<
@@ -145,6 +180,33 @@ export function createBusinessOsMobileInviteEnvironmentAtoms<R, E>(
     revoke: createEnvironmentCommand(runtime, {
       label: "environment-control:business-os-mobile-invite:revoke",
       execute: revokeBusinessOsMobileInvite,
+      scheduler,
+      concurrency,
+    }),
+  };
+}
+
+export function createWorkjetDeviceInviteEnvironmentAtoms<R, E>(
+  runtime: Atom.AtomRuntime<
+    EnvironmentRegistry | HttpClient.HttpClient | ManagedRelayDpopSigner | R,
+    E
+  >,
+) {
+  const scheduler = createAtomCommandScheduler();
+  const concurrency = {
+    mode: "serial" as const,
+    key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
+  };
+  return {
+    create: createEnvironmentCommand(runtime, {
+      label: "environment-control:workjet-device-invite:create",
+      execute: createWorkjetDeviceInvite,
+      scheduler,
+      concurrency,
+    }),
+    revoke: createEnvironmentCommand(runtime, {
+      label: "environment-control:workjet-device-invite:revoke",
+      execute: revokeWorkjetDeviceInvite,
       scheduler,
       concurrency,
     }),

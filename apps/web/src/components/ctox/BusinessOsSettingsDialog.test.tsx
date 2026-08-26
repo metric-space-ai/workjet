@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import computersSettingsSource from "../settings/WorkjetComputersSettings.tsx?raw";
-import pairingSource from "../settings/BusinessOsMobilePairingSection.tsx?raw";
+import pairingSource from "../settings/WorkjetDevicePairingDialog.tsx?raw";
 import dialogSource from "./BusinessOsSettingsDialog.tsx?raw";
 import {
   businessOsInstanceDataPlaneReady,
@@ -36,12 +35,12 @@ describe("BusinessOsSettingsDialog", () => {
     expect(dialogSource).not.toContain("RxDB/WebRTC ·");
   });
 
-  it("keeps QR pairing exclusively in Business OS settings", () => {
-    expect(dialogSource).toContain("BusinessOsMobilePairingSection");
-    expect(computersSettingsSource).not.toContain("BusinessOsMobilePairingSection");
-    expect(pairingSource).toContain("Mobiles Pairing");
+  it("keeps one device pairing entry outside the Business OS-only settings tree", () => {
+    expect(dialogSource).not.toContain("BusinessOsMobilePairingSection");
+    expect(pairingSource).toContain("Mobilgerät verbinden");
     expect(pairingSource).toContain("QR-Code anzeigen");
-    expect(pairingSource).not.toContain('title="Mobile pairing"');
+    expect(pairingSource).toContain("Code und Business OS");
+    expect(pairingSource).toContain("workjetDeviceInviteEnvironment");
   });
 
   it("keeps empty fleet updates responsive and actionable", () => {

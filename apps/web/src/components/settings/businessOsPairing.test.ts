@@ -1,7 +1,11 @@
-import type { CtoxBusinessOsInviteV1 } from "@t3tools/contracts";
+import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteV1 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { encodeWorkjetBusinessOsPairingLink, formatMobileInviteExpiry } from "./businessOsPairing";
+import {
+  encodeWorkjetBusinessOsPairingLink,
+  encodeWorkjetDevicePairingLink,
+  formatMobileInviteExpiry,
+} from "./businessOsPairing";
 
 const invite: CtoxBusinessOsInviteV1 = {
   type: "ctox-business-os-invite",
@@ -38,6 +42,25 @@ function decodePayload(link: string): unknown {
 }
 
 describe("Business OS mobile pairing", () => {
+  it("encodes one Code and Business OS device invite in the canonical Workjet link", () => {
+    const deviceInvite: WorkjetDeviceInviteV1 = {
+      type: "workjet-device-invite",
+      version: 1,
+      device_pairing_id: "device-a",
+      environment: {
+        base_url: "https://workjet.example.test",
+        bootstrap_credential: "synthetic-bootstrap",
+        expires_at: "2026-08-25T17:05:00Z",
+      },
+      business_os: invite,
+    };
+    const link = encodeWorkjetDevicePairingLink(deviceInvite);
+    expect(link.startsWith("workjet://pair?payload=")).toBe(true);
+    expect(decodePayload(link)).toEqual(deviceInvite);
+    expect(link).not.toContain("business-os/pair");
+    expect(link).not.toContain("ctox-mobile");
+  });
+
   it("encodes the exact backend invite into the canonical Workjet link", () => {
     const link = encodeWorkjetBusinessOsPairingLink(invite);
     expect(link.startsWith("workjet://business-os/pair?payload=")).toBe(true);

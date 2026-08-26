@@ -11,8 +11,6 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 
 import { cn } from "../../lib/utils";
 import { APP_VERSION } from "../../branding";
-import { usePrimaryEnvironment } from "../../state/environments";
-import { BusinessOsMobilePairingSection } from "../settings/BusinessOsMobilePairingSection";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 
 const SETTINGS_PAGE_KEY = "workjet.business-os.settings.last-page";
@@ -578,7 +576,6 @@ export function BusinessOsSettingsDialog({
   const [inventory, setInventory] = useState<CtoxShellFleetInventoryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [rolloutStatus, setRolloutStatus] = useState<CtoxShellFleetRolloutStatus | null>(null);
-  const primaryEnvironment = usePrimaryEnvironment();
   const selected = useMemo(
     () =>
       discovery !== "loading" && discovery._tag === "ready"
@@ -746,14 +743,6 @@ export function BusinessOsSettingsDialog({
                       </p>
                     </div>
                   ))}
-                  <BusinessOsMobilePairingSection
-                    environmentId={primaryEnvironment?.environmentId ?? null}
-                    environmentLabel={
-                      selected === undefined
-                        ? (primaryEnvironment?.label ?? null)
-                        : fleetInstanceDisplayTitle(selected.displayName)
-                    }
-                  />
                 </div>
               ) : null}
               {page === "apps" ? (

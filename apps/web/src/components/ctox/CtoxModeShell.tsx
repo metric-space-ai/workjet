@@ -33,6 +33,7 @@ import {
   Plus,
   RefreshCw,
   SettingsIcon,
+  SmartphoneIcon,
   UnplugIcon,
 } from "lucide-react";
 
@@ -46,6 +47,7 @@ import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemo
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { BusinessOsSettingsDialog } from "./BusinessOsSettingsDialog";
+import { openWorkjetDevicePairing } from "../settings/WorkjetDevicePairingDialog";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -1994,6 +1996,16 @@ export function CtoxSidebarFooter() {
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]" data-ctox-sidebar-footer="">
       <SidebarMenu className="flex-row items-center">
+        <SidebarMenuItem className="shrink-0">
+          <SidebarMenuButton
+            aria-label="Mobilgerät verbinden"
+            size="icon"
+            title="Mobilgerät verbinden"
+            onClick={openWorkjetDevicePairing}
+          >
+            <SmartphoneIcon />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
         <SidebarMenuItem className="shrink-0">
           <SidebarMenuButton
             aria-label="Business OS-Einstellungen"

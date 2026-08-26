@@ -365,6 +365,48 @@ export const CtoxMobileInviteRevokeResult = Schema.Struct({
 });
 export type CtoxMobileInviteRevokeResult = typeof CtoxMobileInviteRevokeResult.Type;
 
+/**
+ * One user-visible Workjet device pairing. The environment bootstrap grants
+ * Code access while the nested CTOX invite grants the minimum Business OS
+ * synchronization capability. Both credentials are short-lived and belong to
+ * the same opaque device pairing identity.
+ */
+export const WorkjetDeviceInviteV1 = Schema.Struct({
+  type: Schema.Literal("workjet-device-invite"),
+  version: Schema.Literal(1),
+  device_pairing_id: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  environment: Schema.Struct({
+    base_url: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+    bootstrap_credential: TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+    expires_at: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  }),
+  business_os: CtoxBusinessOsInviteV1,
+});
+export type WorkjetDeviceInviteV1 = typeof WorkjetDeviceInviteV1.Type;
+
+export const WorkjetDeviceInviteCreateInput = Schema.Struct({
+  ttlSeconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 3_600 })),
+  connectionUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+});
+export type WorkjetDeviceInviteCreateInput = typeof WorkjetDeviceInviteCreateInput.Type;
+
+export const WorkjetDeviceInviteCreateResult = Schema.Struct({
+  inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  invite: WorkjetDeviceInviteV1,
+  expiresAt: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+});
+export type WorkjetDeviceInviteCreateResult = typeof WorkjetDeviceInviteCreateResult.Type;
+
+export const WorkjetDeviceInviteRevokeInput = Schema.Struct({
+  inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+});
+export type WorkjetDeviceInviteRevokeInput = typeof WorkjetDeviceInviteRevokeInput.Type;
+
+export const WorkjetDeviceInviteRevokeResult = Schema.Struct({
+  revoked: Schema.Literal(true),
+});
+export type WorkjetDeviceInviteRevokeResult = typeof WorkjetDeviceInviteRevokeResult.Type;
+
 /** A bounded raw invite JSON document or CTOX desktop invite link. */
 export const CtoxPairingInviteImportInput = Schema.Struct({
   invite: Schema.String.check(Schema.isMaxLength(65_536)),

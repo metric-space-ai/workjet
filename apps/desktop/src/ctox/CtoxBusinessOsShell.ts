@@ -230,6 +230,18 @@ export function resolveCtoxBusinessOsShellRoot(
       );
 }
 
+/**
+ * Recovery is an explicit lifecycle state, not a version comparison. An
+ * instance may legitimately run the same version as the bundled recovery
+ * shell while still owning a verified release slot; silently substituting the
+ * bundle would hide both its provenance and cache failures.
+ */
+export function shouldUseCtoxRecoveryShell(
+  shellStatus: BusinessOsShellUpdateStatus | undefined,
+): boolean {
+  return shellStatus === undefined || shellStatus.recoveryShell === true;
+}
+
 const LegacyInventoryFile = Schema.Struct({
   path: Schema.String,
   byteSize: Schema.Int,
@@ -607,11 +619,7 @@ export const make = Effect.gen(function* () {
     Effect.tryPromise({
       try: async (): Promise<ResolvedShellRoot> => {
         const requestedVersion = shellStatus?.activeVersion ?? businessOsShellManifest.version;
-        if (
-          shellStatus === undefined ||
-          shellStatus?.recoveryShell === true ||
-          requestedVersion === businessOsShellManifest.version
-        ) {
+        if (shouldUseCtoxRecoveryShell(shellStatus)) {
           return {
             root: recoveryRoot,
             release: CTOX_BUSINESS_OS_SHELL_RELEASE,

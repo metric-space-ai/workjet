@@ -133,11 +133,47 @@ describe("CtoxBusinessOsShell", () => {
         CtoxBusinessOsShell.resolveCtoxBusinessOsShellRoot(
           environment({ rootDir: "/repo", resourcesPath: "/resources", isPackaged: false }),
         ),
-      ).toBe(NodePath.join("/repo", ".deps", "ctox-business-os-shell", "0.1.4"));
+      ).toBe(NodePath.join("/repo", ".deps", "ctox-business-os-shell", "0.1.10"));
       await shellRoot(base, false);
     } finally {
       await NodeFSP.rm(base, { recursive: true, force: true });
     }
+  });
+
+  it("uses recovery only when the lifecycle explicitly requests it", () => {
+    expect(CtoxBusinessOsShell.shouldUseCtoxRecoveryShell(undefined)).toBe(true);
+    expect(
+      CtoxBusinessOsShell.shouldUseCtoxRecoveryShell({
+        activeVersion: "0.1.9",
+        desiredVersion: null,
+        latestCompatibleVersion: "0.1.9",
+        channel: "stable",
+        phase: "current",
+        health: "healthy",
+        administrable: true,
+        recoveryShell: false,
+        lastCheckedAt: null,
+        lastActivatedAt: null,
+        errorCode: null,
+        pause: null,
+      }),
+    ).toBe(false);
+    expect(
+      CtoxBusinessOsShell.shouldUseCtoxRecoveryShell({
+        activeVersion: "0.1.9",
+        desiredVersion: null,
+        latestCompatibleVersion: "0.1.9",
+        channel: "stable",
+        phase: "blocked",
+        health: "unknown",
+        administrable: false,
+        recoveryShell: true,
+        lastCheckedAt: null,
+        lastActivatedAt: null,
+        errorCode: "recovery-shell",
+        pause: null,
+      }),
+    ).toBe(true);
   });
 
   it.effect("starts one loopback-only server and serves GET and HEAD static files", () =>

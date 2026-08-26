@@ -258,6 +258,15 @@ describe("CtoxBusinessOsShell", () => {
         Effect.gen(function* () {
           const root = yield* Effect.promise(() => shellRoot(base, false));
           const runtimeRoot = NodePath.join(base, "install", "current", "runtime", "business-os");
+          yield* Effect.promise(async () => {
+            await NodeFSP.mkdir(NodePath.dirname(runtimeRoot), { recursive: true });
+            const identity = NodePath.join(
+              NodePath.dirname(runtimeRoot),
+              "business-os-instance-id",
+            );
+            await NodeFSP.writeFile(identity, "biz_local\n", { mode: 0o600 });
+            await NodeFSP.chmod(identity, 0o600);
+          });
           yield* Effect.promise(() =>
             NodeFSP.mkdir(NodePath.join(root, "installed-modules", "shell-owned"), {
               recursive: true,
@@ -285,6 +294,43 @@ describe("CtoxBusinessOsShell", () => {
               "export const owner = 'instance';",
             ),
           );
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(runtimeRoot, "installed-modules", "instance-owned", "module.json"),
+              encodeUnknownJson({
+                id: "instance-owned",
+                version: "1.0.0",
+                distribution: "public",
+              }),
+            ),
+          );
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(runtimeRoot, "installed-modules", "shell-owned", "module.json"),
+              encodeUnknownJson({
+                id: "shell-owned",
+                version: "1.0.0",
+                distribution: "public",
+              }),
+            ),
+          );
+          yield* Effect.promise(async () => {
+            const privateDir = NodePath.join(
+              runtimeRoot,
+              "installed-modules",
+              "rem-unbound-private",
+            );
+            await NodeFSP.mkdir(privateDir, { recursive: true });
+            await NodeFSP.writeFile(
+              NodePath.join(privateDir, "module.json"),
+              encodeUnknownJson({
+                id: "rem-unbound-private",
+                version: "1.0.0",
+                distribution: "customer",
+              }),
+            );
+            await NodeFSP.writeFile(NodePath.join(privateDir, "index.js"), "private");
+          });
           yield* Effect.promise(() =>
             NodeFSP.writeFile(
               NodePath.join(runtimeRoot, "installed-modules", "shell-owned", "index.js"),
@@ -336,6 +382,20 @@ describe("CtoxBusinessOsShell", () => {
                 ),
               );
               assert.equal(missingModuleFile.status, 404);
+              const unboundCustomerAsset = yield* Effect.promise(() =>
+                request(
+                  launch.launchOrigin,
+                  "/business-os/installed-modules/rem-unbound-private/index.js",
+                ),
+              );
+              const unboundCustomerFallbackIcon = yield* Effect.promise(() =>
+                request(
+                  launch.launchOrigin,
+                  "/business-os/installed-modules/rem-unbound-private/icon.svg",
+                ),
+              );
+              assert.equal(unboundCustomerAsset.status, 404);
+              assert.equal(unboundCustomerFallbackIcon.status, 404);
             }).pipe(
               Effect.provide(CtoxBusinessOsShell.layer),
               Effect.provideService(DesktopEnvironment.DesktopEnvironment, env),

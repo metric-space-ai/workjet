@@ -26,6 +26,7 @@ import {
   prepareCtoxBusinessOsShellRelease,
 } from "../../../../scripts/lib/ctox-business-os-shell.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { authorizedCtoxRuntimeModuleKeys, ctoxRuntimeModuleKey } from "./CtoxCustomerAppBinding.ts";
 import { resolveBusinessOsShellReleaseVersion } from "./CtoxShellReleaseTrust.ts";
 
 const MAX_HEADER_BYTES = 64 * 1024;
@@ -422,6 +423,7 @@ function installStaticHandler(
   server: NodeHttp.Server,
   canonicalRoot: string,
   canonicalInstanceModuleRoot?: string,
+  authorizedRuntimeModuleKeys: ReadonlySet<string> = new Set(),
 ): void {
   server.on("request", (request, response) => {
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -447,8 +449,13 @@ function installStaticHandler(
     const mayUseInstanceModuleRoot = INSTANCE_MODULE_PREFIXES.some((prefix) =>
       relative.startsWith(prefix),
     );
+    const runtimeModuleKey = ctoxRuntimeModuleKey(relative);
+    const runtimeModuleAuthorized =
+      runtimeModuleKey !== undefined && authorizedRuntimeModuleKeys.has(runtimeModuleKey);
     const overlayCandidate =
-      mayUseInstanceModuleRoot && canonicalInstanceModuleRoot !== undefined
+      mayUseInstanceModuleRoot &&
+      runtimeModuleAuthorized &&
+      canonicalInstanceModuleRoot !== undefined
         ? NodePath.resolve(canonicalInstanceModuleRoot, relative)
         : undefined;
     const useOverlay =
@@ -468,7 +475,11 @@ function installStaticHandler(
 
     NodeFS.lstat(candidate, (lstatError, lstat) => {
       if (lstatError !== null) {
-        if (lstatError.code === "ENOENT" && isMissingInstanceModuleIcon(relative)) {
+        if (
+          lstatError.code === "ENOENT" &&
+          runtimeModuleAuthorized &&
+          isMissingInstanceModuleIcon(relative)
+        ) {
           respondWithInstanceModuleIconFallback(request, response);
           return;
         }
@@ -520,6 +531,7 @@ function startServer(
   return Effect.callback<RunningShellServer, CtoxBusinessOsShellError>((resume) => {
     let canonicalRoot: string;
     let canonicalInstanceModuleRoot: string | undefined;
+    let authorizedRuntimeModuleKeys: ReadonlySet<string> = new Set();
     try {
       canonicalRoot = NodeFS.realpathSync(resolved.root);
       if (!NodeFS.statSync(canonicalRoot).isDirectory()) throw new Error("invalid shell root");
@@ -561,7 +573,16 @@ function startServer(
       }
       if (instanceModuleRoot !== undefined && NodeFS.existsSync(instanceModuleRoot)) {
         const candidate = NodeFS.realpathSync(instanceModuleRoot);
-        if (NodeFS.statSync(candidate).isDirectory()) canonicalInstanceModuleRoot = candidate;
+        if (NodeFS.statSync(candidate).isDirectory()) {
+          canonicalInstanceModuleRoot = candidate;
+          try {
+            authorizedRuntimeModuleKeys = authorizedCtoxRuntimeModuleKeys(candidate);
+          } catch {
+            // A missing or insecure instance identity disables every runtime
+            // overlay while the signed shell itself remains recoverable.
+            authorizedRuntimeModuleKeys = new Set();
+          }
+        }
       }
     } catch {
       resume(Effect.fail(new CtoxBusinessOsShellError()));
@@ -573,7 +594,12 @@ function startServer(
     server.requestTimeout = 30_000;
     server.keepAliveTimeout = 5_000;
     server.maxRequestsPerSocket = 100;
-    installStaticHandler(server, canonicalRoot, canonicalInstanceModuleRoot);
+    installStaticHandler(
+      server,
+      canonicalRoot,
+      canonicalInstanceModuleRoot,
+      authorizedRuntimeModuleKeys,
+    );
     const fail = () => resume(Effect.fail(new CtoxBusinessOsShellError()));
     server.once("error", fail);
     server.listen(0, LOOPBACK_HOST, () => {

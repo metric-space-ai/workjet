@@ -413,6 +413,17 @@ export const deactivate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.Cto
     }),
 };
 
+export const suspend: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
+  channel: IpcChannels.CTOX_SUSPEND_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* guests.suspend.pipe(
+        Effect.flatMap((result) => encodeSafe(CtoxManagedActionResult, result)),
+      );
+    }),
+};
+
 export const setGuestBounds: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> =
   {
     channel: IpcChannels.CTOX_SET_GUEST_BOUNDS_CHANNEL,
@@ -733,6 +744,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   enterBusinessOsMode,
   exitBusinessOsMode,
   activate,
+  suspend,
   deactivate,
   setGuestBounds,
   listApps,

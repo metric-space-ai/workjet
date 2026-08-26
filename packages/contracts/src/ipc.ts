@@ -1226,6 +1226,8 @@ export interface DesktopCtoxBridge {
   enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
+  /** Detach the active native guest while keeping it warm for later re-attachment. */
+  suspend: () => Promise<CtoxManagedActionResult>;
   deactivate: () => Promise<CtoxManagedActionResult>;
   setGuestBounds: (bounds: CtoxGuestBounds) => Promise<CtoxManagedActionResult>;
   /** Docked-or-open apps of one instance (live from the guest, cache otherwise). */

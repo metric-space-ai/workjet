@@ -47,6 +47,7 @@ import {
   readCtoxRailCollapsed,
   submitCtoxManualPairing,
   submitCtoxSshManagedInstance,
+  suspendCtoxGuestForHostOverlay,
   trackCtoxGuestActivation,
   visibleCtoxRailApps,
   writeCtoxRailCollapsed,
@@ -99,6 +100,7 @@ function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBri
     enterBusinessOsMode: async () => ({ _tag: "completed" }),
     exitBusinessOsMode: async () => ({ _tag: "completed" }),
     activate: async () => ({ _tag: "failed", code: "launch_failed" }),
+    suspend: async () => ({ _tag: "completed" }),
     deactivate: async () => ({ _tag: "completed" }),
     setGuestBounds: async () => ({ _tag: "completed" }),
     listApps: async (instanceId) => ({
@@ -709,6 +711,19 @@ describe("CTOX bridge actions", () => {
 });
 
 describe("CtoxMainShell", () => {
+  it("detaches the native guest before a host-owned overlay is revealed", async () => {
+    const suspend = vi.fn(async () => ({ _tag: "completed" as const }));
+
+    await expect(suspendCtoxGuestForHostOverlay(inertBridge({ suspend }))).resolves.toBe(true);
+    expect(suspend).toHaveBeenCalledOnce();
+
+    await expect(
+      suspendCtoxGuestForHostOverlay(
+        inertBridge({ suspend: async () => ({ _tag: "failed", code: "guest_failed" }) }),
+      ),
+    ).resolves.toBe(false);
+  });
+
   it("renders an honest empty state without a guest surface", () => {
     const markup = renderToStaticMarkup(
       <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "signed_out" }}>

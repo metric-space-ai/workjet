@@ -403,6 +403,21 @@ export function releaseCtoxMode(bridge: DesktopCtoxBridge | undefined): void {
   void bridge?.exitBusinessOsMode().catch(() => undefined);
 }
 
+/**
+ * Native Electron guests are composited above renderer content. A host-owned
+ * overlay is safe to reveal only after the active guest has been detached.
+ */
+export async function suspendCtoxGuestForHostOverlay(
+  bridge: DesktopCtoxBridge | undefined,
+): Promise<boolean> {
+  if (bridge === undefined) return true;
+  try {
+    return (await bridge.suspend())._tag === "completed";
+  } catch {
+    return false;
+  }
+}
+
 const EMPTY_GUEST_STATES: ReadonlyMap<string, CtoxGuestLifecycleState> = new Map();
 
 /**
@@ -656,7 +671,27 @@ export function CtoxModeProvider({
     [dispatchOpenApp, select],
   );
 
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const openSettings = useCallback(() => {
+    if (bridge === undefined) {
+      setSettingsOpen(true);
+      return;
+    }
+    // Electron WebContentsView surfaces are composited above the renderer.
+    // Do not reveal Workjet-owned settings until the native guest is actually
+    // detached, otherwise the guest can cover and intercept the dialog.
+    void suspendCtoxGuestForHostOverlay(bridge).then((suspended) => {
+      if (!mountedRef.current) return;
+      if (suspended) {
+        setSettingsOpen(true);
+        return;
+      }
+      toastManager.add({
+        type: "error",
+        title: "Could not open Business OS settings",
+        description: "The active Business OS surface could not be hidden safely.",
+      });
+    });
+  }, [bridge]);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   useEffect(() => {

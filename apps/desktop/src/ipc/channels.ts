@@ -105,6 +105,7 @@ export const CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL = "desktop:ctox-remove-ssh
 export const CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL = "desktop:ctox-enter-business-os-mode";
 export const CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL = "desktop:ctox-exit-business-os-mode";
 export const CTOX_ACTIVATE_CHANNEL = "desktop:ctox-activate";
+export const CTOX_SUSPEND_CHANNEL = "desktop:ctox-suspend";
 export const CTOX_DEACTIVATE_CHANNEL = "desktop:ctox-deactivate";
 export const CTOX_SET_GUEST_BOUNDS_CHANNEL = "desktop:ctox-set-guest-bounds";
 export const CTOX_LIST_APPS_CHANNEL = "desktop:ctox-list-apps";

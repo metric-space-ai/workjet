@@ -829,6 +829,39 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("suspends the native guest for host overlays and reattaches it warm", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    const returnBounds = { ...bounds, width: 920 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+
+      assert.deepEqual(yield* manager.suspend, { _tag: "completed" });
+      expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+      expect(harness.views[0]?.close).not.toHaveBeenCalled();
+      assert.deepEqual(yield* manager.setBounds(returnBounds), {
+        _tag: "failed",
+        code: "not_active",
+      });
+
+      assert.deepEqual(yield* manager.activate(descriptor.id, returnBounds), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.launch).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.setBounds).toHaveBeenLastCalledWith(returnBounds);
+      expect(harness.addChildView).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("evicts the least recently used warm guest through the shared teardown", () => {
     const harness = makeGuestHarness();
     const tenants = ["one", "two", "three", "four", "five"].map((name) => ({

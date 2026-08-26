@@ -152,6 +152,8 @@ export class CtoxGuestManager extends Context.Service<
       instanceId: string,
       bounds: CtoxGuestBounds,
     ) => Effect.Effect<CtoxManagedGuestResult>;
+    /** Detach the active guest without destroying its warm renderer state. */
+    readonly suspend: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivateInstance: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
     readonly setBounds: (bounds: CtoxGuestBounds) => Effect.Effect<CtoxManagedActionResult>;
@@ -708,6 +710,21 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             pool: new Map<string, PooledGuest>(),
           },
         ] as const;
+      }),
+    );
+
+    // Workjet-owned overlays such as Business OS settings must never be
+    // painted underneath Electron's native WebContentsView. Detach the active
+    // guest first, but keep it in the warm pool so closing the overlay can
+    // reattach the exact renderer without navigation or state loss.
+    const suspend = SynchronizedRef.modifyEffect(stateRef, (state) =>
+      Effect.sync(() => {
+        const active = attachedGuest(state);
+        if (active === undefined) {
+          return [{ _tag: "completed" } as const, state] as const;
+        }
+        detachGuest(active);
+        return [{ _tag: "completed" } as const, { ...state, activeId: undefined }] as const;
       }),
     );
 
@@ -1276,6 +1293,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       enterBusinessOsMode,
       exitBusinessOsMode,
       activate,
+      suspend,
       deactivate,
       deactivateInstance,
       setBounds,

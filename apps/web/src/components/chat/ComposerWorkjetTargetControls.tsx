@@ -3,9 +3,9 @@
  * The composer bar's Workjet TARGET controls — where and on what the next
  * turn runs (docs → chat-composer two-mode rework).
  *
- * Worker mode bar:  Worker · Computer · Extras. Nothing else.
- * Manual mode bar:  Harness · Provider · Model · Computer · Extras, plus a
- *                   custom-system-prompt affordance.
+ * Worker mode bar:  Worker · Computer · Context · Tools · Upload. Nothing else.
+ * Manual mode bar:  Worker/Manual · Computer · Harness · Model · Effort/Context
+ *                   · System Prompt · Tools · Upload.
  *
  * The computer ("Rechner") control is SELECTABLE in both modes: on a draft it
  * moves the draft to the chosen computer's environment through the existing

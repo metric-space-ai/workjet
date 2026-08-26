@@ -78,6 +78,22 @@ describe("CompactComposerControlsMenu", () => {
     expect(containsNode(menu, workerContent)).toBe(true);
   });
 
+  it("keeps System Prompt before Tools in the compact overflow menu", () => {
+    const systemPromptContent = <span data-test-system-prompt-menu="true">System prompt</span>;
+    const toolsContent = <span data-test-tools-menu="true">Tools</span>;
+    const menu = renderMenu({
+      ...baseProps,
+      systemPromptMenuContent: systemPromptContent,
+      workjetMenuContent: toolsContent,
+    });
+
+    expect(containsNode(menu, systemPromptContent)).toBe(true);
+    expect(containsNode(menu, toolsContent)).toBe(true);
+    expect(textContent(menu).indexOf("System prompt")).toBeLessThan(
+      textContent(menu).indexOf("Tools"),
+    );
+  });
+
   it("omits thread settings when the thread has no server configuration", () => {
     const menu = renderMenu(baseProps);
     const text = textContent(menu);

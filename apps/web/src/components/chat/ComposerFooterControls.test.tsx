@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ComposerFooterControls, type ComposerFooterControlsProps } from "./ComposerFooterControls";
+import {
+  COMPOSER_FOOTER_ROW_BREAKPOINTS,
+  ComposerFooterControls,
+  composerFooterRowCountForWidth,
+  type ComposerFooterControlsProps,
+} from "./ComposerFooterControls";
 
 const baseProps: ComposerFooterControlsProps = {
   workerMode: false,
@@ -24,6 +29,20 @@ function render(props: Partial<ComposerFooterControlsProps> = {}): string {
 }
 
 describe("ComposerFooterControls", () => {
+  it("maps measured form widths to exactly one, two, then three ordered rows", () => {
+    expect(composerFooterRowCountForWidth(null)).toBe(1);
+    expect(composerFooterRowCountForWidth(COMPOSER_FOOTER_ROW_BREAKPOINTS.twoRowMaxWidth + 1)).toBe(
+      1,
+    );
+    expect(composerFooterRowCountForWidth(COMPOSER_FOOTER_ROW_BREAKPOINTS.twoRowMaxWidth)).toBe(2);
+    expect(
+      composerFooterRowCountForWidth(COMPOSER_FOOTER_ROW_BREAKPOINTS.threeRowMaxWidth + 1),
+    ).toBe(2);
+    expect(composerFooterRowCountForWidth(COMPOSER_FOOTER_ROW_BREAKPOINTS.threeRowMaxWidth)).toBe(
+      3,
+    );
+  });
+
   /**
    * Provider Plan/Build stays inline; thread role and capabilities live in one
    * compact settings menu instead of spending permanent composer width.
@@ -150,6 +169,45 @@ describe("ComposerFooterControls", () => {
     });
 
     expect(markup).toContain('data-test-system-prompt="true"');
+  });
+
+  it("keeps the full Workjet manual contract ordered across measured rows", () => {
+    const markup = render({
+      workjetWorkers: [],
+      selectedWorkjetWorkerId: null,
+      onSelectWorkjetWorker: () => undefined,
+      computerControl: <span data-test-computer="true">computer</span>,
+      manualTargetControls: <span data-test-manual-targets="true">harness-model</span>,
+      traitsPicker: <span data-test-effort="true">effort</span>,
+      contextWindowControl: <span data-test-context="true">context</span>,
+      systemPromptControl: <span data-test-system-prompt="true">prompt</span>,
+      attachmentControl: <span data-test-upload="true">upload</span>,
+      sendToWorkerControl: <span data-test-send="true">send</span>,
+      showInteractionModeToggle: false,
+      rowCount: 3,
+    });
+
+    const orderedMarkers = [
+      'aria-label="Worker"',
+      'data-test-computer="true"',
+      'data-test-manual-targets="true"',
+      'data-test-effort="true"',
+      'data-test-context="true"',
+      'data-test-system-prompt="true"',
+      'aria-label="Thread tools"',
+      'data-test-upload="true"',
+      'data-test-send="true"',
+    ];
+    let previousIndex = -1;
+    for (const marker of orderedMarkers) {
+      const nextIndex = markup.indexOf(marker);
+      expect(nextIndex, `missing or misplaced marker: ${marker}`).toBeGreaterThan(previousIndex);
+      previousIndex = nextIndex;
+    }
+
+    expect(markup).toContain('data-composer-row-break-after="computer"');
+    expect(markup).toContain('data-composer-row-break-after="context"');
+    expect(markup).toContain('data-composer-control-density="compact"');
   });
 
   it("uses one responsive flow and keeps the Tools cluster atomic", () => {

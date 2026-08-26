@@ -98,7 +98,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerFooterControls } from "./ComposerFooterControls";
+import { ComposerFooterControls, composerFooterRowCountForWidth } from "./ComposerFooterControls";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
   COMPOSER_COMPUTER_LOCKED_REASON,
@@ -281,8 +281,6 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
-  activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
-  activeThreadProviderDisplayName: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -306,12 +304,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          providerDisplayName={props.activeThreadProviderDisplayName}
-        />
-      ) : null}
       {props.isPreparingWorktree ? (
         <span className="text-secondary-label text-xs">Preparing worktree...</span>
       ) : null}
@@ -1482,6 +1474,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
+  const [composerFooterRowCount, setComposerFooterRowCount] = useState<1 | 2 | 3>(1);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
@@ -1951,8 +1944,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const composerForm = composerFormRef.current;
     if (!composerForm) return;
     const measureComposerFormWidth = () => composerForm.clientWidth;
-    const measureFooterCompactness = () => {
-      const composerFormWidth = measureComposerFormWidth();
+    const measureFooterCompactness = (composerFormWidth = measureComposerFormWidth()) => {
       const footerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
         hasWideActions: composerFooterHasWideActions,
       });
@@ -1967,13 +1959,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       };
     };
 
-    const initialCompactness = measureFooterCompactness();
+    const initialComposerFormWidth = measureComposerFormWidth();
+    const initialCompactness = measureFooterCompactness(initialComposerFormWidth);
+    setComposerFooterRowCount(composerFooterRowCountForWidth(initialComposerFormWidth));
     setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
     setIsComposerFooterCompact(initialCompactness.footerCompact);
     if (typeof ResizeObserver === "undefined") return;
 
     const observer = new ResizeObserver(() => {
-      const nextCompactness = measureFooterCompactness();
+      const composerFormWidth = measureComposerFormWidth();
+      const nextCompactness = measureFooterCompactness(composerFormWidth);
+      const nextRowCount = composerFooterRowCountForWidth(composerFormWidth);
+      setComposerFooterRowCount((previous) =>
+        previous === nextRowCount ? previous : nextRowCount,
+      );
       setIsComposerPrimaryActionsCompact((previous) =>
         previous === nextCompactness.primaryActionsCompact
           ? previous
@@ -3229,6 +3228,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  const composerSystemPromptControl =
+    workerModeActive || !workjetManualControlsAvailable ? null : (
+      <ComposerSystemPromptControl
+        value={
+          composerTargetIsThread
+            ? (workjetManagedInstructions ?? "")
+            : (draftManagedInstructions ?? "")
+        }
+        busy={workjetCapabilityBusy}
+        disabled={composerTargetIsThread && workjetCapabilityDisabled}
+        draftPending={!composerTargetIsThread}
+        onApply={handleApplyManagedInstructions}
+      />
+    );
+
+  const composerAttachmentControl =
+    !isComposerApprovalState && pendingUserInputs.length === 0 ? (
+      <ComposerAttachmentMenu
+        disabled={projectSelectionRequired || isConnecting}
+        onAttachImages={(files) => void addComposerImages(files)}
+        onAddProjectFile={() => {
+          insertComposerTextAtEnd("@", { ensureLeadingBoundary: true });
+        }}
+      />
+    ) : null;
+
   return (
     <form
       ref={composerFormRef}
@@ -3683,27 +3708,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               data-chat-composer-footer="true"
               data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
               className={cn(
-                "flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4",
+                "flex min-w-0 flex-nowrap items-end justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4",
                 pendingUserInputs.length > 0 && "pt-2",
                 isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                 showMobilePendingAnswerActions && "hidden sm:flex",
               )}
             >
-              {/* WRAP, never clip: this row used to be a hidden-scrollbar
-                  overflow-x scroller, which left the Manual/Effort/System-
-                  prompt chips invisible past the right edge with no cue they
-                  existed (measured: scrollWidth 1136 in a 720px row). Chips
-                  that don't fit now wrap onto a second line instead. */}
+              {/* The left flow owns the ordered Workjet controls. It wraps at
+                  measured form widths; the primary send action is bottom-
+                  aligned with the last row and never overlaps the flow. */}
               <div className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-start gap-1 p-1 ps-3.5">
-                {!isComposerApprovalState && pendingUserInputs.length === 0 ? (
-                  <ComposerAttachmentMenu
-                    disabled={projectSelectionRequired || isConnecting}
-                    onAttachImages={(files) => void addComposerImages(files)}
-                    onAddProjectFile={() => {
-                      insertComposerTextAtEnd("@", { ensureLeadingBoundary: true });
-                    }}
-                  />
-                ) : null}
                 {/* With Workjet manual controls the retired provider picker
                     stays hidden in BOTH layouts — compact used to fall back
                     to it, resurrecting the removed provider chip (K-A2). */}
@@ -3748,6 +3762,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
+                      systemPromptMenuContent={composerSystemPromptControl}
                       workjetMenuContent={
                         effectiveWorkjetGreppyEnabled === null ? undefined : (
                           <WorkjetCapabilityMenu
@@ -3768,6 +3783,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       onToggleInteractionMode={toggleInteractionMode}
                     />
+                    {composerAttachmentControl}
                     {workerModeActive
                       ? null
                       : (workjetSendToWorkerControl?.({ compact: true }) ?? null)}
@@ -3822,20 +3838,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       )
                     }
-                    systemPromptControl={
-                      workerModeActive || !workjetManualControlsAvailable ? null : (
-                        <ComposerSystemPromptControl
-                          value={
-                            composerTargetIsThread
-                              ? (workjetManagedInstructions ?? "")
-                              : (draftManagedInstructions ?? "")
-                          }
-                          busy={workjetCapabilityBusy}
-                          disabled={composerTargetIsThread && workjetCapabilityDisabled}
-                          draftPending={!composerTargetIsThread}
-                          onApply={handleApplyManagedInstructions}
+                    contextWindowControl={
+                      activeContextWindow ? (
+                        <ContextWindowMeter
+                          usage={activeContextWindow}
+                          providerDisplayName={activeThreadProviderDisplayName}
                         />
-                      )
+                      ) : null
+                    }
+                    systemPromptControl={composerSystemPromptControl}
+                    attachmentControl={composerAttachmentControl}
+                    rowCount={
+                      !workerModeActive && workjetManualControlsAvailable
+                        ? composerFooterRowCount
+                        : 1
                     }
                     traitsPicker={workerModeActive ? null : providerTraitsPicker}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
@@ -3868,8 +3884,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               >
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
-                  activeContextWindow={activeContextWindow}
-                  activeThreadProviderDisplayName={activeThreadProviderDisplayName}
                   pendingAction={pendingPrimaryAction}
                   isRunning={phase === "running"}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}

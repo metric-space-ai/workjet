@@ -4,7 +4,7 @@ import type {
   WorkjetConnectionSummary,
   WorkjetWorkerProfile,
 } from "@t3tools/contracts";
-import { memo, type ReactNode } from "react";
+import { memo, type CSSProperties, type ReactNode } from "react";
 import { BotIcon, PencilRulerIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
@@ -14,6 +14,26 @@ import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
 import type { WorkjetSelectableRole } from "./WorkjetRoleControl";
 import { Separator } from "../ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+export type ComposerFooterRowCount = 1 | 2 | 3;
+
+/**
+ * Measured composer-form breakpoints. The send action occupies its own fixed
+ * width, so these are deliberately based on the form rather than the viewport:
+ * a sidebar or inspector can narrow the same window without changing the
+ * responsive contract. Full Workjet manual mode uses one, two, then three
+ * ordered rows at these tiers; the phone overflow menu remains a single row.
+ */
+export const COMPOSER_FOOTER_ROW_BREAKPOINTS = Object.freeze({
+  threeRowMaxWidth: 639,
+  twoRowMaxWidth: 959,
+});
+
+export function composerFooterRowCountForWidth(width: number | null): ComposerFooterRowCount {
+  if (width === null || width > COMPOSER_FOOTER_ROW_BREAKPOINTS.twoRowMaxWidth) return 1;
+  if (width > COMPOSER_FOOTER_ROW_BREAKPOINTS.threeRowMaxWidth) return 2;
+  return 3;
+}
 
 /**
  * The PROVIDER-SPECIFIC Plan/Build toggle. The toggle is shown only for
@@ -75,7 +95,8 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
 export interface ComposerFooterControlsProps {
   /**
    * Worker mode ("a saved worker is selected") shows ONLY Worker · Computer ·
-   * Extras. A worker bundles harness, model, effort, computer and its own
+   * Context · Tools · Upload. A worker bundles harness, model, effort,
+   * computer and its own
    * task text, so the manual controls, the Plan/Build toggle, the
    * `Code | Orchestrator` radio (with its settings gear) and "Send to worker"
    * all disappear — two sources of truth for one decision is a farce.
@@ -93,16 +114,20 @@ export interface ComposerFooterControlsProps {
   readonly onSelectWorkjetWorker?: ((workerId: string | null) => void) | undefined;
   /**
    * The Computer ("Rechner") select — after the Worker control in worker
-   * mode, second in the manual row (operator-specified order: mode ·
-   * computer · harness · model · model settings).
+   * mode and after Worker/Manual in the manual row. The manual sequence then
+   * continues Harness · Model · Effort/Context · System Prompt · Tools.
    */
   readonly computerControl?: ReactNode;
   /** Legacy provider/model picker, ordered after Worker and Computer. */
   readonly providerTargetControl?: ReactNode;
   /** Manual mode's Harness · Model selects, rendered after the computer. */
   readonly manualTargetControls?: ReactNode;
+  /** Context usage status, ordered after effort and before prompt/tools. */
+  readonly contextWindowControl?: ReactNode;
   /** Custom-system-prompt affordance; manual mode only. */
   readonly systemPromptControl?: ReactNode;
+  /** The visible + menu, ordered after Tools and before the primary send. */
+  readonly attachmentControl?: ReactNode;
   /** Provider traits picker, already resolved by the caller; null when the provider has none. */
   readonly traitsPicker: ReactNode;
   readonly showInteractionModeToggle: boolean;
@@ -125,6 +150,8 @@ export interface ComposerFooterControlsProps {
   readonly decisionHubConnectionId?: string | null | undefined;
   readonly onDecisionHubConnectionChange?: ((connectionId: string) => void) | undefined;
   readonly onOpenWorkjetSettings: () => void;
+  /** Full manual-mode row contract: 1, 2, or 3 ordered rows. */
+  readonly rowCount?: ComposerFooterRowCount;
 }
 
 /**
@@ -133,15 +160,37 @@ export interface ComposerFooterControlsProps {
  *
  * It exists as one component so the bar contract is testable in one place:
  *
- *   Worker mode:  Worker · Computer · Extras — nothing else.
- *   Manual mode:  Computer (after the model controls to its left) · Worker ·
- *                 traits · Plan/Build · Code|Orchestrator · Extras · custom
- *                 system prompt · Send to worker.
+ *   Worker mode:  Worker · Computer · Context · Tools · Upload — nothing else.
+ *   Manual mode:  Worker/Manual · Computer · Harness · Model · Effort/Context
+ *                 · System Prompt · Tools · Upload · Send to worker.
  */
 export const ComposerFooterControls = memo(function ComposerFooterControls(
   props: ComposerFooterControlsProps,
 ) {
   const separator = <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />;
+  const rowCount = props.rowCount ?? 1;
+  const contextWindowControl = props.contextWindowControl ? (
+    <span className="inline-flex shrink-0 items-center gap-1" data-composer-context-window="true">
+      {separator}
+      {props.contextWindowControl}
+    </span>
+  ) : null;
+  const rowBreak = (after: "computer" | "context") => (
+    <span
+      aria-hidden="true"
+      className="h-0 w-0 basis-full p-0"
+      data-composer-row-break-after={after}
+    />
+  );
+  const controlDensityStyle: CSSProperties | undefined =
+    rowCount === 1
+      ? undefined
+      : ({
+          "--composer-control-height": rowCount === 2 ? "1.625rem" : "1.5rem",
+          "--composer-control-font-size": rowCount === 2 ? "12px" : "11px",
+          "--composer-control-gap": rowCount === 2 ? "0.0625rem" : "0rem",
+          "--composer-control-padding": rowCount === 2 ? "0.25rem" : "0.1875rem",
+        } as CSSProperties);
   const workerControl =
     props.workjetWorkers === undefined || props.onSelectWorkjetWorker === undefined ? null : (
       <ComposerWorkerControl
@@ -184,7 +233,9 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
           </>
         )}
         {props.computerControl ?? null}
+        {contextWindowControl}
         {capabilityMenu}
+        {props.attachmentControl ?? null}
       </>
     );
   }
@@ -197,7 +248,9 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
   return (
     <div
       className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1"
+      data-composer-control-density={rowCount === 1 ? "comfortable" : "compact"}
       data-composer-manual-responsive-flow="true"
+      style={controlDensityStyle}
     >
       {workerControl === null ? null : (
         <span className="inline-flex shrink-0 items-center gap-1">
@@ -211,6 +264,7 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
           {separator}
         </span>
       ) : null}
+      {rowCount === 3 ? rowBreak("computer") : null}
       {props.providerTargetControl ? (
         <span className="inline-flex shrink-0 items-center gap-1">
           {props.providerTargetControl}
@@ -229,9 +283,12 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
             </TooltipPopup>
           </Tooltip>
         ))}
+      {contextWindowControl}
+      {rowCount >= 2 ? rowBreak("context") : null}
       {props.systemPromptControl ||
       props.showInteractionModeToggle ||
       capabilityMenu ||
+      props.attachmentControl ||
       props.sendToWorkerControl ? (
         <span
           className="inline-flex shrink-0 items-center gap-0.5"
@@ -244,6 +301,7 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
             onToggleInteractionMode={props.onToggleInteractionMode}
           />
           {capabilityMenu}
+          {props.attachmentControl ?? null}
           {props.sendToWorkerControl}
         </span>
       ) : null}

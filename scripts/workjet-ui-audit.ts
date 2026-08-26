@@ -9,6 +9,8 @@ import { CdpClient, MAX_CDP_MESSAGE_BYTES } from "./lib/cdpClient.ts";
 const MAX_TARGETS = 32;
 const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024;
 const DEFAULT_PORT = 9300;
+export const TRANSIENT_TOAST_SELECTOR =
+  '[data-slot="toast-viewport"] [data-starting-style], [data-slot="toast-viewport"] [data-ending-style]';
 
 export interface AuditArguments {
   readonly port: number;
@@ -390,6 +392,20 @@ function consoleMessage(params: unknown): unknown {
 async function settle(client: CdpClient): Promise<void> {
   await client.evaluate(
     `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 200))))`,
+    2_000,
+  );
+  await client.evaluate(
+    `new Promise((resolve) => {
+      const deadline = performance.now() + 1_000;
+      const wait = () => {
+        if (!document.querySelector(${JSON.stringify(TRANSIENT_TOAST_SELECTOR)}) || performance.now() >= deadline) {
+          resolve();
+          return;
+        }
+        setTimeout(wait, 50);
+      };
+      wait();
+    })`,
     2_000,
   );
 }

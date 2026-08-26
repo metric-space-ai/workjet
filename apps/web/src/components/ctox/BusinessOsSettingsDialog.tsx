@@ -10,6 +10,7 @@ import { RefreshCw, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
+import { APP_VERSION } from "../../branding";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { BusinessOsMobilePairingSection } from "../settings/BusinessOsMobilePairingSection";
 
@@ -207,7 +208,7 @@ function UpdatesPage({
 
   return (
     <section aria-labelledby="business-os-updates-title">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-col items-start justify-between gap-4 xl:flex-row">
         <div>
           <h2 id="business-os-updates-title" className="text-xl font-semibold">
             Shell-Updates
@@ -216,7 +217,9 @@ function UpdatesPage({
             Backend- und Shell-Versionen bleiben getrennt. Blockierte Instanzen zählen nicht als
             aktuell.
           </p>
-          {rolloutStatus !== null && rolloutStatus.phase !== "idle" ? (
+          {rolloutStatus !== null &&
+          rolloutStatus.phase !== "idle" &&
+          rolloutStatus.instanceIds.length > 0 ? (
             <p
               className="mt-2 text-xs text-muted-foreground"
               data-shell-rollout-phase={rolloutStatus.phase}
@@ -245,10 +248,10 @@ function UpdatesPage({
             </div>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:cursor-not-allowed disabled:bg-muted/30 disabled:text-muted-foreground disabled:opacity-70"
             onClick={reload}
             disabled={loading}
           >
@@ -257,7 +260,7 @@ function UpdatesPage({
           </button>
           <button
             type="button"
-            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
+            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70"
             onClick={checkAll}
             disabled={runningId !== null || rows.length === 0}
           >
@@ -265,7 +268,7 @@ function UpdatesPage({
           </button>
           <button
             type="button"
-            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
+            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70"
             onClick={startRollout}
             disabled={
               runningId !== null ||
@@ -321,6 +324,17 @@ function UpdatesPage({
         <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           Das Fleet-Inventar konnte nicht gelesen werden.
         </p>
+      ) : rows.length === 0 ? (
+        <div className="rounded-lg border border-border bg-muted/10 px-5 py-8 text-center">
+          <p className="font-medium">
+            {loading ? "Fleet wird geprüft…" : "Keine CTOX-Instanzen registriert"}
+          </p>
+          <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
+            {loading
+              ? "Erreichbarkeit, Versionen und Updatefähigkeit werden geladen."
+              : "Verbinde zuerst mindestens ein Backend unter Backends & Sync. Danach erscheinen kompatible Shell-Updates hier."}
+          </p>
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[1180px] text-left text-sm">
@@ -442,13 +456,6 @@ function UpdatesPage({
                   ) : null}
                 </Fragment>
               ))}
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
-                    {loading ? "Fleet wird geprüft…" : "Keine CTOX-Instanzen registriert."}
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>
@@ -577,6 +584,22 @@ export function BusinessOsSettingsDialog({
                 <p className="mt-1 text-sm text-muted-foreground">
                   {selected?.displayName ?? "Keine CTOX-Instanz ausgewählt"}
                 </p>
+                {selected === undefined ? (
+                  <button
+                    type="button"
+                    className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                    onClick={() => choosePage("backends")}
+                  >
+                    Backend auswählen
+                  </button>
+                ) : (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    RxDB/WebRTC ·{" "}
+                    {businessOsInstanceDataPlaneReady(selected, readyInstanceId)
+                      ? "bereit"
+                      : "nicht bestätigt"}
+                  </p>
+                )}
               </div>
             ) : null}
             {page === "backends" ? (
@@ -588,7 +611,13 @@ export function BusinessOsSettingsDialog({
                   <div key={instance.id} className="rounded-lg border border-border p-4">
                     <div className="flex items-center justify-between gap-4">
                       <p className="font-medium">{instance.displayName}</p>
-                      <span className="text-xs text-muted-foreground">{instance.status}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        {instance.status === "pairing_expired"
+                          ? "Pairing abgelaufen"
+                          : instance.status === "available"
+                            ? "Verfügbar"
+                            : instance.status}
+                      </span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       RxDB/WebRTC ·{" "}
@@ -605,21 +634,46 @@ export function BusinessOsSettingsDialog({
               </div>
             ) : null}
             {page === "apps" ? (
-              <p className="mt-4 text-sm text-muted-foreground">
-                Apps werden pro ausgewählter CTOX-Instanz verwaltet und bleiben von Coding-Harnesses
-                getrennt.
-              </p>
+              <div className="mt-6 rounded-lg border border-border p-5">
+                <p className="text-sm font-medium">
+                  {selected === undefined
+                    ? "Kein Backend ausgewählt"
+                    : `Aktives Backend: ${selected.displayName}`}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Apps werden pro CTOX-Instanz verwaltet und bleiben von Coding-Harnesses getrennt.
+                </p>
+                {selected === undefined ? (
+                  <button
+                    type="button"
+                    className="mt-4 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                    onClick={() => choosePage("backends")}
+                  >
+                    Backends & Sync öffnen
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             {page === "appearance" ? (
-              <p className="mt-4 text-sm text-muted-foreground">
-                Business OS übernimmt das Workjet-Erscheinungsbild. Eine zweite
-                Desktop-Theme-Schicht existiert nicht.
-              </p>
+              <div className="mt-6 rounded-lg border border-border p-5">
+                <p className="text-sm font-medium">Workjet-Darstellung aktiv</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Business OS übernimmt Theme, Kontrast und Schrift aus Workjet. Es existiert keine
+                  abweichende Desktop-Theme-Schicht.
+                </p>
+              </div>
             ) : null}
             {page === "notifications" ? (
-              <p className="mt-4 text-sm text-muted-foreground">
-                Benachrichtigungen werden pro Workjet-Profil und CTOX-Instanz angezeigt.
-              </p>
+              <div className="mt-6 rounded-lg border border-border p-5">
+                <p className="text-sm font-medium">Profilstandard aktiv</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Benachrichtigungen gelten für dieses Workjet-Profil und das jeweils aktive
+                  CTOX-Backend.
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Aktives Backend: {selected?.displayName ?? "Keines ausgewählt"}
+                </p>
+              </div>
             ) : null}
             {page === "diagnostics" ? (
               <div className="mt-6 rounded-lg border border-border p-5 text-sm">
@@ -627,11 +681,32 @@ export function BusinessOsSettingsDialog({
                 <p className="mt-1 text-muted-foreground">
                   Datenpfad: {selected?.healthSummary.dataPlane ?? "unbekannt"}
                 </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                    onClick={reload}
+                  >
+                    Erneut prüfen
+                  </button>
+                  {selected === undefined ? (
+                    <button
+                      type="button"
+                      className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                      onClick={() => choosePage("backends")}
+                    >
+                      Backend verbinden
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             {page === "about" ? (
               <div className="mt-6 rounded-lg border border-border p-5 text-sm">
                 <p className="font-medium">Workjet</p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  Version {APP_VERSION}
+                </p>
                 <p className="mt-1 text-muted-foreground">
                   CTOX ist das Backend. Workjet ist die einzige Desktop- und Mobile-Nutzer-App.
                 </p>

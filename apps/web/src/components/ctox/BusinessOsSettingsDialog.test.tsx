@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import computersSettingsSource from "../settings/WorkjetComputersSettings.tsx?raw";
+import pairingSource from "../settings/BusinessOsMobilePairingSection.tsx?raw";
 import dialogSource from "./BusinessOsSettingsDialog.tsx?raw";
 import {
   businessOsInstanceDataPlaneReady,
@@ -41,6 +42,16 @@ describe("BusinessOsSettingsDialog", () => {
   it("keeps QR pairing exclusively in Business OS settings", () => {
     expect(dialogSource).toContain("BusinessOsMobilePairingSection");
     expect(computersSettingsSource).not.toContain("BusinessOsMobilePairingSection");
+    expect(pairingSource).toContain("Mobiles Pairing");
+    expect(pairingSource).toContain("QR-Code anzeigen");
+    expect(pairingSource).not.toContain('title="Mobile pairing"');
+  });
+
+  it("keeps empty fleet updates responsive and actionable", () => {
+    expect(dialogSource).toContain("Keine CTOX-Instanzen registriert");
+    expect(dialogSource).toContain("Backend auswählen");
+    expect(dialogSource).toContain("Backend verbinden");
+    expect(dialogSource).toContain("rolloutStatus.instanceIds.length > 0");
   });
 
   it("uses the authenticated selected guest as confirmed WebRTC evidence", () => {

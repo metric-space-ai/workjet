@@ -20,7 +20,7 @@ const INVITE_TTL_SECONDS = 300;
 function publicErrorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
-    : "The pairing invite failed.";
+    : "Die Pairing-Einladung ist fehlgeschlagen.";
 }
 
 export function BusinessOsMobilePairingSection({
@@ -55,7 +55,7 @@ export function BusinessOsMobilePairingSection({
       if (!isAtomCommandInterrupted(result)) {
         toastManager.add({
           type: "error",
-          title: "Could not revoke QR code",
+          title: "QR-Code konnte nicht widerrufen werden",
           description: publicErrorMessage(squashAtomCommandFailure(result)),
         });
       }
@@ -80,7 +80,7 @@ export function BusinessOsMobilePairingSection({
       if (!isAtomCommandInterrupted(result)) {
         toastManager.add({
           type: "error",
-          title: "Could not create QR code",
+          title: "QR-Code konnte nicht erstellt werden",
           description: publicErrorMessage(squashAtomCommandFailure(result)),
         });
       }
@@ -93,15 +93,15 @@ export function BusinessOsMobilePairingSection({
   const disabled = environmentId === null || isCreating || isRevoking;
 
   return (
-    <SettingsSection title="Mobile pairing">
+    <SettingsSection title="Mobiles Pairing">
       <SettingsRow
-        title="Pair Workjet with this CTOX backend"
-        description="Scan a short-lived QR code from Workjet on iOS or Android. Signaling and access credentials are included securely; there is nothing to type."
+        title="Workjet mit diesem CTOX-Backend verbinden"
+        description="Scanne in Workjet auf iOS oder Android einen kurzlebigen QR-Code. Signaling und Zugangsdaten sind sicher enthalten; eine manuelle Eingabe ist nicht nötig."
         control={
           invite === null ? (
             <Button type="button" size="sm" onClick={() => void create()} disabled={disabled}>
               {isCreating ? <Spinner className="size-3.5" /> : <QrCodeIcon className="size-3.5" />}
-              {isCreating ? "Creating…" : "Show QR code"}
+              {isCreating ? "Wird erstellt…" : "QR-Code anzeigen"}
             </Button>
           ) : null
         }
@@ -114,22 +114,22 @@ export function BusinessOsMobilePairingSection({
                 size={220}
                 level="M"
                 marginSize={2}
-                title={`Pair Workjet with ${invite.invite.display_name}`}
+                title={`Workjet mit ${invite.invite.display_name} verbinden`}
               />
             </div>
             <div className="min-w-0 space-y-3 text-sm">
               <div>
                 <p className="font-medium text-foreground">{invite.invite.display_name}</p>
                 <p className="text-muted-foreground">
-                  Selected backend: {environmentLabel ?? "Connected CTOX backend"}
+                  Ausgewähltes Backend: {environmentLabel ?? "Verbundenes CTOX-Backend"}
                 </p>
                 <p className="text-muted-foreground">
-                  Expires at {formatMobileInviteExpiry(invite.expiresAt)}
+                  Gültig bis {formatMobileInviteExpiry(invite.expiresAt)}
                 </p>
               </div>
               <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-                Treat this QR code like a temporary password. It expires after five minutes and can
-                be revoked immediately.
+                Behandle diesen QR-Code wie ein temporäres Passwort. Er läuft nach fünf Minuten ab
+                und kann sofort widerrufen werden.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -144,7 +144,7 @@ export function BusinessOsMobilePairingSection({
                   ) : (
                     <RefreshCwIcon className="size-3.5" />
                   )}
-                  Renew
+                  Erneuern
                 </Button>
                 <Button
                   type="button"
@@ -158,7 +158,7 @@ export function BusinessOsMobilePairingSection({
                   ) : (
                     <ShieldXIcon className="size-3.5" />
                   )}
-                  Revoke
+                  Widerrufen
                 </Button>
               </div>
             </div>
@@ -166,8 +166,8 @@ export function BusinessOsMobilePairingSection({
         ) : null}
       </SettingsRow>
       <SettingsRow
-        title="No manual signaling setup"
-        description="Workjet never asks for a signaling server, room, or password. The CTOX backend creates the complete, revocable handshake."
+        title="Kein manuelles Signaling"
+        description="Workjet fragt weder nach Signaling-Server, Raum noch Passwort. Das CTOX-Backend erzeugt den vollständigen, widerrufbaren Handshake."
       />
     </SettingsSection>
   );

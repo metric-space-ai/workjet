@@ -64,6 +64,13 @@ function fleetHealthLabel(row: CtoxShellFleetRow): string {
   return row.shell.health;
 }
 
+export function fleetInstanceDisplayTitle(displayName: string): string {
+  const normalized = displayName.trim();
+  if (!/^biz_[a-z0-9-]+$/i.test(normalized)) return normalized;
+  const shortId = normalized.slice(4).split("-")[0]?.slice(0, 8) || normalized.slice(4, 12);
+  return `Paired backend · ${shortId}`;
+}
+
 export function businessOsInstanceDataPlaneReady(
   instance: { readonly id: string; readonly healthSummary: { readonly dataPlaneReady: boolean } },
   readyInstanceId: string | null,
@@ -337,7 +344,7 @@ function UpdatesPage({
                 <Fragment key={row.instanceId}>
                   <tr data-shell-fleet-instance={row.instanceId}>
                     <td className="px-4 py-3">
-                      <p className="font-medium">{row.displayName}</p>
+                      <p className="font-medium">{fleetInstanceDisplayTitle(row.displayName)}</p>
                       <p className="text-xs text-muted-foreground">{row.source}</p>
                     </td>
                     <td className="px-4 py-3">{row.reachable ? "Erreichbar" : "Offline"}</td>

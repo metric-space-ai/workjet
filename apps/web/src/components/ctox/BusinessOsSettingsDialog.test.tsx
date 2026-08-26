@@ -6,6 +6,7 @@ import dialogSource from "./BusinessOsSettingsDialog.tsx?raw";
 import {
   businessOsInstanceDataPlaneReady,
   BusinessOsSettingsDialog,
+  fleetInstanceDisplayTitle,
 } from "./BusinessOsSettingsDialog";
 
 describe("BusinessOsSettingsDialog", () => {
@@ -77,5 +78,12 @@ describe("BusinessOsSettingsDialog", () => {
     expect(dialogSource).toContain("Details");
     expect(dialogSource).toContain("Erneut versuchen");
     expect(dialogSource).toContain("row.shell.errorCode ?? row.blocker");
+  });
+
+  it("keeps opaque pairing ids out of the fleet table", () => {
+    expect(fleetInstanceDisplayTitle("biz_2a75d5c5-da16-4a17-90d2-a941ad53f095")).toBe(
+      "Paired backend · 2a75d5c5",
+    );
+    expect(fleetInstanceDisplayTitle("GPU3 A4500")).toBe("GPU3 A4500");
   });
 });

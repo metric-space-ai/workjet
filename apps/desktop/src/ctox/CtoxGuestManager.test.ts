@@ -1458,6 +1458,13 @@ describe("CtoxGuestManager", () => {
     ).toBe(false);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/api/business-os/launch-context",
+        "fetch",
+        "https://ctox.dev",
+      ),
+    ).toBe(false);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/api/business-os/status",
         "xhr",
         "https://ctox.dev",

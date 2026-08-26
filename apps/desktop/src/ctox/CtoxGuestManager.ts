@@ -38,6 +38,7 @@ const SENSITIVE_QUERY_PARAMETERS = new Set([
   "launch_token",
 ]);
 const ALLOWED_CONTROL_PATHS = new Set([
+  "/api/business-os/launch-context",
   "/api/business-os/status",
   "/api/business-os/sync/config",
   "/api/business-os/ctox/subscription-auth/start",

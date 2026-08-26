@@ -103,10 +103,12 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
         }}
       >
         <TooltipTrigger
-          render={<ComposerSelectControl className="font-medium" aria-label="Worker" />}
+          render={
+            <ComposerSelectControl className="min-w-0 max-w-52 font-medium" aria-label="Worker" />
+          }
         >
           <ComposerControlIcon icon={UsersRoundIcon} />
-          <SelectValue>{label}</SelectValue>
+          <SelectValue className="min-w-0">{label}</SelectValue>
         </TooltipTrigger>
         <SelectPopup alignItemWithTrigger={false}>
           <SelectItem value={MANUAL_WORKER_VALUE} hideIndicator className="min-w-64 py-2">

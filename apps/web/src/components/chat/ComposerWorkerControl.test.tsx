@@ -79,6 +79,16 @@ describe("the bar's leftmost decision", () => {
     expect(markup).toContain("Sol · Completion");
   });
 
+  it("keeps a long worker label inside the bounded composer trigger", () => {
+    const markup = render({
+      workers: [worker({ name: `Worker ${"x".repeat(180)}` })],
+      selectedWorkerId: "worker-sol",
+    });
+
+    expect(markup).toContain("max-w-52");
+    expect(markup).toContain("min-w-0");
+  });
+
   it("shows what each worker settles, so picking is not blind", () => {
     // One choice settles harness, model and effort; the menu says which.
     const text = menuText();

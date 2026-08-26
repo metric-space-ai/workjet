@@ -79,16 +79,22 @@ describe("CompactComposerControlsMenu", () => {
   });
 
   it("keeps System Prompt before Tools in the compact overflow menu", () => {
+    const contextWindowContent = <span data-test-context-window-menu="true">Context</span>;
     const systemPromptContent = <span data-test-system-prompt-menu="true">System prompt</span>;
     const toolsContent = <span data-test-tools-menu="true">Tools</span>;
     const menu = renderMenu({
       ...baseProps,
+      contextWindowMenuContent: contextWindowContent,
       systemPromptMenuContent: systemPromptContent,
       workjetMenuContent: toolsContent,
     });
 
+    expect(containsNode(menu, contextWindowContent)).toBe(true);
     expect(containsNode(menu, systemPromptContent)).toBe(true);
     expect(containsNode(menu, toolsContent)).toBe(true);
+    expect(textContent(menu).indexOf("Context")).toBeLessThan(
+      textContent(menu).indexOf("System prompt"),
+    );
     expect(textContent(menu).indexOf("System prompt")).toBeLessThan(
       textContent(menu).indexOf("Tools"),
     );

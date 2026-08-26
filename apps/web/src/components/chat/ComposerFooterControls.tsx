@@ -18,11 +18,12 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export type ComposerFooterRowCount = 1 | 2 | 3;
 
 /**
- * Measured composer-form breakpoints. The send action occupies its own fixed
- * width, so these are deliberately based on the form rather than the viewport:
- * a sidebar or inspector can narrow the same window without changing the
- * responsive contract. Full Workjet manual mode uses one, two, then three
- * ordered rows at these tiers; the phone overflow menu remains a single row.
+ * Measured left-flow breakpoints. The primary send action occupies its own
+ * fixed-width sibling, so the caller must measure the actual control flow
+ * rather than the outer form or viewport. A sidebar or inspector can narrow
+ * the same window without changing the responsive contract. Full Workjet
+ * manual mode uses one, two, then three ordered rows at these tiers; the phone
+ * overflow menu remains a single row.
  */
 export const COMPOSER_FOOTER_ROW_BREAKPOINTS = Object.freeze({
   threeRowMaxWidth: 639,

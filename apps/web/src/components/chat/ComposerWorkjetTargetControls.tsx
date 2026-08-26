@@ -194,7 +194,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
           <TooltipTrigger
             render={
               <ComposerSelectControl
-                className="font-medium"
+                className="min-w-0 max-w-52 font-medium"
                 aria-label="Computer"
                 {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
               />
@@ -203,7 +203,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
             <ComposerControlIcon icon={MonitorIcon} />
             {/* An id whose computer was deleted must not masquerade as the
                 neutral placeholder (Befund K-AH4). */}
-            <SelectValue>
+            <SelectValue className="min-w-0">
               {selected?.label ??
                 (props.selectedComputerId !== null ? "Missing computer" : "Computer")}
             </SelectValue>
@@ -427,7 +427,10 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   };
 
   return (
-    <span className="flex shrink-0 items-center gap-1" data-composer-manual-target-controls="true">
+    <span
+      className="flex min-w-0 max-w-full shrink-0 items-center gap-1"
+      data-composer-manual-target-controls="true"
+    >
       {/* Harness */}
       <Tooltip>
         <Select
@@ -437,9 +440,13 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             props.onSelectHarness(value as WorkjetHarness);
           }}
         >
-          <TooltipTrigger render={<ComposerSelectControl aria-label="Harness" />}>
+          <TooltipTrigger
+            render={<ComposerSelectControl className="min-w-0 max-w-32" aria-label="Harness" />}
+          >
             <ComposerControlIcon icon={TerminalIcon} />
-            <SelectValue>{selectedHarnessOption?.label ?? "Harness"}</SelectValue>
+            <SelectValue className="min-w-0">
+              {selectedHarnessOption?.label ?? "Harness"}
+            </SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
             {props.selectedHarness === null ? (
@@ -482,9 +489,17 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           <Tooltip disabled={modelMenuOpen}>
             <TooltipTrigger
               render={
-                <PopoverTrigger render={<ComposerControl aria-label="Model" type="button" />}>
+                <PopoverTrigger
+                  render={
+                    <ComposerControl
+                      className="min-w-0 max-w-56"
+                      aria-label="Model"
+                      type="button"
+                    />
+                  }
+                >
                   <ComposerControlIcon icon={CpuIcon} />
-                  <span className="truncate">
+                  <span className="min-w-0 truncate">
                     {props.selectedModelId.length > 0 ? props.selectedModelId : "Model"}
                   </span>
                   <ComposerControlChevron />

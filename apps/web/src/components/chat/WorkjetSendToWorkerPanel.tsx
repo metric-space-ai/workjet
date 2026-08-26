@@ -878,7 +878,11 @@ export function WorkjetSendToWorkerPanelControl(props: WorkjetSendToWorkerPanelP
         render={
           <ComposerControl
             type="button"
-            className={compact ? "shrink-0 px-2" : "shrink-0 whitespace-nowrap"}
+            className={
+              compact
+                ? "min-w-0 max-w-40 shrink-0 px-2"
+                : "min-w-0 max-w-40 shrink-0 whitespace-nowrap"
+            }
             aria-label="Send to worker"
           />
         }
@@ -888,7 +892,9 @@ export function WorkjetSendToWorkerPanelControl(props: WorkjetSendToWorkerPanelP
          * Compact keeps the accessible name and drops only the visible one, so
          * the control never becomes an unlabelled icon for a screen reader.
          */}
-        <span className={compact ? "sr-only" : "sr-only sm:not-sr-only"}>Send to worker</span>
+        <span className={compact ? "sr-only" : "sr-only sm:not-sr-only truncate"}>
+          Send to worker
+        </span>
       </PopoverTrigger>
       <PopoverPopup align="start" className={compact ? "w-80" : "w-96"}>
         <WorkjetSendToWorkerPanelContent {...content} />

@@ -115,6 +115,23 @@ describe("the Computer control", () => {
     expect(markup).not.toContain('data-disabled=""');
   });
 
+  it("keeps a long computer label inside the bounded composer trigger", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerComputerControlView
+        computers={[computer("c-long", `Computer ${"x".repeat(180)}`, envA)]}
+        selectedComputerId="c-long"
+        activeEnvironmentId={envA}
+        selectableEnvironmentIds={[envA]}
+        disabledReason={null}
+        mismatchNote={null}
+        onSelectComputer={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("max-w-52");
+    expect(markup).toContain("min-w-0");
+  });
+
   it("pairs computers by environment — an unpaired one is a stated refusal", () => {
     const selectable = new Set([envA, envB]);
     // The two environments this logical project exists on: selectable.
@@ -212,6 +229,23 @@ describe("the manual target controls", () => {
     );
 
     expect(markup).toContain(">Model<");
+  });
+
+  it("keeps a long model id inside the bounded composer trigger", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        configuredInstanceIds={new Set(["claudeAgent"])}
+        selectedHarness="claude-code"
+        onSelectHarness={() => undefined}
+        models={[]}
+        modelsUnavailableReason={null}
+        selectedModelId={`model-${"x".repeat(180)}`}
+        onSelectModel={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("max-w-56");
+    expect(markup).toContain("min-w-0");
   });
 });
 

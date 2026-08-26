@@ -29,7 +29,7 @@ function render(props: Partial<ComposerFooterControlsProps> = {}): string {
 }
 
 describe("ComposerFooterControls", () => {
-  it("maps measured form widths to exactly one, two, then three ordered rows", () => {
+  it("maps measured left-flow widths to exactly one, two, then three ordered rows", () => {
     expect(composerFooterRowCountForWidth(null)).toBe(1);
     expect(composerFooterRowCountForWidth(COMPOSER_FOOTER_ROW_BREAKPOINTS.twoRowMaxWidth + 1)).toBe(
       1,

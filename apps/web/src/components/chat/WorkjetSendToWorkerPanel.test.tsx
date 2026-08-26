@@ -699,6 +699,19 @@ describe("WorkjetSendToWorkerPanel compact variant", () => {
     expect(textContent(control.props.children)).toContain("Send to worker");
   });
 
+  it("keeps the send-to-worker trigger bounded for long localized labels", () => {
+    const { trigger: control } = trigger({});
+    const rendered = control.props.render as InspectableElement;
+
+    expect(rendered.props.className).toContain("max-w-40");
+    expect(rendered.props.className).toContain("min-w-0");
+    expect(
+      descendants(control.props.children).some((element) =>
+        String(element.props.className ?? "").includes("truncate"),
+      ),
+    ).toBe(true);
+  });
+
   it("collapses to an icon button that still names itself, keeping the same popover", () => {
     const { trigger: control, popup } = trigger({ compact: true });
 

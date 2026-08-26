@@ -17,6 +17,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   /** Worker + Computer groups, so both choices exist below the breakpoint. */
   workerMenuContent?: ReactNode;
   traitsMenuContent?: ReactNode;
+  /** Context usage stays reachable between Effort and System Prompt. */
+  contextWindowMenuContent?: ReactNode;
   /** System Prompt stays reachable from the compact menu before Tools. */
   systemPromptMenuContent?: ReactNode;
   workjetMenuContent?: ReactNode;
@@ -46,6 +48,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
+        {props.contextWindowMenuContent ? (
+          <>
+            {props.contextWindowMenuContent}
             <MenuDivider />
           </>
         ) : null}

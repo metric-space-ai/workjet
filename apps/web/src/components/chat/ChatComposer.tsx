@@ -1493,6 +1493,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
+  const composerFooterFlowRef = useRef<HTMLDivElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const composerSelectLockRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
@@ -1942,8 +1943,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   useLayoutEffect(() => {
     const composerForm = composerFormRef.current;
+    const composerFooterFlow = composerFooterFlowRef.current;
     if (!composerForm) return;
     const measureComposerFormWidth = () => composerForm.clientWidth;
+    // The primary send action is a separate shrink-0 sibling of this flow.
+    // Measuring the whole form made the row tiers optimistic by exactly that
+    // reserved width, so a nominal one-row layout could wrap unexpectedly at
+    // the boundary. Observe and measure the actual left flow instead.
+    const measureComposerFooterFlowWidth = () =>
+      composerFooterFlow?.clientWidth ?? measureComposerFormWidth();
     const measureFooterCompactness = (composerFormWidth = measureComposerFormWidth()) => {
       const footerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
         hasWideActions: composerFooterHasWideActions,
@@ -1961,7 +1969,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
     const initialComposerFormWidth = measureComposerFormWidth();
     const initialCompactness = measureFooterCompactness(initialComposerFormWidth);
-    setComposerFooterRowCount(composerFooterRowCountForWidth(initialComposerFormWidth));
+    setComposerFooterRowCount(composerFooterRowCountForWidth(measureComposerFooterFlowWidth()));
     setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
     setIsComposerFooterCompact(initialCompactness.footerCompact);
     if (typeof ResizeObserver === "undefined") return;
@@ -1969,7 +1977,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const observer = new ResizeObserver(() => {
       const composerFormWidth = measureComposerFormWidth();
       const nextCompactness = measureFooterCompactness(composerFormWidth);
-      const nextRowCount = composerFooterRowCountForWidth(composerFormWidth);
+      const nextRowCount = composerFooterRowCountForWidth(measureComposerFooterFlowWidth());
       setComposerFooterRowCount((previous) =>
         previous === nextRowCount ? previous : nextRowCount,
       );
@@ -1984,10 +1992,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
 
     observer.observe(composerForm);
+    if (composerFooterFlow) observer.observe(composerFooterFlow);
     return () => {
       observer.disconnect();
     };
-  }, [activeThreadId, composerFooterActionLayoutKey, composerFooterHasWideActions]);
+  }, [
+    activeThreadId,
+    composerFooterActionLayoutKey,
+    composerFooterHasWideActions,
+    isComposerApprovalState,
+    isComposerCollapsedMobile,
+  ]);
 
   // ------------------------------------------------------------------
   // Image persist effect
@@ -3243,6 +3258,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       />
     );
 
+  const composerContextWindowControl = activeContextWindow ? (
+    <ContextWindowMeter
+      usage={activeContextWindow}
+      providerDisplayName={activeThreadProviderDisplayName}
+    />
+  ) : null;
+  const composerContextWindowMenuContent = composerContextWindowControl ? (
+    <div
+      className="flex items-center justify-between gap-2 px-2 py-1"
+      data-composer-context-window-menu="true"
+    >
+      <span className="text-sm text-muted-foreground">Context window</span>
+      {composerContextWindowControl}
+    </div>
+  ) : null;
+
   const composerAttachmentControl =
     !isComposerApprovalState && pendingUserInputs.length === 0 ? (
       <ComposerAttachmentMenu
@@ -3715,9 +3746,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               {/* The left flow owns the ordered Workjet controls. It wraps at
-                  measured form widths; the primary send action is bottom-
+                  measured flow widths; the primary send action is bottom-
                   aligned with the last row and never overlaps the flow. */}
-              <div className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-start gap-1 p-1 ps-3.5">
+              <div
+                ref={composerFooterFlowRef}
+                className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-start gap-1 p-1 ps-3.5"
+              >
                 {/* With Workjet manual controls the retired provider picker
                     stays hidden in BOTH layouts — compact used to fall back
                     to it, resurrecting the removed provider chip (K-A2). */}
@@ -3762,6 +3796,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
+                      contextWindowMenuContent={composerContextWindowMenuContent}
                       systemPromptMenuContent={composerSystemPromptControl}
                       workjetMenuContent={
                         effectiveWorkjetGreppyEnabled === null ? undefined : (
@@ -3838,14 +3873,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       )
                     }
-                    contextWindowControl={
-                      activeContextWindow ? (
-                        <ContextWindowMeter
-                          usage={activeContextWindow}
-                          providerDisplayName={activeThreadProviderDisplayName}
-                        />
-                      ) : null
-                    }
+                    contextWindowControl={composerContextWindowControl}
                     systemPromptControl={composerSystemPromptControl}
                     attachmentControl={composerAttachmentControl}
                     rowCount={

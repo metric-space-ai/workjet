@@ -221,6 +221,40 @@ describe("ProviderGatewayHostArtifact", () => {
     ),
   );
 
+  it.effect("uses the current workspace release build before a stale development copy", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const rootDir = yield* temporaryDirectory;
+        const executablePath = NodePath.join(
+          rootDir,
+          Artifact.PROVIDER_GATEWAY_HOST_WORKSPACE_DIRECTORY,
+          Artifact.PROVIDER_GATEWAY_HOST_COMPONENT,
+        );
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(NodePath.dirname(executablePath), { recursive: true });
+          await NodeFSP.writeFile(executablePath, BINARY, { mode: 0o755 });
+        });
+
+        assert.strictEqual(
+          Artifact.resolveWorkspaceProviderGatewayHostExecutable({
+            environment: environment({ isPackaged: false, rootDir, resourcesPath: "/resources" }),
+            host: { platform: "darwin", arch: "arm64" },
+          }),
+          executablePath,
+        );
+
+        const resolved = yield* Artifact.resolveProviderGatewayHostExecutable({
+          pin: Artifact.decodeProviderGatewayHostPin(unreleasedPin()),
+          environment: environment({ isPackaged: false, rootDir, resourcesPath: "/resources" }),
+          host: { platform: "darwin", arch: "arm64" },
+        });
+        assert.strictEqual(resolved.source, "workspace-build");
+        assert.strictEqual(resolved.executablePath, executablePath);
+        assert.ok((resolved.reason ?? "").includes("release"));
+      }),
+    ),
+  );
+
   it.effect(
     "names the exact mismatch for a missing, resized, tampered, or symlinked artifact",
     () =>

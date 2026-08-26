@@ -388,10 +388,10 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     // distro, where a Windows-side executable path means nothing; forcing one
     // there would be worse than leaving its own resolution alone.
     //
-    // A local-build or unsatisfiable pin yields `undefined`, which leaves the
-    // server's existing resolution untouched rather than forcing a path that
-    // is not there — the pin is still `unreleased` today, so that is the
-    // normal case, not an error.
+    // In development an unmet pin first resolves the repository's current
+    // release build, then falls back to `undefined` so the server can use its
+    // state-directory copy. The workspace preference keeps an old manually
+    // staged host from drifting behind the current readiness protocol.
     const resolvedHost = yield* ProviderGatewayHostArtifact.resolveProviderGatewayHostExecutable({
       environment,
       host: { platform: process.platform, arch: process.arch },

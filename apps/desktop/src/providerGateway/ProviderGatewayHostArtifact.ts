@@ -14,14 +14,19 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
  * Decides which `workjet-provider-gateway-host` executable a Workjet desktop
  * process should run.
  *
- * There are exactly two sources, and which one applies is decided here rather
+ * There are exactly three sources, and which one applies is decided here rather
  * than anywhere else:
  *
  *   - PINNED   — a `provider-gateway-host-v*` release artifact whose bytes
  *                reproduce the SHA-256 recorded in
  *                `resources/provider-gateway/host-release.pin.json`. This is
  *                the only source a PACKAGED build ever accepts.
- *   - LOCAL    — the development fallback: whatever the server's existing
+ *   - WORKSPACE — the current repository release build under
+ *                 `native/provider-gateway-workjet-host/target/release`. A
+ *                 development desktop prefers this over a state-directory
+ *                 copy so a stale host cannot drift behind the server's
+ *                 readiness protocol.
+ *   - LOCAL     — the final development fallback: whatever the server's existing
  *                default resolution finds (the
  *                `WORKJET_PROVIDER_GATEWAY_HOST_EXECUTABLE` override, else
  *                `<stateDir>/provider-gateway-host`), i.e. a locally built
@@ -48,6 +53,12 @@ export const PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV = "WORKJET_PROVIDER_GATEWAY_HO
 export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
 /** Development installs land under `<rootDir>/.deps/<this>/<version>/`. */
 export const PROVIDER_GATEWAY_HOST_DEPENDENCY_DIRECTORY = "workjet-provider-gateway-host";
+export const PROVIDER_GATEWAY_HOST_WORKSPACE_DIRECTORY = NodePath.join(
+  "native",
+  "provider-gateway-workjet-host",
+  "target",
+  "release",
+);
 export const PROVIDER_GATEWAY_HOST_MAX_EXECUTABLE_BYTES = 128 * 1024 * 1024;
 
 const PinnedArtifact = Schema.Struct({
@@ -249,11 +260,39 @@ export interface ResolvedProviderGatewayHost {
    * place.
    */
   readonly executablePath: string | undefined;
-  readonly source: "pinned" | "override" | "local-build";
+  readonly source: "pinned" | "override" | "workspace-build" | "local-build";
   /** Present for `local-build`: why the pinned artifact was not used. */
   readonly reason?: string;
   readonly version?: string;
   readonly triple?: string;
+}
+
+export function resolveWorkspaceProviderGatewayHostExecutable(input: {
+  readonly environment: ProviderGatewayHostEnvironment;
+  readonly host: ProviderGatewayHostHost;
+}): string | undefined {
+  if (input.environment.isPackaged) return undefined;
+  const executablePath = NodePath.join(
+    input.environment.rootDir,
+    PROVIDER_GATEWAY_HOST_WORKSPACE_DIRECTORY,
+    input.host.platform === "win32"
+      ? `${PROVIDER_GATEWAY_HOST_COMPONENT}.exe`
+      : PROVIDER_GATEWAY_HOST_COMPONENT,
+  );
+  try {
+    const stat = NodeFS.lstatSync(executablePath);
+    if (
+      stat.isSymbolicLink() ||
+      !stat.isFile() ||
+      stat.size <= 0 ||
+      stat.size > PROVIDER_GATEWAY_HOST_MAX_EXECUTABLE_BYTES
+    ) {
+      return undefined;
+    }
+    return executablePath;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -269,6 +308,10 @@ export function resolveProviderGatewayHostExecutable(input: {
     readonly executablePath: string;
     readonly byteLength: number;
     readonly sha256: string;
+  }) => string | undefined;
+  readonly resolveWorkspaceBuild?: (input: {
+    readonly environment: ProviderGatewayHostEnvironment;
+    readonly host: ProviderGatewayHostHost;
   }) => string | undefined;
 }): Effect.Effect<ResolvedProviderGatewayHost, ProviderGatewayHostArtifactError> {
   return Effect.suspend(() => {
@@ -303,6 +346,20 @@ export function resolveProviderGatewayHostExecutable(input: {
         source: "pinned",
         version: decided.version,
         triple: decided.triple,
+      });
+    }
+
+    const workspaceExecutable = input.environment.isPackaged
+      ? undefined
+      : (input.resolveWorkspaceBuild ?? resolveWorkspaceProviderGatewayHostExecutable)({
+          environment: input.environment,
+          host: input.host,
+        });
+    if (workspaceExecutable !== undefined) {
+      return Effect.succeed<ResolvedProviderGatewayHost>({
+        executablePath: workspaceExecutable,
+        source: "workspace-build",
+        ...(unmetReason === undefined ? {} : { reason: unmetReason }),
       });
     }
 

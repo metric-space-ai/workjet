@@ -17,8 +17,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   /** Worker + Computer groups, so both choices exist below the breakpoint. */
   workerMenuContent?: ReactNode;
   traitsMenuContent?: ReactNode;
-  /** Workjet role radio group plus the settings item; omitted on a draft thread. */
-  workjetRoleMenuContent?: ReactNode;
   workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
 }) {
@@ -46,12 +44,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.workjetRoleMenuContent ? (
-          <>
-            {props.workjetRoleMenuContent}
             <MenuDivider />
           </>
         ) : null}

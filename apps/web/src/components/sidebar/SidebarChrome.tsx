@@ -9,19 +9,11 @@ import { memo, useCallback, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useCrossModeNavigator } from "../../crossMode/useCrossModeNavigator";
-import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { resolveWorkjetProductMode, type WorkjetProductMode } from "../../workjetProductMode";
 import workjetMarkUrl from "../../../../../assets/workjet/workjet-app-icon.png";
-import {
-  resolveEnvironmentIdentificationPillLabel,
-  resolveSidebarStageBackdropVariant,
-  resolveSidebarStageFocusRingOffsetClass,
-  SidebarStageBackdrop,
-  useEnvironmentStageLabel,
-} from "../SidebarStageBackdrop";
-import { Badge } from "../ui/badge";
 import {
   SidebarFooter,
   SidebarHeader,
@@ -40,16 +32,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }: {
   isElectron: boolean;
 }) {
-  const stageLabel = useEnvironmentStageLabel();
-  const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const backdropVariant = resolveSidebarStageBackdropVariant(
-    stageLabel,
-    environmentIdentificationMode === "artwork",
-  );
-  const pillLabel =
-    environmentIdentificationMode === "pill"
-      ? resolveEnvironmentIdentificationPillLabel(stageLabel)
-      : null;
   const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
   const productMode = resolveWorkjetProductMode({
     configuredMode: configuredProductMode,
@@ -78,35 +60,21 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         isElectron && "drag-region gap-0",
       )}
     >
-      {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
       <SidebarTrigger
         className={cn(
           "relative z-10",
           isElectron ? "ml-[var(--workspace-controls-left)]" : "md:hidden",
-          backdropVariant &&
-            "focus-visible:ring-white/90 [&_svg]:stroke-white/90! [&_svg]:opacity-100! [&_svg]:hover:stroke-white! [:hover,[data-pressed]]:bg-white/15",
-          backdropVariant && resolveSidebarStageFocusRingOffsetClass(backdropVariant),
         )}
       />
       {isElectron ? (
         <WorkjetProductModeSwitch
           mode={productMode}
-          onBackdrop={backdropVariant !== null}
+          onBackdrop={false}
           onModeChange={handleProductModeChange}
         />
       ) : (
-        <SidebarBrand onBackdrop={backdropVariant !== null} />
+        <SidebarBrand onBackdrop={false} />
       )}
-      {pillLabel ? (
-        <Badge
-          className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
-          data-environment-identification="pill"
-          size="sm"
-          variant="secondary"
-        >
-          {pillLabel}
-        </Badge>
-      ) : null}
     </SidebarHeader>
   );
 });

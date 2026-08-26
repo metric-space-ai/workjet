@@ -247,7 +247,7 @@ function normalizeThemeColor(value: string | null | undefined): string | null {
   return value?.trim() ?? null;
 }
 
-function resolveBrowserChromeSurface(): HTMLElement {
+function resolveBrowserChromeSurface(): HTMLElement | null {
   return (
     document.querySelector<HTMLElement>("main[data-slot='sidebar-inset']") ??
     document.querySelector<HTMLElement>("[data-slot='sidebar-inner']") ??
@@ -257,19 +257,24 @@ function resolveBrowserChromeSurface(): HTMLElement {
 
 export function syncBrowserChromeTheme() {
   if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return;
-  const rootStyles = getComputedStyle(document.documentElement);
-  const themeChromeColor = document.documentElement.dataset.themeId
+  const root = document.documentElement;
+  const body = document.body;
+  const surface = resolveBrowserChromeSurface();
+  // Theme application can run from module initialization before the parser has
+  // attached <body>. Chrome's getComputedStyle throws for null, which used to
+  // turn an otherwise recoverable early paint into the app error boundary.
+  if (root === null || body === null || surface === null) return;
+  const rootStyles = getComputedStyle(root);
+  const themeChromeColor = root.dataset.themeId
     ? normalizeThemeColor(rootStyles.getPropertyValue("--app-chrome-background"))
     : null;
-  const surfaceColor = normalizeThemeColor(
-    getComputedStyle(resolveBrowserChromeSurface()).backgroundColor,
-  );
-  const fallbackColor = normalizeThemeColor(getComputedStyle(document.body).backgroundColor);
+  const surfaceColor = normalizeThemeColor(getComputedStyle(surface).backgroundColor);
+  const fallbackColor = normalizeThemeColor(getComputedStyle(body).backgroundColor);
   const backgroundColor = themeChromeColor ?? surfaceColor ?? fallbackColor;
   if (!backgroundColor) return;
 
-  document.documentElement.style.backgroundColor = backgroundColor;
-  document.body.style.backgroundColor = backgroundColor;
+  root.style.backgroundColor = backgroundColor;
+  body.style.backgroundColor = backgroundColor;
   // Update every theme-color meta so any element another layer added (for
   // example a media-scoped one) carries the resolved color too.
   const themeColorMetas = document.querySelectorAll<HTMLMetaElement>(

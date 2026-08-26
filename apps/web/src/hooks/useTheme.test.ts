@@ -27,6 +27,22 @@ afterEach(() => {
 });
 
 describe("theme failure handling", () => {
+  it("does not touch computed styles before the document body exists", async () => {
+    const getComputedStyle = vi.fn(() => {
+      throw new Error("getComputedStyle must not receive a missing body");
+    });
+    vi.stubGlobal("getComputedStyle", getComputedStyle);
+    vi.stubGlobal("document", {
+      body: null,
+      documentElement: { dataset: {}, style: {} },
+      querySelector: () => null,
+    });
+
+    const { syncBrowserChromeTheme } = await import("./useTheme");
+    expect(() => syncBrowserChromeTheme()).not.toThrow();
+    expect(getComputedStyle).not.toHaveBeenCalled();
+  });
+
   it("preserves exact storage causes and operation context", async () => {
     const readCause = new Error("storage read blocked");
     const writeCause = new Error("storage quota exceeded");

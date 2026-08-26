@@ -11,7 +11,7 @@ import { cn } from "~/lib/utils";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { ComposerWorkerControl } from "./ComposerWorkerControl";
 import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
-import { WorkjetRoleControl, type WorkjetSelectableRole } from "./WorkjetRoleControl";
+import type { WorkjetSelectableRole } from "./WorkjetRoleControl";
 import { Separator } from "../ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -39,7 +39,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   if (!props.showInteractionModeToggle) return null;
 
   return (
-    <>
+    <span className="inline-flex shrink-0 items-center gap-1" data-composer-mode-cluster="true">
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
       <Tooltip>
         <TooltipTrigger
@@ -68,7 +68,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
         </TooltipTrigger>
         <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
       </Tooltip>
-    </>
+    </span>
   );
 });
 
@@ -97,6 +97,8 @@ export interface ComposerFooterControlsProps {
    * computer · harness · model · model settings).
    */
   readonly computerControl?: ReactNode;
+  /** Legacy provider/model picker, ordered after Worker and Computer. */
+  readonly providerTargetControl?: ReactNode;
   /** Manual mode's Harness · Model selects, rendered after the computer. */
   readonly manualTargetControls?: ReactNode;
   /** Custom-system-prompt affordance; manual mode only. */
@@ -152,7 +154,7 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
     );
   const capabilityMenu =
     props.workjetGreppyEnabled === null ? null : (
-      <>
+      <span className="inline-flex shrink-0 items-center gap-1" data-composer-tools-cluster="true">
         {separator}
         <WorkjetCapabilityMenu
           greppyEnabled={props.workjetGreppyEnabled}
@@ -164,8 +166,10 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
           decisionHubConnections={props.decisionHubConnections}
           decisionHubConnectionId={props.decisionHubConnectionId}
           onDecisionHubConnectionChange={props.onDecisionHubConnectionChange}
+          workjetRole={props.workjetRole}
+          onWorkjetRoleChange={props.onWorkjetRoleChange}
         />
-      </>
+      </span>
     );
 
   if (props.workerMode) {
@@ -185,65 +189,53 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
     );
   }
 
-  // Manual mode, TWO rows (operator-specified): the first row answers WHAT
-  // runs — mode · computer · harness · model; the second row tunes it —
-  // model settings (effort), system prompt, plan/build, role, tools.
+  // Manual mode is one responsive flow. It remains one line while space is
+  // available, then wraps to two or three rows before the outer composer
+  // switches to its compact menu. Do not hard-code row breaks: that wastes
+  // wide layouts and is what previously orphaned Tools on a third line.
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <div className="flex min-w-0 flex-wrap items-center gap-1">
-        {workerControl === null ? null : (
-          <>
-            {workerControl}
-            {separator}
-          </>
-        )}
-        {props.computerControl ? (
-          <>
-            {props.computerControl}
-            {separator}
-          </>
-        ) : null}
-        {props.manualTargetControls ?? null}
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-1">
-        {props.traitsPicker ??
-          (props.workerMode ? null : (
-            // Row 2 begins with the Effort slot; a model without effort
-            // metadata used to erase the chip entirely, which read as a
-            // broken bar (Befund F5). A disabled placeholder keeps the
-            // layout stable and says why.
-            <Tooltip>
-              <TooltipTrigger
-                render={<ComposerControl aria-label="Effort" disabled type="button" />}
-              >
-                Effort —
-              </TooltipTrigger>
-              <TooltipPopup side="top">
-                This model does not expose an effort setting on this harness
-              </TooltipPopup>
-            </Tooltip>
-          ))}
-        {props.systemPromptControl ?? null}
-        <ComposerFooterModeControls
-          showInteractionModeToggle={props.showInteractionModeToggle}
-          interactionMode={props.interactionMode}
-          onToggleInteractionMode={props.onToggleInteractionMode}
-        />
-        {props.workjetRole === null ? null : (
-          <>
-            {separator}
-            <WorkjetRoleControl
-              role={props.workjetRole}
-              busy={props.workjetBusy}
-              disabled={props.workjetDisabled}
-              onRoleChange={props.onWorkjetRoleChange}
-              onOpenSettings={props.onOpenWorkjetSettings}
-            />
-          </>
-        )}
-        {capabilityMenu}
-        {props.sendToWorkerControl}
-      </div>
+    <div
+      className="grid min-w-0 flex-1 grid-cols-[max-content_max-content] items-center gap-1 @lg/composer-controls:flex @lg/composer-controls:flex-wrap"
+      data-composer-manual-responsive-flow="true"
+    >
+      {workerControl === null ? null : (
+        <span className="inline-flex shrink-0 items-center gap-1">
+          {workerControl}
+          {separator}
+        </span>
+      )}
+      {props.computerControl ? (
+        <span className="inline-flex shrink-0 items-center gap-1">
+          {props.computerControl}
+          {separator}
+        </span>
+      ) : null}
+      {props.providerTargetControl ? (
+        <span className="inline-flex shrink-0 items-center gap-1">
+          {props.providerTargetControl}
+          {separator}
+        </span>
+      ) : null}
+      {props.manualTargetControls ?? null}
+      {props.traitsPicker ??
+        (props.workerMode ? null : (
+          <Tooltip>
+            <TooltipTrigger render={<ComposerControl aria-label="Effort" disabled type="button" />}>
+              Effort —
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              This model does not expose an effort setting on this harness
+            </TooltipPopup>
+          </Tooltip>
+        ))}
+      {props.systemPromptControl ?? null}
+      <ComposerFooterModeControls
+        showInteractionModeToggle={props.showInteractionModeToggle}
+        interactionMode={props.interactionMode}
+        onToggleInteractionMode={props.onToggleInteractionMode}
+      />
+      {capabilityMenu}
+      {props.sendToWorkerControl}
     </div>
   );
 });

@@ -27,7 +27,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { ChevronRight, Plus, RefreshCw, SettingsIcon } from "lucide-react";
+import {
+  ChevronRight,
+  EllipsisIcon,
+  Plus,
+  RefreshCw,
+  SettingsIcon,
+  UnplugIcon,
+} from "lucide-react";
 
 import {
   peekCrossModeBusinessOsRequest,
@@ -41,6 +48,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar"
 import { BusinessOsSettingsDialog } from "./BusinessOsSettingsDialog";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import {
   SidebarContent,
@@ -1061,11 +1069,15 @@ export function readCtoxRailCollapsed(
   instanceId: string,
   category: string,
   storage: Storage | undefined = railCollapseStorage(),
+  defaultCollapsed = false,
 ): boolean {
   try {
-    return storage?.getItem(ctoxRailCollapseKey(instanceId, category)) === "1";
+    const stored = storage?.getItem(ctoxRailCollapseKey(instanceId, category));
+    if (stored === "1") return true;
+    if (stored === "0") return false;
+    return defaultCollapsed;
   } catch {
-    return false;
+    return defaultCollapsed;
   }
 }
 
@@ -1078,7 +1090,7 @@ export function writeCtoxRailCollapsed(
   const key = ctoxRailCollapseKey(instanceId, category);
   try {
     if (collapsed) storage?.setItem(key, "1");
-    else storage?.removeItem(key);
+    else storage?.setItem(key, "0");
   } catch {
     // A full or blocked store must never break the rail.
   }
@@ -1101,11 +1113,11 @@ function CtoxAppRailRow({
 }) {
   const open = app.open && instanceReady;
   return (
-    <li className="group/ctox-app flex items-center gap-1">
+    <li className="group/ctox-app flex items-center gap-0.5">
       <button
         type="button"
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+          "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs transition-colors",
           open
             ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-accent/40",
@@ -1123,8 +1135,8 @@ function CtoxAppRailRow({
         <span
           aria-hidden
           className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            open ? "bg-sidebar-primary" : "bg-sidebar-muted-foreground/40",
+            "h-3.5 w-0.5 shrink-0 rounded-full",
+            open ? "bg-sidebar-primary" : "bg-transparent",
           )}
         />
         <span className="truncate">{appLabel(app)}</span>
@@ -1160,7 +1172,12 @@ function CtoxAppRailCategory({
   readonly onToggleDock: (moduleId: string, docked: boolean) => void;
 }) {
   const [collapsed, setCollapsed] = useState(() =>
-    readCtoxRailCollapsed(instance.id, group.category),
+    readCtoxRailCollapsed(
+      instance.id,
+      group.category,
+      railCollapseStorage(),
+      !group.apps.some((app) => app.open),
+    ),
   );
   const [expanded, setExpanded] = useState(false);
   const visible = visibleCtoxRailApps(group.apps, expanded);
@@ -1169,7 +1186,7 @@ function CtoxAppRailCategory({
     <li data-ctox-app-category={group.category}>
       <button
         type="button"
-        className="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[10px] font-medium uppercase tracking-wide text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
         aria-expanded={!collapsed}
         data-ctox-app-category-collapsed={collapsed}
         onClick={() => {
@@ -1178,14 +1195,20 @@ function CtoxAppRailCategory({
           writeCtoxRailCollapsed(instance.id, group.category, next);
         }}
       >
-        <span aria-hidden className={cn("shrink-0 text-[8px]", collapsed ? "" : "rotate-90")}>
-          ▶
-        </span>
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "size-3 shrink-0 transition-transform motion-reduce:transition-none",
+            !collapsed && "rotate-90",
+          )}
+        />
         <span className="truncate">{group.category}</span>
-        <span className="text-sidebar-muted-foreground/70">{group.apps.length}</span>
+        <span className="ms-auto tabular-nums text-sidebar-muted-foreground/60">
+          {group.apps.length}
+        </span>
       </button>
       {collapsed ? null : (
-        <ul className="space-y-0.5">
+        <ul className="space-y-px">
           {visible.map((app) => (
             <CtoxAppRailRow
               key={app.id}
@@ -1201,7 +1224,7 @@ function CtoxAppRailCategory({
             <li>
               <button
                 type="button"
-                className="w-full rounded px-2 py-1 text-left text-[11px] text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
+                className="w-full rounded-md px-5 py-1 text-left text-[11px] text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                 data-ctox-app-category-more={group.category}
                 onClick={() => setExpanded((value) => !value)}
               >
@@ -1237,7 +1260,7 @@ export function CtoxAppRailList({
   const stale = !instanceReady || source === "cache";
   const { docked, categories } = groupCtoxRailApps(apps);
   return (
-    <ul className="space-y-0.5 py-0.5 pl-4" aria-label={`Apps of ${instance.displayName}`}>
+    <ul className="space-y-px pb-1 pl-7 pr-1" aria-label={`Apps of ${instance.displayName}`}>
       {docked.map((app) => (
         <CtoxAppRailRow
           key={app.id}
@@ -1301,6 +1324,20 @@ export function ctoxInstanceDotClass(
   return "bg-sidebar-muted-foreground/50";
 }
 
+/** Replace opaque pairing identifiers with a stable, scannable sidebar name. */
+export function ctoxInstanceDisplayTitle(
+  instance: CtoxManagedInstance,
+  workspaceName: string | null = null,
+): string {
+  if (workspaceName !== null && workspaceName.trim() !== "") return workspaceName;
+  const displayName = instance.displayName.trim();
+  if (/^biz_[a-z0-9-]+$/i.test(displayName)) {
+    const shortId = displayName.slice(4).split("-")[0]?.slice(0, 8) || displayName.slice(4, 12);
+    return `Paired backend · ${shortId}`;
+  }
+  return displayName;
+}
+
 function CtoxInstanceCard({
   instance,
   removingId,
@@ -1312,22 +1349,30 @@ function CtoxInstanceCard({
 }) {
   const { selectedId, connection, guestStates, select } = useCtoxMode();
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [removeConfirming, setRemoveConfirming] = useState(false);
   const { reportWorkspaceName } = useCtoxMode();
-  // Collapse is per-card UI state (defect 16): the chevron folds the app tree
-  // without touching the selection; selecting always re-expands.
-  const [collapsed, setCollapsed] = useState(false);
   const selected = selectedId === instance.id;
+  // Keep the fleet scannable: only the selected instance expands by default.
+  // Operators can still inspect another tree with its chevron without
+  // activating the guest.
+  const [collapsed, setCollapsed] = useState(!selected);
   const busy = selected && connection === "connecting";
   const connected = selected && connection === "ready";
   const guestState = guestStates.get(instance.id) ?? "none";
   const launchable = canActivateCtoxInstance(instance);
   const removable = isRemovableCtoxInstance(instance);
-  const title = workspaceName ?? instance.displayName;
+  const title = ctoxInstanceDisplayTitle(instance, workspaceName);
 
   useEffect(() => {
-    // The selected instance's tree stays visible however the selection was
-    // reached (row click, cross-mode handoff, app open).
-    if (selected) setCollapsed(false);
+    if (!removeConfirming) return;
+    const timeout = setTimeout(() => setRemoveConfirming(false), 3_000);
+    return () => clearTimeout(timeout);
+  }, [removeConfirming]);
+
+  useEffect(() => {
+    // Switching instances closes the old tree and opens the new one. This
+    // prevents multiple 30-app catalogs from turning the sidebar into a wall.
+    setCollapsed(!selected);
   }, [selected]);
   const meta = [SOURCE_LABELS[instance.source], instance.role, instance.domain]
     .filter(Boolean)
@@ -1341,11 +1386,17 @@ function CtoxInstanceCard({
     .filter(Boolean)
     .join("\n");
   return (
-    <div className={cn("group/ctox-instance", !launchable && "opacity-70")}>
-      <div className="flex items-center">
+    <div
+      className={cn(
+        "group/ctox-instance rounded-lg border border-transparent transition-colors",
+        selected && "border-sidebar-border/70 bg-sidebar-accent/45",
+        !launchable && "opacity-70",
+      )}
+    >
+      <div className="flex min-h-9 items-center px-1">
         <button
           type="button"
-          className="shrink-0 rounded p-0.5 text-sidebar-muted-foreground transition-colors hover:text-sidebar-foreground"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           aria-expanded={!collapsed}
           aria-label={`${collapsed ? "Expand" : "Collapse"} apps of ${title}`}
           data-ctox-instance-collapse=""
@@ -1363,10 +1414,8 @@ function CtoxInstanceCard({
         <button
           type="button"
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-            selected
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1.5 text-left transition-colors",
+            selected ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
             launchable ? "hover:bg-sidebar-accent/40" : "cursor-not-allowed",
           )}
           aria-pressed={selected}
@@ -1386,22 +1435,40 @@ function CtoxInstanceCard({
           <span
             aria-hidden
             className={cn(
-              "size-2 shrink-0 rounded-full",
+              "size-2 shrink-0 rounded-full ring-2 ring-sidebar/80",
               ctoxInstanceDotClass(instance, connected, guestState),
             )}
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
         {removable && onRemove !== undefined ? (
-          <ConfirmingTextAction
-            label="Remove"
-            confirmLabel="Remove?"
-            ariaLabel={`Remove ${title}`}
-            className="invisible shrink-0 rounded p-1 text-[10px] text-sidebar-muted-foreground group-hover/ctox-instance:visible hover:text-sidebar-foreground focus-visible:visible disabled:opacity-50"
-            disabled={removingId === instance.id}
-            busy={removingId === instance.id}
-            onConfirm={() => onRemove(instance)}
-          />
+          <Menu>
+            <MenuTrigger
+              className="invisible inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-instance:visible data-popup-open:visible"
+              aria-label={`Actions for ${title}`}
+              disabled={removingId === instance.id}
+            >
+              <EllipsisIcon aria-hidden className="size-3.5" />
+            </MenuTrigger>
+            <MenuPopup align="end" side="bottom" className="min-w-44">
+              <MenuItem
+                variant="destructive"
+                disabled={removingId === instance.id}
+                onClick={(event) => {
+                  if (!removeConfirming) {
+                    event.preventDefault();
+                    setRemoveConfirming(true);
+                    return;
+                  }
+                  setRemoveConfirming(false);
+                  onRemove(instance);
+                }}
+              >
+                <UnplugIcon aria-hidden />
+                {removeConfirming ? "Confirm removal" : "Remove pairing…"}
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
         ) : null}
       </div>
       {collapsed ? null : (
@@ -1430,7 +1497,7 @@ function CtoxInstanceList({
   readonly onRemove?: (instance: CtoxManagedInstance) => void;
 }) {
   return (
-    <div className="space-y-2" aria-label={label}>
+    <div className="space-y-1" aria-label={label}>
       {instances.map((instance) => (
         <CtoxInstanceCard
           key={instance.id}
@@ -1942,9 +2009,9 @@ export function CtoxSidebarShell() {
     <>
       <SidebarChromeHeader isElectron />
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
-        <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-5">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-sidebar-foreground">CTOX instances</p>
+        <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
+          <div className="mb-4 flex items-center justify-between gap-2 px-1">
+            <p className="text-sm font-semibold text-sidebar-foreground">Backends</p>
             <div className="flex items-center gap-1">
               {/* Refresh lives ONCE, in the footer strip — the second copy
                   fifteen lines away confused more than it helped (K-B10). */}
@@ -1989,12 +2056,12 @@ export function CtoxSidebarShell() {
               CTOX instance discovery failed. Try refreshing.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <section aria-labelledby="ctox-managed-heading">
-                <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="mb-1 flex min-h-6 items-center justify-between gap-2 px-1">
                   <h2
                     id="ctox-managed-heading"
-                    className="text-xs font-medium uppercase tracking-wide text-sidebar-muted-foreground"
+                    className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
                   >
                     Managed
                   </h2>
@@ -2022,12 +2089,19 @@ export function CtoxSidebarShell() {
               </section>
 
               <section aria-labelledby="ctox-paired-heading">
-                <h2
-                  id="ctox-paired-heading"
-                  className="mb-2 text-xs font-medium uppercase tracking-wide text-sidebar-muted-foreground"
-                >
-                  Paired
-                </h2>
+                <div className="mb-1 flex min-h-6 items-center justify-between px-1">
+                  <h2
+                    id="ctox-paired-heading"
+                    className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
+                  >
+                    Paired
+                  </h2>
+                  {paired.instances.length > 0 ? (
+                    <span className="text-[10px] tabular-nums text-sidebar-muted-foreground/60">
+                      {paired.instances.length}
+                    </span>
+                  ) : null}
+                </div>
                 {discovery === "loading" ? (
                   <p className="text-xs text-sidebar-muted-foreground" role="status">
                     Loading paired instances…
@@ -2050,12 +2124,17 @@ export function CtoxSidebarShell() {
 
               {supplementalGroups.map((group) => (
                 <section key={group.key} aria-labelledby={`ctox-${group.key}-heading`}>
-                  <h2
-                    id={`ctox-${group.key}-heading`}
-                    className="mb-2 text-xs font-medium uppercase tracking-wide text-sidebar-muted-foreground"
-                  >
-                    {group.label}
-                  </h2>
+                  <div className="mb-1 flex min-h-6 items-center justify-between px-1">
+                    <h2
+                      id={`ctox-${group.key}-heading`}
+                      className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
+                    >
+                      {group.label}
+                    </h2>
+                    <span className="text-[10px] tabular-nums text-sidebar-muted-foreground/60">
+                      {group.instances.length}
+                    </span>
+                  </div>
                   <CtoxInstanceList
                     instances={group.instances}
                     label={`${group.label} CTOX instances`}

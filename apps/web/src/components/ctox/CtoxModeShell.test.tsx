@@ -232,10 +232,12 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("SSH CTOX instances");
     expect(markup).toContain("SSH managed\nAvailable · WebRTC unavailable");
     expect(markup).toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
-    // Only the unreachable row is inert; both offer removal.
+    // Only the unreachable row is inert; both keep destructive actions out of
+    // the primary row and behind a compact context trigger.
     expect(markup.match(/cursor-not-allowed/gu)?.length).toBe(1);
-    expect(markup).toContain("Remove Build Box");
-    expect(markup).toContain("Remove Quiet Box");
+    expect(markup).toContain("Actions for Build Box");
+    expect(markup).toContain("Actions for Quiet Box");
+    expect(markup).not.toContain("Remove Build Box");
   });
 
   it("offers an SSH tab in the add surface that stores no credential", async () => {
@@ -909,7 +911,11 @@ describe("CTOX app rail categories", () => {
         apps={[
           app("pinned", { title: "Pinned", category: "Workspace", docked: true }),
           ...Array.from({ length: 8 }, (_, index) =>
-            app(`ops-${index}`, { title: `Ops ${index}`, category: "Operations" }),
+            app(`ops-${index}`, {
+              title: `Ops ${index}`,
+              category: "Operations",
+              open: index === 0,
+            }),
           ),
         ]}
         instanceReady={true}
@@ -968,6 +974,7 @@ describe("CTOX app rail categories", () => {
   it("renders a persisted collapsed category without its app rows", () => {
     const storage = memoryStorage({
       [ctoxRailCollapseKey(railInstance.id, "Operations")]: "1",
+      [ctoxRailCollapseKey(railInstance.id, "Workspace")]: "0",
     });
     const markup = withWindowStorage(storage, () =>
       renderToStaticMarkup(
@@ -988,7 +995,8 @@ describe("CTOX app rail categories", () => {
     expect(markup).toContain('data-ctox-app-category="Operations"');
     expect(markup).toContain('data-ctox-app-category-collapsed="true"');
     expect(markup).not.toContain('data-ctox-app-id="tickets"');
-    // The sibling category has no stored state and stays expanded.
+    // A stored expansion remains explicit even though quiet categories now
+    // default to collapsed.
     expect(markup).toContain('data-ctox-app-id="mail"');
   });
 });
@@ -1068,7 +1076,7 @@ describe("CTOX instance collapse", () => {
     displayName: "Managed Alpha",
   });
 
-  it("renders an expanded tree with a chevron affordance separate from selection", () => {
+  it("keeps unselected trees compact with a chevron affordance separate from selection", () => {
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={inertBridge()}
@@ -1079,16 +1087,17 @@ describe("CTOX instance collapse", () => {
         </SidebarProvider>
       </CtoxModeProvider>,
     );
-    // Expanded by default: the chevron is rotated and announces collapse.
-    expect(markup).toContain('data-ctox-instance-collapsed="false"');
-    expect(markup).toContain("Collapse apps of Managed Alpha");
-    expect(markup).toContain("rotate-90");
+    // A non-selected backend starts folded so several catalogs cannot flood
+    // the sidebar at once.
+    expect(markup).toContain('data-ctox-instance-collapsed="true"');
+    expect(markup).toContain("Expand apps of Managed Alpha");
+    expect(markup).not.toContain("rotate-90");
     // The chevron is its own button, so folding never triggers selection; the
     // name click both selects and re-expands (see the row's onClick).
     expect(ctoxModeShellSource).toContain("setCollapsed((value) => !value)");
     expect(ctoxModeShellSource).toContain("setCollapsed(false);\n            select(instance);");
-    // Selection always re-expands, however it was reached.
-    expect(ctoxModeShellSource).toContain("if (selected) setCollapsed(false);");
+    // Selection opens the current tree and closes the previously selected one.
+    expect(ctoxModeShellSource).toContain("setCollapsed(!selected);");
   });
 });
 

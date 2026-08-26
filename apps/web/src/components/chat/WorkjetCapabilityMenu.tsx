@@ -2,6 +2,7 @@ import type {
   WorkjetCapabilityBinding,
   WorkjetCapabilityId,
   WorkjetConnectionSummary,
+  WorkjetThreadRole,
   WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import { normalizeWorkjetThreadConfig } from "@t3tools/contracts";
@@ -22,6 +23,11 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import {
+  type WorkjetSelectableRole,
+  WORKJET_ROLE_NEXT_SESSION_HINT,
+  WORKJET_WORKER_ROLE_REASON,
+} from "./WorkjetRoleControl";
 
 const GREPPY_CAPABILITY_ID = "greppy" satisfies WorkjetCapabilityId;
 
@@ -234,11 +240,39 @@ export interface WorkjetCapabilityMenuProps {
   readonly decisionHubConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
   readonly decisionHubConnectionId?: string | null | undefined;
   readonly onDecisionHubConnectionChange?: ((connectionId: string) => void) | undefined;
+  /** Thread role belongs in this settings menu, never in the main composer bar. */
+  readonly workjetRole?: WorkjetThreadRole | null | undefined;
+  readonly onWorkjetRoleChange?: ((role: WorkjetSelectableRole) => void) | undefined;
 }
 
 export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) {
   const disabled = props.disabled === true || props.busy;
   const onCapabilityEnabledChange = props.onCapabilityEnabledChange;
+  const roleIsWorker = props.workjetRole === "worker";
+  const roleSetting =
+    props.workjetRole === undefined ||
+    props.workjetRole === null ||
+    props.onWorkjetRoleChange === undefined ? null : (
+      <div data-workjet-role-setting="true">
+        <MenuCheckboxItem
+          variant="switch"
+          checked={props.workjetRole === "orchestrator"}
+          disabled={disabled || roleIsWorker}
+          aria-label="Orchestrator for this thread"
+          aria-busy={props.busy || undefined}
+          onCheckedChange={(checked) =>
+            props.onWorkjetRoleChange?.(checked === true ? "orchestrator" : "standard")
+          }
+        >
+          Orchestrator
+        </MenuCheckboxItem>
+        <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
+          {roleIsWorker
+            ? WORKJET_WORKER_ROLE_REASON
+            : `Allow this thread to delegate to workers. ${WORKJET_ROLE_NEXT_SESSION_HINT}`}
+        </p>
+      </div>
+    );
 
   // Whole catalog when the caller can toggle any of it; otherwise the Greppy
   // row alone, so a caller that only wired Greppy cannot render switches that
@@ -247,7 +281,8 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
     const enabled = new Set(props.enabledCapabilityIds ?? []);
     return (
       <MenuGroup>
-        <MenuGroupLabel>Tools</MenuGroupLabel>
+        <MenuGroupLabel>Thread settings</MenuGroupLabel>
+        {roleSetting}
         {workjetComposerCapabilityList().map((capability) => (
           <div key={capability.id}>
             <MenuCheckboxItem
@@ -306,7 +341,8 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
 
   return (
     <MenuGroup>
-      <MenuGroupLabel>Tools</MenuGroupLabel>
+      <MenuGroupLabel>Thread settings</MenuGroupLabel>
+      {roleSetting}
       <MenuCheckboxItem
         variant="switch"
         checked={props.greppyEnabled}

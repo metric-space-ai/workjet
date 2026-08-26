@@ -2,7 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vite-plus/test";
 
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { WorkjetRoleControl } from "./WorkjetRoleControl";
+import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
 
 type InspectableElement = ReactElement<
   Readonly<Record<string, unknown>> & { readonly children?: ReactNode }
@@ -36,26 +36,25 @@ const baseProps = {
 
 describe("CompactComposerControlsMenu", () => {
   /**
-   * The compact footer folds every control except the model picker and the
-   * primary actions into this menu. The Workjet role has to survive that fold
-   * alongside the provider's Plan/Build ("Mode") group, not instead of it.
+   * Role and capabilities share one settings surface in compact mode too.
    */
-  it("carries the Workjet role group and the provider Mode group together", () => {
-    const roleContent = (
-      <WorkjetRoleControl
+  it("carries Orchestrator inside thread settings beside the provider Mode group", () => {
+    const settingsContent = (
+      <WorkjetCapabilityMenu
         compact
-        role="orchestrator"
+        greppyEnabled
         busy={false}
-        onRoleChange={() => undefined}
-        onOpenSettings={() => undefined}
+        onGreppyEnabledChange={() => undefined}
+        workjetRole="orchestrator"
+        onWorkjetRoleChange={() => undefined}
       />
     );
     const menu = renderMenu({
       ...baseProps,
-      workjetRoleMenuContent: roleContent,
+      workjetMenuContent: settingsContent,
     });
 
-    expect(containsNode(menu, roleContent)).toBe(true);
+    expect(containsNode(menu, settingsContent)).toBe(true);
     const text = textContent(menu);
     expect(text).toContain("Mode");
     expect(text).toContain("Plan");
@@ -79,7 +78,7 @@ describe("CompactComposerControlsMenu", () => {
     expect(containsNode(menu, workerContent)).toBe(true);
   });
 
-  it("omits the role group when the thread has no server configuration", () => {
+  it("omits thread settings when the thread has no server configuration", () => {
     const menu = renderMenu(baseProps);
     const text = textContent(menu);
 

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
+import sidebarChromeSource from "./SidebarChrome.tsx?raw";
 import { resolveProductModeKeyboardTarget, WorkjetProductModeSwitch } from "./SidebarChrome";
 
 describe("WorkjetProductModeSwitch", () => {
@@ -36,5 +37,13 @@ describe("WorkjetProductModeSwitch", () => {
     expect(resolveProductModeKeyboardTarget("ArrowDown")).toBe("ctox");
     expect(resolveProductModeKeyboardTarget("End")).toBe("ctox");
     expect(resolveProductModeKeyboardTarget("Enter")).toBeNull();
+  });
+
+  it("keeps the desktop titlebar free of stage artwork and glow", () => {
+    expect(sidebarChromeSource).not.toContain("<SidebarStageBackdrop");
+    expect(sidebarChromeSource).not.toContain("resolveSidebarStageFocusRingOffsetClass");
+    expect(sidebarChromeSource).not.toContain("focus-visible:ring-white/90");
+    expect(sidebarChromeSource).not.toContain("data-environment-identification");
+    expect(sidebarChromeSource).not.toContain("resolveEnvironmentIdentificationPillLabel");
   });
 });

@@ -7,7 +7,7 @@ import type {
   DesktopCtoxBridge,
 } from "@t3tools/contracts";
 import { RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { usePrimaryEnvironment } from "../../state/environments";
@@ -94,6 +94,11 @@ function FleetStatus({ row }: { readonly row: CtoxShellFleetRow }) {
           {row.shell.pause.reason} · bis {new Date(row.shell.pause.expiresAt).toLocaleString()}
         </p>
       )}
+      {row.shell.errorCode === null ? null : (
+        <p className="mt-0.5 max-w-72 text-[11px] leading-4 text-destructive">
+          Fehler: {row.shell.errorCode}
+        </p>
+      )}
     </div>
   );
 }
@@ -114,6 +119,10 @@ function UpdatesPage({
   readonly setRolloutStatus: (status: CtoxShellFleetRolloutStatus) => void;
 }) {
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  const [pauseTarget, setPauseTarget] = useState<CtoxShellFleetRow | null>(null);
+  const [pauseReason, setPauseReason] = useState("Geplante Wartung");
+  const [pauseHours, setPauseHours] = useState("24");
   const rows = inventory?._tag === "completed" ? inventory.rows : [];
   const run = (row: CtoxShellFleetRow, action: "check" | "update" | "rollback") => {
     if (bridge?.runShellFleetAction === undefined) return;
@@ -153,21 +162,40 @@ function UpdatesPage({
         reload();
       });
   };
-  const togglePause = (row: CtoxShellFleetRow) => {
-    const operation =
-      row.blocker === "paused"
-        ? bridge?.resumeShellFleetInstance?.(row.instanceId)
-        : bridge?.pauseShellFleetInstance?.({
-            instanceId: row.instanceId,
-            reason: "Manuell in Workjet pausiert",
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
-          });
+  const resumeInstance = (row: CtoxShellFleetRow) => {
+    const operation = bridge?.resumeShellFleetInstance?.(row.instanceId);
     if (operation === undefined) return;
     setRunningId(row.instanceId);
     void operation.finally(() => {
       setRunningId(null);
       reload();
     });
+  };
+  const commitPause = () => {
+    if (pauseTarget === null || bridge?.pauseShellFleetInstance === undefined) return;
+    const hours = Number.parseInt(pauseHours, 10);
+    if (!Number.isInteger(hours) || hours < 1 || hours > 720 || pauseReason.trim().length === 0)
+      return;
+    setRunningId(pauseTarget.instanceId);
+    void bridge
+      .pauseShellFleetInstance({
+        instanceId: pauseTarget.instanceId,
+        reason: pauseReason.trim().slice(0, 256),
+        expiresAt: new Date(Date.now() + hours * 60 * 60 * 1_000).toISOString(),
+      })
+      .finally(() => {
+        setRunningId(null);
+        setPauseTarget(null);
+        reload();
+      });
+  };
+  const resumeRelease = () => {
+    if (bridge?.resumeShellFleetRollout === undefined) return;
+    setRunningId("rollout-resume");
+    void bridge
+      .resumeShellFleetRollout()
+      .then(setRolloutStatus)
+      .finally(() => setRunningId(null));
   };
 
   return (
@@ -191,6 +219,24 @@ function UpdatesPage({
               {rolloutStatus.instanceIds.length} Instanzen abgeschlossen
             </p>
           ) : null}
+          {rolloutStatus?.pauseReason == null ? null : (
+            <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
+              <span>
+                Release pausiert: {rolloutStatus.pauseReason}
+                {rolloutStatus.pausedAt === null
+                  ? ""
+                  : ` · seit ${new Date(rolloutStatus.pausedAt).toLocaleString()}`}
+              </span>
+              <button
+                type="button"
+                className="rounded border border-amber-500/40 px-2 py-1 font-medium hover:bg-amber-500/10"
+                onClick={resumeRelease}
+                disabled={runningId !== null}
+              >
+                Release wieder freigeben
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -225,90 +271,173 @@ function UpdatesPage({
         </div>
       </div>
 
+      {pauseTarget === null ? null : (
+        <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-muted/20 p-4">
+          <label className="min-w-64 flex-1 text-xs text-muted-foreground">
+            Pausegrund für {pauseTarget.displayName}
+            <input
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+              value={pauseReason}
+              maxLength={256}
+              onChange={(event) => setPauseReason(event.target.value)}
+            />
+          </label>
+          <label className="w-28 text-xs text-muted-foreground">
+            Dauer (Stunden)
+            <input
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+              type="number"
+              min={1}
+              max={720}
+              value={pauseHours}
+              onChange={(event) => setPauseHours(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+            onClick={commitPause}
+          >
+            Pause speichern
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-border px-3 py-2 text-sm"
+            onClick={() => setPauseTarget(null)}
+          >
+            Abbrechen
+          </button>
+        </div>
+      )}
+
       {inventory?._tag === "failed" ? (
         <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           Das Fleet-Inventar konnte nicht gelesen werden.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[880px] text-left text-sm">
+          <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="bg-muted/40 text-xs text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Instanz</th>
+                <th className="px-4 py-3 font-medium">Erreichbarkeit</th>
                 <th className="px-4 py-3 font-medium">Health</th>
+                <th className="px-4 py-3 font-medium">Plattform</th>
+                <th className="px-4 py-3 font-medium">Admin</th>
                 <th className="px-4 py-3 font-medium">CTOX</th>
                 <th className="px-4 py-3 font-medium">Shell</th>
                 <th className="px-4 py-3 font-medium">Kanal</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Letzte Prüfung</th>
                 <th className="px-4 py-3 font-medium">Aktionen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row) => (
-                <tr key={row.instanceId} data-shell-fleet-instance={row.instanceId}>
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{row.displayName}</p>
-                    <p className="text-xs text-muted-foreground">{row.source}</p>
-                  </td>
-                  <td className="px-4 py-3">{fleetHealthLabel(row)}</td>
-                  <td className="px-4 py-3 tabular-nums">{row.backendVersion ?? "Unbekannt"}</td>
-                  <td className="px-4 py-3 tabular-nums">
-                    {row.shell.recoveryShell ? "Recovery" : `v${row.shell.activeVersion ?? "?"}`}
-                    {row.shell.latestCompatibleVersion === null ? null : (
-                      <p className="text-xs text-muted-foreground">
-                        Angebot v{row.shell.latestCompatibleVersion}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{row.shell.channel}</td>
-                  <td className="px-4 py-3">
-                    <FleetStatus row={row} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
-                        disabled={row.blocker !== null || runningId !== null}
-                        onClick={() => run(row, "check")}
+                <Fragment key={row.instanceId}>
+                  <tr data-shell-fleet-instance={row.instanceId}>
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{row.displayName}</p>
+                      <p className="text-xs text-muted-foreground">{row.source}</p>
+                    </td>
+                    <td className="px-4 py-3">{row.reachable ? "Erreichbar" : "Offline"}</td>
+                    <td className="px-4 py-3">{fleetHealthLabel(row)}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {row.platform} · {row.architecture}
+                    </td>
+                    <td className="px-4 py-3 text-xs">{row.administrativeAccess}</td>
+                    <td className="px-4 py-3 tabular-nums">{row.backendVersion ?? "Unbekannt"}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {row.shell.recoveryShell ? "Recovery" : `v${row.shell.activeVersion ?? "?"}`}
+                      {row.shell.latestCompatibleVersion === null ? null : (
+                        <p className="text-xs text-muted-foreground">
+                          Angebot v{row.shell.latestCompatibleVersion}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">{row.shell.channel}</td>
+                    <td className="px-4 py-3">
+                      <FleetStatus row={row} />
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {row.shell.lastCheckedAt === null
+                        ? "Nie"
+                        : new Date(row.shell.lastCheckedAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
+                          disabled={row.blocker !== null || runningId !== null}
+                          onClick={() => run(row, "check")}
+                        >
+                          Prüfen
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
+                          disabled={row.blocker !== null || runningId !== null}
+                          onClick={() => run(row, "update")}
+                        >
+                          {row.shell.phase === "failed" ? "Erneut versuchen" : "Aktualisieren"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
+                          disabled={
+                            !row.shell.administrable ||
+                            row.shell.activeVersion === null ||
+                            runningId !== null
+                          }
+                          onClick={() => run(row, "rollback")}
+                        >
+                          Rollback
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
+                          disabled={runningId !== null}
+                          onClick={() =>
+                            row.blocker === "paused" ? resumeInstance(row) : setPauseTarget(row)
+                          }
+                        >
+                          {row.blocker === "paused" ? "Fortsetzen" : "Pausieren"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
+                          onClick={() =>
+                            setDetailsId(detailsId === row.instanceId ? null : row.instanceId)
+                          }
+                        >
+                          Details
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {detailsId === row.instanceId ? (
+                    <tr>
+                      <td
+                        colSpan={11}
+                        className="bg-muted/15 px-4 py-3 text-xs text-muted-foreground"
                       >
-                        Prüfen
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
-                        disabled={row.blocker !== null || runningId !== null}
-                        onClick={() => run(row, "update")}
-                      >
-                        Aktualisieren
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
-                        disabled={
-                          !row.shell.administrable ||
-                          row.shell.activeVersion === null ||
-                          runningId !== null
-                        }
-                        onClick={() => run(row, "rollback")}
-                      >
-                        Rollback
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
-                        disabled={runningId !== null}
-                        onClick={() => togglePause(row)}
-                      >
-                        {row.blocker === "paused" ? "Fortsetzen" : "24 h pausieren"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <span>Aktiv: {row.shell.activeVersion ?? "Recovery-Shell"}</span>
+                          <span>Gewünscht: {row.shell.desiredVersion ?? "–"}</span>
+                          <span>Angebot: {row.shell.latestCompatibleVersion ?? "–"}</span>
+                          <span>Phase: {row.shell.phase}</span>
+                          <span>Fehler: {row.shell.errorCode ?? row.blocker ?? "–"}</span>
+                          <span>Operator-Schritt: {row.requiredOperatorStep ?? "Keiner"}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
+                  <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
                     {loading ? "Fleet wird geprüft…" : "Keine CTOX-Instanzen registriert."}
                   </td>
                 </tr>

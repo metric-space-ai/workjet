@@ -37,8 +37,8 @@ describe("shouldUseCompactComposerFooter", () => {
 });
 
 describe("shouldUseCompactComposerPrimaryActions", () => {
-  it("matches the wide footer breakpoint", () => {
-    expect(COMPOSER_PRIMARY_ACTIONS_COMPACT_BREAKPOINT_PX).toBe(
+  it("can compact wide pending actions before the wrapping footer collapses", () => {
+    expect(COMPOSER_PRIMARY_ACTIONS_COMPACT_BREAKPOINT_PX).toBeGreaterThan(
       COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX,
     );
     expect(

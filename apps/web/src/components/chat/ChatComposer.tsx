@@ -107,7 +107,6 @@ import {
   GREPPY_CAPABILITY_ID,
   harnessForProviderInstanceId,
   WorkjetCapabilityMenu,
-  WorkjetRoleControl,
   type WorkjetSelectableRole,
 } from "./workjetSurfaces";
 import { useEnvironmentQuery } from "../../state/query";
@@ -3178,6 +3177,46 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Render
   // ------------------------------------------------------------------
+  const renderLegacyProviderTargetControl = (compact: boolean) => {
+    if (workerModeActive || workjetManualControlsAvailable) return null;
+    if (noProviderAvailable) {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled
+          data-chat-provider-unavailable="true"
+          className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
+        >
+          <CircleAlertIcon className="size-4" />
+          No provider available
+        </Button>
+      );
+    }
+    return (
+      <ProviderModelPicker
+        compact={compact}
+        activeInstanceId={selectedInstanceId}
+        model={selectedModelForPickerWithCustomFallback}
+        lockedProvider={lockedProvider}
+        lockedContinuationGroupKey={lockedContinuationGroupKey}
+        instanceEntries={providerInstanceEntries}
+        keybindings={keybindings}
+        modelOptionsByInstance={modelOptionsByInstance}
+        triggerClassName="-ms-2.5"
+        terminalOpen={terminalOpen}
+        open={isComposerModelPickerOpen}
+        {...(composerProviderState.modelPickerIconClassName
+          ? { activeProviderIconClassName: composerProviderState.modelPickerIconClassName }
+          : {})}
+        onOpenChange={setIsComposerModelPickerOpen}
+        getModelDisabledReason={getModelDisabledReason}
+        onInstanceModelChange={onProviderModelSelect}
+      />
+    );
+  };
+
   return (
     <form
       ref={composerFormRef}
@@ -3641,48 +3680,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   prompt chips invisible past the right edge with no cue they
                   existed (measured: scrollWidth 1136 in a 720px row). Chips
                   that don't fit now wrap onto a second line instead. */}
-              <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-center gap-1 p-1 ps-3.5">
+              <div className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-center gap-1 p-1 ps-3.5">
                 {/* With Workjet manual controls the retired provider picker
                     stays hidden in BOTH layouts — compact used to fall back
                     to it, resurrecting the removed provider chip (K-A2). */}
-                {workerModeActive ? null : workjetManualControlsAvailable ? null : noProviderAvailable ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled
-                    data-chat-provider-unavailable="true"
-                    className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
-                  >
-                    <CircleAlertIcon className="size-4" />
-                    No provider available
-                  </Button>
-                ) : (
-                  <ProviderModelPicker
-                    compact={isComposerFooterCompact}
-                    activeInstanceId={selectedInstanceId}
-                    model={selectedModelForPickerWithCustomFallback}
-                    lockedProvider={lockedProvider}
-                    lockedContinuationGroupKey={lockedContinuationGroupKey}
-                    instanceEntries={providerInstanceEntries}
-                    keybindings={keybindings}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    triggerClassName="-ms-2.5"
-                    terminalOpen={terminalOpen}
-                    open={isComposerModelPickerOpen}
-                    {...(composerProviderState.modelPickerIconClassName
-                      ? {
-                          activeProviderIconClassName:
-                            composerProviderState.modelPickerIconClassName,
-                        }
-                      : {})}
-                    onOpenChange={(open) => {
-                      setIsComposerModelPickerOpen(open);
-                    }}
-                    getModelDisabledReason={getModelDisabledReason}
-                    onInstanceModelChange={onProviderModelSelect}
-                  />
-                )}
+                {isComposerFooterCompact ? renderLegacyProviderTargetControl(true) : null}
 
                 {isComposerFooterCompact ? (
                   <>
@@ -3723,18 +3725,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
-                      workjetRoleMenuContent={
-                        effectiveWorkjetRole === null || workerModeActive ? undefined : (
-                          <WorkjetRoleControl
-                            compact
-                            role={effectiveWorkjetRole}
-                            busy={workjetCapabilityBusy}
-                            disabled={workjetCapabilityDisabled}
-                            onRoleChange={effectiveWorkjetRoleChange}
-                            onOpenSettings={onOpenWorkjetSettings}
-                          />
-                        )
-                      }
                       workjetMenuContent={
                         effectiveWorkjetGreppyEnabled === null ? undefined : (
                           <WorkjetCapabilityMenu
@@ -3748,6 +3738,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             decisionHubConnections={decisionHubConnections}
                             decisionHubConnectionId={decisionHubConnectionId}
                             onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                            workjetRole={workerModeActive ? null : effectiveWorkjetRole}
+                            onWorkjetRoleChange={effectiveWorkjetRoleChange}
                           />
                         )
                       }
@@ -3786,6 +3778,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         />
                       )
                     }
+                    providerTargetControl={renderLegacyProviderTargetControl(false)}
                     manualTargetControls={
                       workerModeActive || !workjetManualControlsAvailable ? null : (
                         <ComposerManualTargetControls

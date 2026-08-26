@@ -52,7 +52,19 @@ describe("BusinessOsSettingsDialog", () => {
   });
 
   it("offers the fleet columns and explicit blocked-state operator guidance", () => {
-    for (const column of ["Instanz", "Health", "CTOX", "Shell", "Kanal", "Status", "Aktionen"]) {
+    for (const column of [
+      "Instanz",
+      "Erreichbarkeit",
+      "Health",
+      "Plattform",
+      "Admin",
+      "CTOX",
+      "Shell",
+      "Kanal",
+      "Status",
+      "Letzte Prüfung",
+      "Aktionen",
+    ]) {
       expect(dialogSource).toContain(column);
     }
     expect(dialogSource).toContain("requiredOperatorStep");
@@ -60,5 +72,10 @@ describe("BusinessOsSettingsDialog", () => {
     expect(dialogSource).toContain('data_plane_degraded: "Sync beeinträchtigt"');
     expect(dialogSource).toContain("row.blocker === null ? PHASE_LABELS[row.shell.phase]");
     expect(dialogSource).toContain('row.blocker !== "paused"');
+    expect(dialogSource).toContain("Release wieder freigeben");
+    expect(dialogSource).toContain("Pausegrund für");
+    expect(dialogSource).toContain("Details");
+    expect(dialogSource).toContain("Erneut versuchen");
+    expect(dialogSource).toContain("row.shell.errorCode ?? row.blocker");
   });
 });

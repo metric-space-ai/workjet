@@ -189,6 +189,31 @@ describe("WorkjetCapabilityMenu", () => {
     expect(compact.props.greppyEnabled).toBe(true);
     expect(compact.props.onGreppyEnabledChange).toBe(baseMenuProps.onGreppyEnabledChange);
   });
+
+  it("places Orchestrator beside capabilities instead of in the main composer bar", () => {
+    const onWorkjetRoleChange = vi.fn();
+    const content = WorkjetCapabilityMenuContent({
+      ...baseMenuProps,
+      onCapabilityEnabledChange: vi.fn(),
+      workjetRole: "standard",
+      onWorkjetRoleChange,
+    }) as InspectableElement;
+    const text = textContent(content);
+
+    expect(text).toContain("Thread settings");
+    expect(text).toContain("Orchestrator");
+    expect(text).toContain(WORKJET_GREPPY_DISPLAY_NAME);
+    const roleContainer = elementChildren(content).find(
+      (child) => child.props["data-workjet-role-setting"] === "true",
+    );
+    const roleSwitch = roleContainer ? elementChildren(roleContainer)[0] : undefined;
+    expect(roleSwitch?.props.checked).toBe(false);
+    const onCheckedChange = roleSwitch?.props.onCheckedChange as
+      | ((checked: boolean) => void)
+      | undefined;
+    onCheckedChange?.(true);
+    expect(onWorkjetRoleChange).toHaveBeenCalledWith("orchestrator");
+  });
 });
 
 describe("executeWorkjetCapabilityToggle", () => {

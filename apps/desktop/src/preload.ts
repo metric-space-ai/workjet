@@ -1,11 +1,10 @@
-import {
+import type {
   CtoxShellFleetRolloutStatus,
-  type DesktopBridge,
-  type DesktopPreviewPointerEvent,
-  type DesktopPreviewRecordingFrame,
-  type DesktopPreviewTabState,
+  DesktopBridge,
+  DesktopPreviewPointerEvent,
+  DesktopPreviewRecordingFrame,
+  DesktopPreviewTabState,
 } from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -27,6 +26,57 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
     throw new Error(message);
   }
   return result as Awaited<ReturnType<DesktopBridge["ensureSshEnvironment"]>>;
+}
+
+const shellFleetRolloutPhases = new Set([
+  "idle",
+  "inventory",
+  "local_canary",
+  "platform_canary",
+  "wave",
+  "observing",
+  "completed",
+  "paused",
+  "failed",
+]);
+
+function isBoundedString(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim() === value &&
+    value.length > 0 &&
+    value.length <= maximum
+  );
+}
+
+function isIdList(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 1_000 &&
+    value.every((entry) => isBoundedString(entry, 256))
+  );
+}
+
+function isShellFleetRolloutStatus(value: unknown): value is CtoxShellFleetRolloutStatus {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const status = value as Record<string, unknown>;
+  const nullableString = (candidate: unknown, maximum: number) =>
+    candidate === null || isBoundedString(candidate, maximum);
+  return (
+    typeof status.phase === "string" &&
+    shellFleetRolloutPhases.has(status.phase) &&
+    nullableString(status.releaseVersion, 128) &&
+    nullableString(status.startedAt, 64) &&
+    isBoundedString(status.updatedAt, 64) &&
+    Number.isInteger(status.currentWave) &&
+    Number(status.currentWave) >= 0 &&
+    Number.isInteger(status.totalWaves) &&
+    Number(status.totalWaves) >= 0 &&
+    isIdList(status.instanceIds) &&
+    isIdList(status.completedInstanceIds) &&
+    nullableString(status.failedInstanceId, 256) &&
+    nullableString(status.errorCode, 128)
+  );
 }
 
 contextBridge.exposeInMainWorld("desktopBridge", {
@@ -227,15 +277,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL),
     onShellFleetRolloutStatus: (listener) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, status: unknown) => {
-        try {
-          listener(
-            Schema.decodeUnknownSync(CtoxShellFleetRolloutStatus)(status, {
-              onExcessProperty: "error",
-            }),
-          );
-        } catch {
-          // Fail closed: malformed main-process events never cross into the renderer.
-        }
+        if (!isShellFleetRolloutStatus(status)) return;
+        listener(status);
       };
       ipcRenderer.on(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT, wrappedListener);
       return () =>

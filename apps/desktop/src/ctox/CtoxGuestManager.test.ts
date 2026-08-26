@@ -1451,6 +1451,13 @@ describe("CtoxGuestManager", () => {
     ).toBe(false);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://ctox.dev/business-os/ctox-shell-manifest.json",
+        "fetch",
+        "https://ctox.dev",
+      ),
+    ).toBe(false);
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/api/business-os/status",
         "xhr",
         "https://ctox.dev",

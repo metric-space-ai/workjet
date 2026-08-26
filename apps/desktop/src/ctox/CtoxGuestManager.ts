@@ -45,6 +45,7 @@ const ALLOWED_CONTROL_PATHS = new Set([
 ]);
 const DATA_RESOURCE_TYPES = new Set(["xhr", "fetch", "websocket", "webSocket"]);
 const STATIC_ASSET_PATHS = new Set([
+  "/ctox-shell-manifest.json",
   "/system-apps.json",
   "/modules/registry.json",
   "/rxdb/src/v1_5_status.mjs",

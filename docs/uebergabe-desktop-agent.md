@@ -1,6 +1,6 @@
 # Übergabe: Workjet Desktop — Entwicklungs-Handover
 
-Stand: 2026-08-25 ~23:00 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
+Stand: 2026-08-26 ~03:25 · Branch `codex/workjet-native-foundation` · Korrektur-Log in `docs/ctox-desktop-korrekturen.md` (das Log ist die Beweiskette; NICHTS dort löschen, nur anhängen).
 
 ## Shell-Release-Fortführung — 2026-08-26 ~01:20
 
@@ -18,6 +18,26 @@ Repository-Secrets. Offen bleiben: Download/Stage/Activate/Rollback im
 Desktop-Main-Prozess, IPC/Fleet-Tabelle, gestaffelter realer Rollout und
 CDP-Abnahme des gebauten Stable-Artefakts. Diese Punkte nicht als erledigt
 melden, solange der Release-Lauf beziehungsweise reale Instanzproben fehlen.
+
+## Shell-/Fleet-Abschluss — 2026-08-26 ~03:25
+
+Der obige Zwischenstand ist durch den echten Stable `v0.1.4` ersetzt. Tag
+`business-os-shell-v0.1.4` zeigt auf CTOX `c2d25b331`; Actions-Lauf
+`32917548865` ist grün. Workjet pinnt/verifiziert v0.1.4 und enthält den
+per-Instanz-Cache, Shell-Lifecycle-IPC, die gestaffelte Fleet-Engine, getrennte
+Business-OS-Settings und den kompakten Chrome/Chat-Dock. Relevante Workjet-
+Commits: `b7425eccb`, `a2bf27219`, `3c6883868`, `11c67a7d9`, `633db1aff`,
+`cf404e954`, `eb370566e`.
+
+Die reale App startet den lokalen Guest mit `v0.1.4`. Die Fleet ist nicht
+scheinbar grün: elf `ctox_dev`-Instanzen, einschließlich GPU3, sind ohne lokalen
+oder SSH-verwalteten Adminzugang blockiert; die lokale Instanz ist wegen nicht
+bestätigtem RxDB/WebRTC-Health blockiert. Vor einem Canary also zuerst GPU3 als
+SSH-verwaltetes Ziel registrieren und den lokalen Datenpfad gesund bestätigen.
+Zusätzlich fehlen noch signierte per-Instanz-Module-Packs: deshalb erzeugen
+einige katalogisierte `installed-modules/*/schema.js` am globalen Recovery-
+Origin 404s. Nicht durch Wiedereinpacken von Kundenmodulen in die globale Shell
+kaschieren; einen getrennten signierten Module-Pack-/Resolver-Pfad bauen.
 
 ## Woran du arbeitest
 
@@ -89,6 +109,7 @@ Attach-Snippet: WebSocket auf `http://127.0.0.1:9300/json/list`, **Target mit UR
 12. **ERLEDIGT 2026-08-25 ~21:40 — statischer Harness-Session-Importer:** Settings → Harnesses erkennt lokale Codex- und Claude-Code-JSONL-Verläufe und erzeugt daraus unabhängige Workjet-Threads. Der Import liest Quellen ausschließlich, speichert weder Quellpfad noch native Resume-ID und startet keinen Provider-Turn; Wiederholung ergänzt nur einen unveränderten Präfix. Interne Health-Probes, Codex-Inject-Kontext, Subagents, Claude-Sidechains sowie Tool-/Thinking-Blöcke werden fail-closed ausgeschlossen. Live wurde eine reale Claude-Session zweimal importiert: 201 Nachrichten nach Erstimport und weiterhin exakt 201 nach Wiederholung; Quellhash, Mtime und Größe blieben bytegleich; `projection_thread_sessions` und `provider_session_runtime` blieben beide leer. Endzustand Business OS.
 13. **ERLEDIGT 2026-08-25 ~22:45 — Workjet-Identität und Logo-Guard:** Aktuelle Desktop-/Web-/Server-/Marketing-/Release- und Mobile-Flächen verwenden nur noch Workjet; CTOX bleibt Backendbegriff. Stable zeigt kein Alpha mehr. Alle ausgelieferten Desktop-, Web- und Marketing-Icons stammen bytegleich aus `assets/workjet/`; Mobile verwendet ebenfalls ausschließlich das Workjet-Zeichen und enthält kein `T3Mark.svg` mehr. Ein Guard verbietet retired Produktnamen in aktuellen Flächen und verhindert die Rückkehr der Screenshots. Live wurden Code, Business OS und alle elf Settings-Seiten im einzigen `t3code://app/`-Target sowie Marketing in Desktop-/Mobile-Viewport geprüft; Mobile-Simulator-Build und 750 Tests sind grün. Nur eng getestete technische Kontinuitätswerte bleiben unsichtbar für Profil-, Daten- und Deep-Link-Migration erhalten. Die lokal generierten alten Alpha-/Dev-Electron-Bundles wurden nach dem Stoppen ihrer verwaisten Prozesse wiederherstellbar in den Papierkorb verschoben; das einzige App-Bundle unter `.electron-runtime/` ist jetzt `Workjet.app`.
 14. **ERLEDIGT 2026-08-25 ~23:00 — Business-OS-Settings und eigener Footer:** Der Business-OS-Modus hat jetzt auch auf einer alten `/settings/*`-Route Vorrang und öffnet über die Desktop-Guest-Brücke den echten CTOX-Settings-Drawer statt Code-Einstellungen zu rendern. Der Business-OS-Footer enthält nur noch Settings und genau einen Instanz-Refresh; Workjet-/Provider-Updater bleiben Code-spezifisch. Vier fokussierte Testdateien / 93 Tests, drei Typechecks, Desktop-Pack und Web-Build sind grün. LIVE wurden sowohl der Footer-Klick als auch `Code Settings → Business OS` gegen den lokalen Loopback-Guest geprüft: echter Runtime-/Sync-/MCP-/Nutzer-/Modul-Drawer offen, keine Code-Settings, keine Doppel-Refresh-Aktion, kein Overflow, keine Kundeninstanz bedient; Endzustand Business OS.
+15. **IMPLEMENTIERT 2026-08-26 ~03:25 — signierte Shells und Fleet-Rollout; reale Canary-Trigger offen:** Stable v0.1.4, atomare CTOX-Slots, per-Instanz-Workjet-Cache, Status-/Updatepanel, acht eigene Business-OS-Settings-Kategorien und gestaffelte Fleet-Engine sind implementiert und im echten `t3code://app/`-Target geprüft. Die lokale v0.1.4-Shell startet, der Chat-Dock bleibt inhaltsbreit und der Business-OS-Footer hat genau Settings plus einen Refresh. Ein echter Rollout wurde korrekt nicht ausgeführt: GPU3 und zehn weitere `ctox_dev`-Instanzen besitzen keinen Workjet-Admin-/SSH-Pfad; die lokale Instanz hat nicht bestätigtes RxDB/WebRTC-Health. Nächste Operator-Schritte: lokalen Datenpfad reparieren/Health bestätigen, GPU3 als SSH-verwaltetes Ziel registrieren, dann Canary und 10-/15-Minuten-Beobachtung ausführen. Separat fehlt noch ein signierter Resolver für instanzspezifische Module-Packs; globale Shell-Releases dürfen keine Kundenmodule aufnehmen.
 
 ## Was NICHT zu tun ist
 

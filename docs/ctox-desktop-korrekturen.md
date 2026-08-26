@@ -1540,3 +1540,81 @@ Der unveränderliche Stable-Tag `business-os-shell-v0.1.0` wurde gepusht.
 Actions-Lauf `32909885557` wartet zum Zeitpunkt dieses Eintrags ohne gestarteten
 Step in der GitHub-Runner-Queue. Deshalb sind Stable-Pin, Download/Aktivierung,
 Fleet-Rollout und reale CDP-/RxDB-WebRTC-Abnahme ausdrücklich noch offen.
+
+## Shell-Lifecycle, Fleet-Steuerung und reale Stable-Abnahme — 2026-08-26 ~03:25
+
+Der zuvor offene Release-/Lifecycle-Strang ist implementiert. CTOX persistiert
+Shell-Kanal, aktive/gewünschte/angebotene Version, current-/previous-Slot,
+Prüf-/Aktivierungszeiten, Health, Phase, Fehler und Rollbackstatus typisiert in
+SQLite. Die getrennten Operationen `status`, `check`, `stage`, `activate` und
+`rollback` sind über authentifizierte Control-Plane-Routen und die lokale CLI
+verfügbar. Download, Manifest-/Ed25519-/SHA-256-/Dateilistenprüfung, Smoke-Test
+und Slotwechsel sind atomar; ein fehlgeschlagener Stage-/Activate-Schritt lässt
+den aktiven Slot unverändert. Backend- und Shell-Update bleiben getrennt.
+
+Workjet löst für jede Instanz exakt deren aktive kompatible Version in einem
+verifizierten Versionscache auf. Die eingebettete Shell ist sichtbar als
+`Recovery-Shell` gekennzeichnet. Das Fleet-Inventar und die sanitisierten IPC-
+Operationen unterstützen Check, Update, Pause/Fortsetzen und Rollback. Der
+Rollout klassifiziert zuerst Erreichbarkeit, Administration, Plattform,
+Backend-/Datenplane-Health und Kompatibilität; danach folgen lokaler Canary,
+GPU3-Canary und begrenzte Wellen. Stable wird beim Start, alle sechs Stunden und
+manuell geprüft. Ein Host wird höchstens einmal automatisch erneut versucht;
+danach folgen Rollback, Wellenstopp und Fleet-Pause.
+
+Die Business-OS-Settings sind eine eigene Oberfläche mit den acht Kategorien
+Allgemein, Backends & Sync, Apps, Updates, Darstellung, Benachrichtigungen,
+Diagnostik und Über. Die zuletzt gewählte Seite wird getrennt von Code
+gespeichert. QR-Pairing und Fleet-Updates liegen ausschließlich dort. Der Host-
+Footer besitzt Settings und genau einen Instanz-Refresh; die Shell besitzt Chat,
+Verlauf und App-Tabs. Im realen Guest misst der eingeklappte Chat-Dock 256 px
+und mit einem geöffneten Chat 454 px bei 1174 px verfügbarer Breite; der
+Plus-Button folgt bei x=431 direkt auf den Chat-Tab, ohne Leiste oder Border bis
+zum rechten Fensterrand.
+
+Die erste reale Release-Abnahme deckte drei Producer-/Integrationfehler auf und
+behob sie vor der Freigabe: ein zu breiter `release`-Dateifilter hatte
+`shared/shell-release-status.js` entfernt; `mobile-host.css/js` fehlten in der
+Root-Inventarliste; und die statische Workjet-Shell versuchte den zulässigen
+Hosted-Launch-Context statt der bereits vorhandenen kurzlebigen Desktop-
+Einladung. Der finale immutable Stable-Tag ist
+`business-os-shell-v0.1.4` auf CTOX-Commit `c2d25b331`. GitHub-Actions-Lauf
+`32917548865` ist vollständig grün. Der signierte Stable-Pointer nennt v0.1.4,
+Manifest-SHA-256 `a9bdcc7c…bb4cf`, Artefakt-SHA-256
+`89875506…b7044ac`, 122281365 Bytes, 1651 Dateien, Workjet-Minimum 0.0.33
+und CTOX-Minimum 0.3.22. Workjet pinnt und verifiziert genau dieses Artefakt.
+
+LIVE: Im einzigen `t3code://app/`-Target startet die lokale Shell als
+`v0.1.4`; Manifest, Shell-Status und Mobile-Host-Dateien laden ohne 404. Der
+Titel ist Workjet, die getrennten Settings und der kompakte Dock wurden
+interaktiv geprüft. Ein frischer Gaststart nach Mode-Wechsel funktioniert; ein
+nackter Reload ohne neu gemintete Einladung bleibt absichtlich nicht der
+Produktpfad. Die laufende App wurde nach Desktop-/Server-Rebuild sauber neu
+gestartet und im Business-OS-Modus hinterlassen.
+
+FLEET-BEFUND: Alle zwölf registrierten Instanzen haben einen konkreten, sichtbaren
+Status statt einer falschen grünen Gesamtanzeige. Elf `ctox_dev`-Einträge,
+einschließlich GPU3, besitzen in Workjet keinen lokalen oder SSH-verwalteten
+Administratorzugang und sind deshalb blockiert. Die lokale CTOX-Instanz ist
+wegen nicht bestätigtem RxDB/WebRTC-Datenplane-Health blockiert. GPU1/GPU4
+bleiben ebenfalls ausgeschlossen. Es wurde folglich keine reale Instanz
+unautorisiert aktualisiert und kein HTTP-Business-Datenfallback verwendet.
+Für den echten Canary müssen GPU3 als SSH-verwaltetes Ziel registriert und der
+lokale Datenpfad gesund bestätigt werden.
+
+VERBLEIBENDER SHELL-BEFUND: Der Start ist funktionsfähig, aber das CDP-Audit
+zeigt erwartete 404s für nicht im globalen Shell-Artefakt enthaltene,
+instanzspezifische `installed-modules/*/schema.js` sowie einen abgefangenen
+Maintenance-Control-Aufruf am statischen Recovery-Origin. Instanzmodule wurden
+bewusst nicht wieder in das globale Shell-Artefakt aufgenommen. Dafür wird ein
+separater signierter Module-Pack-/Resolver-Pfad benötigt; bis dahin dürfen
+diese Apps nicht als vollständig offline/restart-resynchronisiert abgenommen
+gelten.
+
+BEWEISE: Workjet 11 fokussierte Dateien / 154 Tests grün; Contracts-, Desktop-,
+Server- und Web-Typecheck exit 0; Desktop-Pack und Shell-Präparation grün.
+CTOX-Release-Workflow grün. Der breite CTOX-RxDB-Guard bleibt unabhängig von
+diesem Slice an der vorhandenen Mail-Modul-HTTP-Fundstelle rot; die neue
+Launch-Context-Reihenfolge wurde in einem sauberen Detached-Worktree separat
+verifiziert. Relevante Workjet-Commits: `b7425eccb`, `a2bf27219`, `3c6883868`,
+`11c67a7d9`, `633db1aff`, `cf404e954`, `eb370566e`.

@@ -1673,3 +1673,56 @@ wurde neu gestartet und im Business-OS-Modus mit der lokalen v0.1.9-Shell
 hinterlassen. Relevante Workjet-Fortsetzungscommits: `fb5270633`, `2fd2f03bc`,
 `2324a3e9c`, `489a22026`, `e4af40739`, `20687f081`, `bdfa5833e`,
 `346893638`, `fae7fb805`.
+
+## Stable v0.1.10, kompakte Backend-Navigation und Worker-Kontinuität — 2026-08-26 ~08:45
+
+Der immutable Stable `business-os-shell-v0.1.10` wurde aus CTOX-Commit
+`486f50105662ee90431dcef7430fd7a2ff28d29f` veröffentlicht. GitHub-Actions-
+Lauf `32938137492` ist vollständig grün. Das signierte Release-v2-Manifest hat
+SHA-256 `8045da5f9b02b10539f963cb804fe1c413d6763171d5f6f8bc0c824c7917458d`,
+der signierte Stable-Pointer
+`397c41a501c9e0ec37579d50b115e25d10950a7f39be61e20a8efafff9675c5c`.
+Das 122286557 Byte große Artefakt hat SHA-256
+`bddf8e506b8573b0e8ed875e4a9e8493a7fdf36e5fefe68d91abd8d115df9a63`
+und enthält 1651 reguläre Dateien.
+
+LIVE-ROLLOUT: Workjet zeigte für die lokale Instanz v0.1.9 mit Angebot
+v0.1.10 und führte die Aktion „Aktualisieren“ über den Fleet-Control-Pfad aus.
+Nach atomarem Stage/Activate und echtem CTOX-Service-/Workjet-Neustart startete
+der Guest aus Slot v0.1.10. Business OS → Updates zeigt `healthy`, CTOX 0.3.22,
+Shell/Angebot v0.1.10 und `Aktuell`; der Shell-Header zeigt `v0.1.10` mit
+Status `Aktuell`. `ctox business-os rxdb status --json` bestätigt
+`replicationUp=true`, authentifizierten Peer, offenen Data Channel und
+`errorTotal=0`. Es wurde kein HTTP-Business-Datenfallback verwendet.
+
+UI: Der Business-OS-Settings-Baum bleibt vollständig getrennt. Header-Aktionen
+aus dem Coding-Kontext, Hauptzeilen-Orchestrator und doppelte Footer-Aktionen
+sind entfernt. Der Composer ordnet Worker → Computer → Harness → Modell →
+Effort → System-Prompt → Tools; bei 520 px entstehen drei lesbare Zeilen ohne
+horizontalen Dokumentüberlauf. Die Backend-Seitenleiste zeigt statt einer
+rohen `biz_…`-ID einen kurzen Namen, klappt standardmäßig nur die ausgewählte
+Instanz auf, hält ruhige App-Kategorien geschlossen, verwendet eine einheitliche
+Hierarchie und verschiebt destruktives Entfernen in ein bestätigtes Kontextmenü.
+
+WORKER-KONTINUITÄT: Die Produktionsdatei `~/.t3/userdata/settings.json` enthielt
+weiterhin alle zwölf Worker-Profile; gelöscht war nichts. Die isolierte Dev-App
+unter `~/.t3/dev` hatte lediglich keine Settings-Datei. Ein einmaliger statischer
+Snapshot ausschließlich des `workjet`-Abschnitts wurde nach
+`~/.t3/dev/settings.json` übernommen. Settings → Worker zeigt wieder alle zwölf
+Profile. Es existiert keine laufende Synchronisation und keine Interferenz mit
+der Produktionskonfiguration.
+
+VERIFIKATION: Workjet 15 fokussierte Testdateien / 146 Tests grün, Web- und
+Desktop-Typecheck exit 0, `git diff --check` grün. CTOX Shell-Artefakt-/SBOM-/
+Signatursuite 13/13 und Rust-Shell-Lifecycle 10/10 grün. Der breite RxDB-Lauf
+hat 99 Tests bestanden, drei bestehende Inventory-/Command-Plane-Smokes sind
+im fremden parallelen Dirty-Stand rot und zwei Cross-Process-Smokes mangels
+gebautem Wire-Daemon übersprungen; die reale lokale Datenplane-Abnahme ist
+grün. Relevante Workjet-Commits: `41200f799`, `dd1e5cc8c`, `3bd1d9a99`.
+CTOX-Commits: `9f322f887`, `486f50105`.
+
+REMOTE-BLOCKER: GPU3 ist in Workjet noch nicht als SSH-verwaltetes Backend mit
+bestätigtem Host-Key und administratorfähiger Authentifizierung registriert.
+Die bekannten SSH-Benutzer wurden ohne Credential abgewiesen. Deshalb wurde
+keine Remote-Instanz verändert. GPU3 bleibt der nächste reale Linux-Canary;
+GPU1/GPU4 bleiben bis zum gesunden Datenplane-Nachweis blockiert.

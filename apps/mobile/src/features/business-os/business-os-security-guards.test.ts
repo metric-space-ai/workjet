@@ -40,11 +40,13 @@ describe("Business OS native security guards", () => {
     const layout = read("src/features/layout/AdaptiveWorkspaceLayout.tsx");
     const newTask = read("src/features/threads/new-task-flow-provider.tsx");
     const project = read("src/features/projects/AddProjectScreen.tsx");
+    const archiveRoute = read("src/features/archive/ArchivedThreadsRouteScreen.tsx");
     expect(pairing).toContain("bindEnvironment(businessOsInstance.id, environmentId)");
     expect(layout).toContain("selectedEnvironmentId={");
     expect(layout).toContain("selectEnvironment(environmentId)");
     expect(newTask).toContain("activeBusinessOsEnvironmentId");
     expect(project).toContain("connection.environmentId === selectedEnvironmentId");
+    expect(archiveRoute).toContain("allowAllEnvironments={!hasEnvironmentBindings}");
   });
 
   it("requires isolated native profiles and canonical app origins", () => {

@@ -54,8 +54,11 @@ export function ArchivedThreadsRouteScreen() {
     [environmentBindings, hasEnvironmentBindings, savedConnectionsById],
   );
   const environmentIds = useMemo(
-    () => environments.map((environment) => environment.environmentId),
-    [environments],
+    () =>
+      hasEnvironmentBindings && selectedEnvironmentId !== null
+        ? [selectedEnvironmentId]
+        : environments.map((environment) => environment.environmentId),
+    [environments, hasEnvironmentBindings, selectedEnvironmentId],
   );
   const environmentLabels = useMemo(
     () =>
@@ -93,6 +96,7 @@ export function ArchivedThreadsRouteScreen() {
 
   return (
     <ArchivedThreadsScreen
+      allowAllEnvironments={!hasEnvironmentBindings}
       environments={environments}
       error={error}
       groups={groups}

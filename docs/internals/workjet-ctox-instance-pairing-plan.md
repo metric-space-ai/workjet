@@ -62,6 +62,11 @@ signaling credentials and invite payloads are forbidden in the binding table.
 - [ ] Present `Gerät verbinden`, renew and revoke as actions of one instance.
 - [ ] Keep Machines/workers nested under the instance rather than presenting
       them as alternative backends.
+- [ ] Remove the global device-pairing dialog/CTA and the standalone Machines
+      navigation page. Both capabilities live only in the regular settings of
+      the selected CTOX instance; legacy routes may redirect there.
+- [ ] Enroll Mac, `gpu1`, `gpu3` and other hosts as Machines of the selected
+      instance instead of minting additional CTOX instance rows for them.
 - [ ] Generate compact one-time-reference QR codes and retain guarded manual
       signaling details as an explicit fallback.
 

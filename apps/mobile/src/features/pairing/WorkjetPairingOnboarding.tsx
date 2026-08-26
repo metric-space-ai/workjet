@@ -1,18 +1,24 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useCallback, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { pairingScannerSize } from "./pairing-scanner-layout";
+
+type ScannerState = "closed" | "starting" | "ready" | "detected" | "error";
 
 export function WorkjetPairingOnboarding(props: {
   readonly onContinueWithoutPairing: () => void;
   readonly onPairingPayload: (payload: string) => Promise<boolean>;
 }) {
   const foreground = useThemeColor("--color-foreground");
+  const { height, width } = useWindowDimensions();
+  const scannerSize = pairingScannerSize({ height, width });
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [scannerState, setScannerState] = useState<ScannerState>("closed");
   const [scannerLocked, setScannerLocked] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,23 +26,34 @@ export function WorkjetPairingOnboarding(props: {
   const openScanner = useCallback(async () => {
     setError(null);
     if (cameraPermission?.granted) {
+      setScannerState("starting");
       setScannerVisible(true);
       return;
     }
     const permission = await requestCameraPermission();
-    if (permission.granted) setScannerVisible(true);
-    else setError("Kamerazugriff ist erforderlich, um den Workjet-QR-Code zu scannen.");
+    if (permission.granted) {
+      setScannerState("starting");
+      setScannerVisible(true);
+    } else {
+      setScannerState("error");
+      setError("Kamerazugriff ist erforderlich, um den Workjet-QR-Code zu scannen.");
+    }
   }, [cameraPermission?.granted, requestCameraPermission]);
 
   const scan = useCallback(
     ({ data }: { readonly data: string }) => {
       if (scannerLocked || pairing) return;
       setScannerLocked(true);
+      setScannerState("detected");
       setPairing(true);
       setError(null);
       void props
         .onPairingPayload(data)
+        .then((completed) => {
+          if (!completed) setScannerState("ready");
+        })
         .catch((cause) => {
+          setScannerState("ready");
           setError(
             cause instanceof Error
               ? cause.message
@@ -52,7 +69,11 @@ export function WorkjetPairingOnboarding(props: {
   );
 
   return (
-    <View className="flex-1 bg-screen px-5 py-6">
+    <ScrollView
+      className="flex-1 bg-screen"
+      contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingVertical: 24 }}
+      showsVerticalScrollIndicator={false}
+    >
       <View className="w-full max-w-[760px] flex-1 self-center">
         <View className="flex-row items-center gap-3">
           <View className="size-12 items-center justify-center rounded-[15px] bg-subtle-strong">
@@ -74,22 +95,47 @@ export function WorkjetPairingOnboarding(props: {
         <View className="mt-8 rounded-[24px] bg-card p-5">
           <Text className="text-lg font-t3-bold">QR-Code in Workjet Desktop öffnen</Text>
           <Text className="mt-3 text-base leading-normal text-foreground-muted">
-            Öffne Workjet Desktop und wähle im Footer der linken Seitenleiste „Mobilgerät
-            verbinden“. Zeige dort den kurzlebigen QR-Code an und scanne ihn hier. Workjet übernimmt
+            Öffne Workjet Desktop und wähle im Footer der linken Seitenleiste „Gerät verbinden“.
+            Zeige dort den kurzlebigen QR-Code an und scanne ihn hier. Workjet übernimmt
             CTOX-Signaling, Geräteidentität und Synchronisierung automatisch – ohne Server- oder
             Passworteingabe.
           </Text>
         </View>
 
         {scannerVisible ? (
-          <View className="mt-5 overflow-hidden rounded-[26px] border border-border bg-black">
+          <View className="mt-5 items-center gap-3">
             {cameraPermission?.granted ? (
-              <CameraView
-                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                onBarcodeScanned={scan}
-                style={{ aspectRatio: 1, width: "100%" }}
-              />
+              <View
+                className="overflow-hidden rounded-[26px] border border-border bg-black"
+                style={{ height: scannerSize, width: scannerSize }}
+              >
+                <CameraView
+                  autofocus="on"
+                  barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                  facing="back"
+                  onBarcodeScanned={scannerLocked ? undefined : scan}
+                  onCameraReady={() => setScannerState("ready")}
+                  onMountError={({ message }) => {
+                    setScannerState("error");
+                    setError(`Die Kamera konnte nicht gestartet werden: ${message}`);
+                  }}
+                  style={{ height: scannerSize, width: scannerSize }}
+                />
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-[15%] rounded-[24px] border-2 border-white/90"
+                />
+              </View>
             ) : null}
+            <Text className="text-center text-sm font-t3-medium text-foreground-muted">
+              {scannerState === "starting"
+                ? "Kamera wird gestartet…"
+                : scannerState === "detected"
+                  ? "QR-Code erkannt. Pairing wird geprüft…"
+                  : scannerState === "error"
+                    ? "Scanner nicht verfügbar"
+                    : "Kurzen Workjet-QR-Code vollständig innerhalb des Rahmens positionieren"}
+            </Text>
           </View>
         ) : (
           <View className="flex-1" />
@@ -126,6 +172,6 @@ export function WorkjetPairingOnboarding(props: {
           </Pressable>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }

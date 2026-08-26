@@ -12,6 +12,7 @@ import { workjetDeviceInviteEnvironment } from "../../../state/workjet-device-in
 import { useSavedRemoteConnections } from "../../../state/use-remote-environment-registry";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { useWorkjetDevicePairing } from "../../pairing/WorkjetDevicePairingProvider";
+import { pairingScannerSize } from "../../pairing/pairing-scanner-layout";
 import {
   makeWorkjetDeviceInviteControl,
   resolveWorkjetDevicePairingConnection,
@@ -67,13 +68,15 @@ export function BusinessOsSettingsPanel(props: {
     });
   }, [connection, createInviteCommand, revokeInviteCommand]);
   const inviteControl = props.inviteControl ?? productionControl;
-  const { width } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
   const tabletLayout = width >= 720;
+  const scannerSize = pairingScannerSize({ height, width });
   const [generatedInvite, setGeneratedInvite] = useState<CreatedWorkjetDeviceInvite | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [scannerLocked, setScannerLocked] = useState(false);
+  const [scannerReady, setScannerReady] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   useEffect(() => {
@@ -150,12 +153,15 @@ export function BusinessOsSettingsPanel(props: {
   const openScanner = useCallback(async () => {
     if (cameraPermission?.granted) {
       setScannerLocked(false);
+      setScannerReady(false);
       setShowScanner(true);
       return;
     }
     const permission = await requestCameraPermission();
-    if (permission.granted) setShowScanner(true);
-    else
+    if (permission.granted) {
+      setScannerReady(false);
+      setShowScanner(true);
+    } else
       Alert.alert(
         "Kamerazugriff benötigt",
         "Erlaube den Kamerazugriff, um den QR-Code zu scannen.",
@@ -223,18 +229,39 @@ export function BusinessOsSettingsPanel(props: {
       {error ? <ErrorBanner message={error} /> : null}
 
       {showScanner ? (
-        <View className="gap-3 rounded-[24px] bg-card p-4">
-          <View className="overflow-hidden rounded-[18px]">
+        <View className="items-center gap-3 rounded-[24px] bg-card p-4">
+          <View
+            className="overflow-hidden rounded-[18px] bg-black"
+            style={{ height: scannerSize, width: scannerSize }}
+          >
             <CameraView
+              autofocus="on"
               barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-              onBarcodeScanned={scan}
-              style={{ alignSelf: "center", aspectRatio: 1, maxWidth: 520, width: "100%" }}
+              facing="back"
+              onBarcodeScanned={scannerLocked ? undefined : scan}
+              onCameraReady={() => setScannerReady(true)}
+              onMountError={() => setError("Die Kamera konnte nicht gestartet werden.")}
+              style={{ height: scannerSize, width: scannerSize }}
+            />
+            <View
+              pointerEvents="none"
+              className="absolute inset-[15%] rounded-[20px] border-2 border-white/90"
             />
           </View>
+          <Text className="text-center text-sm text-foreground-muted">
+            {scannerLocked
+              ? "QR-Code erkannt. Pairing wird geprüft…"
+              : scannerReady
+                ? "Kurzen Workjet-QR-Code vollständig innerhalb des Rahmens positionieren"
+                : "Kamera wird gestartet…"}
+          </Text>
           <ConnectionSheetButton
             icon="xmark"
             label="Scanner schließen"
-            onPress={() => setShowScanner(false)}
+            onPress={() => {
+              setShowScanner(false);
+              setScannerReady(false);
+            }}
           />
         </View>
       ) : (

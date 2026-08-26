@@ -35,7 +35,7 @@ describe("shared Workjet product shell", () => {
 
     expect(onboarding).toContain("Ein Pairing für Code und Business OS");
     expect(onboarding).toContain("Footer der linken Seitenleiste");
-    expect(onboarding).toMatch(/Mobilgerät\s+verbinden/u);
+    expect(onboarding).toMatch(/Gerät\s+verbinden/u);
     expect(onboarding).toContain("<CameraView");
     expect(onboarding).not.toContain("<TextInput");
     expect(onboarding).not.toMatch(/placeholder=.*(?:server|host|passwort|password)/iu);

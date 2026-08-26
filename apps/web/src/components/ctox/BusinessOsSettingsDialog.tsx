@@ -1,22 +1,24 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import type {
   CtoxDiscoveryResult,
+  CtoxManagedInstance,
   CtoxShellFleetInventoryResult,
   CtoxShellFleetRow,
   CtoxShellFleetRolloutStatus,
   DesktopCtoxBridge,
 } from "@t3tools/contracts";
-import { RefreshCw, X } from "lucide-react";
+import { QrCode, RefreshCw, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { APP_VERSION } from "../../branding";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
+import { openWorkjetDevicePairing } from "../settings/WorkjetDevicePairingDialog";
 
 const SETTINGS_PAGE_KEY = "workjet.business-os.settings.last-page";
 const SETTINGS_PAGES = [
   ["general", "Allgemein"],
-  ["backends", "Backends & Synchronisierung"],
+  ["backends", "Verbindungen"],
   ["apps", "Apps"],
   ["updates", "Updates"],
   ["appearance", "Darstellung"],
@@ -71,13 +73,13 @@ const BLOCKER_LABELS: Readonly<Record<NonNullable<CtoxShellFleetRow["blocker"]>,
 };
 
 const INSTANCE_STATUS_LABELS: Readonly<Record<string, string>> = {
-  available: "Verfügbar",
-  offline: "Offline",
-  needs_auth: "Anmeldung erforderlich",
-  pairing_expired: "Verbindung abgelaufen",
+  available: "Bereit",
+  offline: "Nicht erreichbar",
+  needs_auth: "Anmelden",
+  pairing_expired: "Neu verbinden",
   paired: "Verbunden",
-  installing: "Wird eingerichtet",
-  error: "Fehler",
+  installing: "Wird verbunden…",
+  error: "Verbindung prüfen",
 };
 
 const FLEET_SOURCE_LABELS: Readonly<Record<string, string>> = {
@@ -152,6 +154,35 @@ export function fleetInstanceDisplayTitle(displayName: string): string {
   if (!/^biz_[a-z0-9-]+$/i.test(normalized)) return normalized;
   const shortId = normalized.slice(4).split("-")[0]?.slice(0, 8) || normalized.slice(4, 12);
   return `CTOX Backend · ${shortId}`;
+}
+
+function isTechnicalInstanceName(displayName: string): boolean {
+  const normalized = displayName.trim();
+  return (
+    /^biz_[a-z0-9-]+$/iu.test(normalized) ||
+    /^CTOX (?:Backend|Local Instance)(?:\s*[·-].*)?$/iu.test(normalized)
+  );
+}
+
+export function connectionDisplayTitle(
+  instance: Pick<CtoxManagedInstance, "displayName" | "domain" | "source">,
+): string {
+  if (instance.source === "local_daemon") return "Dieser Mac";
+  if (!isTechnicalInstanceName(instance.displayName)) return instance.displayName.trim();
+  if (instance.source === "ctox_dev") return instance.domain ?? "Workjet Cloud";
+  if (instance.source === "ssh_managed") return instance.domain ?? "Remote-Gerät";
+  return instance.domain ?? "Weiteres Workjet-Gerät";
+}
+
+function connectionStateDescription(
+  instance: Pick<CtoxManagedInstance, "status" | "healthSummary">,
+  ready: boolean,
+): string {
+  if (ready) return "Synchronisiert";
+  if (instance.status === "pairing_expired") return "Verbindung muss erneuert werden";
+  if (instance.status === "offline") return "Zurzeit nicht erreichbar";
+  if (instance.status === "needs_auth") return "Anmeldung erforderlich";
+  return "Noch nicht verbunden";
 }
 
 export function businessOsInstanceDataPlaneReady(
@@ -418,7 +449,7 @@ function UpdatesPage({
           <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
             {loading
               ? "Erreichbarkeit, Versionen und Updatefähigkeit werden geladen."
-              : "Verbinde zuerst mindestens ein Backend unter Backends & Synchronisierung. Danach erscheinen kompatible Business OS-Updates hier."}
+              : "Richte zuerst unter Verbindungen ein Gerät ein. Danach erscheinen kompatible Business OS-Updates hier."}
           </p>
         </div>
       ) : (
@@ -618,6 +649,10 @@ export function BusinessOsSettingsDialog({
     window.localStorage.setItem(SETTINGS_PAGE_KEY, next);
     keepPageButtonVisible(button ?? null);
   };
+  const openDevicePairing = () => {
+    onClose();
+    window.requestAnimationFrame(openWorkjetDevicePairing);
+  };
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -696,11 +731,11 @@ export function BusinessOsSettingsDialog({
               </h2>
               {page === "general" ? (
                 <div className="mt-6 rounded-lg border border-border p-5">
-                  <p className="text-sm font-medium">Aktives Backend</p>
+                  <p className="text-sm font-medium">Aktive Verbindung</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {selected === undefined
-                      ? "Kein CTOX Backend ausgewählt"
-                      : fleetInstanceDisplayTitle(selected.displayName)}
+                      ? "Noch kein Gerät verbunden"
+                      : connectionDisplayTitle(selected)}
                   </p>
                   {selected === undefined ? (
                     <button
@@ -708,38 +743,64 @@ export function BusinessOsSettingsDialog({
                       className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                       onClick={() => choosePage("backends")}
                     >
-                      Backend auswählen
+                      Verbindung auswählen
                     </button>
                   ) : (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      Synchronisierung ·{" "}
-                      {businessOsInstanceDataPlaneReady(selected, readyInstanceId)
-                        ? "bereit"
-                        : "nicht bestätigt"}
+                      {connectionStateDescription(
+                        selected,
+                        businessOsInstanceDataPlaneReady(selected, readyInstanceId),
+                      )}
                     </p>
                   )}
                 </div>
               ) : null}
               {page === "backends" ? (
                 <div className="mt-6 space-y-3">
+                  <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium">Workjet auf einem weiteren Gerät verbinden</p>
+                      <p className="mt-1 max-w-xl text-sm leading-5 text-muted-foreground">
+                        Zeige einen kurzen, einmal gültigen QR-Code an. Ein Scan verbindet Code und
+                        Business OS gemeinsam; Serveradresse und Zugangsdaten müssen nicht manuell
+                        eingegeben werden.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                      onClick={openDevicePairing}
+                    >
+                      <QrCode className="size-4" aria-hidden />
+                      Gerät verbinden
+                    </button>
+                  </div>
                   {(discovery !== "loading" && discovery._tag === "ready"
                     ? discovery.instances
                     : []
                   ).map((instance) => (
                     <div key={instance.id} className="rounded-lg border border-border p-4">
                       <div className="flex items-center justify-between gap-4">
-                        <p className="font-medium">
-                          {fleetInstanceDisplayTitle(instance.displayName)}
-                        </p>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                          {INSTANCE_STATUS_LABELS[instance.status] ?? instance.status}
-                        </span>
+                        <p className="font-medium">{connectionDisplayTitle(instance)}</p>
+                        {instance.status === "pairing_expired" ? (
+                          <button
+                            type="button"
+                            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                            onClick={openDevicePairing}
+                          >
+                            Erneut verbinden
+                          </button>
+                        ) : (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                            {INSTANCE_STATUS_LABELS[instance.status] ?? "Verbindung prüfen"}
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Synchronisierung ·{" "}
-                        {businessOsInstanceDataPlaneReady(instance, readyInstanceId)
-                          ? "bereit"
-                          : "nicht bestätigt"}
+                        {connectionStateDescription(
+                          instance,
+                          businessOsInstanceDataPlaneReady(instance, readyInstanceId),
+                        )}
                       </p>
                     </div>
                   ))}
@@ -749,8 +810,8 @@ export function BusinessOsSettingsDialog({
                 <div className="mt-6 rounded-lg border border-border p-5">
                   <p className="text-sm font-medium">
                     {selected === undefined
-                      ? "Kein Backend ausgewählt"
-                      : `Aktives Backend: ${fleetInstanceDisplayTitle(selected.displayName)}`}
+                      ? "Noch kein Gerät verbunden"
+                      : `Aktive Verbindung: ${connectionDisplayTitle(selected)}`}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Apps werden pro CTOX Backend verwaltet und bleiben von Coding-Prozessen
@@ -762,7 +823,7 @@ export function BusinessOsSettingsDialog({
                       className="mt-4 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
                       onClick={() => choosePage("backends")}
                     >
-                      Backends & Synchronisierung öffnen
+                      Verbindungen öffnen
                     </button>
                   ) : null}
                 </div>
@@ -784,20 +845,20 @@ export function BusinessOsSettingsDialog({
                     CTOX-Backend.
                   </p>
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Aktives Backend:{" "}
+                    Aktive Verbindung:{" "}
                     {selected === undefined
-                      ? "Kein Backend ausgewählt"
-                      : fleetInstanceDisplayTitle(selected.displayName)}
+                      ? "Noch kein Gerät verbunden"
+                      : connectionDisplayTitle(selected)}
                   </p>
                 </div>
               ) : null}
               {page === "diagnostics" ? (
                 <div className="mt-6 rounded-lg border border-border p-5 text-sm">
                   <p>
-                    Instanz:{" "}
+                    Verbindung:{" "}
                     {selected === undefined
-                      ? "Kein Backend ausgewählt"
-                      : fleetInstanceDisplayTitle(selected.displayName)}
+                      ? "Noch kein Gerät verbunden"
+                      : connectionDisplayTitle(selected)}
                   </p>
                   <p className="mt-1 text-muted-foreground">
                     Datenpfad: {selected?.healthSummary.dataPlane ?? "unbekannt"}
@@ -816,7 +877,7 @@ export function BusinessOsSettingsDialog({
                         className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                         onClick={() => choosePage("backends")}
                       >
-                        Backend verbinden
+                        Gerät verbinden
                       </button>
                     ) : null}
                   </div>

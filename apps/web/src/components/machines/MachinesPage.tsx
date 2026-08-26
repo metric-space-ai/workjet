@@ -24,6 +24,7 @@ import type {
   WorkjetMeshPeerBinding,
   WorkjetMeshWorkspaceId,
 } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -387,6 +388,7 @@ export interface MachinesPageViewProps {
   readonly environments: ReadonlyArray<EnvironmentMeshOverviewStatus>;
   readonly isPending: boolean;
   readonly onRefresh: () => void;
+  readonly onOpenComputers?: (() => void) | undefined;
   /**
    * The peer awaiting confirmation, or null. The view renders the dialog from
    * this and NEVER from a click: `onRequestRevoke` only asks for it, and
@@ -481,12 +483,22 @@ export function MachinesPageView(props: MachinesPageViewProps) {
         ))}
 
         {!props.isPending && props.environments.length > 0 && !anyPeers ? (
-          <p data-testid="machines-empty" className="text-sm text-muted-foreground">
-            No other machines have exchanged mail with this one yet. Pair the other Workjet app
-            through the guided flow in Settings → Computers, then send it a message from an
-            orchestrator thread to establish first contact. Mobile Business OS sync uses the QR code
-            shown there; signaling credentials never need to be entered manually.
-          </p>
+          <div
+            data-testid="machines-empty"
+            className="rounded-lg border border-border bg-muted/10 p-4"
+          >
+            <p className="text-sm text-muted-foreground">
+              No other machines have exchanged mail with this one yet. Pair the other Workjet app,
+              then send it a message from an orchestrator thread to establish first contact. Mobile
+              Business OS sync uses the QR code in Computers; signaling credentials never need to be
+              entered manually.
+            </p>
+            {props.onOpenComputers ? (
+              <Button className="mt-4" size="sm" onClick={props.onOpenComputers}>
+                Open Computers
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         {pending !== null && pending.row.revocable !== null ? (
@@ -512,6 +524,7 @@ export function MachinesPageView(props: MachinesPageViewProps) {
 
 export function MachinesPage() {
   const { environments, isPending, refresh, revokePeer, revoking } = useMeshOverview();
+  const navigate = useNavigate();
   const [pendingRevocation, setPendingRevocation] = useState<PendingMachineRevocation | null>(null);
 
   // The observing environment is resolved HERE, from the section the row was
@@ -559,6 +572,7 @@ export function MachinesPage() {
           environments={environments}
           isPending={isPending}
           onRefresh={refresh}
+          onOpenComputers={() => void navigate({ to: "/settings/computers" })}
           pendingRevocation={pendingRevocation}
           onRequestRevoke={requestRevoke}
           onCancelRevoke={() => setPendingRevocation(null)}

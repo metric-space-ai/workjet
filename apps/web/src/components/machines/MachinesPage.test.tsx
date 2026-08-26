@@ -161,15 +161,17 @@ describe("MachinesPageView", () => {
     renderToStaticMarkup(MachinesPageView(props));
 
   it("names the empty state and points at the pairing flow", () => {
+    const onOpenComputers = vi.fn();
     const markup = render({
       environments: [environmentStatus({ overview: overview([]) })],
       isPending: false,
       onRefresh: vi.fn(),
+      onOpenComputers,
     });
 
     expect(markup).toContain("No other machines have exchanged mail with this one yet.");
-    expect(markup).toContain("Settings → Computers");
-    expect(markup).toContain("Mobile Business OS sync uses the QR code shown there");
+    expect(markup).toContain("Open Computers");
+    expect(markup).toContain("Mobile Business OS sync uses the QR code in Computers");
     expect(markup).not.toContain("room password");
     expect(markup).not.toContain("signaling URLs");
     // The local machine is still shown; the mesh being empty is not the same as

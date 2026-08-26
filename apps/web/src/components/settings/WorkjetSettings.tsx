@@ -841,7 +841,7 @@ export function WorkjetSettingsView({
       {activeSection === "workers" ? (
         <SettingsSection
           id={searchableSetting("workjet-workers").id}
-          title={searchableSetting("workjet-workers").title}
+          title="Configured workers"
           headerAction={
             <Button
               type="button"
@@ -870,48 +870,50 @@ export function WorkjetSettingsView({
               description="Add a reusable worker after configuring a computer and LLM route."
             />
           ) : (
-            configuration.workerProfiles.map((worker) => {
-              const computer = configuration.computers.find(
-                (candidate) => candidate.id === worker.computerId,
-              );
-              const route = configuration.llmRoutes.find(
-                (candidate) => candidate.id === worker.llmRouteId,
-              );
-              const warning = workjetHarnessAvailabilityWarning(worker, configuration.computers);
-              return (
-                <Fragment key={worker.id}>
-                  <SettingsRow
-                    title={worker.name}
-                    description={`${computer?.label ?? "Missing computer"} · ${workjetHarnessDisplayLabel(worker.harness)} · ${route?.label ?? "Missing route"} · ${worker.modelId}`}
-                    status={warning ? <span role="alert">{warning}</span> : undefined}
-                    control={
-                      <ItemActions
-                        label={`worker ${worker.name}`}
-                        onEdit={() => {
-                          setAddingWorker(false);
-                          setEditingWorkerId(worker.id);
-                          setPendingWorkerParentId(null);
-                        }}
-                        onDelete={() => {
-                          const workerProfiles = configuration.workerProfiles.filter(
-                            (candidate) => candidate.id !== worker.id,
-                          );
-                          onChange({
-                            ...configuration,
-                            workerProfiles,
-                            workerGraph: sanitizeWorkjetWorkerGraph(
-                              configuration.workerGraph,
+            <div className="divide-y divide-border/60">
+              {configuration.workerProfiles.map((worker) => {
+                const computer = configuration.computers.find(
+                  (candidate) => candidate.id === worker.computerId,
+                );
+                const route = configuration.llmRoutes.find(
+                  (candidate) => candidate.id === worker.llmRouteId,
+                );
+                const warning = workjetHarnessAvailabilityWarning(worker, configuration.computers);
+                return (
+                  <Fragment key={worker.id}>
+                    <SettingsRow
+                      title={worker.name}
+                      description={`${computer?.label ?? "Missing computer"} · ${workjetHarnessDisplayLabel(worker.harness)} · ${route?.label ?? "Missing route"} · ${worker.modelId}`}
+                      status={warning ? <span role="alert">{warning}</span> : undefined}
+                      control={
+                        <ItemActions
+                          label={`worker ${worker.name}`}
+                          onEdit={() => {
+                            setAddingWorker(false);
+                            setEditingWorkerId(worker.id);
+                            setPendingWorkerParentId(null);
+                          }}
+                          onDelete={() => {
+                            const workerProfiles = configuration.workerProfiles.filter(
+                              (candidate) => candidate.id !== worker.id,
+                            );
+                            onChange({
+                              ...configuration,
                               workerProfiles,
-                            ),
-                          });
-                        }}
-                      />
-                    }
-                  />
-                  {editingWorker?.id === worker.id ? workerEditor : null}
-                </Fragment>
-              );
-            })
+                              workerGraph: sanitizeWorkjetWorkerGraph(
+                                configuration.workerGraph,
+                                workerProfiles,
+                              ),
+                            });
+                          }}
+                        />
+                      }
+                    />
+                    {editingWorker?.id === worker.id ? workerEditor : null}
+                  </Fragment>
+                );
+              })}
+            </div>
           )}
         </SettingsSection>
       ) : null}

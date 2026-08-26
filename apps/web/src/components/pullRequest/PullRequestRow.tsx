@@ -60,7 +60,12 @@ function PullRequestRowImpl({
         baseBranch={entry.baseBranch}
       />
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-foreground">{entry.title}</span>
+        <span
+          className="line-clamp-2 text-sm font-medium text-foreground sm:block sm:truncate"
+          title={entry.title}
+        >
+          {entry.title}
+        </span>
         <PullRequestMetaLine className="mt-0.5 text-xs text-muted-foreground/70">
           <span className="flex shrink-0 items-center gap-1">
             {showProvider ? (

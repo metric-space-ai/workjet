@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import * as NodeFs from "node:fs";
 import * as NodeHttp from "node:http";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import type {
@@ -155,6 +156,27 @@ interface ResolvedShellRoot {
   readonly root: string;
   readonly release: CtoxBusinessOsShellReleaseManifest;
   readonly recoveryShell: boolean;
+}
+
+const INSTANCE_MODULE_PREFIXES = ["installed-modules/", "local-modules/"] as const;
+
+/**
+ * Local runtime modules remain instance-owned and are therefore not part of a
+ * global shell release. Resolve their existing CTOX runtime root without
+ * inventing a second configuration switch; `CTOX_INSTALL_ROOT` is the
+ * installer's established location override.
+ */
+export function resolveCtoxLocalModuleAssetRoot(
+  env: Readonly<Record<string, string | undefined>>,
+  homeDirectory: string,
+): string | undefined {
+  const override = env.CTOX_INSTALL_ROOT?.trim();
+  const installRoot =
+    override !== undefined && override.length > 0
+      ? override
+      : NodePath.join(homeDirectory, ".local", "lib", "ctox");
+  if (!NodePath.isAbsolute(installRoot)) return undefined;
+  return NodePath.join(installRoot, "current", "runtime", "business-os");
 }
 
 export function resolveCtoxBusinessOsShellRoot(
@@ -349,7 +371,11 @@ function shellRelativePath(pathname: string): string {
     : normalized.replace(/^\/+/, "");
 }
 
-function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): void {
+function installStaticHandler(
+  server: NodeHttp.Server,
+  canonicalRoot: string,
+  canonicalInstanceModuleRoot?: string,
+): void {
   server.on("request", (request, response) => {
     if (request.method !== "GET" && request.method !== "HEAD") {
       reject(response, 405);
@@ -370,8 +396,25 @@ function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): v
       return;
     }
 
-    const candidate = NodePath.resolve(canonicalRoot, relative);
-    if (candidate !== canonicalRoot && !candidate.startsWith(`${canonicalRoot}${NodePath.sep}`)) {
+    const shellCandidate = NodePath.resolve(canonicalRoot, relative);
+    const mayUseInstanceModuleRoot = INSTANCE_MODULE_PREFIXES.some((prefix) =>
+      relative.startsWith(prefix),
+    );
+    const overlayCandidate =
+      mayUseInstanceModuleRoot && canonicalInstanceModuleRoot !== undefined
+        ? NodePath.resolve(canonicalInstanceModuleRoot, relative)
+        : undefined;
+    const useOverlay =
+      overlayCandidate !== undefined &&
+      !NodeFs.existsSync(shellCandidate) &&
+      NodeFs.existsSync(overlayCandidate);
+    const candidateRoot =
+      useOverlay && canonicalInstanceModuleRoot !== undefined
+        ? canonicalInstanceModuleRoot
+        : canonicalRoot;
+    const candidate =
+      useOverlay && overlayCandidate !== undefined ? overlayCandidate : shellCandidate;
+    if (candidate !== candidateRoot && !candidate.startsWith(`${candidateRoot}${NodePath.sep}`)) {
       reject(response, 403);
       return;
     }
@@ -388,8 +431,8 @@ function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): v
       NodeFs.realpath(candidate, (realpathError, canonicalCandidate) => {
         if (
           realpathError !== null ||
-          (canonicalCandidate !== canonicalRoot &&
-            !canonicalCandidate.startsWith(`${canonicalRoot}${NodePath.sep}`))
+          (canonicalCandidate !== candidateRoot &&
+            !canonicalCandidate.startsWith(`${candidateRoot}${NodePath.sep}`))
         ) {
           reject(response, 403);
           return;
@@ -421,9 +464,11 @@ function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): v
 
 function startServer(
   resolved: ResolvedShellRoot,
+  instanceModuleRoot?: string,
 ): Effect.Effect<RunningShellServer, CtoxBusinessOsShellError> {
   return Effect.callback<RunningShellServer, CtoxBusinessOsShellError>((resume) => {
     let canonicalRoot: string;
+    let canonicalInstanceModuleRoot: string | undefined;
     try {
       canonicalRoot = NodeFs.realpathSync(resolved.root);
       if (!NodeFs.statSync(canonicalRoot).isDirectory()) throw new Error("invalid shell root");
@@ -463,6 +508,10 @@ function startServer(
       ) {
         throw new Error("invalid shell entry");
       }
+      if (instanceModuleRoot !== undefined && NodeFs.existsSync(instanceModuleRoot)) {
+        const candidate = NodeFs.realpathSync(instanceModuleRoot);
+        if (NodeFs.statSync(candidate).isDirectory()) canonicalInstanceModuleRoot = candidate;
+      }
     } catch {
       resume(Effect.fail(new CtoxBusinessOsShellError()));
       return;
@@ -473,7 +522,7 @@ function startServer(
     server.requestTimeout = 30_000;
     server.keepAliveTimeout = 5_000;
     server.maxRequestsPerSocket = 100;
-    installStaticHandler(server, canonicalRoot);
+    installStaticHandler(server, canonicalRoot, canonicalInstanceModuleRoot);
     const fail = () => resume(Effect.fail(new CtoxBusinessOsShellError()));
     server.once("error", fail);
     server.listen(0, LOOPBACK_HOST, () => {
@@ -507,6 +556,7 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const parentScope = yield* Scope.Scope;
   const recoveryRoot = resolveCtoxBusinessOsShellRoot(environment);
+  const localModuleAssetRoot = resolveCtoxLocalModuleAssetRoot(process.env, NodeOS.homedir());
   const cacheRoot = NodePath.join(
     environment.stateDir ?? NodePath.join(environment.rootDir, ".t3"),
     "ctox-business-os-shell-cache",
@@ -544,15 +594,20 @@ export const make = Effect.gen(function* () {
       catch: () => new CtoxBusinessOsShellError(),
     });
 
-  const resolveServer = (shellStatus?: BusinessOsShellUpdateStatus) =>
+  const resolveServer = (
+    config: CtoxBusinessOsLaunchConfig,
+    shellStatus?: BusinessOsShellUpdateStatus,
+  ) =>
     Effect.gen(function* () {
       const resolved = yield* resolveRoot(shellStatus);
-      const key = `${resolved.release.version}:${resolved.recoveryShell ? "recovery" : "active"}`;
+      const moduleRoot =
+        config.desktop_instance.source === "local_daemon" ? localModuleAssetRoot : undefined;
+      const key = `${resolved.release.version}:${resolved.recoveryShell ? "recovery" : "active"}:${moduleRoot ?? "shell-only"}`;
       return yield* SynchronizedRef.modifyEffect(serverRef, (current) => {
         const existing = current.get(key);
         if (existing !== undefined) return Effect.succeed([existing, current] as const);
         return Effect.gen(function* () {
-          const started = yield* startServer(resolved);
+          const started = yield* startServer(resolved, moduleRoot);
           yield* Scope.addFinalizer(parentScope, closeServer(started.server));
           const next = new Map(current);
           next.set(key, started);
@@ -564,7 +619,7 @@ export const make = Effect.gen(function* () {
   return CtoxBusinessOsShell.of({
     launch: (config, shellStatus) =>
       Effect.gen(function* () {
-        const running = yield* resolveServer(shellStatus);
+        const running = yield* resolveServer(config, shellStatus);
         const url = new URL(`${SHELL_PATH_PREFIX}/`, running.origin);
         url.searchParams.set(
           "ctox_config",

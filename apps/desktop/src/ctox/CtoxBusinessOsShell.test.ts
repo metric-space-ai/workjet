@@ -102,6 +102,25 @@ async function shellRoot(base: string, packaged: boolean): Promise<string> {
 }
 
 describe("CtoxBusinessOsShell", () => {
+  it("resolves only an absolute established CTOX install root for local module assets", () => {
+    assert.equal(
+      CtoxBusinessOsShell.resolveCtoxLocalModuleAssetRoot(
+        { CTOX_INSTALL_ROOT: "/opt/ctox" },
+        "/home/workjet",
+      ),
+      "/opt/ctox/current/runtime/business-os",
+    );
+    assert.equal(
+      CtoxBusinessOsShell.resolveCtoxLocalModuleAssetRoot({}, "/home/workjet"),
+      "/home/workjet/.local/lib/ctox/current/runtime/business-os",
+    );
+    assert.isUndefined(
+      CtoxBusinessOsShell.resolveCtoxLocalModuleAssetRoot(
+        { CTOX_INSTALL_ROOT: "relative" },
+        "/home/workjet",
+      ),
+    );
+  });
   it("resolves only the exact packaged root and manifest-pinned development root", async () => {
     const base = await NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-root-"));
     try {
@@ -190,6 +209,95 @@ describe("CtoxBusinessOsShell", () => {
       (base) => Effect.promise(() => NodeFs.rm(base, { recursive: true, force: true })),
     ),
   );
+
+  it.effect("serves local instance modules without allowing them to replace shell files", () => {
+    const previousInstallRoot = process.env.CTOX_INSTALL_ROOT;
+    return Effect.acquireUseRelease(
+      Effect.promise(async () => {
+        const base = await NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-module-http-"));
+        process.env.CTOX_INSTALL_ROOT = NodePath.join(base, "install");
+        return base;
+      }),
+      (base) =>
+        Effect.gen(function* () {
+          const root = yield* Effect.promise(() => shellRoot(base, false));
+          const runtimeRoot = NodePath.join(base, "install", "current", "runtime", "business-os");
+          yield* Effect.promise(() =>
+            NodeFs.mkdir(NodePath.join(root, "installed-modules", "shell-owned"), {
+              recursive: true,
+            }),
+          );
+          yield* Effect.promise(() =>
+            NodeFs.writeFile(
+              NodePath.join(root, "installed-modules", "shell-owned", "index.js"),
+              "export const owner = 'shell';",
+            ),
+          );
+          yield* Effect.promise(() =>
+            NodeFs.mkdir(NodePath.join(runtimeRoot, "installed-modules", "instance-owned"), {
+              recursive: true,
+            }),
+          );
+          yield* Effect.promise(() =>
+            NodeFs.mkdir(NodePath.join(runtimeRoot, "installed-modules", "shell-owned"), {
+              recursive: true,
+            }),
+          );
+          yield* Effect.promise(() =>
+            NodeFs.writeFile(
+              NodePath.join(runtimeRoot, "installed-modules", "instance-owned", "index.js"),
+              "export const owner = 'instance';",
+            ),
+          );
+          yield* Effect.promise(() =>
+            NodeFs.writeFile(
+              NodePath.join(runtimeRoot, "installed-modules", "shell-owned", "index.js"),
+              "export const owner = 'overlay';",
+            ),
+          );
+          const env = environment({
+            rootDir: NodePath.join(base, "repo"),
+            resourcesPath: NodePath.join(base, "resources"),
+            isPackaged: false,
+          });
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const shell = yield* CtoxBusinessOsShell.CtoxBusinessOsShell;
+              const launch = yield* shell.launch({
+                ...config,
+                desktop_instance: {
+                  ...config.desktop_instance,
+                  id: "local:ctox",
+                  source: "local_daemon",
+                },
+              });
+              const instanceOwned = yield* Effect.promise(() =>
+                request(
+                  launch.launchOrigin,
+                  "/business-os/installed-modules/instance-owned/index.js",
+                ),
+              );
+              const shellOwned = yield* Effect.promise(() =>
+                request(launch.launchOrigin, "/business-os/installed-modules/shell-owned/index.js"),
+              );
+              assert.equal(instanceOwned.status, 200);
+              assert.equal(instanceOwned.body, "export const owner = 'instance';");
+              assert.equal(shellOwned.status, 200);
+              assert.equal(shellOwned.body, "export const owner = 'shell';");
+            }).pipe(
+              Effect.provide(CtoxBusinessOsShell.layer),
+              Effect.provideService(DesktopEnvironment.DesktopEnvironment, env),
+            ),
+          );
+        }),
+      (base) =>
+        Effect.promise(async () => {
+          if (previousInstallRoot === undefined) delete process.env.CTOX_INSTALL_ROOT;
+          else process.env.CTOX_INSTALL_ROOT = previousInstallRoot;
+          await NodeFs.rm(base, { recursive: true, force: true });
+        }),
+    );
+  });
 
   it.effect("rejects traversal, symlinks, methods, malformed paths, and data routes", () =>
     Effect.acquireUseRelease(

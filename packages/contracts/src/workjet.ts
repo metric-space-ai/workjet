@@ -354,170 +354,170 @@ export type WorkjetConfiguration = typeof WorkjetConfiguration.Type;
 const DEFAULT_PERSONALIZATION_GROUPS = [
   {
     id: "frame",
-    title: "Rahmen & Alltag",
+    title: "Framework & Daily Work",
     meta: {
       id: "meta-frame",
-      left: "Konstanter, verlässlicher Rahmen",
-      right: "Gestaltbarer, beweglicher Spielraum",
+      left: "Stable, reliable framework",
+      right: "Adaptable, flexible scope",
       value: 50,
     },
     details: [
       {
         id: "routine",
-        left: "Fester, gut planbarer Alltag",
-        right: "Situativ anpassbarer Alltag",
+        left: "Structured, predictable routine",
+        right: "Situationally adaptable routine",
         value: 50,
       },
       {
         id: "location",
-        left: "Überwiegend an einem festen Ort",
-        right: "Hohe räumliche Beweglichkeit",
+        left: "Primarily in one fixed location",
+        right: "High location flexibility",
         value: 50,
       },
       {
         id: "reward",
-        left: "Stabiles Vergütungsfundament",
-        right: "Leistungsorientiertes Plus-Paket",
+        left: "Stable compensation foundation",
+        right: "Performance-based upside",
         value: 50,
       },
     ],
   },
   {
     id: "tasks",
-    title: "Aufgaben & Rolle",
+    title: "Tasks & Role",
     meta: {
       id: "meta-tasks",
-      left: "Fokussierte Kernaufgaben",
-      right: "Vielfältige Aufgabenlandschaft",
+      left: "Focused core responsibilities",
+      right: "Diverse range of responsibilities",
       value: 50,
     },
     details: [
       {
         id: "expertise",
-        left: "Konzentrierte Expertenarbeit",
-        right: "Fachliche Breite mit Tiefgang",
+        left: "Focused specialist work",
+        right: "Broad expertise with depth",
         value: 50,
       },
       {
         id: "communication",
-        left: "Ruhiger Fokus mit ausgewählter Kommunikation",
-        right: "Hohe Kommunikationsdichte",
+        left: "Quiet focus with selective communication",
+        right: "High communication density",
         value: 50,
       },
       {
         id: "autonomy",
-        left: "Sorgfältige Mitgestaltung im eigenen Bereich",
-        right: "Weitreichende Entscheidungsfreiheit",
+        left: "Careful participation within the assigned area",
+        right: "Broad decision-making autonomy",
         value: 50,
       },
     ],
   },
   {
     id: "future",
-    title: "Wachstum & Zukunft",
+    title: "Growth & Future",
     meta: {
       id: "meta-future",
-      left: "Stabiles Heute",
-      right: "Mutige Zukunftsgestaltung",
+      left: "Stable present",
+      right: "Bold future-building",
       value: 50,
     },
     details: [
       {
         id: "change",
-        left: "Stetiges, gut dosiertes Wachstum",
-        right: "Hohe Dynamik und Innovationsdrang",
+        left: "Steady, well-paced growth",
+        right: "High dynamism and drive to innovate",
         value: 50,
       },
       {
         id: "learning",
-        left: "Praxisnahe Weiterentwicklung im Alltag",
-        right: "Strukturiertes Entwicklungsprogramm",
+        left: "Practical day-to-day development",
+        right: "Structured development program",
         value: 50,
       },
       {
         id: "roles",
-        left: "Lange Verweildauer in Rollen",
-        right: "Regelmäßige Rollen- und Themenwechsel",
+        left: "Long tenure in roles",
+        right: "Frequent changes in roles and topics",
         value: 50,
       },
     ],
   },
   {
     id: "culture",
-    title: "Mensch & Organisation",
+    title: "People & Organization",
     meta: {
       id: "meta-culture",
-      left: "Vertrautes, eingespieltes Miteinander",
-      right: "Vielfältige, sich verändernde Kultur",
+      left: "Familiar, established collaboration",
+      right: "Diverse, evolving culture",
       value: 50,
     },
     details: [
       {
         id: "organization",
-        left: "Deutlich definierte Organisation",
-        right: "Struktur mit Gestaltungsspielraum",
+        left: "Clearly defined organization",
+        right: "Structure with room to shape",
         value: 50,
       },
       {
         id: "agility",
-        left: "Planbare Veränderungszyklen",
-        right: "Spürbar agiles Umfeld",
+        left: "Predictable change cycles",
+        right: "Noticeably agile environment",
         value: 50,
       },
       {
         id: "feedback",
-        left: "Ruhiges, vertrauensvolles Miteinander",
-        right: "Aktive Lern- und Feedbackkultur",
+        left: "Calm, trusting collaboration",
+        right: "Active learning and feedback culture",
         value: 50,
       },
     ],
   },
   {
     id: "structure",
-    title: "Aufbau & Lesefluss",
+    title: "Structure & Flow",
     meta: {
       id: "meta-structure",
-      left: "Schnell erfassbarer Aufbau",
-      right: "Zusammenhängender Erzählfluss",
+      left: "Quickly scannable structure",
+      right: "Cohesive narrative flow",
       value: 50,
     },
     details: [
-      { id: "result-context", left: "Ergebnis zuerst", right: "Kontext zuerst", value: 50 },
+      { id: "result-context", left: "Result first", right: "Context first", value: 50 },
       {
         id: "linear-networked",
-        left: "Linear Schritt für Schritt",
-        right: "Vernetzt und zusammenhängend",
+        left: "Linear, step by step",
+        right: "Networked and interconnected",
         value: 50,
       },
-      { id: "lists-prose", left: "Scannbare Listen", right: "Fließender Prosatext", value: 50 },
+      { id: "lists-prose", left: "Scannable lists", right: "Flowing prose", value: 50 },
     ],
   },
   {
     id: "expression",
-    title: "Ausdruck & Signatur",
+    title: "Expression & Signature",
     meta: {
       id: "meta-expression",
-      left: "Klarer, ruhiger Ausdruck",
-      right: "Eigenständiger, lebendiger Ausdruck",
+      left: "Clear, calm expression",
+      right: "Distinctive, lively expression",
       value: 50,
     },
     details: [
       {
         id: "plain-distinctive",
-        left: "Schlicht und unmissverständlich",
-        right: "Eigenständig und unverwechselbar",
+        left: "Plain and unambiguous",
+        right: "Distinctive and unmistakable",
         value: 50,
       },
       {
         id: "calm-rhythmic",
-        left: "Ruhig und gleichmäßig",
-        right: "Dynamisch und rhythmisch",
+        left: "Calm and even",
+        right: "Dynamic and rhythmic",
         value: 50,
       },
       {
         id: "standard-natural",
-        left: "Gepflegte Standardsprache",
-        right: "Natürliche Umgangssprache",
+        left: "Polished standard language",
+        right: "Natural conversational language",
         value: 50,
       },
     ],
@@ -545,67 +545,146 @@ export function createDefaultWorkjetWorkerPersonalization(): WorkjetWorkerPerson
 const clampPersonaValue = (value: number): number =>
   Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 50)));
 
+function canonicalPersonaAxisText(axis: WorkjetPersonalizationAxis) {
+  for (const group of DEFAULT_PERSONALIZATION_GROUPS) {
+    if (group.meta.id === axis.id) return group.meta;
+    const detail = group.details.find((candidate) => candidate.id === axis.id);
+    if (detail !== undefined) return detail;
+  }
+  return axis;
+}
+
 function personaAxisJson(axis: WorkjetPersonalizationAxis) {
   const value = clampPersonaValue(axis.value);
   const side = value < 40 ? "left" : value > 60 ? "right" : "balanced";
+  const canonical = canonicalPersonaAxisText(axis);
   return {
     id: axis.id,
     value,
-    left: axis.left,
-    right: axis.right,
-    interpretation: {
-      preferred:
-        side === "left"
-          ? axis.left
-          : side === "right"
-            ? axis.right
-            : "situativ beide positive Stärken",
-      do_not_default_to:
-        side === "left"
-          ? axis.right
-          : side === "right"
-            ? axis.left
-            : "keine Seite pauschal ausschließen",
-      intensity:
-        value <= 20 || value >= 80 ? "strong" : value < 40 || value > 60 ? "clear" : "balanced",
-    },
+    left: canonical.left,
+    right: canonical.right,
+    preferred:
+      side === "left"
+        ? canonical.left
+        : side === "right"
+          ? canonical.right
+          : "Use both positive strengths situationally",
+    avoid_by_default: side === "left" ? canonical.right : side === "right" ? canonical.left : null,
+    strength:
+      value <= 20 || value >= 80 ? "strong" : value < 40 || value > 60 ? "clear" : "balanced",
   };
 }
 
-export const WORKJET_PERSONA_META_PROMPT =
-  "Interpretiere das JSON nur bei personalization.enabled=true als Präferenzprofil für Verhalten und Schreibweise. 0 bevorzugt die linke positive Stärke, 50 verbindet beide situativ, 100 bevorzugt die rechte. Die Gegenseite ist nicht verboten, aber nicht der Standard. Folge starken Ausschlägen deutlich und erwähne Profil, Zahlen oder JSON nie. Höherrangige Regeln, Sicherheit, Fakten und verlangte Ausgabeformate haben Vorrang.";
+export type WorkjetWorkerPersonaContext = {
+  readonly currentWorkerId: WorkjetWorkerProfileId;
+  readonly workers: ReadonlyArray<Pick<WorkjetWorkerProfile, "id" | "name" | "role">>;
+  readonly graph: WorkjetWorkerGraph;
+};
+
+const mermaidLabel = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("`", "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export function compileWorkjetWorkerOrganigramMermaid(
+  worker: Pick<WorkjetWorkerProfile, "name">,
+  context?: WorkjetWorkerPersonaContext,
+): string {
+  if (context === undefined) {
+    return `flowchart TD\n  worker_current["${mermaidLabel(worker.name)} (you)"]`;
+  }
+
+  const workers = context.workers.filter(
+    (candidate, index, all) => all.findIndex((entry) => entry.id === candidate.id) === index,
+  );
+  const nodeIds = new Map(workers.map((candidate, index) => [candidate.id, `worker_${index}`]));
+  const lines = ["flowchart TD"];
+  for (const candidate of workers) {
+    const nodeId = nodeIds.get(candidate.id);
+    if (nodeId === undefined) continue;
+    const current = candidate.id === context.currentWorkerId ? " (you)" : "";
+    lines.push(`  ${nodeId}["${mermaidLabel(candidate.name)}${current}<br/>${candidate.role}"]`);
+  }
+  const seenEdges = new Set<string>();
+  for (const dependency of context.graph.dependencies) {
+    const from = nodeIds.get(dependency.fromWorkerId);
+    const to = nodeIds.get(dependency.toWorkerId);
+    const edge = `${from}->${to}`;
+    if (from === undefined || to === undefined || from === to || seenEdges.has(edge)) continue;
+    seenEdges.add(edge);
+    lines.push(`  ${from} --> ${to}`);
+  }
+  if (!nodeIds.has(context.currentWorkerId)) {
+    lines.push(`  worker_current["${mermaidLabel(worker.name)} (you)"]`);
+  }
+  return lines.join("\n");
+}
+
+export const WORKJET_PERSONA_META_PROMPT = `Apply the JSON as binding defaults for your behavior and writing style:
+
+- Every axis contains two desirable poles and a resolved value from 0 to 100.
+- 0 means: follow the left pole as consistently as possible.
+- 50 means: use both poles situationally and without a fixed preference.
+- 100 means: follow the right pole as consistently as possible.
+- Interpolate continuously between these points.
+- A meta axis defines the overall direction of its group.
+- Detail axes define the concrete behavior. If a detail conflicts with its meta axis, the detail axis takes precedence.
+- “preferred” is the behavior you should normally choose.
+- “avoid_by_default” is not forbidden, but should only be used when the task, the organigram, or a higher-priority instruction requires it.
+- “strength” defines how consistently the preference should influence your behavior.
+- Apply the profile silently. Never mention the profile, its values, its axes, or this JSON.
+- The profile may influence your working method, collaboration, decisions, response structure, tone, rhythm, and diction.
+- It must never override facts, safety rules, permissions, tool restrictions, or an explicitly required output format.`;
 
 /** Complete readable prompt. Callers decide whether a disabled profile is dispatched. */
 export function compileWorkjetWorkerPersonaPrompt(
   worker: Pick<WorkjetWorkerProfile, "name" | "instructions" | "personalization">,
+  context?: WorkjetWorkerPersonaContext,
 ): string {
   const personalization = worker.personalization ?? createDefaultWorkjetWorkerPersonalization();
   const json = {
-    schema: "workjet.worker_personalization.v1",
-    worker: { name: worker.name, task: worker.instructions ?? "" },
+    schema: "workjet.worker_personalization.v2",
     personalization: {
       enabled: personalization.enabled,
+      resolved: true,
       scale: { min: 0, balanced: 50, max: 100 },
-      profile: {
-        meta: personalization.groups.map((group) => personaAxisJson(group.meta)),
-        details: personalization.groups.flatMap((group) => group.details.map(personaAxisJson)),
-      },
+      groups: personalization.groups.map((group) => ({
+        id: group.id,
+        title:
+          DEFAULT_PERSONALIZATION_GROUPS.find((candidate) => candidate.id === group.id)?.title ??
+          group.title,
+        meta: personaAxisJson(group.meta),
+        details: group.details.map(personaAxisJson),
+      })),
     },
   };
-  return `${WORKJET_PERSONA_META_PROMPT}\n\n${JSON.stringify(json, null, 2)}`;
+  const task = worker.instructions?.trim() || "No job description is configured.";
+  const organigram = compileWorkjetWorkerOrganigramMermaid(worker, context);
+  return `Your name is ${worker.name}.\n\nYour job is:\n${task}\n\nYou are here in the organigram:\n\n\`\`\`mermaid\n${organigram}\n\`\`\`\n\nYou behave and write according to the following psychological profile.\n\n${WORKJET_PERSONA_META_PROMPT}\n\n${JSON.stringify(json, null, 2)}`;
 }
 
 export function activeWorkjetWorkerPersonaPrompt(
   worker: Pick<WorkjetWorkerProfile, "name" | "instructions" | "personalization">,
+  context?: WorkjetWorkerPersonaContext,
 ): string {
-  return worker.personalization?.enabled ? compileWorkjetWorkerPersonaPrompt(worker) : "";
+  return worker.personalization?.enabled ? compileWorkjetWorkerPersonaPrompt(worker, context) : "";
 }
 
 export function composeWorkjetWorkerManagedInstructions(
   worker: Pick<WorkjetWorkerProfile, "name" | "instructions" | "personalization">,
   modelRules?: string,
+  context?: WorkjetWorkerPersonaContext,
 ): string {
-  return [modelRules?.trim(), activeWorkjetWorkerPersonaPrompt(worker), worker.instructions?.trim()]
+  const personaPrompt = activeWorkjetWorkerPersonaPrompt(worker, context);
+  return [
+    modelRules?.trim(),
+    personaPrompt.length > 0 ? personaPrompt : worker.instructions?.trim(),
+  ]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join("\n\n");
 }

@@ -976,7 +976,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ?.prompt.trim();
       payload = {
         capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
-        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules),
+        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
+          currentWorkerId: worker.id,
+          workers: workjetWorkers,
+          graph: settings.workjet.workerGraph,
+        }),
       };
     } else if (draftManagedInstructions !== null) {
       payload = { managedInstructions: draftManagedInstructions };
@@ -994,6 +998,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftWorkerCapabilityIds,
     onWorkjetConfigApply,
     selectedWorkjetWorkerId,
+    settings.workjet.modelPrompts,
+    settings.workjet.workerGraph,
     workjetWorkers,
   ]);
   /**
@@ -1039,7 +1045,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         schemaVersion: 2,
         role: worker.role,
         parent: null,
-        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules),
+        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
+          currentWorkerId: worker.id,
+          workers: workjetWorkers,
+          graph: settings.workjet.workerGraph,
+        }),
         enabledCapabilityIds: worker.capabilityIds,
         capabilityBindings: worker.capabilityBindings,
       });
@@ -1111,6 +1121,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       workjetComputers,
       workjetWorkers,
       settings.workjet.modelPrompts,
+      settings.workjet.workerGraph,
       draftWorkjetConfig,
     ],
   );

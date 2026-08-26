@@ -29,6 +29,7 @@ import {
   WorkjetGreppyOperationError,
   WorkjetLlmRouteId,
   WorkjetThreadConfig,
+  WorkjetWorkerProfileId,
   migrateWorkjetLlmRouteV1ToV2,
   WorktreeStorageInspection,
   WorktreeStorageInspectionInput,
@@ -299,22 +300,70 @@ describe("WorkjetConfiguration", () => {
     expect(personalization.metaToDetailWeights).toHaveLength(18);
     expect(personalization.detailInfluenceWeights).toHaveLength(18);
 
+    const localizedPersonalization = {
+      ...personalization,
+      groups: personalization.groups.map((group, groupIndex) =>
+        groupIndex === 0
+          ? {
+              ...group,
+              title: "Rahmen & Alltag",
+              meta: {
+                ...group.meta,
+                left: "Konstanter, verlässlicher Rahmen",
+                right: "Gestaltbarer, beweglicher Spielraum",
+              },
+              details: group.details.map((detail, detailIndex) =>
+                detailIndex === 0
+                  ? {
+                      ...detail,
+                      left: "Fester, gut planbarer Alltag",
+                      right: "Situativ anpassbarer Alltag",
+                    }
+                  : detail,
+              ),
+            }
+          : group,
+      ),
+    };
     const worker = {
       name: "Research partner",
       instructions: "Check evidence before recommending a decision.",
-      personalization,
+      personalization: localizedPersonalization,
     };
-    const readable = compileWorkjetWorkerPersonaPrompt(worker);
+    const leadId = WorkjetWorkerProfileId.make("worker-lead");
+    const workerId = WorkjetWorkerProfileId.make("worker-research");
+    const readable = compileWorkjetWorkerPersonaPrompt(worker, {
+      currentWorkerId: workerId,
+      workers: [
+        { id: leadId, name: "Research lead", role: "orchestrator" },
+        { id: workerId, name: worker.name, role: "standard" },
+      ],
+      graph: {
+        positions: [],
+        dependencies: [{ fromWorkerId: leadId, toWorkerId: workerId }],
+      },
+    });
     const json = JSON.parse(readable.slice(readable.indexOf("{"))) as {
       readonly personalization: {
         readonly enabled: boolean;
-        readonly profile: { readonly meta: unknown[]; readonly details: unknown[] };
+        readonly groups: ReadonlyArray<{
+          readonly meta: unknown;
+          readonly details: unknown[];
+        }>;
       };
     };
     expect(json.personalization.enabled).toBe(false);
-    expect(json.personalization.profile.meta).toHaveLength(6);
-    expect(json.personalization.profile.details).toHaveLength(18);
-    expect(readable).toContain("Die Gegenseite ist nicht verboten");
+    expect(json.personalization.groups).toHaveLength(6);
+    expect(json.personalization.groups.flatMap((group) => group.details)).toHaveLength(18);
+    expect(readable).toContain("Your name is Research partner.");
+    expect(readable).toContain('worker_1["Research partner (you)<br/>standard"]');
+    expect(readable).toContain("worker_0 --> worker_1");
+    expect(readable).toContain("Detail axes define the concrete behavior");
+    expect(readable).toContain('"title": "Framework & Daily Work"');
+    expect(readable).toContain('"left": "Stable, reliable framework"');
+    expect(readable).toContain('"left": "Structured, predictable routine"');
+    expect(readable).not.toContain("Rahmen & Alltag");
+    expect(readable).not.toContain("Fester, gut planbarer Alltag");
     expect(activeWorkjetWorkerPersonaPrompt(worker)).toBe("");
     expect(
       activeWorkjetWorkerPersonaPrompt({
@@ -326,10 +375,13 @@ describe("WorkjetConfiguration", () => {
       { ...worker, personalization: { ...personalization, enabled: true } },
       "Model rule",
     );
-    expect(composed.indexOf("Model rule")).toBeLessThan(composed.indexOf("Interpretiere das JSON"));
-    expect(composed.indexOf("Interpretiere das JSON")).toBeLessThan(
+    expect(composed.indexOf("Model rule")).toBeLessThan(
+      composed.indexOf("Your name is Research partner."),
+    );
+    expect(composed.indexOf("Your name is Research partner.")).toBeLessThan(
       composed.lastIndexOf("Check evidence"),
     );
+    expect(composed.match(/Check evidence/g)).toHaveLength(1);
   });
 
   it("decodes missing legacy catalog data to a valid empty configuration", () => {

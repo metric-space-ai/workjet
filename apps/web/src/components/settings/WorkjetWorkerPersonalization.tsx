@@ -547,15 +547,15 @@ export function WorkjetWorkerPersonalizationEditor({
                         nativeInput
                         value={editing.left}
                         onChange={(event) => setEditing({ ...editing, left: event.target.value })}
-                        placeholder="Left positive strength"
-                        aria-label="Left positive strength"
+                        placeholder="Left pole for prompt (English)"
+                        aria-label="Left pole for prompt in English"
                       />
                       <Input
                         nativeInput
                         value={editing.right}
                         onChange={(event) => setEditing({ ...editing, right: event.target.value })}
-                        placeholder="Right positive strength"
-                        aria-label="Right positive strength"
+                        placeholder="Right pole for prompt (English)"
+                        aria-label="Right pole for prompt in English"
                       />
                       <div className="flex justify-end gap-1">
                         <Button

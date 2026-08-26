@@ -1115,7 +1115,11 @@ export function WorkjetSettingsView({
                         Persona system prompt
                       </div>
                       <Textarea
-                        value={compileWorkjetWorkerPersonaPrompt(worker)}
+                        value={compileWorkjetWorkerPersonaPrompt(worker, {
+                          currentWorkerId: worker.id,
+                          workers: configuration.workerProfiles,
+                          graph: configuration.workerGraph,
+                        })}
                         readOnly
                         rows={20}
                         aria-label={`Complete persona system prompt for ${worker.name}`}

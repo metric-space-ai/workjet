@@ -12,6 +12,8 @@ const DEFAULT_PORT = 9300;
 export interface AuditArguments {
   readonly port: number;
   readonly output: string;
+  readonly states: readonly string[];
+  readonly viewports: readonly string[];
 }
 
 export interface AuditViewport {
@@ -100,6 +102,8 @@ function defaultOutput(now = new Date()): string {
 export function parseAuditArguments(argv: readonly string[], now = new Date()): AuditArguments {
   let port = DEFAULT_PORT;
   let output = defaultOutput(now);
+  let states: readonly string[] = [];
+  let viewports: readonly string[] = [];
   const values = argv[0] === "--" ? argv.slice(1) : argv;
   for (let index = 0; index < values.length; index += 2) {
     const flag = values[index];
@@ -112,11 +116,21 @@ export function parseAuditArguments(argv: readonly string[], now = new Date()): 
     } else if (flag === "--output") {
       if (!NodePath.isAbsolute(value)) throw new Error("output must be an absolute path");
       output = NodePath.resolve(value);
+    } else if (flag === "--states") {
+      states = value.split(",").filter(Boolean);
+      const known = new Set(CODE_AUDIT_STATES.map(({ name }) => name));
+      if (states.length === 0 || states.some((state) => !known.has(state)))
+        throw new Error("states contains an unknown audit state");
+    } else if (flag === "--viewports") {
+      viewports = value.split(",").filter(Boolean);
+      const known = new Set(AUDIT_VIEWPORTS.map(({ name }) => name));
+      if (viewports.length === 0 || viewports.some((viewport) => !known.has(viewport)))
+        throw new Error("viewports contains an unknown audit viewport");
     } else {
       throw new Error(`unknown argument: ${flag ?? ""}`);
     }
   }
-  return { port, output };
+  return { port, output, states, viewports };
 }
 
 export function summarizeAudit(results: readonly StateResult[]): {
@@ -356,14 +370,22 @@ async function runAudit(args: AuditArguments): Promise<void> {
   await client.command("Page.enable", {});
   const results: StateResult[] = [];
   try {
-    for (const viewport of AUDIT_VIEWPORTS) {
+    const viewports =
+      args.viewports.length === 0
+        ? AUDIT_VIEWPORTS
+        : AUDIT_VIEWPORTS.filter(({ name }) => args.viewports.includes(name));
+    const states =
+      args.states.length === 0
+        ? CODE_AUDIT_STATES
+        : CODE_AUDIT_STATES.filter(({ name }) => args.states.includes(name));
+    for (const viewport of viewports) {
       await client.command("Emulation.setDeviceMetricsOverride", {
         width: viewport.width,
         height: viewport.height,
         deviceScaleFactor: 1,
         mobile: false,
       });
-      for (const state of CODE_AUDIT_STATES) {
+      for (const state of states) {
         const consoleAtStart = consoleErrors.length;
         await client.evaluate(`location.hash = ${JSON.stringify(state.hash)}`);
         await waitForRoute(client, state.hash);

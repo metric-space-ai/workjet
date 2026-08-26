@@ -11,6 +11,8 @@ The runner first closes transient overlays and drawers, then opens the one state
 
 `review-batches.json` partitions the screenshot inventory into immutable review packets of at most four captures. A visual-review agent must receive exactly one packet at a time; packets are never combined, even when the reviewer supports a larger context window.
 
+For the post-fix loop, select a bounded subset without changing the canonical matrix, for example: `pnpm audit:ui -- --port 9300 --output /tmp/workjet-ui-keybindings --states settings-keybindings,settings-diagnostics --viewports compact,narrow`.
+
 ## Review workflow
 
 1. Start the current Desktop development build with remote debugging enabled.

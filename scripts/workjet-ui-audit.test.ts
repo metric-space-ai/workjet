@@ -41,14 +41,27 @@ describe("Workjet UI audit configuration", () => {
   });
 
   it("parses a bounded loopback port and absolute output", () => {
-    expect(parseAuditArguments(["--", "--port", "9300", "--output", "/tmp/workjet-audit"])).toEqual(
-      {
-        port: 9300,
-        output: "/tmp/workjet-audit",
-      },
-    );
+    expect(
+      parseAuditArguments([
+        "--",
+        "--port",
+        "9300",
+        "--output",
+        "/tmp/workjet-audit",
+        "--states",
+        "draft,settings-general",
+        "--viewports",
+        "compact,narrow",
+      ]),
+    ).toEqual({
+      port: 9300,
+      output: "/tmp/workjet-audit",
+      states: ["draft", "settings-general"],
+      viewports: ["compact", "narrow"],
+    });
     expect(() => parseAuditArguments(["--port", "70000"])).toThrow("port");
     expect(() => parseAuditArguments(["--output", "relative"])).toThrow("absolute");
+    expect(() => parseAuditArguments(["--states", "missing"])).toThrow("unknown audit state");
   });
 
   it("selects only the Workjet application target", () => {

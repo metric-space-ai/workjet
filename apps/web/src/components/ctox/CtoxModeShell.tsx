@@ -14,6 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import { CtoxHostThemeColor } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import { useNavigate } from "@tanstack/react-router";
 import {
   createContext,
   useCallback,
@@ -28,12 +29,13 @@ import {
 } from "react";
 
 import {
+  CircleAlertIcon,
+  CircleCheckIcon,
   ChevronRight,
   EllipsisIcon,
   Plus,
   RefreshCw,
   SettingsIcon,
-  SmartphoneIcon,
   UnplugIcon,
 } from "lucide-react";
 
@@ -46,8 +48,6 @@ import {
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
-import { BusinessOsSettingsDialog } from "./BusinessOsSettingsDialog";
-import { openWorkjetDevicePairing } from "../settings/WorkjetDevicePairingDialog";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -176,10 +176,6 @@ interface CtoxModeContextValue {
   readonly setConnection: (state: CtoxConnectionState) => void;
   /** Open a Business OS app: activates the instance guest if needed. */
   readonly openApp: (instance: CtoxManagedInstance, moduleId: string) => void;
-  /** Open Workjet's Business OS settings tree. */
-  readonly openSettings: () => void;
-  readonly closeSettings: () => void;
-  readonly settingsOpen: boolean;
   /** Pin or unpin an app on the instance rail (taskbar model). */
   readonly setAppDocked: (instance: CtoxManagedInstance, moduleId: string, docked: boolean) => void;
   /** Bumped whenever rail-relevant state changed; app rails reload on it. */
@@ -466,7 +462,6 @@ export function CtoxModeProvider({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activationKey, setActivationKey] = useState(0);
   const [connection, setConnection] = useState<CtoxConnectionState>("idle");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [modeReady, setModeReady] = useState(bridge === undefined);
   const [guestStates, setGuestStates] = useState(EMPTY_GUEST_STATES);
   const mountedRef = useRef(true);
@@ -675,29 +670,6 @@ export function CtoxModeProvider({
     [dispatchOpenApp, select],
   );
 
-  const openSettings = useCallback(() => {
-    if (bridge === undefined) {
-      setSettingsOpen(true);
-      return;
-    }
-    // Electron WebContentsView surfaces are composited above the renderer.
-    // Do not reveal Workjet-owned settings until the native guest is actually
-    // detached, otherwise the guest can cover and intercept the dialog.
-    void suspendCtoxGuestForHostOverlay(bridge).then((suspended) => {
-      if (!mountedRef.current) return;
-      if (suspended) {
-        setSettingsOpen(true);
-        return;
-      }
-      toastManager.add({
-        type: "error",
-        title: "Business OS-Einstellungen konnten nicht geöffnet werden",
-        description: "Die aktive Business OS-Oberfläche konnte nicht sicher ausgeblendet werden.",
-      });
-    });
-  }, [bridge]);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
-
   useEffect(() => {
     if (connection !== "ready") {
       if (connection === "idle" || connection === "error" || connection === "revoked") {
@@ -867,9 +839,6 @@ export function CtoxModeProvider({
       select,
       setConnection,
       openApp,
-      openSettings,
-      closeSettings,
-      settingsOpen,
       setAppDocked,
       appRailVersion,
       reportGuestBounds,
@@ -882,7 +851,6 @@ export function CtoxModeProvider({
       appRailVersion,
       bridge,
       connection,
-      closeSettings,
       discovery,
       guestStates,
       importInvite,
@@ -891,7 +859,6 @@ export function CtoxModeProvider({
       logout,
       modeReady,
       openApp,
-      openSettings,
       refresh,
       refreshing,
       removePairedInstance,
@@ -899,7 +866,6 @@ export function CtoxModeProvider({
       reportGuestBounds,
       select,
       selectedId,
-      settingsOpen,
       setAppDocked,
       workspaceNames,
       reportWorkspaceName,
@@ -915,6 +881,75 @@ export function ctoxInstanceStatusLabel(instance: CtoxManagedInstance, connected
       ? "Synchronisierung bereit"
       : "Synchronisierung nicht verfügbar";
   return `${STATUS_LABELS[instance.status]} · ${health}`;
+}
+
+export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {
+  const status = instance.shellUpdate;
+  if (status === undefined) return "Shellstatus unbekannt";
+  const active = status.activeVersion === null ? "Recovery" : `v${status.activeVersion}`;
+  const offered = status.latestCompatibleVersion;
+  switch (status.phase) {
+    case "current":
+      return `${active} · aktuell`;
+    case "available":
+      return offered === null
+        ? `${active} · Update verfügbar`
+        : `${active} · Update auf v${offered}`;
+    case "checking":
+      return `${active} · Prüfung läuft`;
+    case "download":
+      return `${active} · Update wird geladen`;
+    case "verify":
+      return `${active} · Update wird geprüft`;
+    case "ready":
+      return `${active} · Update bereit`;
+    case "restart":
+      return `${active} · Neustart erforderlich`;
+    case "rollback":
+      return `${active} · Rollback aktiv`;
+    case "recovery":
+      return "Recovery-Shell aktiv";
+    case "failed":
+      return `${active} · Update fehlgeschlagen`;
+    case "incompatible":
+      return `${active} · Update inkompatibel`;
+    case "blocked":
+      return `${active} · Update blockiert`;
+  }
+}
+
+function CtoxShellUpdateButton({
+  instance,
+  onOpenSettings,
+}: {
+  readonly instance: CtoxManagedInstance;
+  readonly onOpenSettings: () => void;
+}) {
+  const status = instance.shellUpdate;
+  const current = status?.phase === "current" && status.health === "healthy";
+  const label = ctoxShellUpdateLabel(instance);
+  return (
+    <button
+      type="button"
+      className={cn(
+        "no-drag-region inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs",
+        current
+          ? "text-muted-foreground hover:bg-muted/60"
+          : "bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300",
+      )}
+      aria-label={`Shell: ${label}. Update-Einstellungen öffnen`}
+      title={`${label} · Update-Einstellungen öffnen`}
+      data-ctox-shell-update-status={status?.phase ?? "unknown"}
+      onClick={onOpenSettings}
+    >
+      {current ? (
+        <CircleCheckIcon className="size-3.5 shrink-0" aria-hidden />
+      ) : (
+        <CircleAlertIcon className="size-3.5 shrink-0" aria-hidden />
+      )}
+      <span className="max-w-48 truncate">{label}</span>
+    </button>
+  );
 }
 
 /**
@@ -1976,62 +2011,16 @@ function ManagedAccountState({
   );
 }
 
-/**
- * The Business OS sidebar footer strip. Code mode's footer navigates to
- * thread-scoped pages (Usage, Machines, Pull Requests) that the Business OS
- * main surface never renders, so those would be dead icons here and are
- * hidden. What remains is what has a BOS meaning: the selected CTOX
- * instance's own settings and refreshing the instance catalog.
- */
+/** The one labelled Settings entry shared by the Workjet navigation model. */
 export function CtoxSidebarFooter() {
-  const { openSettings, refresh, refreshing } = useCtoxMode();
-  const [refreshSpinUntil, setRefreshSpinUntil] = useState(0);
-  const [, forceSpinTick] = useState(0);
-  const spinHeld = Date.now() < refreshSpinUntil;
-  useEffect(() => {
-    if (!spinHeld) return;
-    const id = setTimeout(() => forceSpinTick((tick) => tick + 1), refreshSpinUntil - Date.now());
-    return () => clearTimeout(id);
-  }, [refreshSpinUntil, spinHeld]);
+  const navigate = useNavigate();
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]" data-ctox-sidebar-footer="">
-      <SidebarMenu className="flex-row items-center">
-        <SidebarMenuItem className="shrink-0">
-          <SidebarMenuButton
-            aria-label="Mobilgerät verbinden"
-            size="icon"
-            title="Mobilgerät verbinden"
-            onClick={openWorkjetDevicePairing}
-          >
-            <SmartphoneIcon />
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem className="shrink-0">
-          <SidebarMenuButton
-            aria-label="Business OS-Einstellungen"
-            data-business-os-settings-trigger=""
-            size="icon"
-            title="Business OS-Einstellungen"
-            onClick={openSettings}
-          >
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton onClick={() => void navigate({ to: "/settings/business-os" })}>
             <SettingsIcon />
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem className="shrink-0">
-          <SidebarMenuButton
-            aria-label="Backends aktualisieren"
-            size="icon"
-            title="Backends aktualisieren"
-            aria-busy={refreshing}
-            disabled={refreshing}
-            onClick={() => {
-              // The refetch can answer in milliseconds, which read as a dead
-              // button (Befund F7) — hold the spinner long enough to be seen.
-              setRefreshSpinUntil(Date.now() + 600);
-              refresh();
-            }}
-          >
-            <RefreshCw className={cn((refreshing || spinHeld) && "animate-spin")} aria-hidden />
+            <span>Settings</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -2434,30 +2423,9 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
   );
 }
 
-export function CtoxMainShell({
-  openSettingsRequestKey = 0,
-}: {
-  readonly openSettingsRequestKey?: number;
-}) {
-  const {
-    bridge,
-    closeSettings,
-    discovery,
-    selectedId,
-    connection,
-    guestStates,
-    openSettings,
-    settingsOpen,
-    workspaceNames,
-  } = useCtoxMode();
-  const handledSettingsRequestKey = useRef(0);
-  useEffect(() => {
-    if (openSettingsRequestKey <= handledSettingsRequestKey.current || settingsOpen) {
-      return;
-    }
-    handledSettingsRequestKey.current = openSettingsRequestKey;
-    openSettings();
-  }, [openSettings, openSettingsRequestKey, settingsOpen]);
+export function CtoxMainShell() {
+  const navigate = useNavigate();
+  const { discovery, selectedId, connection, workspaceNames } = useCtoxMode();
   const selected =
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find(
@@ -2487,42 +2455,38 @@ export function CtoxMainShell({
               description: "Wählen Sie ein verfügbares Backend aus, um Business OS zu öffnen.",
             };
 
-  // Business OS brings its own full shell header; while the guest is ready
-  // the Workjet chrome row would just double it, so it collapses entirely and
-  // the guest surface takes the full height. It returns for cold connects and
-  // error states, which need the status line (and a drag region) anyway — but
-  // NOT for a switch onto a warm guest: that attach is instant, and flashing
-  // the chrome row would be the visible "load" defect 14 forbids.
-  const chromeHidden =
-    selected !== undefined &&
-    (connection === "ready" ||
-      (connection === "connecting" && guestStates.get(selected.id) === "warm"));
-
   return (
     <SidebarInset
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
-      {chromeHidden ? null : (
-        <header
-          data-ctox-main-chrome=""
-          className={cn(
-            "workspace-topbar drag-region border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-        >
-          <span className="text-xs font-medium text-muted-foreground/60 wco:pr-[var(--workspace-native-controls-inset)]">
-            {selected === undefined
-              ? "Workjet"
-              : ctoxInstanceDisplayTitle(selected, workspaceNames.get(selected.id) ?? null)}
+      <header
+        data-ctox-main-chrome=""
+        className={cn(
+          "workspace-topbar drag-region flex items-center gap-2 border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
+          COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+        )}
+      >
+        <span className="min-w-0 truncate text-xs font-medium text-muted-foreground/60">
+          {selected === undefined
+            ? "Workjet"
+            : ctoxInstanceDisplayTitle(selected, workspaceNames.get(selected.id) ?? null)}
+        </span>
+        {selected !== undefined ? (
+          <CtoxShellUpdateButton
+            instance={selected}
+            onOpenSettings={() => void navigate({ to: "/settings/business-os" })}
+          />
+        ) : null}
+        {selected !== undefined ? (
+          <span
+            className="ml-auto shrink-0 text-xs text-muted-foreground wco:pr-[var(--workspace-native-controls-inset)]"
+            role="status"
+          >
+            {CONNECTION_LABELS[connection] ?? connection}
           </span>
-          {selected !== undefined ? (
-            <span className="ml-auto text-xs text-muted-foreground" role="status">
-              {CONNECTION_LABELS[connection] ?? connection}
-            </span>
-          ) : null}
-        </header>
-      )}
+        ) : null}
+      </header>
       {selected === undefined ? (
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
@@ -2534,18 +2498,9 @@ export function CtoxMainShell({
             </EmptyHeader>
           </div>
         </Empty>
-      ) : settingsOpen ? null : (
+      ) : (
         <CtoxGuestHost instance={selected} />
       )}
-      {settingsOpen ? (
-        <BusinessOsSettingsDialog
-          bridge={bridge}
-          discovery={discovery}
-          selectedId={selectedId}
-          readyInstanceId={connection === "ready" ? selectedId : null}
-          onClose={closeSettings}
-        />
-      ) : null}
     </SidebarInset>
   );
 }

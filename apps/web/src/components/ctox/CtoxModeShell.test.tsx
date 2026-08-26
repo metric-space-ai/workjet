@@ -27,6 +27,7 @@ import {
   CTOX_RAIL_FALLBACK_CATEGORY,
   ctoxInstanceDotClass,
   ctoxInstanceStatusLabel,
+  ctoxShellUpdateLabel,
   ctoxRailCollapseKey,
   CtoxAppRailList,
   CtoxMainShell,
@@ -77,6 +78,35 @@ it("shows an authenticated selected backend as synchronized", () => {
     "Verfügbar · Synchronisierung nicht verfügbar",
   );
   expect(ctoxInstanceStatusLabel(local, true)).toBe("Verfügbar · Synchronisierung bereit");
+});
+
+it("keeps shell freshness visible outside the guest", () => {
+  const stale = instance({
+    id: "managed:stale",
+    source: "ctox_dev",
+    displayName: "Welsch",
+    shellUpdate: {
+      activeVersion: "0.1.9",
+      desiredVersion: "0.1.10",
+      latestCompatibleVersion: "0.1.10",
+      channel: "stable",
+      phase: "available",
+      health: "healthy",
+      administrable: true,
+      recoveryShell: false,
+      lastCheckedAt: null,
+      lastActivatedAt: null,
+      errorCode: null,
+      pause: null,
+    },
+  });
+
+  expect(ctoxShellUpdateLabel(stale)).toBe("v0.1.9 · Update auf v0.1.10");
+  expect(
+    ctoxShellUpdateLabel(
+      instance({ id: "managed:unknown", source: "ctox_dev", displayName: "Unknown" }),
+    ),
+  ).toBe("Shellstatus unbekannt");
 });
 
 function instance(
@@ -380,7 +410,7 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("Nicht bei ctox.dev angemeldet");
     expect(markup).toContain("Anmelden");
     expect(markup).toContain("Invited Office");
-    expect(markup).toContain("Backends aktualisieren");
+    expect(markup).toContain("Settings");
     expect(markup).not.toContain("Abmelden");
   });
 
@@ -720,6 +750,14 @@ describe("CTOX bridge actions", () => {
 });
 
 describe("CtoxMainShell", () => {
+  it("keeps one Workjet chrome mounted for ready guests", () => {
+    expect(ctoxModeShellSource).not.toContain("const chromeHidden");
+    expect(ctoxModeShellSource).toContain('data-ctox-main-chrome=""');
+    expect(ctoxModeShellSource).toContain("data-ctox-shell-update-status");
+    expect(ctoxModeShellSource).not.toContain("BusinessOsSettingsDialog");
+    expect(ctoxModeShellSource).not.toContain("openSettingsRequestKey");
+  });
+
   it("detaches the native guest before a host-owned overlay is revealed", async () => {
     const suspend = vi.fn(async () => ({ _tag: "completed" as const }));
 
@@ -1175,7 +1213,7 @@ describe("CTOX instance collapse", () => {
 });
 
 describe("CTOX sidebar footer", () => {
-  it("offers Settings and catalog refresh and hides Code-mode-only entries", () => {
+  it("offers exactly one labelled Settings entry and no shortcut strip", () => {
     const markup = renderToStaticMarkup(
       <CtoxModeProvider bridge={inertBridge()} initialDiscovery={{ _tag: "signed_out" }}>
         <SidebarProvider>
@@ -1184,12 +1222,12 @@ describe("CTOX sidebar footer", () => {
       </CtoxModeProvider>,
     );
     expect(markup).toContain('data-ctox-sidebar-footer=""');
-    expect(markup).toContain('aria-label="Business OS-Einstellungen"');
-    // Refresh lives exactly once — the header duplicate was removed (K-B10).
-    expect(markup.match(/aria-label="Backends aktualisieren"/gu)?.length).toBe(1);
+    expect(markup).toContain("Settings");
+    expect(markup).not.toContain("Business OS-Einstellungen");
+    expect(markup).not.toContain('aria-label="Backends aktualisieren"');
     expect(markup).not.toContain("Check for updates");
     expect(markup).not.toContain("Provider update");
-    expect(ctoxModeShellSource).not.toContain('navigate({ to: "/settings" })');
+    expect(ctoxModeShellSource).toContain('navigate({ to: "/settings/business-os" })');
     // Code-mode footer entries whose pages the Business OS surface never
     // renders would be dead icons here and must not appear.
     expect(markup).not.toContain('aria-label="Usage"');

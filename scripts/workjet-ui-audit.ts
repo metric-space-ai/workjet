@@ -287,6 +287,7 @@ const AUDIT_EXPRESSION = String.raw`(() => {
   };
   const selector = 'button,a[href],input,select,textarea,[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])';
   const interactive = [...document.querySelectorAll(selector)].filter(visible);
+  const intentionalEdgeControl = (element) => element.getAttribute("aria-label") === "Resize Sidebar";
   const clipRect = (element) => {
     let result = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
@@ -303,6 +304,7 @@ const AUDIT_EXPRESSION = String.raw`(() => {
     return result;
   };
   const clippedInteractive = interactive.flatMap((element) => {
+    if (intentionalEdgeControl(element)) return [];
     const value = element.getBoundingClientRect();
     const clip = clipRect(element);
     const visibleWidth = Math.max(0, Math.min(value.right, clip.right) - Math.max(value.left, clip.left));
@@ -320,6 +322,7 @@ const AUDIT_EXPRESSION = String.raw`(() => {
   }
   const duplicateActions = [...actionGroups.entries()].filter(([, values]) => values.length > 1).map(([label, values]) => ({ label, count: values.length, rects: values })).slice(0, 20);
   const tinyControls = interactive.filter((element) => {
+    if (intentionalEdgeControl(element)) return false;
     const value = element.getBoundingClientRect();
     return value.width < 24 || value.height < 24;
   }).map((element) => ({ label: text(element), rect: rect(element) })).slice(0, 40);
@@ -338,7 +341,23 @@ const AUDIT_EXPRESSION = String.raw`(() => {
 function consoleMessage(params: unknown): unknown {
   if (typeof params !== "object" || params === null) return { kind: "unknown" };
   const record = params as Record<string, unknown>;
-  return { kind: typeof record.type === "string" ? record.type : "error" };
+  const args = Array.isArray(record.args)
+    ? record.args.flatMap((argument) => {
+        if (typeof argument !== "object" || argument === null) return [];
+        const remote = argument as Record<string, unknown>;
+        const message =
+          typeof remote.value === "string"
+            ? remote.value
+            : typeof remote.description === "string"
+              ? remote.description
+              : null;
+        return message === null ? [] : [message.slice(0, 500)];
+      })
+    : [];
+  return {
+    kind: typeof record.type === "string" ? record.type : "error",
+    ...(args.length === 0 ? {} : { message: args.join(" ") }),
+  };
 }
 
 async function settle(client: CdpClient): Promise<void> {

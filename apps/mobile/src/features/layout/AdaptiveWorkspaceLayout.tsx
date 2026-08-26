@@ -219,7 +219,7 @@ function AdaptiveWorkspaceLayoutContent(
     readonly projectGroupingMode: SidebarProjectGroupingMode;
   },
 ) {
-  const { hasEnvironmentBindings, selectedEnvironmentId, selectEnvironment } = useBusinessOs();
+  const { selected: selectedBusinessOsInstance } = useBusinessOs();
   const projectGroupingMode = props.projectGroupingMode;
   const { width, height } = useWindowDimensions();
   const pathname = props.pathname;
@@ -448,7 +448,7 @@ function AdaptiveWorkspaceLayoutContent(
   const handleOpenEnvironmentSettings = useCallback(() => {
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
-      params: { screen: "SettingsEnvironments" },
+      params: { screen: "SettingsBusinessOs" },
     });
   }, [navigation]);
 
@@ -524,14 +524,7 @@ function AdaptiveWorkspaceLayoutContent(
   return (
     <HomeListOptionsProvider
       projectGroupingMode={projectGroupingMode}
-      selectedEnvironmentId={hasEnvironmentBindings ? selectedEnvironmentId : undefined}
-      onSelectedEnvironmentChange={
-        hasEnvironmentBindings
-          ? (environmentId) => {
-              if (environmentId) void selectEnvironment(environmentId);
-            }
-          : undefined
-      }
+      scopeKey={selectedBusinessOsInstance?.id ?? "coding-only"}
     >
       <AdaptiveWorkspaceContext.Provider value={contextValue}>
         <View testID="adaptive-workspace-layout" className="flex-1 flex-row">

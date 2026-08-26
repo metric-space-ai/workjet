@@ -76,7 +76,7 @@ function threadDetailToShell(
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
   const {
     environmentBindings,
-    selectedEnvironmentId: activeBusinessOsEnvironmentId,
+    selectedEnvironmentIds: activeBusinessOsEnvironmentIds,
     selectEnvironment,
   } = useBusinessOs();
   const routeParams = params ?? {};
@@ -101,14 +101,14 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     const environmentId = routeThreadRef?.environmentId;
     if (
       !environmentId ||
-      environmentId === activeBusinessOsEnvironmentId ||
+      activeBusinessOsEnvironmentIds.includes(environmentId) ||
       !environmentBindings.some((binding) => binding.environmentId === environmentId)
     ) {
       return;
     }
     void selectEnvironment(environmentId);
   }, [
-    activeBusinessOsEnvironmentId,
+    activeBusinessOsEnvironmentIds,
     environmentBindings,
     routeThreadRef?.environmentId,
     selectEnvironment,

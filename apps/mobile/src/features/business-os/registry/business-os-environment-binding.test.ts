@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   businessOsInstanceForEnvironment,
   createBusinessOsEnvironmentBinding,
-  environmentForBusinessOsInstance,
+  environmentsForBusinessOsInstance,
 } from "./business-os-environment-binding";
 
 describe("Business OS Code environment bindings", () => {
@@ -12,18 +12,21 @@ describe("Business OS Code environment bindings", () => {
   const environmentB = EnvironmentId.make("environment-b");
   const bindings = [
     createBusinessOsEnvironmentBinding("instance-a", environmentA),
-    createBusinessOsEnvironmentBinding("instance-b", environmentB),
+    createBusinessOsEnvironmentBinding("instance-a", environmentB),
   ];
 
-  it("keeps two CTOX instances mapped to their own complete Code environments", () => {
-    expect(environmentForBusinessOsInstance(bindings, "instance-a")).toBe(environmentA);
-    expect(environmentForBusinessOsInstance(bindings, "instance-b")).toBe(environmentB);
+  it("keeps every Code machine scoped under its CTOX instance", () => {
+    expect(environmentsForBusinessOsInstance(bindings, "instance-a")).toEqual([
+      environmentA,
+      environmentB,
+    ]);
+    expect(environmentsForBusinessOsInstance(bindings, "instance-b")).toEqual([]);
     expect(businessOsInstanceForEnvironment(bindings, environmentA)).toBe("instance-a");
-    expect(businessOsInstanceForEnvironment(bindings, environmentB)).toBe("instance-b");
+    expect(businessOsInstanceForEnvironment(bindings, environmentB)).toBe("instance-a");
   });
 
   it("fails closed for unbound instances and environments", () => {
-    expect(environmentForBusinessOsInstance(bindings, "missing")).toBeNull();
+    expect(environmentsForBusinessOsInstance(bindings, "missing")).toEqual([]);
     expect(businessOsInstanceForEnvironment(bindings, EnvironmentId.make("missing"))).toBeNull();
   });
 

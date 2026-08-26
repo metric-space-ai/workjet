@@ -22,6 +22,7 @@ async function database() {
   databasePromise ??= SQLite.openDatabaseAsync(MOBILE_DATABASE_NAME);
   const value = await databasePromise;
   await value.execAsync(`
+    PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS business_os_instances (
       id TEXT PRIMARY KEY NOT NULL,
       instance_id TEXT NOT NULL UNIQUE,
@@ -39,6 +40,29 @@ async function database() {
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (business_os_instance_id) REFERENCES business_os_instances(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS business_os_instance_environment_memberships (
+      business_os_instance_id TEXT NOT NULL,
+      environment_id TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (business_os_instance_id, environment_id),
+      FOREIGN KEY (business_os_instance_id) REFERENCES business_os_instances(id) ON DELETE CASCADE
+    );
+    INSERT OR IGNORE INTO business_os_instance_environment_memberships (
+      business_os_instance_id,
+      environment_id,
+      updated_at
+    )
+    SELECT business_os_instance_id, environment_id, updated_at
+    FROM business_os_environment_bindings;
+    DROP TABLE business_os_environment_bindings;
+    DELETE FROM business_os_instance_environment_memberships
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid)
+      FROM business_os_instance_environment_memberships
+      GROUP BY environment_id
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS business_os_environment_owner
+      ON business_os_instance_environment_memberships(environment_id);
   `);
   return value;
 }
@@ -120,7 +144,7 @@ export const nativeBusinessOsEnvironmentBindings = {
     }>(
       `SELECT business_os_instance_id AS businessOsInstanceId,
               environment_id AS environmentId
-       FROM business_os_environment_bindings
+       FROM business_os_instance_environment_memberships
        ORDER BY updated_at DESC`,
     );
     return rows.map((row) =>
@@ -134,13 +158,13 @@ export const nativeBusinessOsEnvironmentBindings = {
     await (
       await database()
     ).runAsync(
-      `INSERT INTO business_os_environment_bindings (
+      `INSERT INTO business_os_instance_environment_memberships (
          business_os_instance_id,
          environment_id,
          updated_at
        ) VALUES (?, ?, ?)
-       ON CONFLICT (business_os_instance_id) DO UPDATE SET
-         environment_id = excluded.environment_id,
+       ON CONFLICT (environment_id) DO UPDATE SET
+         business_os_instance_id = excluded.business_os_instance_id,
          updated_at = excluded.updated_at`,
       binding.businessOsInstanceId,
       binding.environmentId,
@@ -151,7 +175,7 @@ export const nativeBusinessOsEnvironmentBindings = {
     await (
       await database()
     ).runAsync(
-      "DELETE FROM business_os_environment_bindings WHERE business_os_instance_id = ?",
+      "DELETE FROM business_os_instance_environment_memberships WHERE business_os_instance_id = ?",
       businessOsInstanceId,
     );
   },

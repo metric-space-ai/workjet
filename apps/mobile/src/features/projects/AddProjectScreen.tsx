@@ -302,16 +302,17 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
   const serverConfigByEnvironmentId = useServerConfigs();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const { connectedEnvironments } = useRemoteConnectionStatus();
-  const { hasEnvironmentBindings, selectedEnvironmentId } = useBusinessOs();
+  const { hasEnvironmentBindings, selectedEnvironmentIds } = useBusinessOs();
 
   return useMemo<ReadonlyArray<EnvironmentOption>>(() => {
     const runtimeByEnvironmentId = new Map(
       connectedEnvironments.map((environment) => [environment.environmentId, environment] as const),
     );
+    const selectedInstanceEnvironmentIds = new Set(selectedEnvironmentIds);
     const options = Object.values(savedConnectionsById)
       .filter(
         (connection) =>
-          !hasEnvironmentBindings || connection.environmentId === selectedEnvironmentId,
+          !hasEnvironmentBindings || selectedInstanceEnvironmentIds.has(connection.environmentId),
       )
       .map((connection) => {
         const config = serverConfigByEnvironmentId.get(connection.environmentId);
@@ -331,7 +332,7 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
     connectedEnvironments,
     hasEnvironmentBindings,
     savedConnectionsById,
-    selectedEnvironmentId,
+    selectedEnvironmentIds,
     serverConfigByEnvironmentId,
   ]);
 }

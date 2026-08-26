@@ -41,6 +41,7 @@ interface BusinessOsContextValue {
   readonly instances: readonly BusinessOsInstance[];
   readonly selected: BusinessOsInstance | null;
   readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly selectedEnvironmentIds: readonly EnvironmentId[];
   readonly environmentBindings: readonly BusinessOsEnvironmentBinding[];
   readonly hasEnvironmentBindings: boolean;
   readonly isReady: boolean;
@@ -73,7 +74,7 @@ function confirmPairing(input: ReturnType<typeof prepareBusinessOsPairing>): Pro
   const host = input.confirmation.signalingHosts.join(", ");
   return new Promise((resolve) => {
     Alert.alert(
-      "CTOX Backend verbinden?",
+      "Business OS verbinden?",
       `${input.confirmation.displayName}\nSignaling: ${host}\nGültig bis: ${expiresAt}`,
       [
         { text: "Abbrechen", style: "cancel", onPress: () => resolve(false) },
@@ -128,13 +129,13 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   const select = useCallback(
     async (id: string) => {
       if (!instances.some((instance) => instance.id === id)) {
-        throw new Error("Die ausgewählte CTOX Instanz ist auf diesem Gerät nicht eingerichtet.");
+        throw new Error("Die ausgewählte Business OS ist auf diesem Gerät nicht eingerichtet.");
       }
       if (
         environmentBindings.length > 0 &&
         !environmentBindings.some((binding) => binding.businessOsInstanceId === id)
       ) {
-        throw new Error("Verbinde diese CTOX Instanz erneut mit Workjet, bevor du sie aktivierst.");
+        throw new Error("Verbinde diese Business OS erneut mit Workjet, bevor du sie aktivierst.");
       }
       setSelectedId(id);
       await nativeBusinessOsSelection.save(id);
@@ -144,15 +145,16 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
 
   const selectEnvironment = useCallback(
     async (environmentId: EnvironmentId) => {
-      const binding = environmentBindings.find(
+      const candidate = environmentBindings.find(
         (candidate) => candidate.environmentId === environmentId,
       );
-      if (!binding) {
-        throw new Error("Diese Code-Environment ist keiner CTOX Instanz zugeordnet.");
+      if (!candidate) {
+        throw new Error("Dieser Computer ist keiner Business OS zugeordnet.");
       }
-      await select(binding.businessOsInstanceId);
+      if (candidate.businessOsInstanceId === selectedId) return;
+      await select(candidate.businessOsInstanceId);
     },
-    [environmentBindings, select],
+    [environmentBindings, select, selectedId],
   );
 
   const bindEnvironment = useCallback(
@@ -191,13 +193,13 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
 
   const forget = useCallback(
     async (instance: BusinessOsInstance) => {
-      const binding = environmentBindings.find(
+      const bindings = environmentBindings.filter(
         (candidate) => candidate.businessOsInstanceId === instance.id,
       );
-      if (binding) {
+      for (const binding of bindings) {
         const codeRemoval = await removeCodeEnvironment(binding.environmentId);
         if (!AsyncResult.isSuccess(codeRemoval)) {
-          throw new Error("Die gebundene Code-Environment konnte nicht entfernt werden.");
+          throw new Error("Ein gebundener Code-Rechner konnte nicht entfernt werden.");
         }
       }
       await forgetBusinessOsInstance(instance, dependencies);
@@ -224,9 +226,10 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   }, [importLink]);
 
   const selected = instances.find((instance) => instance.id === selectedId) ?? null;
-  const selectedEnvironmentId =
-    environmentBindings.find((binding) => binding.businessOsInstanceId === selected?.id)
-      ?.environmentId ?? null;
+  const selectedEnvironmentIds = environmentBindings
+    .filter((binding) => binding.businessOsInstanceId === selected?.id)
+    .map((binding) => binding.environmentId);
+  const selectedEnvironmentId = selectedEnvironmentIds[0] ?? null;
   const value = useMemo(
     () => ({
       bindEnvironment,
@@ -242,6 +245,7 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
       selectEnvironment,
       selected,
       selectedEnvironmentId,
+      selectedEnvironmentIds,
     }),
     [
       bindEnvironment,
@@ -256,6 +260,7 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
       selectEnvironment,
       selected,
       selectedEnvironmentId,
+      selectedEnvironmentIds,
     ],
   );
   return <BusinessOsContext.Provider value={value}>{props.children}</BusinessOsContext.Provider>;

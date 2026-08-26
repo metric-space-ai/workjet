@@ -37,6 +37,7 @@ export type HomeHeaderEnvironment = HomeListFilterMenuEnvironment;
 
 export function HomeHeader(props: {
   readonly allowAllEnvironments?: boolean;
+  readonly allEnvironmentsLabel?: string;
   readonly environments: ReadonlyArray<HomeHeaderEnvironment>;
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly searchQuery: string;
@@ -82,14 +83,14 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     () => [
       {
         id: "environment",
-        title: "CTOX instance",
+        title: "Machine",
         subactions: [
           ...(props.allowAllEnvironments === false
             ? []
             : [
                 {
                   id: "environment:all",
-                  title: "All environments",
+                  title: props.allEnvironmentsLabel ?? "All machines",
                   state: checkedMenuState(props.selectedEnvironmentId === null),
                 },
               ]),
@@ -146,6 +147,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     [
       props.environments,
       props.allowAllEnvironments,
+      props.allEnvironmentsLabel,
       props.projectSortOrder,
       props.projects,
       props.selectedEnvironmentId,
@@ -399,15 +401,17 @@ function IosHomeHeader(props: HomeHeaderProps) {
             title="Thread list options"
             separateBackground
           >
-            <NativeHeaderToolbar.Menu title="CTOX instance">
-              <NativeHeaderToolbar.Label>CTOX instance</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.Menu title="Machine">
+              <NativeHeaderToolbar.Label>Machine</NativeHeaderToolbar.Label>
               {props.allowAllEnvironments === false ? null : (
                 <NativeHeaderToolbar.MenuAction
                   isOn={props.selectedEnvironmentId === null}
                   onPress={() => props.onEnvironmentChange(null)}
-                  subtitle="Show threads from every environment"
+                  subtitle="Show threads from every machine in the active scope"
                 >
-                  <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
+                  <NativeHeaderToolbar.Label>
+                    {props.allEnvironmentsLabel ?? "All machines"}
+                  </NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
               )}
               {props.environments.map((environment) => (

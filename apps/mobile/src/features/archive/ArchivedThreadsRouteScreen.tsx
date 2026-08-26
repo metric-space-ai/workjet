@@ -22,15 +22,11 @@ export function ArchivedThreadsRouteScreen() {
   const {
     environmentBindings,
     hasEnvironmentBindings,
-    selectedEnvironmentId: activeBusinessOsEnvironmentId,
-    selectEnvironment,
+    selected: selectedBusinessOsInstance,
   } = useBusinessOs();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentIdOverride] =
     useState<EnvironmentId | null>(null);
-  const selectedEnvironmentId = hasEnvironmentBindings
-    ? activeBusinessOsEnvironmentId
-    : selectedEnvironmentIdOverride;
   const [sortOrder, setSortOrder] = useState<ArchivedThreadSortOrder>("newest");
   const environments = useMemo<ReadonlyArray<ArchivedThreadsHeaderEnvironment>>(
     () =>
@@ -40,7 +36,9 @@ export function ArchivedThreadsRouteScreen() {
             (connection) =>
               !hasEnvironmentBindings ||
               environmentBindings.some(
-                (binding) => binding.environmentId === connection.environmentId,
+                (binding) =>
+                  binding.businessOsInstanceId === selectedBusinessOsInstance?.id &&
+                  binding.environmentId === connection.environmentId,
               ),
           )
           .map((connection) => ({
@@ -51,14 +49,21 @@ export function ArchivedThreadsRouteScreen() {
           environment.label.toLocaleLowerCase(),
         ),
       ),
-    [environmentBindings, hasEnvironmentBindings, savedConnectionsById],
+    [
+      environmentBindings,
+      hasEnvironmentBindings,
+      savedConnectionsById,
+      selectedBusinessOsInstance?.id,
+    ],
   );
+  const selectedEnvironmentId = environments.some(
+    (environment) => environment.environmentId === selectedEnvironmentIdOverride,
+  )
+    ? selectedEnvironmentIdOverride
+    : null;
   const environmentIds = useMemo(
-    () =>
-      hasEnvironmentBindings && selectedEnvironmentId !== null
-        ? [selectedEnvironmentId]
-        : environments.map((environment) => environment.environmentId),
-    [environments, hasEnvironmentBindings, selectedEnvironmentId],
+    () => environments.map((environment) => environment.environmentId),
+    [environments],
   );
   const environmentLabels = useMemo(
     () =>
@@ -96,17 +101,18 @@ export function ArchivedThreadsRouteScreen() {
 
   return (
     <ArchivedThreadsScreen
-      allowAllEnvironments={!hasEnvironmentBindings}
+      allowAllEnvironments
+      allEnvironmentsLabel={
+        hasEnvironmentBindings
+          ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
+          : "All machines"
+      }
       environments={environments}
       error={error}
       groups={groups}
       isLoading={isLoading}
       onDeleteThread={confirmDeleteThread}
       onEnvironmentChange={(environmentId) => {
-        if (hasEnvironmentBindings) {
-          if (environmentId) void selectEnvironment(environmentId);
-          return;
-        }
         setSelectedEnvironmentIdOverride(environmentId);
       }}
       onRefresh={refresh}

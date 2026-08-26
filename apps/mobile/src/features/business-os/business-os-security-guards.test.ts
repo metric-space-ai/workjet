@@ -12,11 +12,11 @@ describe("Business OS native security guards", () => {
     expect(settings).not.toMatch(/Signaling-URL eingeben|Raum eingeben|Passwort eingeben/iu);
     expect(settings).toContain("QR-Code anzeigen");
     expect(settings).toContain("QR-Code scannen");
-    expect(settings).toContain("CTOX Instanzen");
+    expect(settings).toContain(">Business OS</Text>");
     expect(settings).toContain("separat verbunden");
     expect(settings).toContain("gemeinsam für Code und Business OS");
-    expect(settings).toContain("nur das aktuell ausgewählte CTOX");
-    expect(settings).toContain("Weitere Backends werden unabhängig");
+    expect(settings).toContain("aktuell ausgewählten\n                Business OS");
+    expect(settings).toContain("Weitere Instanzen werden unabhängig");
     expect(settings).toContain("Erneuern");
     expect(settings).toContain("Widerrufen");
     expect(settings).toContain("workjetDeviceInviteEnvironment");
@@ -24,29 +24,48 @@ describe("Business OS native security guards", () => {
     expect(settings).not.toContain("businessOsMobileInviteEnvironment");
   });
 
-  it("persists only the CTOX-instance to Code-environment relation", () => {
+  it("persists only CTOX-instance to Code-machine memberships", () => {
     const registry = read("src/features/business-os/registry/native-business-os-registry.ts");
     const binding = read("src/features/business-os/registry/business-os-environment-binding.ts");
-    expect(registry).toContain("business_os_environment_bindings");
+    expect(registry).toContain("business_os_instance_environment_memberships");
     expect(registry).toContain("business_os_instance_id");
     expect(registry).toContain("environment_id");
+    expect(registry).toContain("business_os_environment_owner");
+    expect(registry).toContain("ON CONFLICT (environment_id)");
     expect(binding).toContain("businessOsInstanceId");
     expect(binding).toContain("environmentId");
+    expect(binding).toContain("each\n * environment belongs to exactly one instance");
     expect(binding).not.toMatch(/password|capabilityToken|roomSecret|businessRecords/iu);
+  });
+
+  it("makes Business OS the single visible connection scope in regular settings", () => {
+    const settings = read("src/features/settings/SettingsRouteScreen.tsx");
+    const home = read("src/features/home/HomeRouteScreen.tsx");
+    expect(settings.indexOf('label="Business OS"')).toBeLessThan(
+      settings.indexOf('label="Code | Business OS"'),
+    );
+    expect(settings).not.toContain('label="Environments"');
+    expect(settings).not.toContain('label="Business OS verbinden"');
+    expect(home).not.toContain('params: { screen: "SettingsEnvironments" }');
+    expect(home).not.toContain('params: { screen: "SettingsEnvironmentNew" }');
   });
 
   it("uses the active CTOX instance as the Code scope across entry points", () => {
     const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
     const layout = read("src/features/layout/AdaptiveWorkspaceLayout.tsx");
+    const home = read("src/features/home/HomeRouteScreen.tsx");
     const newTask = read("src/features/threads/new-task-flow-provider.tsx");
     const project = read("src/features/projects/AddProjectScreen.tsx");
     const archiveRoute = read("src/features/archive/ArchivedThreadsRouteScreen.tsx");
     expect(pairing).toContain("bindEnvironment(businessOsInstance.id, environmentId)");
-    expect(layout).toContain("selectedEnvironmentId={");
-    expect(layout).toContain("selectEnvironment(environmentId)");
-    expect(newTask).toContain("activeBusinessOsEnvironmentId");
-    expect(project).toContain("connection.environmentId === selectedEnvironmentId");
-    expect(archiveRoute).toContain("allowAllEnvironments={!hasEnvironmentBindings}");
+    expect(layout).not.toContain("selectedEnvironmentId={hasEnvironmentBindings");
+    expect(home).toContain("binding.businessOsInstanceId === selectedBusinessOsInstance?.id");
+    expect(newTask).toContain("activeBusinessOsEnvironmentIds");
+    expect(project).toContain("selectedInstanceEnvironmentIds.has(connection.environmentId)");
+    expect(archiveRoute).toContain(
+      "binding.businessOsInstanceId === selectedBusinessOsInstance?.id",
+    );
+    expect(archiveRoute).toContain("All machines in");
   });
 
   it("requires isolated native profiles and canonical app origins", () => {

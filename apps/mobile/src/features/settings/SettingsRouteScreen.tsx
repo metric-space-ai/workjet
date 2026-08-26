@@ -38,6 +38,7 @@ import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import { workjetModeLabel } from "../mode/workjet-mode";
 import { useWorkjetMode } from "../mode/WorkjetModeProvider";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
@@ -103,8 +104,6 @@ export function SettingsRouteScreen() {
 
 function LocalSettingsRouteScreen() {
   const insets = useSafeAreaInsets();
-  const { savedConnectionsById } = useSavedRemoteConnections();
-  const environmentCount = Object.keys(savedConnectionsById).length;
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
@@ -118,15 +117,6 @@ function LocalSettingsRouteScreen() {
         }}
       >
         <WorkjetModeSettingsSection />
-
-        <SettingsSection title="Configuration">
-          <SettingsRow
-            icon="desktopcomputer"
-            label="Environments"
-            value={`${environmentCount}`}
-            target="SettingsEnvironments"
-          />
-        </SettingsSection>
 
         <GeneralSettingsSection />
 
@@ -467,12 +457,6 @@ function ConfiguredSettingsRouteScreen() {
         </View>
 
         <SettingsSection title="Configuration">
-          <SettingsRow
-            icon="desktopcomputer"
-            label="Environments"
-            value={`${environmentCount}`}
-            target="SettingsEnvironments"
-          />
           <SettingsSwitchRow
             icon="bell.badge"
             label="Device Notifications"
@@ -518,17 +502,23 @@ function ConfiguredSettingsRouteScreen() {
 
 function WorkjetModeSettingsSection() {
   const { mode, setMode } = useWorkjetMode();
+  const { selected } = useBusinessOs();
   const nextMode = mode === "code" ? "business_os" : "code";
 
   return (
     <SettingsSection title="Workspace">
+      <SettingsRow
+        icon="square.grid.2x2"
+        label="Business OS"
+        value={selected?.displayName ?? "Nicht eingerichtet"}
+        target="SettingsBusinessOs"
+      />
       <SettingsRow
         icon="square.split.2x1"
         label="Code | Business OS"
         value={workjetModeLabel(mode)}
         onPress={() => setMode(nextMode)}
       />
-      <SettingsRow icon="qrcode" label="Business OS verbinden" target="SettingsBusinessOs" />
     </SettingsSection>
   );
 }

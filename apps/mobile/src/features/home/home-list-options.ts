@@ -72,13 +72,30 @@ export function HomeListOptionsProvider({
   children,
   onSelectedEnvironmentChange,
   projectGroupingMode,
+  scopeKey = "default",
   selectedEnvironmentId,
 }: PropsWithChildren<{
   readonly projectGroupingMode: SidebarProjectGroupingMode;
+  readonly scopeKey?: string;
   readonly selectedEnvironmentId?: EnvironmentId | null;
   readonly onSelectedEnvironmentChange?: (environmentId: EnvironmentId | null) => void;
 }>) {
-  const [options, setOptions] = useState<HomeListOptions>(defaultHomeListOptions);
+  const [optionsByScope, setOptionsByScope] = useState<ReadonlyMap<string, HomeListOptions>>(
+    () => new Map(),
+  );
+  const options = optionsByScope.get(scopeKey) ?? defaultHomeListOptions();
+  const setOptions = useCallback<Dispatch<SetStateAction<HomeListOptions>>>(
+    (action) => {
+      setOptionsByScope((current) => {
+        const previous = current.get(scopeKey) ?? defaultHomeListOptions();
+        const next = typeof action === "function" ? action(previous) : action;
+        const updated = new Map(current);
+        updated.set(scopeKey, next);
+        return updated;
+      });
+    },
+    [scopeKey],
+  );
   const setSelectedEnvironmentId = useCallback(
     (environmentId: EnvironmentId | null) => {
       if (onSelectedEnvironmentChange) {
@@ -87,7 +104,7 @@ export function HomeListOptionsProvider({
       }
       setOptions((current) => ({ ...current, selectedEnvironmentId: environmentId }));
     },
-    [onSelectedEnvironmentChange],
+    [onSelectedEnvironmentChange, setOptions],
   );
   const resolvedOptions = useMemo(
     () => ({
@@ -104,7 +121,7 @@ export function HomeListOptionsProvider({
       setSelectedEnvironmentId,
       projectGroupingMode,
     }),
-    [projectGroupingMode, resolvedOptions, setSelectedEnvironmentId],
+    [projectGroupingMode, resolvedOptions, setOptions, setSelectedEnvironmentId],
   );
   return createElement(HomeListOptionsContext, { value }, children);
 }
@@ -155,12 +172,18 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
     },
     [setOptions, shared],
   );
-  const setProjectSortOrder = useCallback((value: HomeProjectSortOrder) => {
-    setOptions((current) => ({ ...current, projectSortOrder: value }));
-  }, []);
-  const setThreadSortOrder = useCallback((value: SidebarThreadSortOrder) => {
-    setOptions((current) => ({ ...current, threadSortOrder: value }));
-  }, []);
+  const setProjectSortOrder = useCallback(
+    (value: HomeProjectSortOrder) => {
+      setOptions((current) => ({ ...current, projectSortOrder: value }));
+    },
+    [setOptions],
+  );
+  const setThreadSortOrder = useCallback(
+    (value: SidebarThreadSortOrder) => {
+      setOptions((current) => ({ ...current, threadSortOrder: value }));
+    },
+    [setOptions],
+  );
   return {
     options: resolvedOptions,
     setSelectedEnvironmentId,

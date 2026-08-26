@@ -40,7 +40,7 @@ export function BusinessOsSettingsPanel(props: {
     isReady,
     select,
     selected,
-    selectedEnvironmentId,
+    selectedEnvironmentIds,
   } = useBusinessOs();
   const { importPairingPayload } = useWorkjetDevicePairing();
   const { savedConnectionsById } = useSavedRemoteConnections();
@@ -50,14 +50,14 @@ export function BusinessOsSettingsPanel(props: {
   const revokeInviteCommand = useAtomCommand(workjetDeviceInviteEnvironment.revoke, {
     reportFailure: false,
   });
-  const connection = useMemo(
-    () =>
-      resolveWorkjetDevicePairingConnection(
-        selectedEnvironmentId,
-        Object.values(savedConnectionsById),
-      ),
-    [savedConnectionsById, selectedEnvironmentId],
-  );
+  const connection = useMemo(() => {
+    const connections = Object.values(savedConnectionsById);
+    for (const environmentId of selectedEnvironmentIds) {
+      const candidate = resolveWorkjetDevicePairingConnection(environmentId, connections);
+      if (candidate) return candidate;
+    }
+    return null;
+  }, [savedConnectionsById, selectedEnvironmentIds]);
   const productionControl = useMemo(() => {
     if (!connection) return unavailableWorkjetDeviceInviteControl;
     return makeWorkjetDeviceInviteControl({
@@ -232,7 +232,7 @@ export function BusinessOsSettingsPanel(props: {
 
   if (!isReady) {
     return (
-      <Text className="py-10 text-center text-foreground-muted">Backends werden geladen…</Text>
+      <Text className="py-10 text-center text-foreground-muted">Business OS wird geladen…</Text>
     );
   }
 
@@ -280,10 +280,10 @@ export function BusinessOsSettingsPanel(props: {
         <View className={cn("gap-5", tabletLayout && "flex-row items-start")}>
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
             <View className="gap-1">
-              <Text className="text-lg font-t3-bold text-foreground">CTOX Instanzen</Text>
+              <Text className="text-lg font-t3-bold text-foreground">Business OS</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
-                Jede CTOX Instanz wird auf diesem Gerät separat verbunden. Die aktive Auswahl gilt
-                immer gemeinsam für Code und Business OS; Geschäftsdaten synchronisieren weiterhin
+                Jede Business-OS-Instanz wird auf diesem Gerät separat verbunden. Die aktive Auswahl
+                gilt immer gemeinsam für Code und Business OS; Geschäftsdaten synchronisieren
                 ausschließlich direkt per RxDB und WebRTC.
               </Text>
             </View>
@@ -291,8 +291,8 @@ export function BusinessOsSettingsPanel(props: {
             {instances.length === 0 ? (
               <View className="rounded-[18px] bg-subtle p-4">
                 <Text className="text-sm leading-normal text-foreground-muted">
-                  Noch keine CTOX Instanz verbunden. Scanne den QR-Code dieser Instanz oder füge
-                  ihren kurzlebigen Workjet-Link explizit ein.
+                  Noch keine Business-OS-Instanz verbunden. Scanne ihren Workjet-QR-Code oder füge
+                  den kurzlebigen Link explizit ein.
                 </Text>
               </View>
             ) : (
@@ -302,6 +302,9 @@ export function BusinessOsSettingsPanel(props: {
                   const codeEnvironmentBound = environmentBindings.some(
                     (binding) => binding.businessOsInstanceId === instance.id,
                   );
+                  const assignedComputerCount = environmentBindings.filter(
+                    (binding) => binding.businessOsInstanceId === instance.id,
+                  ).length;
                   const canActivate = environmentBindings.length === 0 || codeEnvironmentBound;
                   return (
                     <Pressable
@@ -320,10 +323,12 @@ export function BusinessOsSettingsPanel(props: {
                       <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={1}>
                         {codeEnvironmentBound
                           ? active
-                            ? "Aktiv für Code und Business OS · "
-                            : "Bereit für Code und Business OS · "
-                          : "Erneut verbinden: Code-Zuordnung fehlt · "}
-                        {new URL(instance.signalingUrls[0]!).host}
+                            ? "Aktiv für Code und Business OS"
+                            : "Bereit für Code und Business OS"
+                          : "Erneut verbinden: Computer-Zuordnung fehlt"}
+                        {assignedComputerCount > 0
+                          ? ` · ${assignedComputerCount} ${assignedComputerCount === 1 ? "Computer" : "Computers"}`
+                          : ""}
                       </Text>
                     </Pressable>
                   );
@@ -353,8 +358,8 @@ export function BusinessOsSettingsPanel(props: {
             <View className="gap-1">
               <Text className="text-lg font-t3-bold text-foreground">Weiteres Gerät verbinden</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
-                Der kurzlebige QR-Code gibt auf dem Zielgerät nur das aktuell ausgewählte CTOX
-                Backend für Code und Business OS frei. Weitere Backends werden unabhängig verbunden.
+                Der kurzlebige QR-Code verbindet das Zielgerät nur mit der aktuell ausgewählten
+                Business OS für Code und Business OS. Weitere Instanzen werden unabhängig verbunden.
                 Zeige ihn nur der Zielperson.
               </Text>
             </View>

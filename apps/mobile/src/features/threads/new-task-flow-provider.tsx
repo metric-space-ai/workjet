@@ -194,41 +194,45 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const {
     hasEnvironmentBindings,
-    selectedEnvironmentId: activeBusinessOsEnvironmentId,
+    selectedEnvironmentIds: activeBusinessOsEnvironmentIds,
     selectEnvironment: selectBusinessOsEnvironment,
   } = useBusinessOs();
+  const activeBusinessOsEnvironmentIdSet = useMemo(
+    () => new Set(activeBusinessOsEnvironmentIds),
+    [activeBusinessOsEnvironmentIds],
+  );
+  const scopedProjects = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? projects.filter((project) => activeBusinessOsEnvironmentIdSet.has(project.environmentId))
+        : projects,
+    [activeBusinessOsEnvironmentIdSet, hasEnvironmentBindings, projects],
+  );
   const groupingSettings = useMobileProjectGroupingSettings();
   const { enabled: planModeEnabled, loaded: planModePreferenceLoaded } = useLegacyPlanModeState();
   const projectScopes = useMemo(
     () =>
       sortHomeProjectScopes({
         scopes: buildHomeProjectScopes({
-          projects,
-          environmentId: hasEnvironmentBindings ? activeBusinessOsEnvironmentId : null,
+          projects: scopedProjects,
+          environmentId: null,
           projectGroupingMode: groupingSettings.sidebarProjectGroupingMode,
         }),
         threads,
         pendingTasks: [],
         projectSortOrder: "updated_at",
       }),
-    [
-      activeBusinessOsEnvironmentId,
-      groupingSettings.sidebarProjectGroupingMode,
-      hasEnvironmentBindings,
-      projects,
-      threads,
-    ],
+    [groupingSettings.sidebarProjectGroupingMode, scopedProjects, threads],
   );
 
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
-  const selectedEnvironmentId = hasEnvironmentBindings
-    ? activeBusinessOsEnvironmentId
-    : selectedEnvironmentIdOverride !== null &&
-        projects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
+  const selectedEnvironmentId =
+    selectedEnvironmentIdOverride !== null &&
+    scopedProjects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
       ? selectedEnvironmentIdOverride
-      : (projects[0]?.environmentId ?? null);
+      : (scopedProjects[0]?.environmentId ?? null);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [branchQuery, setBranchQuery] = useState("");
@@ -260,10 +264,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const projectsForEnvironment = useMemo(
     () =>
       pipe(
-        projects,
+        scopedProjects,
         Arr.filter((project) => project.environmentId === selectedEnvironmentId),
       ),
-    [projects, selectedEnvironmentId],
+    [scopedProjects, selectedEnvironmentId],
   );
 
   // Stand-in for the edited task's project while its shell is not loaded
@@ -332,10 +336,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         (selectedProjectTitle !== null && project.title === selectedProjectTitle)
       );
     };
-    for (const project of projects) {
-      if (hasEnvironmentBindings && project.environmentId !== activeBusinessOsEnvironmentId) {
-        continue;
-      }
+    for (const project of scopedProjects) {
       if (!hostsSelectedRepository(project)) {
         continue;
       }
@@ -354,9 +355,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
     return result;
   }, [
-    activeBusinessOsEnvironmentId,
-    hasEnvironmentBindings,
-    projects,
+    scopedProjects,
     savedConnectionsById,
     selectedRepositoryKey,
     selectedWorkspaceBasename,

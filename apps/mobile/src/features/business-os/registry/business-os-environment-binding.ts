@@ -1,8 +1,10 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
 /**
- * Non-secret local relation that makes one CTOX instance the common scope for
- * Code and Business OS. Credentials remain in their existing secure stores.
+ * Non-secret local membership that makes one Code machine/environment part of
+ * a CTOX instance. One instance may own several Code environments, while each
+ * environment belongs to exactly one instance. Credentials remain in their
+ * existing secure stores.
  */
 export interface BusinessOsEnvironmentBinding {
   readonly businessOsInstanceId: string;
@@ -19,15 +21,14 @@ export function createBusinessOsEnvironmentBinding(
   return Object.freeze({ businessOsInstanceId, environmentId });
 }
 
-export function environmentForBusinessOsInstance(
+export function environmentsForBusinessOsInstance(
   bindings: readonly BusinessOsEnvironmentBinding[],
   businessOsInstanceId: string | null,
-): EnvironmentId | null {
-  if (!businessOsInstanceId) return null;
-  return (
-    bindings.find((binding) => binding.businessOsInstanceId === businessOsInstanceId)
-      ?.environmentId ?? null
-  );
+): readonly EnvironmentId[] {
+  if (!businessOsInstanceId) return [];
+  return bindings
+    .filter((binding) => binding.businessOsInstanceId === businessOsInstanceId)
+    .map((binding) => binding.environmentId);
 }
 
 export function businessOsInstanceForEnvironment(

@@ -30,7 +30,11 @@ export function HomeRouteScreen() {
   const threads = useThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const { environmentBindings, hasEnvironmentBindings } = useBusinessOs();
+  const {
+    environmentBindings,
+    hasEnvironmentBindings,
+    selected: selectedBusinessOsInstance,
+  } = useBusinessOs();
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -54,7 +58,9 @@ export function HomeRouteScreen() {
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
   const environments = useMemo(() => {
     const boundEnvironmentIds = new Set(
-      environmentBindings.map((binding) => binding.environmentId),
+      environmentBindings
+        .filter((binding) => binding.businessOsInstanceId === selectedBusinessOsInstance?.id)
+        .map((binding) => binding.environmentId),
     );
     const connectionStateByEnvironmentId = new Map(
       workspaceEnvironments.map(
@@ -75,10 +81,37 @@ export function HomeRouteScreen() {
         })),
       Order.mapInput(Order.String, (environment: { readonly label: string }) => environment.label),
     );
-  }, [environmentBindings, hasEnvironmentBindings, savedConnectionsById, workspaceEnvironments]);
+  }, [
+    environmentBindings,
+    hasEnvironmentBindings,
+    savedConnectionsById,
+    selectedBusinessOsInstance?.id,
+    workspaceEnvironments,
+  ]);
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
+  );
+  const scopedProjects = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? projects.filter((project) => availableEnvironmentIds.has(project.environmentId))
+        : projects,
+    [availableEnvironmentIds, hasEnvironmentBindings, projects],
+  );
+  const scopedThreads = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? threads.filter((thread) => availableEnvironmentIds.has(thread.environmentId))
+        : threads,
+    [availableEnvironmentIds, hasEnvironmentBindings, threads],
+  );
+  const scopedPendingTasks = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? pendingTasks.filter((task) => availableEnvironmentIds.has(task.message.environmentId))
+        : pendingTasks,
+    [availableEnvironmentIds, hasEnvironmentBindings, pendingTasks],
   );
   const {
     options: listOptions,
@@ -91,14 +124,14 @@ export function HomeRouteScreen() {
   const projectFilterOptions = useMemo(
     () =>
       buildHomeProjectScopes({
-        projects,
+        projects: scopedProjects,
         environmentId: selectedEnvironmentId,
         projectGroupingMode: listOptions.projectGroupingMode,
       }).map((scope) => ({
         key: scope.key,
         label: scope.title,
       })),
-    [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
+    [listOptions.projectGroupingMode, scopedProjects, selectedEnvironmentId],
   );
   useEffect(() => {
     if (
@@ -147,12 +180,17 @@ export function HomeRouteScreen() {
             onOpenEnvironments: () =>
               navigation.navigate("SettingsSheet", {
                 screen: "SettingsContent",
-                params: { screen: "SettingsEnvironments" },
+                params: { screen: "SettingsBusinessOs" },
               }),
           })}
         />
         <HomeHeader
-          allowAllEnvironments={!hasEnvironmentBindings}
+          allowAllEnvironments
+          allEnvironmentsLabel={
+            hasEnvironmentBindings
+              ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
+              : "All machines"
+          }
           environments={environments}
           projects={projectFilterOptions}
           searchQuery={searchQuery}
@@ -165,7 +203,7 @@ export function HomeRouteScreen() {
           onOpenEnvironments={() =>
             navigation.navigate("SettingsSheet", {
               screen: "SettingsContent",
-              params: { screen: "SettingsEnvironments" },
+              params: { screen: "SettingsBusinessOs" },
             })
           }
           onOpenSettings={() =>
@@ -186,7 +224,7 @@ export function HomeRouteScreen() {
           onAddConnection={() =>
             navigation.navigate("SettingsSheet", {
               screen: "SettingsContent",
-              params: { screen: "SettingsEnvironmentNew" },
+              params: { screen: "SettingsBusinessOs" },
             })
           }
           onArchiveThread={archiveThread}
@@ -231,15 +269,15 @@ export function HomeRouteScreen() {
           }}
           onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
           onThreadSortOrderChange={setThreadSortOrder}
-          pendingTasks={pendingTasks}
+          pendingTasks={scopedPendingTasks}
           projectGroupingMode={listOptions.projectGroupingMode}
-          projects={projects}
+          projects={scopedProjects}
           projectSortOrder={listOptions.projectSortOrder}
           savedConnectionsById={savedConnectionsById}
           searchQuery={searchQuery}
           selectedEnvironmentId={selectedEnvironmentId}
           selectedProjectKey={selectedProjectKey}
-          threads={threads}
+          threads={scopedThreads}
           threadSortOrder={listOptions.threadSortOrder}
         />
       </>

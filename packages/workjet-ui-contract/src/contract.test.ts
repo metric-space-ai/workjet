@@ -8,6 +8,7 @@ import {
   contrastRatio,
   findForbiddenTerms,
   getCategoryAccent,
+  getCategoryThemeAccent,
   getTheme,
   isForbiddenUserTerm,
   isUserFacingCopy,
@@ -39,18 +40,55 @@ describe("Workjet UI contract", () => {
   });
 
   it("keeps every canonical category on one contrast-safe accent contract", () => {
-    expect(UI_CATEGORIES).toHaveLength(14);
+    expect(UI_CATEGORIES).toEqual([
+      "Workspace",
+      "Collaboration",
+      "Productivity",
+      "Development",
+      "Engineering",
+      "Knowledge",
+      "Research",
+      "Sales",
+      "Recruiting",
+      "Finance",
+      "Operations",
+      "Governance",
+      "Security",
+      "Analytics",
+      "System",
+      "Imported",
+    ]);
     expect(new Set(UI_CATEGORIES).size).toBe(UI_CATEGORIES.length);
 
     for (const category of UI_CATEGORIES) {
       const token = getCategoryAccent(category);
       expect(token.accent).toMatch(/^#[0-9a-f]{6}$/i);
       expect(token.foreground).toBe(readableForeground(token.accent));
+      expect(token.softLight).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(token.softDark).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(token.borderLight).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(token.borderDark).toMatch(/^#[0-9a-f]{6}$/i);
       expect(contrastRatio(token.foreground, token.accent)).toBeGreaterThanOrEqual(
         WORKJET_UI_CONTRACT.focus.minContrastRatio,
       );
+      expect(getCategoryThemeAccent(category, "light")).toMatchObject({
+        accent: token.accent,
+        foreground: token.foreground,
+        soft: token.softLight,
+        border: token.borderLight,
+      });
+      expect(getCategoryThemeAccent(category, "dark")).toMatchObject({
+        soft: token.softDark,
+        border: token.borderDark,
+      });
       expect(categoryAccentCssVariable(category)).toMatch(/^--workjet-category-[a-z-]+-accent$/);
     }
+
+    expect(getCategoryAccent("Workspace").accent).toBe("#2563eb");
+    expect(getCategoryAccent("Collaboration").accent).toBe("#0891b2");
+    expect(getCategoryAccent("Engineering").accent).toBe("#7c3aed");
+    expect(getCategoryAccent("Security").accent).toBe("#dc2626");
+    expect(getCategoryAccent("Imported").accent).toBe("#71717a");
   });
 
   it("provides stable type, rhythm, focus, and elevation primitives", () => {
@@ -75,6 +113,7 @@ describe("Workjet UI contract", () => {
   it("separates approved user vocabulary from implementation terminology", () => {
     expect(WORKJET_UI_CONTRACT.vocabulary.userTerms).toContain("Settings");
     expect(WORKJET_UI_CONTRACT.vocabulary.forbiddenTerms).toContain("WebRTC");
+    expect(WORKJET_UI_CONTRACT.vocabulary.forbiddenTerms).toContain("Guest");
     expect(isUserFacingCopy("Open Workjet Settings and choose Dark appearance.")).toBe(true);
     expect(isForbiddenUserTerm("The WebRTC daemon is waiting for replication.")).toBe(true);
     expect(findForbiddenTerms("Show the RxDB peer session")).not.toHaveLength(0);

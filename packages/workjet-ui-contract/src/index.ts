@@ -10,13 +10,15 @@ export type UiCategory =
   | "Security"
   | "Collaboration"
   | "Development"
+  | "Engineering"
   | "Governance"
   | "Finance"
   | "Productivity"
   | "Sales"
   | "Recruiting"
   | "Research"
-  | "Analytics";
+  | "Analytics"
+  | "Imported";
 
 export interface SurfaceTokens {
   readonly canvas: string;
@@ -75,6 +77,10 @@ export interface TypographyTokens {
 export interface CategoryAccent {
   readonly accent: string;
   readonly foreground: string;
+  readonly softLight: string;
+  readonly softDark: string;
+  readonly borderLight: string;
+  readonly borderDark: string;
 }
 
 export interface UiContract {
@@ -159,6 +165,19 @@ export const getTheme = (theme: UiTheme): ThemeTokens => WORKJET_UI_CONTRACT.the
 
 export const getCategoryAccent = (category: UiCategory): CategoryAccent =>
   WORKJET_UI_CONTRACT.categories[category];
+
+export const getCategoryThemeAccent = (
+  category: UiCategory,
+  theme: UiTheme,
+): Readonly<{ accent: string; foreground: string; soft: string; border: string }> => {
+  const token = getCategoryAccent(category);
+  return {
+    accent: token.accent,
+    foreground: token.foreground,
+    soft: theme === "dark" ? token.softDark : token.softLight,
+    border: theme === "dark" ? token.borderDark : token.borderLight,
+  };
+};
 
 export const categoryAccentCssVariable = (category: UiCategory): string =>
   `--workjet-category-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-accent`;

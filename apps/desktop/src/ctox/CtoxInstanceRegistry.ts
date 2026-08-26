@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  BusinessOsShellUpdateStatus,
+  CtoxManagedInstanceId,
   CtoxManagedInstance as CtoxManagedInstanceSchema,
   CtoxPairedInstanceMutationFailureCode,
   type CtoxDiscoveryResult,
@@ -66,6 +68,7 @@ const SECRET_REGISTRY_FILE = "secrets.json";
  * with a matching encrypted secret.
  */
 const SSH_REGISTRY_FILE = "ssh-instances.json";
+const SHELL_FLEET_STATUS_FILE = "shell-fleet-status.json";
 const PAIRING_ROOM_PREFIX = "ctox-business-os:";
 const textEncoder = new TextEncoder();
 
@@ -184,6 +187,17 @@ type PairingSecretPayload = typeof PairingSecretPayload.Type;
 const UnknownJson = Schema.fromJsonString(Schema.Unknown);
 const PublicRegistryDocumentJson = Schema.fromJsonString(PublicRegistryDocument);
 const SecretRegistryDocumentJson = Schema.fromJsonString(SecretRegistryDocument);
+const ShellFleetStatusDocumentJson = Schema.fromJsonString(
+  Schema.Struct({
+    version: Schema.Literal(1),
+    rows: Schema.Array(
+      Schema.Struct({
+        instanceId: CtoxManagedInstanceId,
+        shell: BusinessOsShellUpdateStatus,
+      }),
+    ).check(Schema.isMaxLength(1_000)),
+  }),
+);
 const PairingSecretPayloadJson = Schema.fromJsonString(PairingSecretPayload);
 const JwtPayloadJson = Schema.fromJsonString(
   Schema.Struct({ exp: Schema.optionalKey(Schema.Number.check(Schema.isFinite())) }),
@@ -916,6 +930,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   const publicRegistryPath = path.join(ctoxDirectory, PUBLIC_REGISTRY_FILE);
   const secretRegistryPath = path.join(ctoxDirectory, SECRET_REGISTRY_FILE);
   const sshRegistryPath = path.join(ctoxDirectory, SSH_REGISTRY_FILE);
+  const shellFleetStatusPath = path.join(ctoxDirectory, SHELL_FLEET_STATUS_FILE);
   const currentTimeMillis =
     options.nowEpochMs === undefined
       ? DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
@@ -964,6 +979,36 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       ),
     ),
   );
+
+  const readShellStatuses = Effect.suspend(() =>
+    readFileOrEmpty(fileSystem, shellFleetStatusPath, MAX_PUBLIC_DOCUMENT_BYTES)
+      .pipe(
+        Effect.flatMap((raw) =>
+          raw === undefined
+            ? Effect.succeed(new Map<string, typeof BusinessOsShellUpdateStatus.Type>())
+            : Schema.decodeUnknownEffect(ShellFleetStatusDocumentJson)(raw, {
+                onExcessProperty: "error",
+              }).pipe(
+                Effect.map(
+                  (document) =>
+                    new Map(document.rows.map((row) => [row.instanceId, row.shell] as const)),
+                ),
+                Effect.orElseSucceed(() => new Map()),
+              ),
+        ),
+      )
+      .pipe(Effect.orElseSucceed(() => new Map())),
+  );
+
+  const attachShellStatuses = Effect.fn("CtoxInstanceRegistry.attachShellStatuses")(function* (
+    instances: readonly CtoxManagedInstance[],
+  ) {
+    const statuses = yield* readShellStatuses;
+    return instances.map((instance) => {
+      const shellUpdate = statuses.get(instance.id);
+      return shellUpdate === undefined ? instance : { ...instance, shellUpdate };
+    });
+  });
 
   const writePublic = Effect.fn("CtoxInstanceRegistry.writePublic")(function* (
     document: PublicRegistryDocument,
@@ -1163,12 +1208,14 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   const resolveLocalDaemonTarget = Effect.fn("CtoxInstanceRegistry.resolveLocalDaemonTarget")(
     function* (instanceId: string) {
       const discovered = yield* discoverLocalInstances;
+      const withShellStatus = yield* attachShellStatuses(discovered.map((entry) => entry.instance));
       const target = discovered.find((entry) => entry.instance.id === instanceId);
       if (target === undefined || !isLaunchableCtoxLocalDaemon(target.instance)) {
         return yield* registryError("not_found");
       }
       return {
-        descriptor: target.instance,
+        descriptor:
+          withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         daemonInstanceId: target.daemonInstanceId,
         discoveredCount: discovered.length,
       };
@@ -1181,12 +1228,14 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       // launched while its daemon is answering right now, the same rule the
       // local-daemon path applies.
       const discovered = yield* discoverSshInstances;
+      const withShellStatus = yield* attachShellStatuses(discovered.map((entry) => entry.instance));
       const target = discovered.find((entry) => entry.instance.id === instanceId);
       if (target === undefined || !isLaunchableCtoxSshManagedInstance(target.instance)) {
         return yield* registryError("not_found");
       }
       return {
-        descriptor: target.instance,
+        descriptor:
+          withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         host: target.host,
         ...(target.stateRoot === undefined ? {} : { stateRoot: target.stateRoot }),
       } satisfies CtoxSshManagedTarget;
@@ -1325,10 +1374,12 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           const [local, ssh] = yield* Effect.all([discoverLocalInstances, discoverSshInstances], {
             concurrency: 2,
           });
-          return mergeCtoxInstanceSources(managed, paired, [
+          const merged = mergeCtoxInstanceSources(managed, paired, [
             ...local.map((entry) => entry.instance),
             ...ssh.map((entry) => entry.instance),
           ]);
+          if (merged._tag !== "ready") return merged;
+          return { ...merged, instances: yield* attachShellStatuses(merged.instances) };
         }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),
       ),
     importInvite: (invite) =>

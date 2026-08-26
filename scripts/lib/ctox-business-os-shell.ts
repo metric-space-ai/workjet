@@ -11,9 +11,9 @@ import pinnedManifestJson from "../../apps/desktop/resources/ctox/business-os-sh
 
 export const CTOX_BUSINESS_OS_SHELL_SCHEMA = "ctox.business-os-shell.v1";
 export const CTOX_BUSINESS_OS_SHELL_MANIFEST_URL =
-  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.12/ctox-business-os-shell-0.1.0-rc.12.manifest.json";
+  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.2/ctox-business-os-shell-0.1.2.manifest.json";
 export const CTOX_BUSINESS_OS_SHELL_ARCHIVE_URL =
-  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.0-rc.12/ctox-business-os-shell-0.1.0-rc.12.tar.gz";
+  "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.2/ctox-business-os-shell-0.1.2.tar.gz";
 export const CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT_ENV =
   "T3CODE_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT";
 export const CTOX_BUSINESS_OS_SHELL_EMBEDDED_MANIFEST = "ctox-shell-manifest.json";
@@ -107,6 +107,23 @@ export type CtoxBusinessOsShellFetch = (
   url: string,
   request: CtoxBusinessOsShellFetchRequest,
 ) => Promise<Response>;
+
+export function officialCtoxBusinessOsShellReleaseUrls(version: string): {
+  readonly manifestUrl: string;
+  readonly archiveUrl: string;
+  readonly archiveFilename: string;
+} {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(version)) {
+    fail("manifest-invalid", "Shell release version must be strict SemVer.");
+  }
+  const archiveFilename = `ctox-business-os-shell-${version}.tar.gz`;
+  const base = `https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v${version}`;
+  return {
+    manifestUrl: `${base}/ctox-business-os-shell-${version}.manifest.json`,
+    archiveUrl: `${base}/${archiveFilename}`,
+    archiveFilename,
+  };
+}
 
 export interface PrepareCtoxBusinessOsShellOptions {
   readonly dependencyRoot?: string;
@@ -372,8 +389,12 @@ export function decodeCtoxBusinessOsShellReleaseManifest(
   assertSha256(release.embeddedManifestSha256, "Pinned embedded-manifest SHA-256");
   validateCanonicalRelativePath(release.archiveRoot, release.budgets.maxPathBytes);
   validateCanonicalRelativePath(release.entry, release.budgets.maxPathBytes);
-  validatePinnedReleaseUrl(release.manifestUrl, CTOX_BUSINESS_OS_SHELL_MANIFEST_URL);
-  validatePinnedReleaseUrl(release.archiveUrl, CTOX_BUSINESS_OS_SHELL_ARCHIVE_URL);
+  const official = officialCtoxBusinessOsShellReleaseUrls(release.version);
+  validatePinnedReleaseUrl(release.manifestUrl, official.manifestUrl);
+  validatePinnedReleaseUrl(release.archiveUrl, official.archiveUrl);
+  if (release.archiveFilename !== official.archiveFilename) {
+    fail("identity-mismatch", "Shell archive filename does not match the release version.");
+  }
   if (release.archiveByteLength > release.budgets.maxArchiveBytes) {
     fail("budget-exceeded", "Pinned archive exceeds its configured download budget.");
   }
@@ -1222,7 +1243,15 @@ export async function prepareCtoxBusinessOsShell(
   return prepareWithManifest({ ...options, releaseManifest: CTOX_BUSINESS_OS_SHELL_RELEASE });
 }
 
-/** Test-only entry point for tiny synthetic archives; production callers always use the tracked pin. */
+/** Prepare one already authenticated release into the versioned Workjet cache. */
+export async function prepareCtoxBusinessOsShellRelease(
+  releaseManifest: CtoxBusinessOsShellReleaseManifest,
+  options: PrepareCtoxBusinessOsShellOptions = {},
+): Promise<PreparedCtoxBusinessOsShell> {
+  return prepareWithManifest({ ...options, releaseManifest });
+}
+
+/** Test-only convenience entry point for tiny synthetic archives. */
 export async function prepareCtoxBusinessOsShellForTest(
   options: PrepareCtoxBusinessOsShellOptions & {
     readonly releaseManifest: CtoxBusinessOsShellReleaseManifest;

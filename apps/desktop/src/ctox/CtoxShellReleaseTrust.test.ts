@@ -6,6 +6,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   CTOX_STABLE_SHELL_CHANNEL_URL,
+  officialBusinessOsShellReleaseManifestUrl,
+  resolveBusinessOsShellReleaseVersion,
   resolveBusinessOsStableShellRelease,
   verifyBusinessOsShellChannelPointer,
   verifyBusinessOsShellReleaseManifest,
@@ -95,5 +97,29 @@ describe("CtoxShellReleaseTrust", () => {
           : new Response(`${await response.text()} `, { status: 200 });
       }, fixture.trust),
     ).rejects.toThrow("shell-release-manifest-hash-mismatch");
+  });
+
+  it("resolves an immutable older active release without following the current channel", async () => {
+    const fixture = signedFixture();
+    const expectedUrl = officialBusinessOsShellReleaseManifestUrl("1.2.3");
+    expect(expectedUrl).toContain("business-os-shell-v1.2.3");
+    const seen: string[] = [];
+    const release = await resolveBusinessOsShellReleaseVersion(
+      "1.2.3",
+      (async (url) => {
+        seen.push(String(url));
+        return new Response(fixture.releaseBytes, { status: 200 });
+      }) as typeof fetch,
+      fixture.trust,
+    );
+    expect(release.version).toBe("1.2.3");
+    expect(seen).toEqual([expectedUrl]);
+    await expect(
+      resolveBusinessOsShellReleaseVersion(
+        "1.2.4",
+        (async () => new Response(fixture.releaseBytes, { status: 200 })) as typeof fetch,
+        fixture.trust,
+      ),
+    ).rejects.toThrow("shell-release-version-mismatch");
   });
 });

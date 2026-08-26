@@ -809,7 +809,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return [{ _tag: "revoked" }, undefined] as const;
         }
         authoritativeDescriptor = resolved.value.descriptor;
-        launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
+        launch = yield* (
+          authoritativeDescriptor.shellUpdate === undefined
+            ? businessOsShell.launch(resolved.value.config)
+            : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
+        ).pipe(Effect.option);
       } else if (isLaunchableCtoxLocalDaemon(descriptor)) {
         // Local pairing material is minted per activation and never persisted,
         // so a daemon that stopped answering fails the launch instead of
@@ -823,7 +827,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
         }
         authoritativeDescriptor = resolved.value.descriptor;
-        launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
+        launch = yield* (
+          authoritativeDescriptor.shellUpdate === undefined
+            ? businessOsShell.launch(resolved.value.config)
+            : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
+        ).pipe(Effect.option);
       } else if (isLaunchableCtoxSshManagedInstance(descriptor)) {
         // Remote pairing material is minted per activation, and its signaling
         // URLs only mean anything through the forwards opened alongside it —
@@ -846,7 +854,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           void runPromise(closeForwards).catch(() => undefined);
         };
         authoritativeDescriptor = resolved.value.descriptor;
-        launch = yield* businessOsShell.launch(resolved.value.config).pipe(Effect.option);
+        launch = yield* (
+          authoritativeDescriptor.shellUpdate === undefined
+            ? businessOsShell.launch(resolved.value.config)
+            : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
+        ).pipe(Effect.option);
       } else {
         return [{ _tag: "revoked" }, undefined] as const;
       }
@@ -908,6 +920,21 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             } catch {
               /* guest may be tearing down */
             }
+          }
+          if (launch.value.shellVersion !== undefined) {
+            const shellStatus = {
+              version: launch.value.shellVersion,
+              channel: authoritativeDescriptor.shellUpdate?.channel ?? "stable",
+              state: launch.value.recoveryShell
+                ? "recovery"
+                : (authoritativeDescriptor.shellUpdate?.phase ?? "current"),
+            };
+            void webContents
+              .executeJavaScript(
+                `window.dispatchEvent(new CustomEvent("workjet:shell-update-status", { detail: ${encodeUnknownJson(shellStatus)} }));`,
+                true,
+              )
+              .catch(() => undefined);
           }
           const currentUrl = webContents.getURL();
           const scrubbed = scrubSensitiveCtoxUrl(currentUrl);

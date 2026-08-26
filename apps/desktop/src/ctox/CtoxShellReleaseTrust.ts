@@ -13,6 +13,13 @@ import * as Schema from "effect/Schema";
 export const CTOX_STABLE_SHELL_CHANNEL_URL =
   "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-channel-stable/business-os-shell-stable.json";
 
+export function officialBusinessOsShellReleaseManifestUrl(version: string): string {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(version)) {
+    throw new Error("shell-release-version-invalid");
+  }
+  return `https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v${version}/ctox-business-os-shell-${version}.release.v2.json`;
+}
+
 export const BUSINESS_OS_SHELL_TRUST_KEYS = Object.freeze({
   "shell-current-2026-08": "MCowBQYDK2VwAyEAZECH2XB0VlZWQ7zUzoChyiRkKtfGNK9HmSMvZQuwGjk=",
   "shell-next-2026-08": "MCowBQYDK2VwAyEAdAgcqbHB2Sr86KzrWcdYxKCxb6Ofz4sVxhkEhTgvo7s=",
@@ -99,5 +106,23 @@ export async function resolveBusinessOsStableShellRelease(
   if (manifest.channel !== pointer.channel || manifest.version !== pointer.version) {
     throw new Error("shell-release-pointer-mismatch");
   }
+  return manifest;
+}
+
+/** Resolve an immutable signed release by version, including an older active rollback slot. */
+export async function resolveBusinessOsShellReleaseVersion(
+  version: string,
+  fetchFn: typeof fetch = fetch,
+  trust: TrustMap = BUSINESS_OS_SHELL_TRUST_KEYS,
+): Promise<BusinessOsShellReleaseManifest> {
+  const manifestBytes = await fetchJsonBytes(
+    fetchFn,
+    officialBusinessOsShellReleaseManifestUrl(version),
+  );
+  const manifest = verifyBusinessOsShellReleaseManifest(
+    JSON.parse(manifestBytes.toString("utf8")),
+    trust,
+  );
+  if (manifest.version !== version) throw new Error("shell-release-version-mismatch");
   return manifest;
 }

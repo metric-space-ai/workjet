@@ -17,15 +17,28 @@ import {
   CtoxBusinessOsShellError,
   type CtoxBusinessOsShellFetch,
   type CtoxBusinessOsShellReleaseManifest,
+  officialCtoxBusinessOsShellReleaseUrls,
   prepareCtoxBusinessOsShellForTest,
   resolveCtoxBusinessOsShellDependencyRoot,
   verifyCtoxBusinessOsShellInstall,
 } from "./ctox-business-os-shell.ts";
 
-const VERSION = "0.1.0-rc.12";
+const VERSION = "0.1.2";
 const SOURCE_COMMIT = "203699e600901ba69cf0afc20f49192688e2dad3";
 const ARCHIVE_ROOT = `ctox-business-os-shell-${VERSION}`;
 const ARCHIVE_FILENAME = `${ARCHIVE_ROOT}.tar.gz`;
+
+it("derives immutable official URLs for every strict release version", () => {
+  const urls = officialCtoxBusinessOsShellReleaseUrls("0.1.2");
+  assert.equal(
+    urls.manifestUrl,
+    "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.2/ctox-business-os-shell-0.1.2.manifest.json",
+  );
+  assert.equal(
+    urls.archiveUrl,
+    "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.2/ctox-business-os-shell-0.1.2.tar.gz",
+  );
+});
 
 interface InventoryRecord {
   readonly path: string;

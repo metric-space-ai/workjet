@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-// @effect-diagnostics nodeBuiltinImport:off - Electron owns this loopback-only static HTTP boundary and its filesystem callbacks.
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Electron owns this loopback-only static HTTP boundary, its verified release download, and its filesystem callbacks.
+import { createHash } from "node:crypto";
 import * as NodeFs from "node:fs";
 import * as NodeHttp from "node:http";
 import * as NodePath from "node:path";
 
+import type {
+  BusinessOsShellReleaseManifestV2,
+  BusinessOsShellUpdateStatus,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,7 +17,15 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import businessOsShellManifest from "../../resources/ctox/business-os-shell.manifest.json" with { type: "json" };
+import {
+  CTOX_BUSINESS_OS_SHELL_RELEASE,
+  CTOX_BUSINESS_OS_SHELL_SCHEMA,
+  type CtoxBusinessOsShellReleaseManifest,
+  officialCtoxBusinessOsShellReleaseUrls,
+  prepareCtoxBusinessOsShellRelease,
+} from "../../../../scripts/lib/ctox-business-os-shell.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { resolveBusinessOsShellReleaseVersion } from "./CtoxShellReleaseTrust.ts";
 
 const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_SENTINEL_BYTES = 16 * 1024;
@@ -24,14 +37,14 @@ const ALLOWED_RXDB_STATIC_MODULE_PATHS = new Set([
 ]);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const CompletionSentinel = Schema.Struct({
-  schema: Schema.Literal(businessOsShellManifest.schema),
-  version: Schema.Literal(businessOsShellManifest.version),
-  sourceCommit: Schema.Literal(businessOsShellManifest.sourceCommit),
-  archiveRoot: Schema.Literal(businessOsShellManifest.archiveRoot),
-  entry: Schema.Literal(businessOsShellManifest.entry),
-  archiveSha256: Schema.Literal(businessOsShellManifest.archiveSha256),
-  embeddedManifestSha256: Schema.Literal(businessOsShellManifest.embeddedManifestSha256),
-  fileCount: Schema.Literal(businessOsShellManifest.fileCount),
+  schema: Schema.Literal(CTOX_BUSINESS_OS_SHELL_SCHEMA),
+  version: Schema.String,
+  sourceCommit: Schema.String,
+  archiveRoot: Schema.String,
+  entry: Schema.String,
+  archiveSha256: Schema.String,
+  embeddedManifestSha256: Schema.String,
+  fileCount: Schema.Int,
 });
 const decodeCompletionSentinel = Schema.decodeUnknownSync(
   Schema.fromJsonString(CompletionSentinel),
@@ -108,6 +121,8 @@ export interface CtoxBusinessOsLaunchConfig {
 export interface CtoxBusinessOsLaunch {
   readonly launchUrl: string;
   readonly launchOrigin: string;
+  readonly shellVersion?: string;
+  readonly recoveryShell?: boolean;
 }
 
 export class CtoxBusinessOsShellError extends Schema.TaggedErrorClass<CtoxBusinessOsShellError>()(
@@ -124,6 +139,7 @@ export class CtoxBusinessOsShell extends Context.Service<
   {
     readonly launch: (
       config: CtoxBusinessOsLaunchConfig,
+      shellStatus?: BusinessOsShellUpdateStatus,
     ) => Effect.Effect<CtoxBusinessOsLaunch, CtoxBusinessOsShellError>;
   }
 >()("@t3tools/desktop/ctox/CtoxBusinessOsShell") {}
@@ -131,6 +147,14 @@ export class CtoxBusinessOsShell extends Context.Service<
 interface RunningShellServer {
   readonly origin: string;
   readonly server: NodeHttp.Server;
+  readonly version: string;
+  readonly recoveryShell: boolean;
+}
+
+interface ResolvedShellRoot {
+  readonly root: string;
+  readonly release: CtoxBusinessOsShellReleaseManifest;
+  readonly recoveryShell: boolean;
 }
 
 export function resolveCtoxBusinessOsShellRoot(
@@ -147,6 +171,120 @@ export function resolveCtoxBusinessOsShellRoot(
         "ctox-business-os-shell",
         businessOsShellManifest.version,
       );
+}
+
+const LegacyInventoryFile = Schema.Struct({
+  path: Schema.String,
+  byteSize: Schema.Int,
+  sha256: Schema.String,
+});
+const LegacyDetachedManifest = Schema.Struct({
+  schema: Schema.Literal(CTOX_BUSINESS_OS_SHELL_SCHEMA),
+  version: Schema.String,
+  sourceCommit: Schema.String,
+  entry: Schema.String,
+  archiveRoot: Schema.String,
+  archiveFilename: Schema.String,
+  archiveByteLength: Schema.Int,
+  archiveSha256: Schema.String,
+  embeddedManifestSha256: Schema.String,
+  files: Schema.Array(LegacyInventoryFile),
+});
+
+function sameReleaseInventory(
+  legacy: typeof LegacyDetachedManifest.Type,
+  release: BusinessOsShellReleaseManifestV2,
+): boolean {
+  if (legacy.files.length !== release.files.length) return false;
+  const signed = new Map(release.files.map((file) => [file.path, file]));
+  return legacy.files.every((file) => {
+    const expected = signed.get(file.path);
+    return expected?.size === file.byteSize && expected.sha256 === file.sha256;
+  });
+}
+
+async function legacyReleaseFromSignedManifest(
+  release: BusinessOsShellReleaseManifestV2,
+): Promise<CtoxBusinessOsShellReleaseManifest> {
+  const official = officialCtoxBusinessOsShellReleaseUrls(release.version);
+  if (release.artifact.url !== official.archiveUrl) throw new Error("shell-release-url-mismatch");
+  const response = await fetch(official.manifestUrl, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { accept: "application/json" },
+    referrerPolicy: "no-referrer",
+  });
+  if (!response.ok) throw new Error("shell-release-legacy-manifest-unavailable");
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length < 2 || bytes.length > CTOX_BUSINESS_OS_SHELL_RELEASE.budgets.maxManifestBytes) {
+    throw new Error("shell-release-legacy-manifest-size");
+  }
+  const legacy = Schema.decodeUnknownSync(LegacyDetachedManifest)(
+    JSON.parse(bytes.toString("utf8")),
+    { onExcessProperty: "ignore" },
+  );
+  if (
+    legacy.version !== release.version ||
+    legacy.sourceCommit !== release.sourceCommit ||
+    legacy.archiveFilename !== official.archiveFilename ||
+    legacy.archiveByteLength !== release.artifact.size ||
+    legacy.archiveSha256 !== release.artifact.sha256 ||
+    legacy.embeddedManifestSha256 !== release.provenance.embeddedManifestSha256 ||
+    !sameReleaseInventory(legacy, release)
+  ) {
+    throw new Error("shell-release-v1-v2-mismatch");
+  }
+  return {
+    ...CTOX_BUSINESS_OS_SHELL_RELEASE,
+    version: release.version,
+    sourceCommit: release.sourceCommit,
+    manifestUrl: official.manifestUrl,
+    manifestByteLength: bytes.length,
+    manifestSha256: createHash("sha256").update(bytes).digest("hex"),
+    archiveUrl: official.archiveUrl,
+    archiveFilename: official.archiveFilename,
+    archiveRoot: legacy.archiveRoot,
+    entry: legacy.entry,
+    archiveByteLength: release.artifact.size,
+    archiveSha256: release.artifact.sha256,
+    embeddedManifestSha256: release.provenance.embeddedManifestSha256,
+    fileCount: release.files.length,
+  };
+}
+
+function semverTuple(value: string): readonly [number, number, number] {
+  const [major = "0", minor = "0", patch = "0"] = value.split(/[+-]/u, 1)[0]!.split(".");
+  return [Number(major), Number(minor), Number(patch)];
+}
+
+function semverCompare(left: string, right: string): number {
+  const a = semverTuple(left);
+  const b = semverTuple(right);
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index]! !== b[index]!) return a[index]! - b[index]!;
+  }
+  return 0;
+}
+
+function supportsWorkjet(release: BusinessOsShellReleaseManifestV2, appVersion: string): boolean {
+  return (
+    semverCompare(appVersion, release.compatibility.workjetMinVersion) >= 0 &&
+    (release.compatibility.workjetMaxVersion === null ||
+      semverCompare(appVersion, release.compatibility.workjetMaxVersion) <= 0)
+  );
+}
+
+function expectedSentinel(release: CtoxBusinessOsShellReleaseManifest) {
+  return {
+    schema: release.schema,
+    version: release.version,
+    sourceCommit: release.sourceCommit,
+    archiveRoot: release.archiveRoot,
+    entry: release.entry,
+    archiveSha256: release.archiveSha256,
+    embeddedManifestSha256: release.embeddedManifestSha256,
+    fileCount: release.fileCount,
+  };
 }
 
 function responseHeaders(): Readonly<Record<string, string>> {
@@ -281,11 +419,13 @@ function installStaticHandler(server: NodeHttp.Server, canonicalRoot: string): v
   });
 }
 
-function startServer(root: string): Effect.Effect<RunningShellServer, CtoxBusinessOsShellError> {
+function startServer(
+  resolved: ResolvedShellRoot,
+): Effect.Effect<RunningShellServer, CtoxBusinessOsShellError> {
   return Effect.callback<RunningShellServer, CtoxBusinessOsShellError>((resume) => {
     let canonicalRoot: string;
     try {
-      canonicalRoot = NodeFs.realpathSync(root);
+      canonicalRoot = NodeFs.realpathSync(resolved.root);
       if (!NodeFs.statSync(canonicalRoot).isDirectory()) throw new Error("invalid shell root");
       const sentinelPath = NodePath.join(canonicalRoot, CTOX_BUSINESS_OS_SHELL_COMPLETION_SENTINEL);
       const sentinelStat = NodeFs.lstatSync(sentinelPath);
@@ -297,10 +437,23 @@ function startServer(root: string): Effect.Effect<RunningShellServer, CtoxBusine
       ) {
         throw new Error("invalid shell sentinel");
       }
-      decodeCompletionSentinel(NodeFs.readFileSync(sentinelPath, "utf8"), {
+      const sentinel = decodeCompletionSentinel(NodeFs.readFileSync(sentinelPath, "utf8"), {
         onExcessProperty: "error",
       });
-      const entryPath = NodePath.join(canonicalRoot, businessOsShellManifest.entry);
+      const expected = expectedSentinel(resolved.release);
+      if (
+        sentinel.schema !== expected.schema ||
+        sentinel.version !== expected.version ||
+        sentinel.sourceCommit !== expected.sourceCommit ||
+        sentinel.archiveRoot !== expected.archiveRoot ||
+        sentinel.entry !== expected.entry ||
+        sentinel.archiveSha256 !== expected.archiveSha256 ||
+        sentinel.embeddedManifestSha256 !== expected.embeddedManifestSha256 ||
+        sentinel.fileCount !== expected.fileCount
+      ) {
+        throw new Error("shell sentinel mismatch");
+      }
+      const entryPath = NodePath.join(canonicalRoot, resolved.release.entry);
       const entryStat = NodeFs.lstatSync(entryPath);
       const canonicalEntry = NodeFs.realpathSync(entryPath);
       if (
@@ -335,6 +488,8 @@ function startServer(root: string): Effect.Effect<RunningShellServer, CtoxBusine
         Effect.succeed({
           origin: `http://${LOOPBACK_HOST}:${address.port}`,
           server,
+          version: resolved.release.version,
+          recoveryShell: resolved.recoveryShell,
         }),
       );
     });
@@ -351,28 +506,76 @@ function closeServer(server: NodeHttp.Server): Effect.Effect<void> {
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const parentScope = yield* Scope.Scope;
-  const root = resolveCtoxBusinessOsShellRoot(environment);
-  const serverRef = yield* SynchronizedRef.make<RunningShellServer | undefined>(undefined);
+  const recoveryRoot = resolveCtoxBusinessOsShellRoot(environment);
+  const cacheRoot = NodePath.join(
+    environment.stateDir ?? NodePath.join(environment.rootDir, ".t3"),
+    "ctox-business-os-shell-cache",
+  );
+  const serverRef = yield* SynchronizedRef.make<ReadonlyMap<string, RunningShellServer>>(new Map());
 
-  const resolveServer = SynchronizedRef.modifyEffect(serverRef, (current) => {
-    if (current !== undefined) return Effect.succeed([current, current] as const);
-    return Effect.gen(function* () {
-      const started = yield* startServer(root);
-      yield* Scope.addFinalizer(parentScope, closeServer(started.server));
-      return [started, started] as const;
+  const resolveRoot = (shellStatus?: BusinessOsShellUpdateStatus) =>
+    Effect.tryPromise({
+      try: async (): Promise<ResolvedShellRoot> => {
+        const requestedVersion = shellStatus?.activeVersion ?? businessOsShellManifest.version;
+        if (
+          shellStatus === undefined ||
+          shellStatus?.recoveryShell === true ||
+          requestedVersion === businessOsShellManifest.version
+        ) {
+          return {
+            root: recoveryRoot,
+            release: CTOX_BUSINESS_OS_SHELL_RELEASE,
+            recoveryShell: shellStatus === undefined || shellStatus.recoveryShell,
+          };
+        }
+        const signed = await resolveBusinessOsShellReleaseVersion(requestedVersion);
+        if (
+          signed.version !== requestedVersion ||
+          !supportsWorkjet(signed, environment.appVersion)
+        ) {
+          throw new Error("shell-release-incompatible");
+        }
+        const release = await legacyReleaseFromSignedManifest(signed);
+        const prepared = await prepareCtoxBusinessOsShellRelease(release, {
+          dependencyRoot: cacheRoot,
+        });
+        return { root: prepared.installPath, release, recoveryShell: false };
+      },
+      catch: () => new CtoxBusinessOsShellError(),
     });
-  });
+
+  const resolveServer = (shellStatus?: BusinessOsShellUpdateStatus) =>
+    Effect.gen(function* () {
+      const resolved = yield* resolveRoot(shellStatus);
+      const key = `${resolved.release.version}:${resolved.recoveryShell ? "recovery" : "active"}`;
+      return yield* SynchronizedRef.modifyEffect(serverRef, (current) => {
+        const existing = current.get(key);
+        if (existing !== undefined) return Effect.succeed([existing, current] as const);
+        return Effect.gen(function* () {
+          const started = yield* startServer(resolved);
+          yield* Scope.addFinalizer(parentScope, closeServer(started.server));
+          const next = new Map(current);
+          next.set(key, started);
+          return [started, next] as const;
+        });
+      });
+    });
 
   return CtoxBusinessOsShell.of({
-    launch: (config) =>
+    launch: (config, shellStatus) =>
       Effect.gen(function* () {
-        const running = yield* resolveServer;
+        const running = yield* resolveServer(shellStatus);
         const url = new URL(`${SHELL_PATH_PREFIX}/`, running.origin);
         url.searchParams.set(
           "ctox_config",
           Buffer.from(encodeUnknownJson(config), "utf8").toString("base64url"),
         );
-        return { launchUrl: url.toString(), launchOrigin: running.origin };
+        return {
+          launchUrl: url.toString(),
+          launchOrigin: running.origin,
+          shellVersion: running.version,
+          recoveryShell: running.recoveryShell,
+        };
       }).pipe(Effect.mapError(() => new CtoxBusinessOsShellError())),
   });
 });

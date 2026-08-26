@@ -18,7 +18,8 @@ import { openWorkjetDevicePairing } from "../settings/WorkjetDevicePairingDialog
 const SETTINGS_PAGE_KEY = "workjet.business-os.settings.last-page";
 const SETTINGS_PAGES = [
   ["general", "Allgemein"],
-  ["backends", "Verbindungen"],
+  ["backends", "CTOX Backends"],
+  ["devices", "Geräte & Synchronisierung"],
   ["apps", "Apps"],
   ["updates", "Updates"],
   ["appearance", "Darstellung"],
@@ -76,7 +77,7 @@ const INSTANCE_STATUS_LABELS: Readonly<Record<string, string>> = {
   available: "Bereit",
   offline: "Nicht erreichbar",
   needs_auth: "Anmelden",
-  pairing_expired: "Neu verbinden",
+  pairing_expired: "Zugang abgelaufen",
   paired: "Verbunden",
   installing: "Wird verbunden…",
   error: "Verbindung prüfen",
@@ -164,25 +165,25 @@ function isTechnicalInstanceName(displayName: string): boolean {
   );
 }
 
-export function connectionDisplayTitle(
+export function backendDisplayTitle(
   instance: Pick<CtoxManagedInstance, "displayName" | "domain" | "source">,
 ): string {
-  if (instance.source === "local_daemon") return "Dieser Mac";
+  if (instance.source === "local_daemon") return "Lokales CTOX Backend";
   if (!isTechnicalInstanceName(instance.displayName)) return instance.displayName.trim();
-  if (instance.source === "ctox_dev") return instance.domain ?? "Workjet Cloud";
-  if (instance.source === "ssh_managed") return instance.domain ?? "Remote-Gerät";
-  return instance.domain ?? "Weiteres Workjet-Gerät";
+  if (instance.source === "ctox_dev") return instance.domain ?? "Verwaltetes CTOX Backend";
+  if (instance.source === "ssh_managed") return instance.domain ?? "Remote CTOX Backend";
+  return instance.domain ?? "CTOX Backend";
 }
 
-function connectionStateDescription(
+function backendSyncDescription(
   instance: Pick<CtoxManagedInstance, "status" | "healthSummary">,
   ready: boolean,
 ): string {
   if (ready) return "Synchronisiert";
-  if (instance.status === "pairing_expired") return "Verbindung muss erneuert werden";
-  if (instance.status === "offline") return "Zurzeit nicht erreichbar";
+  if (instance.status === "pairing_expired") return "Zugang muss erneuert werden";
+  if (instance.status === "offline") return "Backend ist zurzeit nicht erreichbar";
   if (instance.status === "needs_auth") return "Anmeldung erforderlich";
-  return "Noch nicht verbunden";
+  return "Datensynchronisierung wird geprüft";
 }
 
 export function businessOsInstanceDataPlaneReady(
@@ -731,11 +732,11 @@ export function BusinessOsSettingsDialog({
               </h2>
               {page === "general" ? (
                 <div className="mt-6 rounded-lg border border-border p-5">
-                  <p className="text-sm font-medium">Aktive Verbindung</p>
+                  <p className="text-sm font-medium">Ausgewähltes CTOX Backend</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {selected === undefined
-                      ? "Noch kein Gerät verbunden"
-                      : connectionDisplayTitle(selected)}
+                      ? "Noch kein CTOX Backend ausgewählt"
+                      : backendDisplayTitle(selected)}
                   </p>
                   {selected === undefined ? (
                     <button
@@ -743,11 +744,11 @@ export function BusinessOsSettingsDialog({
                       className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                       onClick={() => choosePage("backends")}
                     >
-                      Verbindung auswählen
+                      CTOX Backend auswählen
                     </button>
                   ) : (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      {connectionStateDescription(
+                      {backendSyncDescription(
                         selected,
                         businessOsInstanceDataPlaneReady(selected, readyInstanceId),
                       )}
@@ -757,47 +758,24 @@ export function BusinessOsSettingsDialog({
               ) : null}
               {page === "backends" ? (
                 <div className="mt-6 space-y-3">
-                  <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="font-medium">Workjet auf einem weiteren Gerät verbinden</p>
-                      <p className="mt-1 max-w-xl text-sm leading-5 text-muted-foreground">
-                        Zeige einen kurzen, einmal gültigen QR-Code an. Ein Scan verbindet Code und
-                        Business OS gemeinsam; Serveradresse und Zugangsdaten müssen nicht manuell
-                        eingegeben werden.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                      onClick={openDevicePairing}
-                    >
-                      <QrCode className="size-4" aria-hidden />
-                      Gerät verbinden
-                    </button>
-                  </div>
+                  <p className="text-sm leading-5 text-muted-foreground">
+                    Hier wählst und verwaltest du die CTOX Backends, auf denen Business OS läuft.
+                    Das Verbinden weiterer Workjet-Apps erfolgt getrennt unter „Geräte &
+                    Synchronisierung“.
+                  </p>
                   {(discovery !== "loading" && discovery._tag === "ready"
                     ? discovery.instances
                     : []
                   ).map((instance) => (
                     <div key={instance.id} className="rounded-lg border border-border p-4">
                       <div className="flex items-center justify-between gap-4">
-                        <p className="font-medium">{connectionDisplayTitle(instance)}</p>
-                        {instance.status === "pairing_expired" ? (
-                          <button
-                            type="button"
-                            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                            onClick={openDevicePairing}
-                          >
-                            Erneut verbinden
-                          </button>
-                        ) : (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                            {INSTANCE_STATUS_LABELS[instance.status] ?? "Verbindung prüfen"}
-                          </span>
-                        )}
+                        <p className="font-medium">{backendDisplayTitle(instance)}</p>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                          {INSTANCE_STATUS_LABELS[instance.status] ?? "Backend prüfen"}
+                        </span>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {connectionStateDescription(
+                        {backendSyncDescription(
                           instance,
                           businessOsInstanceDataPlaneReady(instance, readyInstanceId),
                         )}
@@ -806,12 +784,89 @@ export function BusinessOsSettingsDialog({
                   ))}
                 </div>
               ) : null}
+              {page === "devices" ? (
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-lg border border-border p-5">
+                    <p className="text-sm font-medium">Backends in dieser Workjet-App</p>
+                    <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                      Jede Workjet-App kann mehrere CTOX Backends verwenden. Jede Verbindung wird
+                      unabhängig berechtigt und kann unabhängig widerrufen werden.
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      {(discovery !== "loading" && discovery._tag === "ready"
+                        ? discovery.instances
+                        : []
+                      ).map((instance) => (
+                        <div
+                          key={instance.id}
+                          className="flex items-center justify-between gap-3 rounded-md bg-muted/30 px-3 py-2"
+                        >
+                          <span className="min-w-0 truncate text-sm">
+                            {backendDisplayTitle(instance)}
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {backendSyncDescription(
+                              instance,
+                              businessOsInstanceDataPlaneReady(instance, readyInstanceId),
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border p-5">
+                    <p className="text-sm font-medium">Workjet-Apps synchronisieren</p>
+                    <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                      Verbinde eine weitere Workjet-App per kurzem Einmal-Code. Code und Business OS
+                      verwenden danach gemeinsam das ausgewählte CTOX Backend.
+                    </p>
+                    {selected === undefined ? (
+                      <div className="mt-4">
+                        <p className="text-sm text-muted-foreground">
+                          Wähle zuerst das CTOX Backend aus, über das die Geräte synchronisieren.
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-3 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                          onClick={() => choosePage("backends")}
+                        >
+                          CTOX Backend auswählen
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mt-4 text-sm">
+                          Synchronisierung über: <strong>{backendDisplayTitle(selected)}</strong>
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {backendSyncDescription(
+                            selected,
+                            businessOsInstanceDataPlaneReady(selected, readyInstanceId),
+                          )}
+                        </p>
+                        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                          Dieser Pairing-Vorgang gibt nur dieses Backend frei. Weitere Backends
+                          kannst du anschließend unabhängig mit demselben Gerät verbinden.
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-4 inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                          onClick={openDevicePairing}
+                        >
+                          <QrCode className="size-4" aria-hidden />
+                          Gerät verbinden
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               {page === "apps" ? (
                 <div className="mt-6 rounded-lg border border-border p-5">
                   <p className="text-sm font-medium">
                     {selected === undefined
-                      ? "Noch kein Gerät verbunden"
-                      : `Aktive Verbindung: ${connectionDisplayTitle(selected)}`}
+                      ? "Noch kein CTOX Backend ausgewählt"
+                      : `Aktives CTOX Backend: ${backendDisplayTitle(selected)}`}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Apps werden pro CTOX Backend verwaltet und bleiben von Coding-Prozessen
@@ -823,7 +878,7 @@ export function BusinessOsSettingsDialog({
                       className="mt-4 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
                       onClick={() => choosePage("backends")}
                     >
-                      Verbindungen öffnen
+                      CTOX Backends öffnen
                     </button>
                   ) : null}
                 </div>
@@ -845,20 +900,20 @@ export function BusinessOsSettingsDialog({
                     CTOX-Backend.
                   </p>
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Aktive Verbindung:{" "}
+                    Aktives CTOX Backend:{" "}
                     {selected === undefined
-                      ? "Noch kein Gerät verbunden"
-                      : connectionDisplayTitle(selected)}
+                      ? "Noch kein CTOX Backend ausgewählt"
+                      : backendDisplayTitle(selected)}
                   </p>
                 </div>
               ) : null}
               {page === "diagnostics" ? (
                 <div className="mt-6 rounded-lg border border-border p-5 text-sm">
                   <p>
-                    Verbindung:{" "}
+                    CTOX Backend:{" "}
                     {selected === undefined
-                      ? "Noch kein Gerät verbunden"
-                      : connectionDisplayTitle(selected)}
+                      ? "Noch kein CTOX Backend ausgewählt"
+                      : backendDisplayTitle(selected)}
                   </p>
                   <p className="mt-1 text-muted-foreground">
                     Datenpfad: {selected?.healthSummary.dataPlane ?? "unbekannt"}
@@ -877,7 +932,7 @@ export function BusinessOsSettingsDialog({
                         className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                         onClick={() => choosePage("backends")}
                       >
-                        Gerät verbinden
+                        CTOX Backend auswählen
                       </button>
                     ) : null}
                   </div>

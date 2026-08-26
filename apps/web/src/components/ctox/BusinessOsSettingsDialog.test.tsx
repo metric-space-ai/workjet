@@ -4,7 +4,7 @@ import pairingSource from "../settings/WorkjetDevicePairingDialog.tsx?raw";
 import dialogSource from "./BusinessOsSettingsDialog.tsx?raw";
 import {
   businessOsInstanceDataPlaneReady,
-  connectionDisplayTitle,
+  backendDisplayTitle,
   fleetInstanceDisplayTitle,
 } from "./BusinessOsSettingsDialog";
 
@@ -12,7 +12,8 @@ describe("BusinessOsSettingsDialog", () => {
   it("owns a complete Business OS settings tree without rendering Coding settings", () => {
     for (const category of [
       "Allgemein",
-      "Verbindungen",
+      "CTOX Backends",
+      "Geräte & Synchronisierung",
       "Apps",
       "Updates",
       "Darstellung",
@@ -30,23 +31,29 @@ describe("BusinessOsSettingsDialog", () => {
 
   it("keeps normal settings copy free of implementation terms", () => {
     expect(dialogSource).toContain('aria-label="Business OS-Einstellungen"');
-    expect(dialogSource).toContain("Verbindungen");
+    expect(dialogSource).toContain("CTOX Backends");
+    expect(dialogSource).toContain("Geräte & Synchronisierung");
     expect(dialogSource).not.toContain("Synchronisierung · nicht bestätigt");
     expect(dialogSource).not.toContain("CTOX Local Instance");
-    expect(dialogSource).toContain("Erneut verbinden");
     expect(dialogSource).not.toContain("Business OS guest");
     expect(dialogSource).not.toContain("WebContentsView");
     expect(dialogSource).not.toContain("RxDB/WebRTC ·");
   });
 
-  it("opens the same unified device pairing flow from Business OS backend settings", () => {
+  it("keeps backend management separate from Workjet app synchronization", () => {
     expect(dialogSource).not.toContain("BusinessOsMobilePairingSection");
     expect(dialogSource).toContain("openWorkjetDevicePairing");
-    expect(dialogSource).toContain("Workjet auf einem weiteren Gerät verbinden");
-    expect(dialogSource).toContain("Ein Scan verbindet Code und");
-    expect(dialogSource).toContain("Business OS gemeinsam");
+    expect(dialogSource).toContain('page === "backends"');
+    expect(dialogSource).toContain('page === "devices"');
+    expect(dialogSource).toContain("Hier wählst und verwaltest du die CTOX Backends");
+    expect(dialogSource).toContain("Workjet-Apps synchronisieren");
+    expect(dialogSource).toContain("Synchronisierung über:");
+    expect(dialogSource).toContain("Jede Workjet-App kann mehrere CTOX Backends verwenden");
+    expect(dialogSource).toContain("Jede Verbindung wird");
+    expect(dialogSource).toContain("unabhängig widerrufen");
+    expect(dialogSource).toContain("gibt nur dieses Backend frei");
+    expect(dialogSource).toContain("Weitere Backends");
     expect(dialogSource).toContain("Gerät verbinden");
-    expect(pairingSource).toContain("Mobilgerät verbinden");
     expect(pairingSource).toContain("QR-Code anzeigen");
     expect(pairingSource).toContain("Code und Business OS");
     expect(pairingSource).toContain("workjetDeviceInviteEnvironment");
@@ -54,8 +61,7 @@ describe("BusinessOsSettingsDialog", () => {
 
   it("keeps empty fleet updates responsive and actionable", () => {
     expect(dialogSource).toContain("Keine CTOX Backends registriert");
-    expect(dialogSource).toContain("Verbindung auswählen");
-    expect(dialogSource).toContain("Gerät verbinden");
+    expect(dialogSource).toContain("CTOX Backend auswählen");
     expect(dialogSource).toContain("rolloutStatus.instanceIds.length > 0");
   });
 
@@ -121,21 +127,21 @@ describe("BusinessOsSettingsDialog", () => {
     expect(fleetInstanceDisplayTitle("GPU3 A4500")).toBe("GPU3 A4500");
   });
 
-  it("uses friendly device names instead of backend ids in normal settings", () => {
+  it("uses friendly backend names without pretending that backends are devices", () => {
     expect(
-      connectionDisplayTitle({
+      backendDisplayTitle({
         displayName: "CTOX Local Instance",
         source: "local_daemon",
       }),
-    ).toBe("Dieser Mac");
+    ).toBe("Lokales CTOX Backend");
     expect(
-      connectionDisplayTitle({
+      backendDisplayTitle({
         displayName: "biz_2a75d5c5-da16-4a17-90d2-a941ad53f095",
         source: "pairing_invite",
       }),
-    ).toBe("Weiteres Workjet-Gerät");
+    ).toBe("CTOX Backend");
     expect(
-      connectionDisplayTitle({
+      backendDisplayTitle({
         displayName: "Studio Mac",
         source: "pairing_invite",
       }),

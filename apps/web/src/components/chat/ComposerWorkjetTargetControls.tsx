@@ -11,8 +11,10 @@
  * moves the draft to the chosen computer's environment through the existing
  * draft environment-change path; on a started server thread it is disabled
  * with a stated reason, because mid-session migration is a separate project.
- * It never silently no-ops — a computer whose environment this project is not
- * paired with renders as a disabled option that says so.
+ * It never silently no-ops — a computer where this logical project is not
+ * available renders as a disabled option that says so. This is deliberately
+ * not described as device pairing: a Workjet installation can be connected
+ * while a particular project is absent there.
  */
 import type {
   EnvironmentId,
@@ -60,9 +62,9 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export const COMPOSER_COMPUTER_LOCKED_REASON =
   "This thread already runs on its computer. Moving a started session to another computer is a separate project.";
 
-/** The option hint for a computer this project has no environment on. */
-export const COMPOSER_COMPUTER_NOT_PAIRED_HINT =
-  "Not paired — this project has no environment on this computer.";
+/** The option hint for a connected computer this project has no environment on. */
+export const COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT =
+  "This project is not available on this computer.";
 
 const NO_COMPUTER_VALUE = "__no_computer__";
 
@@ -71,7 +73,7 @@ const NO_COMPUTER_VALUE = "__no_computer__";
  * same logical project must exist there. Shared by the wide select and the
  * compact menu so both refuse identically, with the reason on the option.
  */
-export function isComputerPaired(
+export function isProjectAvailableOnComputer(
   computer: WorkjetComputer,
   activeEnvironmentId: EnvironmentId,
   selectableEnvironmentIds: ReadonlySet<EnvironmentId>,
@@ -229,21 +231,25 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
               </SelectItem>
             )}
             {props.computers.map((computer) => {
-              const paired = isComputerPaired(computer, props.activeEnvironmentId, selectable);
+              const projectAvailable = isProjectAvailableOnComputer(
+                computer,
+                props.activeEnvironmentId,
+                selectable,
+              );
               return (
                 <SelectItem
                   key={computer.id}
                   value={computer.id}
-                  disabled={!paired}
+                  disabled={!projectAvailable}
                   hideIndicator
                   className="min-w-64 py-2"
                 >
                   <div className="grid min-w-0 gap-0.5">
                     <span className="font-medium text-foreground">{computer.label}</span>
                     <span className="truncate text-xs leading-4 text-muted-foreground">
-                      {paired
+                      {projectAvailable
                         ? workjetComputerKindLabel(computer.presentationKind)
-                        : COMPOSER_COMPUTER_NOT_PAIRED_HINT}
+                        : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
                     </span>
                   </div>
                 </SelectItem>
@@ -797,18 +803,22 @@ export function ComposerWorkjetCompactMenuContent(
             }}
           >
             {props.computers.map((computer) => {
-              const paired = isComputerPaired(computer, props.activeEnvironmentId, selectable);
+              const projectAvailable = isProjectAvailableOnComputer(
+                computer,
+                props.activeEnvironmentId,
+                selectable,
+              );
               return (
                 <MenuRadioItem
                   key={computer.id}
                   value={computer.id}
-                  disabled={!paired}
+                  disabled={!projectAvailable}
                   // Same reason as the wide control's hint, surfaced where a
                   // short suffix has no room for it (Befund K-B17).
-                  title={paired ? undefined : COMPOSER_COMPUTER_NOT_PAIRED_HINT}
+                  title={projectAvailable ? undefined : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
                 >
                   {computer.label}
-                  {paired ? "" : " — not paired"}
+                  {projectAvailable ? "" : " — project unavailable"}
                 </MenuRadioItem>
               );
             })}

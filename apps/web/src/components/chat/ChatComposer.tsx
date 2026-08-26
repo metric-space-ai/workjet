@@ -511,7 +511,8 @@ export interface ChatComposerProps {
   workjetManagedInstructions: string | null;
   /**
    * Environments the current DRAFT can move to (same logical project). A
-   * computer whose environment is not in this list renders as "not paired".
+   * computer whose environment is not in this list renders as unavailable for
+   * this project. Device pairing is a separate Business OS relation.
    */
   selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
   /** Moves a draft to another environment; the caller guards started threads. */
@@ -1150,7 +1151,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : workerBoundComputer === null
         ? "This worker's computer is no longer in the Workjet catalog — the thread stays on its current environment."
         : workerBoundComputer.environmentId !== environmentId
-          ? `${workerBoundComputer.label} is not paired with this project — the thread stays on its current environment.`
+          ? `${workerBoundComputer.label} does not have this project — the thread stays on its current environment.`
           : null;
   const handleSelectComposerComputer = useCallback(
     (computerId: string) => {

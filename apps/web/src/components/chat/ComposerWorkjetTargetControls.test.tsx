@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   COMPOSER_COMPUTER_LOCKED_REASON,
-  COMPOSER_COMPUTER_NOT_PAIRED_HINT,
+  COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT,
   ComposerComputerControlView,
   ComposerManualTargetControlsView,
   ComposerWorkjetCompactMenuContent,
@@ -25,7 +25,7 @@ import {
   gatewayModelsForRoute,
   harnessForProviderInstanceId,
   inferGatewayProviderFromModelId,
-  isComputerPaired,
+  isProjectAvailableOnComputer,
 } from "./ComposerWorkjetTargetControls";
 import { executeWorkjetCapabilitySet } from "./WorkjetCapabilityMenu";
 
@@ -132,15 +132,17 @@ describe("the Computer control", () => {
     expect(markup).toContain("min-w-0");
   });
 
-  it("pairs computers by environment — an unpaired one is a stated refusal", () => {
+  it("separates project availability from device pairing", () => {
     const selectable = new Set([envA, envB]);
     // The two environments this logical project exists on: selectable.
-    expect(isComputerPaired(computers[0]!, envA, selectable)).toBe(true);
-    expect(isComputerPaired(computers[1]!, envA, selectable)).toBe(true);
-    // The unpaired computer's option is disabled with the hint, never a
-    // silent no-op (the popup renders COMPOSER_COMPUTER_NOT_PAIRED_HINT).
-    expect(isComputerPaired(computers[2]!, envA, selectable)).toBe(false);
-    expect(COMPOSER_COMPUTER_NOT_PAIRED_HINT).toContain("Not paired");
+    expect(isProjectAvailableOnComputer(computers[0]!, envA, selectable)).toBe(true);
+    expect(isProjectAvailableOnComputer(computers[1]!, envA, selectable)).toBe(true);
+    // A computer without the project is disabled with the hint, never a
+    // silent no-op (the popup renders the project-availability hint).
+    expect(isProjectAvailableOnComputer(computers[2]!, envA, selectable)).toBe(false);
+    expect(COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT).toBe(
+      "This project is not available on this computer.",
+    );
   });
 
   it("is disabled with the stated reason on a started thread", () => {

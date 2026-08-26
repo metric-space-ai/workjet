@@ -36,8 +36,8 @@ import { searchableSetting } from "./settingsSearch";
  * computer, so the computer has to exist first and deserves its own place
  * beside Models and Harnesses. The page owns the whole subject: the Workjet
  * computer catalog on top, and the remote environments those computers
- * reference right below it (moved here from Connections, which keeps this
- * machine's network access and authorized clients).
+ * reference right below it. The legacy Connections route redirects here; its
+ * implementation remains an internal source for environment controls.
  */
 export function WorkjetComputersSettingsView({
   configuration,
@@ -139,7 +139,7 @@ export function WorkjetComputersSettingsView({
     >
       <SettingsRow
         title={environmentsReady ? "Computer targets" : "Loading computer targets"}
-        description="A computer is an existing local, relay, SSH, Tailscale, or other remote environment plus its declared harnesses. Connection authority and secrets stay in Connections settings; Workjet stores only the selected target and harness availability."
+        description="A computer is an existing local, relay, SSH, Tailscale, or other remote environment plus its declared harnesses. Workjet stores only the selected target and harness availability; credentials remain with the owning environment."
       />
       {/* The editor renders where the user is looking: adding — right here
           under the header button; editing — directly below the edited row
@@ -260,20 +260,9 @@ export function WorkjetComputersSettingsView({
           </Fragment>
         );
       })}
-      {/* One row ties the two concepts together: computers reference
-          environments, and environment CONNECTION authority lives on the
-          Connections page. */}
       <SettingsRow
-        title="Connections keep the secrets"
-        description="Remote environments are paired and removed below; each one becomes selectable as a computer target here. This machine's network access, Tailscale, and authorized clients stay in Settings → Connections."
-        control={
-          <a
-            href="#/settings/connections"
-            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Open Connections
-          </a>
-        }
+        title="Connection security"
+        description="Remote environments are paired and removed below, then become selectable computer targets. Authentication material remains with its owning environment and is never copied into a computer entry."
       />
     </SettingsSection>
   );

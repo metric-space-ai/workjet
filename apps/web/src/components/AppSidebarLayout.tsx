@@ -47,7 +47,6 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
-import { WorkjetDevicePairingDialog } from "./settings/WorkjetDevicePairingDialog";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -158,8 +157,8 @@ export function resolveAppSidebarSurface({
   readonly productMode: "code" | "ctox";
   readonly isOnSettings: boolean;
 }): AppSidebarSurface {
-  if (productMode === "ctox") return "business-os";
-  return isOnSettings ? "settings" : "code";
+  if (isOnSettings) return "settings";
+  return productMode === "ctox" ? "business-os" : "code";
 }
 
 function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
@@ -174,12 +173,11 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
-  // Business OS owns its own settings inside the selected CTOX guest. A
-  // /settings route must never swap it for Code settings merely because both
-  // modes share the outer Workjet shell.
+  // Settings are one Workjet surface shared by both product modes. The mode
+  // switch changes the work surface, never the settings information
+  // architecture or the active Business OS instance scope.
   const sidebarSurface = resolveAppSidebarSurface({ productMode, isOnSettings });
   const isCtoxShell = sidebarSurface === "business-os";
-  const [businessOsSettingsRequestKey, setBusinessOsSettingsRequestKey] = useState(0);
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -233,11 +231,6 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
 
     const unsubscribe = onMenuAction((action) => {
       if (action === "open-settings") {
-        if (isCtoxShell) {
-          setBusinessOsSettingsRequestKey((key) => key + 1);
-          if (isOnSettings) void navigate({ to: "/", replace: true });
-          return;
-        }
         const isSettingsRoute = /^\/settings(\/|$)/.test(pathname);
         if (!isSettingsRoute) {
           void navigate({ to: "/settings" });
@@ -248,18 +241,12 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
     return () => {
       unsubscribe?.();
     };
-  }, [isCtoxShell, isOnSettings, navigate, pathname]);
-
-  useEffect(() => {
-    if (!isCtoxShell || !isOnSettings) return;
-    setBusinessOsSettingsRequestKey((key) => key + 1);
-    void navigate({ to: "/", replace: true });
-  }, [isCtoxShell, isOnSettings, navigate]);
+  }, [navigate, pathname]);
 
   return (
     <SidebarProvider
       className="h-dvh! min-h-0!"
-      data-product-mode-shell={isCtoxShell ? "ctox" : "code"}
+      data-product-mode-shell={productMode}
       defaultOpen
       style={sidebarProviderStyle}
     >
@@ -294,13 +281,8 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
-        {isCtoxShell ? (
-          <CtoxMainShell openSettingsRequestKey={businessOsSettingsRequestKey} />
-        ) : (
-          children
-        )}
+        {isCtoxShell ? <CtoxMainShell /> : children}
         <SidebarControl />
-        <WorkjetDevicePairingDialog />
       </CtoxModeBoundary>
     </SidebarProvider>
   );

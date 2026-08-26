@@ -1,4 +1,5 @@
 export type SettingsPath =
+  | "/settings/business-os"
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
@@ -7,7 +8,6 @@ export type SettingsPath =
   | "/settings/computers"
   | "/settings/workjet"
   | "/settings/source-control"
-  | "/settings/connections"
   | "/settings/diagnostics"
   | "/settings/archived";
 
@@ -23,6 +23,7 @@ export interface SettingsSearchItem {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
+  "/settings/business-os": "Business OS",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
@@ -33,7 +34,6 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   // Computers, Harnesses); Source Control follows the workflow pages.
   "/settings/workjet": "Worker",
   "/settings/source-control": "Source Control",
-  "/settings/connections": "Connections",
   "/settings/diagnostics": "Diagnostics",
   "/settings/archived": "Archive",
 };
@@ -267,7 +267,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Remote environments",
     // Paired and removed on the Computers page, beside the computers that
-    // reference them; Connections keeps this machine's own access.
+    // reference them. There is no second visible Connections category.
     to: "/settings/computers",
   },
   {

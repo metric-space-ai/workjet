@@ -16,7 +16,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
     id: "network-access",
     title: "Network access",
-    to: "/settings/connections",
+    to: "/settings/computers",
   },
   {
     id: "harnesses",
@@ -40,8 +40,9 @@ describe("searchSettings", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
     // A sidebar label is findable even when no individual setting carries it.
-    expect(searchSettings("connections", ITEMS)).toEqual([
-      { id: "/settings/connections", title: "Connections", to: "/settings/connections" },
+    expect(searchSettings("connections", ITEMS)).toEqual([]);
+    expect(searchSettings("business os", ITEMS)).toEqual([
+      { id: "/settings/business-os", title: "Business OS", to: "/settings/business-os" },
     ]);
     expect(searchSettings("claude", ITEMS)).toEqual([]);
   });
@@ -76,6 +77,12 @@ describe("searchSettings", () => {
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("keeps Business OS first and removes Connections from visible settings", async () => {
+    const { SETTINGS_SECTION_LABELS } = await import("./settingsSearch");
+    expect(Object.keys(SETTINGS_SECTION_LABELS)[0]).toBe("/settings/business-os");
+    expect(Object.values(SETTINGS_SECTION_LABELS)).not.toContain("Connections");
   });
 
   it("serves anchor props to panels from the catalog", () => {

@@ -25,6 +25,7 @@ import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsComputersRouteImport } from './routes/settings.computers'
+import { Route as SettingsBusinessOsRouteImport } from './routes/settings.business-os'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
@@ -112,6 +113,11 @@ const SettingsComputersRoute = SettingsComputersRouteImport.update({
   path: '/computers',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsBusinessOsRoute = SettingsBusinessOsRouteImport.update({
+  id: '/business-os',
+  path: '/business-os',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   id: '/archived',
   path: '/archived',
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/business-os': typeof SettingsBusinessOsRoute
   '/settings/computers': typeof SettingsComputersRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/business-os': typeof SettingsBusinessOsRoute
   '/settings/computers': typeof SettingsComputersRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/business-os': typeof SettingsBusinessOsRoute
   '/settings/computers': typeof SettingsComputersRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -237,6 +246,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/business-os'
     | '/settings/computers'
     | '/settings/connections'
     | '/settings/diagnostics'
@@ -260,6 +270,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/business-os'
     | '/settings/computers'
     | '/settings/connections'
     | '/settings/diagnostics'
@@ -285,6 +296,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/business-os'
     | '/settings/computers'
     | '/settings/connections'
     | '/settings/diagnostics'
@@ -424,6 +436,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsComputersRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/business-os': {
+      id: '/settings/business-os'
+      path: '/business-os'
+      fullPath: '/settings/business-os'
+      preLoaderRoute: typeof SettingsBusinessOsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/archived': {
       id: '/settings/archived'
       path: '/archived'
@@ -495,6 +514,7 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
+  SettingsBusinessOsRoute: typeof SettingsBusinessOsRoute
   SettingsComputersRoute: typeof SettingsComputersRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
@@ -509,6 +529,7 @@ interface SettingsRouteChildren {
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
+  SettingsBusinessOsRoute: SettingsBusinessOsRoute,
   SettingsComputersRoute: SettingsComputersRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,

@@ -46,4 +46,17 @@ describe("WorkjetProductModeSwitch", () => {
     expect(sidebarChromeSource).not.toContain("data-environment-identification");
     expect(sidebarChromeSource).not.toContain("resolveEnvironmentIdentificationPillLabel");
   });
+
+  it("keeps exactly one labelled Settings action in the sidebar footer", () => {
+    const footerSource = sidebarChromeSource.slice(
+      sidebarChromeSource.indexOf("export const SidebarChromeFooter"),
+    );
+    expect(footerSource).toContain("<span>Settings</span>");
+    expect(footerSource.split("<SidebarMenuItem").length - 1).toBe(1);
+    expect(footerSource).not.toContain('size="icon"');
+    expect(footerSource).not.toContain("openWorkjetDevicePairing");
+    expect(footerSource).not.toContain('to: "/machines"');
+    expect(footerSource).not.toContain('to: "/usage"');
+    expect(footerSource).not.toContain('to: "/pull-requests"');
+  });
 });

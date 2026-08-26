@@ -11,10 +11,10 @@ import {
   ActivityIcon,
   ArchiveIcon,
   ArrowLeftIcon,
+  BriefcaseBusinessIcon,
   GitBranchIcon,
   KeyboardIcon,
   MonitorIcon,
-  Link2Icon,
   PaletteIcon,
   SearchIcon,
   SparklesIcon,
@@ -49,6 +49,7 @@ import {
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
+  "/settings/business-os": BriefcaseBusinessIcon,
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/keybindings": KeyboardIcon,
@@ -58,7 +59,6 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/computers": MonitorIcon,
   "/settings/workjet": WrenchIcon,
   "/settings/source-control": GitBranchIcon,
-  "/settings/connections": Link2Icon,
   "/settings/diagnostics": ActivityIcon,
   "/settings/archived": ArchiveIcon,
 };

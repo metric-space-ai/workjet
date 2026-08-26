@@ -171,9 +171,9 @@ function HostedStaticOnboardingState() {
                   : "Add a reachable backend manually to start working from this browser."}
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
-                <Button render={<Link to="/settings/connections" />} size="sm">
+                <Button render={<Link to="/settings/computers" />} size="sm">
                   <PlusIcon className="size-4" />
-                  {cloudEnabled ? "Open Connections" : "Add environment"}
+                  {cloudEnabled ? "Open Computers" : "Add computer"}
                 </Button>
               </div>
             </EmptyHeader>

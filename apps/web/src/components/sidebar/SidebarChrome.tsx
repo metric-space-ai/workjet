@@ -1,18 +1,10 @@
-import {
-  ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
-  GitPullRequestIcon,
-  MonitorSmartphoneIcon,
-  SettingsIcon,
-  SmartphoneIcon,
-} from "lucide-react";
+import { SettingsIcon } from "lucide-react";
 import { memo, useCallback, type KeyboardEvent } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useCrossModeNavigator } from "../../crossMode/useCrossModeNavigator";
 import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useEnvironments } from "../../state/environments";
 import { resolveWorkjetProductMode, type WorkjetProductMode } from "../../workjetProductMode";
 import workjetMarkUrl from "../../../../../assets/workjet/workjet-app-icon.png";
 import {
@@ -24,10 +16,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
-import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
-import { openWorkjetDevicePairing } from "../settings/WorkjetDevicePairingDialog";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -214,153 +202,25 @@ function WorkjetMark() {
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
-  const currentFooterPage = useLocation({
-    select: (location) =>
-      location.pathname === "/usage"
-        ? "usage"
-        : location.pathname === "/machines"
-          ? "machines"
-          : location.pathname === "/pull-requests"
-            ? "pull-requests"
-            : null,
-  });
-  const { environments } = useEnvironments();
-  // The page reads every connected server, so one of them offering pull requests is enough for
-  // the link to lead somewhere.
-  const pullRequestsSupported = environments.some(
-    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-  );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
   }, [isMobile, setOpenMobile]);
-  const handlePullRequestsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
-  }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
   }, [closeMobileSidebar, navigate]);
 
-  const handleUsageClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  }, [isMobile, navigate, setOpenMobile]);
-
-  // The multi-computer overview is a global read, so it belongs in this footer
-  // row beside Usage rather than anywhere thread-scoped.
-  const handleMachinesClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/machines" });
-  }, [closeMobileSidebar, navigate]);
-
-  const handleBackClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/" });
-  }, [closeMobileSidebar, navigate]);
-
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
-      <SidebarProviderUpdatePill />
-      <SidebarUpdateArchitectureWarning />
-      <SidebarMenu className="flex-row items-center">
-        {currentFooterPage ? (
-          <SidebarMenuItem className="min-w-0 flex-1">
-            <SidebarMenuButton onClick={handleBackClick}>
-              <ArrowLeftIcon />
-              <span>Back</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ) : (
-          <>
-            <SidebarMenuItem className="shrink-0">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      aria-label="Mobilgerät verbinden"
-                      onClick={() => {
-                        closeMobileSidebar();
-                        openWorkjetDevicePairing();
-                      }}
-                      size="icon"
-                    >
-                      <SmartphoneIcon />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Mobilgerät verbinden</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-            <SidebarMenuItem className="shrink-0">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      aria-label="Settings"
-                      onClick={handleSettingsClick}
-                      size="icon"
-                    >
-                      <SettingsIcon />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Settings</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-            {pullRequestsSupported ? (
-              <SidebarMenuItem className="shrink-0">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        aria-label="Pull Requests"
-                        onClick={handlePullRequestsClick}
-                        size="icon"
-                      >
-                        <GitPullRequestIcon />
-                      </SidebarMenuButton>
-                    }
-                  />
-                  <TooltipPopup side="top">Pull Requests</TooltipPopup>
-                </Tooltip>
-              </SidebarMenuItem>
-            ) : null}
-            <SidebarMenuItem className="shrink-0">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton aria-label="Usage" onClick={handleUsageClick} size="icon">
-                      <ChartNoAxesColumnIcon />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Usage</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-            <SidebarMenuItem className="shrink-0">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      aria-label="Machines"
-                      onClick={handleMachinesClick}
-                      size="icon"
-                    >
-                      <MonitorSmartphoneIcon />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Machines</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-          </>
-        )}
-        <SidebarUpdatePill />
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton onClick={handleSettingsClick}>
+            <SettingsIcon />
+            <span>Settings</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
   );

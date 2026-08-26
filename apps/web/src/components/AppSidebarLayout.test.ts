@@ -4,13 +4,12 @@ import appSidebarLayoutSource from "./AppSidebarLayout.tsx?raw";
 import { resolveAppSidebarSurface } from "./AppSidebarLayout";
 
 describe("AppSidebarLayout mode ownership", () => {
-  it("never renders Code settings while Business OS owns the shell", () => {
+  it("uses the same settings surface in Code and Business OS", () => {
     expect(resolveAppSidebarSurface({ productMode: "ctox", isOnSettings: false })).toBe(
       "business-os",
     );
-    expect(resolveAppSidebarSurface({ productMode: "ctox", isOnSettings: true })).toBe(
-      "business-os",
-    );
+    expect(resolveAppSidebarSurface({ productMode: "ctox", isOnSettings: true })).toBe("settings");
+    expect(resolveAppSidebarSurface({ productMode: "code", isOnSettings: true })).toBe("settings");
   });
 
   it("keeps the existing Code and Code-settings surfaces separate", () => {
@@ -24,5 +23,12 @@ describe("AppSidebarLayout mode ownership", () => {
     expect(appSidebarLayoutSource).toContain(
       "return <HydratedAppSidebarLayout>{children}</HydratedAppSidebarLayout>",
     );
+  });
+
+  it("keeps pairing and mode-specific settings dialogs out of the global layout", () => {
+    expect(appSidebarLayoutSource).not.toContain("WorkjetDevicePairingDialog");
+    expect(appSidebarLayoutSource).not.toContain("businessOsSettingsRequestKey");
+    expect(appSidebarLayoutSource).not.toContain("openSettingsRequestKey=");
+    expect(appSidebarLayoutSource).toContain("<SettingsSidebarNav pathname={pathname} />");
   });
 });

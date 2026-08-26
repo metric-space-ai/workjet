@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off - exercises the Electron-owned loopback server with real Node HTTP and temporary files.
-import * as NodeFs from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeHttp from "node:http";
-import * as NodeOs from "node:os";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
@@ -81,20 +81,20 @@ async function shellRoot(base: string, packaged: boolean): Promise<string> {
     isPackaged: packaged,
   });
   const root = CtoxBusinessOsShell.resolveCtoxBusinessOsShellRoot(env);
-  await NodeFs.mkdir(root, { recursive: true });
-  await NodeFs.writeFile(NodePath.join(root, "index.html"), "<h1>Business OS</h1>");
-  await NodeFs.writeFile(
+  await NodeFSP.mkdir(root, { recursive: true });
+  await NodeFSP.writeFile(NodePath.join(root, "index.html"), "<h1>Business OS</h1>");
+  await NodeFSP.writeFile(
     NodePath.join(root, CtoxBusinessOsShell.CTOX_BUSINESS_OS_SHELL_COMPLETION_SENTINEL),
     `${encodeUnknownJson(CtoxBusinessOsShell.ctoxBusinessOsShellCompletionSentinel)}\n`,
   );
-  await NodeFs.mkdir(NodePath.join(root, "assets"));
-  await NodeFs.writeFile(NodePath.join(root, "assets", "app.js"), "export const ready = true;");
-  await NodeFs.mkdir(NodePath.join(root, "rxdb", "src"), { recursive: true });
-  await NodeFs.writeFile(
+  await NodeFSP.mkdir(NodePath.join(root, "assets"));
+  await NodeFSP.writeFile(NodePath.join(root, "assets", "app.js"), "export const ready = true;");
+  await NodeFSP.mkdir(NodePath.join(root, "rxdb", "src"), { recursive: true });
+  await NodeFSP.writeFile(
     NodePath.join(root, "rxdb", "src", "v1_5_status.mjs"),
     "export const ready = true;",
   );
-  await NodeFs.writeFile(
+  await NodeFSP.writeFile(
     NodePath.join(root, "rxdb", "src", "protocol-contract.generated.mjs"),
     "export const protocol = true;",
   );
@@ -122,7 +122,7 @@ describe("CtoxBusinessOsShell", () => {
     );
   });
   it("resolves only the exact packaged root and manifest-pinned development root", async () => {
-    const base = await NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-root-"));
+    const base = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-shell-root-"));
     try {
       expect(
         CtoxBusinessOsShell.resolveCtoxBusinessOsShellRoot(
@@ -136,13 +136,13 @@ describe("CtoxBusinessOsShell", () => {
       ).toBe(NodePath.join("/repo", ".deps", "ctox-business-os-shell", "0.1.4"));
       await shellRoot(base, false);
     } finally {
-      await NodeFs.rm(base, { recursive: true, force: true });
+      await NodeFSP.rm(base, { recursive: true, force: true });
     }
   });
 
   it.effect("starts one loopback-only server and serves GET and HEAD static files", () =>
     Effect.acquireUseRelease(
-      Effect.promise(() => NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-http-"))),
+      Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-shell-http-"))),
       (base) =>
         Effect.gen(function* () {
           yield* Effect.promise(() => shellRoot(base, false));
@@ -206,7 +206,7 @@ describe("CtoxBusinessOsShell", () => {
           const closed = yield* Effect.tryPromise(() => request(result, "/")).pipe(Effect.flip);
           assert.isDefined(closed);
         }),
-      (base) => Effect.promise(() => NodeFs.rm(base, { recursive: true, force: true })),
+      (base) => Effect.promise(() => NodeFSP.rm(base, { recursive: true, force: true })),
     ),
   );
 
@@ -214,7 +214,7 @@ describe("CtoxBusinessOsShell", () => {
     const previousInstallRoot = process.env.CTOX_INSTALL_ROOT;
     return Effect.acquireUseRelease(
       Effect.promise(async () => {
-        const base = await NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-module-http-"));
+        const base = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-module-http-"));
         process.env.CTOX_INSTALL_ROOT = NodePath.join(base, "install");
         return base;
       }),
@@ -223,34 +223,34 @@ describe("CtoxBusinessOsShell", () => {
           const root = yield* Effect.promise(() => shellRoot(base, false));
           const runtimeRoot = NodePath.join(base, "install", "current", "runtime", "business-os");
           yield* Effect.promise(() =>
-            NodeFs.mkdir(NodePath.join(root, "installed-modules", "shell-owned"), {
+            NodeFSP.mkdir(NodePath.join(root, "installed-modules", "shell-owned"), {
               recursive: true,
             }),
           );
           yield* Effect.promise(() =>
-            NodeFs.writeFile(
+            NodeFSP.writeFile(
               NodePath.join(root, "installed-modules", "shell-owned", "index.js"),
               "export const owner = 'shell';",
             ),
           );
           yield* Effect.promise(() =>
-            NodeFs.mkdir(NodePath.join(runtimeRoot, "installed-modules", "instance-owned"), {
+            NodeFSP.mkdir(NodePath.join(runtimeRoot, "installed-modules", "instance-owned"), {
               recursive: true,
             }),
           );
           yield* Effect.promise(() =>
-            NodeFs.mkdir(NodePath.join(runtimeRoot, "installed-modules", "shell-owned"), {
+            NodeFSP.mkdir(NodePath.join(runtimeRoot, "installed-modules", "shell-owned"), {
               recursive: true,
             }),
           );
           yield* Effect.promise(() =>
-            NodeFs.writeFile(
+            NodeFSP.writeFile(
               NodePath.join(runtimeRoot, "installed-modules", "instance-owned", "index.js"),
               "export const owner = 'instance';",
             ),
           );
           yield* Effect.promise(() =>
-            NodeFs.writeFile(
+            NodeFSP.writeFile(
               NodePath.join(runtimeRoot, "installed-modules", "shell-owned", "index.js"),
               "export const owner = 'overlay';",
             ),
@@ -284,6 +284,22 @@ describe("CtoxBusinessOsShell", () => {
               assert.equal(instanceOwned.body, "export const owner = 'instance';");
               assert.equal(shellOwned.status, 200);
               assert.equal(shellOwned.body, "export const owner = 'shell';");
+              const fallbackIcon = yield* Effect.promise(() =>
+                request(
+                  launch.launchOrigin,
+                  "/business-os/installed-modules/instance-owned/icon.svg",
+                ),
+              );
+              assert.equal(fallbackIcon.status, 200);
+              assert.equal(fallbackIcon.headers["content-type"], "image/svg+xml");
+              assert.include(fallbackIcon.body, 'viewBox="0 0 24 24"');
+              const missingModuleFile = yield* Effect.promise(() =>
+                request(
+                  launch.launchOrigin,
+                  "/business-os/installed-modules/instance-owned/schema.js",
+                ),
+              );
+              assert.equal(missingModuleFile.status, 404);
             }).pipe(
               Effect.provide(CtoxBusinessOsShell.layer),
               Effect.provideService(DesktopEnvironment.DesktopEnvironment, env),
@@ -294,20 +310,20 @@ describe("CtoxBusinessOsShell", () => {
         Effect.promise(async () => {
           if (previousInstallRoot === undefined) delete process.env.CTOX_INSTALL_ROOT;
           else process.env.CTOX_INSTALL_ROOT = previousInstallRoot;
-          await NodeFs.rm(base, { recursive: true, force: true });
+          await NodeFSP.rm(base, { recursive: true, force: true });
         }),
     );
   });
 
   it.effect("rejects traversal, symlinks, methods, malformed paths, and data routes", () =>
     Effect.acquireUseRelease(
-      Effect.promise(() => NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-guard-"))),
+      Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-shell-guard-"))),
       (base) =>
         Effect.gen(function* () {
           const root = yield* Effect.promise(() => shellRoot(base, true));
           const outside = NodePath.join(base, "outside.txt");
-          yield* Effect.promise(() => NodeFs.writeFile(outside, "outside-secret"));
-          yield* Effect.promise(() => NodeFs.symlink(outside, NodePath.join(root, "escape.txt")));
+          yield* Effect.promise(() => NodeFSP.writeFile(outside, "outside-secret"));
+          yield* Effect.promise(() => NodeFSP.symlink(outside, NodePath.join(root, "escape.txt")));
           const env = environment({
             rootDir: NodePath.join(base, "repo"),
             resourcesPath: NodePath.join(base, "resources"),
@@ -346,13 +362,13 @@ describe("CtoxBusinessOsShell", () => {
             ),
           );
         }),
-      (base) => Effect.promise(() => NodeFs.rm(base, { recursive: true, force: true })),
+      (base) => Effect.promise(() => NodeFSP.rm(base, { recursive: true, force: true })),
     ),
   );
 
   it.effect("uses one fixed secret-free error when the pinned shell is unavailable", () =>
     Effect.acquireUseRelease(
-      Effect.promise(() => NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-error-"))),
+      Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-shell-error-"))),
       (base) => {
         const env = environment({
           rootDir: NodePath.join(base, "room-secret-must-not-leak"),
@@ -372,21 +388,21 @@ describe("CtoxBusinessOsShell", () => {
           ),
         );
       },
-      (base) => Effect.promise(() => NodeFs.rm(base, { recursive: true, force: true })),
+      (base) => Effect.promise(() => NodeFSP.rm(base, { recursive: true, force: true })),
     ),
   );
 
   it.effect("rejects a shell directory without the pinned completion sentinel", () =>
     Effect.acquireUseRelease(
       Effect.promise(() =>
-        NodeFs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-unverified-")),
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-shell-unverified-")),
       ),
       (base) =>
         Effect.gen(function* () {
           const root = NodePath.join(base, "resources", "ctox-business-os-shell");
-          yield* Effect.promise(() => NodeFs.mkdir(root, { recursive: true }));
+          yield* Effect.promise(() => NodeFSP.mkdir(root, { recursive: true }));
           yield* Effect.promise(() =>
-            NodeFs.writeFile(NodePath.join(root, "index.html"), "unsafe"),
+            NodeFSP.writeFile(NodePath.join(root, "index.html"), "unsafe"),
           );
           const shell = yield* CtoxBusinessOsShell.CtoxBusinessOsShell;
           const error = yield* shell.launch(config).pipe(Effect.flip);
@@ -403,7 +419,7 @@ describe("CtoxBusinessOsShell", () => {
           ),
           Effect.scoped,
         ),
-      (base) => Effect.promise(() => NodeFs.rm(base, { recursive: true, force: true })),
+      (base) => Effect.promise(() => NodeFSP.rm(base, { recursive: true, force: true })),
     ),
   );
 });

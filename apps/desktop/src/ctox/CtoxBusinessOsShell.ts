@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Electron owns this loopback-only static HTTP boundary, its verified release download, and its filesystem callbacks.
-import { createHash } from "node:crypto";
-import * as NodeFs from "node:fs";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -159,6 +159,35 @@ interface ResolvedShellRoot {
 }
 
 const INSTANCE_MODULE_PREFIXES = ["installed-modules/", "local-modules/"] as const;
+const INSTANCE_MODULE_ICON_FALLBACK = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">' +
+    '<rect x="3" y="3" width="18" height="18" rx="5" fill="#15191d" stroke="#3b454d"/>' +
+    '<rect x="7" y="7" width="4" height="4" rx="1" fill="#72b8aa"/>' +
+    '<rect x="13" y="7" width="4" height="4" rx="1" fill="#5f83f3"/>' +
+    '<rect x="7" y="13" width="4" height="4" rx="1" fill="#a76ee6"/>' +
+    '<rect x="13" y="13" width="4" height="4" rx="1" fill="#e28b55"/>' +
+    "</svg>",
+  "utf8",
+);
+
+function isMissingInstanceModuleIcon(relative: string): boolean {
+  return (
+    INSTANCE_MODULE_PREFIXES.some((prefix) => relative.startsWith(prefix)) &&
+    relative.endsWith("/icon.svg")
+  );
+}
+
+function respondWithInstanceModuleIconFallback(
+  request: NodeHttp.IncomingMessage,
+  response: NodeHttp.ServerResponse,
+): void {
+  response.writeHead(200, {
+    ...responseHeaders(),
+    "content-length": INSTANCE_MODULE_ICON_FALLBACK.length,
+    "content-type": "image/svg+xml",
+  });
+  response.end(request.method === "HEAD" ? undefined : INSTANCE_MODULE_ICON_FALLBACK);
+}
 
 /**
  * Local runtime modules remain instance-owned and are therefore not part of a
@@ -212,6 +241,7 @@ const LegacyDetachedManifest = Schema.Struct({
   embeddedManifestSha256: Schema.String,
   files: Schema.Array(LegacyInventoryFile),
 });
+const decodeLegacyDetachedManifest = Schema.decodeUnknownSync(LegacyDetachedManifest);
 
 function sameReleaseInventory(
   legacy: typeof LegacyDetachedManifest.Type,
@@ -241,10 +271,9 @@ async function legacyReleaseFromSignedManifest(
   if (bytes.length < 2 || bytes.length > CTOX_BUSINESS_OS_SHELL_RELEASE.budgets.maxManifestBytes) {
     throw new Error("shell-release-legacy-manifest-size");
   }
-  const legacy = Schema.decodeUnknownSync(LegacyDetachedManifest)(
-    JSON.parse(bytes.toString("utf8")),
-    { onExcessProperty: "ignore" },
-  );
+  const legacy = decodeLegacyDetachedManifest(JSON.parse(bytes.toString("utf8")), {
+    onExcessProperty: "ignore",
+  });
   if (
     legacy.version !== release.version ||
     legacy.sourceCommit !== release.sourceCommit ||
@@ -262,7 +291,7 @@ async function legacyReleaseFromSignedManifest(
     sourceCommit: release.sourceCommit,
     manifestUrl: official.manifestUrl,
     manifestByteLength: bytes.length,
-    manifestSha256: createHash("sha256").update(bytes).digest("hex"),
+    manifestSha256: NodeCrypto.createHash("sha256").update(bytes).digest("hex"),
     archiveUrl: official.archiveUrl,
     archiveFilename: official.archiveFilename,
     archiveRoot: legacy.archiveRoot,
@@ -406,8 +435,8 @@ function installStaticHandler(
         : undefined;
     const useOverlay =
       overlayCandidate !== undefined &&
-      !NodeFs.existsSync(shellCandidate) &&
-      NodeFs.existsSync(overlayCandidate);
+      !NodeFS.existsSync(shellCandidate) &&
+      NodeFS.existsSync(overlayCandidate);
     const candidateRoot =
       useOverlay && canonicalInstanceModuleRoot !== undefined
         ? canonicalInstanceModuleRoot
@@ -419,8 +448,12 @@ function installStaticHandler(
       return;
     }
 
-    NodeFs.lstat(candidate, (lstatError, lstat) => {
+    NodeFS.lstat(candidate, (lstatError, lstat) => {
       if (lstatError !== null) {
+        if (lstatError.code === "ENOENT" && isMissingInstanceModuleIcon(relative)) {
+          respondWithInstanceModuleIconFallback(request, response);
+          return;
+        }
         reject(response, 404);
         return;
       }
@@ -428,7 +461,7 @@ function installStaticHandler(
         reject(response, lstat.isSymbolicLink() ? 403 : 404);
         return;
       }
-      NodeFs.realpath(candidate, (realpathError, canonicalCandidate) => {
+      NodeFS.realpath(candidate, (realpathError, canonicalCandidate) => {
         if (
           realpathError !== null ||
           (canonicalCandidate !== candidateRoot &&
@@ -437,7 +470,7 @@ function installStaticHandler(
           reject(response, 403);
           return;
         }
-        NodeFs.stat(canonicalCandidate, (statError, stat) => {
+        NodeFS.stat(canonicalCandidate, (statError, stat) => {
           if (statError !== null || !stat.isFile()) {
             reject(response, 404);
             return;
@@ -453,7 +486,7 @@ function installStaticHandler(
             response.end();
             return;
           }
-          const stream = NodeFs.createReadStream(canonicalCandidate);
+          const stream = NodeFS.createReadStream(canonicalCandidate);
           stream.once("error", () => response.destroy());
           stream.pipe(response);
         });
@@ -470,10 +503,10 @@ function startServer(
     let canonicalRoot: string;
     let canonicalInstanceModuleRoot: string | undefined;
     try {
-      canonicalRoot = NodeFs.realpathSync(resolved.root);
-      if (!NodeFs.statSync(canonicalRoot).isDirectory()) throw new Error("invalid shell root");
+      canonicalRoot = NodeFS.realpathSync(resolved.root);
+      if (!NodeFS.statSync(canonicalRoot).isDirectory()) throw new Error("invalid shell root");
       const sentinelPath = NodePath.join(canonicalRoot, CTOX_BUSINESS_OS_SHELL_COMPLETION_SENTINEL);
-      const sentinelStat = NodeFs.lstatSync(sentinelPath);
+      const sentinelStat = NodeFS.lstatSync(sentinelPath);
       if (
         !sentinelStat.isFile() ||
         sentinelStat.isSymbolicLink() ||
@@ -482,7 +515,7 @@ function startServer(
       ) {
         throw new Error("invalid shell sentinel");
       }
-      const sentinel = decodeCompletionSentinel(NodeFs.readFileSync(sentinelPath, "utf8"), {
+      const sentinel = decodeCompletionSentinel(NodeFS.readFileSync(sentinelPath, "utf8"), {
         onExcessProperty: "error",
       });
       const expected = expectedSentinel(resolved.release);
@@ -499,8 +532,8 @@ function startServer(
         throw new Error("shell sentinel mismatch");
       }
       const entryPath = NodePath.join(canonicalRoot, resolved.release.entry);
-      const entryStat = NodeFs.lstatSync(entryPath);
-      const canonicalEntry = NodeFs.realpathSync(entryPath);
+      const entryStat = NodeFS.lstatSync(entryPath);
+      const canonicalEntry = NodeFS.realpathSync(entryPath);
       if (
         !entryStat.isFile() ||
         entryStat.isSymbolicLink() ||
@@ -508,9 +541,9 @@ function startServer(
       ) {
         throw new Error("invalid shell entry");
       }
-      if (instanceModuleRoot !== undefined && NodeFs.existsSync(instanceModuleRoot)) {
-        const candidate = NodeFs.realpathSync(instanceModuleRoot);
-        if (NodeFs.statSync(candidate).isDirectory()) canonicalInstanceModuleRoot = candidate;
+      if (instanceModuleRoot !== undefined && NodeFS.existsSync(instanceModuleRoot)) {
+        const candidate = NodeFS.realpathSync(instanceModuleRoot);
+        if (NodeFS.statSync(candidate).isDirectory()) canonicalInstanceModuleRoot = candidate;
       }
     } catch {
       resume(Effect.fail(new CtoxBusinessOsShellError()));

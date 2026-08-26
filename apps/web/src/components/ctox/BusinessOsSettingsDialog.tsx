@@ -7,7 +7,7 @@ import type {
   DesktopCtoxBridge,
 } from "@t3tools/contracts";
 import { RefreshCw, X } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { APP_VERSION } from "../../branding";
@@ -573,6 +573,8 @@ export function BusinessOsSettingsDialog({
   readonly onClose: () => void;
 }) {
   const [page, setPage] = useState<SettingsPage>(initialPage);
+  const activePageButtonRef = useRef<HTMLButtonElement | null>(null);
+  const pageNavigationRef = useRef<HTMLElement | null>(null);
   const [inventory, setInventory] = useState<CtoxShellFleetInventoryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [rolloutStatus, setRolloutStatus] = useState<CtoxShellFleetRolloutStatus | null>(null);
@@ -602,10 +604,30 @@ export function BusinessOsSettingsDialog({
     }
     return bridge?.onShellFleetRolloutStatus?.(setRolloutStatus);
   }, [bridge]);
-  const choosePage = (next: SettingsPage) => {
+  const keepPageButtonVisible = useCallback((button: HTMLButtonElement | null) => {
+    const navigation = pageNavigationRef.current;
+    if (
+      navigation === null ||
+      button === null ||
+      navigation.scrollWidth <= navigation.clientWidth
+    ) {
+      return;
+    }
+    const centeredLeft = button.offsetLeft - (navigation.clientWidth - button.offsetWidth) / 2;
+    navigation.scrollTo({ left: Math.max(0, centeredLeft), behavior: "auto" });
+  }, []);
+  const choosePage = (next: SettingsPage, button?: HTMLButtonElement) => {
     setPage(next);
     window.localStorage.setItem(SETTINGS_PAGE_KEY, next);
+    keepPageButtonVisible(button ?? null);
   };
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      keepPageButtonVisible(activePageButtonRef.current);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [keepPageButtonVisible, page]);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -637,12 +659,14 @@ export function BusinessOsSettingsDialog({
             </button>
           </div>
           <nav
+            ref={pageNavigationRef}
             aria-label="Kategorien für Business OS-Einstellungen"
             className="flex gap-1 overflow-x-auto pb-1 md:block md:space-y-1 md:overflow-visible md:pb-0"
           >
             {SETTINGS_PAGES.map(([id, label]) => (
               <button
                 key={id}
+                ref={page === id ? activePageButtonRef : undefined}
                 type="button"
                 className={cn(
                   "shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm md:w-full",
@@ -650,7 +674,7 @@ export function BusinessOsSettingsDialog({
                     ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-border"
                     : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
                 )}
-                onClick={() => choosePage(id)}
+                onClick={(event) => choosePage(id, event.currentTarget)}
                 aria-current={page === id ? "page" : undefined}
               >
                 {label}

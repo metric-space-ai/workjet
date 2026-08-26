@@ -63,6 +63,9 @@ describe("BusinessOsSettingsDialog", () => {
     expect(dialogSource).toContain("w-full");
     expect(dialogSource).toContain("md:w-64");
     expect(dialogSource).toContain("overflow-x-auto");
+    expect(dialogSource).toContain("navigation.scrollTo");
+    expect(dialogSource).toContain('behavior: "auto"');
+    expect(dialogSource).toContain("event.currentTarget");
     expect(dialogSource).toContain("p-4 sm:p-6 md:p-8 lg:p-12");
   });
 

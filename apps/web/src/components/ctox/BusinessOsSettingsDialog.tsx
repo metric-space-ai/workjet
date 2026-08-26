@@ -26,6 +26,19 @@ const SETTINGS_PAGES = [
   ["diagnostics", "Diagnostik"],
   ["about", "Über"],
 ] as const;
+
+function businessOsSettingsReturnFocus(): HTMLElement | null {
+  const settingsTrigger = document.querySelector<HTMLElement>(
+    "[data-business-os-settings-trigger]",
+  );
+  if (settingsTrigger !== null) {
+    const rect = settingsTrigger.getBoundingClientRect();
+    if (rect.width > 1 && rect.height > 1 && rect.right > 0 && rect.left < window.innerWidth) {
+      return settingsTrigger;
+    }
+  }
+  return document.querySelector<HTMLElement>('button[aria-label="Toggle main sidebar"]');
+}
 type SettingsPage = (typeof SETTINGS_PAGES)[number][0];
 
 function initialPage(): SettingsPage {
@@ -602,6 +615,8 @@ export function BusinessOsSettingsDialog({
         bottomStickOnMobile={false}
         showCloseButton={false}
         aria-label="Business OS-Einstellungen"
+        aria-modal="true"
+        finalFocus={businessOsSettingsReturnFocus}
         data-business-os-settings=""
       >
         <DialogTitle className="sr-only">Business OS-Einstellungen</DialogTitle>

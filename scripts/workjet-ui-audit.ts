@@ -56,6 +56,7 @@ export const AUDIT_VIEWPORTS: readonly AuditViewport[] = [
   { name: "wide", width: 1512, height: 890 },
   { name: "compact", width: 1180, height: 820 },
   { name: "narrow", width: 860, height: 720 },
+  { name: "small", width: 640, height: 720 },
 ];
 
 export const CODE_AUDIT_STATES: readonly AuditState[] = [
@@ -374,6 +375,20 @@ async function pressKey(client: CdpClient, key: string, modifiers = 0): Promise<
   await client.command("Input.dispatchKeyEvent", { type: "keyUp", key, modifiers });
 }
 
+async function ensureMainSidebarVisible(client: CdpClient): Promise<void> {
+  const visible = await client.evaluate(`(() => {
+    const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+    if (!(sidebar instanceof HTMLElement)) return false;
+    const rect = sidebar.getBoundingClientRect();
+    return rect.width > 1 && rect.height > 1 && rect.right > 0 && rect.left < innerWidth;
+  })()`);
+  if (visible === true) return;
+  await client.evaluate(
+    `document.querySelector('button[aria-label="Toggle main sidebar"]')?.click()`,
+  );
+  await settle(client);
+}
+
 async function prepareState(
   client: CdpClient,
   interaction: AuditState["interaction"],
@@ -429,7 +444,7 @@ const BUSINESS_SETTINGS_LABELS = {
   "settings-about": "Über",
   "settings-appearance": "Darstellung",
   "settings-apps": "Apps",
-  "settings-backends": "Backends & Sync",
+  "settings-backends": "Backends & Synchronisierung",
   "settings-diagnostics": "Diagnostik",
   "settings-general": "Allgemein",
   "settings-notifications": "Benachrichtigungen",
@@ -437,6 +452,7 @@ const BUSINESS_SETTINGS_LABELS = {
 } as const;
 
 async function prepareProductMode(client: CdpClient, mode: AuditState["mode"]): Promise<void> {
+  await ensureMainSidebarVisible(client);
   const label = mode === "business-os" ? "Business OS" : "Code";
   await client.evaluate(
     `([...document.querySelectorAll("button")].find((element) => (element.textContent || "").trim() === ${JSON.stringify(label)}))?.click()`,
@@ -455,25 +471,26 @@ async function prepareBusinessState(
   );
   if (interaction === undefined) return;
   if (interaction === "add-instance") {
-    await client.evaluate(`document.querySelector('button[aria-label="Add instance"]')?.click()`);
+    await client.evaluate(
+      `document.querySelector('button[aria-label="CTOX Backend hinzufügen"]')?.click()`,
+    );
     return;
   }
   if (interaction === "instance-actions") {
     await client.evaluate(
-      `([...document.querySelectorAll('button[aria-label^="Actions for "]')][0])?.click()`,
+      `([...document.querySelectorAll('button[aria-label^="Aktionen für "]')][0])?.click()`,
     );
     return;
   }
   if (interaction === "expand-instance") {
     await client.evaluate(
-      `([...document.querySelectorAll('button[aria-label^="Expand apps of "]')][0])?.click()`,
+      `([...document.querySelectorAll('button[aria-label^="Apps einblenden:"], button[aria-label^="Apps ausblenden:"]')][0])?.click()`,
     );
     return;
   }
+  await ensureMainSidebarVisible(client);
   await client.evaluate(`(() => {
-    const trigger = document.querySelector('button[aria-label="Settings"]');
-    trigger?.setAttribute("data-ui-audit-settings-trigger", "");
-    trigger?.click();
+    document.querySelector('[data-business-os-settings-trigger]')?.click();
   })()`);
   await settle(client);
   const label = BUSINESS_SETTINGS_LABELS[interaction];
@@ -525,7 +542,7 @@ async function probeBusinessSettingsDialog(
   await settle(client);
   const closeState = await client.evaluate(`(() => ({
     closed: !document.querySelector('[data-business-os-settings]'),
-    restored: document.activeElement?.matches('[data-ui-audit-settings-trigger]') === true,
+    restored: document.activeElement?.matches('[data-business-os-settings-trigger], button[aria-label="Toggle main sidebar"]') === true,
   }))()`);
   if (typeof closeState !== "object" || closeState === null)
     throw new Error("settings close probe returned no result");

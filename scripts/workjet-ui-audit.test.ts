@@ -69,13 +69,13 @@ describe("Workjet UI audit configuration", () => {
         "--states",
         "draft,settings-general",
         "--viewports",
-        "compact,narrow",
+        "compact,narrow,small",
       ]),
     ).toEqual({
       port: 9300,
       output: "/tmp/workjet-audit",
       states: ["draft", "settings-general"],
-      viewports: ["compact", "narrow"],
+      viewports: ["compact", "narrow", "small"],
     });
     expect(() => parseAuditArguments(["--port", "70000"])).toThrow("port");
     expect(() => parseAuditArguments(["--output", "relative"])).toThrow("absolute");

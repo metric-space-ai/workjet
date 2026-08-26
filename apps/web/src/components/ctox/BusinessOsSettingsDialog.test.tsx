@@ -54,6 +54,9 @@ describe("BusinessOsSettingsDialog", () => {
   it("uses the shared modal primitive and a scrollable responsive settings navigation", () => {
     expect(dialogSource).toContain("<Dialog open");
     expect(dialogSource).toContain("<DialogPopup");
+    expect(dialogSource).toContain('aria-modal="true"');
+    expect(dialogSource).toContain('"[data-business-os-settings-trigger]"');
+    expect(dialogSource).toContain('button[aria-label="Toggle main sidebar"]');
     expect(dialogSource).not.toContain('window.addEventListener("keydown"');
     expect(dialogSource).toContain("max-h-[45dvh]");
     expect(dialogSource).toContain("overflow-y-auto");

@@ -1997,6 +1997,7 @@ export function CtoxSidebarFooter() {
         <SidebarMenuItem className="shrink-0">
           <SidebarMenuButton
             aria-label="Business OS-Einstellungen"
+            data-business-os-settings-trigger=""
             size="icon"
             title="Business OS-Einstellungen"
             onClick={openSettings}

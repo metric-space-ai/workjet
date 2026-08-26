@@ -13,6 +13,7 @@ import { cn } from "../../lib/utils";
 import { APP_VERSION } from "../../branding";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { BusinessOsMobilePairingSection } from "../settings/BusinessOsMobilePairingSection";
+import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 
 const SETTINGS_PAGE_KEY = "workjet.business-os.settings.last-page";
 const SETTINGS_PAGES = [
@@ -588,226 +589,227 @@ export function BusinessOsSettingsDialog({
     }
     return bridge?.onShellFleetRolloutStatus?.(setRolloutStatus);
   }, [bridge]);
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   const choosePage = (next: SettingsPage) => {
     setPage(next);
     window.localStorage.setItem(SETTINGS_PAGE_KEY, next);
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[90] flex bg-background"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Business OS-Einstellungen"
-      data-business-os-settings=""
-    >
-      <aside className="w-64 shrink-0 border-r border-border bg-sidebar px-3 py-5">
-        <div className="mb-5 flex items-center justify-between px-2">
-          <div>
-            <p className="font-semibold text-sidebar-foreground">Business OS</p>
-            <p className="text-xs text-sidebar-muted-foreground">Einstellungen</p>
-          </div>
-          <button
-            type="button"
-            className="rounded p-1.5 text-sidebar-muted-foreground hover:bg-sidebar-accent"
-            onClick={onClose}
-            aria-label="Einstellungen schließen"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        <nav aria-label="Kategorien für Business OS-Einstellungen" className="space-y-1">
-          {SETTINGS_PAGES.map(([id, label]) => (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogPopup
+        className="row-start-1 row-span-3 flex h-dvh max-h-none w-dvw max-w-none min-w-0 flex-col overflow-hidden rounded-none border-0 bg-background p-0 shadow-none md:flex-row"
+        viewportClassName="z-[90] grid-rows-1 p-0"
+        bottomStickOnMobile={false}
+        showCloseButton={false}
+        aria-label="Business OS-Einstellungen"
+        data-business-os-settings=""
+      >
+        <DialogTitle className="sr-only">Business OS-Einstellungen</DialogTitle>
+        <aside className="max-h-[45dvh] w-full shrink-0 overflow-y-auto border-b border-border bg-sidebar px-3 py-3 md:max-h-none md:h-full md:w-64 md:border-r md:border-b-0 md:py-5">
+          <div className="mb-3 flex items-center justify-between px-2 md:mb-5">
+            <div>
+              <p className="font-semibold text-sidebar-foreground">Business OS</p>
+              <p className="text-xs text-sidebar-muted-foreground">Einstellungen</p>
+            </div>
             <button
-              key={id}
               type="button"
-              className={cn(
-                "w-full rounded-md px-3 py-2 text-left text-sm",
-                page === id
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-border"
-                  : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-              )}
-              onClick={() => choosePage(id)}
-              aria-current={page === id ? "page" : undefined}
+              className="rounded p-1.5 text-sidebar-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              onClick={onClose}
+              aria-label="Einstellungen schließen"
+              autoFocus
             >
-              {label}
+              <X className="size-4" />
             </button>
-          ))}
-        </nav>
-      </aside>
-      <main className="min-w-0 flex-1 overflow-y-auto p-8 lg:p-12">
-        {page === "updates" ? (
-          <UpdatesPage
-            bridge={bridge}
-            inventory={inventory}
-            loading={loading}
-            reload={reload}
-            rolloutStatus={rolloutStatus}
-            setRolloutStatus={setRolloutStatus}
-          />
-        ) : (
-          <section className="mx-auto max-w-3xl">
-            <h2 className="text-xl font-semibold">
-              {SETTINGS_PAGES.find(([id]) => id === page)?.[1]}
-            </h2>
-            {page === "general" ? (
-              <div className="mt-6 rounded-lg border border-border p-5">
-                <p className="text-sm font-medium">Aktives Backend</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {selected === undefined
-                    ? "Kein CTOX Backend ausgewählt"
-                    : fleetInstanceDisplayTitle(selected.displayName)}
-                </p>
-                {selected === undefined ? (
-                  <button
-                    type="button"
-                    className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
-                    onClick={() => choosePage("backends")}
-                  >
-                    Backend auswählen
-                  </button>
-                ) : (
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    Synchronisierung ·{" "}
-                    {businessOsInstanceDataPlaneReady(selected, readyInstanceId)
-                      ? "bereit"
-                      : "nicht bestätigt"}
-                  </p>
+          </div>
+          <nav
+            aria-label="Kategorien für Business OS-Einstellungen"
+            className="flex gap-1 overflow-x-auto pb-1 md:block md:space-y-1 md:overflow-visible md:pb-0"
+          >
+            {SETTINGS_PAGES.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={cn(
+                  "shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm md:w-full",
+                  page === id
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-border"
+                    : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
                 )}
-              </div>
-            ) : null}
-            {page === "backends" ? (
-              <div className="mt-6 space-y-3">
-                {(discovery !== "loading" && discovery._tag === "ready"
-                  ? discovery.instances
-                  : []
-                ).map((instance) => (
-                  <div key={instance.id} className="rounded-lg border border-border p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="font-medium">
-                        {fleetInstanceDisplayTitle(instance.displayName)}
-                      </p>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                        {INSTANCE_STATUS_LABELS[instance.status] ?? instance.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Synchronisierung ·{" "}
-                      {businessOsInstanceDataPlaneReady(instance, readyInstanceId)
-                        ? "bereit"
-                        : "nicht bestätigt"}
-                    </p>
-                  </div>
-                ))}
-                <BusinessOsMobilePairingSection
-                  environmentId={primaryEnvironment?.environmentId ?? null}
-                  environmentLabel={
-                    selected === undefined
-                      ? (primaryEnvironment?.label ?? null)
-                      : fleetInstanceDisplayTitle(selected.displayName)
-                  }
-                />
-              </div>
-            ) : null}
-            {page === "apps" ? (
-              <div className="mt-6 rounded-lg border border-border p-5">
-                <p className="text-sm font-medium">
-                  {selected === undefined
-                    ? "Kein Backend ausgewählt"
-                    : `Aktives Backend: ${fleetInstanceDisplayTitle(selected.displayName)}`}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Apps werden pro CTOX Backend verwaltet und bleiben von Coding-Prozessen getrennt.
-                </p>
-                {selected === undefined ? (
-                  <button
-                    type="button"
-                    className="mt-4 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-                    onClick={() => choosePage("backends")}
-                  >
-                    Backends & Synchronisierung öffnen
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {page === "appearance" ? (
-              <div className="mt-6 rounded-lg border border-border p-5">
-                <p className="text-sm font-medium">Workjet-Darstellung aktiv</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Business OS übernimmt Darstellung, Kontrast und Schrift aus Workjet. Es existiert
-                  keine abweichende Desktop-Darstellung.
-                </p>
-              </div>
-            ) : null}
-            {page === "notifications" ? (
-              <div className="mt-6 rounded-lg border border-border p-5">
-                <p className="text-sm font-medium">Profilstandard aktiv</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Benachrichtigungen gelten für dieses Workjet-Profil und das jeweils aktive
-                  CTOX-Backend.
-                </p>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Aktives Backend:{" "}
-                  {selected === undefined
-                    ? "Kein Backend ausgewählt"
-                    : fleetInstanceDisplayTitle(selected.displayName)}
-                </p>
-              </div>
-            ) : null}
-            {page === "diagnostics" ? (
-              <div className="mt-6 rounded-lg border border-border p-5 text-sm">
-                <p>
-                  Instanz:{" "}
-                  {selected === undefined
-                    ? "Kein Backend ausgewählt"
-                    : fleetInstanceDisplayTitle(selected.displayName)}
-                </p>
-                <p className="mt-1 text-muted-foreground">
-                  Datenpfad: {selected?.healthSummary.dataPlane ?? "unbekannt"}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-                    onClick={reload}
-                  >
-                    Erneut prüfen
-                  </button>
+                onClick={() => choosePage(id)}
+                aria-current={page === id ? "page" : undefined}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-12">
+          {page === "updates" ? (
+            <UpdatesPage
+              bridge={bridge}
+              inventory={inventory}
+              loading={loading}
+              reload={reload}
+              rolloutStatus={rolloutStatus}
+              setRolloutStatus={setRolloutStatus}
+            />
+          ) : (
+            <section className="mx-auto max-w-3xl">
+              <h2 className="text-xl font-semibold">
+                {SETTINGS_PAGES.find(([id]) => id === page)?.[1]}
+              </h2>
+              {page === "general" ? (
+                <div className="mt-6 rounded-lg border border-border p-5">
+                  <p className="text-sm font-medium">Aktives Backend</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {selected === undefined
+                      ? "Kein CTOX Backend ausgewählt"
+                      : fleetInstanceDisplayTitle(selected.displayName)}
+                  </p>
                   {selected === undefined ? (
                     <button
                       type="button"
-                      className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                      className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                       onClick={() => choosePage("backends")}
                     >
-                      Backend verbinden
+                      Backend auswählen
+                    </button>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Synchronisierung ·{" "}
+                      {businessOsInstanceDataPlaneReady(selected, readyInstanceId)
+                        ? "bereit"
+                        : "nicht bestätigt"}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+              {page === "backends" ? (
+                <div className="mt-6 space-y-3">
+                  {(discovery !== "loading" && discovery._tag === "ready"
+                    ? discovery.instances
+                    : []
+                  ).map((instance) => (
+                    <div key={instance.id} className="rounded-lg border border-border p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <p className="font-medium">
+                          {fleetInstanceDisplayTitle(instance.displayName)}
+                        </p>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                          {INSTANCE_STATUS_LABELS[instance.status] ?? instance.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Synchronisierung ·{" "}
+                        {businessOsInstanceDataPlaneReady(instance, readyInstanceId)
+                          ? "bereit"
+                          : "nicht bestätigt"}
+                      </p>
+                    </div>
+                  ))}
+                  <BusinessOsMobilePairingSection
+                    environmentId={primaryEnvironment?.environmentId ?? null}
+                    environmentLabel={
+                      selected === undefined
+                        ? (primaryEnvironment?.label ?? null)
+                        : fleetInstanceDisplayTitle(selected.displayName)
+                    }
+                  />
+                </div>
+              ) : null}
+              {page === "apps" ? (
+                <div className="mt-6 rounded-lg border border-border p-5">
+                  <p className="text-sm font-medium">
+                    {selected === undefined
+                      ? "Kein Backend ausgewählt"
+                      : `Aktives Backend: ${fleetInstanceDisplayTitle(selected.displayName)}`}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Apps werden pro CTOX Backend verwaltet und bleiben von Coding-Prozessen
+                    getrennt.
+                  </p>
+                  {selected === undefined ? (
+                    <button
+                      type="button"
+                      className="mt-4 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                      onClick={() => choosePage("backends")}
+                    >
+                      Backends & Synchronisierung öffnen
                     </button>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
-            {page === "about" ? (
-              <div className="mt-6 rounded-lg border border-border p-5 text-sm">
-                <p className="font-medium">Workjet</p>
-                <p className="mt-1 font-mono text-xs text-muted-foreground">
-                  Version {APP_VERSION}
-                </p>
-                <p className="mt-1 text-muted-foreground">
-                  Das CTOX Backend verbindet Business OS mit Workjet. Workjet ist die einzige
-                  Desktop- und Mobile-Nutzer-App.
-                </p>
-              </div>
-            ) : null}
-          </section>
-        )}
-      </main>
-    </div>
+              ) : null}
+              {page === "appearance" ? (
+                <div className="mt-6 rounded-lg border border-border p-5">
+                  <p className="text-sm font-medium">Workjet-Darstellung aktiv</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Business OS übernimmt Darstellung, Kontrast und Schrift aus Workjet. Es
+                    existiert keine abweichende Desktop-Darstellung.
+                  </p>
+                </div>
+              ) : null}
+              {page === "notifications" ? (
+                <div className="mt-6 rounded-lg border border-border p-5">
+                  <p className="text-sm font-medium">Profilstandard aktiv</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Benachrichtigungen gelten für dieses Workjet-Profil und das jeweils aktive
+                    CTOX-Backend.
+                  </p>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Aktives Backend:{" "}
+                    {selected === undefined
+                      ? "Kein Backend ausgewählt"
+                      : fleetInstanceDisplayTitle(selected.displayName)}
+                  </p>
+                </div>
+              ) : null}
+              {page === "diagnostics" ? (
+                <div className="mt-6 rounded-lg border border-border p-5 text-sm">
+                  <p>
+                    Instanz:{" "}
+                    {selected === undefined
+                      ? "Kein Backend ausgewählt"
+                      : fleetInstanceDisplayTitle(selected.displayName)}
+                  </p>
+                  <p className="mt-1 text-muted-foreground">
+                    Datenpfad: {selected?.healthSummary.dataPlane ?? "unbekannt"}
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                      onClick={reload}
+                    >
+                      Erneut prüfen
+                    </button>
+                    {selected === undefined ? (
+                      <button
+                        type="button"
+                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                        onClick={() => choosePage("backends")}
+                      >
+                        Backend verbinden
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {page === "about" ? (
+                <div className="mt-6 rounded-lg border border-border p-5 text-sm">
+                  <p className="font-medium">Workjet</p>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">
+                    Version {APP_VERSION}
+                  </p>
+                  <p className="mt-1 text-muted-foreground">
+                    Das CTOX Backend verbindet Business OS mit Workjet. Workjet ist die einzige
+                    Desktop- und Mobile-Nutzer-App.
+                  </p>
+                </div>
+              ) : null}
+            </section>
+          )}
+        </main>
+      </DialogPopup>
+    </Dialog>
   );
 }

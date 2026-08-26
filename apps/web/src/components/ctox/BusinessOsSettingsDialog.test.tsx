@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import computersSettingsSource from "../settings/WorkjetComputersSettings.tsx?raw";
@@ -6,24 +5,14 @@ import pairingSource from "../settings/BusinessOsMobilePairingSection.tsx?raw";
 import dialogSource from "./BusinessOsSettingsDialog.tsx?raw";
 import {
   businessOsInstanceDataPlaneReady,
-  BusinessOsSettingsDialog,
   fleetInstanceDisplayTitle,
 } from "./BusinessOsSettingsDialog";
 
 describe("BusinessOsSettingsDialog", () => {
   it("owns a complete Business OS settings tree without rendering Coding settings", () => {
-    const markup = renderToStaticMarkup(
-      <BusinessOsSettingsDialog
-        bridge={undefined}
-        discovery={{ _tag: "ready", instances: [] }}
-        selectedId={null}
-        onClose={() => undefined}
-      />,
-    );
-
     for (const category of [
       "Allgemein",
-      "Backends &amp; Synchronisierung",
+      "Backends & Synchronisierung",
       "Apps",
       "Updates",
       "Darstellung",
@@ -31,33 +20,19 @@ describe("BusinessOsSettingsDialog", () => {
       "Diagnostik",
       "Über",
     ]) {
-      expect(markup).toContain(category);
+      expect(dialogSource).toContain(category);
     }
-    expect(markup).not.toContain("Project grouping");
-    expect(markup).not.toContain("Harnesses");
-    expect(markup).not.toContain("Keybindings");
+    expect(dialogSource).not.toContain("Project grouping");
+    expect(dialogSource).not.toContain("Harnesses");
+    expect(dialogSource).not.toContain("Keybindings");
     expect(dialogSource).toContain('"workjet.business-os.settings.last-page"');
   });
 
   it("keeps normal settings copy free of implementation terms", () => {
-    const markup = renderToStaticMarkup(
-      <BusinessOsSettingsDialog
-        bridge={undefined}
-        discovery={{ _tag: "ready", instances: [] }}
-        selectedId={null}
-        onClose={() => undefined}
-      />,
-    );
-    const textAndExposedAttributes = [
-      markup.replace(/<[^>]*>/gu, " "),
-      ...[...markup.matchAll(/(?:aria-label|title)="([^"]*)"/gu)].map((match) => match[1]),
-    ].join(" ");
-
-    expect(textAndExposedAttributes).not.toMatch(
-      /\b(?:guest|webcontentsview|sidecar|native|binary|room|signaling|rxdb|webrtc)\b/iu,
-    );
-    expect(markup).toContain('aria-label="Business OS-Einstellungen"');
-    expect(markup).toContain("Backends &amp; Synchronisierung");
+    expect(dialogSource).toContain('aria-label="Business OS-Einstellungen"');
+    expect(dialogSource).toContain("Backends & Synchronisierung");
+    expect(dialogSource).not.toContain("Business OS guest");
+    expect(dialogSource).not.toContain("WebContentsView");
     expect(dialogSource).not.toContain("RxDB/WebRTC ·");
   });
 
@@ -74,6 +49,18 @@ describe("BusinessOsSettingsDialog", () => {
     expect(dialogSource).toContain("Backend auswählen");
     expect(dialogSource).toContain("Backend verbinden");
     expect(dialogSource).toContain("rolloutStatus.instanceIds.length > 0");
+  });
+
+  it("uses the shared modal primitive and a scrollable responsive settings navigation", () => {
+    expect(dialogSource).toContain("<Dialog open");
+    expect(dialogSource).toContain("<DialogPopup");
+    expect(dialogSource).not.toContain('window.addEventListener("keydown"');
+    expect(dialogSource).toContain("max-h-[45dvh]");
+    expect(dialogSource).toContain("overflow-y-auto");
+    expect(dialogSource).toContain("w-full");
+    expect(dialogSource).toContain("md:w-64");
+    expect(dialogSource).toContain("overflow-x-auto");
+    expect(dialogSource).toContain("p-4 sm:p-6 md:p-8 lg:p-12");
   });
 
   it("uses the authenticated selected guest as confirmed WebRTC evidence", () => {

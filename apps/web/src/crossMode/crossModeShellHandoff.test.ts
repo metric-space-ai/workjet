@@ -78,7 +78,11 @@ describe("the two main surfaces are structurally exclusive", () => {
    * against the source.
    */
   it("renders CtoxMainShell and the Code outlet in one ternary", () => {
-    expect(appSidebarLayoutSource).toContain("{isCtoxShell ? <CtoxMainShell /> : children}");
+    expect(appSidebarLayoutSource).toContain("{isCtoxShell ? (");
+    expect(appSidebarLayoutSource).toContain(
+      "<CtoxMainShell openSettingsRequestKey={businessOsSettingsRequestKey} />",
+    );
+    expect(appSidebarLayoutSource).toContain(") : (\n          children\n        )}");
     // Exactly one place mounts either main surface.
     expect(appSidebarLayoutSource.split("<CtoxMainShell").length - 1).toBe(1);
   });

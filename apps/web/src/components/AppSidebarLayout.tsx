@@ -16,6 +16,7 @@ import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   useClientSettings,
+  useClientSettingsHydrated,
   useEnvironmentIdentificationMode,
   useLegacySidebarEnabled,
 } from "../hooks/useSettings";
@@ -160,7 +161,7 @@ export function resolveAppSidebarSurface({
   return isOnSettings ? "settings" : "code";
 }
 
-export function AppSidebarLayout({ children }: { children: ReactNode }) {
+function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
@@ -301,4 +302,21 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       </CtoxModeBoundary>
     </SidebarProvider>
   );
+}
+
+export function AppSidebarLayout({ children }: { children: ReactNode }) {
+  const settingsHydrated = useClientSettingsHydrated();
+  if (!settingsHydrated) {
+    return (
+      <div
+        className="flex h-dvh min-h-0 items-center justify-center bg-background text-sm text-muted-foreground"
+        data-product-mode-shell="loading"
+        aria-busy="true"
+        aria-label="Workjet wird geladen"
+      >
+        Workjet wird geladen…
+      </div>
+    );
+  }
+  return <HydratedAppSidebarLayout>{children}</HydratedAppSidebarLayout>;
 }

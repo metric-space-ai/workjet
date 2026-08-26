@@ -45,5 +45,8 @@ describe("BusinessOsSettingsDialog", () => {
     }
     expect(dialogSource).toContain("requiredOperatorStep");
     expect(dialogSource).toContain("Blockierte Instanzen zählen nicht als");
+    expect(dialogSource).toContain('data_plane_degraded: "Sync beeinträchtigt"');
+    expect(dialogSource).toContain("row.blocker === null ? PHASE_LABELS[row.shell.phase]");
+    expect(dialogSource).toContain('row.blocker !== "paused"');
   });
 });

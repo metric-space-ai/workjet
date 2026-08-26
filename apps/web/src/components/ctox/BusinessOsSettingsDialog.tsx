@@ -47,16 +47,36 @@ const PHASE_LABELS: Readonly<Record<string, string>> = {
   recovery: "Recovery-Shell",
 };
 
+const BLOCKER_LABELS: Readonly<Record<NonNullable<CtoxShellFleetRow["blocker"]>, string>> = {
+  offline: "Offline",
+  no_administrative_access: "Kein administrativer Zugriff",
+  backend_unavailable: "Backend nicht erreichbar",
+  data_plane_degraded: "Sync beeinträchtigt",
+  incompatible: "Inkompatibel",
+  paused: "Pausiert",
+  unknown_instance: "Unbekannte Instanz",
+};
+
+function fleetHealthLabel(row: CtoxShellFleetRow): string {
+  if (!row.reachable || row.blocker === "offline") return "offline";
+  if (row.blocker === "data_plane_degraded") return "degraded";
+  if (row.blocker === "backend_unavailable") return "unavailable";
+  return row.shell.health;
+}
+
 function FleetStatus({ row }: { readonly row: CtoxShellFleetRow }) {
+  const label = row.blocker === null ? PHASE_LABELS[row.shell.phase] : BLOCKER_LABELS[row.blocker];
   const color =
-    row.blocker !== null || row.shell.phase === "failed"
-      ? "text-destructive"
-      : row.shell.phase === "current"
-        ? "text-emerald-500"
-        : "text-amber-500";
+    row.blocker === "paused"
+      ? "text-amber-500"
+      : row.blocker !== null || row.shell.phase === "failed"
+        ? "text-destructive"
+        : row.shell.phase === "current"
+          ? "text-emerald-500"
+          : "text-amber-500";
   return (
     <div className="min-w-40">
-      <p className={cn("font-medium", color)}>{PHASE_LABELS[row.shell.phase] ?? row.shell.phase}</p>
+      <p className={cn("font-medium", color)}>{label ?? row.shell.phase}</p>
       {row.requiredOperatorStep === null ? null : (
         <p className="mt-0.5 max-w-72 text-[11px] leading-4 text-muted-foreground">
           {row.requiredOperatorStep}
@@ -98,7 +118,9 @@ function UpdatesPage({
   };
   const checkAll = () => {
     if (bridge?.runShellFleetAction === undefined) return;
-    const eligible = rows.filter((row) => row.blocker === null && row.shell.administrable);
+    const eligible = rows.filter(
+      (row) => row.reachable && row.shell.administrable && row.blocker !== "paused",
+    );
     setRunningId("*");
     void Promise.allSettled(
       eligible.map((row) =>
@@ -221,7 +243,7 @@ function UpdatesPage({
                     <p className="font-medium">{row.displayName}</p>
                     <p className="text-xs text-muted-foreground">{row.source}</p>
                   </td>
-                  <td className="px-4 py-3">{row.reachable ? row.shell.health : "offline"}</td>
+                  <td className="px-4 py-3">{fleetHealthLabel(row)}</td>
                   <td className="px-4 py-3 tabular-nums">{row.backendVersion ?? "Unbekannt"}</td>
                   <td className="px-4 py-3 tabular-nums">
                     {row.shell.recoveryShell ? "Recovery" : `v${row.shell.activeVersion ?? "?"}`}
@@ -268,9 +290,7 @@ function UpdatesPage({
                       <button
                         type="button"
                         className="rounded border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
-                        disabled={
-                          runningId !== null || (row.blocker !== null && row.blocker !== "paused")
-                        }
+                        disabled={runningId !== null}
                         onClick={() => togglePause(row)}
                       >
                         {row.blocker === "paused" ? "Fortsetzen" : "24 h pausieren"}

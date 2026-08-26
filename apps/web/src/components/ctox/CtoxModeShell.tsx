@@ -862,8 +862,9 @@ export function CtoxModeProvider({
   return <CtoxModeContext value={value}>{children}</CtoxModeContext>;
 }
 
-function statusLabel(instance: CtoxManagedInstance): string {
-  const health = instance.healthSummary.dataPlaneReady ? "WebRTC ready" : "WebRTC unavailable";
+export function ctoxInstanceStatusLabel(instance: CtoxManagedInstance, connected = false): string {
+  const health =
+    connected || instance.healthSummary.dataPlaneReady ? "WebRTC ready" : "WebRTC unavailable";
   return `${STATUS_LABELS[instance.status]} · ${health}`;
 }
 
@@ -1334,7 +1335,7 @@ function CtoxInstanceCard({
   const detailTitle = [
     workspaceName === null ? undefined : instance.displayName,
     meta,
-    statusLabel(instance),
+    ctoxInstanceStatusLabel(instance, connected),
     launchable ? undefined : unavailableHint(instance),
   ]
     .filter(Boolean)
@@ -2403,6 +2404,7 @@ export function CtoxMainShell({
           bridge={bridge}
           discovery={discovery}
           selectedId={selectedId}
+          readyInstanceId={connection === "ready" ? selectedId : null}
           onClose={closeSettings}
         />
       ) : null}

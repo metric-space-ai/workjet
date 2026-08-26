@@ -26,6 +26,7 @@ import {
   CTOX_SSH_LAUNCH_PENDING_HINT,
   CTOX_RAIL_FALLBACK_CATEGORY,
   ctoxInstanceDotClass,
+  ctoxInstanceStatusLabel,
   ctoxRailCollapseKey,
   CtoxAppRailList,
   CtoxMainShell,
@@ -63,6 +64,17 @@ const unavailable = {
   dataPlaneReady: false,
   nativePeerObserved: false,
 };
+
+it("shows an authenticated selected guest as WebRTC ready", () => {
+  const local = instance({
+    id: "local:AAAAAAAAAAAAAAAAAAAAAA",
+    source: "local_daemon",
+    displayName: "Local Lab",
+    healthSummary: unavailable,
+  });
+  expect(ctoxInstanceStatusLabel(local, false)).toBe("Available · WebRTC unavailable");
+  expect(ctoxInstanceStatusLabel(local, true)).toBe("Available · WebRTC ready");
+});
 
 function instance(
   input: Partial<CtoxManagedInstance> & Pick<CtoxManagedInstance, "id" | "source" | "displayName">,

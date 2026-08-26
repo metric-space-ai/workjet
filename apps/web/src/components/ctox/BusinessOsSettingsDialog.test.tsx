@@ -3,7 +3,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import computersSettingsSource from "../settings/WorkjetComputersSettings.tsx?raw";
 import dialogSource from "./BusinessOsSettingsDialog.tsx?raw";
-import { BusinessOsSettingsDialog } from "./BusinessOsSettingsDialog";
+import {
+  businessOsInstanceDataPlaneReady,
+  BusinessOsSettingsDialog,
+} from "./BusinessOsSettingsDialog";
 
 describe("BusinessOsSettingsDialog", () => {
   it("owns a complete Business OS settings tree without rendering Coding settings", () => {
@@ -37,6 +40,15 @@ describe("BusinessOsSettingsDialog", () => {
   it("keeps QR pairing exclusively in Business OS settings", () => {
     expect(dialogSource).toContain("BusinessOsMobilePairingSection");
     expect(computersSettingsSource).not.toContain("BusinessOsMobilePairingSection");
+  });
+
+  it("uses the authenticated selected guest as confirmed WebRTC evidence", () => {
+    const instance = {
+      id: "local:AAAAAAAAAAAAAAAAAAAAAA",
+      healthSummary: { dataPlaneReady: false },
+    };
+    expect(businessOsInstanceDataPlaneReady(instance, null)).toBe(false);
+    expect(businessOsInstanceDataPlaneReady(instance, instance.id)).toBe(true);
   });
 
   it("offers the fleet columns and explicit blocked-state operator guidance", () => {

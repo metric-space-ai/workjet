@@ -64,6 +64,13 @@ function fleetHealthLabel(row: CtoxShellFleetRow): string {
   return row.shell.health;
 }
 
+export function businessOsInstanceDataPlaneReady(
+  instance: { readonly id: string; readonly healthSummary: { readonly dataPlaneReady: boolean } },
+  readyInstanceId: string | null,
+): boolean {
+  return instance.healthSummary.dataPlaneReady || instance.id === readyInstanceId;
+}
+
 function FleetStatus({ row }: { readonly row: CtoxShellFleetRow }) {
   const label = row.blocker === null ? PHASE_LABELS[row.shell.phase] : BLOCKER_LABELS[row.blocker];
   const color =
@@ -318,11 +325,14 @@ export function BusinessOsSettingsDialog({
   bridge,
   discovery,
   selectedId,
+  readyInstanceId = null,
   onClose,
 }: {
   readonly bridge: DesktopCtoxBridge | undefined;
   readonly discovery: "loading" | CtoxDiscoveryResult;
   readonly selectedId: string | null;
+  /** The selected native guest has completed its authenticated WebRTC launch. */
+  readonly readyInstanceId?: string | null;
   readonly onClose: () => void;
 }) {
   const [page, setPage] = useState<SettingsPage>(initialPage);
@@ -446,7 +456,9 @@ export function BusinessOsSettingsDialog({
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       RxDB/WebRTC ·{" "}
-                      {instance.healthSummary.dataPlaneReady ? "bereit" : "nicht bestätigt"}
+                      {businessOsInstanceDataPlaneReady(instance, readyInstanceId)
+                        ? "bereit"
+                        : "nicht bestätigt"}
                     </p>
                   </div>
                 ))}

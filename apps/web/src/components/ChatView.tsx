@@ -6718,6 +6718,10 @@ function ChatViewContent(props: ChatViewProps) {
   if (!activeThread) {
     return <NoActiveThreadState />;
   }
+  // The terminal consumes vertical space below the chat column. Keeping the tall draft hero
+  // centered in the remaining area makes its headline collide with the cross-mode status above.
+  // In that split layout the composer behaves like the normal bottom-docked composer instead.
+  const shouldCenterDraftComposer = isDraftHeroState && !terminalUiState.terminalOpen;
 
   const panelToggleControls = (
     <PanelLayoutControls
@@ -7040,7 +7044,7 @@ function ChatViewContent(props: ChatViewProps) {
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
               className={
-                isDraftHeroState
+                shouldCenterDraftComposer
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
@@ -7050,7 +7054,7 @@ function ChatViewContent(props: ChatViewProps) {
                 className="chat-composer-horizontal-inset w-full"
               >
                 <div className="pointer-events-auto relative z-10">
-                  {isDraftHeroState ? (
+                  {shouldCenterDraftComposer ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
                         className="pb-8"

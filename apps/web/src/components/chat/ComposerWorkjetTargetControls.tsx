@@ -18,6 +18,7 @@ import type {
   EnvironmentId,
   WorkjetComputer,
   WorkjetGatewayModelSummary,
+  WorkjetGatewayProvider,
   WorkjetHarness,
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
@@ -301,6 +302,21 @@ const GATEWAY_PROVIDER_GROUP_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The provider rail is product navigation, not a projection of the latest
+ * catalog response. Keeping it stable prevents the whole mini menu from
+ * collapsing into an oversized empty-state panel while discovery refreshes.
+ */
+export const COMPOSER_GATEWAY_PROVIDER_RAIL: ReadonlyArray<WorkjetGatewayProvider> = [
+  "claude",
+  "codex",
+  "xai",
+  "zai",
+  "kimi",
+  "minimax",
+  "antigravity",
+];
+
+/**
  * Group by the model's FIRST provider; a model served by several accounts
  * still appears once, under its primary provider. Shared by the wide mini
  * menu and the compact overflow menu so both group identically.
@@ -316,6 +332,31 @@ function groupGatewayModelsByProvider(
     groups.set(key, list);
   }
   return groups;
+}
+
+export function composerGatewayModelMenuGroups(
+  models: ReadonlyArray<WorkjetGatewayModelSummary>,
+): ReadonlyArray<readonly [string, ReadonlyArray<WorkjetGatewayModelSummary>]> {
+  const grouped = groupGatewayModelsByProvider(models);
+  const stable = COMPOSER_GATEWAY_PROVIDER_RAIL.map(
+    (provider) => [provider, grouped.get(provider) ?? []] as const,
+  );
+  const additional = [...grouped.entries()].filter(
+    ([provider]) => !COMPOSER_GATEWAY_PROVIDER_RAIL.includes(provider as WorkjetGatewayProvider),
+  );
+  return [...stable, ...additional];
+}
+
+export function inferGatewayProviderFromModelId(modelId: string): WorkjetGatewayProvider | null {
+  const normalized = modelId.trim().toLowerCase();
+  if (normalized.startsWith("claude")) return "claude";
+  if (/^(gpt|o[134]|codex)/u.test(normalized)) return "codex";
+  if (normalized.startsWith("grok")) return "xai";
+  if (/^(glm|zai)/u.test(normalized)) return "zai";
+  if (/^(kimi|moonshot)/u.test(normalized)) return "kimi";
+  if (normalized.startsWith("minimax")) return "minimax";
+  if (/^(gemini|antigravity)/u.test(normalized)) return "antigravity";
+  return null;
 }
 
 /**
@@ -361,14 +402,23 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   const selectedHarnessOption =
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
   const modelInCatalog = props.models.some((model) => model.id === props.selectedModelId);
-  const modelGroups = [...groupGatewayModelsByProvider(props.models).entries()];
+  const modelGroups = composerGatewayModelMenuGroups(props.models);
+  const selectedModelProvider =
+    props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
+    inferGatewayProviderFromModelId(props.selectedModelId);
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
     modelProviderChoice ??
-    props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
-    modelGroups[0]?.[0] ??
-    null;
+    selectedModelProvider ??
+    modelGroups.find(([, models]) => models.length > 0)?.[0] ??
+    COMPOSER_GATEWAY_PROVIDER_RAIL[0];
+  const activeProviderModels =
+    modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? [];
+  const showCurrentCustomModel =
+    !modelInCatalog &&
+    props.selectedModelId.length > 0 &&
+    (selectedModelProvider ?? activeModelProvider) === activeModelProvider;
 
   const commitCustomModel = () => {
     const next = customModelDraft?.trim() ?? "";
@@ -429,7 +479,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           hatch. Data source is the Workjet gateway catalog. */}
       {customModelDraft === null ? (
         <Popover open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
-          <Tooltip>
+          <Tooltip disabled={modelMenuOpen}>
             <TooltipTrigger
               render={
                 <PopoverTrigger render={<ComposerControl aria-label="Model" type="button" />}>
@@ -449,7 +499,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           <PopoverPopup
             side="top"
             align="start"
-            className="overflow-hidden p-0"
+            className="w-[19rem] max-w-[calc(100vw-1rem)] overflow-hidden p-0"
             // Children render inside the popup's inner VIEWPORT, not the popup
             // itself — flex on the popup silently stacked rail and list
             // vertically (measured: rail above, models below).
@@ -457,8 +507,8 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           >
             {/* Own flex wrapper: the popup viewport nests children inside a
                 transition pane, so flex on the viewport never reaches them. */}
-            <div className="flex flex-row">
-              <div className="flex flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
+            <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true">
+              <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
                 {modelGroups.map(([provider]) => {
                   const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
                   const active = provider === activeModelProvider;
@@ -484,15 +534,13 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                   );
                 })}
               </div>
-              <div className="flex max-h-72 min-w-56 flex-col overflow-y-auto p-1.5">
+              <div className="flex max-h-72 min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
                 <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                   {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
                     activeModelProvider ??
                     "Models"}
                 </div>
-                {(
-                  modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []
-                ).map((model) => (
+                {activeProviderModels.map((model) => (
                   <button
                     key={model.id}
                     type="button"
@@ -515,16 +563,26 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                     )}
                   </button>
                 ))}
-                {props.models.length === 0 && props.modelsUnavailableReason !== null ? (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    {props.modelsUnavailableReason}
+                {showCurrentCustomModel ? (
+                  <button
+                    type="button"
+                    className="rounded-md bg-accent px-2 py-1.5 text-left text-sm text-accent-foreground"
+                    onClick={() => setModelMenuOpen(false)}
+                  >
+                    <span className="block truncate font-medium">{props.selectedModelId}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Current custom model
+                    </span>
+                  </button>
+                ) : null}
+                {activeProviderModels.length === 0 && !showCurrentCustomModel ? (
+                  <div
+                    className="px-2 py-1.5 text-xs leading-4 text-muted-foreground"
+                    title={props.modelsUnavailableReason ?? undefined}
+                  >
+                    No models reported for this provider.
                   </div>
                 ) : null}
-                {modelInCatalog || props.selectedModelId.length === 0 ? null : (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    Current: {props.selectedModelId} (not in the gateway catalog)
-                  </div>
-                )}
                 <button
                   type="button"
                   className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"

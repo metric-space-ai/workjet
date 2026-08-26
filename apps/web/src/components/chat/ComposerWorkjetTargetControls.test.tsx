@@ -19,9 +19,12 @@ import {
   ComposerManualTargetControlsView,
   ComposerWorkjetCompactMenuContent,
   ComposerSystemPromptControlView,
+  COMPOSER_GATEWAY_PROVIDER_RAIL,
+  composerGatewayModelMenuGroups,
   composerHarnessOptions,
   gatewayModelsForRoute,
   harnessForProviderInstanceId,
+  inferGatewayProviderFromModelId,
   isComputerPaired,
 } from "./ComposerWorkjetTargetControls";
 import { executeWorkjetCapabilitySet } from "./WorkjetCapabilityMenu";
@@ -158,6 +161,23 @@ describe("the Computer control", () => {
 });
 
 describe("the manual target controls", () => {
+  it("keeps the provider icon rail stable while the catalog is empty", () => {
+    expect(composerGatewayModelMenuGroups([]).map(([provider]) => provider)).toEqual(
+      COMPOSER_GATEWAY_PROVIDER_RAIL,
+    );
+  });
+
+  it("keeps catalog models in the matching provider pane and locates custom current models", () => {
+    const catalogModel = {
+      ...model("gpt-5.6-sol", ["acc-openai"]),
+      providers: ["codex" as const],
+    };
+    const groups = composerGatewayModelMenuGroups([catalogModel]);
+    expect(groups.find(([provider]) => provider === "codex")?.[1]).toEqual([catalogModel]);
+    expect(inferGatewayProviderFromModelId("claude-fable-5")).toBe("claude");
+    expect(inferGatewayProviderFromModelId("grok-4.6")).toBe("xai");
+  });
+
   it("renders Harness and Model — no separate provider chip: the model implies the account", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView

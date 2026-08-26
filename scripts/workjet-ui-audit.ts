@@ -438,7 +438,7 @@ async function prepareState(
   }
   const label = labels[interaction];
   await client.evaluate(
-    `([...document.querySelectorAll("button")].find((element) => element.getAttribute("aria-label") === ${JSON.stringify(label)}))?.click()`,
+    `([...document.querySelectorAll("button")].find((element) => element.getAttribute("aria-label") === ${JSON.stringify(label)} && element.getBoundingClientRect().width > 1 && element.getBoundingClientRect().height > 1))?.click()`,
   );
 }
 

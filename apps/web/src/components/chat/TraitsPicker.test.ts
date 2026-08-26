@@ -47,14 +47,14 @@ function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
 describe("buildTraitsTriggerDisplay", () => {
   it("omits fast mode from the label entirely when it is off", () => {
     expect(display([EFFORT, fastModeDescriptor(false), CONTEXT_WINDOW])).toEqual({
-      label: "High · 1M",
+      label: "Effort High · Context 1M",
       showFastModeIcon: false,
     });
   });
 
   it("shows the bolt instead of a text label when fast mode is on", () => {
     expect(display([EFFORT, fastModeDescriptor(true), CONTEXT_WINDOW])).toEqual({
-      label: "High · 1M",
+      label: "Effort High · Context 1M",
       showFastModeIcon: true,
     });
   });
@@ -70,11 +70,11 @@ describe("buildTraitsTriggerDisplay", () => {
     );
 
     expect(display([EFFORT, serviceTier])).toEqual({
-      label: "High",
+      label: "Effort High",
       showFastModeIcon: false,
     });
     expect(display([EFFORT, { ...serviceTier, currentValue: "priority" }])).toEqual({
-      label: "High",
+      label: "Effort High",
       showFastModeIcon: true,
     });
   });
@@ -87,7 +87,7 @@ describe("buildTraitsTriggerDisplay", () => {
       currentValue: true,
     };
     expect(display([EFFORT, thinking])).toEqual({
-      label: "High · Thinking On",
+      label: "Effort High · Thinking On",
       showFastModeIcon: false,
     });
   });
@@ -127,6 +127,6 @@ describe("buildTraitsTriggerDisplay", () => {
         primarySelectDescriptorId: "reasoningEffort",
         ultrathinkPromptControlled: true,
       }),
-    ).toEqual({ label: "Ultrathink", showFastModeIcon: true });
+    ).toEqual({ label: "Effort Ultrathink", showFastModeIcon: true });
   });
 });

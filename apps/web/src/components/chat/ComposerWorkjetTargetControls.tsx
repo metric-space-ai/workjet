@@ -27,6 +27,7 @@ import { Fragment, memo, useState, type ReactNode } from "react";
 import { CpuIcon, FileTextIcon, MonitorIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
 
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import {
   ComposerControl,
   ComposerControlIcon,
@@ -397,11 +398,13 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   const [customModelDraft, setCustomModelDraft] = useState<string | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [modelProviderChoice, setModelProviderChoice] = useState<string | null>(null);
+  const placeModelMenuBesideComposer = useMediaQuery("(max-width: 700px)");
 
   const harnessOptions = composerHarnessOptions(props.configuredInstanceIds);
   const selectedHarnessOption =
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
-  const modelInCatalog = props.models.some((model) => model.id === props.selectedModelId);
+  const selectedModelSummary = props.models.find((model) => model.id === props.selectedModelId);
+  const modelInCatalog = selectedModelSummary !== undefined;
   const modelGroups = composerGatewayModelMenuGroups(props.models);
   const selectedModelProvider =
     props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
@@ -500,7 +503,8 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                 >
                   <ComposerControlIcon icon={CpuIcon} />
                   <span className="min-w-0 truncate">
-                    {props.selectedModelId.length > 0 ? props.selectedModelId : "Model"}
+                    {selectedModelSummary?.displayName ??
+                      (props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
                   </span>
                   <ComposerControlChevron />
                 </PopoverTrigger>
@@ -512,8 +516,8 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             </TooltipPopup>
           </Tooltip>
           <PopoverPopup
-            side="top"
-            align="start"
+            side={placeModelMenuBesideComposer ? "right" : "top"}
+            align={placeModelMenuBesideComposer ? "center" : "start"}
             className="w-[19rem] max-w-[calc(100vw-1rem)] overflow-hidden p-0"
             // Children render inside the popup's inner VIEWPORT, not the popup
             // itself — flex on the popup silently stacked rail and list
@@ -549,7 +553,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                   );
                 })}
               </div>
-              <div className="flex max-h-72 min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
+              <div className="flex max-h-80 min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
                 <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                   {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
                     activeModelProvider ??

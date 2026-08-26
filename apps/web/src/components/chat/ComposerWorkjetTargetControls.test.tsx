@@ -201,7 +201,7 @@ describe("the manual target controls", () => {
         configuredInstanceIds={new Set(["claudeAgent", "codex"])}
         selectedHarness="claude-code"
         onSelectHarness={() => undefined}
-        models={[model("gpt-5.6-sol", ["acc-openai"])]}
+        models={[{ ...model("gpt-5.6-sol", ["acc-openai"]), displayName: "GPT 5.6 Sol" }]}
         modelsUnavailableReason={null}
         selectedModelId="gpt-5.6-sol"
         onSelectModel={() => undefined}
@@ -212,7 +212,7 @@ describe("the manual target controls", () => {
     expect(markup).not.toContain('aria-label="Provider"');
     expect(markup).toContain('aria-label="Model"');
     expect(markup).toContain("Claude Code");
-    expect(markup).toContain("gpt-5.6-sol");
+    expect(markup).toContain("GPT 5.6 Sol");
   });
 
   it("shows the unavailable reason instead of a silent blank model menu", () => {

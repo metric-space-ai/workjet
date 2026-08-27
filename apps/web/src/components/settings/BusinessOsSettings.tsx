@@ -24,6 +24,7 @@ import {
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { usePrimarySettings } from "../../hooks/useSettings";
+import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
@@ -37,7 +38,9 @@ export function visibleBusinessOsInstances(
   if (discovery === "loading" || discovery._tag !== "ready") return [];
   return discovery.instances
     .filter((instance) => instance.source !== "ssh_managed")
-    .toSorted((left, right) => left.displayName.localeCompare(right.displayName));
+    .toSorted((left, right) =>
+      ctoxInstanceDisplayTitle(left).localeCompare(ctoxInstanceDisplayTitle(right)),
+    );
 }
 
 export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null): string | null {
@@ -99,6 +102,7 @@ export function BusinessOsSettingsView({
   const [addingError, setAddingError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
+  const selectedDisplayName = selected === null ? null : ctoxInstanceDisplayTitle(selected);
 
   const submitInvite = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -174,7 +178,7 @@ export function BusinessOsSettingsView({
                 {selected === null ? <option value="">Instanz auswählen</option> : null}
                 {instances.map((instance) => (
                   <option key={instance.id} value={instance.id}>
-                    {instance.displayName}
+                    {ctoxInstanceDisplayTitle(instance)}
                   </option>
                 ))}
               </select>
@@ -239,7 +243,9 @@ export function BusinessOsSettingsView({
               />
               <div>
                 <p className="text-sm font-medium">
-                  {selected === null ? "Instanz auswählen" : `Geräte für ${selected.displayName}`}
+                  {selectedDisplayName === null
+                    ? "Instanz auswählen"
+                    : `Geräte für ${selectedDisplayName}`}
                 </p>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   {selected === null
@@ -319,7 +325,9 @@ export function BusinessOsSettingsView({
             <LaptopIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
             <div>
               <p className="text-sm font-medium">
-                {selected === null ? "Instanz auswählen" : `Zuweisungen zu ${selected.displayName}`}
+                {selectedDisplayName === null
+                  ? "Instanz auswählen"
+                  : `Zuweisungen zu ${selectedDisplayName}`}
               </p>
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
                 {computerCount === 0
@@ -456,7 +464,7 @@ export function BusinessOsSettings() {
         ? "Die Instanzberechtigung wird geprüft …"
         : authorityId === null
           ? "Die kanonische Instanzberechtigung konnte nicht bestätigt werden. Geräteaktionen bleiben aus Sicherheitsgründen gesperrt."
-          : `Für ${selected.displayName} ist noch keine serverseitig attestierte Backend-Steuerverbindung verfügbar. Geräteaktionen bleiben bis dahin gesperrt.`;
+          : `Für ${ctoxInstanceDisplayTitle(selected)} ist noch keine serverseitig attestierte Backend-Steuerverbindung verfügbar. Geräteaktionen bleiben bis dahin gesperrt.`;
   return (
     <BusinessOsSettingsView
       instances={instances}

@@ -90,6 +90,17 @@ describe("Business OS settings scope", () => {
     expect(markup.indexOf("Rechner für Code")).toBeLessThan(markup.indexOf("Diagnose"));
   });
 
+  it("keeps opaque authority identifiers out of regular instance labels", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[instance("paired:backend-alpha", "biz_2a75d5c5-da16-4a17-90d2-a941ad53f095")]}
+        activeInstanceId="paired:backend-alpha"
+      />,
+    );
+    expect(markup).toContain("CTOX Backend · 2a75d5c5");
+    expect(markup).not.toContain("biz_2a75d5c5-da16-4a17-90d2-a941ad53f095");
+  });
+
   it("shows the exact managed-control blocker instead of choosing a Code computer", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView

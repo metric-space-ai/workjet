@@ -49,6 +49,7 @@ import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemo
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
@@ -1401,20 +1402,6 @@ export function ctoxInstanceDotClass(
   )
     return "bg-amber-500/90";
   return "bg-sidebar-muted-foreground/50";
-}
-
-/** Replace opaque pairing identifiers with a stable, scannable sidebar name. */
-export function ctoxInstanceDisplayTitle(
-  instance: CtoxManagedInstance,
-  workspaceName: string | null = null,
-): string {
-  if (workspaceName !== null && workspaceName.trim() !== "") return workspaceName;
-  const displayName = instance.displayName.trim();
-  if (/^biz_[a-z0-9-]+$/i.test(displayName)) {
-    const shortId = displayName.slice(4).split("-")[0]?.slice(0, 8) || displayName.slice(4, 12);
-    return `CTOX Backend · ${shortId}`;
-  }
-  return displayName;
 }
 
 function CtoxInstanceCard({

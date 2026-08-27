@@ -11,6 +11,7 @@ import {
   type CrossModeSelectionMemory,
 } from "../crossMode/crossModeSelectionMemory";
 import type { WorkjetProductMode } from "../workjetProductMode";
+import { ctoxInstanceDisplayTitle } from "./ctox/ctoxInstanceDisplayTitle";
 
 type InstanceDiscovery = "loading" | CtoxDiscoveryResult;
 
@@ -152,7 +153,7 @@ export function ActiveCtoxInstanceSelector({
           ) : null}
           {instances.map((instance) => (
             <option key={instance.id} value={instance.id}>
-              {instance.displayName}
+              {ctoxInstanceDisplayTitle(instance)}
             </option>
           ))}
         </select>

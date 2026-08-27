@@ -94,6 +94,15 @@ vi.mock("react-native", () => ({
   },
 }));
 
+vi.mock("./runtime", async () => {
+  const ManagedRuntime = await import("effect/ManagedRuntime");
+  const Persistence = await import("../persistence/layer");
+
+  return {
+    runtime: ManagedRuntime.make(Persistence.layer),
+  };
+});
+
 import {
   loadPreferences,
   loadSavedConnections,

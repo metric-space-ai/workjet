@@ -323,11 +323,11 @@ export function BusinessOsSettingsPanel(props: {
 
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
             <View className="gap-1">
-              <Text className="text-lg font-t3-bold text-foreground">Weiteres Gerät verbinden</Text>
+              <Text className="text-lg font-t3-bold text-foreground">Gerät hinzufügen</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
-                Der kurzlebige QR-Code verbindet das Zielgerät nur mit der aktuell ausgewählten
-                Business OS für Code und Business OS. Weitere Instanzen werden unabhängig verbunden.
-                Zeige ihn nur der Zielperson.
+                Der kurzlebige QR-Code verbindet das andere Gerät mit Code und Business OS dieser
+                Instanz. Weitere Business-OS-Instanzen werden separat verbunden. Zeige ihn nur der
+                Zielperson.
               </Text>
             </View>
 
@@ -345,13 +345,13 @@ export function BusinessOsSettingsPanel(props: {
                 <View className="gap-3">
                   <ConnectionSheetButton
                     icon="arrow.clockwise"
-                    label="Erneuern"
+                    label="Neuen QR-Code erstellen"
                     disabled={busy}
                     onPress={() => void renewInvite()}
                   />
                   <ConnectionSheetButton
                     icon="xmark"
-                    label="Widerrufen"
+                    label="QR-Code widerrufen"
                     tone="danger"
                     disabled={busy}
                     onPress={() => void revokeInvite()}
@@ -370,8 +370,9 @@ export function BusinessOsSettingsPanel(props: {
 
             {selected && !hasVerifiedBackendControl ? (
               <Text className="text-sm leading-normal text-foreground-muted">
-                Diese Instanz hat noch keine bestätigte Geräteverwaltung. Workjet verwendet dafür
-                keinen zugewiesenen Code-Rechner als Ersatz.
+                Für diese Business OS ist die sichere Gerätefreigabe noch nicht verfügbar. Sobald
+                die Instanz online und vollständig eingerichtet ist, kannst du hier ein Gerät
+                hinzufügen.
               </Text>
             ) : null}
 

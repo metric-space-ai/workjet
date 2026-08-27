@@ -50,6 +50,34 @@ describe("Business OS native security guards", () => {
     expect(home).not.toContain('params: { screen: "SettingsEnvironmentNew" }');
   });
 
+  it("opens the one regular Workjet settings surface and renders only one gear", () => {
+    const root = read("src/features/business-os/launcher/BusinessOsMobileRoot.tsx");
+    const home = read("src/features/business-os/launcher/BusinessOsHomeDesk.tsx");
+    const nativeTypes = read("src/features/business-os/launcher/native-business-os-launcher.tsx");
+    const ios = read("modules/t3-native-controls/ios/T3BusinessOsLauncherModule.swift");
+    const android = read(
+      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsLauncherModule.kt",
+    );
+    expect(
+      NodeFS.existsSync(
+        NodePath.resolve(
+          MOBILE_ROOT,
+          "src/features/business-os/launcher/BusinessOsNativeSettings.tsx",
+        ),
+      ),
+    ).toBe(false);
+    expect(root).not.toContain('"settings" | "app"');
+    expect(root).not.toContain('setRoute("settings")');
+    expect(root).toContain('navigation.navigate("SettingsSheet"');
+    expect(root).toContain('params: { screen: "SettingsBusinessOs" }');
+    expect(root).toContain("showsSettingsAction={!sidebarAvailable || !sidebarVisible}");
+    expect(home).toContain("props.showsSettingsAction ?");
+    expect(nativeTypes).toContain("readonly showsSettingsAction: boolean");
+    expect(ios).toContain("if model.showsSettingsAction");
+    expect(android).toContain("if (state.showsSettingsAction)");
+    expect(`${home}\n${ios}\n${android}`).not.toContain("Business OS Einstellungen");
+  });
+
   it("uses the active CTOX instance as the Code scope across entry points", () => {
     const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
     const layout = read("src/features/layout/AdaptiveWorkspaceLayout.tsx");

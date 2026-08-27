@@ -13,6 +13,7 @@ export interface NativeBusinessOsLauncherProps extends ViewProps {
   readonly layoutJson: string;
   readonly badgesJson: string;
   readonly instanceName: string;
+  readonly showsSettingsAction: boolean;
   readonly onOpenApp: (event: NativeSyntheticEvent<{ readonly appId: string }>) => void;
   readonly onOpenSearch: () => void;
   readonly onOpenRecents: () => void;

@@ -452,7 +452,8 @@ function ConfiguredSettingsRouteScreen() {
             />
           </SettingsSection>
           <Text className="px-2 text-sm text-foreground-muted">
-            Workjet Code works without a CTOX Backend. Workjet Connect and Business OS are optional.
+            Code funktioniert auch ohne Business OS. Verbundene Instanzen gelten gemeinsam für Code
+            und Business OS.
           </Text>
         </View>
 

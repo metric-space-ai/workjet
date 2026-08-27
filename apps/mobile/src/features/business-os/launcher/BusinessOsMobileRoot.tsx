@@ -1,3 +1,4 @@
+import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
@@ -40,7 +41,6 @@ import {
 } from "./business-os-shell-protocol";
 import { BusinessOsAppLibrary } from "./BusinessOsAppLibrary";
 import { BusinessOsHomeDesk } from "./BusinessOsHomeDesk";
-import { BusinessOsNativeSettings } from "./BusinessOsNativeSettings";
 import { BusinessOsRecents } from "./BusinessOsRecents";
 import {
   addBusinessOsRecent,
@@ -48,7 +48,7 @@ import {
   type BusinessOsRecentApp,
 } from "./native-business-os-home-store";
 
-type BusinessOsRoute = "home" | "search" | "recents" | "settings" | "app";
+type BusinessOsRoute = "home" | "search" | "recents" | "app";
 
 export interface BusinessOsActivatedShellPack {
   readonly packId: string;
@@ -122,6 +122,7 @@ function BusinessOsNavigationSidebar(props: {
   readonly onSelectInstance: (instanceId: string) => void;
   readonly route: BusinessOsRoute;
   readonly onSelect: (route: Exclude<BusinessOsRoute, "app">) => void;
+  readonly onOpenSettings: () => void;
 }) {
   return (
     <View
@@ -192,8 +193,8 @@ function BusinessOsNavigationSidebar(props: {
       <BusinessOsSidebarButton
         icon="gearshape"
         label="Einstellungen"
-        selected={props.route === "settings"}
-        onPress={() => props.onSelect("settings")}
+        selected={false}
+        onPress={props.onOpenSettings}
       />
     </View>
   );
@@ -267,6 +268,7 @@ export function BusinessOsMobileRoot(props: {
   /** Set only by the native verified-pack lifecycle. Production currently stays fail-closed. */
   readonly activatedShellPack?: BusinessOsActivatedShellPack | null;
 }) {
+  const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const reducedMotion = useReducedMotion();
@@ -309,6 +311,12 @@ export function BusinessOsMobileRoot(props: {
   const activeApp = apps.find((app) => app.id === activeAppId) ?? null;
   const sidebarAvailable = selected !== null && width >= 600;
   const toggleSidebar = useCallback(() => setSidebarVisible((current) => !current), []);
+  const openSettings = useCallback(() => {
+    navigation.navigate("SettingsSheet", {
+      screen: "SettingsContent",
+      params: { screen: "SettingsBusinessOs" },
+    });
+  }, [navigation]);
   useRegisterWorkjetProductSidebar("business_os", {
     available: sidebarAvailable,
     visible: sidebarAvailable && sidebarVisible,
@@ -443,6 +451,7 @@ export function BusinessOsMobileRoot(props: {
           selectedInstanceId={selected.id}
           onSelectInstance={(instanceId) => void select(instanceId)}
           route={route}
+          onOpenSettings={openSettings}
           onSelect={(nextRoute) => {
             if (activeAppId && route === "app") {
               send({
@@ -492,8 +501,9 @@ export function BusinessOsMobileRoot(props: {
             onOpenApp={openApp}
             onOpenRecents={() => setRoute("recents")}
             onOpenSearch={() => setRoute("search")}
-            onOpenSettings={() => setRoute("settings")}
+            onOpenSettings={openSettings}
             onReturnToCode={() => setMode("code")}
+            showsSettingsAction={!sidebarAvailable || !sidebarVisible}
           />
         ) : null}
         {route === "search" ? (
@@ -502,7 +512,6 @@ export function BusinessOsMobileRoot(props: {
         {route === "recents" ? (
           <BusinessOsRecents apps={apps} onBack={goHome} onOpenApp={openApp} recents={recents} />
         ) : null}
-        {route === "settings" ? <BusinessOsNativeSettings onBack={goHome} /> : null}
       </View>
     </View>
   );

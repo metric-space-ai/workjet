@@ -45,7 +45,7 @@ export function BusinessOsShellHost(props: {
       })
       .catch(() => {
         if (current)
-          setError("Business OS kann nicht sicher gestartet werden. Verbinde das Backend erneut.");
+          setError("Business OS kann nicht sicher gestartet werden. Verbinde die Instanz erneut.");
       });
     return () => {
       current = false;

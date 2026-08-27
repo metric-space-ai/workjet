@@ -26,7 +26,7 @@ import { CredentialQrCode } from "./CredentialQrCode";
 
 function safeMessage(error: unknown): string {
   return error instanceof Error && error.name === "WorkjetDeviceInviteControlUnavailableError"
-    ? "Für dieses Backend ist keine vom Mobilgerät erreichbare Workjet-Verbindung verfügbar."
+    ? "Für diese Business-OS-Instanz ist keine vom Mobilgerät erreichbare Workjet-Verbindung verfügbar."
     : "Die Aktion konnte nicht abgeschlossen werden. Bitte erneut versuchen.";
 }
 

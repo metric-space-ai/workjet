@@ -41,6 +41,7 @@ private final class WorkjetLauncherModel: ObservableObject {
   @Published var editing = false
   @Published var activePage = 0
   @Published var dragged: (page: Int, index: Int)?
+  @Published var showsSettingsAction = true
 
   var onOpenApp: ((String) -> Void)?
   var onOpenSearch: (() -> Void)?
@@ -139,6 +140,7 @@ public final class T3BusinessOsLauncherView: ExpoView {
     let next = value.trimmingCharacters(in: .whitespacesAndNewlines)
     model.instanceName = next.isEmpty ? "Business OS" : String(next.prefix(80))
   }
+  func setShowsSettingsAction(_ value: Bool) { model.showsSettingsAction = value }
 }
 
 public final class T3BusinessOsLauncherModule: Module {
@@ -149,6 +151,9 @@ public final class T3BusinessOsLauncherModule: Module {
       Prop("layoutJson") { (view: T3BusinessOsLauncherView, value: String) in view.setLayoutJson(value) }
       Prop("badgesJson") { (view: T3BusinessOsLauncherView, value: String) in view.setBadgesJson(value) }
       Prop("instanceName") { (view: T3BusinessOsLauncherView, value: String) in view.setInstanceName(value) }
+      Prop("showsSettingsAction") { (view: T3BusinessOsLauncherView, value: Bool) in
+        view.setShowsSettingsAction(value)
+      }
       Events(
         "onOpenApp",
         "onOpenSearch",
@@ -210,10 +215,12 @@ private struct WorkjetNativeLauncher: View {
           Image(systemName: "magnifyingglass").frame(width: 44, height: 44)
         }
         .accessibilityLabel("Apps durchsuchen")
-        Button(action: { model.onOpenSettings?() }) {
-          Image(systemName: "gearshape").frame(width: 44, height: 44)
+        if model.showsSettingsAction {
+          Button(action: { model.onOpenSettings?() }) {
+            Image(systemName: "gearshape").frame(width: 44, height: 44)
+          }
+          .accessibilityLabel("Workjet Einstellungen")
         }
-        .accessibilityLabel("Business OS Einstellungen")
       }
     }
     .padding(.horizontal, 18)

@@ -105,6 +105,7 @@ private class LauncherState {
   var badges by mutableStateOf<Map<String, Int>>(emptyMap())
   var instanceName by mutableStateOf("Business OS")
   var editing by mutableStateOf(false)
+  var showsSettingsAction by mutableStateOf(true)
 }
 
 class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
@@ -233,6 +234,10 @@ class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoV
   fun setInstanceName(value: String) {
     state.instanceName = value.trim().take(80).ifEmpty { "Business OS" }
   }
+
+  fun setShowsSettingsAction(value: Boolean) {
+    state.showsSettingsAction = value
+  }
 }
 
 class T3BusinessOsLauncherModule : Module() {
@@ -243,6 +248,7 @@ class T3BusinessOsLauncherModule : Module() {
       Prop("layoutJson") { view: T3BusinessOsLauncherView, value: String -> view.setLayoutJson(value) }
       Prop("badgesJson") { view: T3BusinessOsLauncherView, value: String -> view.setBadgesJson(value) }
       Prop("instanceName") { view: T3BusinessOsLauncherView, value: String -> view.setInstanceName(value) }
+      Prop("showsSettingsAction") { view: T3BusinessOsLauncherView, value: Boolean -> view.setShowsSettingsAction(value) }
       Events("onOpenApp", "onOpenSearch", "onOpenRecents", "onOpenSettings", "onReturnToCode", "onLayoutChange")
     }
     Function("isSupported") { true }
@@ -368,8 +374,10 @@ private fun OneUiExtendedHeader(
         IconButton(onClick = onOpenSearch, modifier = Modifier.size(48.dp)) {
           Icon(painterResource(android.R.drawable.ic_menu_search), contentDescription = "Apps durchsuchen")
         }
-        IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-          Icon(painterResource(android.R.drawable.ic_menu_preferences), contentDescription = "Business OS Einstellungen")
+        if (state.showsSettingsAction) {
+          IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(android.R.drawable.ic_menu_preferences), contentDescription = "Workjet Einstellungen")
+          }
         }
       }
     }

@@ -27,7 +27,7 @@ function confirmDevicePairing(input: ParsedWorkjetDevicePairingLink) {
     input.kind === "reference"
       ? `Server: ${new URL(input.reference.endpoint).host}\nGültig bis: ${new Date(
           input.reference.expiresAt,
-        ).toLocaleString()}\n\nDer Einmal-Code gibt genau ein CTOX Backend frei.`
+        ).toLocaleString()}\n\nDer Einmal-Code gibt genau eine Business-OS-Instanz frei.`
       : `${input.invite.confirmation.displayName}\nSignaling: ${input.invite.confirmation.signalingHosts.join(
           ", ",
         )}\nGültig bis: ${new Date(input.invite.confirmation.expiresAt).toLocaleString()}`;

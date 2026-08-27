@@ -128,6 +128,29 @@ describe("Workjet device invite v1", () => {
     expect(compact).not.toMatch(/bootstrap|room-secret|capability-token/iu);
   });
 
+  it("requires HTTPS for reference redemption except on the actual loopback host", () => {
+    const makeReference = (endpoint: string) =>
+      encodeWorkjetDevicePairLink({
+        type: "workjet-device-invite-ref",
+        version: 1,
+        endpoint,
+        code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+        expires_at: "2026-08-25T12:45:00Z",
+      });
+    expect(
+      parseWorkjetDevicePairingLink(makeReference("http://127.0.0.1:13773"), { now: NOW }),
+    ).toMatchObject({ kind: "reference" });
+    expect(
+      parseWorkjetDevicePairingLink(makeReference("http://[::1]:13773"), { now: NOW }),
+    ).toMatchObject({ kind: "reference" });
+    expect(() =>
+      parseWorkjetDevicePairingLink(makeReference("http://192.168.1.20:13773"), { now: NOW }),
+    ).toThrowError(expect.objectContaining({ code: "reference_endpoint" }));
+    expect(() =>
+      parseWorkjetDevicePairingLink(makeReference("http://example.test"), { now: NOW }),
+    ).toThrowError(expect.objectContaining({ code: "reference_endpoint" }));
+  });
+
   it("redeems a compact reference once in memory and validates the combined invite", async () => {
     const compact = parseWorkjetDevicePairingLink(
       encodeWorkjetDevicePairLink({

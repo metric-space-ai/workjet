@@ -97,6 +97,7 @@ type BusinessOsHomeDeskProps = {
   readonly onOpenRecents: () => void;
   readonly onOpenSettings: () => void;
   readonly onReturnToCode: () => void;
+  readonly showsSettingsAction: boolean;
 };
 
 export function BusinessOsHomeDesk(props: BusinessOsHomeDeskProps) {
@@ -115,6 +116,7 @@ export function BusinessOsHomeDesk(props: BusinessOsHomeDeskProps) {
         onOpenSearch={props.onOpenSearch}
         onOpenRecents={props.onOpenRecents}
         onOpenSettings={props.onOpenSettings}
+        showsSettingsAction={props.showsSettingsAction}
         onReturnToCode={props.onReturnToCode}
         onLayoutChange={(event) => {
           const { pageIndex, sourceIndex, targetIndex } = event.nativeEvent;
@@ -184,11 +186,13 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
                   icon="chevron.left.forwardslash.chevron.right"
                   onPress={props.onReturnToCode}
                 />
-                <ControlPill
-                  accessibilityLabel="Business OS Einstellungen"
-                  icon="gearshape"
-                  onPress={props.onOpenSettings}
-                />
+                {props.showsSettingsAction ? (
+                  <ControlPill
+                    accessibilityLabel="Workjet Einstellungen"
+                    icon="gearshape"
+                    onPress={props.onOpenSettings}
+                  />
+                ) : null}
               </>
             )}
           </View>

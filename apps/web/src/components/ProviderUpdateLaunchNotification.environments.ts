@@ -2,7 +2,7 @@ import type { ConnectionCatalogEntry } from "@t3tools/client-runtime/connection"
 import type { ServerConfig } from "@t3tools/contracts";
 import { useMemo } from "react";
 
-import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { useBusinessOsScopedEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import {
   buildLocalEnvironmentUpdateGroups,
@@ -51,7 +51,7 @@ export function useLocalEnvironmentUpdateGroups(): {
   readonly groups: LocalEnvironmentUpdateGroup[];
   readonly isAnySettling: boolean;
 } {
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
 
   return useMemo(() => {

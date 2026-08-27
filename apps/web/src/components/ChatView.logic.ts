@@ -17,6 +17,10 @@ import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
 import {
+  businessOsCodeScopeContainsEnvironment,
+  readBusinessOsCodeScope,
+} from "../businessOsCodeScope";
+import {
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
@@ -449,6 +453,9 @@ export async function waitForStartedServerThread(
   threadRef: ScopedThreadRef,
   timeoutMs = 1_000,
 ): Promise<boolean> {
+  if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), threadRef.environmentId)) {
+    return false;
+  }
   const threadAtom = environmentThreadDetails.detailAtom(threadRef);
   const getThread = () => appAtomRegistry.get(threadAtom);
   const thread = getThread();

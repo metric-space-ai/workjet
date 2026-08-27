@@ -24,7 +24,7 @@ function instance(
 }
 
 describe("ActiveCtoxInstanceSelector", () => {
-  it("falls back from a stale id to the first real discovered instance", () => {
+  it("rejects a stale id without silently selecting the first discovered instance", () => {
     const alpha = instance("instance-alpha", "Alpha");
     const beta = instance("instance-beta", "Beta");
     const sshComputer = instance("ssh:gpu-1", "gpu1", "ssh_managed");
@@ -35,7 +35,7 @@ describe("ActiveCtoxInstanceSelector", () => {
     });
 
     expect(instances.map((entry) => entry.id)).toEqual(["instance-alpha", "instance-beta"]);
-    expect(resolveActiveCtoxInstanceId(instances, "stale-instance")).toBe("instance-alpha");
+    expect(resolveActiveCtoxInstanceId(instances, "stale-instance")).toBeNull();
     expect(resolveActiveCtoxInstanceId(instances, "instance-beta")).toBe("instance-beta");
   });
 

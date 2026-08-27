@@ -245,7 +245,7 @@ import {
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { useBusinessOsScopedEnvironments } from "../state/environments";
 import {
   useProject,
   useProjects,
@@ -1286,8 +1286,7 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
-  const { environments } = useEnvironments();
-  const primaryEnvironment = usePrimaryEnvironment();
+  const { environments } = useBusinessOsScopedEnvironments();
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const environmentById = useMemo(
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
@@ -2235,7 +2234,6 @@ function ChatViewContent(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
-  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
     registerFaviconProjectForThread(activeThreadRef, activeProjectRef);
@@ -2248,7 +2246,7 @@ function ChatViewContent(props: ChatViewProps) {
     const logicalKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
       projects: allProjects,
       settings: projectGroupingSettings,
-      primaryEnvironmentId,
+      primaryEnvironmentId: null,
     });
     useBrowserHistoryStore
       .getState()
@@ -2262,11 +2260,9 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadRef,
     allProjects,
     clientSettingsHydrated,
-    primaryEnvironmentId,
     projectGroupingSettings,
   ]);
-  const activeEnvironment =
-    activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
+  const activeEnvironment = environmentById.get(environmentId) ?? null;
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
   const activeEnvironmentUnavailable =
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
@@ -2332,7 +2328,7 @@ function ChatViewContent(props: ChatViewProps) {
     for (const p of memberProjects) {
       if (seen.has(p.environmentId)) continue;
       seen.add(p.environmentId);
-      const isPrimary = p.environmentId === primaryEnvironmentId;
+      const isPrimary = false;
       const label = environmentById.get(p.environmentId)?.label ?? p.environmentId;
       envs.push({
         environmentId: p.environmentId,
@@ -2347,7 +2343,7 @@ function ChatViewContent(props: ChatViewProps) {
       return a.label.localeCompare(b.label);
     });
     return envs;
-  }, [activeProject, allProjects, projectGroupingSettings, primaryEnvironmentId, environmentById]);
+  }, [activeProject, allProjects, projectGroupingSettings, environmentById]);
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
   /**
    * The environments the composer's Computer ("Rechner") control may move a
@@ -2484,9 +2480,7 @@ function ChatViewContent(props: ChatViewProps) {
   });
   // Once a thread selects an environment, never substitute the primary
   // environment's config while the selected environment is still loading.
-  const serverConfig = activeThread
-    ? (activeEnvironment?.serverConfig ?? null)
-    : (primaryEnvironment?.serverConfig ?? null);
+  const serverConfig = activeEnvironment?.serverConfig ?? null;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);

@@ -392,13 +392,14 @@ export function BusinessOsSettings() {
   const [authorityLoading, setAuthorityLoading] = useState(false);
 
   useEffect(() => {
-    if (instances.length === 0) return;
-    const next = instances.some((instance) => instance.id === activeInstanceId)
-      ? activeInstanceId
-      : (instances[0]?.id ?? null);
-    if (next === null || next === activeInstanceId) return;
-    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: next });
-  }, [activeInstanceId, instances]);
+    if (discovery === "loading" || discovery._tag !== "ready") return;
+    if (
+      activeInstanceId !== null &&
+      !instances.some((instance) => instance.id === activeInstanceId)
+    ) {
+      crossModeSelectionMemory.forget("business-os");
+    }
+  }, [activeInstanceId, discovery, instances]);
 
   const selectInstance = (instanceId: string) => {
     if (!instances.some((instance) => instance.id === instanceId)) return;

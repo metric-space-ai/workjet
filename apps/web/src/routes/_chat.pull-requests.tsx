@@ -89,7 +89,7 @@ import {
 } from "../rightPanelStore";
 import { useDebouncedValue } from "../state/queries";
 import { useAllEnvironmentShellsBootstrapped, useProjects } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useBusinessOsScopedEnvironments } from "../state/environments";
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -220,7 +220,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
 function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
   // connections happened to come up in.

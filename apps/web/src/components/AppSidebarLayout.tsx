@@ -48,6 +48,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
 import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -251,6 +252,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       defaultOpen
       style={sidebarProviderStyle}
     >
+      <BusinessOsCodeScopeSynchronizer />
       <CtoxModeBoundary active={isCtoxShell}>
         {!isCtoxShell ? <ProjectProjectionRetention /> : null}
         <Sidebar

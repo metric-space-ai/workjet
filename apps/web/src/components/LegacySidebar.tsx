@@ -114,7 +114,11 @@ import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import {
+  useBusinessOsScopedEnvironments,
+  useEnvironment,
+  usePrimaryEnvironmentId,
+} from "../state/environments";
 import {
   buildThreadRouteParams,
   resolveActiveThreadRouteRef,
@@ -2519,7 +2523,7 @@ const SidebarProjectListRow = memo(function SidebarProjectListRow(props: Sidebar
 });
 
 function LocalSecondaryStatus() {
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   // The desktop reports which local secondary backends (e.g. the WSL backend)
   // exist; the hook polls because the bridge has no change event. A backend that
   // is still cold-booting has no httpBaseUrl yet and isn't in the catalog, so we
@@ -3074,7 +3078,7 @@ export default function LegacySidebar() {
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const platform = navigator.platform;
   const shortcutModifiers = useShortcutModifierState();
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentLabelById = useMemo(
     () =>
@@ -3111,9 +3115,9 @@ export default function LegacySidebar() {
     return buildPhysicalToLogicalProjectKeyMap({
       projects: orderedProjects,
       settings: projectGroupingSettings,
-      primaryEnvironmentId,
+      primaryEnvironmentId: null,
     });
-  }, [orderedProjects, projectGroupingSettings, primaryEnvironmentId]);
+  }, [orderedProjects, projectGroupingSettings]);
   const projectPhysicalKeyByScopedRef = useMemo(
     () =>
       new Map(
@@ -3129,17 +3133,11 @@ export default function LegacySidebar() {
     return buildSidebarProjectSnapshots({
       projects: orderedProjects,
       settings: projectGroupingSettings,
-      primaryEnvironmentId,
+      primaryEnvironmentId: null,
       resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
       isDesktopLocalEnvironment: (environmentId) => desktopLocalEnvironmentIds.has(environmentId),
     });
-  }, [
-    environmentLabelById,
-    desktopLocalEnvironmentIds,
-    orderedProjects,
-    projectGroupingSettings,
-    primaryEnvironmentId,
-  ]);
+  }, [environmentLabelById, desktopLocalEnvironmentIds, orderedProjects, projectGroupingSettings]);
 
   const sidebarProjectByKey = useMemo(
     () => new Map(sidebarProjects.map((project) => [project.projectKey, project] as const)),

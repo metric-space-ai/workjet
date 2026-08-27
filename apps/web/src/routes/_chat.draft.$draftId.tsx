@@ -11,14 +11,22 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { waitForDraftHeroTransition } from "../components/chat/draftHeroTransition";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useThread, useThreadRefs } from "../state/entities";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  useBusinessOsCodeScope,
+} from "../businessOsCodeScope";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
   const { draftId: rawDraftId } = Route.useParams();
   const draftId = DraftId.make(rawDraftId);
   const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
+  const businessOsCodeScope = useBusinessOsCodeScope();
+  const draftInActiveInstance =
+    draftSession !== null &&
+    businessOsCodeScopeContainsEnvironment(businessOsCodeScope, draftSession.environmentId);
   const threadRefs = useThreadRefs();
-  const inferredThreadRef = draftSession
+  const inferredThreadRef = draftInActiveInstance
     ? (threadRefs.find(
         (ref) =>
           ref.environmentId === draftSession.environmentId &&
@@ -60,13 +68,13 @@ function DraftChatThreadRouteView() {
   }, [canonicalThreadRef, navigate]);
 
   useEffect(() => {
-    if (draftSession || canonicalThreadRef) {
+    if ((draftSession && draftInActiveInstance) || canonicalThreadRef) {
       return;
     }
     void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate]);
+  }, [canonicalThreadRef, draftInActiveInstance, draftSession, navigate]);
 
-  if (!draftSession) {
+  if (!draftSession || !draftInActiveInstance) {
     return null;
   }
 

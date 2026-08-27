@@ -118,6 +118,10 @@ import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  useBusinessOsCodeScope,
+} from "../../businessOsCodeScope";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
   getComposerPromptInjectionState,
@@ -882,8 +886,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * `settings.workjet` is required-with-default in the contract, so no
    * optional chain: the one at the footer never had one either.
    */
-  const workjetWorkers = settings.workjet.workerProfiles;
-  const workjetComputers = settings.workjet.computers;
+  const businessOsCodeScope = useBusinessOsCodeScope();
+  const workjetComputers = useMemo(
+    () =>
+      settings.workjet.computers.filter((computer) =>
+        businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId),
+      ),
+    [businessOsCodeScope, settings.workjet.computers],
+  );
+  const scopedComputerIds = useMemo(
+    () => new Set(workjetComputers.map((computer) => computer.id)),
+    [workjetComputers],
+  );
+  const workjetWorkers = useMemo(
+    () =>
+      settings.workjet.workerProfiles.filter((worker) => scopedComputerIds.has(worker.computerId)),
+    [scopedComputerIds, settings.workjet.workerProfiles],
+  );
   const workjetLlmRoutes = settings.workjet.llmRoutes;
   // Persisted with the draft (F1): the worker's model lands in the shared
   // per-instance selection, so a component-local worker choice that dies on

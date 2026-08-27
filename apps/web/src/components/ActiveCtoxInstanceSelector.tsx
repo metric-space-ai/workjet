@@ -32,7 +32,7 @@ export function resolveActiveCtoxInstanceId(
   if (rememberedId !== null && instances.some((instance) => instance.id === rememberedId)) {
     return rememberedId;
   }
-  return instances[0]?.id ?? null;
+  return null;
 }
 
 export function selectActiveCtoxInstance({
@@ -100,13 +100,6 @@ export function ActiveCtoxInstanceSelector({
   const instances = useMemo(() => selectableCtoxInstances(discovery), [discovery]);
   const activeId = resolveActiveCtoxInstanceId(instances, rememberedId);
   const lastRequestedId = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (activeId === null || activeId === rememberedId) return;
-    // Invalid/stale persisted ids fail closed to a real discovery row. The
-    // memory validates the bounded id again before persisting it.
-    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: activeId });
-  }, [activeId, rememberedId]);
 
   useEffect(() => {
     if (productMode !== "ctox" || activeId === null || lastRequestedId.current === activeId) return;

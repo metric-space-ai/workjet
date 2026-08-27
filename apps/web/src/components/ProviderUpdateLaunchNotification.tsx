@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useEnvironments } from "~/state/environments";
+import { useBusinessOsScopedEnvironments } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderUpdateEnvironmentRows } from "./ProviderUpdateEnvironmentRows";
@@ -24,7 +24,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
  * single-prompt flow.
  */
 function useHasLocalSecondaryEnvironment(): boolean {
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   return useMemo(
     () =>
       environments.some((environment) => isDesktopLocalConnectionTarget(environment.entry.target)),

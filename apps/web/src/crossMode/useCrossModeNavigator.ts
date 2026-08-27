@@ -17,6 +17,10 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback } from "react";
 
 import { isElectron } from "../env";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  readBusinessOsCodeScope,
+} from "../businessOsCodeScope";
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { readActiveEnvironmentId, setActiveEnvironmentId } from "../state/entities";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
@@ -113,7 +117,11 @@ export function useCrossModeNavigator(): (target: unknown) => Promise<CrossModeN
             return;
           }
           if (resolved.environmentId === undefined) return;
-          setActiveEnvironmentId(resolved.environmentId as EnvironmentId);
+          const environmentId = resolved.environmentId as EnvironmentId;
+          if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), environmentId)) {
+            return;
+          }
+          setActiveEnvironmentId(environmentId);
         },
         openMainSurface: (resolved) => {
           if (resolved.mode === "business-os") {
@@ -121,10 +129,14 @@ export function useCrossModeNavigator(): (target: unknown) => Promise<CrossModeN
             return;
           }
           if (resolved.environmentId === undefined || resolved.threadId === undefined) return;
+          const environmentId = resolved.environmentId as EnvironmentId;
+          if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), environmentId)) {
+            return;
+          }
           void router.navigate({
             to: "/$environmentId/$threadId",
             params: {
-              environmentId: resolved.environmentId as EnvironmentId,
+              environmentId,
               threadId: resolved.threadId as ThreadId,
             },
           });

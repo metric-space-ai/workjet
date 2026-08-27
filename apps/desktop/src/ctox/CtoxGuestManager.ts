@@ -6,7 +6,10 @@ import type {
   CtoxManagedActionResult,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
+  CtoxWorkjetDeviceControlResult,
+  WorkjetDeviceWebRtcRequestV1,
 } from "@t3tools/contracts";
+import { WorkjetDeviceWebRtcResponseV1 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -169,6 +172,14 @@ export class CtoxGuestManager extends Context.Service<
     readonly openGuestSettings: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
     /** Project the host appearance theme into the guest (persists across guests). */
     readonly setHostTheme: (theme: CtoxHostThemeInput) => Effect.Effect<CtoxManagedActionResult>;
+    /**
+     * Execute one transient device-management request on the warm guest that
+     * owns the selected CTOX RxDB/WebRTC peer. No network fallback is allowed.
+     */
+    readonly requestDeviceControl: (
+      instanceId: string,
+      request: WorkjetDeviceWebRtcRequestV1,
+    ) => Effect.Effect<CtoxWorkjetDeviceControlResult>;
   }
 >()("@t3tools/desktop/ctox/CtoxGuestManager") {}
 
@@ -276,6 +287,15 @@ const GUEST_OPEN_SETTINGS_EXPRESSION = `(async () => {
   button.click();
   return { ok: true };
 })()`;
+
+function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1): string {
+  return `(async () => {
+  const control = globalThis.workjetBusinessOsDeviceControl;
+  if (typeof control !== "function") return { status: "unsupported" };
+  const result = await control(${JSON.stringify(request)});
+  return { status: "completed", result };
+})()`;
+}
 
 function stripControlCharacters(value: string): string {
   let out = "";
@@ -701,14 +721,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
     const exitBusinessOsMode = SynchronizedRef.modifyEffect(stateRef, (state) =>
       Effect.sync(() => {
-        destroyAllGuests(state);
+        const active = attachedGuest(state);
+        if (active !== undefined) detachGuest(active);
         return [
           { _tag: "completed" } as const,
-          {
-            businessOsModeActive: false,
-            activeId: undefined,
-            pool: new Map<string, PooledGuest>(),
-          },
+          { ...state, businessOsModeActive: false, activeId: undefined },
         ] as const;
       }),
     );
@@ -763,7 +780,21 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
-    yield* Effect.addFinalizer(() => exitBusinessOsMode.pipe(Effect.asVoid));
+    yield* Effect.addFinalizer(() =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.sync(() => {
+          destroyAllGuests(state);
+          return [
+            undefined,
+            {
+              businessOsModeActive: false,
+              activeId: undefined,
+              pool: new Map<string, PooledGuest>(),
+            },
+          ] as const;
+        }),
+      ).pipe(Effect.asVoid),
+    );
 
     let refreshFromWebContents: (sender: WebContents) => void = () => undefined;
 
@@ -1289,6 +1320,53 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const requestDeviceControl = (
+      instanceId: string,
+      request: WorkjetDeviceWebRtcRequestV1,
+    ): Effect.Effect<CtoxWorkjetDeviceControlResult> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxWorkjetDeviceControlResult, GuestState],
+          never
+        > {
+          const guest = state.pool.get(instanceId);
+          if (guest === undefined || guest.view.webContents.isDestroyed()) {
+            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
+          }
+          const raw = yield* Effect.tryPromise({
+            try: () =>
+              guest.view.webContents.executeJavaScript(
+                buildGuestDeviceControlExpression(request),
+                true,
+              ),
+            catch: () => undefined,
+          }).pipe(Effect.orElseSucceed(() => undefined));
+          if (
+            typeof raw === "object" &&
+            raw !== null &&
+            (raw as { readonly status?: unknown }).status === "unsupported"
+          ) {
+            return [{ _tag: "failed", code: "unsupported" } as const, state] as const;
+          }
+          if (
+            typeof raw !== "object" ||
+            raw === null ||
+            (raw as { readonly status?: unknown }).status !== "completed"
+          ) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
+          }
+          const decoded = yield* Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1)(
+            (raw as { readonly result?: unknown }).result,
+            { onExcessProperty: "error" },
+          ).pipe(Effect.option);
+          if (Option.isNone(decoded)) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
+          }
+          return [{ _tag: "completed", response: decoded.value } as const, state] as const;
+        }),
+      );
+
     return CtoxGuestManager.of({
       enterBusinessOsMode,
       exitBusinessOsMode,
@@ -1301,6 +1379,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       openGuestApp,
       openGuestSettings,
       setHostTheme,
+      requestDeviceControl,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 

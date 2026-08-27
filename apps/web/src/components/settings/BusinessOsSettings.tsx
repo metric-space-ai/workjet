@@ -2,9 +2,10 @@ import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
   DesktopCtoxBridge,
-  WorkjetDeviceBindingSummary,
-  WorkjetDeviceInviteCreateResult,
-  WorkjetManagedDeviceInviteManualConnectionResult,
+  WorkjetDeviceBindingV1,
+  WorkjetDeviceInviteCreateResponseV1,
+  WorkjetDeviceWebRtcRequestV1,
+  WorkjetDeviceWebRtcResponseV1,
 } from "@t3tools/contracts";
 import {
   BriefcaseBusinessIcon,
@@ -21,6 +22,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
@@ -42,14 +44,7 @@ import {
 } from "../ui/dialog";
 import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
-import {
-  createBusinessOsDeviceInvite,
-  listBusinessOsDevices,
-  readBusinessOsDeviceInviteManualConnection,
-  revokeBusinessOsDevice,
-  revokeBusinessOsDeviceInvite,
-} from "./businessOsDeviceControl";
-import { encodeWorkjetDevicePairingLink, formatMobileInviteExpiry } from "./businessOsPairing";
+import { encodeWorkjetBusinessOsPairingLink, formatMobileInviteExpiry } from "./businessOsPairing";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
@@ -95,78 +90,63 @@ function DevicePairingDialog({
   onClose,
   onRenew,
   onRevoke,
-  onLoadManualConnection,
   revoking,
 }: {
   readonly instanceName: string | null;
-  readonly invite: WorkjetDeviceInviteCreateResult | null;
+  readonly invite: WorkjetDeviceInviteCreateResponseV1 | null;
   readonly onClose: (() => void) | undefined;
   readonly onRenew: (() => void) | undefined;
   readonly onRevoke: (() => void) | undefined;
-  readonly onLoadManualConnection:
-    | (() => Promise<WorkjetManagedDeviceInviteManualConnectionResult>)
-    | undefined;
   readonly revoking: boolean;
 }) {
   const [copied, setCopied] = useState(false);
-  const [manualConnection, setManualConnection] =
-    useState<WorkjetManagedDeviceInviteManualConnectionResult | null>(null);
-  const [manualLoading, setManualLoading] = useState(false);
-  const [manualError, setManualError] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const sensitiveClipboardValue = useRef<string | null>(null);
   const link = useMemo(
-    () => (invite === null ? null : encodeWorkjetDevicePairingLink(invite.reference)),
+    () => (invite === null ? null : encodeWorkjetBusinessOsPairingLink(invite.invite)),
     [invite],
   );
 
   useEffect(() => {
     setCopied(false);
-    setManualConnection(null);
-    setManualLoading(false);
-    setManualError(false);
     setPasswordVisible(false);
   }, [invite]);
 
-  useEffect(() => {
-    const hidePassword = () => {
-      if (document.visibilityState !== "visible") setPasswordVisible(false);
-    };
-    document.addEventListener("visibilitychange", hidePassword);
-    return () => document.removeEventListener("visibilitychange", hidePassword);
+  const clearSensitiveClipboard = useCallback(() => {
+    const value = sensitiveClipboardValue.current;
+    sensitiveClipboardValue.current = null;
+    if (value === null) return;
+    void navigator.clipboard
+      .readText()
+      .then((current) => (current === value ? navigator.clipboard.writeText("") : undefined))
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const discardInvite = () => {
+      if (document.visibilityState === "visible") return;
+      setPasswordVisible(false);
+      clearSensitiveClipboard();
+      onClose?.();
+    };
+    document.addEventListener("visibilitychange", discardInvite);
+    return () => document.removeEventListener("visibilitychange", discardInvite);
+  }, [clearSensitiveClipboard, onClose]);
+
+  useEffect(() => clearSensitiveClipboard, [clearSensitiveClipboard, invite]);
 
   const copyValue = async (value: string, sensitive = false) => {
     await navigator.clipboard.writeText(value);
     if (!sensitive) return;
+    sensitiveClipboardValue.current = value;
     window.setTimeout(() => {
-      void navigator.clipboard
-        .readText()
-        .then((current) => (current === value ? navigator.clipboard.writeText("") : undefined))
-        .catch(() => undefined);
+      if (sensitiveClipboardValue.current === value) clearSensitiveClipboard();
     }, 30_000);
-  };
-
-  const loadManualConnection = () => {
-    if (manualConnection !== null || manualLoading || onLoadManualConnection === undefined) {
-      return;
-    }
-    setManualLoading(true);
-    setManualError(false);
-    void onLoadManualConnection().then(
-      (result) => {
-        setManualConnection(result);
-        setManualLoading(false);
-      },
-      () => {
-        setManualError(true);
-        setManualLoading(false);
-      },
-    );
   };
 
   const close = () => {
     setPasswordVisible(false);
-    setManualConnection(null);
+    clearSensitiveClipboard();
     onClose?.();
   };
 
@@ -186,10 +166,11 @@ function DevicePairingDialog({
               <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/8">
                 <QRCodeSvg
                   value={link}
-                  size={224}
+                  size={320}
                   level="M"
                   marginSize={4}
                   title={`QR-Code für ${instanceName ?? "Business OS"}`}
+                  className="h-auto w-full max-w-80"
                 />
               </div>
               <div className="w-full rounded-lg bg-muted/40 px-3 py-3 text-center">
@@ -212,8 +193,7 @@ function DevicePairingDialog({
               <details
                 className="w-full rounded-xl border border-border/80 bg-muted/20"
                 onToggle={(event) => {
-                  if (event.currentTarget.open) loadManualConnection();
-                  else setPasswordVisible(false);
+                  if (!event.currentTarget.open) setPasswordVisible(false);
                 }}
               >
                 <summary className="cursor-pointer px-3 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -225,89 +205,71 @@ function DevicePairingDialog({
                     Workjet-Verbindung mit Code und Business OS verwende den QR-Code oder den
                     Verbindungslink.
                   </p>
-                  {manualLoading ? (
-                    <p
-                      className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"
-                      role="status"
-                    >
-                      <Spinner className="size-3.5" /> Verbindungsdaten werden geladen …
-                    </p>
-                  ) : manualError ? (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-destructive" role="alert">
-                        Die manuellen Verbindungsdaten konnten nicht geladen werden.
-                      </p>
-                      <Button size="sm" variant="outline" onClick={loadManualConnection}>
-                        Erneut versuchen
-                      </Button>
+                  <dl className="mt-3 space-y-3">
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">Server</dt>
+                      {invite.invite.signaling_urls.map((url) => (
+                        <dd key={url} className="mt-1 flex items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
+                            {url}
+                          </code>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Server kopieren"
+                            onClick={() => void copyValue(url)}
+                          >
+                            <CopyIcon aria-hidden />
+                          </Button>
+                        </dd>
+                      ))}
                     </div>
-                  ) : manualConnection === null ? null : (
-                    <dl className="mt-3 space-y-3">
-                      <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Server</dt>
-                        {manualConnection.signalingUrls.map((url) => (
-                          <dd key={url} className="mt-1 flex items-center gap-2">
-                            <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                              {url}
-                            </code>
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label="Server kopieren"
-                              onClick={() => void copyValue(url)}
-                            >
-                              <CopyIcon aria-hidden />
-                            </Button>
-                          </dd>
-                        ))}
-                      </div>
-                      <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Raum</dt>
-                        <dd className="mt-1 flex items-center gap-2">
-                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                            {manualConnection.room}
-                          </code>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="Raum kopieren"
-                            onClick={() => void copyValue(manualConnection.room)}
-                          >
-                            <CopyIcon aria-hidden />
-                          </Button>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Passwort</dt>
-                        <dd className="mt-1 flex items-center gap-2">
-                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                            {manualConnectionPasswordText(
-                              manualConnection.password,
-                              passwordVisible,
-                            )}
-                          </code>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={
-                              passwordVisible ? "Passwort verbergen" : "Passwort anzeigen"
-                            }
-                            onClick={() => setPasswordVisible((visible) => !visible)}
-                          >
-                            {passwordVisible ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
-                          </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="Passwort kopieren"
-                            onClick={() => void copyValue(manualConnection.password, true)}
-                          >
-                            <CopyIcon aria-hidden />
-                          </Button>
-                        </dd>
-                      </div>
-                    </dl>
-                  )}
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">Raum</dt>
+                      <dd className="mt-1 flex items-center gap-2">
+                        <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
+                          {invite.invite.sync_room}
+                        </code>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Raum kopieren"
+                          onClick={() => void copyValue(invite.invite.sync_room)}
+                        >
+                          <CopyIcon aria-hidden />
+                        </Button>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">Passwort</dt>
+                      <dd className="mt-1 flex items-center gap-2">
+                        <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
+                          {manualConnectionPasswordText(
+                            invite.invite.signaling_room_password,
+                            passwordVisible,
+                          )}
+                        </code>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={passwordVisible ? "Passwort verbergen" : "Passwort anzeigen"}
+                          onClick={() => setPasswordVisible((visible) => !visible)}
+                        >
+                          {passwordVisible ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
+                        </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Passwort kopieren"
+                          onClick={() =>
+                            void copyValue(invite.invite.signaling_room_password, true)
+                          }
+                        >
+                          <CopyIcon aria-hidden />
+                        </Button>
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
               </details>
             </>
@@ -353,7 +315,6 @@ export function BusinessOsSettingsView({
   onCloseInvite,
   onRenewInvite,
   onRevokeInvite,
-  onLoadManualConnection,
   revokingInvite = false,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
@@ -362,7 +323,7 @@ export function BusinessOsSettingsView({
   readonly refreshDisabled?: boolean;
   readonly addDisabledReason?: string | null;
   readonly computerCount?: number;
-  readonly devices?: readonly WorkjetDeviceBindingSummary[];
+  readonly devices?: readonly WorkjetDeviceBindingV1[];
   readonly devicesLoading?: boolean;
   readonly devicesError?: string | null;
   readonly deviceManagementBlockedReason?: string | null;
@@ -374,11 +335,10 @@ export function BusinessOsSettingsView({
   readonly onRetryDevices?: () => void;
   readonly revokingDeviceId?: string | null;
   readonly addingDevice?: boolean;
-  readonly activeInvite?: WorkjetDeviceInviteCreateResult | null;
+  readonly activeInvite?: WorkjetDeviceInviteCreateResponseV1 | null;
   readonly onCloseInvite?: () => void;
   readonly onRenewInvite?: () => void;
   readonly onRevokeInvite?: () => void;
-  readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
   readonly revokingInvite?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
@@ -585,27 +545,27 @@ export function BusinessOsSettingsView({
             <ul className="mt-3 divide-y divide-border rounded-md border border-border">
               {devices.map((device) => (
                 <li
-                  key={device.devicePairingId}
+                  key={device.id}
                   className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
-                      Workjet-Gerät · {device.deviceId.slice(-8)}
+                      {device.displayName || `Workjet-Gerät · ${device.deviceId.slice(-8)}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Verbunden am {new Date(device.pairedAtMillis).toLocaleDateString()}
+                      {device.pairedAtMs === null
+                        ? "Einladung erstellt"
+                        : `Verbunden am ${new Date(device.pairedAtMs).toLocaleDateString()}`}
                     </p>
                   </div>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={revokingDeviceId === device.devicePairingId}
-                      onClick={() => onRevokeDevice?.(device.devicePairingId)}
+                      disabled={revokingDeviceId === device.id}
+                      onClick={() => onRevokeDevice?.(device.id)}
                     >
-                      {revokingDeviceId === device.devicePairingId ? (
-                        <Spinner className="size-3.5" />
-                      ) : null}
+                      {revokingDeviceId === device.id ? <Spinner className="size-3.5" /> : null}
                       Widerrufen
                     </Button>
                   </div>
@@ -648,11 +608,6 @@ export function BusinessOsSettingsView({
         onClose={onCloseInvite}
         onRenew={onRenewInvite}
         onRevoke={onRevokeInvite}
-        onLoadManualConnection={
-          activeInvite === null || onLoadManualConnection === undefined
-            ? undefined
-            : onLoadManualConnection
-        }
         revoking={revokingInvite}
       />
     </SettingsPageContainer>
@@ -677,6 +632,37 @@ function useBusinessOsDiscovery(bridge: DesktopCtoxBridge | undefined) {
   return { discovery, refresh };
 }
 
+class BusinessOsDeviceControlError extends Error {
+  constructor(readonly code: "not_active" | "unsupported" | "guest_failed" | "invalid_input") {
+    super(code);
+  }
+}
+
+async function requestBusinessOsDeviceControl(
+  bridge: DesktopCtoxBridge | undefined,
+  instanceId: string,
+  request: WorkjetDeviceWebRtcRequestV1,
+): Promise<WorkjetDeviceWebRtcResponseV1> {
+  if (bridge?.requestDeviceControl === undefined) {
+    throw new BusinessOsDeviceControlError("unsupported");
+  }
+  const result = await bridge.requestDeviceControl(instanceId, request);
+  if (result._tag === "failed") throw new BusinessOsDeviceControlError(result.code);
+  return result.response;
+}
+
+function deviceControlErrorMessage(error: unknown, instanceName: string): string {
+  if (error instanceof BusinessOsDeviceControlError) {
+    if (error.code === "not_active") {
+      return `Öffne ${instanceName} einmal in Business OS, damit die direkte Geräteverbindung aufgebaut wird.`;
+    }
+    if (error.code === "unsupported") {
+      return `Die Shell von ${instanceName} unterstützt die Geräteverbindung noch nicht. Aktualisiere die Business-OS-Shell.`;
+    }
+  }
+  return `Die direkte Geräteverbindung zu ${instanceName} ist unterbrochen. Öffne Business OS und versuche es erneut.`;
+}
+
 export function BusinessOsSettings() {
   const settings = usePrimarySettings();
   const bridge = window.desktopBridge?.ctox;
@@ -687,18 +673,17 @@ export function BusinessOsSettings() {
     () => resolveActiveBusinessOsInstanceId(crossModeSelectionMemory.read("business-os")),
     () => resolveActiveBusinessOsInstanceId(crossModeSelectionMemory.read("business-os")),
   );
-  const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
+  const [devices, setDevices] = useState<readonly WorkjetDeviceBindingV1[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState<string | null>(null);
-  const [authorityId, setAuthorityId] = useState<string | null>(null);
-  const [authorityLoading, setAuthorityLoading] = useState(false);
   const [deviceRefreshKey, setDeviceRefreshKey] = useState(0);
   const [addingDevice, setAddingDevice] = useState(false);
-  const [activeInvite, setActiveInvite] = useState<WorkjetDeviceInviteCreateResult | null>(null);
+  const [activeInvite, setActiveInvite] = useState<WorkjetDeviceInviteCreateResponseV1 | null>(
+    null,
+  );
   const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
   const [revokingInvite, setRevokingInvite] = useState(false);
-  const deviceControlAvailable =
-    authorityId !== null && bridge?.issueControlIdentityAssertion !== undefined;
+  const deviceControlAvailable = bridge?.requestDeviceControl !== undefined;
 
   useEffect(() => {
     if (discovery === "loading" || discovery._tag !== "ready") return;
@@ -712,60 +697,58 @@ export function BusinessOsSettings() {
 
   const selectInstance = (instanceId: string) => {
     if (!instances.some((instance) => instance.id === instanceId)) return;
+    const previousInstanceId = activeInstanceId;
+    const previousInviteId = activeInvite?.inviteId;
+    setActiveInvite(null);
+    if (previousInstanceId !== null && previousInviteId !== undefined) {
+      void requestBusinessOsDeviceControl(bridge, previousInstanceId, {
+        action: "invite.revoke",
+        inviteId: previousInviteId,
+      }).catch(() => undefined);
+    }
     crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: instanceId });
   };
 
   useEffect(() => {
-    setAuthorityId(null);
+    setActiveInvite(null);
     setDevices([]);
     setDevicesLoading(false);
     setDevicesError(null);
-    if (activeInstanceId === null || bridge?.resolveInstanceAuthority === undefined) return;
-    let cancelled = false;
-    setAuthorityLoading(true);
-    void bridge.resolveInstanceAuthority(activeInstanceId).then(
-      (result) => {
-        if (cancelled) return;
-        setAuthorityLoading(false);
-        setAuthorityId(result._tag === "completed" ? result.businessOsInstanceId : null);
-      },
-      () => {
-        if (cancelled) return;
-        setAuthorityLoading(false);
-        setAuthorityId(null);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
   }, [activeInstanceId, bridge]);
 
   useEffect(() => {
     setDevices([]);
     setDevicesError(null);
-    if (!deviceControlAvailable || authorityId === null) return;
+    if (!deviceControlAvailable || activeInstanceId === null) return;
     let cancelled = false;
     setDevicesLoading(true);
-    void listBusinessOsDevices(authorityId).then(
-      (result) => {
+    void (async () => {
+      try {
+        const response = await requestBusinessOsDeviceControl(bridge, activeInstanceId, {
+          action: "binding.list",
+        });
+        if (!("bindings" in response)) throw new BusinessOsDeviceControlError("guest_failed");
         if (cancelled) return;
-        setDevices(result.devices);
+        setDevices(response.bindings);
         setDevicesError(null);
         setDevicesLoading(false);
-      },
-      () => {
+      } catch (error) {
         if (cancelled) return;
         setDevices([]);
+        const instance = instances.find((candidate) => candidate.id === activeInstanceId);
         setDevicesError(
-          "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+          deviceControlErrorMessage(
+            error,
+            instance === undefined ? "Business OS" : ctoxInstanceDisplayTitle(instance),
+          ),
         );
         setDevicesLoading(false);
-      },
-    );
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [authorityId, deviceControlAvailable, deviceRefreshKey]);
+  }, [activeInstanceId, bridge, deviceControlAvailable, deviceRefreshKey, instances]);
 
   const addBusinessOs = async (invite: string): Promise<string | null> => {
     if (bridge === undefined)
@@ -788,23 +771,28 @@ export function BusinessOsSettings() {
   const deviceManagementBlockedReason =
     selected === null
       ? null
-      : authorityLoading
-        ? "Die Instanzberechtigung wird geprüft …"
-        : authorityId === null
-          ? `${ctoxInstanceDisplayTitle(selected)} konnte noch nicht bestätigt werden.`
-          : !deviceControlAvailable
-            ? `Die sichere Geräteverbindung für ${ctoxInstanceDisplayTitle(selected)} ist in dieser Workjet-Ausgabe noch nicht aktiviert.`
-            : null;
+      : !deviceControlAvailable
+        ? `Diese Workjet-Ausgabe unterstützt die direkte Geräteverbindung für ${ctoxInstanceDisplayTitle(selected)} noch nicht.`
+        : null;
 
   const createDeviceInvite = async () => {
-    if (authorityId === null) return;
+    if (activeInstanceId === null) return;
     setAddingDevice(true);
     setDevicesError(null);
     try {
-      setActiveInvite(await createBusinessOsDeviceInvite(authorityId));
-    } catch {
+      const response = await requestBusinessOsDeviceControl(bridge, activeInstanceId, {
+        action: "invite.create",
+        ttlSeconds: 300,
+        displayName: "Workjet-Gerät",
+      });
+      if (!("invite" in response)) throw new BusinessOsDeviceControlError("guest_failed");
+      setActiveInvite(response);
+    } catch (error) {
       setDevicesError(
-        "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+        deviceControlErrorMessage(
+          error,
+          selected ? ctoxInstanceDisplayTitle(selected) : "Business OS",
+        ),
       );
     } finally {
       setAddingDevice(false);
@@ -812,11 +800,16 @@ export function BusinessOsSettings() {
   };
 
   const revokeInvite = async () => {
-    if (authorityId === null || activeInvite === null) return;
+    const invite = activeInvite;
+    if (activeInstanceId === null || invite === null) return;
+    setActiveInvite(null);
     setRevokingInvite(true);
     try {
-      await revokeBusinessOsDeviceInvite(authorityId, activeInvite.inviteId);
-      setActiveInvite(null);
+      const response = await requestBusinessOsDeviceControl(bridge, activeInstanceId, {
+        action: "invite.revoke",
+        inviteId: invite.inviteId,
+      });
+      if (!("revoked" in response)) throw new BusinessOsDeviceControlError("guest_failed");
     } catch {
       setDevicesError("Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.");
     } finally {
@@ -825,11 +818,23 @@ export function BusinessOsSettings() {
   };
 
   const renewInvite = async () => {
-    if (authorityId === null || activeInvite === null) return;
+    const invite = activeInvite;
+    if (activeInstanceId === null || invite === null) return;
+    setActiveInvite(null);
     setRevokingInvite(true);
     try {
-      await revokeBusinessOsDeviceInvite(authorityId, activeInvite.inviteId);
-      setActiveInvite(await createBusinessOsDeviceInvite(authorityId));
+      const revoked = await requestBusinessOsDeviceControl(bridge, activeInstanceId, {
+        action: "invite.revoke",
+        inviteId: invite.inviteId,
+      });
+      if (!("revoked" in revoked)) throw new BusinessOsDeviceControlError("guest_failed");
+      const created = await requestBusinessOsDeviceControl(bridge, activeInstanceId, {
+        action: "invite.create",
+        ttlSeconds: 300,
+        displayName: "Workjet-Gerät",
+      });
+      if (!("invite" in created)) throw new BusinessOsDeviceControlError("guest_failed");
+      setActiveInvite(created);
     } catch {
       setDevicesError("Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.");
     } finally {
@@ -837,11 +842,15 @@ export function BusinessOsSettings() {
     }
   };
 
-  const revokeDevice = async (devicePairingId: string) => {
-    if (authorityId === null) return;
-    setRevokingDeviceId(devicePairingId);
+  const revokeDevice = async (bindingId: string) => {
+    if (activeInstanceId === null) return;
+    setRevokingDeviceId(bindingId);
     try {
-      await revokeBusinessOsDevice(authorityId, devicePairingId);
+      const response = await requestBusinessOsDeviceControl(bridge, activeInstanceId, {
+        action: "binding.revoke",
+        bindingId,
+      });
+      if (!("revoked" in response)) throw new BusinessOsDeviceControlError("guest_failed");
       setDeviceRefreshKey((key) => key + 1);
     } catch {
       setDevicesError("Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.");
@@ -874,12 +883,6 @@ export function BusinessOsSettings() {
       onCloseInvite={() => void revokeInvite()}
       onRevokeInvite={() => void revokeInvite()}
       onRenewInvite={() => void renewInvite()}
-      {...(!deviceControlAvailable || authorityId === null || activeInvite === null
-        ? {}
-        : {
-            onLoadManualConnection: () =>
-              readBusinessOsDeviceInviteManualConnection(authorityId, activeInvite.inviteId),
-          })}
       revokingInvite={revokingInvite}
     />
   );

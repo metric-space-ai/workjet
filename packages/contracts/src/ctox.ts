@@ -381,6 +381,89 @@ export const CtoxMobileInviteRevokeResult = Schema.Struct({
 export type CtoxMobileInviteRevokeResult = typeof CtoxMobileInviteRevokeResult.Type;
 
 /**
+ * Transient Workjet device management on the authenticated CTOX WebRTC peer.
+ * The request is sent only to the already warm guest for the selected
+ * Business-OS instance. It is never an HTTP or persisted control-plane shape.
+ */
+export const WorkjetDeviceWebRtcRequestV1 = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("invite.create"),
+    ttlSeconds: Schema.optionalKey(
+      Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 3_600 })),
+    ),
+    displayName: Schema.optionalKey(CtoxPairingDisplayName),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("invite.revoke"),
+    inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  }),
+  Schema.Struct({ action: Schema.Literal("binding.list") }),
+  Schema.Struct({
+    action: Schema.Literal("binding.revoke"),
+    bindingId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  }),
+]);
+export type WorkjetDeviceWebRtcRequestV1 = typeof WorkjetDeviceWebRtcRequestV1.Type;
+
+export const WorkjetDeviceInviteCreateResponseV1 = Schema.Struct({
+  businessOsInstanceId: CtoxPairingInstanceIdentity,
+  deviceId: Schema.NullOr(CtoxPairingInstanceIdentity),
+  proofKeyThumbprint: Schema.NullOr(
+    Schema.String.check(
+      Schema.isMinLength(43),
+      Schema.isMaxLength(43),
+      Schema.isPattern(/^[A-Za-z0-9_-]{43}$/),
+    ),
+  ),
+  grantId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  invite: CtoxBusinessOsInviteV1,
+  expiresAt: CtoxPairingInputText.check(Schema.isMaxLength(64)),
+});
+export type WorkjetDeviceInviteCreateResponseV1 = typeof WorkjetDeviceInviteCreateResponseV1.Type;
+
+export const WorkjetDeviceBindingV1 = Schema.Struct({
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  deviceId: CtoxPairingInstanceIdentity,
+  displayName: CtoxPairingDisplayName,
+  createdAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  pairedAtMs: Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+});
+export type WorkjetDeviceBindingV1 = typeof WorkjetDeviceBindingV1.Type;
+
+export const WorkjetDeviceBindingListResponseV1 = Schema.Struct({
+  schema: Schema.Literal("ctox.workjet-device-bindings.v1"),
+  bindings: Schema.Array(WorkjetDeviceBindingV1).check(Schema.isMaxLength(1_000)),
+});
+export type WorkjetDeviceBindingListResponseV1 = typeof WorkjetDeviceBindingListResponseV1.Type;
+
+export const WorkjetDeviceMutationResponseV1 = Schema.Struct({
+  revoked: Schema.Literal(true),
+});
+export type WorkjetDeviceMutationResponseV1 = typeof WorkjetDeviceMutationResponseV1.Type;
+
+export const WorkjetDeviceWebRtcResponseV1 = Schema.Union([
+  WorkjetDeviceInviteCreateResponseV1,
+  WorkjetDeviceBindingListResponseV1,
+  WorkjetDeviceMutationResponseV1,
+]);
+export type WorkjetDeviceWebRtcResponseV1 = typeof WorkjetDeviceWebRtcResponseV1.Type;
+
+export const CtoxWorkjetDeviceControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: WorkjetDeviceWebRtcRequestV1,
+});
+export type CtoxWorkjetDeviceControlInput = typeof CtoxWorkjetDeviceControlInput.Type;
+
+export const CtoxWorkjetDeviceControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: WorkjetDeviceWebRtcResponseV1 }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_active", "unsupported", "guest_failed"]),
+  }),
+]);
+export type CtoxWorkjetDeviceControlResult = typeof CtoxWorkjetDeviceControlResult.Type;
+
+/**
  * One user-visible Workjet device pairing. The environment bootstrap grants
  * Code access while the nested CTOX invite grants the minimum Business OS
  * synchronization capability. Both credentials are short-lived and belong to

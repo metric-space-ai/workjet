@@ -18,6 +18,8 @@ import {
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
 } from "./BusinessOsSettings";
+import { encodeWorkjetBusinessOsPairingLink } from "./businessOsPairing";
+import { QRCodeSvg } from "../ui/qr-code";
 
 function instance(
   id: string,
@@ -104,17 +106,17 @@ describe("Business OS settings scope", () => {
     expect(markup).not.toContain("biz_2a75d5c5-da16-4a17-90d2-a941ad53f095");
   });
 
-  it("shows the exact managed-control blocker instead of choosing a Code computer", () => {
+  it("shows a direct guest-control blocker instead of choosing a Code computer", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[instance("managed:welsch", "WELSCH", "ctox_dev")]}
         activeInstanceId="managed:welsch"
         computerCount={3}
-        deviceManagementBlockedReason="WELSCH konnte noch nicht bestätigt werden."
+        deviceManagementBlockedReason="Die Shell von WELSCH unterstützt die Geräteverbindung noch nicht."
       />,
     );
     expect(markup).toContain("Gerät hinzufügen");
-    expect(markup).toContain("WELSCH konnte noch nicht bestätigt werden");
+    expect(markup).toContain("Die Shell von WELSCH unterstützt die Geräteverbindung noch nicht");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("serverautoritativ");
     expect(markup).not.toContain("Erneuern");
@@ -128,24 +130,68 @@ describe("Business OS settings scope", () => {
         activeInstanceId="local:welsch"
         devices={[
           {
-            devicePairingId: "pairing-1",
+            id: "pairing-1",
             deviceId: "workjet-device-abcdefgh",
-            businessOsInstanceId: "welsch-authority",
-            pairedAtMillis: 1_788_000_000_000,
+            displayName: "Galaxy Fold",
+            createdAtMs: 1_787_999_000_000,
+            pairedAtMs: 1_788_000_000_000,
           },
         ]}
         onAddDevice={() => undefined}
         onRevokeDevice={() => undefined}
       />,
     );
-    expect(markup).toContain("Workjet-Gerät · abcdefgh");
+    expect(markup).toContain("Galaxy Fold");
     expect(markup).toContain("Widerrufen");
-    expect(markup).not.toContain("welsch-authority");
     expect(markup).not.toContain("pairing-1");
   });
 
   it("keeps the manual room password masked until the user explicitly reveals it", () => {
     expect(manualConnectionPasswordText("room-secret", false)).toBe("••••••••••••");
     expect(manualConnectionPasswordText("room-secret", true)).toBe("room-secret");
+  });
+
+  it("renders the transient WebRTC invite as a large QR without exposing its password as text", () => {
+    const password = "never-render-this-password";
+    const link = encodeWorkjetBusinessOsPairingLink({
+      type: "ctox-business-os-invite",
+      version: 1,
+      display_name: "WELSCH",
+      instance_id: "welsch",
+      sync_room: "ctox-business-os:welsch",
+      native_peer_id: "native-welsch",
+      signaling_urls: ["wss://signaling.ctox.dev/v2"],
+      signaling_room_password: password,
+      transport: "webrtc",
+      expires_at: "2026-08-27T15:00:00Z",
+      data_plane: "rxdb-webrtc",
+      http_bridge_available: false,
+      session: {
+        authenticated: true,
+        source: "mobile_invite",
+        capability_token: "transient-capability",
+        capability_expires_at_ms: 1_788_000_000_000,
+        user: {
+          id: "pairing-device",
+          display_name: "Workjet-Gerät",
+          role: "user",
+          is_admin: false,
+        },
+      },
+    });
+    const markup = renderToStaticMarkup(
+      <QRCodeSvg
+        value={link}
+        size={320}
+        level="M"
+        marginSize={4}
+        title="QR-Code für WELSCH"
+        className="h-auto w-full max-w-80"
+      />,
+    );
+    expect(markup).toContain('aria-label="QR-Code für WELSCH"');
+    expect(markup).toContain('width="320"');
+    expect(markup).not.toContain(password);
+    expect(manualConnectionPasswordText(password, false)).toBe("••••••••••••");
   });
 });

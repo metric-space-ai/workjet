@@ -208,6 +208,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         : projects,
     [activeBusinessOsEnvironmentIdSet, hasEnvironmentBindings, projects],
   );
+  const scopedThreads = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? threads.filter((thread) => activeBusinessOsEnvironmentIdSet.has(thread.environmentId))
+        : threads,
+    [activeBusinessOsEnvironmentIdSet, hasEnvironmentBindings, threads],
+  );
   const groupingSettings = useMobileProjectGroupingSettings();
   const { enabled: planModeEnabled, loaded: planModePreferenceLoaded } = useLegacyPlanModeState();
   const projectScopes = useMemo(
@@ -218,11 +225,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           environmentId: null,
           projectGroupingMode: groupingSettings.sidebarProjectGroupingMode,
         }),
-        threads,
+        threads: scopedThreads,
         pendingTasks: [],
         projectSortOrder: "updated_at",
       }),
-    [groupingSettings.sidebarProjectGroupingMode, scopedProjects, threads],
+    [groupingSettings.sidebarProjectGroupingMode, scopedProjects, scopedThreads],
   );
 
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentId] = useState<EnvironmentId | null>(

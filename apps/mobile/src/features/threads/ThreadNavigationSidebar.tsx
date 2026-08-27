@@ -445,18 +445,18 @@ function ThreadNavigationSidebarPane(
   );
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
-    for (const project of projects) {
+    for (const project of instanceScopedProjects) {
       map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
     }
     return map;
-  }, [projects]);
+  }, [instanceScopedProjects]);
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
-    for (const project of projects) {
+    for (const project of instanceScopedProjects) {
       map.set(scopedProjectKey(project.environmentId, project.id), project);
     }
     return map;
-  }, [projects]);
+  }, [instanceScopedProjects]);
 
   // Thread List v2 (beta) support — same model as the compact Home list
   // (HomeScreen.tsx): flat creation-order card block + settled recency tail.
@@ -568,7 +568,7 @@ function ThreadNavigationSidebarPane(
   // all shells so search/scope filtering never disables a valid move.
   const arrangedPinnedKeys = useMemo(() => {
     const pinned = sortPinnedThreadsByOrderKey(
-      threads.filter(
+      instanceScopedThreads.filter(
         (thread) =>
           thread.pinnedAt != null &&
           thread.archivedAt === null &&
@@ -576,7 +576,7 @@ function ThreadNavigationSidebarPane(
       ),
     );
     return pinned.map((thread) => `${thread.environmentId}:${thread.id}`);
-  }, [pinReorderEnvironmentIds, threads]);
+  }, [instanceScopedThreads, pinReorderEnvironmentIds]);
   const threadListV2Layout = useMemo(() => {
     if (!threadListV2Enabled)
       return {
@@ -589,7 +589,7 @@ function ThreadNavigationSidebarPane(
         nextSnoozeWakeAt: null,
       };
     return buildThreadListV2Items({
-      threads: threads.filter((thread) => thread.archivedAt === null),
+      threads: instanceScopedThreads.filter((thread) => thread.archivedAt === null),
       environmentId: options.selectedEnvironmentId,
       projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
       searchQuery: props.searchQuery,
@@ -620,7 +620,7 @@ function ThreadNavigationSidebarPane(
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     threadListV2Enabled,
-    threads,
+    instanceScopedThreads,
     selectedProjectScope,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
@@ -645,7 +645,7 @@ function ThreadNavigationSidebarPane(
     // deletable while their environment is offline. Same environment scope
     // and search filter as the list.
     const v2SearchQuery = props.searchQuery.trim().toLocaleLowerCase();
-    const v2PendingTasks = pendingTasks.filter(
+    const v2PendingTasks = instanceScopedPendingTasks.filter(
       (pendingTask) =>
         (options.selectedEnvironmentId === null ||
           pendingTask.message.environmentId === options.selectedEnvironmentId) &&
@@ -679,7 +679,7 @@ function ThreadNavigationSidebarPane(
     listLayout.items,
     nowMinute,
     options.selectedEnvironmentId,
-    pendingTasks,
+    instanceScopedPendingTasks,
     props.searchQuery,
     selectedProjectRefs,
     settledShelfExpanded,

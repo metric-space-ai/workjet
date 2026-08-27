@@ -18,6 +18,7 @@ import {
   useSavedRemoteConnection,
 } from "./use-remote-environment-registry";
 import { useBusinessOs } from "../features/business-os/BusinessOsProvider";
+import { isThreadEnvironmentInActiveBusinessOsScope } from "./business-os-thread-scope";
 type ThreadSelectionRouteParams = {
   readonly environmentId?: string | string[];
   readonly threadId?: string | string[];
@@ -76,6 +77,7 @@ function threadDetailToShell(
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
   const {
     environmentBindings,
+    hasEnvironmentBindings,
     selectedEnvironmentIds: activeBusinessOsEnvironmentIds,
     selectEnvironment,
   } = useBusinessOs();
@@ -96,7 +98,7 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
   if (routeThreadRef !== null) {
     lastRouteThreadRef.current = routeThreadRef;
   }
-  const selectedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
+  const rememberedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
   useEffect(() => {
     const environmentId = routeThreadRef?.environmentId;
     if (
@@ -113,6 +115,13 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     routeThreadRef?.environmentId,
     selectEnvironment,
   ]);
+  const selectedThreadRef = isThreadEnvironmentInActiveBusinessOsScope({
+    environmentId: rememberedThreadRef?.environmentId ?? null,
+    activeEnvironmentIds: activeBusinessOsEnvironmentIds,
+    hasEnvironmentBindings,
+  })
+    ? rememberedThreadRef
+    : null;
   const selectedThreadShell = useThreadShell(selectedThreadRef);
   const selectedThreadDetailState = useEnvironmentThread(
     selectedThreadRef?.environmentId ?? null,

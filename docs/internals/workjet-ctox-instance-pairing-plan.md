@@ -5,6 +5,29 @@ Status: implementation in progress, 2026-08-27.
 This file is the continuity checklist for the shared Desktop and Mobile work.
 It describes product state, not a second wire protocol.
 
+Current implementation baseline:
+
+- `7a1c8b532` implements compact, one-time, DPoP-bound device-pairing
+  references with an explicit canonical Business-OS-instance scope.
+- `72c9c0a1a` resolves Desktop presentation IDs to canonical
+  `BusinessOsInstanceId` values in the main process without exposing pairing
+  secrets to the renderer.
+- `13b0303da` removes the global pairing dialog and keeps device actions in the
+  regular, instance-scoped Business OS settings. Actions remain fail-closed
+  until the selected instance has a verified backend-control authority.
+- `9c751db06`, `49405cb8b` and `e3b1ddfaf` scope Mobile Code to the active
+  Business OS, simplify the settings hierarchy and prohibit a Code computer or
+  primary environment from acting as an implicit device-control route.
+- The Android release artifact for `e3b1ddfaf` was installed without clearing
+  data on the Galaxy Fold over wireless ADB on 2026-08-27. The visible device
+  pass still requires the operator to unlock the phone.
+- `99c61badd` contains the typed and tested Computer List/Assign/Unassign
+  scaffold. It remains intentionally unmounted until an authoritative producer
+  supplies bounded instance inventory, `hostingMode`, backend host identity and
+  computer host identities. Renderer connection catalogs, hostnames, CTOX
+  presentation source kinds and the primary Code environment are forbidden
+  substitutes.
+
 ## Canonical model
 
 - A **CTOX instance** is the only user-selectable backend scope.

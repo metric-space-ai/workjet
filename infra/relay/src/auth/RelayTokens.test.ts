@@ -128,6 +128,40 @@ describe("RelayTokens", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("round-trips the revocable Workjet device-session generation claims", () =>
+    Effect.gen(function* () {
+      const relayTokens = yield* RelayTokens.RelayTokens;
+      const token = yield* relayTokens.issueDpopAccessToken({
+        userId: "user_123",
+        proofKeyThumbprint: "proof-key-thumbprint",
+        jti: "workjet-access-token-1",
+        issuedAtEpochSeconds: 100,
+        expiresAtEpochSeconds: 1_900,
+        clientId: "t3-mobile",
+        scopes: ["environment:connect", "environment:status"],
+        workjet: {
+          grantId: "grant-1",
+          businessOsInstanceId: "business-os-1",
+          deviceId: "mobile-1",
+          accessGeneration: 7,
+        },
+      });
+
+      expect(
+        yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 700 }),
+      ).toMatchObject({
+        sub: "user_123",
+        cnf: { jkt: "proof-key-thumbprint" },
+        workjet: {
+          grantId: "grant-1",
+          businessOsInstanceId: "business-os-1",
+          deviceId: "mobile-1",
+          accessGeneration: 7,
+        },
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("treats requested scope as an order-independent set", () =>
     Effect.gen(function* () {
       const relayTokens = yield* RelayTokens.RelayTokens;

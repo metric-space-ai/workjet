@@ -23,6 +23,10 @@ The relay currently owns:
 - Registering mobile notification preferences and APNs tokens.
 - Receiving published agent activity and delivering notifications or Live Activity updates.
 - Persisting relay state and exposing relay-specific traces for diagnostics.
+- Issuing revocable, DPoP-bound Workjet device sessions for one Business OS instance and enforcing
+  its current zero-to-many environment membership on Relay connect/status requests.
+- Minting short-lived Relay identity assertions for ctox.dev without exposing client-asserted Relay
+  account identifiers.
 
 The environment server and relay have separate credentials and trust boundaries. Read
 [Environment Authentication Profile](../../docs/internals/environment-auth.md) before changing token,
@@ -39,6 +43,8 @@ credential, or authorization behavior.
 - [`src/agentActivity`](./src/agentActivity) contains mobile device registration, activity state,
   APNs delivery, and queue processing.
 - [`src/auth`](./src/auth) contains relay token and DPoP proof handling.
+- [`src/workjet`](./src/workjet) contains Workjet device-session, Business OS membership, and
+  control-identity assertion authority.
 - [`src/persistence/schema.ts`](./src/persistence/schema.ts) defines persisted relay state. Keep
   schema and migration changes together.
 
@@ -85,7 +91,10 @@ vp run --filter t3code-relay deploy
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
 connectivity, and relay tracing resources. Copy [`infra/relay/.env.example`](./.env.example) to
 `infra/relay/.env` and fill in the deployment-specific values before deploying. Alchemy loads that
-file from the relay directory. Runtime secrets include Clerk and APNs credentials. Production adopts
+file from the relay directory. Runtime secrets include Clerk and APNs credentials plus
+`CTOX_RELAY_SERVICE_TOKEN`, a 32-byte-or-longer token provisioned identically to the ctox.dev
+private adapter. The device-session derivation secret is generated and retained by Alchemy and is
+never shared with ctox.dev. Production adopts
 the configured API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference
 the production-owned zones.
 
@@ -150,6 +159,23 @@ The `production` GitHub environment must define these Actions secrets:
 
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY`
+- `CTOX_RELAY_SERVICE_TOKEN`
+
+### Workjet device-session endpoints
+
+The private ctox.dev adapter uses service-authenticated issue, revoke, membership replacement, and
+identity-assertion consumption routes under `/v1/private/workjet/`. Public clients exchange and
+renew a proof-key-bound session at `/api/workjet/device-session/` and read current instance
+membership separately. Relay-signed account assertions are minted only from an existing
+Clerk-derived Relay DPoP principal at `/v1/workjet/control-identity/assertion`; verifiers discover
+the current and retained rotation keys at `/.well-known/jwks.json`.
+
+Bootstrap and refresh credentials are stored only as hashes. Bootstrap material is deterministically
+derived with a relay-only key so an identical provisioning retry returns the same grant without
+persisting plaintext. Every session request verifies exact DPoP method/URL, proof-key thumbprint,
+freshness and replay state. Revocation and refresh rotation are enforced by a persisted access
+generation check before connect/status, while ordinary Clerk-derived Relay tokens keep their
+existing behavior.
 
 The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
 are not bound into the relay Worker. The production deployment uses an Axiom personal access token,

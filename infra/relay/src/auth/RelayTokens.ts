@@ -52,6 +52,14 @@ const RelayDpopAccessTokenClaims = Schema.Struct({
   client_id: Schema.Literals([RelayMobileClientId, RelayWebClientId]),
   scope: Schema.String,
   cnf: Schema.Struct({ jkt: Schema.String }),
+  workjet: Schema.optionalKey(
+    Schema.Struct({
+      grantId: Schema.String,
+      businessOsInstanceId: Schema.String,
+      deviceId: Schema.String,
+      accessGeneration: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
 });
 export type RelayDpopAccessTokenClaims = Omit<typeof RelayDpopAccessTokenClaims.Type, "scope"> & {
   readonly scope: ReadonlyArray<RelayDpopAccessTokenScope>;
@@ -107,6 +115,12 @@ export class RelayTokens extends Context.Service<
       readonly expiresAtEpochSeconds: number;
       readonly clientId: RelayPublicClientId;
       readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
+      readonly workjet?: {
+        readonly grantId: string;
+        readonly businessOsInstanceId: string;
+        readonly deviceId: string;
+        readonly accessGeneration: number;
+      };
     }) => Effect.Effect<string, RelayJwtError>;
     readonly verifyDpopAccessToken: (input: {
       readonly token: string;
@@ -181,6 +195,7 @@ const make = Effect.gen(function* () {
         client_id: input.clientId,
         scope: encodeOAuthScope(input.scopes),
         cnf: { jkt: input.proofKeyThumbprint },
+        ...(input.workjet ? { workjet: input.workjet } : {}),
       },
     });
   });

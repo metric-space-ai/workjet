@@ -69,6 +69,8 @@ import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublis
 import * as MobileRegistrations from "../agentActivity/MobileRegistrations.ts";
 import { withSpanAttributes } from "../observability.ts";
 import * as RelayDb from "../db.ts";
+import * as DeviceSessions from "../workjet/DeviceSessions.ts";
+import * as BusinessOsMemberships from "../workjet/BusinessOsMemberships.ts";
 
 const relayCorsAllowedMethods = ["GET", "POST", "DELETE", "OPTIONS"] as const;
 const relayCorsAllowedHeaders = [
@@ -92,12 +94,13 @@ const relayCorsPreflightHeaders = {
   "access-control-max-age": "86400",
 } as const;
 
-const appendRelayCredentialResponseHeaders = HttpEffect.appendPreResponseHandler(
+export const appendRelayCredentialResponseHeaders = HttpEffect.appendPreResponseHandler(
   (_request, response) =>
     Effect.succeed(
       HttpServerResponse.setHeaders(response, {
         "cache-control": "no-store",
         pragma: "no-cache",
+        "referrer-policy": "no-referrer",
       }),
     ),
 );
@@ -308,6 +311,7 @@ export const relayDpopClientAuthLayer = Layer.effect(
   RelayDpopClientAuth,
   Effect.gen(function* () {
     const relayTokens = yield* RelayTokens.RelayTokens;
+    const deviceSessions = yield* DeviceSessions.DeviceSessions;
     return {
       relayDpop: Effect.fn("relay.auth.dpop_client")(function* (httpEffect, { credential }) {
         yield* appendRelayDpopChallengeHeader;
@@ -324,11 +328,19 @@ export const relayDpopClientAuthLayer = Layer.effect(
         if (!verified) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
+        const workjetPrincipal = verified.workjet
+          ? yield* deviceSessions
+              .authorizeAccess(verified)
+              .pipe(Effect.catch(() => relayAuthInvalidError("invalid_bearer")))
+          : null;
+        if (verified.workjet && !workjetPrincipal) {
+          return yield* relayAuthInvalidError("invalid_bearer");
+        }
         yield* Effect.annotateCurrentSpan({
           "relay.auth.mode": "dpop",
           "relay.auth.subject": verified.sub,
         });
-        return yield* httpEffect.pipe(
+        const authorized = httpEffect.pipe(
           withSpanAttributes({ "user.id": verified.sub }),
           Effect.provideService(RelayClientPrincipal, {
             userId: verified.sub,
@@ -337,6 +349,11 @@ export const relayDpopClientAuthLayer = Layer.effect(
             dpopScopes: verified.scope,
           }),
         );
+        return yield* workjetPrincipal
+          ? authorized.pipe(
+              Effect.provideService(DeviceSessions.WorkjetDeviceSessionPrincipal, workjetPrincipal),
+            )
+          : authorized;
       }),
     };
   }),
@@ -753,6 +770,7 @@ export const dpopClientApi = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const connector = yield* EnvironmentConnector.EnvironmentConnector;
     const dpopProofs = yield* DpopProofs.DpopProofReplay;
+    const memberships = yield* BusinessOsMemberships.BusinessOsMemberships;
     return handlers
       .handle(
         "connectEnvironment",
@@ -769,6 +787,19 @@ export const dpopClientApi = HttpApiBuilder.group(
             const clientProofKeyThumbprint = yield* requireDpopThumbprint(proofKeyThumbprint, {
               expectedAccessToken: token,
             }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs));
+            const workjetPrincipal = yield* Effect.serviceOption(
+              DeviceSessions.WorkjetDeviceSessionPrincipal,
+            );
+            if (Option.isSome(workjetPrincipal)) {
+              const member = yield* memberships
+                .isMember({
+                  businessOsInstanceId: workjetPrincipal.value.businessOsInstanceId,
+                  relayUserId: workjetPrincipal.value.relayUserId,
+                  environmentId: params.environmentId,
+                })
+                .pipe(Effect.orElseSucceed(() => false));
+              if (!member) return yield* new HttpApiError.Unauthorized({});
+            }
             return yield* connector.connect({
               userId,
               environmentId: params.environmentId,
@@ -814,6 +845,19 @@ export const dpopClientApi = HttpApiBuilder.group(
             yield* requireDpopThumbprint(proofKeyThumbprint, {
               expectedAccessToken: token,
             }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs));
+            const workjetPrincipal = yield* Effect.serviceOption(
+              DeviceSessions.WorkjetDeviceSessionPrincipal,
+            );
+            if (Option.isSome(workjetPrincipal)) {
+              const member = yield* memberships
+                .isMember({
+                  businessOsInstanceId: workjetPrincipal.value.businessOsInstanceId,
+                  relayUserId: workjetPrincipal.value.relayUserId,
+                  environmentId: params.environmentId,
+                })
+                .pipe(Effect.orElseSucceed(() => false));
+              if (!member) return yield* new HttpApiError.Unauthorized({});
+            }
             return yield* connector.status({
               userId,
               environmentId: params.environmentId,
@@ -1226,18 +1270,18 @@ export function verifyRelayClientBearerToken(
   );
 }
 
-const requireDpopPrincipalScope = Effect.fn("relay.api.require_dpop_principal_scope")(function* (
-  scope: RelayDpopAccessTokenScope,
-) {
-  yield* Effect.annotateCurrentSpan({ "relay.dpop.required_scope": scope });
-  const principal = yield* RelayClientPrincipal;
-  if (!principal.proofKeyThumbprint || !principal.dpopScopes?.includes(scope)) {
-    return yield* new HttpApiError.Unauthorized({});
-  }
-  return principal.proofKeyThumbprint;
-});
+export const requireDpopPrincipalScope = Effect.fn("relay.api.require_dpop_principal_scope")(
+  function* (scope: RelayDpopAccessTokenScope) {
+    yield* Effect.annotateCurrentSpan({ "relay.dpop.required_scope": scope });
+    const principal = yield* RelayClientPrincipal;
+    if (!principal.proofKeyThumbprint || !principal.dpopScopes?.includes(scope)) {
+      return yield* new HttpApiError.Unauthorized({});
+    }
+    return principal.proofKeyThumbprint;
+  },
+);
 
-const requireDpopThumbprint = Effect.fn("relay.api.require_dpop_thumbprint")(function* (
+export const requireDpopThumbprint = Effect.fn("relay.api.require_dpop_thumbprint")(function* (
   expectedThumbprint: string,
   options?: {
     readonly expectedAccessToken?: string;

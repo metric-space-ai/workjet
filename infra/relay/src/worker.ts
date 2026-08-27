@@ -14,6 +14,13 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as HttpApiScalar from "effect/unstable/httpapi/HttpApiScalar";
 
 import { RelayApi } from "@t3tools/contracts/relay";
+import {
+  WorkjetRelayApi,
+  workjetAuthenticatedApi,
+  workjetMetadataApi,
+  workjetPrivateApi,
+  workjetSessionApi,
+} from "./http/WorkjetApi.ts";
 
 import {
   clientApi,
@@ -39,6 +46,7 @@ import * as AgentActivityRows from "./agentActivity/AgentActivityRows.ts";
 import * as Devices from "./agentActivity/Devices.ts";
 import * as DpopProofs from "./auth/DpopProofs.ts";
 import * as RelayTokens from "./auth/RelayTokens.ts";
+import * as CtoxServiceAuth from "./auth/CtoxServiceAuth.ts";
 import * as EnvironmentCredentials from "./environments/EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "./environments/EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./environments/ManagedEndpointAllocations.ts";
@@ -57,6 +65,9 @@ import * as EnvironmentPublishSignatures from "./environments/EnvironmentPublish
 import * as ManagedEndpointProvider from "./environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
 import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
+import * as BusinessOsMemberships from "./workjet/BusinessOsMemberships.ts";
+import * as ControlIdentityAssertions from "./workjet/ControlIdentityAssertions.ts";
+import * as DeviceSessions from "./workjet/DeviceSessions.ts";
 
 const webcryptoLayer = Layer.succeed(
   Crypto.Crypto,
@@ -91,8 +102,18 @@ const relayApiLayer = Layer.mergeAll(
   serverApi,
 );
 
+const workjetRelayApiLayer = Layer.empty.pipe(
+  Layer.provideMerge(workjetPrivateApi),
+  Layer.provideMerge(workjetSessionApi),
+  Layer.provideMerge(workjetAuthenticatedApi),
+  Layer.provideMerge(workjetMetadataApi),
+);
+
 const CloudMintKeyPair = Alchemy.KeyPair("CloudMintKeyPair");
 const ApnsDeliveryJobSigningSecret = Alchemy.makeRandom("ApnsDeliveryJobSigningSecret", {
+  bytes: 32,
+});
+const WorkjetDeviceSessionSecret = Alchemy.makeRandom("WorkjetDeviceSessionSecret", {
   bytes: 32,
 });
 
@@ -121,6 +142,7 @@ export const ApiLive = Api.make(
     const relayApiZone = yield* RelayApiZone;
     const managedEndpointZone = yield* ManagedEndpointZone;
     const randomApnsDeliveryJobSigningSecret = yield* ApnsDeliveryJobSigningSecret;
+    const randomWorkjetDeviceSessionSecret = yield* WorkjetDeviceSessionSecret;
     const observability = yield* RelayObservability;
 
     //
@@ -135,6 +157,7 @@ export const ApiLive = Api.make(
     const apnsBundleId = yield* Config.string("APNS_BUNDLE_ID");
     const apnsPrivateKey = yield* Config.redacted("APNS_PRIVATE_KEY");
     const apnsDeliveryJobSigningSecret = yield* randomApnsDeliveryJobSigningSecret;
+    const workjetDeviceSessionSecret = yield* randomWorkjetDeviceSessionSecret;
     const apnsDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(apnsDeliveryQueue);
 
     const axiomDatasetName = yield* observability.traces.name;
@@ -144,6 +167,7 @@ export const ApiLive = Api.make(
     const clerkSecretKey = yield* Config.redacted("CLERK_SECRET_KEY");
     const clerkPublishableKey = yield* Config.string("CLERK_PUBLISHABLE_KEY");
     const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE");
+    const ctoxServiceToken = yield* Config.redacted("CTOX_RELAY_SERVICE_TOKEN");
 
     const cloudMintPrivateKey = yield* cloudMintKeyPair.privateKey;
     const cloudMintPublicKey = yield* cloudMintKeyPair.publicKey;
@@ -177,6 +201,8 @@ export const ApiLive = Api.make(
         clerkJwtAudience,
         cloudMintPrivateKey: yield* cloudMintPrivateKey,
         cloudMintPublicKey: yield* cloudMintPublicKey,
+        ctoxServiceToken,
+        workjetDeviceSessionSecret: yield* workjetDeviceSessionSecret,
         managedEndpointBaseDomain: yield* managedEndpointZoneName,
         managedEndpointNamespace: stage,
       });
@@ -221,7 +247,14 @@ export const ApiLive = Api.make(
       ),
       Layer.provideMerge(LiveActivities.layer),
       Layer.provideMerge(DeliveryAttempts.layer),
-      Layer.provideMerge(RelayTokens.layer),
+      Layer.provideMerge(
+        Layer.mergeAll(
+          CtoxServiceAuth.layer,
+          BusinessOsMemberships.layer,
+          ControlIdentityAssertions.layer,
+          DeviceSessions.layer.pipe(Layer.provideMerge(RelayTokens.layer)),
+        ),
+      ),
       Layer.provideMerge(
         RelayDb.RelayTransactions.layer.pipe(
           Layer.provideMerge(Layer.succeed(RelayDb.RelayDb, db)),
@@ -235,6 +268,10 @@ export const ApiLive = Api.make(
       Layer.provideMerge(relayClientAuthLayer),
       Layer.provideMerge(relayDpopClientAuthLayer),
       Layer.provideMerge(relayEnvironmentAuthLayer),
+      Layer.provide(runtimeLayer),
+    );
+    const workjetAppLayer = workjetRelayApiLayer.pipe(
+      Layer.provideMerge(relayDpopClientAuthLayer),
       Layer.provide(runtimeLayer),
     );
 
@@ -284,6 +321,7 @@ export const ApiLive = Api.make(
         HttpApiBuilder.layer(RelayApi, { openapiPath: "/openapi.json" }).pipe(
           Layer.provide(appLayer),
         ),
+        HttpApiBuilder.layer(WorkjetRelayApi).pipe(Layer.provide(workjetAppLayer)),
         HttpApiScalar.layer(RelayApi, { path: "/docs" }),
         relayDocsRedirectRoute,
       ).pipe(Layer.provide([Etag.layerWeak, httpPlatformNotSupportedLayer, relayCors])),

@@ -189,11 +189,11 @@ terms restricted to status details or the collapsed Diagnose section.
 
 ## Desktop implementation checklist
 
-- [ ] Render the same active CTOX instance selector in the left sidebar of Code
+- [x] Render the same active CTOX instance selector in the left sidebar of Code
       and Business OS.
 - [ ] Derive Code environment, projects, threads, sessions and workers from the
       active instance.
-- [ ] Keep the active instance stable when switching `Code | Business OS`.
+- [x] Keep the active instance stable when switching `Code | Business OS`.
 - [ ] Present `Gerät verbinden`, renew and revoke as actions of one instance.
 - [ ] Keep Machines/workers nested under the instance rather than presenting
       them as alternative backends.

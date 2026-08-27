@@ -10,6 +10,7 @@ import {
   WORKJET_MANAGED_DEVICE_BINDINGS_LIST_PATH,
   WORKJET_MANAGED_DEVICE_BINDINGS_REVOKE_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_CREATE_PATH,
+  WORKJET_MANAGED_DEVICE_INVITES_MANUAL_CONNECTION_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_REDEEM_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_REVOKE_PATH,
   WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH,
@@ -26,6 +27,8 @@ import {
   WorkjetManagedCtoxSyncInviteIssueInput,
   WorkjetManagedDeviceBindingRecordV1,
   WorkjetManagedDeviceInviteCreateInput,
+  WorkjetManagedDeviceInviteManualConnectionInput,
+  WorkjetManagedDeviceInviteManualConnectionResult,
   WorkjetManagedDeviceSessionIssueInput,
   WorkjetManagedDeviceSessionIssueResult,
   WorkjetRelayControlIdentityAssertionIssueInput,
@@ -64,6 +67,9 @@ describe("Workjet managed Business OS backend control contract", () => {
     );
     expect(WORKJET_MANAGED_DEVICE_INVITES_REVOKE_PATH).toBe(
       "/api/workjet/backend-control/device-invites/revoke",
+    );
+    expect(WORKJET_MANAGED_DEVICE_INVITES_MANUAL_CONNECTION_PATH).toBe(
+      "/api/workjet/backend-control/device-invites/manual-connection",
     );
     expect(WORKJET_MANAGED_DEVICE_INVITES_REDEEM_PATH).toBe("/api/workjet/device-invites/redeem");
     expect(WORKJET_DEVICE_SESSION_BOOTSTRAP_EXCHANGE_PATH).toBe(
@@ -197,6 +203,32 @@ describe("Workjet managed Business OS backend control contract", () => {
     expect(decoded).not.toHaveProperty("environmentId");
     expect(decoded).not.toHaveProperty("connectionUrl");
     expect(decoded).not.toHaveProperty("invite");
+  });
+
+  it("keeps manual room credentials behind a separate scoped recovery contract", () => {
+    const input = Schema.decodeUnknownSync(WorkjetManagedDeviceInviteManualConnectionInput)({
+      backendControlConnectionId: connectionId,
+      businessOsInstanceId: instanceId,
+      inviteId: "invite-1",
+    });
+    expect(input).toEqual({
+      backendControlConnectionId: connectionId,
+      businessOsInstanceId: instanceId,
+      inviteId: "invite-1",
+    });
+    expect(
+      Schema.decodeUnknownSync(WorkjetManagedDeviceInviteManualConnectionResult)({
+        signalingUrls: ["wss://signaling.ctox.dev/v2"],
+        room: "ctox-business-os:biz_welsch",
+        password: "room-secret",
+        expiresAt: "2026-08-27T04:00:00Z",
+      }),
+    ).toEqual({
+      signalingUrls: ["wss://signaling.ctox.dev/v2"],
+      room: "ctox-business-os:biz_welsch",
+      password: "room-secret",
+      expiresAt: "2026-08-27T04:00:00Z",
+    });
   });
 
   it("provisions one instance session plus CTOX sync without choosing a Code computer", () => {

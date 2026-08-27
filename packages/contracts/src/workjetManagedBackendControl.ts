@@ -88,9 +88,12 @@ export const WorkjetInstallationId = TrimmedNonEmptyString.check(
 export type WorkjetInstallationId = typeof WorkjetInstallationId.Type;
 
 /**
- * Relay-signed compact assertion. ctox.dev validates issuer, audience, expiry,
- * JTI, installation identity and `cnf.jkt`; it never correlates accounts by
- * email or accepts client-asserted Relay user ids.
+ * Compact assertion minted by the platform Control Identity port. The current
+ * target is the Cloudflare `service` worker backed by D1/Durable Objects.
+ * ctox.dev validates issuer, audience, expiry, JTI, installation identity and
+ * `cnf.jkt`; it never correlates accounts by email or accepts a client-asserted
+ * account identity. The historical Relay name remains only for wire/API
+ * compatibility while the producer migration is completed.
  */
 export const WorkjetRelayControlIdentityAssertion = Schema.String.check(
   Schema.isMinLength(64),
@@ -194,6 +197,30 @@ export const WorkjetManagedDeviceInviteRevokeInput = Schema.Struct({
 });
 export type WorkjetManagedDeviceInviteRevokeInput =
   typeof WorkjetManagedDeviceInviteRevokeInput.Type;
+
+/**
+ * Explicit, short-lived recovery read for manually joining the CTOX sync plane.
+ *
+ * This is deliberately separate from invite creation so the compact QR result
+ * never contains room credentials. Producers must return this only for the
+ * exact active invite, control handle and Business-OS instance, with the same
+ * DPoP + CSRF checks and no-store response policy as every other control call.
+ */
+export const WorkjetManagedDeviceInviteManualConnectionInput = Schema.Struct({
+  ...WorkjetManagedBackendControlScope,
+  inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+});
+export type WorkjetManagedDeviceInviteManualConnectionInput =
+  typeof WorkjetManagedDeviceInviteManualConnectionInput.Type;
+
+export const WorkjetManagedDeviceInviteManualConnectionResult = Schema.Struct({
+  signalingUrls: CtoxBusinessOsInviteV1.fields.signaling_urls,
+  room: CtoxBusinessOsInviteV1.fields.sync_room,
+  password: CtoxBusinessOsInviteV1.fields.signaling_room_password,
+  expiresAt: Rfc3339Timestamp,
+});
+export type WorkjetManagedDeviceInviteManualConnectionResult =
+  typeof WorkjetManagedDeviceInviteManualConnectionResult.Type;
 
 /** DPoP proof for the unauthenticated possession-of-secret redemption request. */
 export const WorkjetManagedDeviceInviteRedeemHeaders = Schema.Struct({
@@ -498,6 +525,8 @@ export const WORKJET_MANAGED_DEVICE_INVITES_CREATE_PATH =
   "/api/workjet/backend-control/device-invites/create";
 export const WORKJET_MANAGED_DEVICE_INVITES_REVOKE_PATH =
   "/api/workjet/backend-control/device-invites/revoke";
+export const WORKJET_MANAGED_DEVICE_INVITES_MANUAL_CONNECTION_PATH =
+  "/api/workjet/backend-control/device-invites/manual-connection";
 export const WORKJET_MANAGED_DEVICE_INVITES_REDEEM_PATH = "/api/workjet/device-invites/redeem";
 export const WORKJET_DEVICE_SESSION_BOOTSTRAP_EXCHANGE_PATH =
   "/api/workjet/device-session/exchange";
@@ -563,6 +592,18 @@ export class WorkjetManagedBackendControlHttpGroup extends HttpApiGroup.make(
       success: WorkjetDeviceInviteRevokeResult,
       error: ManagedControlErrors,
     }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "readDeviceInviteManualConnection",
+      WORKJET_MANAGED_DEVICE_INVITES_MANUAL_CONNECTION_PATH,
+      {
+        headers: WorkjetManagedBackendControlHeaders,
+        payload: WorkjetManagedDeviceInviteManualConnectionInput,
+        success: WorkjetManagedDeviceInviteManualConnectionResult,
+        error: ManagedControlErrors,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.post("redeemDeviceInvite", WORKJET_MANAGED_DEVICE_INVITES_REDEEM_PATH, {

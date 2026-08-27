@@ -14,6 +14,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 import {
   BusinessOsSettingsView,
+  manualConnectionPasswordText,
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
 } from "./BusinessOsSettings";
@@ -84,10 +85,12 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain("WELSCH");
     expect(markup).toContain("Geräte für WELSCH");
     expect(markup).toContain("Zuweisungen zu WELSCH");
-    expect(markup).toContain("3 Rechner im globalen Inventar");
-    expect(markup).toContain("Technische Details");
+    expect(markup).toContain("3 Rechner sind eingerichtet");
+    expect(markup).not.toContain("Technische Details");
+    expect(markup).not.toContain("Darstellungs-ID");
+    expect(markup).not.toContain("ctox_dev");
     expect(markup.indexOf("Workjet-Geräte")).toBeLessThan(markup.indexOf("Rechner für Code"));
-    expect(markup.indexOf("Rechner für Code")).toBeLessThan(markup.indexOf("Diagnose"));
+    expect(markup).not.toContain("Diagnose");
   });
 
   it("keeps opaque authority identifiers out of regular instance labels", () => {
@@ -107,12 +110,13 @@ describe("Business OS settings scope", () => {
         instances={[instance("managed:welsch", "WELSCH", "ctox_dev")]}
         activeInstanceId="managed:welsch"
         computerCount={3}
-        deviceManagementBlockedReason="Für WELSCH ist noch keine serverseitig attestierte Backend-Steuerverbindung verfügbar. Geräteaktionen bleiben bis dahin gesperrt."
+        deviceManagementBlockedReason="WELSCH konnte noch nicht bestätigt werden."
       />,
     );
     expect(markup).toContain("Gerät hinzufügen");
-    expect(markup).toContain("serverseitig attestierte Backend-Steuerverbindung");
+    expect(markup).toContain("WELSCH konnte noch nicht bestätigt werden");
     expect(markup).toContain("disabled");
+    expect(markup).not.toContain("serverautoritativ");
     expect(markup).not.toContain("Erneuern");
     expect(markup).not.toContain("primaryEnvironment");
   });
@@ -138,5 +142,10 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain("Widerrufen");
     expect(markup).not.toContain("welsch-authority");
     expect(markup).not.toContain("pairing-1");
+  });
+
+  it("keeps the manual room password masked until the user explicitly reveals it", () => {
+    expect(manualConnectionPasswordText("room-secret", false)).toBe("••••••••••••");
+    expect(manualConnectionPasswordText("room-secret", true)).toBe("room-secret");
   });
 });

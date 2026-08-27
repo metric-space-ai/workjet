@@ -138,6 +138,10 @@ import type {
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
 } from "./computerProvisioning.ts";
+import type {
+  WorkjetRelayControlIdentityAssertionIssueInput,
+  WorkjetRelayControlIdentityAssertionIssueResult,
+} from "./workjetManagedBackendControl.ts";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -1220,6 +1224,14 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxPairedInstanceImportResult>;
   removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
   resolveInstanceAuthority?: (instanceId: string) => Promise<CtoxInstanceAuthorityResolveResult>;
+  /**
+   * Platform-owned, fail-closed identity port for the Cloudflare `service`
+   * control plane. Renderer code never receives account credentials or the
+   * DPoP private key; absence means managed device actions remain unavailable.
+   */
+  issueControlIdentityAssertion?: (
+    input: WorkjetRelayControlIdentityAssertionIssueInput,
+  ) => Promise<WorkjetRelayControlIdentityAssertionIssueResult>;
   /** Configure one SSH-managed CTOX instance; carries no credential. */
   addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,

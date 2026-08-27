@@ -23,6 +23,7 @@ import {
   exchangeManagedWorkjetDeviceSessionBootstrap,
   issueManagedRelayControlIdentityAssertion,
   listManagedWorkjetDeviceBindings,
+  readManagedWorkjetDeviceInviteManualConnection,
   readManagedBusinessOsDeviceSessionMembership,
   readManagedWorkjetDeviceSessionAuthorization,
   redeemManagedWorkjetDeviceInviteReference,
@@ -67,12 +68,21 @@ describe("managed Business OS backend control client runtime", () => {
       }),
     );
     const revokeDeviceInvite = vi.fn(() => Effect.succeed({ revoked: true as const }));
+    const readDeviceInviteManualConnection = vi.fn(() =>
+      Effect.succeed({
+        signalingUrls: ["wss://signaling.ctox.dev/v2"],
+        room: "ctox-business-os:biz_welsch",
+        password: "room-secret",
+        expiresAt: "2026-08-27T04:00:00Z",
+      }),
+    );
     const revokeDeviceBinding = vi.fn(() => Effect.succeed({ revoked: true as const }));
     const client = WorkjetManagedBackendControlClient.of({
       resolve,
       listDeviceBindings,
       createDeviceInvite,
       revokeDeviceInvite,
+      readDeviceInviteManualConnection,
       revokeDeviceBinding,
     });
 
@@ -93,6 +103,11 @@ describe("managed Business OS backend control client runtime", () => {
           ttlSeconds: 300,
         });
         yield* revokeManagedWorkjetDeviceInvite({
+          backendControlConnectionId,
+          businessOsInstanceId,
+          inviteId: "invite-1",
+        });
+        yield* readManagedWorkjetDeviceInviteManualConnection({
           backendControlConnectionId,
           businessOsInstanceId,
           inviteId: "invite-1",
@@ -118,6 +133,11 @@ describe("managed Business OS backend control client runtime", () => {
           ttlSeconds: 300,
         });
         expect(revokeDeviceInvite).toHaveBeenCalledWith({
+          backendControlConnectionId,
+          businessOsInstanceId,
+          inviteId: "invite-1",
+        });
+        expect(readDeviceInviteManualConnection).toHaveBeenCalledWith({
           backendControlConnectionId,
           businessOsInstanceId,
           inviteId: "invite-1",

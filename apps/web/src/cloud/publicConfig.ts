@@ -17,6 +17,7 @@ export interface CloudPublicConfig {
   readonly clerkPublishableKey: string | null;
   readonly clerkJwtTemplate: string | null;
   readonly relayUrl: string | null;
+  readonly managedControlUrl: string | null;
   readonly relayTracing: {
     readonly tracesUrl: string | null;
     readonly tracesDataset: string | null;
@@ -37,6 +38,16 @@ function normalizeSecureUrl(value: string): string | null {
   }
 }
 
+function normalizeSecureOrigin(value: string): string | null {
+  const normalized = normalizeSecureUrl(value);
+  if (normalized === null) return null;
+  const url = new URL(normalized);
+  if (url.username || url.password || url.search || url.hash || !/^\/+$/u.test(url.pathname)) {
+    return null;
+  }
+  return url.origin;
+}
+
 export function resolveCloudPublicConfig(): CloudPublicConfig {
   return {
     clerkPublishableKey: trimNonEmpty(
@@ -45,6 +56,10 @@ export function resolveCloudPublicConfig(): CloudPublicConfig {
     clerkJwtTemplate: trimNonEmpty(import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined),
     relayUrl: normalizeSecureRelayUrl(
       (import.meta.env.VITE_T3CODE_RELAY_URL as string | undefined) ?? "",
+    ),
+    managedControlUrl: normalizeSecureOrigin(
+      (import.meta.env.VITE_WORKJET_MANAGED_CONTROL_URL as string | undefined) ??
+        "https://ctox.dev",
     ),
     relayTracing: {
       tracesUrl: normalizeSecureUrl(

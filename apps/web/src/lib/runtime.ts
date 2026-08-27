@@ -9,7 +9,8 @@ import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClien
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 
 import { browserCryptoLayer } from "../cloud/dpop";
-import { managedRelayClientLayer } from "../cloud/managedRelayLayer";
+import { managedBackendControlClientLayer } from "../cloud/managedBackendControlLayer";
+import { managedRelayClientLayer, relayDpopSignerLayer } from "../cloud/managedRelayLayer";
 import { resolveCloudPublicConfig, resolveRelayTracingConfig } from "../cloud/publicConfig";
 
 function configuredRelayUrl(): string {
@@ -29,6 +30,7 @@ type RuntimeLayerSource =
   | typeof browserCryptoLayer
   | typeof Socket.layerWebSocketConstructorGlobal
   | typeof relayTracingLayer
+  | typeof managedBackendControlClientLayer
   | ReturnType<typeof managedRelayClientLayer>;
 
 export const remoteHttpRuntime = ManagedRuntime.make(httpClientLayer);
@@ -61,6 +63,11 @@ const runtimeLayer = Layer.mergeAll(
   relayTracingLayer,
   managedRelayClientLayer(configuredRelayUrl()).pipe(
     Layer.provide(Layer.mergeAll(httpClientLayer, browserCryptoLayer)),
+  ),
+  managedBackendControlClientLayer.pipe(
+    Layer.provide(
+      Layer.mergeAll(httpClientLayer, relayDpopSignerLayer.pipe(Layer.provide(browserCryptoLayer))),
+    ),
   ),
 );
 

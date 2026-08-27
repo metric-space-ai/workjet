@@ -3,10 +3,15 @@ import type {
   CtoxManagedInstance,
   DesktopCtoxBridge,
   WorkjetDeviceBindingSummary,
+  WorkjetDeviceInviteCreateResult,
+  WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@t3tools/contracts";
 import {
   BriefcaseBusinessIcon,
   CircleAlertIcon,
+  CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
   LaptopIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -26,7 +31,25 @@ import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemo
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
+import {
+  createBusinessOsDeviceInvite,
+  listBusinessOsDevices,
+  readBusinessOsDeviceInviteManualConnection,
+  revokeBusinessOsDevice,
+  revokeBusinessOsDeviceInvite,
+} from "./businessOsDeviceControl";
+import { encodeWorkjetDevicePairingLink, formatMobileInviteExpiry } from "./businessOsPairing";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
@@ -62,6 +85,251 @@ function instanceStatus(instance: CtoxManagedInstance): string {
   return "Verbindung fehlerhaft";
 }
 
+export function manualConnectionPasswordText(password: string, visible: boolean): string {
+  return visible ? password : "••••••••••••";
+}
+
+function DevicePairingDialog({
+  instanceName,
+  invite,
+  onClose,
+  onRenew,
+  onRevoke,
+  onLoadManualConnection,
+  revoking,
+}: {
+  readonly instanceName: string | null;
+  readonly invite: WorkjetDeviceInviteCreateResult | null;
+  readonly onClose: (() => void) | undefined;
+  readonly onRenew: (() => void) | undefined;
+  readonly onRevoke: (() => void) | undefined;
+  readonly onLoadManualConnection:
+    | (() => Promise<WorkjetManagedDeviceInviteManualConnectionResult>)
+    | undefined;
+  readonly revoking: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [manualConnection, setManualConnection] =
+    useState<WorkjetManagedDeviceInviteManualConnectionResult | null>(null);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualError, setManualError] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const link = useMemo(
+    () => (invite === null ? null : encodeWorkjetDevicePairingLink(invite.reference)),
+    [invite],
+  );
+
+  useEffect(() => {
+    setCopied(false);
+    setManualConnection(null);
+    setManualLoading(false);
+    setManualError(false);
+    setPasswordVisible(false);
+  }, [invite]);
+
+  useEffect(() => {
+    const hidePassword = () => {
+      if (document.visibilityState !== "visible") setPasswordVisible(false);
+    };
+    document.addEventListener("visibilitychange", hidePassword);
+    return () => document.removeEventListener("visibilitychange", hidePassword);
+  }, []);
+
+  const copyValue = async (value: string, sensitive = false) => {
+    await navigator.clipboard.writeText(value);
+    if (!sensitive) return;
+    window.setTimeout(() => {
+      void navigator.clipboard
+        .readText()
+        .then((current) => (current === value ? navigator.clipboard.writeText("") : undefined))
+        .catch(() => undefined);
+    }, 30_000);
+  };
+
+  const loadManualConnection = () => {
+    if (manualConnection !== null || manualLoading || onLoadManualConnection === undefined) {
+      return;
+    }
+    setManualLoading(true);
+    setManualError(false);
+    void onLoadManualConnection().then(
+      (result) => {
+        setManualConnection(result);
+        setManualLoading(false);
+      },
+      () => {
+        setManualError(true);
+        setManualLoading(false);
+      },
+    );
+  };
+
+  const close = () => {
+    setPasswordVisible(false);
+    setManualConnection(null);
+    onClose?.();
+  };
+
+  return (
+    <Dialog open={invite !== null} onOpenChange={(open) => (open ? undefined : close())}>
+      <DialogPopup className="max-w-md overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>Workjet-Gerät verbinden</DialogTitle>
+          <DialogDescription>
+            Scanne den QR-Code mit Workjet auf dem neuen Gerät. Code und Business OS werden
+            gemeinsam mit {instanceName ?? "dieser Instanz"} verbunden.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="flex flex-col items-center gap-4">
+          {link === null || invite === null ? null : (
+            <>
+              <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/8">
+                <QRCodeSvg
+                  value={link}
+                  size={224}
+                  level="M"
+                  marginSize={4}
+                  title={`QR-Code für ${instanceName ?? "Business OS"}`}
+                />
+              </div>
+              <div className="w-full rounded-lg bg-muted/40 px-3 py-3 text-center">
+                <p className="text-sm font-medium">{instanceName ?? "Business OS"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Gültig bis {formatMobileInviteExpiry(invite.expiresAt, "de-DE")} Uhr
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  void copyValue(link).then(() => setCopied(true));
+                }}
+              >
+                <CopyIcon aria-hidden />
+                {copied ? "Link kopiert" : "Verbindungslink kopieren"}
+              </Button>
+
+              <details
+                className="w-full rounded-xl border border-border/80 bg-muted/20"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) loadManualConnection();
+                  else setPasswordVisible(false);
+                }}
+              >
+                <summary className="cursor-pointer px-3 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Manuelle Verbindungsdaten
+                </summary>
+                <div className="border-t border-border/70 px-3 py-3">
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Diese Daten verbinden nur die CTOX-Synchronisierung. Für die vollständige
+                    Workjet-Verbindung mit Code und Business OS verwende den QR-Code oder den
+                    Verbindungslink.
+                  </p>
+                  {manualLoading ? (
+                    <p
+                      className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"
+                      role="status"
+                    >
+                      <Spinner className="size-3.5" /> Verbindungsdaten werden geladen …
+                    </p>
+                  ) : manualError ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm text-destructive" role="alert">
+                        Die manuellen Verbindungsdaten konnten nicht geladen werden.
+                      </p>
+                      <Button size="sm" variant="outline" onClick={loadManualConnection}>
+                        Erneut versuchen
+                      </Button>
+                    </div>
+                  ) : manualConnection === null ? null : (
+                    <dl className="mt-3 space-y-3">
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground">Server</dt>
+                        {manualConnection.signalingUrls.map((url) => (
+                          <dd key={url} className="mt-1 flex items-center gap-2">
+                            <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
+                              {url}
+                            </code>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label="Server kopieren"
+                              onClick={() => void copyValue(url)}
+                            >
+                              <CopyIcon aria-hidden />
+                            </Button>
+                          </dd>
+                        ))}
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground">Raum</dt>
+                        <dd className="mt-1 flex items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
+                            {manualConnection.room}
+                          </code>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Raum kopieren"
+                            onClick={() => void copyValue(manualConnection.room)}
+                          >
+                            <CopyIcon aria-hidden />
+                          </Button>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground">Passwort</dt>
+                        <dd className="mt-1 flex items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
+                            {manualConnectionPasswordText(
+                              manualConnection.password,
+                              passwordVisible,
+                            )}
+                          </code>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={
+                              passwordVisible ? "Passwort verbergen" : "Passwort anzeigen"
+                            }
+                            onClick={() => setPasswordVisible((visible) => !visible)}
+                          >
+                            {passwordVisible ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
+                          </Button>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Passwort kopieren"
+                            onClick={() => void copyValue(manualConnection.password, true)}
+                          >
+                            <CopyIcon aria-hidden />
+                          </Button>
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+                </div>
+              </details>
+            </>
+          )}
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="ghost" onClick={close}>
+            Schließen
+          </Button>
+          <Button variant="outline" onClick={onRenew} disabled={revoking}>
+            Neuen QR-Code erstellen
+          </Button>
+          <Button variant="destructive" onClick={onRevoke} disabled={revoking}>
+            {revoking ? <Spinner className="size-3.5" /> : null}
+            Einladung widerrufen
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
 export function BusinessOsSettingsView({
   instances,
   activeInstanceId,
@@ -78,7 +346,15 @@ export function BusinessOsSettingsView({
   onAddBusinessOs,
   onAddDevice,
   onRevokeDevice,
+  onRetryDevices,
   revokingDeviceId = null,
+  addingDevice = false,
+  activeInvite = null,
+  onCloseInvite,
+  onRenewInvite,
+  onRevokeInvite,
+  onLoadManualConnection,
+  revokingInvite = false,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
@@ -95,7 +371,15 @@ export function BusinessOsSettingsView({
   readonly onAddBusinessOs?: (invite: string) => Promise<string | null>;
   readonly onAddDevice?: () => void;
   readonly onRevokeDevice?: (devicePairingId: string) => void;
+  readonly onRetryDevices?: () => void;
   readonly revokingDeviceId?: string | null;
+  readonly addingDevice?: boolean;
+  readonly activeInvite?: WorkjetDeviceInviteCreateResult | null;
+  readonly onCloseInvite?: () => void;
+  readonly onRenewInvite?: () => void;
+  readonly onRevokeInvite?: () => void;
+  readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
+  readonly revokingInvite?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [invite, setInvite] = useState("");
@@ -126,8 +410,7 @@ export function BusinessOsSettingsView({
       <div className="px-3 sm:px-4">
         <h1 className="text-xl font-semibold tracking-[-0.025em]">Business OS</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Wähle die Business-OS-Instanz, die Code und Business OS gemeinsam verwenden. Ein
-          Moduswechsel ändert diese Auswahl nicht.
+          Verwalte die aktive Instanz, deine Workjet-Geräte und die zugehörigen Code-Rechner.
         </p>
       </div>
 
@@ -151,7 +434,7 @@ export function BusinessOsSettingsView({
           </div>
         }
       >
-        <div className="max-w-2xl rounded-lg border border-border bg-muted/10 p-4">
+        <div className="max-w-3xl rounded-xl border border-border/80 bg-card/30 p-4 sm:p-5">
           {loading ? (
             <p className="text-sm text-muted-foreground" role="status">
               Business-OS-Instanzen werden geladen …
@@ -234,7 +517,7 @@ export function BusinessOsSettingsView({
       </SettingsSection>
 
       <SettingsSection title="Workjet-Geräte">
-        <div className="max-w-2xl rounded-lg border border-border p-4">
+        <div className="max-w-3xl rounded-xl border border-border/80 bg-card/20 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
               <SmartphoneIcon
@@ -249,8 +532,8 @@ export function BusinessOsSettingsView({
                 </p>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   {selected === null
-                    ? "Wähle zuerst die Business-OS-Instanz, für die ein Workjet-Gerät freigegeben werden soll."
-                    : "Gerätefreigaben werden nach der serverautoritativen Zuordnung hier mit Ablauf und Widerruf angezeigt."}
+                    ? "Wähle zuerst eine Business-OS-Instanz."
+                    : "Verbinde einen weiteren Computer, ein Smartphone oder Tablet mit dieser Instanz."}
                 </p>
               </div>
             </div>
@@ -259,30 +542,44 @@ export function BusinessOsSettingsView({
               disabled={
                 selected === null ||
                 onAddDevice === undefined ||
-                deviceManagementBlockedReason !== null
+                deviceManagementBlockedReason !== null ||
+                addingDevice
               }
               onClick={onAddDevice}
               title={deviceManagementBlockedReason ?? undefined}
             >
-              <PlusIcon aria-hidden />
-              Gerät hinzufügen
+              {addingDevice ? <Spinner className="size-3.5" /> : <PlusIcon aria-hidden />}
+              {addingDevice ? "QR-Code wird erstellt …" : "Gerät hinzufügen"}
             </Button>
           </div>
           {selected === null ? null : deviceManagementBlockedReason !== null ? (
-            <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-xs text-muted-foreground">
-              {deviceManagementBlockedReason}
-            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/35 px-3 py-3">
+              <p className="text-sm text-muted-foreground">{deviceManagementBlockedReason}</p>
+              {onRetryDevices === undefined ? null : (
+                <Button size="sm" variant="outline" onClick={onRetryDevices}>
+                  <RefreshCwIcon aria-hidden />
+                  Erneut prüfen
+                </Button>
+              )}
+            </div>
           ) : devicesLoading ? (
-            <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground" role="status">
+            <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground" role="status">
               <Spinner className="size-3.5" /> Geräte werden geladen …
             </p>
           ) : devicesError !== null ? (
-            <p className="mt-3 text-xs text-destructive" role="alert">
-              {devicesError}
-            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
+              <p className="text-sm text-destructive" role="alert">
+                {devicesError}
+              </p>
+              {onRetryDevices === undefined ? null : (
+                <Button size="sm" variant="outline" onClick={onRetryDevices}>
+                  Erneut versuchen
+                </Button>
+              )}
+            </div>
           ) : devices.length === 0 ? (
-            <p className="mt-3 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Noch keine weiteren Workjet-Geräte mit dieser Instanz verbunden.
+            <p className="mt-4 rounded-lg bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+              Mit dieser Instanz ist noch kein weiteres Workjet-Gerät verbunden.
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-border rounded-md border border-border">
@@ -320,7 +617,7 @@ export function BusinessOsSettingsView({
       </SettingsSection>
 
       <SettingsSection title="Rechner für Code">
-        <div className="max-w-2xl rounded-lg border border-border p-4">
+        <div className="max-w-3xl rounded-xl border border-border/80 bg-card/20 p-4 sm:p-5">
           <div className="flex items-start gap-3">
             <LaptopIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
             <div>
@@ -332,7 +629,7 @@ export function BusinessOsSettingsView({
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
                 {computerCount === 0
                   ? "Im globalen Computer-Inventar sind noch keine Rechner eingerichtet."
-                  : `${computerCount} Rechner im globalen Inventar. Die eindeutige Instanzzuordnung wird nach serverseitiger Freigabe hier verwaltet.`}
+                  : `${computerCount} Rechner sind eingerichtet. Weise sie dieser Business-OS-Instanz im Computer-Inventar zu.`}
               </p>
               <a
                 className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
@@ -345,22 +642,19 @@ export function BusinessOsSettingsView({
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Diagnose">
-        <details className="max-w-2xl rounded-lg border border-border p-4">
-          <summary className="cursor-pointer text-sm font-medium text-foreground">
-            Technische Details
-          </summary>
-          {selected === null ? (
-            <p className="mt-2 text-sm text-muted-foreground">Keine Instanz ausgewählt.</p>
-          ) : (
-            <div className="mt-2 space-y-1 break-all font-mono text-xs text-muted-foreground">
-              <p>Darstellungs-ID: {selected.id}</p>
-              <p>Quelle: {selected.source}</p>
-              <p>Status: {selected.status}</p>
-            </div>
-          )}
-        </details>
-      </SettingsSection>
+      <DevicePairingDialog
+        instanceName={selectedDisplayName}
+        invite={activeInvite}
+        onClose={onCloseInvite}
+        onRenew={onRenewInvite}
+        onRevoke={onRevokeInvite}
+        onLoadManualConnection={
+          activeInvite === null || onLoadManualConnection === undefined
+            ? undefined
+            : onLoadManualConnection
+        }
+        revoking={revokingInvite}
+      />
     </SettingsPageContainer>
   );
 }
@@ -398,6 +692,13 @@ export function BusinessOsSettings() {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [authorityId, setAuthorityId] = useState<string | null>(null);
   const [authorityLoading, setAuthorityLoading] = useState(false);
+  const [deviceRefreshKey, setDeviceRefreshKey] = useState(0);
+  const [addingDevice, setAddingDevice] = useState(false);
+  const [activeInvite, setActiveInvite] = useState<WorkjetDeviceInviteCreateResult | null>(null);
+  const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
+  const [revokingInvite, setRevokingInvite] = useState(false);
+  const deviceControlAvailable =
+    authorityId !== null && bridge?.issueControlIdentityAssertion !== undefined;
 
   useEffect(() => {
     if (discovery === "loading" || discovery._tag !== "ready") return;
@@ -439,6 +740,33 @@ export function BusinessOsSettings() {
     };
   }, [activeInstanceId, bridge]);
 
+  useEffect(() => {
+    setDevices([]);
+    setDevicesError(null);
+    if (!deviceControlAvailable || authorityId === null) return;
+    let cancelled = false;
+    setDevicesLoading(true);
+    void listBusinessOsDevices(authorityId).then(
+      (result) => {
+        if (cancelled) return;
+        setDevices(result.devices);
+        setDevicesError(null);
+        setDevicesLoading(false);
+      },
+      () => {
+        if (cancelled) return;
+        setDevices([]);
+        setDevicesError(
+          "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+        );
+        setDevicesLoading(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [authorityId, deviceControlAvailable, deviceRefreshKey]);
+
   const addBusinessOs = async (invite: string): Promise<string | null> => {
     if (bridge === undefined)
       return "Diese Workjet-Ausgabe kann keine Backend-Einladung importieren.";
@@ -463,8 +791,65 @@ export function BusinessOsSettings() {
       : authorityLoading
         ? "Die Instanzberechtigung wird geprüft …"
         : authorityId === null
-          ? "Die kanonische Instanzberechtigung konnte nicht bestätigt werden. Geräteaktionen bleiben aus Sicherheitsgründen gesperrt."
-          : `Für ${ctoxInstanceDisplayTitle(selected)} ist noch keine serverseitig attestierte Backend-Steuerverbindung verfügbar. Geräteaktionen bleiben bis dahin gesperrt.`;
+          ? `${ctoxInstanceDisplayTitle(selected)} konnte noch nicht bestätigt werden.`
+          : !deviceControlAvailable
+            ? `Die sichere Geräteverbindung für ${ctoxInstanceDisplayTitle(selected)} ist in dieser Workjet-Ausgabe noch nicht aktiviert.`
+            : null;
+
+  const createDeviceInvite = async () => {
+    if (authorityId === null) return;
+    setAddingDevice(true);
+    setDevicesError(null);
+    try {
+      setActiveInvite(await createBusinessOsDeviceInvite(authorityId));
+    } catch {
+      setDevicesError(
+        "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+      );
+    } finally {
+      setAddingDevice(false);
+    }
+  };
+
+  const revokeInvite = async () => {
+    if (authorityId === null || activeInvite === null) return;
+    setRevokingInvite(true);
+    try {
+      await revokeBusinessOsDeviceInvite(authorityId, activeInvite.inviteId);
+      setActiveInvite(null);
+    } catch {
+      setDevicesError("Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.");
+    } finally {
+      setRevokingInvite(false);
+    }
+  };
+
+  const renewInvite = async () => {
+    if (authorityId === null || activeInvite === null) return;
+    setRevokingInvite(true);
+    try {
+      await revokeBusinessOsDeviceInvite(authorityId, activeInvite.inviteId);
+      setActiveInvite(await createBusinessOsDeviceInvite(authorityId));
+    } catch {
+      setDevicesError("Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.");
+    } finally {
+      setRevokingInvite(false);
+    }
+  };
+
+  const revokeDevice = async (devicePairingId: string) => {
+    if (authorityId === null) return;
+    setRevokingDeviceId(devicePairingId);
+    try {
+      await revokeBusinessOsDevice(authorityId, devicePairingId);
+      setDeviceRefreshKey((key) => key + 1);
+    } catch {
+      setDevicesError("Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.");
+    } finally {
+      setRevokingDeviceId(null);
+    }
+  };
+
   return (
     <BusinessOsSettingsView
       instances={instances}
@@ -480,6 +865,22 @@ export function BusinessOsSettings() {
       onSelectInstance={selectInstance}
       onRefresh={() => void refresh()}
       onAddBusinessOs={addBusinessOs}
+      {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
+      addingDevice={addingDevice}
+      onRetryDevices={() => setDeviceRefreshKey((key) => key + 1)}
+      onRevokeDevice={(devicePairingId) => void revokeDevice(devicePairingId)}
+      revokingDeviceId={revokingDeviceId}
+      activeInvite={activeInvite}
+      onCloseInvite={() => void revokeInvite()}
+      onRevokeInvite={() => void revokeInvite()}
+      onRenewInvite={() => void renewInvite()}
+      {...(!deviceControlAvailable || authorityId === null || activeInvite === null
+        ? {}
+        : {
+            onLoadManualConnection: () =>
+              readBusinessOsDeviceInviteManualConnection(authorityId, activeInvite.inviteId),
+          })}
+      revokingInvite={revokingInvite}
     />
   );
 }

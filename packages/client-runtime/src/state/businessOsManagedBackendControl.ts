@@ -18,6 +18,8 @@ import type {
   WorkjetManagedDeviceBindingListInput,
   WorkjetManagedDeviceBindingRevokeInput,
   WorkjetManagedDeviceInviteCreateInput,
+  WorkjetManagedDeviceInviteManualConnectionInput,
+  WorkjetManagedDeviceInviteManualConnectionResult,
   WorkjetManagedDeviceInviteRevokeInput,
   WorkjetRelayControlIdentityAssertionIssueInput,
   WorkjetRelayControlIdentityAssertionIssueResult,
@@ -37,7 +39,7 @@ import * as Effect from "effect/Effect";
 export class WorkjetManagedBackendControlClientError extends Data.TaggedError(
   "WorkjetManagedBackendControlClientError",
 )<{
-  readonly operation: "resolve" | "list" | "create" | "revoke";
+  readonly operation: "resolve" | "list" | "create" | "revoke" | "manual";
   readonly message: string;
 }> {}
 
@@ -67,6 +69,12 @@ export class WorkjetManagedBackendControlClient extends Context.Service<
     readonly revokeDeviceInvite: (
       input: WorkjetManagedDeviceInviteRevokeInput,
     ) => Effect.Effect<WorkjetDeviceInviteRevokeResult, WorkjetManagedBackendControlClientError>;
+    readonly readDeviceInviteManualConnection: (
+      input: WorkjetManagedDeviceInviteManualConnectionInput,
+    ) => Effect.Effect<
+      WorkjetManagedDeviceInviteManualConnectionResult,
+      WorkjetManagedBackendControlClientError
+    >;
     readonly revokeDeviceBinding: (
       input: WorkjetManagedDeviceBindingRevokeInput,
     ) => Effect.Effect<WorkjetDeviceInviteRevokeResult, WorkjetManagedBackendControlClientError>;
@@ -109,6 +117,17 @@ export const revokeManagedWorkjetDeviceInvite = (
   WorkjetManagedBackendControlClient
 > =>
   Effect.flatMap(WorkjetManagedBackendControlClient, (client) => client.revokeDeviceInvite(input));
+
+export const readManagedWorkjetDeviceInviteManualConnection = (
+  input: WorkjetManagedDeviceInviteManualConnectionInput,
+): Effect.Effect<
+  WorkjetManagedDeviceInviteManualConnectionResult,
+  WorkjetManagedBackendControlClientError,
+  WorkjetManagedBackendControlClient
+> =>
+  Effect.flatMap(WorkjetManagedBackendControlClient, (client) =>
+    client.readDeviceInviteManualConnection(input),
+  );
 
 export const revokeManagedWorkjetDeviceBinding = (
   input: WorkjetManagedDeviceBindingRevokeInput,

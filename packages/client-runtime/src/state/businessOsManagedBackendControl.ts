@@ -29,6 +29,7 @@ import {
   WORKJET_MANAGED_DEVICE_INVITES_REDEEM_PATH,
   WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH,
 } from "@t3tools/contracts";
+import type { RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -120,6 +121,7 @@ export const revokeManagedWorkjetDeviceBinding = (
 
 export type WorkjetManagedDeviceSessionOperation =
   | "identity"
+  | "connect"
   | "redeem"
   | "exchange"
   | "renew"
@@ -134,7 +136,12 @@ export class WorkjetManagedDeviceSessionClientError extends Data.TaggedError(
   "WorkjetManagedDeviceSessionClientError",
 )<{
   readonly operation: WorkjetManagedDeviceSessionOperation;
-  readonly code: "invalid_endpoint" | "request_failed";
+  readonly code:
+    | "invalid_endpoint"
+    | "authentication_failed"
+    | "permission_denied"
+    | "session_expired"
+    | "request_failed";
 }> {}
 
 export interface WorkjetManagedDeviceSessionRequestTarget {
@@ -161,6 +168,14 @@ export interface WorkjetManagedDeviceSessionMembershipReadRequest {
 export interface WorkjetManagedDeviceSessionRenewRequest {
   readonly target: WorkjetManagedDeviceSessionRequestTarget;
   readonly payload: WorkjetDeviceSessionRenewInput;
+}
+
+export interface WorkjetManagedDeviceSessionEnvironmentConnectRequest {
+  readonly relayIssuer: WorkjetManagedIssuerOrigin;
+  readonly accessToken: WorkjetDeviceSessionBootstrapExchangeResult["accessToken"];
+  readonly environmentId: RelayEnvironmentConnectResponse["environmentId"];
+  readonly deviceId: WorkjetDeviceSessionBootstrapExchangeResult["deviceId"];
+  readonly businessOsInstanceId: BusinessOsInstanceId;
 }
 
 export interface WorkjetRelayControlIdentityAssertionIssueRequest {
@@ -205,6 +220,10 @@ export class WorkjetManagedDeviceSessionClient extends Context.Service<
       WorkjetRelayControlIdentityAssertionIssueResult,
       WorkjetManagedDeviceSessionClientError
     >;
+    /** Creates a fresh ath-bound DPoP proof and calls the Relay connect endpoint directly. */
+    readonly connectEnvironment: (
+      request: WorkjetManagedDeviceSessionEnvironmentConnectRequest,
+    ) => Effect.Effect<RelayEnvironmentConnectResponse, WorkjetManagedDeviceSessionClientError>;
     readonly redeemDeviceInvite: (
       request: WorkjetManagedDeviceInviteRedeemRequest,
     ) => Effect.Effect<WorkjetDeviceInviteV2, WorkjetManagedDeviceSessionClientError>;
@@ -398,6 +417,24 @@ export const toManagedRelayDeviceSessionAuthorization = (
   businessOsInstanceId: authorization.businessOsInstanceId,
   deviceId: authorization.deviceId,
 });
+
+export const connectManagedWorkjetDeviceSessionEnvironment = (input: {
+  readonly authorization: WorkjetManagedDeviceSessionAuthorization;
+  readonly environmentId: RelayEnvironmentConnectResponse["environmentId"];
+}): Effect.Effect<
+  RelayEnvironmentConnectResponse,
+  WorkjetManagedDeviceSessionClientError,
+  WorkjetManagedDeviceSessionClient
+> =>
+  Effect.flatMap(WorkjetManagedDeviceSessionClient, (client) =>
+    client.connectEnvironment({
+      relayIssuer: input.authorization.relayIssuer,
+      accessToken: input.authorization.accessToken,
+      environmentId: input.environmentId,
+      deviceId: input.authorization.deviceId,
+      businessOsInstanceId: input.authorization.businessOsInstanceId,
+    }),
+  );
 
 /**
  * Rotates the opaque refresh grant. The platform adapter owns the atomic secure

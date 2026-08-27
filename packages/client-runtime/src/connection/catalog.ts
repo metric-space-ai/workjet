@@ -91,16 +91,17 @@ export type ConnectionRegistration = typeof ConnectionRegistration.Type;
 
 /**
  * Platform-managed registrations are reconciled from the host (the desktop
- * bootstrap IPC) rather than persisted by the user. They cover the primary
- * local environment plus any additional desktop-local backends running
- * alongside it (e.g. a parallel WSL backend). The primary stays on same-origin
- * cookie auth (`PrimaryConnectionRegistration`); secondary local backends live
- * on a separate loopback origin and authenticate with a bearer token minted
- * from their bootstrap credential (`BearerConnectionRegistration`).
+ * bootstrap IPC or another server-authoritative runtime source) rather than
+ * persisted by the user. They cover the primary local environment, additional
+ * desktop-local backends, and Business-OS-scoped Relay environments derived
+ * from current computer membership. The latter must remain platform-managed:
+ * persisting them would let an older client drop their instance scope and
+ * incorrectly reinterpret them as classic Clerk-authorized cloud targets.
  */
 export const PlatformConnectionRegistration = Schema.Union([
   PrimaryConnectionRegistration,
   BearerConnectionRegistration,
+  RelayConnectionRegistration,
 ]);
 export type PlatformConnectionRegistration = typeof PlatformConnectionRegistration.Type;
 

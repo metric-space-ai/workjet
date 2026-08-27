@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 const ConnectionTargetBase = {
@@ -27,6 +27,7 @@ export class RelayConnectionTarget extends Schema.TaggedClass<RelayConnectionTar
   "RelayConnectionTarget",
   {
     ...ConnectionTargetBase,
+    businessOsInstanceId: Schema.optionalKey(BusinessOsInstanceId),
   },
 ) {}
 

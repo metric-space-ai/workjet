@@ -79,6 +79,7 @@ function createClient(overrides?: Partial<ManagedRelay.ManagedRelayClient["Servi
         checkedAt: "2026-06-01T00:00:00.000Z",
       }),
     connectEnvironment: () => Effect.die("unused"),
+    issueWorkjetControlIdentityAssertion: () => Effect.die("unused"),
     registerDevice: () => Effect.die("unused"),
     unregisterDevice: () => Effect.die("unused"),
     registerLiveActivity: () => Effect.die("unused"),

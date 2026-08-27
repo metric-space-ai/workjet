@@ -49,6 +49,7 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
     readonly authorizeDpop: (input: {
       readonly expectedEnvironmentId: EnvironmentId;
+      readonly authorizationContext?: string;
       readonly obtainBootstrap: Effect.Effect<
         RelayEnvironmentAuthorization,
         ConnectionAttemptError
@@ -183,6 +184,7 @@ export const make = Effect.gen(function* () {
       readonly obtainBootstrap: Parameters<
         RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]
       >[0]["obtainBootstrap"];
+      readonly authorizationContext?: string;
     }) {
       const thumbprint = yield* signer.thumbprint.pipe(
         Effect.mapError(
@@ -202,6 +204,7 @@ export const make = Effect.gen(function* () {
         Option.isSome(cached) &&
         cached.value.environmentId === input.expectedEnvironmentId &&
         cached.value.dpopThumbprint === thumbprint &&
+        cached.value.authorizationContext === input.authorizationContext &&
         cached.value.expiresAtEpochMs > now + TOKEN_EXPIRY_SAFETY_MARGIN_MS
       ) {
         yield* Effect.annotateCurrentSpan({
@@ -278,6 +281,9 @@ export const make = Effect.gen(function* () {
         accessToken: access.access_token,
         expiresAtEpochMs: issuedAt + access.expires_in * 1_000,
         dpopThumbprint: thumbprint,
+        ...(input.authorizationContext === undefined
+          ? {}
+          : { authorizationContext: input.authorizationContext }),
       });
       const socketUrl = yield* createDpopSocketUrl(token).pipe(Effect.mapError(mapDpopSocketError));
       yield* tokenStore

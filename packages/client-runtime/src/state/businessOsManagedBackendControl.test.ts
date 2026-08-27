@@ -19,6 +19,7 @@ import {
   WorkjetManagedDeviceSessionClientError,
   WorkjetManagedDeviceSessionAuthorizationProvider,
   createManagedWorkjetDeviceInvite,
+  connectManagedWorkjetDeviceSessionEnvironment,
   exchangeManagedWorkjetDeviceSessionBootstrap,
   issueManagedRelayControlIdentityAssertion,
   listManagedWorkjetDeviceBindings,
@@ -175,8 +176,21 @@ describe("managed Business OS backend control client runtime", () => {
         environmentIds: ["environment-gpu3" as EnvironmentId],
       }),
     );
+    const connectEnvironment = vi.fn((request) =>
+      Effect.succeed({
+        environmentId: request.environmentId,
+        endpoint: {
+          httpBaseUrl: "https://environment.example.test",
+          wsBaseUrl: "wss://environment.example.test",
+          providerKind: "cloudflare_tunnel" as const,
+        },
+        credential: "relay-bootstrap",
+        expiresAt: "2026-08-27T04:00:00Z",
+      }),
+    );
     const client = WorkjetManagedDeviceSessionClient.of({
       issueControlIdentityAssertion,
+      connectEnvironment,
       redeemDeviceInvite,
       exchangeDeviceSessionBootstrap,
       renewDeviceSession,
@@ -218,6 +232,10 @@ describe("managed Business OS backend control client runtime", () => {
           exchanged,
         );
         yield* readManagedBusinessOsDeviceSessionMembership({ authorization });
+        yield* connectManagedWorkjetDeviceSessionEnvironment({
+          authorization,
+          environmentId: "environment-gpu3" as EnvironmentId,
+        });
         const renewed = yield* renewManagedWorkjetDeviceSession({ authorization });
         expect(renewed.accessToken).toBe("t".repeat(43));
 
@@ -261,6 +279,13 @@ describe("managed Business OS backend control client runtime", () => {
           },
           accessToken: "s".repeat(43),
           payload: { businessOsInstanceId },
+        });
+        expect(connectEnvironment).toHaveBeenCalledWith({
+          relayIssuer: "https://relay.ctox.dev",
+          accessToken: "s".repeat(43),
+          environmentId: "environment-gpu3",
+          deviceId: "galaxy-fold-8",
+          businessOsInstanceId,
         });
         expect(renewDeviceSession).toHaveBeenCalledWith({
           target: {
@@ -326,6 +351,7 @@ describe("managed Business OS backend control client runtime", () => {
     );
     const client = WorkjetManagedDeviceSessionClient.of({
       issueControlIdentityAssertion: unused,
+      connectEnvironment: unused,
       redeemDeviceInvite: unused,
       exchangeDeviceSessionBootstrap: unused,
       renewDeviceSession: unused,

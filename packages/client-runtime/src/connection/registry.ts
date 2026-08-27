@@ -70,10 +70,12 @@ export class EnvironmentRegistry extends Context.Service<
     readonly register: (
       registration: ConnectionRegistration,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
-    readonly registerPlatform: (registration: PrimaryConnectionRegistration) => Effect.Effect<void>;
+    readonly registerPlatform: (
+      registration: PrimaryConnectionRegistration,
+    ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
     readonly reconcilePlatform: (
       registrations: ReadonlyArray<PlatformConnectionRegistration>,
-    ) => Effect.Effect<void>;
+    ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
     readonly remove: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<
@@ -390,6 +392,16 @@ export const make = Effect.gen(function* () {
     registration: ConnectionRegistration,
   ) {
     const entry = connectionRegistrationCatalogEntry(registration);
+    if (
+      entry.target._tag === "RelayConnectionTarget" &&
+      entry.target.businessOsInstanceId !== undefined
+    ) {
+      return yield* new Persistence.ConnectionPersistenceError({
+        operation: "register-connection",
+        message:
+          "Business OS-scoped relay connections are runtime-managed and cannot be persisted.",
+      });
+    }
     const environmentId = entry.target.environmentId;
     yield* withLeaseLock(
       environmentId,
@@ -415,12 +427,6 @@ export const make = Effect.gen(function* () {
       yield* withLeaseLock(
         target.environmentId,
         Effect.gen(function* () {
-          yield* Ref.update(platformEnvironmentIds, (current) => {
-            const next = new Set(current);
-            next.add(target.environmentId);
-            return next;
-          });
-
           // Secondary desktop-local backends (e.g. a parallel WSL backend) live
           // on their own loopback origin, so they authenticate with a bearer
           // token instead of the primary's same-origin cookie. Stash it where
@@ -448,17 +454,14 @@ export const make = Effect.gen(function* () {
                   return next;
                 }),
               ),
-              Effect.catch((error) =>
-                Effect.logWarning(
-                  "Could not remove a persisted registration shadowed by a platform environment.",
-                  {
-                    environmentId: target.environmentId,
-                    error,
-                  },
-                ),
-              ),
             );
           }
+
+          yield* Ref.update(platformEnvironmentIds, (current) => {
+            const next = new Set(current);
+            next.add(target.environmentId);
+            return next;
+          });
 
           yield* installEntryLocked(entry, { retainEquivalentRuntime: true });
         }),

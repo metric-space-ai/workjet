@@ -85,6 +85,26 @@ The DPoP session reads current server-authoritative computer membership from
 Environment IDs. Assignment changes take effect without repeating device pairing, and the pairing
 path never receives or chooses a Computer/Environment credential.
 
+## Connection projection
+
+The shared connection runtime projects an assigned Code computer as a `RelayConnectionTarget` with
+an additive, opaque `businessOsInstanceId`. That field is an authority scope, not a presentation ID
+or a label. For such a target, `ConnectionResolver` reads the exact-instance
+`WorkjetManagedDeviceSessionAuthorizationProvider`, verifies the Relay issuer, required scopes and
+expiry, refreshes current membership, and calls the platform-owned direct-DPoP connect adapter. A
+missing session, a mismatched instance, a stale grant, or a computer absent from membership blocks
+the connection. None of those cases may retry through Clerk, a primary Environment, or another
+Computer.
+
+Targets without `businessOsInstanceId` retain the classic Clerk-authorized cloud path. This is the
+only fallback and exists solely for pre-existing, non-instance-bound cloud connections.
+
+Instance-scoped targets are reconciled as `PlatformConnectionRegistration` values from the
+server-authoritative membership snapshot. They are not stored in the user connection catalog. This
+prevents an older Workjet version from stripping the additive scope during persistence and later
+reinterpreting the same Environment as a classic Clerk-authorized target. Disappearing membership
+removes the platform registration and tears down its runtime.
+
 The producer persists only the secret-free device-to-instance edge and the two revocable grant IDs.
 If either issuer or durable edge completion fails, the other grant is revoked. Issuers are
 idempotent by `devicePairingId`, and partial failures remain retryable without creating parallel

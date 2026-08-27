@@ -1,4 +1,10 @@
 import {
+  WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH,
+  WorkjetRelayControlIdentityAssertionIssueResult,
+  type WorkjetRelayControlIdentityAssertionIssueInput,
+  type WorkjetRelayControlIdentityAssertionIssueResult as WorkjetRelayControlIdentityAssertionIssueResultType,
+} from "@t3tools/contracts";
+import {
   RelayAccessTokenType,
   RelayApi,
   type RelayClientEnvironmentRecord,
@@ -7,6 +13,7 @@ import {
   type RelayDeviceRegistrationRequest,
   RelayDpopAccessTokenScope,
   RelayDpopTokenExchangeGrantType,
+  RelayEnvironmentConnectScope,
   type RelayEnvironmentConnectRequest,
   type RelayEnvironmentConnectResponse,
   type RelayEnvironmentLinkChallengeRequest,
@@ -14,6 +21,7 @@ import {
   type RelayEnvironmentLinkRequest,
   type RelayEnvironmentLinkResponse,
   type RelayEnvironmentStatusResponse,
+  RelayEnvironmentStatusScope,
   RelayExchangeDpopAccessTokenEndpoint,
   RelayGetEnvironmentStatusEndpoint,
   RelayJwtSubjectTokenType,
@@ -41,7 +49,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as HttpBody from "effect/unstable/http/HttpBody";
 import type * as HttpMethod from "effect/unstable/http/HttpMethod";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
@@ -91,6 +103,7 @@ export const ManagedRelayRequestAction = Schema.Literals([
   "unlink relay environment",
   "get relay environment status",
   "connect relay environment",
+  "issue Workjet Relay control identity assertion",
   "register relay mobile device",
   "unregister relay mobile device",
   "register relay live activity",
@@ -107,6 +120,7 @@ export const ManagedRelayRequestActivity = Schema.Literals([
   "Relay environment unlinking",
   "Relay environment status request",
   "Relay environment connection",
+  "Workjet Relay control identity assertion",
   "Relay mobile device registration",
   "Relay mobile device unregistration",
   "Relay Live Activity registration",
@@ -207,6 +221,7 @@ export type ManagedRelayClientError = typeof ManagedRelayClientError.Type;
 type RelayHttpRequestError =
   | RelayProtectedErrorType
   | HttpClientError.HttpClientError
+  | HttpBody.HttpBodyError
   | Schema.SchemaError;
 
 export class ManagedRelayDpopSigner extends Context.Service<
@@ -282,6 +297,14 @@ export class ManagedRelayClient extends Context.Service<
       readonly environmentId: RelayClientEnvironmentRecord["environmentId"];
       readonly deviceId?: string;
     }) => Effect.Effect<RelayEnvironmentConnectResponse, ManagedRelayClientError>;
+    /** Uses the classic Clerk session only to mint a short-lived Relay DPoP assertion for ctox.dev. */
+    readonly issueWorkjetControlIdentityAssertion: (input: {
+      readonly clerkToken: string;
+      readonly payload: WorkjetRelayControlIdentityAssertionIssueInput;
+    }) => Effect.Effect<
+      WorkjetRelayControlIdentityAssertionIssueResultType,
+      ManagedRelayClientError
+    >;
     readonly registerDevice: (input: {
       readonly clerkToken: string;
       readonly payload: RelayDeviceRegistrationRequest;
@@ -414,6 +437,9 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
     unlinkEnvironment: unavailable("clientRuntime.managedRelay.unlinkEnvironment"),
     getEnvironmentStatus: unavailable("clientRuntime.managedRelay.getEnvironmentStatus"),
     connectEnvironment: unavailable("clientRuntime.managedRelay.connectEnvironment"),
+    issueWorkjetControlIdentityAssertion: unavailable(
+      "clientRuntime.managedRelay.issueWorkjetControlIdentityAssertion",
+    ),
     registerDevice: unavailable("clientRuntime.managedRelay.registerDevice"),
     unregisterDevice: unavailable("clientRuntime.managedRelay.unregisterDevice"),
     registerLiveActivity: unavailable("clientRuntime.managedRelay.registerLiveActivity"),
@@ -432,6 +458,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     return disabledManagedRelayClient(options.relayUrl);
   }
   const signer = yield* ManagedRelayDpopSigner;
+  const httpClient = yield* HttpClient.HttpClient;
   const client = yield* HttpApiClient.make(RelayApi, { baseUrl: relayUrl });
   const initialTokens = options.accessTokenStore ? yield* options.accessTokenStore.load : [];
   const cachedTokens = yield* SynchronizedRef.make<
@@ -456,6 +483,10 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ): DpopProofTarget => ({
       method: RelayConnectEnvironmentEndpoint.method,
       url: urlBuilder.dpopClient.connectEnvironment({ params: { environmentId } }),
+    }),
+    issueWorkjetControlIdentityAssertion: (): DpopProofTarget => ({
+      method: "POST",
+      url: new URL(WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH, `${relayUrl}/`).toString(),
     }),
     registerDevice: (): DpopProofTarget => ({
       method: RelayRegisterDeviceEndpoint.method,
@@ -822,6 +853,34 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         );
       },
       Effect.withSpan("clientRuntime.managedRelay.connectEnvironment"),
+      withRelayClientTracing,
+    ),
+    issueWorkjetControlIdentityAssertion: Effect.fnUntraced(
+      function* (input) {
+        const target = dpopProofTargets.issueWorkjetControlIdentityAssertion();
+        return yield* runDpopRequest(
+          {
+            clerkToken: input.clerkToken,
+            scopes: [RelayEnvironmentConnectScope, RelayEnvironmentStatusScope],
+            target,
+          },
+          (authorization) =>
+            HttpClientRequest.post(target.url).pipe(
+              HttpClientRequest.acceptJson,
+              HttpClientRequest.setHeaders(dpopHeaders(authorization)),
+              HttpClientRequest.bodyJson(input.payload),
+              Effect.flatMap(httpClient.execute),
+              Effect.flatMap((response) =>
+                HttpClientResponse.schemaBodyJson(WorkjetRelayControlIdentityAssertionIssueResult)(
+                  response,
+                ),
+              ),
+              Effect.mapError(relayRequestError("issue Workjet Relay control identity assertion")),
+              timeoutRelayRequest("Workjet Relay control identity assertion"),
+            ),
+        );
+      },
+      Effect.withSpan("clientRuntime.managedRelay.issueWorkjetControlIdentityAssertion"),
       withRelayClientTracing,
     ),
     registerDevice: Effect.fnUntraced(

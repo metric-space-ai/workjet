@@ -210,6 +210,8 @@ describe("Business OS native security guards", () => {
   it("binds HTTP DPoP and WebRTC sync to one non-exportable native P-256 key", () => {
     const surface = read("src/features/business-os/shell/native-business-os-surface.tsx");
     const dpop = read("src/features/cloud/dpop.ts");
+    const nativeSigner = read("src/features/cloud/nativeWorkjetDpopSigner.ts");
+    const relay = read("src/features/cloud/managedRelayLayer.ts");
     const session = read("src/features/pairing/workjet-managed-device-session-layer.ts");
     const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
     const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
@@ -221,8 +223,11 @@ describe("Business OS native security guards", () => {
     expect(surface).toContain('readonly crv: "P-256"');
     expect(surface).not.toMatch(/privateJwk|privateKey|\bd:\s*string/iu);
     expect(dpop).toContain("createDpopProofWithSigner");
-    expect(session).toContain("loadNativeDeviceProofSigner");
-    expect(session).toContain("nativeWorkjetDeviceProof.sign(message)");
+    expect(nativeSigner).toContain("loadNativeWorkjetDpopSigner");
+    expect(nativeSigner).toContain("nativeWorkjetDeviceProof.sign(message)");
+    expect(session).toContain("loadNativeWorkjetDpopSigner");
+    expect(relay).toContain("loadNativeWorkjetDpopSigner");
+    expect(relay).not.toContain("loadOrCreateDpopProofKeyPair");
     expect(pairing).toContain("nativeWorkjetDeviceProof.key()");
 
     expect(ios).toContain("kSecAttrAccessibleWhenUnlockedThisDeviceOnly");

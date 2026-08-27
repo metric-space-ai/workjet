@@ -363,6 +363,9 @@ const config: ExpoConfig = {
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
     },
+    managedControl: {
+      url: repoEnv.EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL ?? null,
+    },
     clerk: {
       publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
       jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,

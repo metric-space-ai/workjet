@@ -31,6 +31,9 @@ describe("resolveCloudPublicConfig", () => {
       relay: {
         url: null,
       },
+      managedControl: {
+        url: null,
+      },
       observability: {
         tracesUrl: null,
         tracesDataset: null,
@@ -44,6 +47,7 @@ describe("resolveCloudPublicConfig", () => {
       resolveCloudPublicConfig({
         clerk: { publishableKey: "  pk_test_example  ", jwtTemplate: "  t3-relay  " },
         relay: { url: " https://relay.example.test/// " },
+        managedControl: { url: " https://ctox.example.test/// " },
         observability: {
           tracesUrl: " https://api.axiom.co/v1/traces ",
           tracesDataset: " mobile-traces ",
@@ -57,6 +61,9 @@ describe("resolveCloudPublicConfig", () => {
       },
       relay: {
         url: "https://relay.example.test",
+      },
+      managedControl: {
+        url: "https://ctox.example.test",
       },
       observability: {
         tracesUrl: "https://api.axiom.co/v1/traces",
@@ -80,12 +87,23 @@ describe("resolveCloudPublicConfig", () => {
       relay: {
         url: null,
       },
+      managedControl: {
+        url: null,
+      },
       observability: {
         tracesUrl: null,
         tracesDataset: null,
         tracesToken: null,
       },
     });
+  });
+
+  it("rejects an insecure managed-control URL", () => {
+    expect(
+      resolveCloudPublicConfig({
+        managedControl: { url: "http://ctox.example.test" },
+      }).managedControl,
+    ).toEqual({ url: null });
   });
 
   it("rejects an insecure traces URL", () => {

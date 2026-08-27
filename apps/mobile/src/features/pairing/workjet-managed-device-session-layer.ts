@@ -1,10 +1,11 @@
 import {
+  WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH,
   WorkjetDeviceInviteV2,
   WorkjetDeviceSessionBootstrapExchangeResult,
   WorkjetDeviceSessionMembershipReadResult,
   WorkjetDeviceSessionRenewResult,
-  WorkjetRelayControlIdentityAssertionIssueResult,
 } from "@t3tools/contracts";
+import { ManagedRelay, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
 import {
   WorkjetManagedDeviceSessionClient,
@@ -19,9 +20,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { CloudDpopError, createDpopProofWithSigner, type DpopProofSigner } from "../cloud/dpop";
+import { createDpopProofWithSigner, type DpopProofSigner } from "../cloud/dpop";
+import { loadNativeWorkjetDpopSigner } from "../cloud/nativeWorkjetDpopSigner";
 import { nativeWorkjetDeviceSessionStore } from "../business-os/registry/native-business-os-registry";
-import { nativeWorkjetDeviceProof } from "../business-os/shell/native-business-os-surface";
+import { resolveCloudPublicConfig } from "../cloud/publicConfig";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { loadWorkjetDeviceSession, saveWorkjetDeviceSession } from "./workjet-device-session-store";
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -37,6 +40,12 @@ const decodeRelayEnvironmentConnect = Schema.decodeUnknownEffect(RelayEnvironmen
 
 function failure(operation: WorkjetManagedDeviceSessionOperation) {
   return new WorkjetManagedDeviceSessionClientError({ operation, code: "request_failed" });
+}
+
+function relayIdentityTarget(): string | null {
+  const relayUrl = resolveCloudPublicConfig().relay.url;
+  if (!relayUrl) return null;
+  return new URL(WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH, relayUrl).toString();
 }
 
 function postJson<A, E, R>(input: {
@@ -88,34 +97,6 @@ function postJson<A, E, R>(input: {
   });
 }
 
-function loadNativeDeviceProofSigner(): Effect.Effect<DpopProofSigner, CloudDpopError> {
-  return Effect.tryPromise({
-    try: () => nativeWorkjetDeviceProof.key(),
-    catch: (cause) => new CloudDpopError({ message: "Native device proof is unavailable.", cause }),
-  }).pipe(
-    Effect.map((key) => ({
-      publicJwk: key.publicJwk,
-      thumbprint: key.thumbprint,
-      sign: (message: string) =>
-        Effect.tryPromise({
-          try: async () => {
-            const proof = await nativeWorkjetDeviceProof.sign(message);
-            if (
-              proof.thumbprint !== key.thumbprint ||
-              proof.publicJwk.x !== key.publicJwk.x ||
-              proof.publicJwk.y !== key.publicJwk.y
-            ) {
-              throw new Error("Native Workjet device proof key changed during signing.");
-            }
-            return proof.signature;
-          },
-          catch: (cause) =>
-            new CloudDpopError({ message: "Native device proof signing failed.", cause }),
-        }),
-    })),
-  );
-}
-
 /**
  * Mobile implementation of the possession-bound reference/session transport.
  * It never logs request bodies or response bodies because both can carry an
@@ -125,6 +106,7 @@ export const workjetManagedDeviceSessionClientLayer = Layer.effect(
   WorkjetManagedDeviceSessionClient,
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
+    const relay = yield* ManagedRelay.ManagedRelayClient;
     const request = <A, E, R>(input: {
       readonly operation: WorkjetManagedDeviceSessionOperation;
       readonly url: string;
@@ -132,27 +114,53 @@ export const workjetManagedDeviceSessionClientLayer = Layer.effect(
       readonly accessToken?: string;
       readonly decode: (payload: unknown) => Effect.Effect<A, E, R>;
     }) =>
-      loadNativeDeviceProofSigner().pipe(
+      loadNativeWorkjetDpopSigner().pipe(
         Effect.mapError(() => failure(input.operation)),
         Effect.flatMap((signer) => postJson({ ...input, signer, crypto })),
       );
 
     return WorkjetManagedDeviceSessionClient.of({
-      issueControlIdentityAssertion: (_input) =>
-        // The assertion endpoint additionally requires the signed-in Relay
-        // session and CSRF binding. That authenticated adapter is intentionally
-        // separate from anonymous reference redemption and remains fail-closed
-        // until its producer is enabled.
-        Effect.fail(failure("identity")) as Effect.Effect<
-          typeof WorkjetRelayControlIdentityAssertionIssueResult.Type,
-          WorkjetManagedDeviceSessionClientError
-        >,
+      issueControlIdentityAssertion: (input) =>
+        Effect.gen(function* () {
+          const expectedTarget = relayIdentityTarget();
+          if (expectedTarget === null || input.target.url !== expectedTarget) {
+            return yield* new WorkjetManagedDeviceSessionClientError({
+              operation: "identity",
+              code: "invalid_endpoint",
+            });
+          }
+          const session = appAtomRegistry.get(managedRelaySessionAtom);
+          if (session === null) {
+            return yield* new WorkjetManagedDeviceSessionClientError({
+              operation: "identity",
+              code: "authentication_failed",
+            });
+          }
+          const clerkToken = yield* session.readClerkToken().pipe(
+            Effect.mapError(
+              () =>
+                new WorkjetManagedDeviceSessionClientError({
+                  operation: "identity",
+                  code: "authentication_failed",
+                }),
+            ),
+          );
+          if (clerkToken === null) {
+            return yield* new WorkjetManagedDeviceSessionClientError({
+              operation: "identity",
+              code: "authentication_failed",
+            });
+          }
+          return yield* relay
+            .issueWorkjetControlIdentityAssertion({ clerkToken, payload: input.payload })
+            .pipe(Effect.mapError(() => failure("identity")));
+        }),
       connectEnvironment: (input) => {
         const url = new URL(
           `/v1/environments/${encodeURIComponent(input.environmentId)}/connect`,
           input.relayIssuer,
         ).toString();
-        return loadNativeDeviceProofSigner().pipe(
+        return loadNativeWorkjetDpopSigner().pipe(
           Effect.mapError(() => failure("connect")),
           Effect.flatMap((signer) =>
             postJson({

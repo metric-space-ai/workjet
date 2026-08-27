@@ -70,6 +70,59 @@ const registrationRecordStore = vi.hoisted(() => ({
     readonly pushToStartToken?: string;
   } | null,
 }));
+const nativeDeviceProofMock = vi.hoisted(() => ({
+  keyPair: null as null | {
+    readonly privateKey: import("node:crypto").KeyObject;
+    readonly publicJwk: {
+      readonly kty: "EC";
+      readonly crv: "P-256";
+      readonly x: string;
+      readonly y: string;
+    };
+    readonly thumbprint: string;
+  },
+}));
+
+vi.mock("../business-os/shell/native-business-os-surface", () => {
+  const load = async () => {
+    if (nativeDeviceProofMock.keyPair) return nativeDeviceProofMock.keyPair;
+    const crypto = await import("node:crypto");
+    const pair = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const raw = pair.publicKey.export({ format: "jwk" });
+    if (raw.kty !== "EC" || raw.crv !== "P-256" || !raw.x || !raw.y) {
+      throw new Error("Test P-256 key is invalid.");
+    }
+    const publicJwk = { kty: "EC" as const, crv: "P-256" as const, x: raw.x, y: raw.y };
+    const thumbprint = crypto
+      .createHash("sha256")
+      .update(JSON.stringify({ crv: publicJwk.crv, kty: publicJwk.kty, x: raw.x, y: raw.y }))
+      .digest("base64url");
+    nativeDeviceProofMock.keyPair = { privateKey: pair.privateKey, publicJwk, thumbprint };
+    return nativeDeviceProofMock.keyPair;
+  };
+  return {
+    nativeWorkjetDeviceProof: {
+      key: async () => {
+        const key = await load();
+        return { publicJwk: key.publicJwk, thumbprint: key.thumbprint };
+      },
+      sign: async (message: string) => {
+        const key = await load();
+        const crypto = await import("node:crypto");
+        return {
+          publicJwk: key.publicJwk,
+          thumbprint: key.thumbprint,
+          signature: crypto
+            .sign("sha256", Buffer.from(message), {
+              key: key.privateKey,
+              dsaEncoding: "ieee-p1363",
+            })
+            .toString("base64url"),
+        };
+      },
+    },
+  };
+});
 
 vi.mock("expo-constants", () => ({
   default: {

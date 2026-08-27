@@ -16,6 +16,14 @@ function configuredRelayUrl(): string {
 }
 
 const httpClientLayer = remoteHttpClientLayer(fetch);
+const relayLayer = managedRelayClientLayer(configuredRelayUrl()).pipe(
+  Layer.provideMerge(cryptoLayer),
+  Layer.provideMerge(httpClientLayer),
+);
+const deviceSessionLayer = workjetManagedDeviceSessionLayer.pipe(
+  Layer.provideMerge(relayLayer),
+  Layer.provide(cryptoLayer),
+);
 
 type RuntimeLayerSource =
   | ReturnType<typeof managedRelayClientLayer>
@@ -26,15 +34,12 @@ type RuntimeLayerSource =
   | typeof workjetManagedDeviceSessionLayer
   | typeof tracingLayer;
 
-const runtimeLayer = Layer.merge(
-  managedRelayClientLayer(configuredRelayUrl()),
-  Socket.layerWebSocketConstructorGlobal,
-).pipe(
+const runtimeLayer = Layer.merge(relayLayer, Socket.layerWebSocketConstructorGlobal).pipe(
   Layer.provideMerge(cryptoLayer),
   Layer.provideMerge(httpClientLayer),
   Layer.provideMerge(tracingLayer.pipe(Layer.provide(httpClientLayer))),
   Layer.provideMerge(Persistence.layer),
-  Layer.provideMerge(workjetManagedDeviceSessionLayer.pipe(Layer.provide(cryptoLayer))),
+  Layer.provideMerge(deviceSessionLayer),
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<

@@ -106,17 +106,9 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
         nextInstances.some((instance) => instance.id === binding.businessOsInstanceId),
       ),
     );
-    const selectableInstances =
-      nextBindings.length > 0
-        ? nextInstances.filter((instance) =>
-            nextBindings.some((binding) => binding.businessOsInstanceId === instance.id),
-          )
-        : nextInstances;
-    const validSelection = selectableInstances.some(
-      (instance) => instance.id === persistedSelection,
-    )
+    const validSelection = nextInstances.some((instance) => instance.id === persistedSelection)
       ? persistedSelection
-      : (selectableInstances[0]?.id ?? null);
+      : (nextInstances[0]?.id ?? null);
     setSelectedId(validSelection);
     if (validSelection !== persistedSelection) await nativeBusinessOsSelection.save(validSelection);
     setIsReady(true);
@@ -131,16 +123,10 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
       if (!instances.some((instance) => instance.id === id)) {
         throw new Error("Die ausgewählte Business OS ist auf diesem Gerät nicht eingerichtet.");
       }
-      if (
-        environmentBindings.length > 0 &&
-        !environmentBindings.some((binding) => binding.businessOsInstanceId === id)
-      ) {
-        throw new Error("Verbinde diese Business OS erneut mit Workjet, bevor du sie aktivierst.");
-      }
       setSelectedId(id);
       await nativeBusinessOsSelection.save(id);
     },
-    [environmentBindings, instances],
+    [instances],
   );
 
   const selectEnvironment = useCallback(

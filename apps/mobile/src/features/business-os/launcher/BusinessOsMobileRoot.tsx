@@ -273,16 +273,8 @@ export function BusinessOsMobileRoot(props: {
   const colorScheme = useColorScheme();
   const reducedMotion = useReducedMotion();
   const { setMode } = useWorkjetMode();
-  const { environmentBindings, instances, isReady, select, selected } = useBusinessOs();
-  const selectableInstances = useMemo(
-    () =>
-      instances.filter(
-        (instance) =>
-          environmentBindings.length === 0 ||
-          environmentBindings.some((binding) => binding.businessOsInstanceId === instance.id),
-      ),
-    [environmentBindings, instances],
-  );
+  const { instances, isReady, select, selected } = useBusinessOs();
+  const selectableInstances = instances;
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [route, setRoute] = useState<BusinessOsRoute>("home");
   const [layout, setLayout] = useState<BusinessOsHomeLayout | null>(null);

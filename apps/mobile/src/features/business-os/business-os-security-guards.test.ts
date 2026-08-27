@@ -94,6 +94,10 @@ describe("Business OS native security guards", () => {
   });
 
   it("uses the active CTOX instance as the Code scope across entry points", () => {
+    const provider = read("src/features/business-os/BusinessOsProvider.tsx");
+    const settingsPanel = read("src/features/business-os/components/BusinessOsSettingsPanel.tsx");
+    const productChrome = read("src/features/mode/WorkjetProductChrome.tsx");
+    const businessOsRoot = read("src/features/business-os/launcher/BusinessOsMobileRoot.tsx");
     const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
     const layout = read("src/features/layout/AdaptiveWorkspaceLayout.tsx");
     const home = read("src/features/home/HomeRouteScreen.tsx");
@@ -109,6 +113,12 @@ describe("Business OS native security guards", () => {
       "binding.businessOsInstanceId === selectedBusinessOsInstance?.id",
     );
     expect(archiveRoute).toContain("All machines in");
+    expect(provider).not.toContain("Verbinde diese Business OS erneut");
+    expect(provider).not.toContain("const selectableInstances =");
+    expect(settingsPanel).toContain("Noch keine Rechner zugewiesen");
+    expect(settingsPanel).not.toContain("Erneut verbinden: Rechner-Zuordnung fehlt");
+    expect(productChrome).not.toContain("environmentBindings.length === 0");
+    expect(businessOsRoot).toContain("const selectableInstances = instances;");
   });
 
   it("requires isolated native profiles and canonical app origins", () => {

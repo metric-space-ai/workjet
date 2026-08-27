@@ -49,24 +49,18 @@ export function WorkjetProductChrome() {
   const foreground = useThemeColor("--color-foreground");
   const muted = useThemeColor("--color-foreground-muted");
   const { mode, setMode } = useWorkjetMode();
-  const { environmentBindings, instances, select, selected } = useBusinessOs();
+  const { instances, select, selected } = useBusinessOs();
   const { sidebar } = useWorkjetProductChrome();
   const showWordmark = width >= 720;
   const sidebarAvailable = sidebar?.available === true;
   const instanceActions = useMemo<MenuAction[]>(
     () =>
-      instances
-        .filter(
-          (instance) =>
-            environmentBindings.length === 0 ||
-            environmentBindings.some((binding) => binding.businessOsInstanceId === instance.id),
-        )
-        .map((instance) => ({
-          id: `instance:${instance.id}`,
-          title: instance.displayName,
-          state: instance.id === selected?.id ? "on" : "off",
-        })),
-    [environmentBindings, instances, selected?.id],
+      instances.map((instance) => ({
+        id: `instance:${instance.id}`,
+        title: instance.displayName,
+        state: instance.id === selected?.id ? "on" : "off",
+      })),
+    [instances, selected?.id],
   );
 
   return (

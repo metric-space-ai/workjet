@@ -268,14 +268,12 @@ export function BusinessOsSettingsPanel(props: {
                   const assignedComputerCount = environmentBindings.filter(
                     (binding) => binding.businessOsInstanceId === instance.id,
                   ).length;
-                  const canActivate = environmentBindings.length === 0 || codeEnvironmentBound;
                   return (
                     <Pressable
                       key={instance.id}
                       accessibilityLabel={`${instance.displayName}${active ? ", ausgewählt" : ""}`}
                       accessibilityRole="button"
-                      accessibilityState={{ disabled: !canActivate, selected: active }}
-                      disabled={!canActivate}
+                      accessibilityState={{ selected: active }}
                       onPress={() => void select(instance.id)}
                       className={cn(
                         "min-h-14 justify-center rounded-[16px] border px-4 py-3",
@@ -288,7 +286,9 @@ export function BusinessOsSettingsPanel(props: {
                           ? active
                             ? "Aktiv für Code und Business OS"
                             : "Bereit für Code und Business OS"
-                          : "Erneut verbinden: Rechner-Zuordnung fehlt"}
+                          : active
+                            ? "Aktiv · Noch keine Rechner zugewiesen"
+                            : "Noch keine Rechner zugewiesen"}
                         {assignedComputerCount > 0 ? ` · ${assignedComputerCount} Rechner` : ""}
                       </Text>
                     </Pressable>

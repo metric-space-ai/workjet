@@ -1,6 +1,8 @@
 import {
   CtoxAppActionResult,
   CtoxHostThemeInput,
+  CtoxInstanceAuthorityResolveInput,
+  CtoxInstanceAuthorityResolveResult,
   CtoxDiscoveryResult,
   CtoxDecisionHubDisconnectInput,
   CtoxDecisionHubDisconnectResult,
@@ -43,6 +45,7 @@ import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvision
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
+import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
 import * as CtoxShellFleet from "../../ctox/CtoxShellFleet.ts";
 import * as IpcChannels from "../channels.ts";
 import type * as DesktopIpc from "../DesktopIpc.ts";
@@ -290,6 +293,71 @@ export const removePairedInstance: DesktopIpc.DesktopIpcMethod<
         removal.success.secretRecordRemoved && Exit.isSuccess(cleanup)
           ? { _tag: "completed" }
           : { _tag: "failed", code: "persistence_failed" },
+      );
+    }),
+};
+
+export const resolveInstanceAuthority: DesktopIpc.DesktopIpcMethod<
+  never,
+  | CtoxDevAuth.CtoxDevAuth
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
+  | CtoxManagedLaunch.CtoxManagedLaunch
+> = {
+  channel: IpcChannels.CTOX_RESOLVE_INSTANCE_AUTHORITY_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxInstanceAuthorityResolveInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxInstanceAuthorityResolveResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      const managed = yield* auth.refresh.pipe(
+        Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
+      );
+      const discovery = yield* registry.merge(managed);
+      const descriptor =
+        discovery._tag === "ready"
+          ? discovery.instances.find((instance) => instance.id === input.value.instanceId)
+          : undefined;
+      if (descriptor === undefined) {
+        return yield* encodeSafe(CtoxInstanceAuthorityResolveResult, {
+          _tag: "failed",
+          code: "not_found",
+        });
+      }
+      if (descriptor.source === "ssh_managed") {
+        return yield* encodeSafe(CtoxInstanceAuthorityResolveResult, {
+          _tag: "failed",
+          code: "not_pairable",
+        });
+      }
+      if (descriptor.source === "ctox_dev") {
+        const managedLaunch = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+        const result = yield* managedLaunch
+          .resolveBusinessOsInstanceId(descriptor)
+          .pipe(Effect.result);
+        return yield* encodeSafe(
+          CtoxInstanceAuthorityResolveResult,
+          Result.isSuccess(result)
+            ? { _tag: "completed", businessOsInstanceId: result.success }
+            : { _tag: "failed", code: "authority_unavailable" },
+        );
+      }
+      const result = yield* registry.resolveBusinessOsInstanceId(descriptor.id).pipe(Effect.result);
+      return yield* encodeSafe(
+        CtoxInstanceAuthorityResolveResult,
+        Result.isSuccess(result)
+          ? { _tag: "completed", businessOsInstanceId: result.success }
+          : {
+              _tag: "failed",
+              code: result.failure.code === "not_found" ? "not_found" : "authority_unavailable",
+            },
       );
     }),
 };
@@ -728,6 +796,7 @@ type CtoxIpcServices =
   | CtoxElectronSessions.CtoxElectronSessions
   | CtoxGuestManager.CtoxGuestManager
   | CtoxInstanceRegistry.CtoxInstanceRegistry
+  | CtoxManagedLaunch.CtoxManagedLaunch
   | CtoxShellFleet.CtoxShellFleet;
 
 export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcServices>[] = [
@@ -739,6 +808,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   importInvite,
   importManualPairing,
   removePairedInstance,
+  resolveInstanceAuthority,
   addSshManagedInstance,
   removeSshManagedInstance,
   enterBusinessOsMode,

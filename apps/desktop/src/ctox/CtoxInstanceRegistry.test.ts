@@ -437,6 +437,22 @@ describe("CtoxInstanceRegistry", () => {
     });
   });
 
+  it.effect("resolves the canonical authority id only inside the paired registry", () => {
+    const { memory, registry } = registryHarness();
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      const paired = yield* service.importManualPairing(manualPairing);
+      assert.equal(yield* service.resolveBusinessOsInstanceId(paired.id), "office-1");
+
+      const publicDocument = memory.files.get("/state/ctox/instances.json") ?? "";
+      assert.notInclude(publicDocument, "office-1");
+      assert.notInclude(publicDocument, "room-secret");
+
+      const managed = yield* Effect.result(service.resolveBusinessOsInstanceId("managed:tenant"));
+      assert.equal(failureCode(managed), "not_found");
+    });
+  });
+
   it.effect("rejects expired, bridged, oversized, malformed-room, and dangerous URL inputs", () =>
     Effect.gen(function* () {
       const invalidInvites = [
@@ -865,6 +881,7 @@ describe("CtoxInstanceRegistry", () => {
 
       const target = yield* service.resolveLocalDaemonTarget(local.id);
       assert.equal(target.daemonInstanceId, "workshop-1");
+      assert.equal(yield* service.resolveBusinessOsInstanceId(local.id), "workshop-1");
       assert.equal(target.discoveredCount, 1);
       assert.deepEqual(
         failureCode(yield* Effect.result(service.resolveLocalDaemonTarget(paired.id))),

@@ -5,6 +5,7 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { EnvironmentId } from "./baseSchemas.ts";
 import { WorkjetConnectionId, WorkjetConnectionSummary } from "./workjet.ts";
 import { BusinessOsShellUpdateStatus } from "./businessOsShell.ts";
+import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
 
 const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   for (let index = 0; index < input.length; index += 1) {
@@ -144,6 +145,20 @@ export const CtoxManagedInstance = Schema.Struct({
   healthSummary: CtoxManagedInstanceHealth,
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;
+
+/** Resolve a Desktop presentation row to the canonical Business OS authority. */
+export const CtoxInstanceAuthorityResolveInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+});
+export type CtoxInstanceAuthorityResolveInput = typeof CtoxInstanceAuthorityResolveInput.Type;
+
+export const CtoxInstanceAuthorityResolveResult = Schema.Union([
+  Schema.TaggedStruct("completed", { businessOsInstanceId: BusinessOsInstanceId }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_pairable", "not_found", "authority_unavailable"]),
+  }),
+]);
+export type CtoxInstanceAuthorityResolveResult = typeof CtoxInstanceAuthorityResolveResult.Type;
 
 export const CtoxShellFleetBlocker = Schema.Literals([
   "offline",

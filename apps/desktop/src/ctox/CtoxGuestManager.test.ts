@@ -274,6 +274,7 @@ function makeGuestHarness() {
     resolveLocalDaemonTarget: () => Effect.die("unused"),
     resolveSshManagedTarget: () => Effect.die("unused"),
     stableIdentityKey: () => Effect.die("unused"),
+    resolveBusinessOsInstanceId: () => Effect.die("unused"),
   });
   let localInstances: readonly CtoxManagedInstance[] = [];
   const resolveLocalLaunch = vi.fn((instanceId: string) => {
@@ -319,7 +320,10 @@ function makeGuestHarness() {
       launchOrigin: "https://ctox.dev",
     }),
   );
-  const launches = CtoxManagedLaunch.CtoxManagedLaunch.of({ launch });
+  const launches = CtoxManagedLaunch.CtoxManagedLaunch.of({
+    launch,
+    resolveBusinessOsInstanceId: () => Effect.die("unused"),
+  });
   const shellLaunch = vi.fn(
     (): Effect.Effect<
       CtoxBusinessOsShell.CtoxBusinessOsLaunch,

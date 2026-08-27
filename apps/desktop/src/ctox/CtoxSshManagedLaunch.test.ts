@@ -69,6 +69,7 @@ function registryStub(
       resolvePairedLaunch: () => Effect.die("unused"),
       resolveLocalDaemonTarget: () => Effect.die("unused"),
       stableIdentityKey: () => Effect.die("unused"),
+      resolveBusinessOsInstanceId: () => Effect.die("unused"),
       resolveSshManagedTarget: (instanceId) =>
         input.found !== false && instanceId === sshDescriptor.id
           ? Effect.succeed({

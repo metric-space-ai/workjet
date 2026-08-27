@@ -127,6 +127,56 @@ describe("CtoxManagedLaunch", () => {
     }).pipe(Effect.provide(harness(fetchImpl)));
   });
 
+  it.effect("resolves only the server-bound canonical authority id for WELSCH", () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/desktop/launch-token")) {
+        return response({ launchConfigUrl: "https://ctox.dev/api/desktop/launch/welsch" });
+      }
+      return response({
+        launchUrl: "https://skf.ctox.dev/",
+        pairingConfig: {
+          transport: "webrtc",
+          http_bridge_available: false,
+          instance_id: "business-os-welsch",
+          sync_room: "never-return-this-room",
+          signaling_room_password: "never-return-this-secret",
+        },
+      });
+    });
+
+    return Effect.gen(function* () {
+      const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      assert.equal(yield* launches.resolveBusinessOsInstanceId(descriptor), "business-os-welsch");
+    }).pipe(Effect.provide(harness(fetchImpl)));
+  });
+
+  it.effect("fails closed when managed authority identity is missing or ambiguous", () => {
+    const configs = [
+      { transport: "webrtc", http_bridge_available: false },
+      {
+        transport: "webrtc",
+        http_bridge_available: false,
+        instance_id: "business-os-a",
+        instanceId: "business-os-b",
+      },
+    ];
+    let index = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/desktop/launch-token")) {
+        return response({ launchConfigUrl: `https://ctox.dev/api/desktop/launch/${index}` });
+      }
+      return response({ launchUrl: "https://tenant.ctox.dev/", pairingConfig: configs[index++] });
+    });
+
+    return Effect.gen(function* () {
+      const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      for (const _config of configs) {
+        const error = yield* launches.resolveBusinessOsInstanceId(descriptor).pipe(Effect.flip);
+        assert.equal(error.operation, "launch-contract");
+      }
+    }).pipe(Effect.provide(harness(fetchImpl)));
+  });
+
   it.effect("requests a fresh launch exchange on every activation", () => {
     let epoch = 0;
     const fetchImpl = vi.fn(async (url: string) => {

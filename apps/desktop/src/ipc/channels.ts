@@ -100,6 +100,7 @@ export const CTOX_DISCONNECT_DECISION_HUB_CHANNEL = "desktop:ctox-disconnect-dec
 export const CTOX_IMPORT_INVITE_CHANNEL = "desktop:ctox-import-invite";
 export const CTOX_IMPORT_MANUAL_PAIRING_CHANNEL = "desktop:ctox-import-manual-pairing";
 export const CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL = "desktop:ctox-remove-paired-instance";
+export const CTOX_RESOLVE_INSTANCE_AUTHORITY_CHANNEL = "desktop:ctox-resolve-instance-authority";
 export const CTOX_ADD_SSH_MANAGED_INSTANCE_CHANNEL = "desktop:ctox-add-ssh-managed-instance";
 export const CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL = "desktop:ctox-remove-ssh-managed-instance";
 export const CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL = "desktop:ctox-enter-business-os-mode";

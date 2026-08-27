@@ -104,6 +104,7 @@ import type {
   CtoxHostThemeInput,
   CtoxGuestBounds,
   CtoxInstanceAppsResult,
+  CtoxInstanceAuthorityResolveResult,
   CtoxManagedActionResult,
   CtoxManagedGuestResult,
   CtoxManagedLoginResult,
@@ -1218,6 +1219,7 @@ export interface DesktopCtoxBridge {
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxPairedInstanceImportResult>;
   removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
+  resolveInstanceAuthority?: (instanceId: string) => Promise<CtoxInstanceAuthorityResolveResult>;
   /** Configure one SSH-managed CTOX instance; carries no credential. */
   addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,

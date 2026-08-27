@@ -241,6 +241,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_MANUAL_PAIRING_CHANNEL, input),
     removePairedInstance: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL, { instanceId }),
+    resolveInstanceAuthority: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_RESOLVE_INSTANCE_AUTHORITY_CHANNEL, { instanceId }),
     addSshManagedInstance: (input) =>
       ipcRenderer.invoke(IpcChannels.CTOX_ADD_SSH_MANAGED_INSTANCE_CHANNEL, input),
     removeSshManagedInstance: (instanceId) =>

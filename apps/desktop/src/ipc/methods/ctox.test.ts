@@ -11,6 +11,7 @@ import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
+import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
 import {
   activate,
   importInvite,
@@ -20,6 +21,7 @@ import {
   openApp,
   openSettings,
   refresh,
+  resolveInstanceAuthority,
   removePairedInstance,
   addSshManagedInstance,
   removeSshManagedInstance,
@@ -58,6 +60,7 @@ function registryLayer(
     resolvePairedLaunch: () => Effect.die("unused"),
     resolveLocalDaemonTarget: () => Effect.die("unused"),
     stableIdentityKey: () => failedRegistry("not_found"),
+    resolveBusinessOsInstanceId: () => failedRegistry("not_found"),
     ...overrides,
   });
   return Layer.succeed(CtoxInstanceRegistry.CtoxInstanceRegistry, service);
@@ -65,6 +68,30 @@ function registryLayer(
 
 function failedRegistry(code: CtoxInstanceRegistry.CtoxInstanceRegistryError["code"]) {
   return Effect.fail(new CtoxInstanceRegistry.CtoxInstanceRegistryError({ code }));
+}
+
+function authorityLayers(input: {
+  readonly instances: readonly (typeof pairedInstance)[];
+  readonly registry?: Partial<CtoxInstanceRegistry.CtoxInstanceRegistry["Service"]>;
+  readonly managedAuthorityId?: string;
+}) {
+  const auth = CtoxDevAuth.CtoxDevAuth.of({
+    refresh: Effect.succeed({ _tag: "ready", instances: input.instances }),
+    login: Effect.die("unused"),
+    logout: Effect.die("unused"),
+  });
+  const managedLaunch = CtoxManagedLaunch.CtoxManagedLaunch.of({
+    launch: () => Effect.die("unused"),
+    resolveBusinessOsInstanceId: () =>
+      input.managedAuthorityId === undefined
+        ? Effect.die("unused")
+        : Effect.succeed(input.managedAuthorityId as never),
+  });
+  return Layer.mergeAll(
+    registryLayer(input.registry),
+    Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+    Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, managedLaunch),
+  );
 }
 
 function removalCleanupLayer(
@@ -98,6 +125,81 @@ function removalCleanupLayer(
 }
 
 describe("CTOX IPC methods", () => {
+  it.effect("resolves only the canonical paired authority id without secret material", () => {
+    const resolveBusinessOsInstanceId = vi.fn(() => Effect.succeed("office-1" as never));
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* resolveInstanceAuthority.handler({ instanceId: pairedInstance.id }), {
+        _tag: "completed",
+        businessOsInstanceId: "office-1",
+      });
+      expect(resolveBusinessOsInstanceId).toHaveBeenCalledWith(pairedInstance.id);
+
+      assert.deepEqual(yield* resolveInstanceAuthority.handler({ instanceId: "managed:tenant" }), {
+        _tag: "failed",
+        code: "not_found",
+      });
+      assert.deepEqual(
+        yield* resolveInstanceAuthority.handler({ instanceId: pairedInstance.id, extra: true }),
+        { _tag: "failed", code: "invalid_input" },
+      );
+    }).pipe(
+      Effect.provide(
+        authorityLayers({
+          instances: [pairedInstance],
+          registry: { resolveBusinessOsInstanceId },
+        }),
+      ),
+    );
+  });
+
+  it.effect("resolves managed and local authorities through their main-process sources", () => {
+    const managed = {
+      ...pairedInstance,
+      id: "managed:tenant-welsch",
+      source: "ctox_dev",
+      status: "available",
+      displayName: "WELSCH",
+    } as const;
+    const local = {
+      ...pairedInstance,
+      id: "local:daemon-welsch",
+      source: "local_daemon",
+      status: "available",
+      displayName: "WELSCH local",
+    } as const;
+    const ssh = {
+      ...pairedInstance,
+      id: "ssh:gpu3",
+      source: "ssh_managed",
+      status: "available",
+      displayName: "gpu3",
+    } as const;
+    const localResolver = vi.fn(() => Effect.succeed("welsch-local-authority" as never));
+
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* resolveInstanceAuthority.handler({ instanceId: managed.id }), {
+        _tag: "completed",
+        businessOsInstanceId: "welsch-managed-authority",
+      });
+      assert.deepEqual(yield* resolveInstanceAuthority.handler({ instanceId: local.id }), {
+        _tag: "completed",
+        businessOsInstanceId: "welsch-local-authority",
+      });
+      assert.deepEqual(yield* resolveInstanceAuthority.handler({ instanceId: ssh.id }), {
+        _tag: "failed",
+        code: "not_pairable",
+      });
+      expect(localResolver).toHaveBeenCalledWith(local.id);
+    }).pipe(
+      Effect.provide(
+        authorityLayers({
+          instances: [managed, local, ssh] as never,
+          registry: { resolveBusinessOsInstanceId: localResolver },
+          managedAuthorityId: "welsch-managed-authority",
+        }),
+      ),
+    );
+  });
   it.effect("rejects malformed activation input before calling the guest manager", () => {
     const activateGuest = vi.fn(() => Effect.succeed({ _tag: "ready" as const, instanceId: "x" }));
     const guests = CtoxGuestManager.CtoxGuestManager.of({

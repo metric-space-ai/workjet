@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  BusinessOsInstanceId,
   BusinessOsShellUpdateStatus,
   CtoxManagedInstanceId,
   CtoxManagedInstance as CtoxManagedInstanceSchema,
@@ -310,6 +311,14 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly stableIdentityKey: (
       instanceId: string,
     ) => Effect.Effect<string, CtoxInstanceRegistryError>;
+    /**
+     * Main-process-only presentation-to-authority resolution. The returned
+     * opaque instance id is not a credential; room, signaling and capability
+     * material remain encrypted in this registry and never cross IPC.
+     */
+    readonly resolveBusinessOsInstanceId: (
+      instanceId: string,
+    ) => Effect.Effect<BusinessOsInstanceId, CtoxInstanceRegistryError>;
     /** Main-process-only launch resolution; its secret-bearing result never crosses IPC. */
     readonly resolvePairedLaunch: (
       instanceId: string,
@@ -1281,6 +1290,40 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     return yield* instanceIdentityKey(secret.instanceIdentity);
   });
 
+  const resolveBusinessOsInstanceId = Effect.fn("CtoxInstanceRegistry.resolveBusinessOsInstanceId")(
+    function* (instanceId: string) {
+      if (instanceId.startsWith("local:")) {
+        const target = yield* resolveLocalDaemonTarget(instanceId);
+        return yield* Schema.decodeUnknownEffect(BusinessOsInstanceId)(
+          target.daemonInstanceId,
+        ).pipe(Effect.mapError(() => registryError("persistence_failed")));
+      }
+      if (!/^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(instanceId)) {
+        return yield* registryError("not_found");
+      }
+      yield* assertSafeStorage();
+      const [publicDocument, secretDocument] = yield* Effect.all([
+        readPublicDocument(fileSystem, publicRegistryPath),
+        readSecretDocument(fileSystem, secretRegistryPath),
+      ]);
+      const descriptor = publicDocument.instances.find((instance) => instance.id === instanceId);
+      const record = secretDocument.records.find((entry) => entry.id === instanceId);
+      if (
+        descriptor === undefined ||
+        record === undefined ||
+        !isSafePersistedPairedInstance(descriptor)
+      ) {
+        return yield* registryError("not_found");
+      }
+      const secret = yield* decryptSecret(record);
+      const expectedId = yield* stableId(secret.source, secret.instanceIdentity);
+      if (expectedId !== descriptor.id || secret.source !== descriptor.source) {
+        return yield* registryError("persistence_failed");
+      }
+      return BusinessOsInstanceId.make(secret.instanceIdentity);
+    },
+  );
+
   const importPairing = Effect.fn("CtoxInstanceRegistry.importPairing")(function* (
     pairing: ValidatedPairing,
   ) {
@@ -1374,6 +1417,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     resolveSshManagedTarget: (instanceId) =>
       registryLock.withPermit(resolveSshManagedTarget(instanceId)),
     stableIdentityKey: (instanceId) => registryLock.withPermit(stableIdentityKey(instanceId)),
+    resolveBusinessOsInstanceId: (instanceId) =>
+      registryLock.withPermit(resolveBusinessOsInstanceId(instanceId)),
     merge: (managed) =>
       registryLock.withPermit(
         Effect.gen(function* () {

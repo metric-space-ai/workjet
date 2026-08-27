@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import { BusinessOsInstanceId, type CtoxManagedInstance } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -56,6 +56,9 @@ export class CtoxManagedLaunch extends Context.Service<
     readonly launch: (
       descriptor: CtoxManagedInstance,
     ) => Effect.Effect<CtoxManagedLaunchConfig, CtoxManagedLaunchError>;
+    readonly resolveBusinessOsInstanceId: (
+      descriptor: CtoxManagedInstance,
+    ) => Effect.Effect<BusinessOsInstanceId, CtoxManagedLaunchError>;
   }
 >()("@t3tools/desktop/ctox/CtoxManagedLaunch") {}
 
@@ -134,6 +137,15 @@ function packedConfigFromLaunchUrl(launchUrl: URL): Record<string, unknown> | un
   } catch {
     return undefined;
   }
+}
+
+function authorityIdFromConfig(config: Record<string, unknown>): unknown {
+  const snakeCase = config.instance_id;
+  const camelCase = config.instanceId;
+  if (snakeCase !== undefined && camelCase !== undefined && snakeCase !== camelCase) {
+    return undefined;
+  }
+  return snakeCase ?? camelCase;
 }
 
 function forceWebRtc(config: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -316,7 +328,20 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
       return { launchUrl, launchOrigin: serverLaunchUrl.origin };
     });
 
-    return CtoxManagedLaunch.of({ launch });
+    const resolveBusinessOsInstanceId = Effect.fn("CtoxManagedLaunch.resolveBusinessOsInstanceId")(
+      function* (descriptor: CtoxManagedInstance) {
+        const resolved = yield* launch(descriptor);
+        const config = packedConfigFromLaunchUrl(new URL(resolved.launchUrl));
+        if (config === undefined) {
+          return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
+        }
+        return yield* Schema.decodeUnknownEffect(BusinessOsInstanceId)(
+          authorityIdFromConfig(config),
+        ).pipe(Effect.mapError(() => new CtoxManagedLaunchError({ operation: "launch-contract" })));
+      },
+    );
+
+    return CtoxManagedLaunch.of({ launch, resolveBusinessOsInstanceId });
   }).pipe(Effect.withSpan("CtoxManagedLaunch.make"));
 
 export const layer = (options: CtoxManagedLaunchOptions = {}) =>

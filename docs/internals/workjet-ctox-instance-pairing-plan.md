@@ -49,18 +49,18 @@ Current implementation baseline:
   cookie-free Mobile ctox.dev adapter and exposes production QR actions only
   when that exact instance has a valid Device Session and a configured managed
   control origin.
-- The isolated ctox.dev branch contains `4e57284` (fail-closed managed control
-  core) and `0698a34` (V2 Relay-producer adapter, rotating JWKS, one-time
-  assertion consume and stable device-pairing edge). `6cdce4e` adds the
-  cookie-free DPoP device-control connection and handle-bound CSRF flow.
-  `22aa27f` adds the exact-instance adapter from ctox.dev to the native CTOX
-  issuer through the existing host-key-pinned managed SSH transport. Production
-  deployment, native fleet rollout and secret/JWKS configuration remain
-  intentionally fail-closed.
+- The managed producer has been rebased cleanly onto ctox.dev `origin/main`
+  `a4ba17a` as branch `codex/workjet-managed-control-origin-main`, six commits
+  ahead (`a9856d0`, `d6cde17`, `11552f6`, `3672d7c`, `625c5fe`, `5c96c5a`).
+  Its Workjet migrations are collision-free at `036`–`038`; the producer test,
+  migration guard and typecheck are green. Production deployment, native fleet
+  rollout and secret/JWKS configuration remain intentionally fail-closed.
 - The isolated CTOX branch contains `1beff1e41` (device-bound invite issuer,
   `cnf.jkt`, pairing-ID rotation/revoke and nonce-based P-256 proof before the
-  WebRTC data plane). It is fully tested on its clean branch but intentionally
-  not cherry-picked over the strongly overlapping dirty CTOX main checkout.
+  WebRTC data plane). It is a direct child of committed CTOX `main` `bfb8c01b7`
+  and passes the RxDB, Clippy, format and device-proof gates in its clean
+  worktree. It is intentionally not cherry-picked over the strongly
+  overlapping dirty CTOX main checkout.
 - `78e857a9d` removes the obsolete Mobile environment/connection fallback and
   accepts only a short-lived, exact-instance managed control handle. Production
   actions remain disabled while ctox.dev has no live producer.
@@ -382,16 +382,20 @@ active.
 - [ ] Deliver one offline HTML selector with per-app favorites and JSON export.
 - [ ] Integrate only operator-approved icons into signed platform asset packs.
 
-The reference corpus currently contains 544 raster files (34 apps x 16
-candidates), but the icon-studio audit proves that file completeness is not
-production provenance: several app sets contain `sourceGeneration: null`,
-brief-inconsistent stock motifs or no candidate recognizable at 60 px. Those
-sets remain open and require new Grok Agentic concepts. The SVG stage is never
-auto-traced: a candidate must first pass the semantic/provenance gate and then
-side-by-side 1024 px and 60 px review. Pen Testing passes this pipeline; Mail
-passes as an explicit inbox-triage candidate. Browser, CTOX Backend, Threads,
-Documents, Tickets, Knowledge and Credentials are rejected and must not be
-promoted merely because a close SVG reconstruction is possible. The Kimi/Grok
-SVG route most recently returned a provider `USAGE_LIMIT` response; retry
-supervisors are stopped and must not poll more frequently than the icon-studio
-cooldown permits.
+The reference corpus contains 544 technically valid raster files (34 apps x 16
+candidates), but only 260 are hash-bound to their current Grok Agentic concept
+and generation record. Another 284 are stale/incomplete, and none currently has
+the required validator-v15 three-pass review plus local 60-px proof. The honest
+operator-selection count is therefore 0/544, not 544/544. File presence,
+session logs and synthetic selection metadata are no longer accepted as
+provenance; geometry, SVG and selector construction now fail closed without the
+strict evidence chain.
+
+Pen Testing and Mail remain useful local reconstruction pilots only; neither is
+promoted into the canonical 544-item selector before the same current review
+gate passes. Browser, CTOX Backend, Threads, Documents, Tickets, Knowledge,
+Credentials and the other audited stock/ambiguous sets remain rejected. The
+SVG stage is never auto-traced: every accepted raster is reconstructed from
+scratch, compared at 1024 px and 60 px, and independently approved A/B. The
+configured Kimi K3 authoring route most recently returned `USAGE_LIMIT`; SVG
+workers remain paused and may probe only after the documented cooldown.

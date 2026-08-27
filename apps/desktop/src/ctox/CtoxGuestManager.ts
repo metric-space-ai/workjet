@@ -6,6 +6,7 @@ import type {
   CtoxManagedActionResult,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
+  CtoxWorkjetDeviceControlRequest,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -167,6 +168,11 @@ export class CtoxGuestManager extends Context.Service<
     ) => Effect.Effect<CtoxManagedActionResult>;
     /** Open settings inside the already-active Business OS guest. */
     readonly openGuestSettings: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
+    /** Invoke the bounded CTOX device method on the active guest's WebRTC channel. */
+    readonly requestGuestDeviceControl?: (
+      instanceId: string,
+      request: CtoxWorkjetDeviceControlRequest,
+    ) => Effect.Effect<CtoxGuestDeviceControlObservation>;
     /** Project the host appearance theme into the guest (persists across guests). */
     readonly setHostTheme: (theme: CtoxHostThemeInput) => Effect.Effect<CtoxManagedActionResult>;
   }
@@ -195,6 +201,26 @@ export type CtoxGuestAppsObservation =
       readonly workspaceName?: string;
     }
   | { readonly _tag: "failed"; readonly code: "not_active" | "guest_failed" };
+
+export type CtoxGuestDeviceControlObservation =
+  | { readonly _tag: "completed"; readonly response: unknown }
+  | { readonly _tag: "failed"; readonly code: "not_active" | "guest_failed" };
+
+const MAX_DEVICE_CONTROL_RESPONSE_BYTES = 512 * 1024;
+const DEVICE_CONTROL_GUEST_BOUNDS: CtoxGuestBounds = { x: 0, y: 0, width: 0, height: 0 };
+
+function buildGuestDeviceControlExpression(request: CtoxWorkjetDeviceControlRequest): string {
+  const encodedRequest = JSON.stringify(request);
+  return `(async () => {
+    if (typeof globalThis.workjetBusinessOsDeviceControl !== "function") return { ok: false };
+    try {
+      const response = await globalThis.workjetBusinessOsDeviceControl(${encodedRequest});
+      return { ok: true, response };
+    } catch {
+      return { ok: false };
+    }
+  })()`;
+}
 
 // Fixed, renderer-independent expression: reads only bounded module identity
 // data from the guest's own app state. Never interpolates untrusted input.
@@ -1154,12 +1180,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           readonly [CtoxGuestAppsObservation, GuestState],
           never
         > {
-          const active = attachedGuest(state);
-          if (
-            active === undefined ||
-            active.instanceId !== instanceId ||
-            active.view.webContents.isDestroyed()
-          ) {
+          const active = state.pool.get(instanceId);
+          if (active === undefined || active.view.webContents.isDestroyed()) {
             return [{ _tag: "failed", code: "not_active" } as const, state] as const;
           }
           const raw = yield* Effect.tryPromise({
@@ -1271,6 +1293,60 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const requestGuestDeviceControl = (
+      instanceId: string,
+      request: CtoxWorkjetDeviceControlRequest,
+    ): Effect.Effect<CtoxGuestDeviceControlObservation> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxGuestDeviceControlObservation, GuestState],
+          never
+        > {
+          let active = state.pool.get(instanceId);
+          let nextState = state;
+          if (active === undefined || active.view.webContents.isDestroyed()) {
+            if (active !== undefined) destroyPooledGuest(active);
+            const pool = new Map(state.pool);
+            pool.delete(instanceId);
+            const [, prepared] = yield* prepareGuest(instanceId, DEVICE_CONTROL_GUEST_BOUNDS);
+            if (prepared === undefined) {
+              return [
+                { _tag: "failed", code: "guest_failed" } as const,
+                { ...state, pool },
+              ] as const;
+            }
+            // Settings owns the visible surface. Keep this guest alive for its
+            // instance-bound WebRTC control method without painting it above
+            // the Workjet settings renderer.
+            detachGuest(prepared);
+            active = { ...prepared, lastUsedAt: ++guestUseSequence };
+            pool.set(instanceId, active);
+            nextState = { ...state, pool };
+          }
+          const raw = yield* Effect.tryPromise({
+            try: () =>
+              active.view.webContents.executeJavaScript(
+                buildGuestDeviceControlExpression(request),
+                true,
+              ),
+            catch: () => undefined,
+          }).pipe(Effect.orElseSucceed(() => undefined));
+          if (!raw || typeof raw !== "object" || (raw as { readonly ok?: unknown }).ok !== true) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, nextState] as const;
+          }
+          const response = (raw as { readonly response?: unknown }).response;
+          const encodedLength = yield* Effect.try({
+            try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
+            catch: () => MAX_DEVICE_CONTROL_RESPONSE_BYTES + 1,
+          }).pipe(Effect.orElseSucceed(() => MAX_DEVICE_CONTROL_RESPONSE_BYTES + 1));
+          if (encodedLength > MAX_DEVICE_CONTROL_RESPONSE_BYTES) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, nextState] as const;
+          }
+          return [{ _tag: "completed", response } as const, nextState] as const;
+        }),
+      );
+
     const setHostTheme = (theme: CtoxHostThemeInput): Effect.Effect<CtoxManagedActionResult> =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.sync((): readonly [CtoxManagedActionResult, GuestState] => {
@@ -1300,6 +1376,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       readGuestApps,
       openGuestApp,
       openGuestSettings,
+      requestGuestDeviceControl,
       setHostTheme,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));

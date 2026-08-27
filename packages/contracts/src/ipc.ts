@@ -120,6 +120,8 @@ import type {
   CtoxShellFleetPauseInput,
   CtoxShellFleetRolloutResult,
   CtoxShellFleetRolloutStatus,
+  CtoxWorkjetDeviceControlRequest,
+  CtoxWorkjetDeviceControlResult,
 } from "./ctox.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -1254,6 +1256,11 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxAppActionResult>;
   /** Open the active CTOX instance's own Business OS settings drawer. */
   openSettings?: (instanceId: string) => Promise<CtoxAppActionResult>;
+  /** Execute the bounded device-control method inside the active WebRTC guest. */
+  requestDeviceControl?: (
+    instanceId: string,
+    request: CtoxWorkjetDeviceControlRequest,
+  ) => Promise<CtoxWorkjetDeviceControlResult>;
   /** Pin or unpin an app on the instance's rail (taskbar model). */
   setAppDocked: (
     instanceId: string,

@@ -3,7 +3,6 @@ import type {
   CtoxManagedInstance,
   DesktopCtoxBridge,
   WorkjetDeviceBindingSummary,
-  WorkjetDeviceInviteCreateResult,
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@t3tools/contracts";
 import {
@@ -44,12 +43,12 @@ import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
 import {
   createBusinessOsDeviceInvite,
+  type BusinessOsWebRtcDeviceInvite,
   listBusinessOsDevices,
-  readBusinessOsDeviceInviteManualConnection,
   revokeBusinessOsDevice,
   revokeBusinessOsDeviceInvite,
 } from "./businessOsDeviceControl";
-import { encodeWorkjetDevicePairingLink, formatMobileInviteExpiry } from "./businessOsPairing";
+import { formatMobileInviteExpiry } from "./businessOsPairing";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
@@ -99,7 +98,7 @@ function DevicePairingDialog({
   revoking,
 }: {
   readonly instanceName: string | null;
-  readonly invite: WorkjetDeviceInviteCreateResult | null;
+  readonly invite: BusinessOsWebRtcDeviceInvite | null;
   readonly onClose: (() => void) | undefined;
   readonly onRenew: (() => void) | undefined;
   readonly onRevoke: (() => void) | undefined;
@@ -114,10 +113,7 @@ function DevicePairingDialog({
   const [manualLoading, setManualLoading] = useState(false);
   const [manualError, setManualError] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const link = useMemo(
-    () => (invite === null ? null : encodeWorkjetDevicePairingLink(invite.reference)),
-    [invite],
-  );
+  const link = invite?.link ?? null;
 
   useEffect(() => {
     setCopied(false);
@@ -172,7 +168,7 @@ function DevicePairingDialog({
 
   return (
     <Dialog open={invite !== null} onOpenChange={(open) => (open ? undefined : close())}>
-      <DialogPopup className="max-w-md overflow-hidden">
+      <DialogPopup className="max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle>Workjet-Gerät verbinden</DialogTitle>
           <DialogDescription>
@@ -186,10 +182,11 @@ function DevicePairingDialog({
               <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/8">
                 <QRCodeSvg
                   value={link}
-                  size={224}
+                  size={320}
                   level="M"
                   marginSize={4}
                   title={`QR-Code für ${instanceName ?? "Business OS"}`}
+                  className="h-auto w-full max-w-80"
                 />
               </div>
               <div className="w-full rounded-lg bg-muted/40 px-3 py-3 text-center">
@@ -313,7 +310,7 @@ function DevicePairingDialog({
             </>
           )}
         </DialogPanel>
-        <DialogFooter>
+        <DialogFooter className="sm:flex-wrap">
           <Button variant="ghost" onClick={close}>
             Schließen
           </Button>
@@ -374,7 +371,7 @@ export function BusinessOsSettingsView({
   readonly onRetryDevices?: () => void;
   readonly revokingDeviceId?: string | null;
   readonly addingDevice?: boolean;
-  readonly activeInvite?: WorkjetDeviceInviteCreateResult | null;
+  readonly activeInvite?: BusinessOsWebRtcDeviceInvite | null;
   readonly onCloseInvite?: () => void;
   readonly onRenewInvite?: () => void;
   readonly onRevokeInvite?: () => void;
@@ -690,15 +687,13 @@ export function BusinessOsSettings() {
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState<string | null>(null);
-  const [authorityId, setAuthorityId] = useState<string | null>(null);
-  const [authorityLoading, setAuthorityLoading] = useState(false);
   const [deviceRefreshKey, setDeviceRefreshKey] = useState(0);
   const [addingDevice, setAddingDevice] = useState(false);
-  const [activeInvite, setActiveInvite] = useState<WorkjetDeviceInviteCreateResult | null>(null);
+  const [activeInvite, setActiveInvite] = useState<BusinessOsWebRtcDeviceInvite | null>(null);
   const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
   const [revokingInvite, setRevokingInvite] = useState(false);
   const deviceControlAvailable =
-    authorityId !== null && bridge?.issueControlIdentityAssertion !== undefined;
+    activeInstanceId !== null && bridge?.requestDeviceControl !== undefined;
 
   useEffect(() => {
     if (discovery === "loading" || discovery._tag !== "ready") return;
@@ -716,37 +711,12 @@ export function BusinessOsSettings() {
   };
 
   useEffect(() => {
-    setAuthorityId(null);
-    setDevices([]);
-    setDevicesLoading(false);
-    setDevicesError(null);
-    if (activeInstanceId === null || bridge?.resolveInstanceAuthority === undefined) return;
-    let cancelled = false;
-    setAuthorityLoading(true);
-    void bridge.resolveInstanceAuthority(activeInstanceId).then(
-      (result) => {
-        if (cancelled) return;
-        setAuthorityLoading(false);
-        setAuthorityId(result._tag === "completed" ? result.businessOsInstanceId : null);
-      },
-      () => {
-        if (cancelled) return;
-        setAuthorityLoading(false);
-        setAuthorityId(null);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [activeInstanceId, bridge]);
-
-  useEffect(() => {
     setDevices([]);
     setDevicesError(null);
-    if (!deviceControlAvailable || authorityId === null) return;
+    if (!deviceControlAvailable || activeInstanceId === null || bridge === undefined) return;
     let cancelled = false;
     setDevicesLoading(true);
-    void listBusinessOsDevices(authorityId).then(
+    void listBusinessOsDevices(bridge, activeInstanceId, activeInstanceId).then(
       (result) => {
         if (cancelled) return;
         setDevices(result.devices);
@@ -765,7 +735,7 @@ export function BusinessOsSettings() {
     return () => {
       cancelled = true;
     };
-  }, [authorityId, deviceControlAvailable, deviceRefreshKey]);
+  }, [activeInstanceId, bridge, deviceControlAvailable, deviceRefreshKey]);
 
   const addBusinessOs = async (invite: string): Promise<string | null> => {
     if (bridge === undefined)
@@ -788,20 +758,22 @@ export function BusinessOsSettings() {
   const deviceManagementBlockedReason =
     selected === null
       ? null
-      : authorityLoading
-        ? "Die Instanzberechtigung wird geprüft …"
-        : authorityId === null
-          ? `${ctoxInstanceDisplayTitle(selected)} konnte noch nicht bestätigt werden.`
-          : !deviceControlAvailable
-            ? `Die sichere Geräteverbindung für ${ctoxInstanceDisplayTitle(selected)} ist in dieser Workjet-Ausgabe noch nicht aktiviert.`
-            : null;
+      : !deviceControlAvailable
+        ? `Öffne ${ctoxInstanceDisplayTitle(selected)} einmal in Business OS, um ein Gerät über CTOX Sync zu verbinden.`
+        : null;
 
   const createDeviceInvite = async () => {
-    if (authorityId === null) return;
+    if (activeInstanceId === null || bridge === undefined || selected === null) return;
     setAddingDevice(true);
     setDevicesError(null);
     try {
-      setActiveInvite(await createBusinessOsDeviceInvite(authorityId));
+      setActiveInvite(
+        await createBusinessOsDeviceInvite(
+          bridge,
+          activeInstanceId,
+          ctoxInstanceDisplayTitle(selected),
+        ),
+      );
     } catch {
       setDevicesError(
         "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
@@ -812,10 +784,10 @@ export function BusinessOsSettings() {
   };
 
   const revokeInvite = async () => {
-    if (authorityId === null || activeInvite === null) return;
+    if (activeInstanceId === null || bridge === undefined || activeInvite === null) return;
     setRevokingInvite(true);
     try {
-      await revokeBusinessOsDeviceInvite(authorityId, activeInvite.inviteId);
+      await revokeBusinessOsDeviceInvite(bridge, activeInstanceId, activeInvite.inviteId);
       setActiveInvite(null);
     } catch {
       setDevicesError("Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.");
@@ -824,12 +796,38 @@ export function BusinessOsSettings() {
     }
   };
 
+  const closeInvite = () => {
+    if (activeInvite === null) return;
+    const inviteToRevoke = activeInvite;
+    setActiveInvite(null);
+    if (activeInstanceId === null || bridge === undefined) return;
+    void revokeBusinessOsDeviceInvite(bridge, activeInstanceId, inviteToRevoke.inviteId).catch(
+      () => {
+        setDevicesError(
+          "Die geschlossene Einladung konnte nicht widerrufen werden. Erstelle vor der Weitergabe einen neuen QR-Code.",
+        );
+      },
+    );
+  };
+
   const renewInvite = async () => {
-    if (authorityId === null || activeInvite === null) return;
+    if (
+      activeInstanceId === null ||
+      bridge === undefined ||
+      activeInvite === null ||
+      selected === null
+    )
+      return;
     setRevokingInvite(true);
     try {
-      await revokeBusinessOsDeviceInvite(authorityId, activeInvite.inviteId);
-      setActiveInvite(await createBusinessOsDeviceInvite(authorityId));
+      await revokeBusinessOsDeviceInvite(bridge, activeInstanceId, activeInvite.inviteId);
+      setActiveInvite(
+        await createBusinessOsDeviceInvite(
+          bridge,
+          activeInstanceId,
+          ctoxInstanceDisplayTitle(selected),
+        ),
+      );
     } catch {
       setDevicesError("Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.");
     } finally {
@@ -838,10 +836,10 @@ export function BusinessOsSettings() {
   };
 
   const revokeDevice = async (devicePairingId: string) => {
-    if (authorityId === null) return;
+    if (activeInstanceId === null || bridge === undefined) return;
     setRevokingDeviceId(devicePairingId);
     try {
-      await revokeBusinessOsDevice(authorityId, devicePairingId);
+      await revokeBusinessOsDevice(bridge, activeInstanceId, devicePairingId);
       setDeviceRefreshKey((key) => key + 1);
     } catch {
       setDevicesError("Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.");
@@ -871,14 +869,13 @@ export function BusinessOsSettings() {
       onRevokeDevice={(devicePairingId) => void revokeDevice(devicePairingId)}
       revokingDeviceId={revokingDeviceId}
       activeInvite={activeInvite}
-      onCloseInvite={() => void revokeInvite()}
+      onCloseInvite={closeInvite}
       onRevokeInvite={() => void revokeInvite()}
       onRenewInvite={() => void renewInvite()}
-      {...(!deviceControlAvailable || authorityId === null || activeInvite === null
+      {...(!deviceControlAvailable || activeInvite === null
         ? {}
         : {
-            onLoadManualConnection: () =>
-              readBusinessOsDeviceInviteManualConnection(authorityId, activeInvite.inviteId),
+            onLoadManualConnection: async () => activeInvite.manualConnection,
           })}
       revokingInvite={revokingInvite}
     />

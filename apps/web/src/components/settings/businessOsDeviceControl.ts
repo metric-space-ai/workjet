@@ -1,113 +1,114 @@
 import {
-  BusinessOsInstanceId,
-  WorkjetInstallationId,
+  CtoxBusinessOsInviteV1,
+  type DesktopCtoxBridge,
   type WorkjetDeviceBindingListResult,
-  type WorkjetDeviceInviteCreateResult,
-  type WorkjetManagedBackendControlResolveResult,
+  type WorkjetDeviceBindingSummary,
   type WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@t3tools/contracts";
-import {
-  createManagedWorkjetDeviceInvite,
-  listManagedWorkjetDeviceBindings,
-  readManagedWorkjetDeviceInviteManualConnection,
-  resolveManagedBusinessOsBackendControl,
-  revokeManagedWorkjetDeviceBinding,
-  revokeManagedWorkjetDeviceInvite,
-} from "@t3tools/client-runtime/state/business-os-managed-backend-control";
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { randomUUID } from "../../lib/utils";
-import { runtime } from "../../lib/runtime";
+import { encodeWorkjetBusinessOsPairingLink } from "./businessOsPairing";
 
-const INSTALLATION_ID_KEY = "workjet.installation-id.v1";
-const decodeBusinessOsInstanceId = Schema.decodeUnknownSync(BusinessOsInstanceId);
-const decodeWorkjetInstallationId = Schema.decodeUnknownSync(WorkjetInstallationId);
-
-function loadOrCreateInstallationId(): WorkjetInstallationId {
-  const stored = globalThis.localStorage?.getItem(INSTALLATION_ID_KEY);
-  if (stored) {
-    try {
-      return decodeWorkjetInstallationId(stored);
-    } catch {
-      globalThis.localStorage?.removeItem(INSTALLATION_ID_KEY);
-    }
-  }
-  const created = decodeWorkjetInstallationId(`desktop:${randomUUID()}`);
-  globalThis.localStorage?.setItem(INSTALLATION_ID_KEY, created);
-  return created;
+export interface BusinessOsWebRtcDeviceInvite {
+  readonly inviteId: string;
+  readonly link: string;
+  readonly expiresAt: string;
+  readonly manualConnection: WorkjetManagedDeviceInviteManualConnectionResult;
 }
 
-export interface BusinessOsDeviceControlScope {
-  readonly businessOsInstanceId: BusinessOsInstanceId;
-  readonly backendControlConnectionId: WorkjetManagedBackendControlResolveResult["backendControlConnectionId"];
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("CTOX WebRTC device response is invalid.");
+  }
+  return value as Record<string, unknown>;
 }
 
-async function resolveControl(
-  rawBusinessOsInstanceId: string,
-): Promise<BusinessOsDeviceControlScope> {
-  const businessOsInstanceId = decodeBusinessOsInstanceId(rawBusinessOsInstanceId);
-  const workjetInstallationId = loadOrCreateInstallationId();
-  const identityPort = window.desktopBridge?.ctox?.issueControlIdentityAssertion;
-  if (identityPort === undefined) throw new Error("control_identity_unavailable");
-  const controlIdentity = await identityPort({
-    audience: "ctox.dev",
-    businessOsInstanceId,
-    workjetInstallationId,
-  });
-  if (Date.parse(controlIdentity.expiresAt) <= Date.now()) {
-    throw new Error("control_identity_expired");
-  }
-  const resolved = await runtime.runPromise(
-    resolveManagedBusinessOsBackendControl({
-      businessOsInstanceId,
-      workjetInstallationId,
-      relayIdentityAssertion: controlIdentity.assertion,
-    }),
-  );
-  if (resolved.businessOsInstanceId !== businessOsInstanceId) {
-    throw new Error("wrong_business_os_instance");
-  }
-  return {
-    businessOsInstanceId,
-    backendControlConnectionId: resolved.backendControlConnectionId,
-  };
+async function request(
+  bridge: DesktopCtoxBridge,
+  instanceId: string,
+  input: Parameters<NonNullable<DesktopCtoxBridge["requestDeviceControl"]>>[1],
+): Promise<unknown> {
+  if (bridge.requestDeviceControl === undefined) throw new Error("ctox_webrtc_unavailable");
+  const result = await bridge.requestDeviceControl(instanceId, input);
+  if (result._tag !== "completed") throw new Error(result.code);
+  return result.response;
 }
 
 export async function listBusinessOsDevices(
+  bridge: DesktopCtoxBridge,
+  instanceId: string,
   businessOsInstanceId: string,
 ): Promise<WorkjetDeviceBindingListResult> {
-  const scope = await resolveControl(businessOsInstanceId);
-  return runtime.runPromise(listManagedWorkjetDeviceBindings(scope));
+  const response = record(await request(bridge, instanceId, { action: "binding.list" }));
+  if (!Array.isArray(response.bindings) || response.bindings.length > 1_000) {
+    throw new Error("invalid_binding_list");
+  }
+  const devices: WorkjetDeviceBindingSummary[] = response.bindings.map((value) => {
+    const binding = record(value);
+    if (
+      typeof binding.id !== "string" ||
+      typeof binding.deviceId !== "string" ||
+      !Number.isSafeInteger(binding.pairedAtMs ?? binding.createdAtMs)
+    ) {
+      throw new Error("invalid_binding");
+    }
+    return {
+      devicePairingId: binding.id,
+      deviceId: binding.deviceId,
+      businessOsInstanceId,
+      pairedAtMillis: Number(binding.pairedAtMs ?? binding.createdAtMs),
+    };
+  });
+  return { devices };
 }
 
 export async function createBusinessOsDeviceInvite(
-  businessOsInstanceId: string,
-): Promise<WorkjetDeviceInviteCreateResult> {
-  const scope = await resolveControl(businessOsInstanceId);
-  return runtime.runPromise(createManagedWorkjetDeviceInvite({ ...scope, ttlSeconds: 300 }));
+  bridge: DesktopCtoxBridge,
+  instanceId: string,
+  displayName: string,
+): Promise<BusinessOsWebRtcDeviceInvite> {
+  const response = record(
+    await request(bridge, instanceId, {
+      action: "invite.create",
+      ttlSeconds: 300,
+      displayName,
+    }),
+  );
+  if (typeof response.inviteId !== "string" || typeof response.expiresAt !== "string") {
+    throw new Error("invalid_invite");
+  }
+  const invite = Schema.decodeUnknownSync(CtoxBusinessOsInviteV1)(response.invite, {
+    onExcessProperty: "error",
+  });
+  return {
+    inviteId: response.inviteId,
+    link: encodeWorkjetBusinessOsPairingLink(invite),
+    expiresAt: response.expiresAt,
+    manualConnection: {
+      signalingUrls: [...invite.signaling_urls],
+      room: invite.sync_room,
+      password: invite.signaling_room_password,
+      expiresAt: response.expiresAt,
+    },
+  };
 }
 
 export async function revokeBusinessOsDeviceInvite(
-  businessOsInstanceId: string,
+  bridge: DesktopCtoxBridge,
+  instanceId: string,
   inviteId: string,
 ): Promise<void> {
-  const scope = await resolveControl(businessOsInstanceId);
-  await runtime.runPromise(revokeManagedWorkjetDeviceInvite({ ...scope, inviteId }));
-}
-
-export async function readBusinessOsDeviceInviteManualConnection(
-  businessOsInstanceId: string,
-  inviteId: string,
-): Promise<WorkjetManagedDeviceInviteManualConnectionResult> {
-  const scope = await resolveControl(businessOsInstanceId);
-  return runtime.runPromise(readManagedWorkjetDeviceInviteManualConnection({ ...scope, inviteId }));
+  const response = record(await request(bridge, instanceId, { action: "invite.revoke", inviteId }));
+  if (response.revoked !== true) throw new Error("invite_revoke_failed");
 }
 
 export async function revokeBusinessOsDevice(
-  businessOsInstanceId: string,
-  devicePairingId: string,
+  bridge: DesktopCtoxBridge,
+  instanceId: string,
+  bindingId: string,
 ): Promise<void> {
-  const scope = await resolveControl(businessOsInstanceId);
-  await runtime.runPromise(revokeManagedWorkjetDeviceBinding({ ...scope, devicePairingId }));
+  const response = record(
+    await request(bridge, instanceId, { action: "binding.revoke", bindingId }),
+  );
+  if (response.revoked !== true) throw new Error("binding_revoke_failed");
 }

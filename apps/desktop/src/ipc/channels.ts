@@ -112,6 +112,7 @@ export const CTOX_SET_GUEST_BOUNDS_CHANNEL = "desktop:ctox-set-guest-bounds";
 export const CTOX_LIST_APPS_CHANNEL = "desktop:ctox-list-apps";
 export const CTOX_OPEN_APP_CHANNEL = "desktop:ctox-open-app";
 export const CTOX_OPEN_SETTINGS_CHANNEL = "desktop:ctox-open-settings";
+export const CTOX_DEVICE_CONTROL_CHANNEL = "desktop:ctox-device-control";
 export const CTOX_SET_APP_DOCKED_CHANNEL = "desktop:ctox-set-app-docked";
 export const CTOX_SET_HOST_THEME_CHANNEL = "desktop:ctox-set-host-theme";
 export const CTOX_SHELL_FLEET_INVENTORY_CHANNEL = "desktop:ctox-shell-fleet-inventory";

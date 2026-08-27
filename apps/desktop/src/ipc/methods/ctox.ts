@@ -32,6 +32,8 @@ import {
   CtoxShellFleetPauseInput,
   CtoxShellFleetRolloutResult,
   CtoxShellFleetRolloutStatus,
+  CtoxWorkjetDeviceControlInput,
+  CtoxWorkjetDeviceControlResult,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -628,6 +630,37 @@ export const openSettings: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.C
     }),
 };
 
+export const requestDeviceControl: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_DEVICE_CONTROL_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const input = yield* Schema.decodeUnknownEffect(CtoxWorkjetDeviceControlInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxWorkjetDeviceControlResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      if (guests.requestGuestDeviceControl === undefined) {
+        return yield* encodeSafe(CtoxWorkjetDeviceControlResult, {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+      }
+      const result = yield* guests.requestGuestDeviceControl(
+        input.value.instanceId,
+        input.value.request,
+      );
+      return yield* encodeSafe(CtoxWorkjetDeviceControlResult, result);
+    }),
+};
+
 export const setAppDocked: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxAppRail.CtoxAppRail | CtoxInstanceRegistry.CtoxInstanceRegistry
@@ -820,6 +853,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   listApps,
   openApp,
   openSettings,
+  requestDeviceControl,
   setAppDocked,
   setHostTheme,
   shellFleetInventory,

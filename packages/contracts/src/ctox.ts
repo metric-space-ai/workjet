@@ -728,6 +728,43 @@ export const CtoxAppActionResult = Schema.Union([
 ]);
 export type CtoxAppActionResult = typeof CtoxAppActionResult.Type;
 
+/**
+ * Device administration travels through the active Business-OS guest's
+ * authenticated RxDB/WebRTC DataChannel. This is deliberately not an HTTP or
+ * relay-control contract.
+ */
+export const CtoxWorkjetDeviceControlRequest = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("invite.create"),
+    ttlSeconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 3_600 })),
+    displayName: TrimmedNonEmptyString.check(Schema.isMaxLength(128), NoAsciiControlCharacters),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("invite.revoke"),
+    inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(256), NoAsciiControlCharacters),
+  }),
+  Schema.Struct({ action: Schema.Literal("binding.list") }),
+  Schema.Struct({
+    action: Schema.Literal("binding.revoke"),
+    bindingId: TrimmedNonEmptyString.check(Schema.isMaxLength(256), NoAsciiControlCharacters),
+  }),
+]);
+export type CtoxWorkjetDeviceControlRequest = typeof CtoxWorkjetDeviceControlRequest.Type;
+
+export const CtoxWorkjetDeviceControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: CtoxWorkjetDeviceControlRequest,
+});
+export type CtoxWorkjetDeviceControlInput = typeof CtoxWorkjetDeviceControlInput.Type;
+
+export const CtoxWorkjetDeviceControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: Schema.Unknown }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_active", "guest_failed"]),
+  }),
+]);
+export type CtoxWorkjetDeviceControlResult = typeof CtoxWorkjetDeviceControlResult.Type;
+
 /** Allowlisted theme token keys the guest shell understands (--ctox-host-*). */
 export const CtoxHostThemeTokenKey = Schema.Literals([
   "bg",

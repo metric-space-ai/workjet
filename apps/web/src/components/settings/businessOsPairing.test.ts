@@ -62,10 +62,26 @@ describe("Business OS mobile pairing", () => {
     expect((qr.size - 17) / 4).toBeLessThanOrEqual(15);
   });
 
-  it("encodes the exact backend invite into the canonical Workjet link", () => {
+  it("encodes the backend invite as the compact canonical Workjet link", () => {
     const link = encodeWorkjetBusinessOsPairingLink(invite);
-    expect(link.startsWith("workjet://business-os/pair?payload=")).toBe(true);
-    expect(decodePayload(link)).toEqual(invite);
+    expect(link.startsWith("workjet://pair?payload=")).toBe(true);
+    expect(link.length).toBeLessThan(1_000);
+    expect(decodePayload(link)).toEqual([
+      "w1",
+      invite.display_name,
+      invite.instance_id,
+      invite.sync_room,
+      invite.native_peer_id,
+      invite.signaling_urls,
+      invite.signaling_room_password,
+      invite.expires_at,
+      invite.session.capability_token,
+      invite.session.capability_expires_at_ms,
+      invite.session.user.id,
+      invite.session.user.display_name,
+      invite.session.user.role,
+      invite.session.source,
+    ]);
     expect(link).not.toContain("ctox-desktop://");
   });
 

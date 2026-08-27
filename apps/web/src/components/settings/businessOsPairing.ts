@@ -20,9 +20,25 @@ function encodeBase64Url(value: string): string {
 }
 
 export function encodeWorkjetBusinessOsPairingLink(invite: CtoxBusinessOsInviteV1): string {
-  const payload = encodeBase64Url(JSON.stringify(invite));
+  const compact = [
+    "w1",
+    invite.display_name,
+    invite.instance_id,
+    invite.sync_room,
+    invite.native_peer_id,
+    invite.signaling_urls,
+    invite.signaling_room_password,
+    invite.expires_at,
+    invite.session.capability_token,
+    invite.session.capability_expires_at_ms,
+    invite.session.user.id,
+    invite.session.user.display_name,
+    invite.session.user.role,
+    invite.session.source,
+  ] as const;
+  const payload = encodeBase64Url(JSON.stringify(compact));
   const search = new URLSearchParams([["payload", payload]]);
-  const link = `workjet://business-os/pair?${search.toString()}`;
+  const link = `workjet://pair?${search.toString()}`;
   if (new TextEncoder().encode(link).byteLength > 2_300) {
     throw new Error("The pairing invite is too large for a reliable QR code.");
   }

@@ -64,6 +64,14 @@ Current implementation baseline:
 - `78e857a9d` removes the obsolete Mobile environment/connection fallback and
   accepts only a short-lived, exact-instance managed control handle. Production
   actions remain disabled while ctox.dev has no live producer.
+- `9764fb8b9` isolates the Mobile persistence test from the full Expo/Relay
+  runtime, so the complete Mobile unit project now runs in Node without an
+  ambient React-Native `__DEV__` global. The current Mobile verification is
+  green at 136 files / 815 tests plus TypeScript.
+- `df493f0fd` aligns the Mobile settings language with this model: the primary
+  action is `Gerät hinzufügen`, generated references are explicitly renewed as
+  a new QR code, and unavailable production control is explained without
+  exposing internal authority or Code-environment fallback terminology.
 - The current Android release artifact (SHA-256
   `02a89e3b84b3eb7ba77f03f41161861ddc44cf129bfcab27a40335a379f0be40`) was
   installed as an in-place update on the Galaxy Fold over wireless ADB on

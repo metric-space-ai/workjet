@@ -1,5 +1,6 @@
 import * as Linking from "expo-linking";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, type EnvironmentId } from "@t3tools/contracts";
+import type { WorkjetManagedDeviceSessionAuthorization } from "@t3tools/client-runtime/state/business-os-managed-backend-control";
 import {
   createContext,
   use,
@@ -10,10 +11,13 @@ import {
   type ReactNode,
 } from "react";
 import { Alert } from "react-native";
-import { AsyncResult } from "effect/unstable/reactivity";
 
 import { isBusinessOsPairLink } from "../../lib/workjetLinks";
 import { uuidv4 } from "../../lib/uuid";
+import {
+  buildMobileBusinessOsPlatformRegistrations,
+  publishMobileBusinessOsPlatformRegistrations,
+} from "../../connection/business-os-platform-connections";
 import {
   commitBusinessOsPairing,
   prepareBusinessOsPairing,
@@ -28,14 +32,19 @@ import {
 } from "./registry/business-os-registry";
 import {
   nativeBusinessOsEnvironmentBindings,
+  commitNativeManagedWorkjetPairing,
   nativeBusinessOsRegistry,
   nativeBusinessOsSecretStore,
   nativeBusinessOsSelection,
+  nativeWorkjetDeviceSessionStore,
 } from "./registry/native-business-os-registry";
 import type { BusinessOsEnvironmentBinding } from "./registry/business-os-environment-binding";
 import { nativeBusinessOsProfileStore } from "./shell/native-business-os-surface";
 import { nativeBusinessOsHomeStore } from "./launcher/native-business-os-home-store";
-import { useConnectionController } from "../connection/useConnectionController";
+import {
+  loadWorkjetDeviceSession,
+  removeWorkjetDeviceSession,
+} from "../pairing/workjet-device-session-store";
 
 interface BusinessOsContextValue {
   readonly instances: readonly BusinessOsInstance[];
@@ -51,11 +60,20 @@ interface BusinessOsContextValue {
     businessOsInstanceId: string,
     environmentId: EnvironmentId,
   ) => Promise<void>;
+  readonly replaceEnvironmentMemberships: (
+    businessOsInstanceId: string,
+    environmentIds: readonly EnvironmentId[],
+  ) => Promise<void>;
   readonly importLink: (raw: string) => Promise<BusinessOsInstance | null>;
   readonly importInvite: (
     invite: ValidatedBusinessOsInvite,
     options?: { readonly confirm?: boolean },
   ) => Promise<BusinessOsInstance | null>;
+  readonly importManagedInvite: (
+    invite: ValidatedBusinessOsInvite,
+    authorization: WorkjetManagedDeviceSessionAuthorization,
+    environmentIds: readonly EnvironmentId[],
+  ) => Promise<BusinessOsInstance>;
   readonly forget: (instance: BusinessOsInstance) => Promise<void>;
   readonly refresh: () => Promise<void>;
 }
@@ -86,7 +104,6 @@ function confirmPairing(input: ReturnType<typeof prepareBusinessOsPairing>): Pro
 }
 
 export function BusinessOsProvider(props: { readonly children: ReactNode }) {
-  const { removeEnvironment: removeCodeEnvironment } = useConnectionController();
   const [instances, setInstances] = useState<readonly BusinessOsInstance[]>([]);
   const [environmentBindings, setEnvironmentBindings] = useState<
     readonly BusinessOsEnvironmentBinding[]
@@ -100,12 +117,35 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
       nativeBusinessOsEnvironmentBindings.list(),
       nativeBusinessOsSelection.load(),
     ]);
-    setInstances(nextInstances);
-    setEnvironmentBindings(
-      nextBindings.filter((binding) =>
-        nextInstances.some((instance) => instance.id === binding.businessOsInstanceId),
-      ),
+    const validBindings = nextBindings.filter((binding) =>
+      nextInstances.some((instance) => instance.id === binding.businessOsInstanceId),
     );
+    const deviceSessionAuthorityIds = new Set(
+      (
+        await Promise.all(
+          nextInstances.map(async (instance) => {
+            const authorization = await loadWorkjetDeviceSession(
+              BusinessOsInstanceId.make(instance.instanceId),
+              nativeWorkjetDeviceSessionStore,
+            ).catch(() => null);
+            return authorization?.businessOsInstanceId ?? null;
+          }),
+        )
+      ).filter((instanceId): instanceId is BusinessOsInstanceId => instanceId !== null),
+    );
+    publishMobileBusinessOsPlatformRegistrations(
+      buildMobileBusinessOsPlatformRegistrations({
+        instances: nextInstances.map((instance) => ({
+          localId: instance.id,
+          authorityId: instance.instanceId,
+          label: instance.displayName,
+        })),
+        bindings: validBindings,
+        deviceSessionAuthorityIds,
+      }),
+    );
+    setInstances(nextInstances);
+    setEnvironmentBindings(validBindings);
     const validSelection = nextInstances.some((instance) => instance.id === persistedSelection)
       ? persistedSelection
       : (nextInstances[0]?.id ?? null);
@@ -155,6 +195,18 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
     [refresh],
   );
 
+  const replaceEnvironmentMemberships = useCallback(
+    async (businessOsInstanceId: string, environmentIds: readonly EnvironmentId[]) => {
+      await nativeBusinessOsEnvironmentBindings.replaceForBusinessOsInstance(
+        businessOsInstanceId,
+        environmentIds,
+      );
+      await nativeBusinessOsSelection.save(businessOsInstanceId);
+      await refresh();
+    },
+    [refresh],
+  );
+
   const commitPrepared = useCallback(
     async (prepared: PreparedBusinessOsPairing, shouldConfirm: boolean) => {
       if (shouldConfirm && !(await confirmPairing(prepared))) return null;
@@ -177,23 +229,35 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
     [commitPrepared],
   );
 
+  const importManagedInvite = useCallback(
+    async (
+      invite: ValidatedBusinessOsInvite,
+      authorization: WorkjetManagedDeviceSessionAuthorization,
+      environmentIds: readonly EnvironmentId[],
+    ) => {
+      const instance = await commitNativeManagedWorkjetPairing({
+        invite,
+        authorization,
+        environmentIds,
+      });
+      await refresh();
+      return instance;
+    },
+    [refresh],
+  );
+
   const forget = useCallback(
     async (instance: BusinessOsInstance) => {
-      const bindings = environmentBindings.filter(
-        (candidate) => candidate.businessOsInstanceId === instance.id,
-      );
-      for (const binding of bindings) {
-        const codeRemoval = await removeCodeEnvironment(binding.environmentId);
-        if (!AsyncResult.isSuccess(codeRemoval)) {
-          throw new Error("Ein gebundener Code-Rechner konnte nicht entfernt werden.");
-        }
-      }
       await forgetBusinessOsInstance(instance, dependencies);
+      await removeWorkjetDeviceSession(
+        BusinessOsInstanceId.make(instance.instanceId),
+        nativeWorkjetDeviceSessionStore,
+      );
       await nativeBusinessOsEnvironmentBindings.removeByBusinessOsInstanceId(instance.id);
       await nativeBusinessOsHomeStore.remove(instance.id);
       await refresh();
     },
-    [environmentBindings, refresh, removeCodeEnvironment],
+    [refresh],
   );
 
   useEffect(() => {
@@ -223,10 +287,12 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
       forget,
       hasEnvironmentBindings: environmentBindings.length > 0,
       importInvite,
+      importManagedInvite,
       importLink,
       instances,
       isReady,
       refresh,
+      replaceEnvironmentMemberships,
       select,
       selectEnvironment,
       selected,
@@ -238,10 +304,12 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
       environmentBindings,
       forget,
       importInvite,
+      importManagedInvite,
       importLink,
       instances,
       isReady,
       refresh,
+      replaceEnvironmentMemberships,
       select,
       selectEnvironment,
       selected,

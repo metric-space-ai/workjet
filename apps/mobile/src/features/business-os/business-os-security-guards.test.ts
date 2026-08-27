@@ -53,6 +53,37 @@ describe("Business OS native security guards", () => {
     expect(binding).not.toMatch(/password|capabilityToken|roomSecret|businessRecords/iu);
   });
 
+  it("reconciles scoped Code memberships as runtime platform connections", () => {
+    const platform = read("src/connection/platform.ts");
+    const projection = read("src/connection/business-os-platform-connections.ts");
+    const controller = read("src/features/connection/useConnectionController.ts");
+    const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
+    expect(platform).toContain("mobileBusinessOsPlatformRegistrations");
+    expect(platform).not.toContain("registrations: Stream.empty");
+    expect(projection).toContain("businessOsInstanceId: BusinessOsInstanceId.make");
+    expect(projection).toContain("deviceSessionAuthorityIds");
+    expect(projection).toContain("server-authoritative Code memberships");
+    expect(controller).not.toContain("registerBusinessOsEnvironment");
+    expect(pairing).not.toContain("registerBusinessOsEnvironment");
+  });
+
+  it("keeps Workjet device-session credentials behind opaque secure-store references", () => {
+    const registry = read("src/features/business-os/registry/native-business-os-registry.ts");
+    const sessionStore = read("src/features/pairing/workjet-device-session-store.ts");
+    const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
+    expect(registry).toContain("business_os_device_sessions");
+    expect(registry).toContain("secret_reference TEXT NOT NULL");
+    expect(registry).not.toMatch(
+      /access_token TEXT|refresh_grant TEXT|bootstrap_credential TEXT/iu,
+    );
+    expect(registry).toContain("commitNativeManagedWorkjetPairing");
+    expect(registry).toContain("withTransactionAsync");
+    expect(sessionStore).toContain("previous session remains usable until the swap succeeds");
+    expect(pairing).toContain("redeemManagedWorkjetDeviceInviteReference");
+    expect(pairing).toContain("readManagedBusinessOsDeviceSessionMembership");
+    expect(pairing).toContain("importManagedBusinessOsInvite");
+  });
+
   it("makes Business OS the single visible connection scope in regular settings", () => {
     const settings = read("src/features/settings/SettingsRouteScreen.tsx");
     const home = read("src/features/home/HomeRouteScreen.tsx");
@@ -174,6 +205,40 @@ describe("Business OS native security guards", () => {
     expect(android).toContain("setOf(BUSINESS_OS_ORIGIN)");
     expect(ios).toContain("businessOsShellMessageMaxBytes = 65_536");
     expect(`${android}\n${ios}`).not.toContain("businessRecords");
+  });
+
+  it("binds HTTP DPoP and WebRTC sync to one non-exportable native P-256 key", () => {
+    const surface = read("src/features/business-os/shell/native-business-os-surface.tsx");
+    const dpop = read("src/features/cloud/dpop.ts");
+    const session = read("src/features/pairing/workjet-managed-device-session-layer.ts");
+    const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
+    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const android = read(
+      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+    );
+
+    expect(surface).toContain("nativeWorkjetDeviceProof");
+    expect(surface).toContain('readonly crv: "P-256"');
+    expect(surface).not.toMatch(/privateJwk|privateKey|\bd:\s*string/iu);
+    expect(dpop).toContain("createDpopProofWithSigner");
+    expect(session).toContain("loadNativeDeviceProofSigner");
+    expect(session).toContain("nativeWorkjetDeviceProof.sign(message)");
+    expect(pairing).toContain("nativeWorkjetDeviceProof.key()");
+
+    expect(ios).toContain("kSecAttrAccessibleWhenUnlockedThisDeviceOnly");
+    expect(ios).toContain("SecKeyCreateSignature");
+    expect(ios).toContain("\\(crv)");
+    expect(ios).toContain("\\(x)");
+    expect(ios).not.toContain('"(crv)"');
+    expect(ios).toContain("ctoxWorkjetDeviceProofProvider");
+    expect(ios).toContain("writable:false,configurable:false,enumerable:false");
+    expect(android).toContain(
+      'KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")',
+    );
+    expect(android).toContain('Signature.getInstance("SHA256withECDSA")');
+    expect(android).toContain("ctoxWorkjetDeviceProofProvider");
+    expect(android).toContain("writable:false,configurable:false,enumerable:false");
+    expect(`${ios}\n${android}`).not.toMatch(/privateKey.*(?:return|put)|"d"\s*(?:to|:)/iu);
   });
 
   it("resolves shell packs through the shared DPoP command and preflights trust", () => {

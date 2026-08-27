@@ -2,6 +2,7 @@ import {
   BusinessOsInstanceId,
   WORKJET_MANAGED_BACKEND_CONTROL_MAX_TTL_SECONDS,
   WorkjetInstallationId,
+  type WorkjetRelayControlIdentityAssertion,
   type WorkjetDeviceInviteCreateResult,
   type WorkjetDeviceInviteRevokeResult,
   type WorkjetManagedBackendControlResolveInput,
@@ -57,6 +58,10 @@ export function makeManagedWorkjetDeviceInviteControl(
   transport: WorkjetManagedBackendControlTransportPort,
   options: {
     readonly loadInstallationId: () => Promise<string>;
+    readonly loadRelayIdentityAssertion: (input: {
+      readonly businessOsInstanceId: BusinessOsInstanceId;
+      readonly workjetInstallationId: WorkjetInstallationId;
+    }) => Promise<WorkjetRelayControlIdentityAssertion>;
     readonly now?: () => number;
   },
 ): WorkjetDeviceInviteControlPort {
@@ -65,7 +70,15 @@ export function makeManagedWorkjetDeviceInviteControl(
 
   const resolve = async (businessOsInstanceId: BusinessOsInstanceId) => {
     const workjetInstallationId = decodeWorkjetInstallationId(await options.loadInstallationId());
-    const resolved = await transport.resolve({ businessOsInstanceId, workjetInstallationId });
+    const relayIdentityAssertion = await options.loadRelayIdentityAssertion({
+      businessOsInstanceId,
+      workjetInstallationId,
+    });
+    const resolved = await transport.resolve({
+      businessOsInstanceId,
+      workjetInstallationId,
+      relayIdentityAssertion,
+    });
     assertControlScope(resolved, businessOsInstanceId, now());
     return resolved;
   };

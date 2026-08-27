@@ -3,6 +3,7 @@ import type {
   BusinessOsInstanceId,
   WorkjetDeviceInviteRefV1,
   WorkjetManagedBackendControlConnectionId,
+  WorkjetRelayControlIdentityAssertion,
 } from "@t3tools/contracts";
 
 import {
@@ -13,6 +14,7 @@ import {
 const NOW = Date.parse("2026-08-25T12:00:00Z");
 const INSTANCE_ID = "instance-a" as BusinessOsInstanceId;
 const CONTROL_ID = "a".repeat(43) as WorkjetManagedBackendControlConnectionId;
+const IDENTITY_ASSERTION = "a.b.c".padEnd(64, "a") as WorkjetRelayControlIdentityAssertion;
 const reference: WorkjetDeviceInviteRefV1 = {
   type: "workjet-device-invite-ref",
   version: 1,
@@ -50,6 +52,7 @@ describe("managed Workjet device invite control", () => {
     const client = transport();
     const control = makeManagedWorkjetDeviceInviteControl(client.port, {
       loadInstallationId: async () => "mobile-device-1",
+      loadRelayIdentityAssertion: async () => IDENTITY_ASSERTION,
       now: () => NOW,
     });
 
@@ -61,6 +64,7 @@ describe("managed Workjet device invite control", () => {
     expect(client.resolve).toHaveBeenNthCalledWith(1, {
       businessOsInstanceId: INSTANCE_ID,
       workjetInstallationId: "mobile-device-1",
+      relayIdentityAssertion: IDENTITY_ASSERTION,
     });
     expect(client.createDeviceInvite).toHaveBeenCalledWith({
       backendControlConnectionId: CONTROL_ID,
@@ -77,6 +81,7 @@ describe("managed Workjet device invite control", () => {
     expect(client.resolve).toHaveBeenNthCalledWith(2, {
       businessOsInstanceId: INSTANCE_ID,
       workjetInstallationId: "mobile-device-1",
+      relayIdentityAssertion: IDENTITY_ASSERTION,
     });
     expect(client.revokeDeviceInvite).toHaveBeenCalledWith({
       backendControlConnectionId: CONTROL_ID,
@@ -99,6 +104,7 @@ describe("managed Workjet device invite control", () => {
       } as never);
       const control = makeManagedWorkjetDeviceInviteControl(client.port, {
         loadInstallationId: async () => "mobile-device-1",
+        loadRelayIdentityAssertion: async () => IDENTITY_ASSERTION,
         now: () => NOW,
       });
       await expect(
@@ -116,6 +122,7 @@ describe("managed Workjet device invite control", () => {
     const client = transport();
     const control = makeManagedWorkjetDeviceInviteControl(client.port, {
       loadInstallationId: async () => "mobile-device-1",
+      loadRelayIdentityAssertion: async () => IDENTITY_ASSERTION,
       now: () => NOW,
     });
     await expect(control.revoke({ inviteId: "unknown" })).rejects.toMatchObject({

@@ -1,6 +1,11 @@
 import * as Linking from "expo-linking";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { redeemWorkjetDeviceInviteReference as redeemWorkjetDeviceInviteReferenceEffect } from "@t3tools/client-runtime/state/business-os-mobile-invite";
+import {
+  exchangeManagedWorkjetDeviceSessionBootstrap,
+  readManagedBusinessOsDeviceSessionMembership,
+  redeemManagedWorkjetDeviceInviteReference,
+  toManagedWorkjetDeviceSessionAuthorization,
+} from "@t3tools/client-runtime/state/business-os-managed-backend-control";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { useAtomSet } from "@effect/atom-react";
@@ -13,12 +18,12 @@ import { updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { loadOrCreateAgentAwarenessDeviceId } from "../../persistence/imperative";
 import { runtime } from "../../lib/runtime";
-import { loadOrCreateDpopProofKeyPair } from "../cloud/dpop";
+import { nativeWorkjetDeviceProof } from "../business-os/shell/native-business-os-surface";
 import {
   parseWorkjetDevicePairingLink,
   toWorkjetDeviceInviteReferenceContract,
   type ParsedWorkjetDevicePairingLink,
-  validateRedeemedWorkjetDeviceInvite,
+  validateRedeemedWorkjetDeviceInviteV2,
 } from "./workjet-device-invite";
 
 interface WorkjetDevicePairingContextValue {
@@ -56,6 +61,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
     bindEnvironment,
     forget: forgetBusinessOsInstance,
     importInvite: importBusinessOsInvite,
+    importManagedInvite: importManagedBusinessOsInvite,
     instances: businessOsInstances,
   } = useBusinessOs();
   const { connectPairingUrl: connectCodePairingUrl, removeEnvironment: removeCodeEnvironment } =
@@ -73,23 +79,58 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
       try {
         const candidate = parseWorkjetDevicePairingLink(payload);
         if (!(await confirmDevicePairing(candidate))) return false;
-        const prepared =
-          candidate.kind === "reference"
-            ? await Promise.all([
-                loadOrCreateAgentAwarenessDeviceId(),
-                runtime.runPromise(loadOrCreateDpopProofKeyPair()),
-              ]).then(async ([deviceId, proofKey]) =>
-                validateRedeemedWorkjetDeviceInvite(
-                  await runtime.runPromise(
-                    redeemWorkjetDeviceInviteReferenceEffect({
-                      reference: toWorkjetDeviceInviteReferenceContract(candidate.reference),
-                      deviceId,
-                      proofKeyThumbprint: proofKey.thumbprint,
-                    }),
-                  ),
-                ),
-              )
-            : candidate.invite;
+        if (candidate.kind === "reference") {
+          const [deviceId, proofKey] = await Promise.all([
+            loadOrCreateAgentAwarenessDeviceId(),
+            nativeWorkjetDeviceProof.key(),
+          ]);
+          const redeemed = validateRedeemedWorkjetDeviceInviteV2(
+            await runtime.runPromise(
+              redeemManagedWorkjetDeviceInviteReference({
+                reference: toWorkjetDeviceInviteReferenceContract(candidate.reference),
+                deviceId,
+                proofKeyThumbprint: proofKey.thumbprint,
+              }),
+            ),
+          );
+          const exchange = await runtime.runPromise(
+            exchangeManagedWorkjetDeviceSessionBootstrap({
+              issuer: redeemed.workjetSession.issuer,
+              bootstrapCredential: redeemed.workjetSession.bootstrapCredential,
+              deviceId,
+              businessOsInstanceId: redeemed.businessOsInstanceId,
+            }),
+          );
+          const now = Date.now();
+          if (
+            exchange.businessOsInstanceId !== redeemed.businessOsInstanceId ||
+            exchange.deviceId !== deviceId ||
+            Date.parse(exchange.expiresAt) <= now ||
+            Date.parse(exchange.refreshExpiresAt) <= Date.parse(exchange.expiresAt)
+          ) {
+            throw new Error("Workjet hat eine unpassende Gerätesitzung zurückgegeben.");
+          }
+          const authorization = toManagedWorkjetDeviceSessionAuthorization(
+            redeemed.workjetSession.issuer,
+            exchange,
+          );
+          const membership = await runtime.runPromise(
+            readManagedBusinessOsDeviceSessionMembership({ authorization }),
+          );
+          if (membership.businessOsInstanceId !== redeemed.businessOsInstanceId) {
+            throw new Error("Die Code-Rechner gehören zu einer anderen Business OS.");
+          }
+          await importManagedBusinessOsInvite(
+            redeemed.businessOs,
+            authorization,
+            membership.environmentIds,
+          );
+          savePreferences({ workjetPairingOnboardingDismissed: true });
+          setMode("business_os");
+          return true;
+        }
+
+        const prepared = candidate.invite;
 
         const codePairing = await connectCodePairingUrl(prepared.environment.pairingUrl);
         if (!AsyncResult.isSuccess(codePairing)) {
@@ -137,6 +178,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
       connectCodePairingUrl,
       forgetBusinessOsInstance,
       importBusinessOsInvite,
+      importManagedBusinessOsInvite,
       removeCodeEnvironment,
       savePreferences,
       savedConnectionsById,

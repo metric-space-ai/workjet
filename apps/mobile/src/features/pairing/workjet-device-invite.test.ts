@@ -8,10 +8,12 @@ import {
   parseWorkjetDevicePairingLink,
   toWorkjetDeviceInviteReferenceContract,
   validateRedeemedWorkjetDeviceInvite,
+  validateRedeemedWorkjetDeviceInviteV2,
   WorkjetDeviceInviteValidationError,
 } from "./workjet-device-invite";
 
 const NOW = Date.parse("2026-08-25T12:00:00Z");
+const decodeDeviceInviteV1 = Schema.decodeUnknownSync(WorkjetDeviceInviteV1);
 
 function businessOsInvite(overrides: Record<string, unknown> = {}) {
   return {
@@ -173,10 +175,9 @@ describe("Workjet device invite v1", () => {
       code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
       expires_at: "2026-08-25T12:45:00.000Z",
     });
-    const redeemed = validateRedeemedWorkjetDeviceInvite(
-      Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(deviceInvite()),
-      { now: NOW },
-    );
+    const redeemed = validateRedeemedWorkjetDeviceInvite(decodeDeviceInviteV1(deviceInvite()), {
+      now: NOW,
+    });
     expect(redeemed.environment.baseUrl).toBe("https://workjet.example.test");
     expect(redeemed.businessOs.instanceId).toBe("instance-a");
   });
@@ -212,5 +213,35 @@ describe("Workjet device invite v1", () => {
       expect(String(error)).not.toContain("synthetic-room-secret");
       expect(String(error)).not.toContain("synthetic-capability-token");
     }
+  });
+});
+
+describe("Workjet device invite v2", () => {
+  const v2 = () => ({
+    type: "workjet-device-invite",
+    version: 2,
+    device_pairing_id: "pairing-a",
+    business_os_instance_id: "instance-a",
+    workjet_session: {
+      issuer: "https://relay.example.test",
+      bootstrap_credential: "b".repeat(43),
+      expires_at: "2026-08-25T12:45:00Z",
+    },
+    business_os: businessOsInvite(),
+  });
+
+  it("accepts an instance-scoped session without selecting a Code computer", () => {
+    const parsed = validateRedeemedWorkjetDeviceInviteV2(v2(), { now: NOW });
+    expect(parsed.businessOsInstanceId).toBe("instance-a");
+    expect(parsed.workjetSession.issuer).toBe("https://relay.example.test");
+    expect(JSON.stringify(parsed)).not.toContain("environment");
+  });
+
+  it("rejects a CTOX invite for a different Business OS authority", () => {
+    const invite = v2();
+    invite.business_os.instance_id = "instance-b";
+    expect(() => validateRedeemedWorkjetDeviceInviteV2(invite, { now: NOW })).toThrow(
+      /different Business OS instances/u,
+    );
   });
 });

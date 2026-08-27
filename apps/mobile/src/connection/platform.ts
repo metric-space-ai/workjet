@@ -31,6 +31,7 @@ import { appAtomRegistry } from "../state/atom-registry";
 import { clearThreadOutboxEnvironment } from "../state/thread-outbox";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
+import { mobileBusinessOsPlatformRegistrations } from "./business-os-platform-connections";
 import { connectionStorageLayer } from "./storage";
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
@@ -197,7 +198,7 @@ const capabilitiesLayer = Layer.effectContext(
 const platformConnectionSourceLayer = Layer.succeed(
   PlatformConnectionSource,
   PlatformConnectionSource.of({
-    registrations: Stream.empty,
+    registrations: mobileBusinessOsPlatformRegistrations,
   }),
 );
 

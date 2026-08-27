@@ -19,14 +19,36 @@ Current implementation baseline:
   Business OS, simplify the settings hierarchy and prohibit a Code computer or
   primary environment from acting as an implicit device-control route.
 - `4eaadfbc9` defines the managed ctox.dev control-plane envelope and keeps it
-  independent from Code environments. It is a producer contract only: the
-  ctox.dev routes and a redeemable managed device session do not exist yet.
+  independent from Code environments. It is the V1 producer envelope retained
+  as the baseline for the additive V2 work below.
+- `9cea1847f` defines Device Session V2: compact reference redemption, DPoP-
+  bound bootstrap exchange, rotating refresh grants, zero-to-many membership,
+  direct Relay connect, edge revoke and Relay-signed control identity.
+- `3ec175b3e` and `db2493c84` implement the Relay producer, including direct
+  device-session authorization, membership enforcement, refresh rotation,
+  identity assertions and the contract-exact assertion endpoint.
+- `8bc4ce97d` binds Relay connection targets to the canonical Business OS,
+  prohibits persistence of scoped targets and removes the classic Clerk
+  fallback for device-session-authorized connections. Mobile projects the
+  current membership through the runtime-reconciled platform source rather
+  than the user connection catalog.
+- The isolated ctox.dev branch contains `4e57284` (fail-closed managed control
+  core) and `0698a34` (V2 Relay-producer adapter, rotating JWKS, one-time
+  assertion consume and stable device-pairing edge). The native CTOX issuer
+  and production secret/JWKS configuration remain intentionally fail-closed.
+- The isolated CTOX branch contains `1beff1e41` (device-bound invite issuer,
+  `cnf.jkt`, pairing-ID rotation/revoke and nonce-based P-256 proof before the
+  WebRTC data plane). It is fully tested on its clean branch but intentionally
+  not cherry-picked over the strongly overlapping dirty CTOX main checkout.
 - `78e857a9d` removes the obsolete Mobile environment/connection fallback and
   accepts only a short-lived, exact-instance managed control handle. Production
   actions remain disabled while ctox.dev has no live producer.
-- The Android release artifact for `e3b1ddfaf` was installed without clearing
-  data on the Galaxy Fold over wireless ADB on 2026-08-27. The visible device
-  pass still requires the operator to unlock the phone.
+- The current Android release artifact (SHA-256
+  `bb007170c9f616118923cfec35e9c0b79082511426cac1b26a529ae61eb2b579`) was
+  installed as an in-place update on the Galaxy Fold over wireless ADB on
+  2026-08-27. Android retained the original install time and local data; the
+  process starts without a fatal log. The visible device pass still requires
+  the operator to unlock the phone.
 - `99c61badd` contains the typed and tested Computer List/Assign/Unassign
   scaffold. It remains intentionally unmounted until an authoritative producer
   supplies bounded instance inventory, `hostingMode`, backend host identity and
@@ -77,10 +99,11 @@ though its control authority can authorize Workjet devices.
 
 One Business OS owns zero to many Code computers. Therefore a Workjet device
 invite must authorize the selected `BusinessOsInstanceId`, not one arbitrary
-`EnvironmentId`. The current v1 redeemed payload contains exactly one
-`environment { base_url, bootstrap_credential }`; it is insufficient as the
-managed producer contract because it would silently turn a selected/primary
-computer into the instance authority.
+`EnvironmentId`. The legacy v1 redeemed payload contains exactly one
+`environment { base_url, bootstrap_credential }`; it remains migration-only
+because it would silently turn a selected/primary computer into the instance
+authority. Managed pairing uses `WorkjetDeviceInviteV2`, which contains no
+single Environment and no array of raw computer credentials.
 
 The production managed flow must use this sequence:
 
@@ -258,10 +281,17 @@ terms restricted to status details or the collapsed Diagnose section.
 - [x] Redeem compact one-time references with a stable device identifier and
       the existing DPoP proof-key thumbprint; never return or persist the full
       secret bundle during invite creation.
-- [ ] Replace the single-environment redeemed payload for managed pairing with
+- [x] Replace the single-environment redeemed payload for managed pairing with
       an instance-scoped, DPoP-bound Workjet device session plus authoritative
       zero-to-many computer membership.
-- [ ] Bind the Mobile managed transport to the authenticated ctox.dev producer;
+- [x] Implement Mobile V2 redemption, exchange, rotating renewal, direct Relay
+      transport, atomic SecureStore/SQLite session persistence and zero-to-many
+      membership projection.
+- [x] Reconcile device-session-authorized Code memberships as platform-managed
+      Relay targets and never persist them as classic Connections.
+- [x] Use one non-exportable native P-256 installation key for V2 redemption,
+      HTTP DPoP, direct Relay connect and every RxDB/WebRTC proof challenge.
+- [ ] Activate Mobile against the authenticated ctox.dev producer;
       no Code environment/primary fallback is permitted.
 - [ ] Consume the authoritative backend-host isolation capability once the
       Desktop/Server contract lands; never offer a managed host as a worker.
@@ -285,9 +315,13 @@ terms restricted to status details or the collapsed Diagnose section.
       high-risk confirmation before self-hosted backend/worker co-location.
 - [ ] Generate compact one-time-reference QR codes and retain guarded manual
       signaling details as an explicit fallback.
-- [ ] Implement the ctox.dev producer and one-time redemption for the
-      instance-scoped Workjet device session; the four route envelopes alone do
-      not constitute a working QR flow.
+- [x] Implement the Relay producer and the fail-closed ctox.dev coordination
+      core for the instance-scoped, device-bound session without transporting
+      a credential bundle in the QR code.
+- [ ] Activate ctox.dev only after its final Relay adapter and the native CTOX
+      issuer/revoke path are both integrated and production-configured; route
+      envelopes and isolated branches alone do not constitute a working QR
+      flow.
 
 Desktop ownership remains with the parallel `Workjet Desktop app` task. Mobile
 does not edit Desktop, Server or shared-contract files while that task is

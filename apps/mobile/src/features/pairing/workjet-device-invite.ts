@@ -1,4 +1,11 @@
-import { WorkjetDeviceInviteRefV1, WorkjetDeviceInviteV1 } from "@t3tools/contracts";
+import {
+  WorkjetDeviceInviteRefV1,
+  WorkjetDeviceInviteV1,
+  WorkjetDeviceInviteV2,
+  type BusinessOsInstanceId,
+  type WorkjetDeviceSessionBootstrapCredential,
+  type WorkjetManagedIssuerOrigin,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import { buildPairingUrl } from "../connection/pairing";
@@ -12,6 +19,9 @@ const MAX_ENCODED_PAYLOAD_LENGTH = 262_144;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/u;
 const DEVICE_INVITE_ROUTE = "pair";
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const decodeDeviceInviteV1 = Schema.decodeUnknownSync(WorkjetDeviceInviteV1);
+const decodeDeviceInviteV2 = Schema.decodeUnknownSync(WorkjetDeviceInviteV2);
+const decodeDeviceInviteReference = Schema.decodeUnknownSync(WorkjetDeviceInviteRefV1);
 
 export interface ValidatedWorkjetDeviceInvite {
   readonly devicePairingId: string;
@@ -34,6 +44,23 @@ export interface ValidatedWorkjetDeviceInviteReference {
   readonly code: string;
   readonly expiresAt: string;
   readonly expiresAtMs: number;
+}
+
+export interface ValidatedWorkjetDeviceInviteV2 {
+  readonly devicePairingId: string;
+  readonly businessOsInstanceId: BusinessOsInstanceId;
+  readonly workjetSession: {
+    readonly issuer: WorkjetManagedIssuerOrigin;
+    readonly bootstrapCredential: WorkjetDeviceSessionBootstrapCredential;
+    readonly expiresAt: string;
+    readonly expiresAtMs: number;
+  };
+  readonly businessOs: ValidatedBusinessOsInvite;
+  readonly confirmation: {
+    readonly displayName: string;
+    readonly expiresAt: string;
+    readonly signalingHosts: readonly string[];
+  };
 }
 
 export type ParsedWorkjetDevicePairingLink =
@@ -163,7 +190,7 @@ export function parseWorkjetDevicePairLink(
   const payload = decodeWorkjetDevicePairPayload(raw);
   let invite: typeof WorkjetDeviceInviteV1.Type;
   try {
-    invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(payload);
+    invite = decodeDeviceInviteV1(payload);
   } catch {
     return fail("schema", "Workjet pairing payload has an unsupported schema.");
   }
@@ -228,7 +255,7 @@ export function parseWorkjetDevicePairingLink(
   const now = options.now ?? Date.now();
   const payload = decodeWorkjetDevicePairPayload(raw);
   try {
-    const invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(payload);
+    const invite = decodeDeviceInviteV1(payload);
     const parsed = parseWorkjetDevicePairLink(raw, { now });
     return Object.freeze({
       kind: "invite" as const,
@@ -243,7 +270,7 @@ export function parseWorkjetDevicePairingLink(
 
   let reference: typeof WorkjetDeviceInviteRefV1.Type;
   try {
-    reference = Schema.decodeUnknownSync(WorkjetDeviceInviteRefV1)(payload);
+    reference = decodeDeviceInviteReference(payload);
   } catch {
     return fail("schema", "Workjet pairing payload has an unsupported schema.");
   }
@@ -280,4 +307,43 @@ export function validateRedeemedWorkjetDeviceInvite(
   options: { readonly now?: number } = {},
 ): ValidatedWorkjetDeviceInvite {
   return parseWorkjetDevicePairLink(encodeWorkjetDevicePairLink(invite), options);
+}
+
+export function validateRedeemedWorkjetDeviceInviteV2(
+  rawInvite: unknown,
+  options: { readonly now?: number } = {},
+): ValidatedWorkjetDeviceInviteV2 {
+  const now = options.now ?? Date.now();
+  let invite: typeof WorkjetDeviceInviteV2.Type;
+  try {
+    invite = decodeDeviceInviteV2(rawInvite);
+  } catch {
+    return fail("schema", "Workjet pairing response has an unsupported schema.");
+  }
+  const expiresAtMs = Date.parse(invite.workjet_session.expires_at);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
+    fail("expired", "Workjet pairing response is expired.");
+  }
+  const businessOs = validateBusinessOsInviteV1(invite.business_os, { now });
+  if (businessOs.instanceId !== invite.business_os_instance_id) {
+    fail("instance", "Workjet pairing response names different Business OS instances.");
+  }
+  return Object.freeze({
+    devicePairingId: invite.device_pairing_id,
+    businessOsInstanceId: invite.business_os_instance_id,
+    workjetSession: Object.freeze({
+      issuer: invite.workjet_session.issuer,
+      bootstrapCredential: invite.workjet_session.bootstrap_credential,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      expiresAtMs,
+    }),
+    businessOs,
+    confirmation: Object.freeze({
+      displayName: businessOs.displayName,
+      expiresAt: new Date(Math.min(expiresAtMs, businessOs.expiresAtMs)).toISOString(),
+      signalingHosts: Object.freeze(
+        businessOs.signalingUrls.map((signalingUrl) => new URL(signalingUrl).host),
+      ),
+    }),
+  });
 }

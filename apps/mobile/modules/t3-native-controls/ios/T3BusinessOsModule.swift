@@ -1,4 +1,6 @@
+import CryptoKit
 import ExpoModulesCore
+import Security
 import UIKit
 import WebKit
 
@@ -22,8 +24,133 @@ private enum BusinessOsMimeTypes {
 
 private let businessOsNotificationHandlerName = "workjetBusinessOsNotification"
 private let businessOsShellHandlerName = "workjetBusinessOsShell"
+private let businessOsDeviceProofHandlerName = "workjetBusinessOsDeviceProof"
 private let businessOsShellProtocol = "workjet.business-os-shell.v1"
 private let businessOsShellMessageMaxBytes = 65_536
+
+private enum WorkjetDeviceProofKey {
+  static let applicationTag = Data("com.t3tools.t3code.workjet-device-proof.v1".utf8)
+
+  static func privateKey() throws -> SecKey {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassKey,
+      kSecAttrApplicationTag as String: applicationTag,
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
+      kSecReturnRef as String: true,
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    if status == errSecSuccess, let item {
+      guard CFGetTypeID(item) == SecKeyGetTypeID() else { throw CocoaError(.coderInvalidValue) }
+      return item as! SecKey
+    }
+    guard status == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    let attributes: [String: Any] = [
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecAttrKeySizeInBits as String: 256,
+      kSecPrivateKeyAttrs as String: [
+        kSecAttrIsPermanent as String: true,
+        kSecAttrApplicationTag as String: applicationTag,
+        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+      ],
+    ]
+    var error: Unmanaged<CFError>?
+    guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
+      throw error?.takeRetainedValue() ?? CocoaError(.coderInvalidValue)
+    }
+    return key
+  }
+
+  static func publicJwk(for privateKey: SecKey) throws -> [String: String] {
+    guard let publicKey = SecKeyCopyPublicKey(privateKey) else { throw CocoaError(.coderInvalidValue) }
+    var error: Unmanaged<CFError>?
+    guard let representation = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
+      throw error?.takeRetainedValue() ?? CocoaError(.coderInvalidValue)
+    }
+    guard representation.count == 65, representation.first == 0x04 else {
+      throw CocoaError(.coderInvalidValue)
+    }
+    return [
+      "kty": "EC",
+      "crv": "P-256",
+      "x": base64Url(representation.subdata(in: 1..<33)),
+      "y": base64Url(representation.subdata(in: 33..<65)),
+    ]
+  }
+
+  static func proof(message: String) throws -> [String: Any] {
+    let key = try privateKey()
+    let publicJwk = try publicJwk(for: key)
+    var error: Unmanaged<CFError>?
+    guard let der = SecKeyCreateSignature(
+      key,
+      .ecdsaSignatureMessageX962SHA256,
+      Data(message.utf8) as CFData,
+      &error
+    ) as Data? else {
+      throw error?.takeRetainedValue() ?? CocoaError(.coderInvalidValue)
+    }
+    return [
+      "publicJwk": publicJwk,
+      "signature": base64Url(try p1363Signature(fromDer: der)),
+      "thumbprint": try thumbprint(publicJwk),
+    ]
+  }
+
+  static func descriptor() throws -> [String: Any] {
+    let publicJwk = try publicJwk(for: privateKey())
+    return ["publicJwk": publicJwk, "thumbprint": try thumbprint(publicJwk)]
+  }
+
+  private static func base64Url(_ data: Data) -> String {
+    data.base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  private static func thumbprint(_ jwk: [String: String]) throws -> String {
+    guard let crv = jwk["crv"], let kty = jwk["kty"], let x = jwk["x"], let y = jwk["y"] else {
+      throw CocoaError(.coderInvalidValue)
+    }
+    let canonical = Data("{\"crv\":\"\(crv)\",\"kty\":\"\(kty)\",\"x\":\"\(x)\",\"y\":\"\(y)\"}".utf8)
+    return base64Url(Data(SHA256.hash(data: canonical)))
+  }
+
+  private static func p1363Signature(fromDer der: Data) throws -> Data {
+    let bytes = [UInt8](der)
+    var index = 0
+    func readLength() throws -> Int {
+      guard index < bytes.count else { throw CocoaError(.coderInvalidValue) }
+      let first = Int(bytes[index]); index += 1
+      if first & 0x80 == 0 { return first }
+      let count = first & 0x7f
+      guard count > 0, count <= 2, index + count <= bytes.count else { throw CocoaError(.coderInvalidValue) }
+      var length = 0
+      for _ in 0..<count { length = (length << 8) | Int(bytes[index]); index += 1 }
+      return length
+    }
+    guard index < bytes.count, bytes[index] == 0x30 else { throw CocoaError(.coderInvalidValue) }
+    index += 1
+    let sequenceLength = try readLength()
+    guard sequenceLength == bytes.count - index else { throw CocoaError(.coderInvalidValue) }
+    func readInteger() throws -> [UInt8] {
+      guard index < bytes.count, bytes[index] == 0x02 else { throw CocoaError(.coderInvalidValue) }
+      index += 1
+      let length = try readLength()
+      guard length > 0, index + length <= bytes.count else { throw CocoaError(.coderInvalidValue) }
+      var value = Array(bytes[index..<(index + length)]); index += length
+      while value.count > 32 && value.first == 0 { value.removeFirst() }
+      guard value.count <= 32 else { throw CocoaError(.coderInvalidValue) }
+      return Array(repeating: 0, count: 32 - value.count) + value
+    }
+    let r = try readInteger()
+    let s = try readInteger()
+    guard index == bytes.count else { throw CocoaError(.coderInvalidValue) }
+    return Data(r + s)
+  }
+}
 
 @MainActor
 private final class WorkjetBusinessOsSchemeHandler: NSObject, WKURLSchemeHandler {
@@ -47,8 +174,9 @@ private final class WorkjetBusinessOsSchemeHandler: NSObject, WKURLSchemeHandler
     let clipboardLock = "try{Object.defineProperty(navigator,'clipboard',{value:{read:()=>Promise.reject(new DOMException('Denied','NotAllowedError')),readText:()=>Promise.reject(new DOMException('Denied','NotAllowedError')),write:()=>Promise.reject(new DOMException('Denied','NotAllowedError')),writeText:()=>Promise.reject(new DOMException('Denied','NotAllowedError'))},configurable:false})}catch(_){}"
     let notificationBridge = "try{Object.defineProperty(window,'workjetBusinessOsNotify',{value:(payload)=>{try{window.webkit.messageHandlers.\(businessOsNotificationHandlerName).postMessage(payload);return true}catch(_){return false}},configurable:false})}catch(_){}"
     let shellBridge = "try{Object.defineProperty(window,'workjetBusinessOsPostMessage',{value:(payload)=>{try{window.webkit.messageHandlers.\(businessOsShellHandlerName).postMessage(JSON.stringify(payload));return true}catch(_){return false}},configurable:false})}catch(_){}"
+    let deviceProofBridge = "try{Object.defineProperty(globalThis,'ctoxWorkjetDeviceProofProvider',{value:(nonce)=>window.webkit.messageHandlers.\(businessOsDeviceProofHandlerName).postMessage(nonce),writable:false,configurable:false,enumerable:false})}catch(_){}"
     let mobileHost = "document.documentElement.dataset.workjetMobileHost='true'"
-    let script = "<script data-workjet-mobile-bootstrap>window.CTOX_BUSINESS_OS_SESSION=\(sessionJson);window.CTOX_BUSINESS_OS_CONFIG=\(configJson);window.CTOX_BUSINESS_OS_DESIGN_TEMPLATES=[];\(mobileHost);\(clipboardLock);\(notificationBridge);\(shellBridge)</script>"
+    let script = "<script data-workjet-mobile-bootstrap>window.CTOX_BUSINESS_OS_SESSION=\(sessionJson);window.CTOX_BUSINESS_OS_CONFIG=\(configJson);window.CTOX_BUSINESS_OS_DESIGN_TEMPLATES=[];\(mobileHost);\(clipboardLock);\(notificationBridge);\(shellBridge);\(deviceProofBridge)</script>"
     return Data((html[..<head.upperBound] + script + html[head.upperBound...]).utf8)
   }
 
@@ -124,6 +252,34 @@ private final class WorkjetBusinessOsShellHandler: NSObject, WKScriptMessageHand
   }
 }
 
+@MainActor
+private final class WorkjetBusinessOsDeviceProofHandler: NSObject, WKScriptMessageHandlerWithReply {
+  weak var owner: T3BusinessOsView?
+
+  init(owner: T3BusinessOsView) {
+    self.owner = owner
+  }
+
+  func userContentController(
+    _ userContentController: WKUserContentController,
+    didReceive message: WKScriptMessage,
+    replyHandler: @escaping (Any?, String?) -> Void
+  ) {
+    guard let owner, owner.acceptsDeviceProofMessage(message),
+      let nonce = message.body as? String,
+      nonce.range(of: #"^[A-Za-z0-9_-]{43}$"#, options: .regularExpression) != nil
+    else {
+      replyHandler(nil, "invalid_device_proof_request")
+      return
+    }
+    do {
+      replyHandler(try WorkjetDeviceProofKey.proof(message: nonce), nil)
+    } catch {
+      replyHandler(nil, "device_proof_unavailable")
+    }
+  }
+}
+
 public final class T3BusinessOsView: ExpoView, WKNavigationDelegate, WKUIDelegate {
   let onError = EventDispatcher()
   let onNotification = EventDispatcher()
@@ -131,6 +287,7 @@ public final class T3BusinessOsView: ExpoView, WKNavigationDelegate, WKUIDelegat
   private var webView: WKWebView?
   private var notificationHandler: WorkjetBusinessOsNotificationHandler?
   private var shellHandler: WorkjetBusinessOsShellHandler?
+  private var deviceProofHandler: WorkjetBusinessOsDeviceProofHandler?
   private var storageIdentity = ""
   private var shellRootUri = ""
   private var sessionJson = ""
@@ -180,6 +337,13 @@ public final class T3BusinessOsView: ExpoView, WKNavigationDelegate, WKUIDelegat
     let nextShellHandler = WorkjetBusinessOsShellHandler(owner: self)
     configuration.userContentController.add(nextShellHandler, name: businessOsShellHandlerName)
     shellHandler = nextShellHandler
+    let nextDeviceProofHandler = WorkjetBusinessOsDeviceProofHandler(owner: self)
+    configuration.userContentController.addScriptMessageHandler(
+      nextDeviceProofHandler,
+      contentWorld: .page,
+      name: businessOsDeviceProofHandlerName
+    )
+    deviceProofHandler = nextDeviceProofHandler
     configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: identifier)
     configuration.setURLSchemeHandler(
       WorkjetBusinessOsSchemeHandler(
@@ -232,6 +396,13 @@ public final class T3BusinessOsView: ExpoView, WKNavigationDelegate, WKUIDelegat
   fileprivate func receiveShellMessage(_ raw: Any) {
     guard let value = raw as? String, isValidShellMessage(value) else { return }
     onShellMessage(["message": value])
+  }
+
+  fileprivate func acceptsDeviceProofMessage(_ message: WKScriptMessage) -> Bool {
+    let origin = message.frameInfo.securityOrigin
+    return message.frameInfo.isMainFrame
+      && origin.protocol == "workjet-business-os"
+      && origin.host == storageIdentity
   }
 
   private func deliverCommandIfReady() {
@@ -295,6 +466,15 @@ public final class T3BusinessOsModule: Module {
     AsyncFunction("removeProfile") { (storageIdentity: String) in
       guard let identifier = UUID(uuidString: storageIdentity) else { return }
       try await WKWebsiteDataStore.remove(forIdentifier: identifier)
+    }
+    AsyncFunction("getDeviceProofKey") {
+      try WorkjetDeviceProofKey.descriptor()
+    }
+    AsyncFunction("signDeviceProofMessage") { (message: String) in
+      guard !message.isEmpty, message.utf8.count <= 4_096 else {
+        throw CocoaError(.coderInvalidValue)
+      }
+      return try WorkjetDeviceProofKey.proof(message: message)
     }
     Function("isSupported") { true }
   }

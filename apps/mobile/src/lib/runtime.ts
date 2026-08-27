@@ -6,6 +6,7 @@ import { remoteHttpClientLayer } from "@t3tools/client-runtime/rpc";
 
 import { cryptoLayer } from "../features/cloud/dpop";
 import { managedRelayClientLayer } from "../features/cloud/managedRelayLayer";
+import { workjetManagedDeviceSessionLayer } from "../features/pairing/workjet-managed-device-session-layer";
 import { resolveCloudPublicConfig } from "../features/cloud/publicConfig";
 import { tracingLayer } from "../features/observability/tracing";
 import * as Persistence from "../persistence/layer";
@@ -22,6 +23,7 @@ type RuntimeLayerSource =
   | typeof cryptoLayer
   | typeof httpClientLayer
   | typeof Persistence.layer
+  | typeof workjetManagedDeviceSessionLayer
   | typeof tracingLayer;
 
 const runtimeLayer = Layer.merge(
@@ -32,6 +34,7 @@ const runtimeLayer = Layer.merge(
   Layer.provideMerge(httpClientLayer),
   Layer.provideMerge(tracingLayer.pipe(Layer.provide(httpClientLayer))),
   Layer.provideMerge(Persistence.layer),
+  Layer.provideMerge(workjetManagedDeviceSessionLayer.pipe(Layer.provide(cryptoLayer))),
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<

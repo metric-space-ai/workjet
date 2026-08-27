@@ -42,9 +42,12 @@ describe("shared Workjet product shell", () => {
     expect(onboarding).not.toMatch(/placeholder=.*(?:server|host|passwort|password)/iu);
     expect(app).toContain("<WorkjetDevicePairingProvider>");
     expect(pairing).toContain("parseWorkjetDevicePairingLink(payload)");
-    expect(pairing).toContain("redeemWorkjetDeviceInviteReferenceEffect");
+    expect(pairing).toContain("redeemManagedWorkjetDeviceInviteReference");
+    expect(pairing).toContain("exchangeManagedWorkjetDeviceSessionBootstrap");
+    expect(pairing).toContain("readManagedBusinessOsDeviceSessionMembership");
+    expect(pairing).toContain("importManagedBusinessOsInvite");
     expect(pairing).toContain("loadOrCreateAgentAwarenessDeviceId()");
-    expect(pairing).toContain("loadOrCreateDpopProofKeyPair()");
+    expect(pairing).toContain("nativeWorkjetDeviceProof.key()");
     expect(pairing).toContain("proofKeyThumbprint: proofKey.thumbprint");
     expect(pairing).toContain("connectCodePairingUrl(prepared.environment.pairingUrl)");
     expect(pairing).toContain("importBusinessOsInvite(prepared.businessOs");

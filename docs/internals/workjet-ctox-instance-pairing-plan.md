@@ -32,10 +32,20 @@ Current implementation baseline:
   fallback for device-session-authorized connections. Mobile projects the
   current membership through the runtime-reconciled platform source rather
   than the user connection catalog.
+- `999784233` completes the Mobile instance/session projection, and
+  `602e9c396` moves pairing, CTOX WebRTC, Relay and managed control onto one
+  non-exportable native P-256 installation key.
+- `a169a8041` authorizes Relay control assertions for an active, exact-instance
+  Workjet Device Session without a Clerk fallback. `0f8bbf74b` adds the
+  cookie-free Mobile ctox.dev adapter and exposes production QR actions only
+  when that exact instance has a valid Device Session and a configured managed
+  control origin.
 - The isolated ctox.dev branch contains `4e57284` (fail-closed managed control
   core) and `0698a34` (V2 Relay-producer adapter, rotating JWKS, one-time
-  assertion consume and stable device-pairing edge). The native CTOX issuer
-  and production secret/JWKS configuration remain intentionally fail-closed.
+  assertion consume and stable device-pairing edge). `6cdce4e` adds the
+  cookie-free DPoP device-control connection and handle-bound CSRF flow. The
+  native CTOX issuer, production deployment and secret/JWKS configuration
+  remain intentionally fail-closed.
 - The isolated CTOX branch contains `1beff1e41` (device-bound invite issuer,
   `cnf.jkt`, pairing-ID rotation/revoke and nonce-based P-256 proof before the
   WebRTC data plane). It is fully tested on its clean branch but intentionally
@@ -291,8 +301,13 @@ terms restricted to status details or the collapsed Diagnose section.
       Relay targets and never persist them as classic Connections.
 - [x] Use one non-exportable native P-256 installation key for V2 redemption,
       HTTP DPoP, direct Relay connect and every RxDB/WebRTC proof challenge.
+- [x] Bind Mobile managed-control resolve, CSRF, invite creation and revoke to
+      the selected instance's DPoP Device Session without cookies, Clerk or a
+      Code-environment fallback.
 - [ ] Activate Mobile against the authenticated ctox.dev producer;
-      no Code environment/primary fallback is permitted.
+      no Code environment/primary fallback is permitted. The client and
+      producer implementations exist, but deployment, native CTOX integration
+      and production keys remain required.
 - [ ] Consume the authoritative backend-host isolation capability once the
       Desktop/Server contract lands; never offer a managed host as a worker.
 

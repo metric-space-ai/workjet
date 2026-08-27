@@ -360,9 +360,9 @@ flowchart LR
     CF["Cloudflare tunnel + DNS APIs"]
   end
 
-  DB["PlanetScale Postgres<br/>prod database + stage branches"]
+  DB["Cloudflare D1<br/>pairing and session control state"]
   APNs["Apple Push Notification service"]
-  Traces["Axiom OTLP traces"]
+  Traces["Cloudflare Worker logs"]
 
   subgraph Local["Linked Workjet environment"]
     Env["Environment server<br/>local auth authority"]
@@ -1010,7 +1010,7 @@ sequenceDiagram
           <h2>Relay Infrastructure</h2>
           <ul>
             <li>Cloudflare Worker for the hosted relay HTTP API.</li>
-            <li>PlanetScale Postgres database named <code>t3coderelay</code>.</li>
+            <li>Cloudflare D1 stores bounded pairing and session control state.</li>
             <li>
               Production uses the shared database; non-production stages use database branches.
             </li>
@@ -1020,7 +1020,7 @@ sequenceDiagram
             <li>Cloudflare tunnel and DNS bindings for managed endpoint reconciliation.</li>
             <li>Cloudflare APNs delivery queue plus dead-letter queue.</li>
             <li>A five-minute cron job that prunes expired DPoP replay rows.</li>
-            <li>Axiom OTLP trace dataset, scoped ingest token, and recent-spans view per stage.</li>
+            <li>Cloudflare Worker logs provide redacted operational diagnostics.</li>
           </ul>
         </article>
       </section>

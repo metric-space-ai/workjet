@@ -39,10 +39,9 @@ the task commands.
 
 ## infra
 
-- `infra/relay` (`t3code-relay`): the hosted Workjet Connect relay, deployed with Alchemy. Handles
-  environment discovery, cloud-side records, and mobile notifications. It is not in the hot path;
-  after connect, client traffic goes directly to the environment. See
-  [t3-connect.md](./t3-connect.md).
+- `infra/relay`: retired, non-deployable protocol reference code. Production signaling and
+  device-session control run on Cloudflare; Business OS records synchronize directly through CTOX.
+  See [t3-connect.md](./t3-connect.md).
 
 ## Other top-level directories
 

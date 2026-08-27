@@ -126,8 +126,8 @@ following producers exist:
 - ctox.dev control-handle and invite/reference coordination with fail-closed rate limiting, CSRF,
   no-store responses, and service authentication;
 - Relay device-session grants, versioned instance membership, direct DPoP session authorization,
-  and a revocable device-to-instance edge. The producer belongs in the existing Relay authority
-  (`infra/relay`), not in a Workjet Environment server;
+  and a revocable device-to-instance edge. The producer belongs in the Cloudflare control-plane
+  authority, not in a Workjet Environment server;
 - CTOX sync invites bound natively to the same device ID and proof-key thumbprint, rather than only
   copying those values into a Workjet-side payload; and
 - a retryable coordinator that rolls either grant back when the other issuer fails.

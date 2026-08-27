@@ -49,7 +49,7 @@ describe("resolveCloudPublicConfig", () => {
         relay: { url: " https://relay.example.test/// " },
         managedControl: { url: " https://ctox.example.test/// " },
         observability: {
-          tracesUrl: " https://api.axiom.co/v1/traces ",
+          tracesUrl: " https://collector.example.test/v1/traces ",
           tracesDataset: " mobile-traces ",
           tracesToken: " public-ingest-token ",
         },
@@ -66,7 +66,7 @@ describe("resolveCloudPublicConfig", () => {
         url: "https://ctox.example.test",
       },
       observability: {
-        tracesUrl: "https://api.axiom.co/v1/traces",
+        tracesUrl: "https://collector.example.test/v1/traces",
         tracesDataset: "mobile-traces",
         tracesToken: "public-ingest-token",
       },
@@ -110,7 +110,7 @@ describe("resolveCloudPublicConfig", () => {
     expect(
       resolveCloudPublicConfig({
         observability: {
-          tracesUrl: "http://api.axiom.co/v1/traces",
+          tracesUrl: "http://collector.example.test/v1/traces",
           tracesDataset: "mobile-traces",
           tracesToken: "public-ingest-token",
         },
@@ -128,7 +128,7 @@ describe("resolveCloudPublicConfig", () => {
       hasTracingPublicConfig(
         resolveCloudPublicConfig({
           observability: {
-            tracesUrl: "https://api.axiom.co/v1/traces",
+            tracesUrl: "https://collector.example.test/v1/traces",
             tracesDataset: "mobile-traces",
           },
         }),
@@ -138,7 +138,7 @@ describe("resolveCloudPublicConfig", () => {
       hasTracingPublicConfig(
         resolveCloudPublicConfig({
           observability: {
-            tracesUrl: "https://api.axiom.co/v1/traces",
+            tracesUrl: "https://collector.example.test/v1/traces",
             tracesDataset: "mobile-traces",
             tracesToken: "public-ingest-token",
           },

@@ -54,11 +54,12 @@ Current implementation baseline:
   accepts only a short-lived, exact-instance managed control handle. Production
   actions remain disabled while ctox.dev has no live producer.
 - The current Android release artifact (SHA-256
-  `bb007170c9f616118923cfec35e9c0b79082511426cac1b26a529ae61eb2b579`) was
+  `02a89e3b84b3eb7ba77f03f41161861ddc44cf129bfcab27a40335a379f0be40`) was
   installed as an in-place update on the Galaxy Fold over wireless ADB on
-  2026-08-27. Android retained the original install time and local data; the
-  process starts without a fatal log. The visible device pass still requires
-  the operator to unlock the phone.
+  2026-08-27 after `0f8bbf74b`. Android retained the original install time and
+  local data; the process starts without a fatal log. The protected/locked
+  display produces an intentionally black ADB capture, so the interactive QR
+  and instance-switch pass still requires the operator to unlock the phone.
 - `99c61badd` contains the typed and tested Computer List/Assign/Unassign
   scaffold. It remains intentionally unmounted until an authoritative producer
   supplies bounded instance inventory, `hostingMode`, backend host identity and

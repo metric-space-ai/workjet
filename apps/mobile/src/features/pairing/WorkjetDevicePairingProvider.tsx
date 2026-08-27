@@ -1,5 +1,6 @@
 import * as Linking from "expo-linking";
 import { AsyncResult } from "effect/unstable/reactivity";
+import { redeemWorkjetDeviceInviteReference as redeemWorkjetDeviceInviteReferenceEffect } from "@t3tools/client-runtime/state/business-os-mobile-invite";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { useAtomSet } from "@effect/atom-react";
@@ -10,10 +11,14 @@ import { useWorkjetMode } from "../mode/WorkjetModeProvider";
 import { isWorkjetDevicePairLink } from "../../lib/workjetLinks";
 import { updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { loadOrCreateAgentAwarenessDeviceId } from "../../persistence/imperative";
+import { runtime } from "../../lib/runtime";
+import { loadOrCreateDpopProofKeyPair } from "../cloud/dpop";
 import {
   parseWorkjetDevicePairingLink,
-  redeemWorkjetDeviceInviteReference,
+  toWorkjetDeviceInviteReferenceContract,
   type ParsedWorkjetDevicePairingLink,
+  validateRedeemedWorkjetDeviceInvite,
 } from "./workjet-device-invite";
 
 interface WorkjetDevicePairingContextValue {
@@ -70,7 +75,20 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
         if (!(await confirmDevicePairing(candidate))) return false;
         const prepared =
           candidate.kind === "reference"
-            ? await redeemWorkjetDeviceInviteReference(candidate.reference)
+            ? await Promise.all([
+                loadOrCreateAgentAwarenessDeviceId(),
+                runtime.runPromise(loadOrCreateDpopProofKeyPair()),
+              ]).then(async ([deviceId, proofKey]) =>
+                validateRedeemedWorkjetDeviceInvite(
+                  await runtime.runPromise(
+                    redeemWorkjetDeviceInviteReferenceEffect({
+                      reference: toWorkjetDeviceInviteReferenceContract(candidate.reference),
+                      deviceId,
+                      proofKeyThumbprint: proofKey.thumbprint,
+                    }),
+                  ),
+                ),
+              )
             : candidate.invite;
 
         const codePairing = await connectCodePairingUrl(prepared.environment.pairingUrl);

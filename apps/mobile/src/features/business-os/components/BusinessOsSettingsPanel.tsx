@@ -119,17 +119,24 @@ export function BusinessOsSettingsPanel(props: {
   }, [generatedInvite]);
 
   const createInvite = useCallback(async () => {
-    if (!connection) return;
+    if (!connection || !selected) return;
     setBusy(true);
     setError(null);
     try {
-      setGeneratedInvite(await inviteControl.create({ connection, ttlSeconds: 300 }));
+      setGeneratedInvite(
+        await inviteControl.create({
+          connection,
+          businessOsInstanceId: selected.instanceId,
+          displayName: selected.displayName,
+          ttlSeconds: 300,
+        }),
+      );
     } catch (cause) {
       setError(safeMessage(cause));
     } finally {
       setBusy(false);
     }
-  }, [connection, inviteControl]);
+  }, [connection, inviteControl, selected]);
 
   const revokeInvite = useCallback(async () => {
     if (!connection || !generatedInvite) return;
@@ -146,21 +153,28 @@ export function BusinessOsSettingsPanel(props: {
   }, [connection, generatedInvite, inviteControl]);
 
   const renewInvite = useCallback(async () => {
-    if (!connection) return;
+    if (!connection || !selected) return;
     setBusy(true);
     setError(null);
     try {
       if (generatedInvite) {
         await inviteControl.revoke({ connection, inviteId: generatedInvite.inviteId });
       }
-      setGeneratedInvite(await inviteControl.create({ connection, ttlSeconds: 300 }));
+      setGeneratedInvite(
+        await inviteControl.create({
+          connection,
+          businessOsInstanceId: selected.instanceId,
+          displayName: selected.displayName,
+          ttlSeconds: 300,
+        }),
+      );
     } catch (cause) {
       setGeneratedInvite(null);
       setError(safeMessage(cause));
     } finally {
       setBusy(false);
     }
-  }, [connection, generatedInvite, inviteControl]);
+  }, [connection, generatedInvite, inviteControl, selected]);
 
   const openScanner = useCallback(async () => {
     if (cameraPermission?.granted) {

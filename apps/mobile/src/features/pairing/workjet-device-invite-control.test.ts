@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type {
-  EnvironmentId,
-  WorkjetDeviceInviteRefV1,
-  WorkjetDeviceInviteV1,
-} from "@t3tools/contracts";
+import type { EnvironmentId, WorkjetDeviceInviteRefV1 } from "@t3tools/contracts";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
 import {
@@ -25,43 +21,6 @@ function connection(httpBaseUrl = "https://workjet.example.test"): SavedRemoteCo
     bearerToken: null,
   };
 }
-
-const invite: WorkjetDeviceInviteV1 = {
-  type: "workjet-device-invite" as const,
-  version: 1 as const,
-  device_pairing_id: "device-a",
-  environment: {
-    base_url: "https://workjet.example.test",
-    bootstrap_credential: "synthetic-bootstrap-credential",
-    expires_at: "2026-08-25T12:45:00Z",
-  },
-  business_os: {
-    type: "ctox-business-os-invite" as const,
-    version: 1 as const,
-    display_name: "Operations",
-    instance_id: "instance-a",
-    sync_room: "ctox-business-os:instance-a",
-    native_peer_id: "native-a",
-    signaling_urls: ["wss://signal.example.test/socket"],
-    signaling_room_password: "synthetic-room-secret",
-    transport: "webrtc" as const,
-    expires_at: "2026-08-25T12:45:00Z",
-    data_plane: "rxdb-webrtc" as const,
-    http_bridge_available: false as const,
-    session: {
-      authenticated: true as const,
-      source: "mobile_invite" as const,
-      capability_token: "synthetic-capability-token",
-      capability_expires_at_ms: Date.parse("2026-08-25T12:45:00Z"),
-      user: {
-        id: "user-a",
-        display_name: "Operator",
-        role: "user" as const,
-        is_admin: false as const,
-      },
-    },
-  },
-};
 
 const reference: WorkjetDeviceInviteRefV1 = {
   type: "workjet-device-invite-ref",
@@ -98,7 +57,6 @@ describe("Workjet device invite control", () => {
           return {
             inviteId: "invite-a",
             reference,
-            invite,
             expiresAt: "2026-08-25T12:45:00Z",
           };
         },
@@ -110,9 +68,18 @@ describe("Workjet device invite control", () => {
       { now: () => NOW },
     );
 
-    const created = await control.create({ connection: connection(), ttlSeconds: 300 });
+    const created = await control.create({
+      connection: connection(),
+      businessOsInstanceId: "instance-a",
+      displayName: "Operations",
+      ttlSeconds: 300,
+    });
     expect(createInputs).toEqual([
-      { ttlSeconds: 300, connectionUrl: "https://workjet.example.test" },
+      {
+        ttlSeconds: 300,
+        connectionUrl: "https://workjet.example.test",
+        businessOsInstanceId: "instance-a",
+      },
     ]);
     expect(created.link).toMatch(/^workjet:\/\/pair\?payload=/u);
     expect(created.link).not.toContain("synthetic-bootstrap-credential");
@@ -132,7 +99,12 @@ describe("Workjet device invite control", () => {
       },
     });
     await expect(
-      control.create({ connection: connection("http://127.0.0.1:13773"), ttlSeconds: 300 }),
+      control.create({
+        connection: connection("http://127.0.0.1:13773"),
+        businessOsInstanceId: "instance-a",
+        displayName: "Operations",
+        ttlSeconds: 300,
+      }),
     ).rejects.toBeInstanceOf(WorkjetDeviceInviteControlUnavailableError);
   });
 });

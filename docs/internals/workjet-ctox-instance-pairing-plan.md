@@ -181,6 +181,9 @@ terms restricted to status details or the collapsed Diagnose section.
       other bindings.
 - [x] Preserve Coding-only operation before any CTOX instance is paired.
 - [x] Keep the Business OS data path RxDB/WebRTC-only.
+- [x] Redeem compact one-time references with a stable device identifier and
+      the existing DPoP proof-key thumbprint; never return or persist the full
+      secret bundle during invite creation.
 - [ ] Consume the authoritative backend-host isolation capability once the
       Desktop/Server contract lands; never offer a managed host as a worker.
 

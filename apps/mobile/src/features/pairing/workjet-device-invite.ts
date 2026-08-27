@@ -263,41 +263,21 @@ export function parseWorkjetDevicePairingLink(
   });
 }
 
-export async function redeemWorkjetDeviceInviteReference(
+export function toWorkjetDeviceInviteReferenceContract(
   reference: ValidatedWorkjetDeviceInviteReference,
-  options: {
-    readonly fetch?: typeof globalThis.fetch;
-    readonly now?: number;
-    readonly timeoutMs?: number;
-  } = {},
-): Promise<ValidatedWorkjetDeviceInvite> {
-  const now = options.now ?? Date.now();
-  if (reference.expiresAtMs <= now) fail("expired", "Workjet pairing link is expired.");
-  const fetchImpl = options.fetch ?? globalThis.fetch;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
-  try {
-    const response = await fetchImpl(`${reference.endpoint}/api/workjet/device-invites/redeem`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: reference.code }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      fail("reference_unavailable", "Workjet pairing code is unavailable or expired.");
-    }
-    let invite: typeof WorkjetDeviceInviteV1.Type;
-    try {
-      invite = Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(await response.json());
-    } catch {
-      return fail("reference_response", "Workjet pairing response is invalid.");
-    }
-    return parseWorkjetDevicePairLink(encodeWorkjetDevicePairLink(invite), { now });
-  } catch (error) {
-    if (error instanceof WorkjetDeviceInviteValidationError) throw error;
-    return fail("reference_network", "Workjet pairing server could not be reached.");
-  } finally {
-    clearTimeout(timeout);
-  }
+): typeof WorkjetDeviceInviteRefV1.Type {
+  return {
+    type: "workjet-device-invite-ref",
+    version: 1,
+    endpoint: reference.endpoint,
+    code: reference.code,
+    expires_at: reference.expiresAt,
+  };
+}
+
+export function validateRedeemedWorkjetDeviceInvite(
+  invite: typeof WorkjetDeviceInviteV1.Type,
+  options: { readonly now?: number } = {},
+): ValidatedWorkjetDeviceInvite {
+  return parseWorkjetDevicePairLink(encodeWorkjetDevicePairLink(invite), options);
 }

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
+import { WorkjetDeviceInviteV1 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import {
   encodeWorkjetDevicePairLink,
   parseWorkjetDevicePairLink,
   parseWorkjetDevicePairingLink,
-  redeemWorkjetDeviceInviteReference,
+  toWorkjetDeviceInviteReferenceContract,
+  validateRedeemedWorkjetDeviceInvite,
   WorkjetDeviceInviteValidationError,
 } from "./workjet-device-invite";
 
@@ -151,7 +154,7 @@ describe("Workjet device invite v1", () => {
     ).toThrowError(expect.objectContaining({ code: "reference_endpoint" }));
   });
 
-  it("redeems a compact reference once in memory and validates the combined invite", async () => {
+  it("converts a compact reference for the shared redeemer and validates its result", () => {
     const compact = parseWorkjetDevicePairingLink(
       encodeWorkjetDevicePairLink({
         type: "workjet-device-invite-ref",
@@ -163,25 +166,17 @@ describe("Workjet device invite v1", () => {
       { now: NOW },
     );
     if (compact.kind !== "reference") throw new Error("expected compact reference");
-    const requests: Array<{ readonly url: string; readonly init?: RequestInit }> = [];
-    const redeemed = await redeemWorkjetDeviceInviteReference(compact.reference, {
-      now: NOW,
-      fetch: async (url, init) => {
-        requests.push({ url: String(url), init });
-        return new Response(JSON.stringify(deviceInvite()), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      },
+    expect(toWorkjetDeviceInviteReferenceContract(compact.reference)).toEqual({
+      type: "workjet-device-invite-ref",
+      version: 1,
+      endpoint: "https://workjet.example.test",
+      code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+      expires_at: "2026-08-25T12:45:00.000Z",
     });
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      url: "https://workjet.example.test/api/workjet/device-invites/redeem",
-      init: {
-        method: "POST",
-        body: JSON.stringify({ code: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ" }),
-      },
-    });
+    const redeemed = validateRedeemedWorkjetDeviceInvite(
+      Schema.decodeUnknownSync(WorkjetDeviceInviteV1)(deviceInvite()),
+      { now: NOW },
+    );
     expect(redeemed.environment.baseUrl).toBe("https://workjet.example.test");
     expect(redeemed.businessOs.instanceId).toBe("instance-a");
   });

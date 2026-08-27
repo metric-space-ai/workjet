@@ -6,7 +6,10 @@ import type {
 } from "@t3tools/contracts";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
-import { encodeWorkjetDevicePairLink, parseWorkjetDevicePairLink } from "./workjet-device-invite";
+import {
+  encodeWorkjetDevicePairLink,
+  parseWorkjetDevicePairingLink,
+} from "./workjet-device-invite";
 
 export interface CreatedWorkjetDeviceInvite {
   readonly inviteId: string;
@@ -18,6 +21,8 @@ export interface CreatedWorkjetDeviceInvite {
 export interface WorkjetDeviceInviteControlPort {
   readonly create: (input: {
     readonly connection: SavedRemoteConnection;
+    readonly businessOsInstanceId: string;
+    readonly displayName: string;
     readonly ttlSeconds?: number;
   }) => Promise<CreatedWorkjetDeviceInvite>;
   readonly revoke: (input: {
@@ -67,7 +72,7 @@ function shareableConnectionUrl(connection: SavedRemoteConnection): string {
     throw new WorkjetDeviceInviteControlUnavailableError();
   }
   if (
-    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.protocol !== "https:" ||
     url.username ||
     url.password ||
     url.search ||
@@ -84,24 +89,28 @@ export function makeWorkjetDeviceInviteControl(
   options: { readonly now?: () => number } = {},
 ): WorkjetDeviceInviteControlPort {
   return {
-    async create({ connection, ttlSeconds = 300 }) {
+    async create({ connection, businessOsInstanceId, displayName, ttlSeconds = 300 }) {
+      if (!businessOsInstanceId.trim() || !displayName.trim()) {
+        throw new WorkjetDeviceInviteControlUnavailableError();
+      }
       const response = await http.create({
         ttlSeconds,
         connectionUrl: shareableConnectionUrl(connection),
+        businessOsInstanceId,
       });
       const link = encodeWorkjetDevicePairLink(response.reference);
-      const parsedInvite = parseWorkjetDevicePairLink(
-        encodeWorkjetDevicePairLink(response.invite),
-        { now: options.now?.() },
-      );
-      if (Date.parse(response.expiresAt) !== Date.parse(parsedInvite.confirmation.expiresAt)) {
-        throw new Error("Device invite response expiry does not match its credentials.");
+      const parsedReference = parseWorkjetDevicePairingLink(link, { now: options.now?.() });
+      if (
+        parsedReference.kind !== "reference" ||
+        Date.parse(response.expiresAt) !== Date.parse(parsedReference.reference.expiresAt)
+      ) {
+        throw new Error("Device invite response expiry does not match its reference.");
       }
       return Object.freeze({
         inviteId: response.inviteId,
         link,
-        expiresAt: parsedInvite.confirmation.expiresAt,
-        displayName: parsedInvite.confirmation.displayName,
+        expiresAt: parsedReference.reference.expiresAt,
+        displayName: displayName.trim(),
       });
     },
     async revoke({ inviteId }) {

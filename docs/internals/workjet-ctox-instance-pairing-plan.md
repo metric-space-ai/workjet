@@ -35,6 +35,10 @@ Current implementation baseline:
 - `999784233` completes the Mobile instance/session projection, and
   `602e9c396` moves pairing, CTOX WebRTC, Relay and managed control onto one
   non-exportable native P-256 installation key.
+- `4d92b41d0` scopes the Desktop Code surface to the active Business OS across
+  environment visibility, projects, threads, drafts, navigation, composer and
+  worker selection. Its complete Web unit project is green (307 files / 2,933
+  tests); live Electron isolation remains part of the release gate below.
 - `a169a8041` authorizes Relay control assertions for an active, exact-instance
   Workjet Device Session without a Clerk fallback. `0f8bbf74b` adds the
   cookie-free Mobile ctox.dev adapter and exposes production QR actions only
@@ -318,7 +322,7 @@ terms restricted to status details or the collapsed Diagnose section.
 
 - [x] Render the same active CTOX instance selector in the left sidebar of Code
       and Business OS.
-- [ ] Derive Code environment, projects, threads, sessions and workers from the
+- [x] Derive Code environment, projects, threads, sessions and workers from the
       active instance.
 - [x] Keep the active instance stable when switching `Code | Business OS`.
 - [ ] Present `Gerät verbinden`, renew and revoke as actions of one instance.
@@ -363,9 +367,16 @@ active.
 
 ## Separate visual deliverable still active
 
-- [ ] Generate sixteen genuinely distinct reference candidates for every
+- [x] Generate sixteen genuinely distinct reference candidates for every
       Business OS app.
 - [ ] Program production SVG candidates from first principles.
 - [ ] Show generated PNG and SVG reconstruction side by side.
 - [ ] Deliver one offline HTML selector with per-app favorites and JSON export.
 - [ ] Integrate only operator-approved icons into signed platform asset packs.
+
+The reference corpus currently contains 544 validated Grok Agentic Image
+Generation renders (34 apps x 16 candidates). The SVG stage is deliberately
+not auto-traced: the remaining candidates must pass side-by-side 1024 px and
+60 px review. The Kimi/Grok SVG route most recently returned a provider
+`USAGE_LIMIT` response; retry supervisors are stopped and must not poll more
+frequently than the icon-studio cooldown permits.

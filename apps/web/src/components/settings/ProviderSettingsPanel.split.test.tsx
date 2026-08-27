@@ -30,7 +30,10 @@ vi.mock("react/compiler-runtime", async () => {
 });
 
 vi.mock("../../state/environments", () => ({
-  useEnvironments: () => ({ environments: environmentState.environments, isReady: true }),
+  useBusinessOsScopedEnvironments: () => ({
+    environments: environmentState.environments,
+    isReady: true,
+  }),
   usePrimaryEnvironmentId: () => primaryEnvironmentId,
 }));
 

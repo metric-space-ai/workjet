@@ -1334,6 +1334,53 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
+    // An explicit Add Project intent must never inherit a previous palette
+    // surface (notably Go to file / project-content search). Start the
+    // project workflow from a clean command view every time.
+    browseNavigation.invalidate();
+    setAddProjectCloneFlow(null);
+    setAddProjectEnvironmentId(null);
+    setViewStack([]);
+    setHighlightedItemValue(null);
+    setQuery("");
+
+    if (addProjectEnvironmentOptions.length === 0) {
+      pushPaletteView({
+        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "project-scope-unavailable",
+            label: "Project location",
+            items: [
+              {
+                kind: "action",
+                value: "action:add-project:no-code-computer",
+                searchTerms: ["project", "computer", "business os", "assign"],
+                title: "No Code computer assigned",
+                description: "Assign a computer to the active Business OS before adding a project.",
+                icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+                disabled: true,
+                run: async () => {},
+              },
+              {
+                kind: "action",
+                value: "action:add-project:open-business-os-settings",
+                searchTerms: ["settings", "business os", "computer", "assign"],
+                title: "Open Business OS settings",
+                description:
+                  "Review the active instance. Project creation stays blocked until CTOX confirms a Code computer assignment.",
+                icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
+                run: async () => {
+                  setOpen(false);
+                  await navigate({ to: "/settings/business-os" });
+                },
+              },
+            ],
+          },
+        ],
+      });
+      return;
+    }
     if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
       pushPaletteView({
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
@@ -1358,8 +1405,11 @@ function OpenCommandPaletteDialog(props: {
   }, [
     addProjectEnvironmentGroups,
     addProjectEnvironmentOptions.length,
+    browseNavigation,
     defaultAddProjectEnvironmentId,
+    navigate,
     pushPaletteView,
+    setOpen,
     startAddProjectSourceSelection,
   ]);
 
@@ -1499,7 +1549,6 @@ function OpenCommandPaletteDialog(props: {
       "environment",
     ],
     title: "Add project",
-    disabled: defaultAddProjectEnvironmentId === null,
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {

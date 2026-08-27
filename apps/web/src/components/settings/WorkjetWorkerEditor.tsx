@@ -260,6 +260,7 @@ function SectionHeader({ title, action }: { readonly title: string; readonly act
 
 export function WorkjetWorkerEditor({
   worker = null,
+  draftScopeKey,
   computers,
   routes,
   onSave,
@@ -267,6 +268,8 @@ export function WorkjetWorkerEditor({
   onAddRoute,
 }: {
   readonly worker?: WorkjetWorkerProfile | null;
+  /** Prevents an unfinished worker from one Business OS leaking into another. */
+  readonly draftScopeKey: string;
   readonly computers: ReadonlyArray<WorkjetComputer>;
   readonly routes: ReadonlyArray<WorkjetLlmRoute>;
   readonly onSave: (worker: WorkjetWorkerProfile) => void;
@@ -278,7 +281,7 @@ export function WorkjetWorkerEditor({
     // "Add LLM route…" navigates AWAY to the Models page; without this stash
     // every typed field died with the unmount (Befund K-A7). The stash is
     // per-worker-identity, read once, and cleared immediately.
-    const stashKey = `workjet-worker-draft:${worker?.id ?? "new"}`;
+    const stashKey = `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`;
     try {
       const raw = window.sessionStorage.getItem(stashKey);
       if (raw !== null) {
@@ -427,7 +430,7 @@ export function WorkjetWorkerEditor({
             onClick={() => {
               try {
                 window.sessionStorage.setItem(
-                  `workjet-worker-draft:${worker?.id ?? "new"}`,
+                  `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
                   JSON.stringify(draft),
                 );
               } catch {

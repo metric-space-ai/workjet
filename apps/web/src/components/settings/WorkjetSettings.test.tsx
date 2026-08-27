@@ -107,6 +107,7 @@ describe("Workjet configuration settings", () => {
   it("renders compact tabs and opens workers by default", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
+        draftScopeKey="test-instance"
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
@@ -143,6 +144,7 @@ describe("Workjet configuration settings", () => {
   it("keeps telemetry free of the Greppy runtime, which lives under Workers", () => {
     const telemetryMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
+        draftScopeKey="test-instance"
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
@@ -158,6 +160,7 @@ describe("Workjet configuration settings", () => {
 
     const capabilitiesMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
+        draftScopeKey="test-instance"
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
@@ -172,6 +175,7 @@ describe("Workjet configuration settings", () => {
   it("shows selected-server automatic storage health in Execution", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
+        draftScopeKey="test-instance"
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}

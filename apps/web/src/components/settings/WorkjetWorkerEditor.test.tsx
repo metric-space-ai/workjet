@@ -142,6 +142,7 @@ describe("WorkjetWorkerEditor", () => {
   it("renders accessible controls for the complete worker flow", () => {
     const markup = renderToStaticMarkup(
       <WorkjetWorkerEditor
+        draftScopeKey="test-instance"
         computers={[computer]}
         routes={[route]}
         onSave={() => undefined}

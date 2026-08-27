@@ -36,16 +36,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
-import {
-  useEnvironmentSettings,
-  usePrimarySettings,
-  useUpdateEnvironmentSettings,
-  useUpdatePrimarySettings,
-} from "../../hooks/useSettings";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
-  useEnvironments,
+  useBusinessOsScopedEnvironments,
   usePrimaryEnvironmentId,
   type EnvironmentPresentation,
 } from "../../state/environments";
@@ -248,7 +243,7 @@ export function ProviderSettingsPanel({
 }: {
   readonly sections?: ProviderSettingsSections;
 } = {}) {
-  const { environments, isReady } = useEnvironments();
+  const { environments, isReady } = useBusinessOsScopedEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const options = useMemo(
     () => buildProviderEnvironmentOptions(environments, primaryEnvironmentId),
@@ -349,9 +344,27 @@ export function WorkjetGatewayAccountsSection({
 }: {
   readonly environmentId: EnvironmentId | null;
 }) {
+  if (environmentId === null) {
+    return (
+      <SettingsSection title="Model access">
+        <SettingsRow
+          title="No Code computer assigned"
+          description="Assign a Code computer to the active Business OS before configuring models. Data from another instance is never used as a fallback."
+        />
+      </SettingsSection>
+    );
+  }
+  return <ScopedWorkjetGatewayAccountsSection key={environmentId} environmentId={environmentId} />;
+}
+
+function ScopedWorkjetGatewayAccountsSection({
+  environmentId,
+}: {
+  readonly environmentId: EnvironmentId;
+}) {
   const gateway = useWorkjetGatewaySection(environmentId);
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
   return (
     <>
       <WorkjetGatewayAccountsSectionView {...gateway} />
@@ -1056,7 +1069,16 @@ export function EnvironmentProviderSettings({
         </div>
       </SettingsSection>
 
-      <SessionImportSection environmentId={environmentId} readOnly={readOnly} />
+      {readOnly ? (
+        <SettingsSection title="Import sessions">
+          <SettingsRow
+            title="Import unavailable"
+            description="This Code computer does not grant permission to inspect or copy local Codex and Claude Code sessions. No session metadata has been loaded."
+          />
+        </SettingsSection>
+      ) : (
+        <SessionImportSection environmentId={environmentId} readOnly={false} />
+      )}
 
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog

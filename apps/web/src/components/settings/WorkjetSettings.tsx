@@ -29,8 +29,8 @@ import {
 import { useMemo, Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
-import { type EnvironmentPresentation, usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import type { EnvironmentPresentation } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -43,6 +43,7 @@ import { toastManager } from "../ui/toast";
 import type { WorkjetEnvironmentTargetOption } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
+import { useActiveBusinessOsSettingsEnvironment } from "./businessOsSettingsScope";
 import {
   workjetHarnessDisplayLabel,
   workjetReasoningDisplayLabel,
@@ -698,6 +699,7 @@ export function AutomaticWorktreeStorageSettings({
 
 export function WorkjetSettingsView({
   configuration,
+  draftScopeKey,
   greppy,
   gateway,
   automaticWorktreeStorage,
@@ -705,6 +707,7 @@ export function WorkjetSettingsView({
   onChange,
 }: {
   readonly configuration: WorkjetConfiguration;
+  readonly draftScopeKey: string;
   readonly greppy: GreppySectionState;
   readonly gateway: WorkjetGatewaySectionState;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
@@ -722,8 +725,9 @@ export function WorkjetSettingsView({
     try {
       for (let index = 0; index < window.sessionStorage.length; index += 1) {
         const key = window.sessionStorage.key(index);
-        if (key?.startsWith("workjet-worker-draft:")) {
-          return key.slice("workjet-worker-draft:".length);
+        const prefix = `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:`;
+        if (key?.startsWith(prefix)) {
+          return key.slice(prefix.length);
         }
       }
     } catch {
@@ -748,6 +752,7 @@ export function WorkjetSettingsView({
       <WorkjetWorkerEditor
         key={editingWorker?.id ?? "new-worker"}
         worker={editingWorker}
+        draftScopeKey={draftScopeKey}
         computers={configuration.computers}
         routes={configuration.llmRoutes}
         onAddRoute={() =>
@@ -1277,10 +1282,50 @@ export function WorkjetSettings({
 }: {
   readonly defaultSection?: WorkjetSettingsSectionId;
 } = {}) {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const primaryEnvironment = usePrimaryEnvironment();
-  const environmentId = primaryEnvironment?.environmentId ?? null;
+  const target = useActiveBusinessOsSettingsEnvironment();
+
+  if (target.phase !== "ready") {
+    const resolving = target.phase === "resolving";
+    const description = resolving
+      ? "Die aktive Business-OS-Instanz wird geprüft."
+      : target.reason === "no-active-instance"
+        ? "Wähle zuerst eine Business-OS-Instanz aus."
+        : target.reason === "no-code-computer"
+          ? "Dieser Business-OS-Instanz ist noch kein Rechner für Code zugewiesen."
+          : target.reason === "ambiguous-code-computer"
+            ? "Worker-Einstellungen sind noch nicht als instanzweite CTOX-Konfiguration verfügbar. Bei mehreren zugewiesenen Rechnern bleibt die Seite deshalb zum Schutz vor Datenvermischung gesperrt."
+            : "Die Berechtigung der aktiven Business-OS-Instanz konnte nicht bestätigt werden.";
+    return (
+      <SettingsPageContainer>
+        <SettingsSection title="Worker">
+          <SettingsRow
+            title={resolving ? "Instanz wird geladen" : "Worker nicht verfügbar"}
+            description={description}
+          />
+        </SettingsSection>
+      </SettingsPageContainer>
+    );
+  }
+
+  return (
+    <ScopedWorkjetSettings
+      key={target.environment.environmentId}
+      environment={target.environment}
+      {...(defaultSection ? { defaultSection } : {})}
+    />
+  );
+}
+
+function ScopedWorkjetSettings({
+  environment,
+  defaultSection,
+}: {
+  readonly environment: EnvironmentPresentation;
+  readonly defaultSection?: WorkjetSettingsSectionId;
+}) {
+  const environmentId = environment.environmentId;
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const query = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -1327,7 +1372,7 @@ export function WorkjetSettings({
   const runStorageInspection = useCallback(
     async (root: string): Promise<WorktreeStorageInspection | null> => {
       if (environmentId === null) {
-        setStorageError("Select a primary Code environment before checking storage.");
+        setStorageError("The active Business OS has no available Code computer.");
         return null;
       }
       setIsCheckingStorage(true);
@@ -1393,6 +1438,7 @@ export function WorkjetSettings({
   return (
     <WorkjetSettingsView
       {...(defaultSection ? { defaultSection } : {})}
+      draftScopeKey={environmentId}
       configuration={settings.workjet}
       greppy={{
         snapshot: query.data,
@@ -1406,7 +1452,7 @@ export function WorkjetSettings({
       gateway={gateway}
       automaticWorktreeStorage={{
         configuredRoot: settings.automaticWorktreeRoot,
-        selectedServerLabel: primaryEnvironment?.label ?? null,
+        selectedServerLabel: environment.label,
         selectedServerId: environmentId,
         inspection: storageInspection,
         error: storageError,

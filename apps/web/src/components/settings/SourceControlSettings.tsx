@@ -17,9 +17,8 @@ import {
   resolveServerBackgroundActivitySettings,
 } from "@t3tools/shared/backgroundActivitySettings";
 
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { Badge } from "../ui/badge";
@@ -54,8 +53,14 @@ import {
 } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
-import { SettingResetButton, SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { useActiveBusinessOsSettingsEnvironment } from "./businessOsSettingsScope";
 
 const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
   versionControlSystems: [],
@@ -346,9 +351,13 @@ function DiscoveryItemRow({
   );
 }
 
-function GitFetchIntervalSettings() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
+function GitFetchIntervalSettings({
+  environmentId,
+}: {
+  readonly environmentId: import("@t3tools/contracts").EnvironmentId;
+}) {
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
   const automaticGitFetchIntervalSeconds = durationToSeconds(
     resolvedBackgroundActivity.automaticGitFetchInterval,
@@ -508,22 +517,37 @@ function EmptySourceControlDiscovery({
 }
 
 export function SourceControlSettingsPanel() {
-  const { environments } = useEnvironments();
-  const primaryEnvironment = usePrimaryEnvironment();
-  const fallbackEnvironment =
-    environments.find((environment) => environment.connection.phase === "connected") ??
-    environments[0] ??
-    null;
-  const environmentId =
-    primaryEnvironment?.environmentId ?? fallbackEnvironment?.environmentId ?? null;
-  const isPrimaryEnvironment = environmentId === primaryEnvironment?.environmentId;
+  const target = useActiveBusinessOsSettingsEnvironment();
+  if (target.phase !== "ready") {
+    return (
+      <SettingsPageContainer>
+        <SettingsSection title="Source Control">
+          <SettingsRow
+            title={target.phase === "resolving" ? "Instanz wird geladen" : "Nicht verfügbar"}
+            description="Source-Control-Einstellungen werden nur vom eindeutig autorisierten Code-Rechner der aktiven Business-OS-Instanz geladen."
+          />
+        </SettingsSection>
+      </SettingsPageContainer>
+    );
+  }
+  return (
+    <ScopedSourceControlSettingsPanel
+      key={target.environment.environmentId}
+      environmentId={target.environment.environmentId}
+    />
+  );
+}
+
+function ScopedSourceControlSettingsPanel({
+  environmentId,
+}: {
+  readonly environmentId: import("@t3tools/contracts").EnvironmentId;
+}) {
   const discovery = useEnvironmentQuery(
-    environmentId === null
-      ? null
-      : sourceControlEnvironment.discovery({
-          environmentId,
-          input: {},
-        }),
+    sourceControlEnvironment.discovery({
+      environmentId,
+      input: {},
+    }),
   );
   const result = discovery.data ?? EMPTY_DISCOVERY_RESULT;
   const hasVersionControlSystems = result.versionControlSystems.length > 0;
@@ -569,8 +593,8 @@ export function SourceControlSettingsPanel() {
             >
               {result.versionControlSystems.map((item) => (
                 <DiscoveryItemRow key={`vcs:${item.kind}`} item={item}>
-                  {item.kind === "git" && isPrimaryEnvironment ? (
-                    <GitFetchIntervalSettings />
+                  {item.kind === "git" ? (
+                    <GitFetchIntervalSettings environmentId={environmentId} />
                   ) : undefined}
                 </DiscoveryItemRow>
               ))}
@@ -597,7 +621,7 @@ export function SourceControlSettingsPanel() {
         />
       )}
 
-      {isPrimaryEnvironment ? <SourceControlWritingSettingsSection /> : null}
+      <SourceControlWritingSettingsSection environmentId={environmentId} />
     </SettingsPageContainer>
   );
 }

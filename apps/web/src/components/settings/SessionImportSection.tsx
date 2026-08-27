@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, WorkjetSessionImportCandidate } from "@t3tools/contracts";
 import { CheckIcon, ExternalLinkIcon, LoaderIcon, RefreshCwIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentQuery } from "../../state/query";
@@ -90,6 +90,7 @@ export function SessionImportSection({
   });
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [isImporting, setIsImporting] = useState(false);
+  const activeScopeRef = useRef(true);
   const candidates = inspection.data?.candidates ?? [];
   const candidateIds = useMemo(
     () => new Set(candidates.map(({ candidateId }) => candidateId)),
@@ -100,10 +101,23 @@ export function SessionImportSection({
     setSelected((current) => new Set([...current].filter((id) => candidateIds.has(id))));
   }, [candidateIds]);
 
+  useEffect(() => {
+    activeScopeRef.current = true;
+    setSelected(new Set());
+    setIsImporting(false);
+    return () => {
+      // Parent panels key this component by environment. A late inspection or
+      // import result from the previous Business OS must not update the new
+      // instance, navigate to an old draft, or emit a misleading toast.
+      activeScopeRef.current = false;
+    };
+  }, [environmentId]);
+
   const importSelected = async () => {
     if (selected.size === 0 || isImporting || readOnly) return;
     setIsImporting(true);
     const result = await runImport({ environmentId, input: { candidateIds: [...selected] } });
+    if (!activeScopeRef.current) return;
     setIsImporting(false);
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) return;

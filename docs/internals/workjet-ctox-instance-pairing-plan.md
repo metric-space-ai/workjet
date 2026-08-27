@@ -375,16 +375,23 @@ active.
 
 ## Separate visual deliverable still active
 
-- [x] Generate sixteen genuinely distinct reference candidates for every
+- [ ] Generate sixteen genuinely distinct reference candidates for every
       Business OS app.
 - [ ] Program production SVG candidates from first principles.
 - [ ] Show generated PNG and SVG reconstruction side by side.
 - [ ] Deliver one offline HTML selector with per-app favorites and JSON export.
 - [ ] Integrate only operator-approved icons into signed platform asset packs.
 
-The reference corpus currently contains 544 validated Grok Agentic Image
-Generation renders (34 apps x 16 candidates). The SVG stage is deliberately
-not auto-traced: the remaining candidates must pass side-by-side 1024 px and
-60 px review. The Kimi/Grok SVG route most recently returned a provider
-`USAGE_LIMIT` response; retry supervisors are stopped and must not poll more
-frequently than the icon-studio cooldown permits.
+The reference corpus currently contains 544 raster files (34 apps x 16
+candidates), but the icon-studio audit proves that file completeness is not
+production provenance: several app sets contain `sourceGeneration: null`,
+brief-inconsistent stock motifs or no candidate recognizable at 60 px. Those
+sets remain open and require new Grok Agentic concepts. The SVG stage is never
+auto-traced: a candidate must first pass the semantic/provenance gate and then
+side-by-side 1024 px and 60 px review. Pen Testing passes this pipeline; Mail
+passes as an explicit inbox-triage candidate. Browser, CTOX Backend, Threads,
+Documents, Tickets, Knowledge and Credentials are rejected and must not be
+promoted merely because a close SVG reconstruction is possible. The Kimi/Grok
+SVG route most recently returned a provider `USAGE_LIMIT` response; retry
+supervisors are stopped and must not poll more frequently than the icon-studio
+cooldown permits.

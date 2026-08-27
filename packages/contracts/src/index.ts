@@ -23,6 +23,7 @@ export * from "./orchestration.ts";
 export * from "./workjet.ts";
 export * from "./workjetBusinessOsComputers.ts";
 export * from "./workjetBusinessOsComputerMembershipHttp.ts";
+export * from "./workjetManagedBackendControl.ts";
 export * from "./workjetGatewayRouting.ts";
 export * from "./workjetLegacyImport.ts";
 export * from "./workjetSessionImport.ts";

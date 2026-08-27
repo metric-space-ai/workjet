@@ -5,6 +5,8 @@ import {
   CtoxMobileInviteCreateResult,
   WorkjetDeviceInviteCreateInput,
   WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceInviteRedeemInput,
+  WorkjetDeviceInviteRefV1,
 } from "./ctox.ts";
 import {
   EnvironmentAuthInvalidError,
@@ -122,56 +124,56 @@ describe("Workjet device invite HTTP contract", () => {
       Schema.decodeUnknownSync(WorkjetDeviceInviteCreateInput)({
         ttlSeconds: 300,
         connectionUrl: "https://workjet.example.test",
+        businessOsInstanceId: "instance-a",
       }),
-    ).toEqual({ ttlSeconds: 300, connectionUrl: "https://workjet.example.test" });
+    ).toEqual({
+      ttlSeconds: 300,
+      connectionUrl: "https://workjet.example.test",
+      businessOsInstanceId: "instance-a",
+    });
     expect(() =>
       Schema.decodeUnknownSync(WorkjetDeviceInviteCreateInput)({
         ttlSeconds: 30,
         connectionUrl: "https://workjet.example.test",
+        businessOsInstanceId: "instance-a",
       }),
     ).toThrow();
 
     const combined = Schema.decodeUnknownSync(WorkjetDeviceInviteCreateResult)({
       inviteId: "opaque-composite-id",
       expiresAt: "2099-08-25T12:05:00.000Z",
-      invite: {
-        type: "workjet-device-invite",
+      reference: {
+        type: "workjet-device-invite-ref",
         version: 1,
-        device_pairing_id: "device-a",
-        environment: {
-          base_url: "https://workjet.example.test",
-          bootstrap_credential: "synthetic-bootstrap",
-          expires_at: "2099-08-25T12:05:00.000Z",
-        },
-        business_os: {
-          type: "ctox-business-os-invite",
-          version: 1,
-          display_name: "Operations",
-          instance_id: "instance-a",
-          sync_room: "ctox-business-os:instance-a",
-          native_peer_id: "native-a",
-          signaling_urls: ["wss://signal.example.test/socket"],
-          signaling_room_password: "synthetic-room-secret",
-          transport: "webrtc",
-          expires_at: "2099-08-25T12:05:00.000Z",
-          data_plane: "rxdb-webrtc",
-          http_bridge_available: false,
-          session: {
-            authenticated: true,
-            source: "mobile_invite",
-            capability_token: "synthetic-capability",
-            capability_expires_at_ms: Date.parse("2099-08-25T12:05:00.000Z"),
-            user: {
-              id: "mobile-a",
-              display_name: "Workjet Mobile",
-              role: "user",
-              is_admin: false,
-            },
-          },
-        },
+        endpoint: "https://workjet.example.test",
+        code: "a".repeat(43),
+        expires_at: "2099-08-25T12:05:00.000Z",
       },
     });
-    expect(combined.invite.device_pairing_id).toBe("device-a");
-    expect(combined.invite.business_os.instance_id).toBe("instance-a");
+    expect(combined).not.toHaveProperty("invite");
+    expect(JSON.stringify(combined)).not.toMatch(
+      /bootstrap_credential|signaling_room_password|capability_token|sync_room/u,
+    );
+    expect(Schema.decodeUnknownSync(WorkjetDeviceInviteRefV1)(combined.reference)).toEqual(
+      combined.reference,
+    );
+    expect(
+      Schema.decodeUnknownSync(WorkjetDeviceInviteRedeemInput)({
+        code: "b".repeat(43),
+        deviceId: "fold-8",
+        proofKeyThumbprint: "c".repeat(43),
+      }),
+    ).toEqual({
+      code: "b".repeat(43),
+      deviceId: "fold-8",
+      proofKeyThumbprint: "c".repeat(43),
+    });
+    expect(() =>
+      Schema.decodeUnknownSync(WorkjetDeviceInviteRedeemInput)({
+        code: "too-short",
+        deviceId: "fold-8",
+        proofKeyThumbprint: "c".repeat(43),
+      }),
+    ).toThrow();
   });
 });

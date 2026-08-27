@@ -15,8 +15,10 @@ import {
   CtoxMobileInviteRevokeResult,
   WorkjetDeviceInviteCreateInput,
   WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceInviteRedeemInput,
   WorkjetDeviceInviteRevokeInput,
   WorkjetDeviceInviteRevokeResult,
+  WorkjetDeviceInviteV1,
 } from "./ctox.ts";
 import {
   CtoxMobileShellPackResolveInput,
@@ -109,6 +111,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "mobile_invite_revoke_failed",
   "mobile_shell_pack_resolve_failed",
   "device_invite_issuance_failed",
+  "device_invite_redemption_failed",
   "device_invite_revoke_failed",
   "internal_error",
 ]);
@@ -312,6 +315,38 @@ export class EnvironmentCloudEndpointUnavailableError extends Schema.TaggedError
     return HttpServerResponse.schemaJson(EnvironmentCloudEndpointUnavailableError)(this, {
       status: 503,
     });
+  }
+}
+
+export class WorkjetDeviceInviteRedeemRejectedError extends Schema.TaggedErrorClass<WorkjetDeviceInviteRedeemRejectedError>()(
+  "WorkjetDeviceInviteRedeemRejectedError",
+  { code: Schema.Literal("device_invite_unavailable") },
+  { httpApiStatus: 404 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(WorkjetDeviceInviteRedeemRejectedError)(this, {
+      status: 404,
+    });
+  }
+
+  override get message(): string {
+    return "This Workjet device invitation is unavailable.";
+  }
+}
+
+export class WorkjetDeviceInviteRedeemRateLimitedError extends Schema.TaggedErrorClass<WorkjetDeviceInviteRedeemRateLimitedError>()(
+  "WorkjetDeviceInviteRedeemRateLimitedError",
+  { code: Schema.Literal("device_invite_rate_limited") },
+  { httpApiStatus: 429 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(WorkjetDeviceInviteRedeemRateLimitedError)(this, {
+      status: 429,
+    });
+  }
+
+  override get message(): string {
+    return "Too many Workjet device invitation attempts.";
   }
 }
 const EnvironmentSessionCreationErrors = [
@@ -566,6 +601,17 @@ export class EnvironmentBusinessOsHttpApi extends HttpApiGroup.make("businessOs"
       success: WorkjetDeviceInviteRevokeResult,
       error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("redeemDeviceInvite", "/api/workjet/device-invites/redeem", {
+      payload: WorkjetDeviceInviteRedeemInput,
+      success: WorkjetDeviceInviteV1,
+      error: [
+        WorkjetDeviceInviteRedeemRejectedError,
+        WorkjetDeviceInviteRedeemRateLimitedError,
+        EnvironmentInternalError,
+      ],
+    }),
   )
   .add(
     HttpApiEndpoint.post("createMobileInvite", "/api/ctox/business-os/mobile-invites", {

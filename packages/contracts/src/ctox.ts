@@ -384,15 +384,30 @@ export const WorkjetDeviceInviteV1 = Schema.Struct({
 });
 export type WorkjetDeviceInviteV1 = typeof WorkjetDeviceInviteV1.Type;
 
+/** Compact possession-of-secret reference encoded in the visible Workjet QR code. */
+export const WorkjetDeviceInviteRefV1 = Schema.Struct({
+  type: Schema.Literal("workjet-device-invite-ref"),
+  version: Schema.Literal(1),
+  endpoint: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+  code: Schema.String.check(
+    Schema.isMinLength(43),
+    Schema.isMaxLength(128),
+    Schema.isPattern(/^[A-Za-z0-9_-]+$/),
+  ),
+  expires_at: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+});
+export type WorkjetDeviceInviteRefV1 = typeof WorkjetDeviceInviteRefV1.Type;
+
 export const WorkjetDeviceInviteCreateInput = Schema.Struct({
   ttlSeconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 3_600 })),
   connectionUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+  businessOsInstanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
 });
 export type WorkjetDeviceInviteCreateInput = typeof WorkjetDeviceInviteCreateInput.Type;
 
 export const WorkjetDeviceInviteCreateResult = Schema.Struct({
   inviteId: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
-  invite: WorkjetDeviceInviteV1,
+  reference: WorkjetDeviceInviteRefV1,
   expiresAt: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
 });
 export type WorkjetDeviceInviteCreateResult = typeof WorkjetDeviceInviteCreateResult.Type;
@@ -406,6 +421,20 @@ export const WorkjetDeviceInviteRevokeResult = Schema.Struct({
   revoked: Schema.Literal(true),
 });
 export type WorkjetDeviceInviteRevokeResult = typeof WorkjetDeviceInviteRevokeResult.Type;
+
+export const WorkjetDeviceInviteRedeemInput = Schema.Struct({
+  code: WorkjetDeviceInviteRefV1.fields.code,
+  deviceId: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(256),
+    Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/),
+  ),
+  proofKeyThumbprint: Schema.String.check(
+    Schema.isMinLength(43),
+    Schema.isMaxLength(43),
+    Schema.isPattern(/^[A-Za-z0-9_-]{43}$/),
+  ),
+});
+export type WorkjetDeviceInviteRedeemInput = typeof WorkjetDeviceInviteRedeemInput.Type;
 
 /** A bounded raw invite JSON document or CTOX desktop invite link. */
 export const CtoxPairingInviteImportInput = Schema.Struct({

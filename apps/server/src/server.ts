@@ -102,6 +102,7 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as CtoxMobileInviteService from "./ctox/CtoxMobileInviteService.ts";
 import * as CtoxMobileShellPackService from "./ctox/CtoxMobileShellPackService.ts";
+import * as WorkjetDeviceInviteReferenceService from "./ctox/WorkjetDeviceInviteReferenceService.ts";
 import { businessOsHttpApiLayer } from "./ctox/http.ts";
 import {
   connectHttpApiLayer,
@@ -517,6 +518,7 @@ export const makeRoutesLayer = Layer.mergeAll(
         businessOsHttpApiLayer.pipe(
           Layer.provide(CtoxMobileInviteService.layer()),
           Layer.provide(CtoxMobileShellPackService.layer()),
+          Layer.provide(WorkjetDeviceInviteReferenceService.layer()),
         ),
       ),
       Layer.provide(connectHttpApiLayer),

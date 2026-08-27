@@ -7,8 +7,11 @@ import type {
   CtoxMobileShellPackResolveResult,
   WorkjetDeviceInviteCreateInput,
   WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceInviteRefV1,
+  WorkjetDeviceInviteRedeemInput,
   WorkjetDeviceInviteRevokeInput,
   WorkjetDeviceInviteRevokeResult,
+  WorkjetDeviceInviteV1,
 } from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -34,6 +37,8 @@ import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.
 // server is still finishing the fail-closed capability issuance.
 const MOBILE_INVITE_REQUEST_TIMEOUT_MS = 30_000;
 const MOBILE_SHELL_PACK_REQUEST_TIMEOUT_MS = 10_000;
+const DEVICE_INVITE_REDEEM_REQUEST_TIMEOUT_MS = 10_000;
+const DEVICE_INVITE_REDEEM_PATH = "/api/workjet/device-invites/redeem";
 
 export class EnvironmentNotConnectedForMobileInviteError extends Data.TaggedError(
   "EnvironmentNotConnectedForMobileInviteError",
@@ -52,6 +57,16 @@ export class EnvironmentNotConnectedForMobileShellPackError extends Data.TaggedE
 }> {
   constructor() {
     super({ message: "The selected CTOX backend is not connected." });
+  }
+}
+
+export class WorkjetDeviceInviteReferenceInvalidError extends Data.TaggedError(
+  "WorkjetDeviceInviteReferenceInvalidError",
+)<{
+  readonly message: string;
+}> {
+  constructor() {
+    super({ message: "The Workjet device invitation endpoint is invalid." });
   }
 }
 
@@ -130,6 +145,56 @@ export const revokeWorkjetDeviceInvite = (
     new EnvironmentNotConnectedForMobileInviteError(),
     ({ client, headers }) => client.businessOs.revokeDeviceInvite({ headers, payload: input }),
   );
+
+export function normalizeWorkjetDeviceInviteReferenceEndpoint(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const isLoopback =
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "[::1]" ||
+      url.hostname === "::1";
+    if (
+      (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      url.search
+    ) {
+      return null;
+    }
+    url.pathname = url.pathname.replace(/\/$/u, "");
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Redeems one compact Workjet device reference without sending environment credentials. */
+export const redeemWorkjetDeviceInviteReference = (input: {
+  readonly reference: WorkjetDeviceInviteRefV1;
+  readonly deviceId: WorkjetDeviceInviteRedeemInput["deviceId"];
+  readonly proofKeyThumbprint: WorkjetDeviceInviteRedeemInput["proofKeyThumbprint"];
+}): Effect.Effect<WorkjetDeviceInviteV1, unknown, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
+    const endpoint = normalizeWorkjetDeviceInviteReferenceEndpoint(input.reference.endpoint);
+    if (endpoint === null) {
+      return yield* new WorkjetDeviceInviteReferenceInvalidError();
+    }
+    const requestUrl = environmentEndpointUrl(endpoint, DEVICE_INVITE_REDEEM_PATH);
+    const client = yield* makeEnvironmentHttpApiClient(endpoint);
+    return yield* executeEnvironmentHttpRequest(
+      requestUrl,
+      DEVICE_INVITE_REDEEM_REQUEST_TIMEOUT_MS,
+      client.businessOs.redeemDeviceInvite({
+        payload: {
+          code: input.reference.code,
+          deviceId: input.deviceId,
+          proofKeyThumbprint: input.proofKeyThumbprint,
+        },
+      }),
+    );
+  });
 
 export const revokeBusinessOsMobileInvite = (
   input: CtoxMobileInviteRevokeInput,

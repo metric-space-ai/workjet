@@ -750,10 +750,11 @@ describe("CTOX bridge actions", () => {
 });
 
 describe("CtoxMainShell", () => {
-  it("keeps one Workjet chrome mounted for ready guests", () => {
+  it("does not stack Workjet chrome above a ready Business OS shell", () => {
     expect(ctoxModeShellSource).not.toContain("const chromeHidden");
     expect(ctoxModeShellSource).toContain('data-ctox-main-chrome=""');
-    expect(ctoxModeShellSource).toContain("data-ctox-shell-update-status");
+    expect(ctoxModeShellSource).not.toContain("CtoxShellUpdateButton");
+    expect(ctoxModeShellSource).toContain("selected === undefined ? (");
     expect(ctoxModeShellSource).not.toContain("BusinessOsSettingsDialog");
     expect(ctoxModeShellSource).not.toContain("openSettingsRequestKey");
   });

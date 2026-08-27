@@ -29,8 +29,6 @@ import {
 } from "react";
 
 import {
-  CircleAlertIcon,
-  CircleCheckIcon,
   ChevronRight,
   EllipsisIcon,
   Plus,
@@ -917,40 +915,6 @@ export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {
     case "blocked":
       return `${active} · Update blockiert`;
   }
-}
-
-function CtoxShellUpdateButton({
-  instance,
-  onOpenSettings,
-}: {
-  readonly instance: CtoxManagedInstance;
-  readonly onOpenSettings: () => void;
-}) {
-  const status = instance.shellUpdate;
-  const current = status?.phase === "current" && status.health === "healthy";
-  const label = ctoxShellUpdateLabel(instance);
-  return (
-    <button
-      type="button"
-      className={cn(
-        "no-drag-region inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs",
-        current
-          ? "text-muted-foreground hover:bg-muted/60"
-          : "bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300",
-      )}
-      aria-label={`Shell: ${label}. Update-Einstellungen öffnen`}
-      title={`${label} · Update-Einstellungen öffnen`}
-      data-ctox-shell-update-status={status?.phase ?? "unknown"}
-      onClick={onOpenSettings}
-    >
-      {current ? (
-        <CircleCheckIcon className="size-3.5 shrink-0" aria-hidden />
-      ) : (
-        <CircleAlertIcon className="size-3.5 shrink-0" aria-hidden />
-      )}
-      <span className="max-w-48 truncate">{label}</span>
-    </button>
-  );
 }
 
 /**
@@ -2411,8 +2375,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 }
 
 export function CtoxMainShell() {
-  const navigate = useNavigate();
-  const { discovery, selectedId, connection, workspaceNames } = useCtoxMode();
+  const { discovery, selectedId, connection } = useCtoxMode();
   const selected =
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find(
@@ -2447,44 +2410,30 @@ export function CtoxMainShell() {
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
-      <header
-        data-ctox-main-chrome=""
-        className={cn(
-          "workspace-topbar drag-region flex items-center gap-2 border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-          COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        )}
-      >
-        <span className="min-w-0 truncate text-xs font-medium text-muted-foreground/60">
-          {selected === undefined
-            ? "Workjet"
-            : ctoxInstanceDisplayTitle(selected, workspaceNames.get(selected.id) ?? null)}
-        </span>
-        {selected !== undefined ? (
-          <CtoxShellUpdateButton
-            instance={selected}
-            onOpenSettings={() => void navigate({ to: "/settings/business-os" })}
-          />
-        ) : null}
-        {selected !== undefined ? (
-          <span
-            className="ml-auto shrink-0 text-xs text-muted-foreground wco:pr-[var(--workspace-native-controls-inset)]"
-            role="status"
-          >
-            {CONNECTION_LABELS[connection] ?? connection}
-          </span>
-        ) : null}
-      </header>
       {selected === undefined ? (
-        <Empty className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
-            <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-xl text-foreground">{emptyState.title}</EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                {emptyState.description}
-              </EmptyDescription>
-            </EmptyHeader>
-          </div>
-        </Empty>
+        <>
+          <header
+            data-ctox-main-chrome=""
+            className={cn(
+              "workspace-topbar drag-region flex items-center border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
+              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            )}
+          >
+            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground/60">
+              Workjet
+            </span>
+          </header>
+          <Empty className="flex-1">
+            <div className="w-full max-w-lg px-8 py-12">
+              <EmptyHeader className="max-w-none">
+                <EmptyTitle className="text-xl text-foreground">{emptyState.title}</EmptyTitle>
+                <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
+                  {emptyState.description}
+                </EmptyDescription>
+              </EmptyHeader>
+            </div>
+          </Empty>
+        </>
       ) : (
         <CtoxGuestHost instance={selected} />
       )}

@@ -47,6 +47,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
+import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -256,7 +257,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
           side="left"
           collapsible="offcanvas"
           data-app-sidebar=""
-          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
           resizable={{
             maxWidth: sidebarMaximumWidth,
             minWidth: THREAD_SIDEBAR_MIN_WIDTH,
@@ -267,6 +268,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
             onResize: setSidebarWidth,
           }}
         >
+          <ActiveCtoxInstanceSelector productMode={productMode} />
           {sidebarSurface === "business-os" ? (
             <CtoxSidebarShell />
           ) : sidebarSurface === "settings" ? (

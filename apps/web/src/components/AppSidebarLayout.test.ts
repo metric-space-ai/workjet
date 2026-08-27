@@ -31,4 +31,12 @@ describe("AppSidebarLayout mode ownership", () => {
     expect(appSidebarLayoutSource).not.toContain("openSettingsRequestKey=");
     expect(appSidebarLayoutSource).toContain("<SettingsSidebarNav pathname={pathname} />");
   });
+
+  it("mounts one shared active-instance selector above every mode-specific sidebar", () => {
+    expect(appSidebarLayoutSource.split("<ActiveCtoxInstanceSelector").length - 1).toBe(1);
+    expect(appSidebarLayoutSource).toContain(
+      "<ActiveCtoxInstanceSelector productMode={productMode} />",
+    );
+    expect(appSidebarLayoutSource).toContain("[&_[data-slot=sidebar-header]]:order-[-2]");
+  });
 });

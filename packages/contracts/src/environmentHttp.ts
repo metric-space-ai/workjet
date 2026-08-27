@@ -15,6 +15,8 @@ import {
   CtoxMobileInviteRevokeResult,
   WorkjetDeviceInviteCreateInput,
   WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceBindingListInput,
+  WorkjetDeviceBindingListResult,
   WorkjetDeviceInviteRedeemInput,
   WorkjetDeviceInviteRevokeInput,
   WorkjetDeviceInviteRevokeResult,
@@ -586,6 +588,14 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   ) {}
 
 export class EnvironmentBusinessOsHttpApi extends HttpApiGroup.make("businessOs")
+  .add(
+    HttpApiEndpoint.post("listDeviceBindings", "/api/workjet/device-bindings/list", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetDeviceBindingListInput,
+      success: WorkjetDeviceBindingListResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
   .add(
     HttpApiEndpoint.post("createDeviceInvite", "/api/workjet/device-invites", {
       headers: OptionalBearerHeaders,

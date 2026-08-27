@@ -89,4 +89,43 @@ describe("Business OS settings scope", () => {
     expect(markup.indexOf("Workjet-Geräte")).toBeLessThan(markup.indexOf("Rechner für Code"));
     expect(markup.indexOf("Rechner für Code")).toBeLessThan(markup.indexOf("Diagnose"));
   });
+
+  it("shows the exact managed-control blocker instead of choosing a Code computer", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[instance("managed:welsch", "WELSCH", "ctox_dev")]}
+        activeInstanceId="managed:welsch"
+        computerCount={3}
+        deviceManagementBlockedReason="Für WELSCH ist noch keine serverseitig attestierte Backend-Steuerverbindung verfügbar. Geräteaktionen bleiben bis dahin gesperrt."
+      />,
+    );
+    expect(markup).toContain("Gerät hinzufügen");
+    expect(markup).toContain("serverseitig attestierte Backend-Steuerverbindung");
+    expect(markup).toContain("disabled");
+    expect(markup).not.toContain("Erneuern");
+    expect(markup).not.toContain("primaryEnvironment");
+  });
+
+  it("renders only sanitized device-edge summaries when a control path is available", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[instance("local:welsch", "WELSCH", "local_daemon")]}
+        activeInstanceId="local:welsch"
+        devices={[
+          {
+            devicePairingId: "pairing-1",
+            deviceId: "workjet-device-abcdefgh",
+            businessOsInstanceId: "welsch-authority",
+            pairedAtMillis: 1_788_000_000_000,
+          },
+        ]}
+        onAddDevice={() => undefined}
+        onRevokeDevice={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Workjet-Gerät · abcdefgh");
+    expect(markup).toContain("Widerrufen");
+    expect(markup).not.toContain("welsch-authority");
+    expect(markup).not.toContain("pairing-1");
+  });
 });

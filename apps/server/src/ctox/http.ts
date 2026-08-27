@@ -110,6 +110,29 @@ export const businessOsHttpApiLayer = HttpApiBuilder.group(
     const environmentAuth = yield* EnvironmentAuth;
     return handlers
       .handle(
+        "listDeviceBindings",
+        Effect.fn("environment.businessOs.listDeviceBindings")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthAccessReadScope);
+          yield* appendMobileInviteResponseHeaders;
+          const bindings = yield* deviceInviteReferences
+            .listBindings(args.payload.businessOsInstanceId)
+            .pipe(
+              Effect.catchTag("WorkjetDeviceInviteReferenceServiceError", () =>
+                failEnvironmentInternal("device_invite_issuance_failed"),
+              ),
+            );
+          return {
+            devices: bindings.map((binding) => ({
+              devicePairingId: binding.devicePairingId,
+              deviceId: binding.deviceId,
+              businessOsInstanceId: binding.businessOsInstanceId,
+              pairedAtMillis: binding.createdAtMs,
+            })),
+          };
+        }),
+      )
+      .handle(
         "createDeviceInvite",
         Effect.fn("environment.businessOs.createDeviceInvite")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);

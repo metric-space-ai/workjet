@@ -317,6 +317,71 @@ describe("Business OS mobile control-plane HTTP safety", () => {
     expect(fixture.revokedCtoxInvites).toContain("opaque-id");
   });
 
+  it("lists only sanitized device bindings for the selected instance", async () => {
+    const fixture = await fixtureFor(authenticatedAuth(new Set(["access:read", "access:write"])));
+    const createdReference = await Effect.runPromise(
+      fixture.client.businessOs.createDeviceInvite({
+        headers: {},
+        payload: {
+          ttlSeconds: 300,
+          connectionUrl: "https://workjet.example.test",
+          businessOsInstanceId: "instance-a",
+        },
+      }),
+    );
+    await Effect.runPromise(
+      fixture.client.businessOs.redeemDeviceInvite({
+        payload: {
+          code: createdReference.reference.code,
+          deviceId: "galaxy-fold-8",
+          proofKeyThumbprint: "a".repeat(43),
+        },
+      }),
+    );
+
+    const result = await Effect.runPromise(
+      fixture.client.businessOs.listDeviceBindings({
+        headers: {},
+        payload: { businessOsInstanceId: "instance-a" },
+      }),
+    );
+    expect(result).toEqual({
+      devices: [
+        {
+          devicePairingId: createdReference.inviteId,
+          deviceId: "galaxy-fold-8",
+          businessOsInstanceId: "instance-a",
+          pairedAtMillis: expect.any(Number),
+        },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /bootstrap|capability|credential|signaling|room|proofKey|ctoxInvite/iu,
+    );
+  });
+
+  it("requires read access before listing device bindings", async () => {
+    const unauthenticated = await clientFor(unauthenticatedAuth);
+    await expect(
+      Effect.runPromise(
+        unauthenticated.businessOs.listDeviceBindings({
+          headers: {},
+          payload: { businessOsInstanceId: "instance-a" },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
+
+    const writeOnly = await clientFor(authenticatedAuth(new Set(["access:write"])));
+    await expect(
+      Effect.runPromise(
+        writeOnly.businessOs.listDeviceBindings({
+          headers: {},
+          payload: { businessOsInstanceId: "instance-a" },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
+  });
+
   it("redeems once and rejects a replay with another device or thumbprint", async () => {
     const writable = await clientFor(authenticatedAuth(new Set(["access:write"])));
     const result = await Effect.runPromise(

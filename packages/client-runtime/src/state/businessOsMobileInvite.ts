@@ -7,6 +7,8 @@ import type {
   CtoxMobileShellPackResolveResult,
   WorkjetDeviceInviteCreateInput,
   WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceBindingListInput,
+  WorkjetDeviceBindingListResult,
   WorkjetDeviceInviteRefV1,
   WorkjetDeviceInviteRedeemInput,
   WorkjetDeviceInviteRevokeInput,
@@ -130,6 +132,20 @@ export const createWorkjetDeviceInvite = (
     MOBILE_INVITE_REQUEST_TIMEOUT_MS,
     new EnvironmentNotConnectedForMobileInviteError(),
     ({ client, headers }) => client.businessOs.createDeviceInvite({ headers, payload: input }),
+  );
+
+export const listWorkjetDeviceBindings = (
+  input: WorkjetDeviceBindingListInput,
+): Effect.Effect<
+  WorkjetDeviceBindingListResult,
+  unknown,
+  EnvironmentSupervisor | HttpClient.HttpClient | ManagedRelayDpopSigner
+> =>
+  withCurrentEnvironmentConnection(
+    "/api/workjet/device-bindings/list",
+    MOBILE_INVITE_REQUEST_TIMEOUT_MS,
+    new EnvironmentNotConnectedForMobileInviteError(),
+    ({ client, headers }) => client.businessOs.listDeviceBindings({ headers, payload: input }),
   );
 
 export const revokeWorkjetDeviceInvite = (
@@ -263,6 +279,12 @@ export function createWorkjetDeviceInviteEnvironmentAtoms<R, E>(
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   };
   return {
+    list: createEnvironmentCommand(runtime, {
+      label: "environment-control:workjet-device-bindings:list",
+      execute: listWorkjetDeviceBindings,
+      scheduler,
+      concurrency,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-control:workjet-device-invite:create",
       execute: createWorkjetDeviceInvite,

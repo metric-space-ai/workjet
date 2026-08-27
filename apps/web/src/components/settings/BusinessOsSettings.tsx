@@ -2,6 +2,7 @@ import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
   DesktopCtoxBridge,
+  WorkjetDeviceBindingSummary,
 } from "@t3tools/contracts";
 import {
   BriefcaseBusinessIcon,
@@ -11,12 +12,20 @@ import {
   RefreshCwIcon,
   SmartphoneIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
@@ -57,9 +66,16 @@ export function BusinessOsSettingsView({
   refreshDisabled = false,
   addDisabledReason = null,
   computerCount = 0,
+  devices = [],
+  devicesLoading = false,
+  devicesError = null,
+  deviceManagementBlockedReason = null,
   onSelectInstance,
   onRefresh,
   onAddBusinessOs,
+  onAddDevice,
+  onRevokeDevice,
+  revokingDeviceId = null,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
@@ -67,9 +83,16 @@ export function BusinessOsSettingsView({
   readonly refreshDisabled?: boolean;
   readonly addDisabledReason?: string | null;
   readonly computerCount?: number;
+  readonly devices?: readonly WorkjetDeviceBindingSummary[];
+  readonly devicesLoading?: boolean;
+  readonly devicesError?: string | null;
+  readonly deviceManagementBlockedReason?: string | null;
   readonly onSelectInstance?: (instanceId: string) => void;
   readonly onRefresh?: () => void;
   readonly onAddBusinessOs?: (invite: string) => Promise<string | null>;
+  readonly onAddDevice?: () => void;
+  readonly onRevokeDevice?: (devicePairingId: string) => void;
+  readonly revokingDeviceId?: string | null;
 }) {
   const [adding, setAdding] = useState(false);
   const [invite, setInvite] = useState("");
@@ -135,7 +158,7 @@ export function BusinessOsSettingsView({
               <div>
                 <p className="text-sm font-medium">Keine Business-OS-Instanz verbunden</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Füge eine Business OS über eine sichere Backend-Einladung hinzu.
+                  Füge eine Business-OS-Instanz über eine sichere Backend-Einladung hinzu.
                 </p>
               </div>
             </div>
@@ -225,17 +248,67 @@ export function BusinessOsSettingsView({
                 </p>
               </div>
             </div>
-            <Button size="sm" disabled title="Sicherer Gerätevertrag noch nicht verfügbar">
+            <Button
+              size="sm"
+              disabled={
+                selected === null ||
+                onAddDevice === undefined ||
+                deviceManagementBlockedReason !== null
+              }
+              onClick={onAddDevice}
+              title={deviceManagementBlockedReason ?? undefined}
+            >
               <PlusIcon aria-hidden />
               Gerät hinzufügen
             </Button>
           </div>
-          {selected === null ? null : (
-            <p className="mt-3 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Der QR-Code bleibt gesperrt, bis Einmal-Code, Geräteidentität, Widerruf und
-              Backend-Scope serverseitig sicher gebunden sind. Dadurch werden keine unsicheren
-              Zugangsdaten angezeigt.
+          {selected === null ? null : deviceManagementBlockedReason !== null ? (
+            <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-xs text-muted-foreground">
+              {deviceManagementBlockedReason}
             </p>
+          ) : devicesLoading ? (
+            <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground" role="status">
+              <Spinner className="size-3.5" /> Geräte werden geladen …
+            </p>
+          ) : devicesError !== null ? (
+            <p className="mt-3 text-xs text-destructive" role="alert">
+              {devicesError}
+            </p>
+          ) : devices.length === 0 ? (
+            <p className="mt-3 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Noch keine weiteren Workjet-Geräte mit dieser Instanz verbunden.
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-border rounded-md border border-border">
+              {devices.map((device) => (
+                <li
+                  key={device.devicePairingId}
+                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      Workjet-Gerät · {device.deviceId.slice(-8)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Verbunden am {new Date(device.pairedAtMillis).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={revokingDeviceId === device.devicePairingId}
+                      onClick={() => onRevokeDevice?.(device.devicePairingId)}
+                    >
+                      {revokingDeviceId === device.devicePairingId ? (
+                        <Spinner className="size-3.5" />
+                      ) : null}
+                      Widerrufen
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </SettingsSection>
@@ -273,7 +346,7 @@ export function BusinessOsSettingsView({
             <p className="mt-2 text-sm text-muted-foreground">Keine Instanz ausgewählt.</p>
           ) : (
             <div className="mt-2 space-y-1 break-all font-mono text-xs text-muted-foreground">
-              <p>Backend-ID: {selected.id}</p>
+              <p>Darstellungs-ID: {selected.id}</p>
               <p>Quelle: {selected.source}</p>
               <p>Status: {selected.status}</p>
             </div>
@@ -307,10 +380,16 @@ export function BusinessOsSettings() {
   const bridge = window.desktopBridge?.ctox;
   const { discovery, refresh } = useBusinessOsDiscovery(bridge);
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
-  const rememberedId = resolveActiveBusinessOsInstanceId(
-    crossModeSelectionMemory.read("business-os"),
+  const activeInstanceId = useSyncExternalStore(
+    crossModeSelectionMemory.subscribeToActiveCtoxInstance,
+    () => resolveActiveBusinessOsInstanceId(crossModeSelectionMemory.read("business-os")),
+    () => resolveActiveBusinessOsInstanceId(crossModeSelectionMemory.read("business-os")),
   );
-  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(rememberedId);
+  const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  const [authorityId, setAuthorityId] = useState<string | null>(null);
+  const [authorityLoading, setAuthorityLoading] = useState(false);
 
   useEffect(() => {
     if (instances.length === 0) return;
@@ -318,15 +397,38 @@ export function BusinessOsSettings() {
       ? activeInstanceId
       : (instances[0]?.id ?? null);
     if (next === null || next === activeInstanceId) return;
-    setActiveInstanceId(next);
     crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: next });
   }, [activeInstanceId, instances]);
 
   const selectInstance = (instanceId: string) => {
     if (!instances.some((instance) => instance.id === instanceId)) return;
-    setActiveInstanceId(instanceId);
     crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: instanceId });
   };
+
+  useEffect(() => {
+    setAuthorityId(null);
+    setDevices([]);
+    setDevicesLoading(false);
+    setDevicesError(null);
+    if (activeInstanceId === null || bridge?.resolveInstanceAuthority === undefined) return;
+    let cancelled = false;
+    setAuthorityLoading(true);
+    void bridge.resolveInstanceAuthority(activeInstanceId).then(
+      (result) => {
+        if (cancelled) return;
+        setAuthorityLoading(false);
+        setAuthorityId(result._tag === "completed" ? result.businessOsInstanceId : null);
+      },
+      () => {
+        if (cancelled) return;
+        setAuthorityLoading(false);
+        setAuthorityId(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [activeInstanceId, bridge]);
 
   const addBusinessOs = async (invite: string): Promise<string | null> => {
     if (bridge === undefined)
@@ -338,7 +440,6 @@ export function BusinessOsSettings() {
         mode: "business-os",
         ctoxInstanceId: result.instance.id,
       });
-      setActiveInstanceId(result.instance.id);
       await refresh();
       return null;
     } catch {
@@ -346,6 +447,15 @@ export function BusinessOsSettings() {
     }
   };
 
+  const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
+  const deviceManagementBlockedReason =
+    selected === null
+      ? null
+      : authorityLoading
+        ? "Die Instanzberechtigung wird geprüft …"
+        : authorityId === null
+          ? "Die kanonische Instanzberechtigung konnte nicht bestätigt werden. Geräteaktionen bleiben aus Sicherheitsgründen gesperrt."
+          : `Für ${selected.displayName} ist noch keine serverseitig attestierte Backend-Steuerverbindung verfügbar. Geräteaktionen bleiben bis dahin gesperrt.`;
   return (
     <BusinessOsSettingsView
       instances={instances}
@@ -354,6 +464,10 @@ export function BusinessOsSettings() {
       refreshDisabled={bridge === undefined}
       addDisabledReason={bridge === undefined ? "Nur in Workjet Desktop verfügbar." : null}
       computerCount={settings.workjet.computers.length}
+      devices={devices}
+      devicesLoading={devicesLoading}
+      devicesError={devicesError}
+      deviceManagementBlockedReason={deviceManagementBlockedReason}
       onSelectInstance={selectInstance}
       onRefresh={() => void refresh()}
       onAddBusinessOs={addBusinessOs}

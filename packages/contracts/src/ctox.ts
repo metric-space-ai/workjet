@@ -437,6 +437,25 @@ export const WorkjetDeviceInviteRevokeResult = Schema.Struct({
 });
 export type WorkjetDeviceInviteRevokeResult = typeof WorkjetDeviceInviteRevokeResult.Type;
 
+/** Renderer-safe summary of one active Workjet-device-to-Business-OS edge. */
+export const WorkjetDeviceBindingSummary = Schema.Struct({
+  devicePairingId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  deviceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  businessOsInstanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  pairedAtMillis: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type WorkjetDeviceBindingSummary = typeof WorkjetDeviceBindingSummary.Type;
+
+export const WorkjetDeviceBindingListInput = Schema.Struct({
+  businessOsInstanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+});
+export type WorkjetDeviceBindingListInput = typeof WorkjetDeviceBindingListInput.Type;
+
+export const WorkjetDeviceBindingListResult = Schema.Struct({
+  devices: Schema.Array(WorkjetDeviceBindingSummary).check(Schema.isMaxLength(1_000)),
+});
+export type WorkjetDeviceBindingListResult = typeof WorkjetDeviceBindingListResult.Type;
+
 export const WorkjetDeviceInviteRedeemInput = Schema.Struct({
   code: WorkjetDeviceInviteRefV1.fields.code,
   deviceId: TrimmedNonEmptyString.check(

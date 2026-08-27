@@ -1,4 +1,5 @@
-import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteV1 } from "@t3tools/contracts";
+import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteRefV1 } from "@t3tools/contracts";
+import { QrCode } from "@t3tools/shared/qrCode";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -42,23 +43,23 @@ function decodePayload(link: string): unknown {
 }
 
 describe("Business OS mobile pairing", () => {
-  it("encodes one Code and Business OS device invite in the canonical Workjet link", () => {
-    const deviceInvite: WorkjetDeviceInviteV1 = {
-      type: "workjet-device-invite",
+  it("encodes only a compact one-time reference in the canonical Workjet link", () => {
+    const reference: WorkjetDeviceInviteRefV1 = {
+      type: "workjet-device-invite-ref",
       version: 1,
-      device_pairing_id: "device-a",
-      environment: {
-        base_url: "https://workjet.example.test",
-        bootstrap_credential: "synthetic-bootstrap",
-        expires_at: "2026-08-25T17:05:00Z",
-      },
-      business_os: invite,
+      endpoint: "https://workjet.example.test",
+      code: "a".repeat(43),
+      expires_at: "2026-08-25T17:05:00Z",
     };
-    const link = encodeWorkjetDevicePairingLink(deviceInvite);
+    const link = encodeWorkjetDevicePairingLink(reference);
     expect(link.startsWith("workjet://pair?payload=")).toBe(true);
-    expect(decodePayload(link)).toEqual(deviceInvite);
+    expect(decodePayload(link)).toEqual(reference);
     expect(link).not.toContain("business-os/pair");
     expect(link).not.toContain("ctox-mobile");
+    expect(link).not.toContain("synthetic-bootstrap");
+    expect(new TextEncoder().encode(link).byteLength).toBeLessThanOrEqual(320);
+    const qr = QrCode.encodeText(link, QrCode.Ecc.MEDIUM);
+    expect((qr.size - 17) / 4).toBeLessThanOrEqual(15);
   });
 
   it("encodes the exact backend invite into the canonical Workjet link", () => {

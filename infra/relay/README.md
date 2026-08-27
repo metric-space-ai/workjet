@@ -167,7 +167,7 @@ The private ctox.dev adapter uses service-authenticated issue, revoke, membershi
 identity-assertion consumption routes under `/v1/private/workjet/`. Public clients exchange and
 renew a proof-key-bound session at `/api/workjet/device-session/` and read current instance
 membership separately. Relay-signed account assertions are minted only from an existing
-Clerk-derived Relay DPoP principal at `/v1/workjet/control-identity/assertion`; verifiers discover
+Clerk-derived Relay DPoP principal at `/api/workjet/device-session/control-assertion`; verifiers discover
 the current and retained rotation keys at `/.well-known/jwks.json`.
 
 Bootstrap and refresh credentials are stored only as hashes. Bootstrap material is deterministically

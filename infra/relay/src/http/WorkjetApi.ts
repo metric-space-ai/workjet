@@ -248,12 +248,16 @@ const sessionGroup = HttpApiGroup.make("workjetSessions")
 
 const authenticatedGroup = HttpApiGroup.make("workjetAuthenticated")
   .add(
-    HttpApiEndpoint.post("issueIdentityAssertion", "/v1/workjet/control-identity/assertion", {
-      headers: DpopAuthorizationHeaders,
-      payload: IdentityIssueInput,
-      success: IdentityIssueResult,
-      error: Errors,
-    }),
+    HttpApiEndpoint.post(
+      "issueIdentityAssertion",
+      "/api/workjet/device-session/control-assertion",
+      {
+        headers: DpopAuthorizationHeaders,
+        payload: IdentityIssueInput,
+        success: IdentityIssueResult,
+        error: Errors,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.post("readMembership", "/api/workjet/device-session/business-os/computers", {

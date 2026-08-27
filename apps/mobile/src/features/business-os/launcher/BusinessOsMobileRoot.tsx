@@ -130,7 +130,7 @@ function BusinessOsNavigationSidebar(props: {
       className="w-[252px] border-r border-border bg-sidebar px-3 py-4"
     >
       <Text className="px-3 text-xs font-t3-bold uppercase tracking-[0.8px] text-foreground-muted">
-        CTOX Instanz
+        Business OS
       </Text>
       <ScrollView
         className="mt-2 max-h-[220px]"

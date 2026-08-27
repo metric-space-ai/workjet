@@ -36,8 +36,6 @@ import { runtime } from "../../lib/runtime";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
-import { workjetModeLabel } from "../mode/workjet-mode";
-import { useWorkjetMode } from "../mode/WorkjetModeProvider";
 import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import {
   type AppUpdateCheckState,
@@ -502,23 +500,15 @@ function ConfiguredSettingsRouteScreen() {
 }
 
 function WorkjetModeSettingsSection() {
-  const { mode, setMode } = useWorkjetMode();
   const { selected } = useBusinessOs();
-  const nextMode = mode === "code" ? "business_os" : "code";
 
   return (
-    <SettingsSection title="Workspace">
+    <SettingsSection title="Business OS">
       <SettingsRow
         icon="square.grid.2x2"
         label="Business OS"
         value={selected?.displayName ?? "Nicht eingerichtet"}
         target="SettingsBusinessOs"
-      />
-      <SettingsRow
-        icon="square.split.2x1"
-        label="Code | Business OS"
-        value={workjetModeLabel(mode)}
-        onPress={() => setMode(nextMode)}
       />
     </SettingsSection>
   );

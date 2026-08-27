@@ -41,9 +41,9 @@ describe("Business OS native security guards", () => {
   it("makes Business OS the single visible connection scope in regular settings", () => {
     const settings = read("src/features/settings/SettingsRouteScreen.tsx");
     const home = read("src/features/home/HomeRouteScreen.tsx");
-    expect(settings.indexOf('label="Business OS"')).toBeLessThan(
-      settings.indexOf('label="Code | Business OS"'),
-    );
+    expect(settings).toContain('<SettingsSection title="Business OS">');
+    expect(settings).toContain('label="Business OS"');
+    expect(settings).not.toContain('label="Code | Business OS"');
     expect(settings).not.toContain('label="Environments"');
     expect(settings).not.toContain('label="Business OS verbinden"');
     expect(home).not.toContain('params: { screen: "SettingsEnvironments" }');

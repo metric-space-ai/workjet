@@ -339,10 +339,8 @@ export function BusinessOsSettingsPanel(props: {
                           ? active
                             ? "Aktiv für Code und Business OS"
                             : "Bereit für Code und Business OS"
-                          : "Erneut verbinden: Computer-Zuordnung fehlt"}
-                        {assignedComputerCount > 0
-                          ? ` · ${assignedComputerCount} ${assignedComputerCount === 1 ? "Computer" : "Computers"}`
-                          : ""}
+                          : "Erneut verbinden: Rechner-Zuordnung fehlt"}
+                        {assignedComputerCount > 0 ? ` · ${assignedComputerCount} Rechner` : ""}
                       </Text>
                     </Pressable>
                   );

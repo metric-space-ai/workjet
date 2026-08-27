@@ -31,6 +31,19 @@ Local membership relation:
 businessOsInstanceId -> environmentId[]
 ```
 
+The backend control authority is a separate internal relation:
+
+```text
+businessOsInstanceId -> backendControlAuthority
+```
+
+`backendControlAuthority` is the server-attested route which can mint, list
+and revoke device invitations for exactly that CTOX instance. It is not a Code
+computer and is never exposed as another selectable Connection. In particular,
+the primary Code environment and the first assigned computer must never be used
+as a fallback for this route. A managed backend host remains backend-only even
+though its control authority can authorize Workjet devices.
+
 Only those stable, non-secret identifiers may be stored in the local binding
 table. Pairing secrets remain in the existing secure stores. Business records,
 signaling credentials and invite payloads are forbidden in the binding table.

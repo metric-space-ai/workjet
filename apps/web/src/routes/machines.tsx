@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-import { MachinesPage } from "../components/machines/MachinesPage";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/machines")({
-  component: MachinesPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/business-os", replace: true });
+  },
 });

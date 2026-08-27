@@ -65,11 +65,11 @@ describe("Workjet device invite control", () => {
           return { revoked: true };
         },
       },
+      connection(),
       { now: () => NOW },
     );
 
     const created = await control.create({
-      connection: connection(),
       businessOsInstanceId: "instance-a",
       displayName: "Operations",
       ttlSeconds: 300,
@@ -85,22 +85,24 @@ describe("Workjet device invite control", () => {
     expect(created.link).not.toContain("synthetic-bootstrap-credential");
     expect(created.link.length).toBeLessThanOrEqual(320);
     expect(created.displayName).toBe("Operations");
-    await control.revoke({ connection: connection(), inviteId: created.inviteId });
+    await control.revoke({ inviteId: created.inviteId });
     expect(revokeInputs).toEqual([{ inviteId: "invite-a" }]);
   });
 
   it("refuses to generate a QR code with a loopback connection URL", async () => {
-    const control = makeWorkjetDeviceInviteControl({
-      async create() {
-        throw new Error("must not be called");
+    const control = makeWorkjetDeviceInviteControl(
+      {
+        async create() {
+          throw new Error("must not be called");
+        },
+        async revoke() {
+          return { revoked: true };
+        },
       },
-      async revoke() {
-        return { revoked: true };
-      },
-    });
+      connection("http://127.0.0.1:13773"),
+    );
     await expect(
       control.create({
-        connection: connection("http://127.0.0.1:13773"),
         businessOsInstanceId: "instance-a",
         displayName: "Operations",
         ttlSeconds: 300,

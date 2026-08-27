@@ -2,20 +2,14 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Pressable, useWindowDimensions, View } from "react-native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { AppText as Text } from "../../../components/AppText";
 import { ErrorBanner } from "../../../components/ErrorBanner";
 import { cn } from "../../../lib/cn";
 import { ConnectionSheetButton } from "../../connection/ConnectionSheetButton";
-import { workjetDeviceInviteEnvironment } from "../../../state/workjet-device-invite";
-import { useSavedRemoteConnections } from "../../../state/use-remote-environment-registry";
-import { useAtomCommand } from "../../../state/use-atom-command";
 import { useWorkjetDevicePairing } from "../../pairing/WorkjetDevicePairingProvider";
 import { pairingScannerSize } from "../../pairing/pairing-scanner-layout";
 import {
-  makeWorkjetDeviceInviteControl,
-  resolveWorkjetDevicePairingConnection,
   unavailableWorkjetDeviceInviteControl,
   type CreatedWorkjetDeviceInvite,
   type WorkjetDeviceInviteControlPort,
@@ -33,53 +27,10 @@ function safeMessage(error: unknown): string {
 export function BusinessOsSettingsPanel(props: {
   readonly inviteControl?: WorkjetDeviceInviteControlPort;
 }) {
-  const {
-    environmentBindings,
-    forget,
-    instances,
-    isReady,
-    select,
-    selected,
-    selectedEnvironmentIds,
-  } = useBusinessOs();
+  const { environmentBindings, forget, instances, isReady, select, selected } = useBusinessOs();
   const { importPairingPayload } = useWorkjetDevicePairing();
-  const { savedConnectionsById } = useSavedRemoteConnections();
-  const createInviteCommand = useAtomCommand(workjetDeviceInviteEnvironment.create, {
-    reportFailure: false,
-  });
-  const revokeInviteCommand = useAtomCommand(workjetDeviceInviteEnvironment.revoke, {
-    reportFailure: false,
-  });
-  const connection = useMemo(() => {
-    const connections = Object.values(savedConnectionsById);
-    for (const environmentId of selectedEnvironmentIds) {
-      const candidate = resolveWorkjetDevicePairingConnection(environmentId, connections);
-      if (candidate) return candidate;
-    }
-    return null;
-  }, [savedConnectionsById, selectedEnvironmentIds]);
-  const productionControl = useMemo(() => {
-    if (!connection) return unavailableWorkjetDeviceInviteControl;
-    return makeWorkjetDeviceInviteControl({
-      async create(input) {
-        const result = await createInviteCommand({
-          environmentId: connection.environmentId,
-          input,
-        });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        return result.value;
-      },
-      async revoke(input) {
-        const result = await revokeInviteCommand({
-          environmentId: connection.environmentId,
-          input,
-        });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        return result.value;
-      },
-    });
-  }, [connection, createInviteCommand, revokeInviteCommand]);
-  const inviteControl = props.inviteControl ?? productionControl;
+  const inviteControl = props.inviteControl ?? unavailableWorkjetDeviceInviteControl;
+  const hasVerifiedBackendControl = props.inviteControl !== undefined;
   const { height, width } = useWindowDimensions();
   const tabletLayout = width >= 720;
   const scannerSize = pairingScannerSize({ height, width });
@@ -119,13 +70,12 @@ export function BusinessOsSettingsPanel(props: {
   }, [generatedInvite]);
 
   const createInvite = useCallback(async () => {
-    if (!connection || !selected) return;
+    if (!selected || !hasVerifiedBackendControl) return;
     setBusy(true);
     setError(null);
     try {
       setGeneratedInvite(
         await inviteControl.create({
-          connection,
           businessOsInstanceId: selected.instanceId,
           displayName: selected.displayName,
           ttlSeconds: 300,
@@ -136,33 +86,32 @@ export function BusinessOsSettingsPanel(props: {
     } finally {
       setBusy(false);
     }
-  }, [connection, inviteControl, selected]);
+  }, [hasVerifiedBackendControl, inviteControl, selected]);
 
   const revokeInvite = useCallback(async () => {
-    if (!connection || !generatedInvite) return;
+    if (!generatedInvite) return;
     setBusy(true);
     setError(null);
     try {
-      await inviteControl.revoke({ connection, inviteId: generatedInvite.inviteId });
+      await inviteControl.revoke({ inviteId: generatedInvite.inviteId });
       setGeneratedInvite(null);
     } catch (cause) {
       setError(safeMessage(cause));
     } finally {
       setBusy(false);
     }
-  }, [connection, generatedInvite, inviteControl]);
+  }, [generatedInvite, inviteControl]);
 
   const renewInvite = useCallback(async () => {
-    if (!connection || !selected) return;
+    if (!selected || !hasVerifiedBackendControl) return;
     setBusy(true);
     setError(null);
     try {
       if (generatedInvite) {
-        await inviteControl.revoke({ connection, inviteId: generatedInvite.inviteId });
+        await inviteControl.revoke({ inviteId: generatedInvite.inviteId });
       }
       setGeneratedInvite(
         await inviteControl.create({
-          connection,
           businessOsInstanceId: selected.instanceId,
           displayName: selected.displayName,
           ttlSeconds: 300,
@@ -174,7 +123,7 @@ export function BusinessOsSettingsPanel(props: {
     } finally {
       setBusy(false);
     }
-  }, [connection, generatedInvite, inviteControl, selected]);
+  }, [generatedInvite, hasVerifiedBackendControl, inviteControl, selected]);
 
   const openScanner = useCallback(async () => {
     if (cameraPermission?.granted) {
@@ -408,10 +357,17 @@ export function BusinessOsSettingsPanel(props: {
                 icon="qrcode"
                 label="QR-Code anzeigen"
                 tone="primary"
-                disabled={busy || !connection}
+                disabled={busy || !selected || !hasVerifiedBackendControl}
                 onPress={() => void createInvite()}
               />
             )}
+
+            {selected && !hasVerifiedBackendControl ? (
+              <Text className="text-sm leading-normal text-foreground-muted">
+                Diese Instanz hat noch keine bestätigte Geräteverwaltung. Workjet verwendet dafür
+                keinen zugewiesenen Code-Rechner als Ersatz.
+              </Text>
+            ) : null}
 
             {selected ? (
               <ConnectionSheetButton

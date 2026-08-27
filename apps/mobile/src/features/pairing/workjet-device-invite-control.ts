@@ -20,15 +20,11 @@ export interface CreatedWorkjetDeviceInvite {
 
 export interface WorkjetDeviceInviteControlPort {
   readonly create: (input: {
-    readonly connection: SavedRemoteConnection;
     readonly businessOsInstanceId: string;
     readonly displayName: string;
     readonly ttlSeconds?: number;
   }) => Promise<CreatedWorkjetDeviceInvite>;
-  readonly revoke: (input: {
-    readonly connection: SavedRemoteConnection;
-    readonly inviteId: string;
-  }) => Promise<void>;
+  readonly revoke: (input: { readonly inviteId: string }) => Promise<void>;
 }
 
 export interface WorkjetDeviceInviteHttpPort {
@@ -86,10 +82,11 @@ function shareableConnectionUrl(connection: SavedRemoteConnection): string {
 
 export function makeWorkjetDeviceInviteControl(
   http: WorkjetDeviceInviteHttpPort,
+  connection: SavedRemoteConnection,
   options: { readonly now?: () => number } = {},
 ): WorkjetDeviceInviteControlPort {
   return {
-    async create({ connection, businessOsInstanceId, displayName, ttlSeconds = 300 }) {
+    async create({ businessOsInstanceId, displayName, ttlSeconds = 300 }) {
       if (!businessOsInstanceId.trim() || !displayName.trim()) {
         throw new WorkjetDeviceInviteControlUnavailableError();
       }

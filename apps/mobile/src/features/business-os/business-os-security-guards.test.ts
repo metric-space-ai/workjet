@@ -19,7 +19,10 @@ describe("Business OS native security guards", () => {
     expect(settings).toContain("Weitere Instanzen werden unabhängig");
     expect(settings).toContain("Erneuern");
     expect(settings).toContain("Widerrufen");
-    expect(settings).toContain("workjetDeviceInviteEnvironment");
+    expect(settings).toContain("hasVerifiedBackendControl");
+    expect(settings).not.toContain("workjetDeviceInviteEnvironment");
+    expect(settings).not.toContain("resolveWorkjetDevicePairingConnection");
+    expect(settings).not.toContain("selectedEnvironmentIds");
     expect(settings).toContain("importPairingPayload");
     expect(settings).not.toContain("businessOsMobileInviteEnvironment");
   });

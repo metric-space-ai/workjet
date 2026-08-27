@@ -47,6 +47,10 @@
       "types": "./src/state/businessOsMobileInvite.ts",
       "default": "./src/state/businessOsMobileInvite.ts"
     },
+    "./state/business-os-computer-membership": {
+      "types": "./src/state/businessOsComputerMembership.ts",
+      "default": "./src/state/businessOsComputerMembership.ts"
+    },
     "./state/assets": {
       "types": "./src/state/assets.ts",
       "default": "./src/state/assets.ts"

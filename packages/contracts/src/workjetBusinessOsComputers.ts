@@ -96,6 +96,41 @@ export const WorkjetBusinessOsComputerAssignResult = Schema.Struct({
 export type WorkjetBusinessOsComputerAssignResult =
   typeof WorkjetBusinessOsComputerAssignResult.Type;
 
+/** Server-filtered inventory row safe to present in the assignment picker. */
+export const WorkjetBusinessOsComputerCandidate = Schema.Struct({
+  environmentId: EnvironmentId,
+  currentBusinessOsInstanceId: Schema.NullOr(BusinessOsInstanceId),
+  requiresCoLocationRiskConfirmation: Schema.Boolean,
+});
+export type WorkjetBusinessOsComputerCandidate = typeof WorkjetBusinessOsComputerCandidate.Type;
+
+export const WorkjetBusinessOsComputerListInput = Schema.Struct({
+  businessOsInstanceId: BusinessOsInstanceId,
+});
+export type WorkjetBusinessOsComputerListInput = typeof WorkjetBusinessOsComputerListInput.Type;
+
+export const WorkjetBusinessOsComputerListResult = Schema.Struct({
+  businessOsInstanceId: BusinessOsInstanceId,
+  assigned: Schema.Array(WorkjetBusinessOsComputerAssignment).check(Schema.isMaxLength(1_000)),
+  available: Schema.Array(WorkjetBusinessOsComputerCandidate).check(Schema.isMaxLength(1_000)),
+});
+export type WorkjetBusinessOsComputerListResult = typeof WorkjetBusinessOsComputerListResult.Type;
+
+export const WorkjetBusinessOsComputerUnassignInput = Schema.Struct({
+  businessOsInstanceId: BusinessOsInstanceId,
+  environmentId: EnvironmentId,
+});
+export type WorkjetBusinessOsComputerUnassignInput =
+  typeof WorkjetBusinessOsComputerUnassignInput.Type;
+
+export const WorkjetBusinessOsComputerUnassignResult = Schema.Struct({
+  businessOsInstanceId: BusinessOsInstanceId,
+  environmentId: EnvironmentId,
+  unassigned: Schema.Boolean,
+});
+export type WorkjetBusinessOsComputerUnassignResult =
+  typeof WorkjetBusinessOsComputerUnassignResult.Type;
+
 export const WorkjetBusinessOsComputerOwnershipFailureReason = Schema.Literals([
   "authority-unavailable",
   "managed-backend-host",

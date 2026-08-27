@@ -6,11 +6,15 @@ import {
   WorkjetBusinessOsComputerAssignInput,
   WorkjetBusinessOsComputerAssignment,
   WorkjetBusinessOsComputerAssignmentAuthority,
+  WorkjetBusinessOsComputerListInput,
+  WorkjetBusinessOsComputerUnassignInput,
 } from "./workjetBusinessOsComputers.ts";
 
 const decodeInput = Schema.decodeUnknownSync(WorkjetBusinessOsComputerAssignInput);
 const decodeAuthority = Schema.decodeUnknownSync(WorkjetBusinessOsComputerAssignmentAuthority);
 const decodeAssignment = Schema.decodeUnknownSync(WorkjetBusinessOsComputerAssignment);
+const decodeListInput = Schema.decodeUnknownSync(WorkjetBusinessOsComputerListInput);
+const decodeUnassignInput = Schema.decodeUnknownSync(WorkjetBusinessOsComputerUnassignInput);
 
 describe("Business OS computer ownership contracts", () => {
   it("keeps client assignment intent free of authority flags", () => {
@@ -83,5 +87,12 @@ describe("Business OS computer ownership contracts", () => {
         coLocationRiskAcceptance: { policyVersion: 1 },
       }),
     ).toThrow();
+  });
+
+  it("requires explicit instance and environment identifiers at membership boundaries", () => {
+    expect(() => decodeListInput({})).toThrow();
+    expect(() => decodeListInput({ businessOsInstanceId: "" })).toThrow();
+    expect(() => decodeUnassignInput({ businessOsInstanceId: "business-os-welsch" })).toThrow();
+    expect(() => decodeUnassignInput({ environmentId: "gpu-1" })).toThrow();
   });
 });

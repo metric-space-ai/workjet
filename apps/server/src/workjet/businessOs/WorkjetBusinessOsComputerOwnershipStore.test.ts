@@ -76,6 +76,26 @@ const authorityResolver: WorkjetBusinessOsComputerAuthorityResolverShape = {
           : host(`host-${environmentId}`),
     } satisfies WorkjetBusinessOsComputerAssignmentAuthority);
   },
+  listCandidates: (businessOsInstanceId) =>
+    Effect.all([
+      authorityResolver.resolve({
+        businessOsInstanceId,
+        environmentId:
+          businessOsInstanceId === MANAGED
+            ? environment("managed-backend")
+            : businessOsInstanceId === WELSCH
+              ? environment("welsch-backend")
+              : environment("north-backend"),
+      }),
+      authorityResolver.resolve({
+        businessOsInstanceId,
+        environmentId: environment("gpu-available"),
+      }),
+      authorityResolver.resolve({
+        businessOsInstanceId,
+        environmentId: environment("gpu-owned-elsewhere"),
+      }),
+    ]),
 };
 
 const resolverLayer = Layer.succeed(WorkjetBusinessOsComputerAuthorityResolver, authorityResolver);
@@ -116,6 +136,69 @@ it.effect("atomically replaces an environment's sole owner and reports the previ
     assert.deepEqual(yield* store.listByInstance(WELSCH), []);
     assert.equal((yield* store.listByInstance(NORTH)).length, 1);
     assert.equal(Option.getOrThrow(yield* store.getByEnvironment(gpu)).businessOsInstanceId, NORTH);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect(
+  "lists only server-authorized available computers and never advertises a managed host",
+  () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetBusinessOsComputerOwnershipStore;
+      yield* store.assign({
+        businessOsInstanceId: NORTH,
+        environmentId: environment("gpu-owned-elsewhere"),
+      });
+
+      const managedCandidates = yield* store.listAvailable(MANAGED);
+      assert.deepEqual(
+        managedCandidates.map((candidate) => candidate.environmentId),
+        [environment("gpu-available"), environment("gpu-owned-elsewhere")],
+      );
+      assert.isFalse(
+        managedCandidates.some(
+          (candidate) => candidate.environmentId === environment("managed-backend"),
+        ),
+      );
+      assert.equal(
+        managedCandidates.find(
+          (candidate) => candidate.environmentId === environment("gpu-owned-elsewhere"),
+        )?.currentBusinessOsInstanceId,
+        NORTH,
+      );
+
+      const selfHostedCandidates = yield* store.listAvailable(WELSCH);
+      assert.equal(
+        selfHostedCandidates.find(
+          (candidate) => candidate.environmentId === environment("welsch-backend"),
+        )?.requiresCoLocationRiskConfirmation,
+        true,
+      );
+    }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("unassigns only the explicitly scoped edge and is idempotent", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetBusinessOsComputerOwnershipStore;
+    const gpu = environment("gpu-unassign");
+    yield* store.assign({ businessOsInstanceId: WELSCH, environmentId: gpu });
+
+    const wrongInstance = yield* store.unassign({
+      businessOsInstanceId: NORTH,
+      environmentId: gpu,
+    });
+    assert.isFalse(wrongInstance.unassigned);
+    assert.equal(
+      Option.getOrThrow(yield* store.getByEnvironment(gpu)).businessOsInstanceId,
+      WELSCH,
+    );
+
+    assert.isTrue(
+      (yield* store.unassign({ businessOsInstanceId: WELSCH, environmentId: gpu })).unassigned,
+    );
+    assert.isFalse(
+      (yield* store.unassign({ businessOsInstanceId: WELSCH, environmentId: gpu })).unassigned,
+    );
+    assert.isTrue(Option.isNone(yield* store.getByEnvironment(gpu)));
   }).pipe(Effect.provide(testLayer)),
 );
 

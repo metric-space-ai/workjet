@@ -7,6 +7,9 @@ import {
   type WorkjetBusinessOsComputerAssignResult,
   type WorkjetBusinessOsComputerAssignment,
   type WorkjetBusinessOsComputerAssignmentAuthority,
+  type WorkjetBusinessOsComputerCandidate,
+  type WorkjetBusinessOsComputerUnassignInput,
+  type WorkjetBusinessOsComputerUnassignResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -31,6 +34,14 @@ export interface WorkjetBusinessOsComputerAuthorityResolverShape {
     readonly environmentId: EnvironmentId;
   }) => Effect.Effect<
     WorkjetBusinessOsComputerAssignmentAuthority,
+    WorkjetBusinessOsComputerOwnershipError
+  >;
+
+  /** Bounded authoritative inventory. Managed backend hosts may be present here only to be denied. */
+  readonly listCandidates: (
+    businessOsInstanceId: BusinessOsInstanceId,
+  ) => Effect.Effect<
+    ReadonlyArray<WorkjetBusinessOsComputerAssignmentAuthority>,
     WorkjetBusinessOsComputerOwnershipError
   >;
 }
@@ -69,6 +80,22 @@ export interface WorkjetBusinessOsComputerOwnershipStoreShape {
     ReadonlyArray<WorkjetBusinessOsComputerAssignment>,
     PersistenceSqlError | PersistenceDecodeError
   >;
+
+  /** Server-filtered inventory; managed backend hosts are never returned. */
+  readonly listAvailable: (
+    businessOsInstanceId: BusinessOsInstanceId,
+  ) => Effect.Effect<
+    ReadonlyArray<WorkjetBusinessOsComputerCandidate>,
+    WorkjetBusinessOsComputerOwnershipStoreError
+  >;
+
+  /** Idempotently remove exactly the named instance/environment edge. */
+  readonly unassign: (
+    input: WorkjetBusinessOsComputerUnassignInput,
+  ) => Effect.Effect<
+    WorkjetBusinessOsComputerUnassignResult,
+    PersistenceSqlError | PersistenceDecodeError
+  >;
 }
 
 export class WorkjetBusinessOsComputerOwnershipStore extends Context.Service<
@@ -99,6 +126,8 @@ const isPersistenceDecodeError = Schema.is(PersistenceDecodeError);
 
 const unavailable = () =>
   new WorkjetBusinessOsComputerOwnershipError({ reason: "authority-unavailable" });
+
+const MAX_CANDIDATES = 1_000;
 
 type CoLocation = "co-located" | "external" | "ambiguous";
 
@@ -272,6 +301,76 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(rows, decodeRow);
     });
 
+  const listAvailable: WorkjetBusinessOsComputerOwnershipStoreShape["listAvailable"] = (
+    businessOsInstanceId,
+  ) =>
+    Effect.gen(function* () {
+      const authorities = yield* authorityResolver.listCandidates(businessOsInstanceId);
+      if (authorities.length > MAX_CANDIDATES) return yield* unavailable();
+
+      const seen = new Set<string>();
+      const candidates = yield* Effect.forEach(
+        authorities,
+        (authority) =>
+          Effect.gen(function* () {
+            if (
+              authority.businessOsInstanceId !== businessOsInstanceId ||
+              seen.has(authority.computerEnvironmentId)
+            ) {
+              return yield* unavailable();
+            }
+            seen.add(authority.computerEnvironmentId);
+
+            const coLocation = classifyCoLocation(authority);
+            if (coLocation === "ambiguous") return yield* unavailable();
+            if (coLocation === "co-located" && authority.hostingMode === "managed") {
+              return null;
+            }
+
+            const current = yield* getByEnvironment(authority.computerEnvironmentId);
+            if (
+              Option.isSome(current) &&
+              current.value.businessOsInstanceId === businessOsInstanceId
+            ) {
+              return null;
+            }
+            return {
+              environmentId: authority.computerEnvironmentId,
+              currentBusinessOsInstanceId: Option.match(current, {
+                onNone: () => null,
+                onSome: (assignment) => assignment.businessOsInstanceId,
+              }),
+              requiresCoLocationRiskConfirmation: coLocation === "co-located",
+            } satisfies WorkjetBusinessOsComputerCandidate;
+          }),
+        { concurrency: 16 },
+      );
+      return candidates
+        .filter((candidate): candidate is WorkjetBusinessOsComputerCandidate => candidate !== null)
+        .sort((left, right) => left.environmentId.localeCompare(right.environmentId));
+    });
+
+  const unassign: WorkjetBusinessOsComputerOwnershipStoreShape["unassign"] = (input) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+            DELETE FROM workjet_business_os_computer_owners
+            WHERE environment_id = ? AND business_os_instance_id = ?
+            RETURNING environment_id AS "environmentId"
+          `,
+          [input.environmentId, input.businessOsInstanceId],
+        )
+        .pipe(
+          Effect.mapError(sqlFailure("WorkjetBusinessOsComputerOwnershipStore.unassign:delete")),
+        );
+      return {
+        businessOsInstanceId: input.businessOsInstanceId,
+        environmentId: input.environmentId,
+        unassigned: rows.length > 0,
+      } satisfies WorkjetBusinessOsComputerUnassignResult;
+    });
+
   const assign: WorkjetBusinessOsComputerOwnershipStoreShape["assign"] = (input) =>
     Effect.gen(function* () {
       const authority = yield* authorityResolver.resolve({
@@ -347,6 +446,8 @@ export const make = Effect.gen(function* () {
     assign,
     getByEnvironment,
     listByInstance,
+    listAvailable,
+    unassign,
   } satisfies WorkjetBusinessOsComputerOwnershipStoreShape;
 });
 

@@ -132,6 +132,17 @@ export const WorkjetManagedBackendControlResolveInput = Schema.Struct({
 export type WorkjetManagedBackendControlResolveInput =
   typeof WorkjetManagedBackendControlResolveInput.Type;
 
+/** Cookie-free resolve used only by an already paired, DPoP-bound installation. */
+export const WorkjetManagedDeviceControlResolveInput = WorkjetManagedBackendControlResolveInput;
+export type WorkjetManagedDeviceControlResolveInput =
+  typeof WorkjetManagedDeviceControlResolveInput.Type;
+
+export const WorkjetManagedDeviceControlResolveHeaders = Schema.Struct({
+  dpop: TrimmedNonEmptyString.check(Schema.isMaxLength(8_192)),
+});
+export type WorkjetManagedDeviceControlResolveHeaders =
+  typeof WorkjetManagedDeviceControlResolveHeaders.Type;
+
 export const WorkjetManagedBackendControlResolveResult = Schema.Struct({
   backendControlConnectionId: WorkjetManagedBackendControlConnectionId,
   businessOsInstanceId: BusinessOsInstanceId,
@@ -149,6 +160,22 @@ export const WorkjetManagedDeviceBindingListInput = Schema.Struct({
   ...WorkjetManagedBackendControlScope,
 });
 export type WorkjetManagedDeviceBindingListInput = typeof WorkjetManagedDeviceBindingListInput.Type;
+
+export const WorkjetManagedDeviceControlCsrfInput = Schema.Struct({
+  ...WorkjetManagedBackendControlScope,
+});
+export type WorkjetManagedDeviceControlCsrfInput = typeof WorkjetManagedDeviceControlCsrfInput.Type;
+
+export const WorkjetManagedDeviceControlCsrfHeaders = WorkjetManagedDeviceControlResolveHeaders;
+export type WorkjetManagedDeviceControlCsrfHeaders =
+  typeof WorkjetManagedDeviceControlCsrfHeaders.Type;
+
+export const WorkjetManagedControlCsrfResult = Schema.Struct({
+  ok: Schema.Literal(true),
+  csrfToken: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
+  expiresAt: Rfc3339Timestamp,
+});
+export type WorkjetManagedControlCsrfResult = typeof WorkjetManagedControlCsrfResult.Type;
 
 /**
  * Managed invite creation deliberately omits `connectionUrl`: the producer
@@ -438,6 +465,18 @@ export class WorkjetManagedBackendControlUnavailableError extends Schema.TaggedE
   }
 }
 
+export class WorkjetManagedBackendControlRateLimitedError extends Schema.TaggedErrorClass<WorkjetManagedBackendControlRateLimitedError>()(
+  "WorkjetManagedBackendControlRateLimitedError",
+  { code: Schema.Literal("managed_backend_control_rate_limited") },
+  { httpApiStatus: 429 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(WorkjetManagedBackendControlRateLimitedError)(this, {
+      status: 429,
+    });
+  }
+}
+
 const ManagedControlErrors = [
   WorkjetManagedBackendControlRejectedError,
   WorkjetManagedBackendControlExpiredError,
@@ -446,6 +485,9 @@ const ManagedControlErrors = [
 
 export const WORKJET_MANAGED_BACKEND_CONTROL_RESOLVE_PATH =
   "/api/workjet/backend-control/connections";
+export const WORKJET_MANAGED_DEVICE_CONTROL_RESOLVE_PATH =
+  "/api/workjet/backend-control/device-connections";
+export const WORKJET_MANAGED_DEVICE_CONTROL_CSRF_PATH = "/api/workjet/backend-control/device-csrf";
 export const WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH =
   "/api/workjet/device-session/control-assertion";
 export const WORKJET_MANAGED_DEVICE_BINDINGS_LIST_PATH =
@@ -466,6 +508,22 @@ export const WORKJET_DEVICE_SESSION_MEMBERSHIP_READ_PATH =
 export class WorkjetManagedBackendControlHttpGroup extends HttpApiGroup.make(
   "managedBackendControl",
 )
+  .add(
+    HttpApiEndpoint.post("resolveDeviceControl", WORKJET_MANAGED_DEVICE_CONTROL_RESOLVE_PATH, {
+      headers: WorkjetManagedDeviceControlResolveHeaders,
+      payload: WorkjetManagedDeviceControlResolveInput,
+      success: WorkjetManagedBackendControlResolveResult,
+      error: [...ManagedControlErrors, WorkjetManagedBackendControlRateLimitedError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("issueDeviceControlCsrf", WORKJET_MANAGED_DEVICE_CONTROL_CSRF_PATH, {
+      headers: WorkjetManagedDeviceControlCsrfHeaders,
+      payload: WorkjetManagedDeviceControlCsrfInput,
+      success: WorkjetManagedControlCsrfResult,
+      error: [...ManagedControlErrors, WorkjetManagedBackendControlRateLimitedError],
+    }),
+  )
   .add(
     HttpApiEndpoint.post("resolve", WORKJET_MANAGED_BACKEND_CONTROL_RESOLVE_PATH, {
       headers: WorkjetManagedBackendControlHeaders,

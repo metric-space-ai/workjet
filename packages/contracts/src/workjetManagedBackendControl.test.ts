@@ -5,6 +5,8 @@ import {
   WORKJET_MANAGED_BACKEND_CONTROL_MAX_TTL_SECONDS,
   WORKJET_MANAGED_BACKEND_CONTROL_RESPONSE_HEADERS,
   WORKJET_MANAGED_BACKEND_CONTROL_RESOLVE_PATH,
+  WORKJET_MANAGED_DEVICE_CONTROL_CSRF_PATH,
+  WORKJET_MANAGED_DEVICE_CONTROL_RESOLVE_PATH,
   WORKJET_MANAGED_DEVICE_BINDINGS_LIST_PATH,
   WORKJET_MANAGED_DEVICE_BINDINGS_REVOKE_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_CREATE_PATH,
@@ -16,6 +18,11 @@ import {
   WORKJET_DEVICE_SESSION_RENEW_PATH,
   WorkjetManagedBackendControlResolveInput,
   WorkjetManagedBackendControlResolveResult,
+  WorkjetManagedControlCsrfResult,
+  WorkjetManagedDeviceControlCsrfHeaders,
+  WorkjetManagedDeviceControlCsrfInput,
+  WorkjetManagedDeviceControlResolveHeaders,
+  WorkjetManagedDeviceControlResolveInput,
   WorkjetManagedCtoxSyncInviteIssueInput,
   WorkjetManagedDeviceBindingRecordV1,
   WorkjetManagedDeviceInviteCreateInput,
@@ -39,6 +46,12 @@ describe("Workjet managed Business OS backend control contract", () => {
   it("uses dedicated managed-control endpoints rather than environment routes", () => {
     expect(WORKJET_MANAGED_BACKEND_CONTROL_RESOLVE_PATH).toBe(
       "/api/workjet/backend-control/connections",
+    );
+    expect(WORKJET_MANAGED_DEVICE_CONTROL_RESOLVE_PATH).toBe(
+      "/api/workjet/backend-control/device-connections",
+    );
+    expect(WORKJET_MANAGED_DEVICE_CONTROL_CSRF_PATH).toBe(
+      "/api/workjet/backend-control/device-csrf",
     );
     expect(WORKJET_MANAGED_DEVICE_BINDINGS_LIST_PATH).toBe(
       "/api/workjet/backend-control/device-bindings/list",
@@ -68,6 +81,45 @@ describe("Workjet managed Business OS backend control contract", () => {
       "cache-control": "no-store",
       pragma: "no-cache",
       "referrer-policy": "no-referrer",
+    });
+  });
+
+  it("defines cookie-free device control with DPoP and handle-bound CSRF", () => {
+    const resolveInput = {
+      businessOsInstanceId: instanceId,
+      workjetInstallationId: "fold-8",
+      relayIdentityAssertion,
+    };
+    expect(Schema.decodeUnknownSync(WorkjetManagedDeviceControlResolveInput)(resolveInput)).toEqual(
+      resolveInput,
+    );
+    expect(
+      Schema.decodeUnknownSync(WorkjetManagedDeviceControlResolveHeaders)({
+        dpop: "proof",
+      }),
+    ).toEqual({ dpop: "proof" });
+    expect(
+      Schema.decodeUnknownSync(WorkjetManagedDeviceControlCsrfInput)({
+        backendControlConnectionId: connectionId,
+        businessOsInstanceId: instanceId,
+      }),
+    ).toEqual({
+      backendControlConnectionId: connectionId,
+      businessOsInstanceId: instanceId,
+    });
+    expect(
+      Schema.decodeUnknownSync(WorkjetManagedDeviceControlCsrfHeaders)({ dpop: "proof" }),
+    ).toEqual({ dpop: "proof" });
+    expect(
+      Schema.decodeUnknownSync(WorkjetManagedControlCsrfResult)({
+        ok: true,
+        csrfToken: "v1.payload.signature",
+        expiresAt: "2026-08-27T04:00:00Z",
+      }),
+    ).toEqual({
+      ok: true,
+      csrfToken: "v1.payload.signature",
+      expiresAt: "2026-08-27T04:00:00Z",
     });
   });
 

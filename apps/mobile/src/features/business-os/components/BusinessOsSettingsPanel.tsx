@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, AppState, Pressable, useWindowDimensions, View } from "react-native";
 
 import { AppText as Text } from "../../../components/AppText";
@@ -9,6 +9,7 @@ import { cn } from "../../../lib/cn";
 import { ConnectionSheetButton } from "../../connection/ConnectionSheetButton";
 import { useWorkjetDevicePairing } from "../../pairing/WorkjetDevicePairingProvider";
 import { pairingScannerSize } from "../../pairing/pairing-scanner-layout";
+import { useManagedWorkjetDeviceInviteControl } from "../../pairing/useManagedWorkjetDeviceInviteControl";
 import {
   unavailableWorkjetDeviceInviteControl,
   type CreatedWorkjetDeviceInvite,
@@ -29,8 +30,13 @@ export function BusinessOsSettingsPanel(props: {
 }) {
   const { environmentBindings, forget, instances, isReady, select, selected } = useBusinessOs();
   const { importPairingPayload } = useWorkjetDevicePairing();
-  const inviteControl = props.inviteControl ?? unavailableWorkjetDeviceInviteControl;
-  const hasVerifiedBackendControl = props.inviteControl !== undefined;
+  const productionInviteControl = useManagedWorkjetDeviceInviteControl(
+    selected?.instanceId ?? null,
+  );
+  const inviteControl =
+    props.inviteControl ?? productionInviteControl ?? unavailableWorkjetDeviceInviteControl;
+  const hasVerifiedBackendControl =
+    props.inviteControl !== undefined || productionInviteControl !== undefined;
   const { height, width } = useWindowDimensions();
   const tabletLayout = width >= 720;
   const scannerSize = pairingScannerSize({ height, width });

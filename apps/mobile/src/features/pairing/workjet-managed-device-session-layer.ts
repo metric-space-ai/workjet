@@ -4,8 +4,8 @@ import {
   WorkjetDeviceSessionBootstrapExchangeResult,
   WorkjetDeviceSessionMembershipReadResult,
   WorkjetDeviceSessionRenewResult,
+  WorkjetRelayControlIdentityAssertionIssueResult,
 } from "@t3tools/contracts";
-import { ManagedRelay, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
 import {
   WorkjetManagedDeviceSessionClient,
@@ -23,8 +23,6 @@ import * as Schema from "effect/Schema";
 import { createDpopProofWithSigner, type DpopProofSigner } from "../cloud/dpop";
 import { loadNativeWorkjetDpopSigner } from "../cloud/nativeWorkjetDpopSigner";
 import { nativeWorkjetDeviceSessionStore } from "../business-os/registry/native-business-os-registry";
-import { resolveCloudPublicConfig } from "../cloud/publicConfig";
-import { appAtomRegistry } from "../../state/atom-registry";
 import { loadWorkjetDeviceSession, saveWorkjetDeviceSession } from "./workjet-device-session-store";
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -40,12 +38,6 @@ const decodeRelayEnvironmentConnect = Schema.decodeUnknownEffect(RelayEnvironmen
 
 function failure(operation: WorkjetManagedDeviceSessionOperation) {
   return new WorkjetManagedDeviceSessionClientError({ operation, code: "request_failed" });
-}
-
-function relayIdentityTarget(): string | null {
-  const relayUrl = resolveCloudPublicConfig().relay.url;
-  if (!relayUrl) return null;
-  return new URL(WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH, relayUrl).toString();
 }
 
 function postJson<A, E, R>(input: {
@@ -106,7 +98,6 @@ export const workjetManagedDeviceSessionClientLayer = Layer.effect(
   WorkjetManagedDeviceSessionClient,
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
-    const relay = yield* ManagedRelay.ManagedRelayClient;
     const request = <A, E, R>(input: {
       readonly operation: WorkjetManagedDeviceSessionOperation;
       readonly url: string;
@@ -122,38 +113,34 @@ export const workjetManagedDeviceSessionClientLayer = Layer.effect(
     return WorkjetManagedDeviceSessionClient.of({
       issueControlIdentityAssertion: (input) =>
         Effect.gen(function* () {
-          const expectedTarget = relayIdentityTarget();
-          if (expectedTarget === null || input.target.url !== expectedTarget) {
-            return yield* new WorkjetManagedDeviceSessionClientError({
-              operation: "identity",
-              code: "invalid_endpoint",
-            });
-          }
-          const session = appAtomRegistry.get(managedRelaySessionAtom);
-          if (session === null) {
-            return yield* new WorkjetManagedDeviceSessionClientError({
-              operation: "identity",
-              code: "authentication_failed",
-            });
-          }
-          const clerkToken = yield* session.readClerkToken().pipe(
-            Effect.mapError(
-              () =>
-                new WorkjetManagedDeviceSessionClientError({
-                  operation: "identity",
-                  code: "authentication_failed",
-                }),
-            ),
-          );
-          if (clerkToken === null) {
+          const authorization = yield* Effect.tryPromise({
+            try: () =>
+              loadWorkjetDeviceSession(
+                input.payload.businessOsInstanceId,
+                nativeWorkjetDeviceSessionStore,
+              ),
+            catch: () => failure("identity"),
+          });
+          if (
+            authorization === null ||
+            authorization.deviceId !== input.payload.workjetInstallationId ||
+            new URL(
+              WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH,
+              authorization.relayIssuer,
+            ).toString() !== input.target.url
+          ) {
             return yield* new WorkjetManagedDeviceSessionClientError({
               operation: "identity",
               code: "authentication_failed",
             });
           }
-          return yield* relay
-            .issueWorkjetControlIdentityAssertion({ clerkToken, payload: input.payload })
-            .pipe(Effect.mapError(() => failure("identity")));
+          return yield* request({
+            operation: "identity",
+            url: input.target.url,
+            payload: input.payload,
+            accessToken: authorization.accessToken,
+            decode: Schema.decodeUnknownEffect(WorkjetRelayControlIdentityAssertionIssueResult),
+          });
         }),
       connectEnvironment: (input) => {
         const url = new URL(

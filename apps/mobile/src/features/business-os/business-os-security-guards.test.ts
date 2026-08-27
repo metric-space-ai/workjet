@@ -246,6 +246,21 @@ describe("Business OS native security guards", () => {
     expect(`${ios}\n${android}`).not.toMatch(/privateKey.*(?:return|put)|"d"\s*(?:to|:)/iu);
   });
 
+  it("keeps managed device control instance-bound, cookie-free and fail-closed", () => {
+    const control = read("src/features/pairing/workjet-managed-backend-control-layer.ts");
+    const hook = read("src/features/pairing/useManagedWorkjetDeviceInviteControl.ts");
+    expect(control).toContain("WORKJET_MANAGED_DEVICE_CONTROL_RESOLVE_PATH");
+    expect(control).toContain("WORKJET_MANAGED_DEVICE_CONTROL_CSRF_PATH");
+    expect(control).toContain('credentials: "omit"');
+    expect(control).toContain('redirect: "error"');
+    expect(control).toContain('"x-workjet-csrf"');
+    expect(control).toContain("loadNativeWorkjetDpopSigner");
+    expect(control).not.toMatch(/primaryEnvironment|environmentId/iu);
+    expect(hook).toContain("readManagedWorkjetDeviceSessionAuthorization");
+    expect(hook).toContain("authorization.deviceId !== workjetInstallationId");
+    expect(hook).not.toMatch(/usePrimaryEnvironment|connectionUrl/iu);
+  });
+
   it("resolves shell packs through the shared DPoP command and preflights trust", () => {
     const state = read("src/state/business-os-mobile-shell-pack.ts");
     const resolver = read("src/features/business-os/shell/production-shell-pack-resolver.ts");

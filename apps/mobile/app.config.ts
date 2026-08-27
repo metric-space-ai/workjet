@@ -11,6 +11,17 @@ Object.assign(process.env, repoEnv);
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
+// Public production origins and identifiers are safe to bundle. Keeping the
+// canonical values here prevents a locally assembled production APK from
+// silently shipping with the Workjet pairing and Relay clients disabled.
+// Environment values still override these defaults for controlled rollouts.
+const PRODUCTION_PUBLIC_CONFIG = {
+  clerkPublishableKey: "pk_live_Y2xlcmsudDMuY29kZXMk",
+  clerkJwtTemplate: "t3-relay",
+  relayUrl: "https://relay.t3.codes",
+  managedControlUrl: "https://ctox.dev",
+} as const;
+
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
@@ -361,14 +372,22 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
-      url: repoEnv.T3CODE_RELAY_URL ?? null,
+      url:
+        repoEnv.T3CODE_RELAY_URL ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.relayUrl : null),
     },
     managedControl: {
-      url: repoEnv.EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL ?? null,
+      url:
+        repoEnv.EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.managedControlUrl : null),
     },
     clerk: {
-      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
-      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
+      publishableKey:
+        repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.clerkPublishableKey : null),
+      jwtTemplate:
+        repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.clerkJwtTemplate : null),
     },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads

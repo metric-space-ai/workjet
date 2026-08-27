@@ -93,9 +93,13 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 
 CI uses Expo fingerprinting with the `preview:dev` profile to reuse an existing compatible build when possible, or start a new internal EAS build when native runtime inputs change. Production and default local builds continue to use the `appVersion` runtime policy.
 
-For preview or production EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
-`T3CODE_CLERK_JWT_TEMPLATE`, and `T3CODE_RELAY_URL`
-as EAS environment variables. Expo config maps the canonical values into the mobile build.
+For preview EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
+`T3CODE_CLERK_JWT_TEMPLATE`, `T3CODE_RELAY_URL`, and
+`EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL` as EAS environment variables. Expo config maps the
+canonical values into the mobile build. Production builds contain the public Workjet production
+origins and Clerk identifiers as safe defaults so a local release APK cannot silently disable
+managed device pairing; EAS values may override them for a controlled migration. No server-side
+credential belongs in Expo config.
 
 Create a PR preview dev-client build manually:
 

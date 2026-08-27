@@ -39,6 +39,11 @@ Current implementation baseline:
   environment visibility, projects, threads, drafts, navigation, composer and
   worker selection. Its complete Web unit project is green (307 files / 2,933
   tests); live Electron isolation remains part of the release gate below.
+- `2b9834f69` keeps opaque Business-OS authority identifiers out of normal UI,
+  and `90db8007b` redirects legacy Machines management into the one canonical
+  `Settings -> Business OS` surface. Electron verification confirmed stable
+  Code -> Business OS -> Code scope across reload, no console errors and no
+  horizontal overflow at 1323x843 or 860x720.
 - `a169a8041` authorizes Relay control assertions for an active, exact-instance
   Workjet Device Session without a Clerk fallback. `0f8bbf74b` adds the
   cookie-free Mobile ctox.dev adapter and exposes production QR actions only
@@ -325,10 +330,12 @@ terms restricted to status details or the collapsed Diagnose section.
 - [x] Derive Code environment, projects, threads, sessions and workers from the
       active instance.
 - [x] Keep the active instance stable when switching `Code | Business OS`.
-- [ ] Present `Gerät verbinden`, renew and revoke as actions of one instance.
+- [x] Present `Gerät verbinden`, further-device creation, list and revoke as
+      actions of one instance; keep them visibly fail-closed until the exact
+      instance's production control authority is available.
 - [ ] Keep Machines/workers nested under the instance rather than presenting
       them as alternative backends.
-- [ ] Remove the global device-pairing dialog/CTA and the standalone Machines
+- [x] Remove the global device-pairing dialog/CTA and the standalone Machines
       navigation page. Both capabilities live only in the regular settings of
       the selected CTOX instance; legacy routes may redirect there.
 - [ ] Enroll Mac, `gpu1`, `gpu3` and other hosts as Machines of the selected
@@ -354,7 +361,8 @@ active.
 - [ ] Pair two CTOX instances in one Workjet installation.
 - [ ] Switch A -> B in Business OS and observe Code switch to B.
 - [ ] Switch B -> A in Code and observe Business OS switch to A.
-- [ ] Toggle modes repeatedly without changing the active instance.
+- [x] Toggle modes repeatedly without changing the active instance; Desktop
+      Electron verification also preserves it across reload.
 - [ ] Create threads/sessions under each instance and prove no cross-instance
       list mixing.
 - [ ] Pair a second Workjet installation to A and prove the first relation is

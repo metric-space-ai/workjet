@@ -27,6 +27,18 @@ describe("Business OS native security guards", () => {
     expect(settings).not.toContain("businessOsMobileInviteEnvironment");
   });
 
+  it("never routes device control through a Code environment or connection URL", () => {
+    const commonControl = read("src/features/pairing/workjet-device-invite-control.ts");
+    const managedControl = read("src/features/pairing/workjet-managed-device-invite-control.ts");
+    expect(`${commonControl}\n${managedControl}`).not.toMatch(
+      /SavedRemoteConnection|EnvironmentId|connectionUrl|primaryEnvironment/iu,
+    );
+    expect(managedControl).toContain("backendControlConnectionId");
+    expect(managedControl).toContain("WorkjetInstallationId");
+    expect(managedControl).toContain("businessOsInstanceId");
+    expect(managedControl).toContain("MAX_ACTIVE_INVITES");
+  });
+
   it("persists only CTOX-instance to Code-machine memberships", () => {
     const registry = read("src/features/business-os/registry/native-business-os-registry.ts");
     const binding = read("src/features/business-os/registry/business-os-environment-binding.ts");

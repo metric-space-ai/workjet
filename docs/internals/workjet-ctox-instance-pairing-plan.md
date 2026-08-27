@@ -18,6 +18,12 @@ Current implementation baseline:
 - `9c751db06`, `49405cb8b` and `e3b1ddfaf` scope Mobile Code to the active
   Business OS, simplify the settings hierarchy and prohibit a Code computer or
   primary environment from acting as an implicit device-control route.
+- `4eaadfbc9` defines the managed ctox.dev control-plane envelope and keeps it
+  independent from Code environments. It is a producer contract only: the
+  ctox.dev routes and a redeemable managed device session do not exist yet.
+- `78e857a9d` removes the obsolete Mobile environment/connection fallback and
+  accepts only a short-lived, exact-instance managed control handle. Production
+  actions remain disabled while ctox.dev has no live producer.
 - The Android release artifact for `e3b1ddfaf` was installed without clearing
   data on the Galaxy Fold over wireless ADB on 2026-08-27. The visible device
   pass still requires the operator to unlock the phone.
@@ -66,6 +72,38 @@ computer and is never exposed as another selectable Connection. In particular,
 the primary Code environment and the first assigned computer must never be used
 as a fallback for this route. A managed backend host remains backend-only even
 though its control authority can authorize Workjet devices.
+
+### Unified device bootstrap invariant
+
+One Business OS owns zero to many Code computers. Therefore a Workjet device
+invite must authorize the selected `BusinessOsInstanceId`, not one arbitrary
+`EnvironmentId`. The current v1 redeemed payload contains exactly one
+`environment { base_url, bootstrap_credential }`; it is insufficient as the
+managed producer contract because it would silently turn a selected/primary
+computer into the instance authority.
+
+The production managed flow must use this sequence:
+
+1. Resolve a short-lived backend-control handle bound to the authenticated
+   Workjet user session, installation ID, DPoP key and canonical
+   `BusinessOsInstanceId`.
+2. Create a compact, one-time reference for that instance. The visible QR
+   contains no Business OS secret and no list of computer credentials.
+3. Redeem the reference with the new installation's stable device ID and DPoP
+   thumbprint. Redemption atomically creates the Workjet installation-to-
+   instance authorization edge and the CTOX Business OS invite.
+4. Return a DPoP-bound Workjet device session for that instance. The
+   server-authoritative membership read supplies the current set of zero to
+   many Code environments; the existing relay mints environment bootstraps as
+   needed. Adding or removing a computer must not require re-pairing the device.
+5. List and revoke operate on the installation-to-instance edge. Revoke also
+   invalidates every derived Code relay grant and the CTOX capability for that
+   edge.
+
+An array of raw environment credentials in the QR, persistence or retained
+invite response is forbidden. So is choosing the primary or first computer.
+Until this redeem/device-session contract and its ctox.dev producer are live,
+Managed `Gerät hinzufügen` remains visibly fail-closed.
 
 Only those stable, non-secret identifiers may be stored in the local binding
 table. Pairing secrets remain in the existing secure stores. Business records,
@@ -220,6 +258,11 @@ terms restricted to status details or the collapsed Diagnose section.
 - [x] Redeem compact one-time references with a stable device identifier and
       the existing DPoP proof-key thumbprint; never return or persist the full
       secret bundle during invite creation.
+- [ ] Replace the single-environment redeemed payload for managed pairing with
+      an instance-scoped, DPoP-bound Workjet device session plus authoritative
+      zero-to-many computer membership.
+- [ ] Bind the Mobile managed transport to the authenticated ctox.dev producer;
+      no Code environment/primary fallback is permitted.
 - [ ] Consume the authoritative backend-host isolation capability once the
       Desktop/Server contract lands; never offer a managed host as a worker.
 
@@ -242,6 +285,9 @@ terms restricted to status details or the collapsed Diagnose section.
       high-risk confirmation before self-hosted backend/worker co-location.
 - [ ] Generate compact one-time-reference QR codes and retain guarded manual
       signaling details as an explicit fallback.
+- [ ] Implement the ctox.dev producer and one-time redemption for the
+      instance-scoped Workjet device session; the four route envelopes alone do
+      not constitute a working QR flow.
 
 Desktop ownership remains with the parallel `Workjet Desktop app` task. Mobile
 does not edit Desktop, Server or shared-contract files while that task is

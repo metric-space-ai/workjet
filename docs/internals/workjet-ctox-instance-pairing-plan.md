@@ -43,9 +43,11 @@ Current implementation baseline:
 - The isolated ctox.dev branch contains `4e57284` (fail-closed managed control
   core) and `0698a34` (V2 Relay-producer adapter, rotating JWKS, one-time
   assertion consume and stable device-pairing edge). `6cdce4e` adds the
-  cookie-free DPoP device-control connection and handle-bound CSRF flow. The
-  native CTOX issuer, production deployment and secret/JWKS configuration
-  remain intentionally fail-closed.
+  cookie-free DPoP device-control connection and handle-bound CSRF flow.
+  `22aa27f` adds the exact-instance adapter from ctox.dev to the native CTOX
+  issuer through the existing host-key-pinned managed SSH transport. Production
+  deployment, native fleet rollout and secret/JWKS configuration remain
+  intentionally fail-closed.
 - The isolated CTOX branch contains `1beff1e41` (device-bound invite issuer,
   `cnf.jkt`, pairing-ID rotation/revoke and nonce-based P-256 proof before the
   WebRTC data plane). It is fully tested on its clean branch but intentionally

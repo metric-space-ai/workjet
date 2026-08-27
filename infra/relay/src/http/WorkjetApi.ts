@@ -307,6 +307,32 @@ function authorizationResponse(
   };
 }
 
+export function resolveControlIdentityAssertionAuthority(input: {
+  readonly relayPrincipal: {
+    readonly userId: string;
+    readonly proofKeyThumbprint?: string;
+  };
+  readonly devicePrincipal: DeviceSessions.DeviceSessionGrantCandidate | null;
+  readonly workjetInstallationId: string;
+  readonly businessOsInstanceId: string;
+}): { readonly relayUserId: string; readonly proofKeyThumbprint: string } | null {
+  const currentJkt = input.relayPrincipal.proofKeyThumbprint;
+  if (!currentJkt) return null;
+  if (!input.devicePrincipal) {
+    return { relayUserId: input.relayPrincipal.userId, proofKeyThumbprint: currentJkt };
+  }
+  const device = input.devicePrincipal;
+  if (
+    device.relayUserId !== input.relayPrincipal.userId ||
+    device.businessOsInstanceId !== input.businessOsInstanceId ||
+    device.deviceId !== input.workjetInstallationId ||
+    device.proofKeyThumbprint !== currentJkt
+  ) {
+    return null;
+  }
+  return { relayUserId: device.relayUserId, proofKeyThumbprint: device.proofKeyThumbprint };
+}
+
 export const workjetPrivateApi = HttpApiBuilder.group(
   WorkjetRelayApi,
   "workjetPrivate",
@@ -461,16 +487,20 @@ export const workjetAuthenticatedApi = HttpApiBuilder.group(
           const devicePrincipal = yield* Effect.serviceOption(
             DeviceSessions.WorkjetDeviceSessionPrincipal,
           );
-          if (!principal.proofKeyThumbprint || Option.isSome(devicePrincipal)) {
-            return yield* rejected();
-          }
-          yield* requireDpopThumbprint(principal.proofKeyThumbprint, {
+          const authority = resolveControlIdentityAssertionAuthority({
+            relayPrincipal: principal,
+            devicePrincipal: Option.getOrNull(devicePrincipal),
+            workjetInstallationId: payload.workjetInstallationId,
+            businessOsInstanceId: payload.businessOsInstanceId,
+          });
+          if (!authority) return yield* rejected();
+          yield* requireDpopThumbprint(authority.proofKeyThumbprint, {
             expectedAccessToken: principal.token,
           }).pipe(Effect.mapError(() => rejected()));
           return yield* assertions
             .issue({
-              relayUserId: principal.userId,
-              proofKeyThumbprint: principal.proofKeyThumbprint,
+              relayUserId: authority.relayUserId,
+              proofKeyThumbprint: authority.proofKeyThumbprint,
               workjetInstallationId: payload.workjetInstallationId,
               businessOsInstanceId: payload.businessOsInstanceId,
             })

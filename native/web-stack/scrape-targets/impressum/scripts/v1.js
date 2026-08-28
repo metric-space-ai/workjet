@@ -79,7 +79,7 @@ function runCtox(args, input, timeout = 35_000) {
       timeout,
     });
     return JSON.parse(out);
-  } catch (_err) {
+  } catch {
     // Silent on per-URL failures (see northdata.de/scripts/v1.js: stderr
     // substrings would misclassify the whole run).
     return null;
@@ -160,7 +160,7 @@ function safePublicHttpUrl(value) {
       !/^172\.(?:1[6-9]|2\d|3[01])\./.test(host) &&
       host !== "::1"
     );
-  } catch (_err) {
+  } catch {
     return false;
   }
 }
@@ -175,7 +175,7 @@ function originFromInput(input) {
   if (!safePublicHttpUrl(withScheme)) return null;
   try {
     return new URL(withScheme).origin;
-  } catch (_err) {
+  } catch {
     return null;
   }
 }
@@ -317,7 +317,7 @@ function originVariants(origin) {
     const host = url.hostname;
     if (host.startsWith("www.")) return [origin, url.protocol + "//" + host.slice(4)];
     return [origin, url.protocol + "//www." + host];
-  } catch (_err) {
+  } catch {
     return [origin];
   }
 }
@@ -392,12 +392,12 @@ const GENERIC_LINE_RE =
   /^(?:impressum|imprint|angaben|anbieter|diensteanbieter|anbieterkennzeichnung|verantwortlich|verantwortliche|vertreten|inhaltlich|kontakt|contact|firma|company|unternehmen|betreiber|herausgeber|gemäß|gemaess|§|tmg|ddg|mstg|umsatzsteuer|handelsregister|register|aufsicht|geschäftsführung|geschaeftsfuehrung|vorstand|telefon|telefax|fax|e-?mail|internet|web|vertretungsberechtigt|sitz|ladungsfähige|ladungsfaehige|anschrift|adresse|address|postanschrift)\b/i;
 
 const STREET_RE =
-  /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß."()\/-]*(?:[ ][A-Za-zÄÖÜäöüß."()\/-]+){0,5}[ ]?\d+\s*[a-zA-Z]?\s*(?:[\/-]\s*\d+\s*[a-zA-Z]?)?$/;
+  /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß."()/-]*(?:[ ][A-Za-zÄÖÜäöüß."()/-]+){0,5}[ ]?\d+\s*[a-zA-Z]?\s*(?:[/-]\s*\d+\s*[a-zA-Z]?)?$/;
 
 const PLZ_RE =
   /\b(?:[Dd]-|D )?(\d{5})[ ]([A-ZÄÖÜ][A-Za-zÄÖÜäöüß."-]*(?:[ ][A-Za-zÄÖÜäöüß."()-]+){0,3})/;
 
-const PHONE_LABEL_RE = /(?:telefon|tel\.?|phone|zentrale)\b\s*[:.]?\s*(\+?\d[\d\s().\/-]{5,22}\d)/i;
+const PHONE_LABEL_RE = /(?:telefon|tel\.?|phone|zentrale)\b\s*[:.]?\s*(\+?\d[\d\s()./-]{5,22}\d)/i;
 
 const EMAIL_TEXT_RE = /\b([A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b/g;
 
@@ -753,7 +753,7 @@ function extractImpressum(html, finalUrl) {
   let host = "";
   try {
     host = new URL(finalUrl).hostname.replace(/^www\./, "").toLowerCase();
-  } catch (_err) {
+  } catch {
     /* keep empty */
   }
 
@@ -801,7 +801,7 @@ function pageBaseHref(html, origin) {
   if (!match) return origin;
   try {
     return new URL(decodeEntities(match[1]), origin).href;
-  } catch (_err) {
+  } catch {
     return origin;
   }
 }
@@ -820,7 +820,7 @@ function discoverImpressumLink(html, origin) {
       const sameOrigin =
         target.hostname.replace(/^www\./, "") === new URL(origin).hostname.replace(/^www\./, "");
       if (sameOrigin && safePublicHttpUrl(target.href)) return target.href;
-    } catch (_err) {
+    } catch {
       /* try the next anchor */
     }
   }
@@ -933,7 +933,7 @@ function browserCapturePage(url) {
     let html;
     try {
       html = readFileSync(path.join(outDir, "page.html"), "utf8");
-    } catch (_err) {
+    } catch {
       return { page: null, commandUnavailable: false };
     }
     return {

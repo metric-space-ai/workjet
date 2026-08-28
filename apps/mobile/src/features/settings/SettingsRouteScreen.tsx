@@ -20,7 +20,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
-import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
+import { supportsAgentAwarenessLiveActivities } from "../agent-awareness/capabilities";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
 import {
@@ -135,7 +135,7 @@ function LocalSettingsRouteScreen() {
 function ConfiguredSettingsRouteScreen() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const agentAwarenessPushAvailable = supportsAgentAwarenessPush();
+  const agentAwarenessPushAvailable = supportsAgentAwarenessLiveActivities();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
@@ -601,10 +601,7 @@ function AppSettingsSection() {
     if (updateInFlight.current) return;
     updateInFlight.current = true;
     try {
-      await runAppUpdateCheck({
-        onFailure: (message) => Alert.alert("Update failed", message),
-        onStateChange: setUpdateState,
-      });
+      await runAppUpdateCheck();
     } finally {
       updateInFlight.current = false;
     }

@@ -1,5 +1,4 @@
 import type { DesktopAppBranding } from "@t3tools/contracts";
-import { formatAppDisplayName } from "./branding.logic";
 
 function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
   if (typeof window === "undefined") {

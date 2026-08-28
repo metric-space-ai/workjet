@@ -7,14 +7,14 @@
 // Zwei Schwellen mit Abstand (Hysterese): ohne sie flackert die Anzeige bei
 // jeder Kopfbewegung im Grenzbereich.
 
-export function createTiltGate({ threshold = 25, release = 12, axis = 'auto' } = {}) {
+export function createTiltGate({ threshold = 25, release = 12, axis = "auto" } = {}) {
   let ruhe = null;
   let sichtbar = true;
 
   function pick(sample) {
-    if (axis !== 'auto') return sample[axis] ?? 0;
+    if (axis !== "auto") return sample[axis] ?? 0;
     // Die Achse mit der groessten Abweichung von der Ruhelage fuehrt.
-    const kandidaten = ['x', 'y', 'z'].map((key) => ({
+    const kandidaten = ["x", "y", "z"].map((key) => ({
       key,
       delta: Math.abs((sample[key] ?? 0) - (ruhe?.[key] ?? 0)),
     }));
@@ -42,11 +42,11 @@ export function createTiltGate({ threshold = 25, release = 12, axis = 'auto' } =
       const delta = pick(sample);
       if (!sichtbar && delta >= threshold) {
         sichtbar = true;
-        return 'show';
+        return "show";
       }
       if (sichtbar && delta <= -threshold) {
         sichtbar = false;
-        return 'hide';
+        return "hide";
       }
       // Zwischen den Schwellen passiert nichts — das ist die Hysterese.
       if (Math.abs(delta) < release) return null;

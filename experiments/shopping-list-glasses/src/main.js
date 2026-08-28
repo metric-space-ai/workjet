@@ -1,4 +1,13 @@
-import { loadState, saveState, addItem, editItem, removeItem, toggleChecked, setChecked, clearChecked } from "./state.js";
+import {
+  loadState,
+  saveState,
+  addItem,
+  editItem,
+  removeItem,
+  toggleChecked,
+  setChecked,
+  clearChecked,
+} from "./state.js";
 import { renderPhoneView } from "./phoneView.js";
 import { createGlassesController } from "./glassesView.js";
 
@@ -13,7 +22,9 @@ const melde = (t) => {
 };
 
 window.addEventListener("error", (e) => melde(`FEHLER ${e.message} @ ${e.filename}:${e.lineno}`));
-window.addEventListener("unhandledrejection", (e) => melde(`ABBRUCH ${e.reason?.message || e.reason}`));
+window.addEventListener("unhandledrejection", (e) =>
+  melde(`ABBRUCH ${e.reason?.message || e.reason}`),
+);
 
 let state = loadState();
 

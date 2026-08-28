@@ -14,7 +14,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 import {
   BusinessOsSettingsView,
-  manualConnectionPasswordText,
+  manualConnectionCredentialText,
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
 } from "./BusinessOsSettings";
@@ -144,8 +144,8 @@ describe("Business OS settings scope", () => {
     expect(markup).not.toContain("pairing-1");
   });
 
-  it("keeps the manual room password masked until the user explicitly reveals it", () => {
-    expect(manualConnectionPasswordText("room-secret", false)).toBe("••••••••••••");
-    expect(manualConnectionPasswordText("room-secret", true)).toBe("room-secret");
+  it("keeps the manual browser credential masked until the user explicitly reveals it", () => {
+    expect(manualConnectionCredentialText("browser-token", false)).toBe("••••••••••••");
+    expect(manualConnectionCredentialText("browser-token", true)).toBe("browser-token");
   });
 });

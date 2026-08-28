@@ -4,8 +4,8 @@
 // Items im richtigen Zustand in welcher Reihenfolge auftauchen, und dass ein
 // Klick-Index korrekt auf die echte Item-ID zurueckuebersetzt wird.
 
-import test from "node:test";
-import assert from "node:assert/strict";
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
 import { addItem, createEmptyState, setChecked } from "../src/state.js";
 import { unfinishedItems, buildGlassesPage } from "../src/glassesLayout.js";
 
@@ -15,60 +15,66 @@ function listOf(n, dept = "Sonstiges") {
   return state;
 }
 
-test("unfinishedItems blendet abgehakte Items aus und sortiert nach Abteilung", () => {
+NodeTest("unfinishedItems blendet abgehakte Items aus und sortiert nach Abteilung", () => {
   let state = addItem(createEmptyState(), "Bier", "Getränke");
   state = addItem(state, "Apfel", "Obst & Gemüse");
   state = setChecked(state, state.items[0].id, true);
   const open = unfinishedItems(state.items);
-  assert.equal(open.length, 1);
-  assert.equal(open[0].text, "Apfel");
+  NodeAssert.equal(open.length, 1);
+  NodeAssert.equal(open[0].text, "Apfel");
 });
 
-test("Abhaken des obersten (aktuell hervorgehobenen) Items laesst das naechste nachruecken", () => {
-  const state0 = listOf(3); // Artikel 0,1,2, alle Sonstiges -> Eingabereihenfolge
-  const page0 = buildGlassesPage(state0.items);
-  assert.equal(page0.listObject[0].itemContainer.itemName[0], "SONST  Artikel 0");
+NodeTest(
+  "Abhaken des obersten (aktuell hervorgehobenen) Items laesst das naechste nachruecken",
+  () => {
+    const state0 = listOf(3); // Artikel 0,1,2, alle Sonstiges -> Eingabereihenfolge
+    const page0 = buildGlassesPage(state0.items);
+    NodeAssert.equal(page0.listObject[0].itemContainer.itemName[0], "SONST  Artikel 0");
 
-  // Klick auf Index 0 (das aktuell ausgewaehlte, oberste Item) -> abhaken.
-  const clickedId = page0.indexMap[0];
-  const state1 = setChecked(state0, clickedId, true);
-  const page1 = buildGlassesPage(state1.items);
-  assert.equal(page1.listObject[0].itemContainer.itemName[0], "SONST  Artikel 1");
-});
+    // Klick auf Index 0 (das aktuell ausgewaehlte, oberste Item) -> abhaken.
+    const clickedId = page0.indexMap[0];
+    const state1 = setChecked(state0, clickedId, true);
+    const page1 = buildGlassesPage(state1.items);
+    NodeAssert.equal(page1.listObject[0].itemContainer.itemName[0], "SONST  Artikel 1");
+  },
+);
 
-test("ein listEvent-Index uebersetzt sich ueber indexMap auf dieselbe Item-ID wie in der Telefon-Ansicht", () => {
-  const state = listOf(5);
-  const page = buildGlassesPage(state.items);
-  const unfinished = unfinishedItems(state.items);
-  for (let i = 0; i < unfinished.length; i++) {
-    assert.equal(page.indexMap[i], unfinished[i].id);
-  }
-});
+NodeTest(
+  "ein listEvent-Index uebersetzt sich ueber indexMap auf dieselbe Item-ID wie in der Telefon-Ansicht",
+  () => {
+    const state = listOf(5);
+    const page = buildGlassesPage(state.items);
+    const unfinished = unfinishedItems(state.items);
+    for (let i = 0; i < unfinished.length; i++) {
+      NodeAssert.equal(page.indexMap[i], unfinished[i].id);
+    }
+  },
+);
 
-test("die Liste ist nach Abteilung sortiert (Ladenrundgang)", () => {
+NodeTest("die Liste ist nach Abteilung sortiert (Ladenrundgang)", () => {
   let state = addItem(createEmptyState(), "Bier", "Getränke");
   state = addItem(state, "Apfel", "Obst & Gemüse");
   state = addItem(state, "Wurst", "Fleisch");
   const page = buildGlassesPage(state.items);
   const labels = page.listObject[0].itemContainer.itemName;
-  assert.deepEqual(labels, ["OBST  Apfel", "FLEISCH  Wurst", "GETR  Bier"]);
+  NodeAssert.deepEqual(labels, ["OBST  Apfel", "FLEISCH  Wurst", "GETR  Bier"]);
 });
 
-test("checked Items verschwinden vollstaendig aus der Brillenliste", () => {
+NodeTest("checked Items verschwinden vollstaendig aus der Brillenliste", () => {
   let state = listOf(3);
   const idToCheck = unfinishedItems(state.items)[1].id;
   state = setChecked(state, idToCheck, true);
   const page = buildGlassesPage(state.items);
   const labels = page.listObject[0].itemContainer.itemName;
-  assert.equal(labels.length, 2);
-  assert.ok(!labels.some((l) => l.includes("Artikel 1")));
+  NodeAssert.equal(labels.length, 2);
+  NodeAssert.ok(!labels.some((l) => l.includes("Artikel 1")));
 });
 
-test("alles abgehakt -> Fertig-Zustand ohne Liste", () => {
+NodeTest("alles abgehakt -> Fertig-Zustand ohne Liste", () => {
   let state = listOf(2);
   for (const it of state.items) state = setChecked(state, it.id, true);
   const page = buildGlassesPage(state.items);
-  assert.equal(page.done, true);
-  assert.equal(page.listObject.length, 0);
-  assert.equal(page.textObject[0].content, "Fertig.");
+  NodeAssert.equal(page.done, true);
+  NodeAssert.equal(page.listObject.length, 0);
+  NodeAssert.equal(page.textObject[0].content, "Fertig.");
 });

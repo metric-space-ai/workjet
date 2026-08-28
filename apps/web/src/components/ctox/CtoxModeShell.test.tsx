@@ -643,7 +643,9 @@ describe("CTOX bridge actions", () => {
         instanceId: "",
         syncRoom: "ctox-business-os:office",
         signalingUrls: "wss://one.example\n wss://two.example,",
-        roomSecret: "room-secret",
+        browserToken: "raw-browser-token",
+        browserTokenHash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97",
+        nativeTokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         capabilityToken: "",
         capabilityExpiresAtMs: "",
         role: "",
@@ -653,7 +655,10 @@ describe("CTOX bridge actions", () => {
       displayName: "Office",
       syncRoom: "ctox-business-os:office",
       signalingUrls: ["wss://one.example", "wss://two.example"],
-      roomSecret: "room-secret",
+      signalingAuthVersion: "ctox-role-bound-v1" as const,
+      browserToken: "raw-browser-token",
+      browserTokenHash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97",
+      nativeTokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     });
   });
 
@@ -720,7 +725,10 @@ describe("CTOX bridge actions", () => {
       displayName: "Office",
       syncRoom: "ctox-business-os:office",
       signalingUrls: [signalingUrl],
-      roomSecret: secret,
+      signalingAuthVersion: "ctox-role-bound-v1" as const,
+      browserToken: secret,
+      browserTokenHash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97",
+      nativeTokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     };
     const importManualPairing = vi.fn(async () => ({
       _tag: "completed" as const,

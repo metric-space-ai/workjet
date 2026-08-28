@@ -23,7 +23,11 @@ function inviteResult(overrides: Record<string, unknown> = {}) {
       sync_room: "ctox-business-os:instance-a",
       native_peer_id: "native-a",
       signaling_urls: ["wss://signaling.ctox.dev/v2"],
-      signaling_room_password: "room-secret-canary",
+      signaling_auth_version: "ctox-role-bound-v1",
+      signaling_browser_token: "browser-token-canary",
+      signaling_browser_token_hash:
+        "8d600d3e754f87bc9d759302261788c6618a2b09cdeecb5ecdf6c15c7f21b64c",
+      signaling_native_token_hash: "a".repeat(64),
       transport: "webrtc",
       expires_at: expiresAt,
       data_plane: "rxdb-webrtc",
@@ -114,7 +118,7 @@ describe("CtoxMobileInviteService", () => {
       const service = yield* MobileInvites.CtoxMobileInviteService;
       const error = yield* Effect.flip(service.create(300));
       assert.equal(error.reason, "invalid_response");
-      assert.notInclude(error.message, "room-secret-canary");
+      assert.notInclude(error.message, "browser-token-canary");
       assert.notInclude(error.message, "capability-secret-canary");
     }).pipe(Effect.provide(harness(() => ({ stdout: JSON.stringify(expired) }))));
   });

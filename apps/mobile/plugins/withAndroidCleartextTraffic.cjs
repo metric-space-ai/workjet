@@ -11,7 +11,7 @@ module.exports = function withAndroidCleartextTraffic(config) {
     }
 
     application.$ ??= {};
-    application.$["android:usesCleartextTraffic"] = "true";
+    application.$["android:usesCleartextTraffic"] = "false";
 
     return nextConfig;
   });

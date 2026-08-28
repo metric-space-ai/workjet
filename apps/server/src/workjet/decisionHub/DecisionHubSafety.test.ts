@@ -1,25 +1,31 @@
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { normalizeDecisionHubEndpoint } from "./DecisionHubConnectionRegistry.ts";
 import { isDecisionHubResponseWithinLimit, mapRemoteStatus } from "./DecisionHubMcpClient.ts";
 import { decisionHubContinuationIds, decisionHubRetryDelayMs } from "./DecisionHubReconciler.ts";
 
 describe("Decision Hub safety boundaries", () => {
-  it("accepts HTTPS and loopback HTTP endpoints but rejects credentialed or remote HTTP URLs", async () => {
-    await expect(
-      Effect.runPromise(normalizeDecisionHubEndpoint("https://mcp.ctox.dev/tenant")),
-    ).resolves.toBe("https://mcp.ctox.dev/tenant/mcp");
-    await expect(
-      Effect.runPromise(normalizeDecisionHubEndpoint("http://127.0.0.1:8788/mcp")),
-    ).resolves.toBe("http://127.0.0.1:8788/mcp");
-    await expect(
-      Effect.runPromise(normalizeDecisionHubEndpoint("http://example.com/mcp")),
-    ).rejects.toMatchObject({ reason: "invalid-endpoint" });
-    await expect(
-      Effect.runPromise(normalizeDecisionHubEndpoint("https://user:secret@example.com/mcp")),
-    ).rejects.toMatchObject({ reason: "invalid-endpoint" });
-  });
+  it.effect(
+    "accepts HTTPS and loopback HTTP endpoints but rejects credentialed or remote HTTP URLs",
+    () =>
+      Effect.gen(function* () {
+        expect(yield* normalizeDecisionHubEndpoint("https://mcp.ctox.dev/tenant")).toBe(
+          "https://mcp.ctox.dev/tenant/mcp",
+        );
+        expect(yield* normalizeDecisionHubEndpoint("http://127.0.0.1:8788/mcp")).toBe(
+          "http://127.0.0.1:8788/mcp",
+        );
+        expect(
+          yield* Effect.flip(normalizeDecisionHubEndpoint("http://example.com/mcp")),
+        ).toMatchObject({
+          reason: "invalid-endpoint",
+        });
+        expect(
+          yield* Effect.flip(normalizeDecisionHubEndpoint("https://user:secret@example.com/mcp")),
+        ).toMatchObject({ reason: "invalid-endpoint" });
+      }),
+  );
 
   it("bounds remote responses by UTF-8 bytes and normalizes only known statuses", () => {
     expect(isDecisionHubResponseWithinLimit("a".repeat(256 * 1_024))).toBe(true);

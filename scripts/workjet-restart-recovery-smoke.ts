@@ -43,7 +43,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
-import { DatabaseSync } from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -183,7 +183,7 @@ async function boot(
  * test cannot pass because two libraries disagree about the file.
  */
 function writeSentinelRow(home: string, sentinel: string): void {
-  const database = new DatabaseSync(NodePath.join(home, "userdata", "state.sqlite"));
+  const database = new NodeSqlite.DatabaseSync(NodePath.join(home, "userdata", "state.sqlite"));
   try {
     database.exec(
       `INSERT INTO workjet_delegation_state_events
@@ -196,7 +196,7 @@ function writeSentinelRow(home: string, sentinel: string): void {
 }
 
 function sentinelSurvived(home: string, sentinel: string): boolean {
-  const database = new DatabaseSync(NodePath.join(home, "userdata", "state.sqlite"));
+  const database = new NodeSqlite.DatabaseSync(NodePath.join(home, "userdata", "state.sqlite"));
   try {
     const rows = database
       .prepare(

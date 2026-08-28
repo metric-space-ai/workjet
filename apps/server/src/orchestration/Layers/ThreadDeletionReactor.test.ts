@@ -11,7 +11,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -162,7 +162,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     return { removals, branchDeletions, run };
   };
 
-  it("removes the worker worktree and its branch, and leaves other threads alone", async () => {
+  it.effect("removes the worker worktree and its branch, and leaves other threads alone", () => {
     const harness = makeHarness({
       threads: {
         [workerThreadId]: {
@@ -179,13 +179,14 @@ describe("worker worktree cleanup on thread.deleted", () => {
       events: [deletedEvent(workerThreadId), deletedEvent(standardThreadId)],
     });
 
-    await Effect.runPromise(harness.run);
-
-    expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
-    expect(harness.branchDeletions).toEqual([{ cwd: workspaceRoot, refName: workerRefName }]);
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+      expect(harness.branchDeletions).toEqual([{ cwd: workspaceRoot, refName: workerRefName }]);
+    });
   });
 
-  it("never removes a worktree outside the automatic storage root", async () => {
+  it.effect("never removes a worktree outside the automatic storage root", () => {
     const harness = makeHarness({
       threads: {
         [workerThreadId]: {
@@ -197,13 +198,14 @@ describe("worker worktree cleanup on thread.deleted", () => {
       events: [deletedEvent(workerThreadId)],
     });
 
-    await Effect.runPromise(harness.run);
-
-    expect(harness.removals).toEqual([]);
-    expect(harness.branchDeletions).toEqual([]);
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.removals).toEqual([]);
+      expect(harness.branchDeletions).toEqual([]);
+    });
   });
 
-  it("only deletes this thread's own worker ref", async () => {
+  it.effect("only deletes this thread's own worker ref", () => {
     const harness = makeHarness({
       threads: {
         [workerThreadId]: {
@@ -216,34 +218,37 @@ describe("worker worktree cleanup on thread.deleted", () => {
       events: [deletedEvent(workerThreadId)],
     });
 
-    await Effect.runPromise(harness.run);
-
-    expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
-    expect(harness.branchDeletions).toEqual([]);
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+      expect(harness.branchDeletions).toEqual([]);
+    });
   });
 
-  it("does not fail the deletion reaction when cleanup fails", async () => {
-    for (const failure of [{ failRemoveWorktree: true }, { failDeleteBranch: true }] as const) {
-      const harness = makeHarness({
-        threads: {
-          [workerThreadId]: {
-            workjetRole: "worker",
-            branch: workerRefName,
-            worktreePath: workerWorktreePath,
+  it.effect("does not fail the deletion reaction when cleanup fails", () =>
+    Effect.gen(function* () {
+      for (const failure of [{ failRemoveWorktree: true }, { failDeleteBranch: true }] as const) {
+        const harness = makeHarness({
+          threads: {
+            [workerThreadId]: {
+              workjetRole: "worker",
+              branch: workerRefName,
+              worktreePath: workerWorktreePath,
+            },
           },
-        },
-        events: [deletedEvent(workerThreadId)],
-        ...failure,
-      });
+          events: [deletedEvent(workerThreadId)],
+          ...failure,
+        });
 
-      const exit = await Effect.runPromiseExit(harness.run);
+        const exit = yield* Effect.exit(harness.run);
 
-      expect(Exit.isSuccess(exit)).toBe(true);
-      expect(harness.removals).toHaveLength(1);
-    }
-  });
+        expect(Exit.isSuccess(exit)).toBe(true);
+        expect(harness.removals).toHaveLength(1);
+      }
+    }),
+  );
 
-  it("is idempotent when the same deletion is observed twice", async () => {
+  it.effect("is idempotent when the same deletion is observed twice", () => {
     const harness = makeHarness({
       threads: {
         [workerThreadId]: {
@@ -258,23 +263,25 @@ describe("worker worktree cleanup on thread.deleted", () => {
       failRemoveWorktree: true,
     });
 
-    const exit = await Effect.runPromiseExit(harness.run);
-
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(harness.removals).toEqual([
-      { cwd: workspaceRoot, path: workerWorktreePath },
-      { cwd: workspaceRoot, path: workerWorktreePath },
-    ]);
-    // Never a path other than the thread's recorded worktree.
-    expect(harness.removals.every(({ path }) => path === workerWorktreePath)).toBe(true);
+    return Effect.gen(function* () {
+      const exit = yield* Effect.exit(harness.run);
+      expect(Exit.isSuccess(exit)).toBe(true);
+      expect(harness.removals).toEqual([
+        { cwd: workspaceRoot, path: workerWorktreePath },
+        { cwd: workspaceRoot, path: workerWorktreePath },
+      ]);
+      // Never a path other than the thread's recorded worktree.
+      expect(harness.removals.every(({ path }) => path === workerWorktreePath)).toBe(true);
+    });
   });
 
-  it("skips threads whose projection row is already gone", async () => {
+  it.effect("skips threads whose projection row is already gone", () => {
     const harness = makeHarness({ threads: {}, events: [deletedEvent(workerThreadId)] });
 
-    await Effect.runPromise(harness.run);
-
-    expect(harness.removals).toEqual([]);
-    expect(harness.branchDeletions).toEqual([]);
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.removals).toEqual([]);
+      expect(harness.branchDeletions).toEqual([]);
+    });
   });
 });

@@ -9,9 +9,9 @@
 //
 // Alles erledigt → Rezept C: eine ruhige, gedimmte Zeile.
 
-import { DEPARTMENTS } from './state.js';
-import { renderLegend, legendWidth, bitmapPayload } from './paint.js';
-import { renderDots } from './dots.mjs';
+import { DEPARTMENTS } from "./state.js";
+import { renderLegend, legendWidth, bitmapPayload } from "./paint.js";
+import { renderDots } from "./dots.mjs";
 
 const CONTAINER = { LISTE: 1, BOX: 2, LEGEND: 20, DOTS: 21 };
 
@@ -26,9 +26,10 @@ const DOTS = { x: 179, y: BOX.y + 8, w: 20, h: 144 };
 const MAX_SICHTBAR = 4;
 
 function zaehlen(page) {
-  page.containerTotalNum = (page.listObject?.length || 0)
-    + (page.textObject?.length || 0)
-    + (page.imageObject?.length || 0);
+  page.containerTotalNum =
+    (page.listObject?.length || 0) +
+    (page.textObject?.length || 0) +
+    (page.imageObject?.length || 0);
   return page;
 }
 
@@ -49,18 +50,33 @@ export function buildGlassesPage(items, deptPos = 0) {
     // Rezept C: ruhiger Endzustand, gedimmt, kein Poster. Kein Catcher —
     // der naechste Klick kommt als sysEvent trotzdem an und weckt die App.
     return {
-      done: true, indexMap: [], deptPos: 0, deptCount: 0, bitmaps: [],
+      done: true,
+      indexMap: [],
+      deptPos: 0,
+      deptCount: 0,
+      bitmaps: [],
       page: zaehlen({
         containerTotalNum: 0,
         listObject: [],
         imageObject: [],
-        textObject: [{
-          containerID: CONTAINER.BOX, containerName: 'fertig',
-          xPosition: BOX.x, yPosition: BOX.y, width: BOX.w, height: BOX.h,
-          borderWidth: 1, borderColor: 6, borderRadius: 10, paddingLength: 10,
-          content: 'Alles erledigt.\n\nNeue Artikel legst du am Handy an.',
-          textColor: 2, isEventCapture: 0, zOrderIndex: 1,
-        }],
+        textObject: [
+          {
+            containerID: CONTAINER.BOX,
+            containerName: "fertig",
+            xPosition: BOX.x,
+            yPosition: BOX.y,
+            width: BOX.w,
+            height: BOX.h,
+            borderWidth: 1,
+            borderColor: 6,
+            borderRadius: 10,
+            paddingLength: 10,
+            content: "Alles erledigt.\n\nNeue Artikel legst du am Handy an.",
+            textColor: 2,
+            isEventCapture: 0,
+            zOrderIndex: 1,
+          },
+        ],
       }),
     };
   }
@@ -72,13 +88,13 @@ export function buildGlassesPage(items, deptPos = 0) {
   const gesamtOffen = items.filter((it) => !it.checked).length;
 
   const status = [
-    `${artikel.length} ${artikel.length === 1 ? 'Artikel' : 'Artikel'} in dieser Abteilung`,
+    `${artikel.length} ${artikel.length === 1 ? "Artikel" : "Artikel"} in dieser Abteilung`,
     `${gesamtOffen} insgesamt offen`,
-    '',
-    'Klick hakt ab.',
-    'Doppelklick: nächste Abteilung.',
+    "",
+    "Klick hakt ab.",
+    "Doppelklick: nächste Abteilung.",
     ...(artikel.length > MAX_SICHTBAR
-      ? ['', `${artikel.length - MAX_SICHTBAR} weitere erscheinen beim Abhaken.`]
+      ? ["", `${artikel.length - MAX_SICHTBAR} weitere erscheinen beim Abhaken.`]
       : []),
   ];
 
@@ -102,39 +118,67 @@ export function buildGlassesPage(items, deptPos = 0) {
     ],
     page: zaehlen({
       containerTotalNum: 0,
-      listObject: [{
-        containerID: CONTAINER.LISTE, containerName: 'artikel',
-        xPosition: LISTE.x, yPosition: LISTE.y, width: LISTE.w, height: LISTE.h,
-        // Kein Rahmen um die Liste: der OS-Auswahlrahmen IST die Struktur.
-        borderWidth: 0, borderRadius: 8, paddingLength: 4,
-        isEventCapture: 1, zOrderIndex: 1,
-        itemContainer: {
-          itemCount: sichtbar.length,
-          itemWidth: 156,
-          isItemSelectBorderEn: 1,
-          // NUR der Artikelname — die Abteilung steht im Legendenstreifen.
-          itemName: sichtbar.map((it) => it.text),
+      listObject: [
+        {
+          containerID: CONTAINER.LISTE,
+          containerName: "artikel",
+          xPosition: LISTE.x,
+          yPosition: LISTE.y,
+          width: LISTE.w,
+          height: LISTE.h,
+          // Kein Rahmen um die Liste: der OS-Auswahlrahmen IST die Struktur.
+          borderWidth: 0,
+          borderRadius: 8,
+          paddingLength: 4,
+          isEventCapture: 1,
+          zOrderIndex: 1,
+          itemContainer: {
+            itemCount: sichtbar.length,
+            itemWidth: 156,
+            isItemSelectBorderEn: 1,
+            // NUR der Artikelname — die Abteilung steht im Legendenstreifen.
+            itemName: sichtbar.map((it) => it.text),
+          },
         },
-      }],
-      textObject: [{
-        containerID: CONTAINER.BOX, containerName: 'kontext',
-        xPosition: BOX.x, yPosition: BOX.y, width: BOX.w, height: BOX.h,
-        borderWidth: 1, borderColor: 13, borderRadius: 10, paddingLength: 10,
-        content: status.join('\n'),
-        textColor: 3, isEventCapture: 0, zOrderIndex: 2,
-      }],
+      ],
+      textObject: [
+        {
+          containerID: CONTAINER.BOX,
+          containerName: "kontext",
+          xPosition: BOX.x,
+          yPosition: BOX.y,
+          width: BOX.w,
+          height: BOX.h,
+          borderWidth: 1,
+          borderColor: 13,
+          borderRadius: 10,
+          paddingLength: 10,
+          content: status.join("\n"),
+          textColor: 3,
+          isEventCapture: 0,
+          zOrderIndex: 2,
+        },
+      ],
       imageObject: [
         {
           // Abteilungsname im unterbrochenen Rahmen — nie als Textzeile.
-          containerID: CONTAINER.LEGEND, containerName: 'legend',
-          xPosition: BOX.x + 14, yPosition: BOX.y - 10,
-          width: legende.width, height: 20, zOrderIndex: 9,
+          containerID: CONTAINER.LEGEND,
+          containerName: "legend",
+          xPosition: BOX.x + 14,
+          yPosition: BOX.y - 10,
+          width: legende.width,
+          height: 20,
+          zOrderIndex: 9,
         },
         {
           // Ein Punkt je Abteilung, die aktuelle invertiert.
-          containerID: CONTAINER.DOTS, containerName: 'dots',
-          xPosition: DOTS.x, yPosition: DOTS.y,
-          width: DOTS.w, height: DOTS.h, zOrderIndex: 4,
+          containerID: CONTAINER.DOTS,
+          containerName: "dots",
+          xPosition: DOTS.x,
+          yPosition: DOTS.y,
+          width: DOTS.w,
+          height: DOTS.h,
+          zOrderIndex: 4,
         },
       ],
     }),

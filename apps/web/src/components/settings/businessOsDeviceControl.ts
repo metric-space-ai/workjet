@@ -18,7 +18,7 @@ export interface BusinessOsWebRtcDeviceInvite {
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("CTOX WebRTC device response is invalid.");
+    throw new Error("CTOX device response is invalid.");
   }
   return value as Record<string, unknown>;
 }
@@ -87,7 +87,10 @@ export async function createBusinessOsDeviceInvite(
     manualConnection: {
       signalingUrls: [...invite.signaling_urls],
       room: invite.sync_room,
-      password: invite.signaling_room_password,
+      authVersion: invite.signaling_auth_version,
+      browserToken: invite.signaling_browser_token,
+      browserTokenHash: invite.signaling_browser_token_hash,
+      nativeTokenHash: invite.signaling_native_token_hash,
       expiresAt: response.expiresAt,
     },
   };

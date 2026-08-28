@@ -59,18 +59,29 @@ describe("Workjet Mobile product identity", () => {
     expect(surfaces).not.toContain('stage="Alpha"');
   });
 
-  it("pins generated native display names to Workjet without renaming technical identities", () => {
+  it("pins generated native display names and removes the unsigned widget target", () => {
     const config = read("../../app.config.ts");
     const mark = read("../components/CtoxMark.tsx");
-    const widget = read("../widgets/AgentActivity.tsx");
-    const widgetPlugin = read("../../plugins/withWidgetLogoAsset.cjs");
+    const manifest = read("../../package.json");
 
     expect(config.match(/appName: "Workjet"/gu)).toHaveLength(3);
     expect(config).not.toMatch(/appName: "(?:CTOX|T3 Code|T3Code|Alpha)"/u);
     expect(config).toContain("Allow Workjet to connect to CTOX backends");
+    expect(config).toContain("updates: { enabled: false }");
+    expect(config).not.toContain("expo-widgets");
+    expect(manifest).not.toContain('"expo-widgets"');
+    expect(manifest).not.toContain('"expo-updates"');
     expect(mark).toContain('accessibilityLabel="Workjet"');
     expect(mark).not.toContain('accessibilityLabel="CTOX"');
-    expect(`${widget}\n${widgetPlugin}`).not.toContain("T3Mark");
-    expect(`${widget}\n${widgetPlugin}`).toContain("WorkjetMark");
+  });
+
+  it("keeps native cleartext transports disabled", () => {
+    const config = read("../../app.config.ts");
+    const androidPlugin = read("../../plugins/withAndroidCleartextTraffic.cjs");
+
+    expect(config).toContain("NSAllowsArbitraryLoads: false");
+    expect(config).not.toContain("NSAllowsArbitraryLoads: true");
+    expect(androidPlugin).toContain('application.$["android:usesCleartextTraffic"] = "false"');
+    expect(androidPlugin).not.toContain('application.$["android:usesCleartextTraffic"] = "true"');
   });
 });

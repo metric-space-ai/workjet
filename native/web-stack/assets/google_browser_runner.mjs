@@ -31,8 +31,8 @@
 // rules, not the patched binary.
 
 import { chromium } from "patchright";
-import fs from "node:fs";
-import { fileURLToPath } from "node:url";
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
 
 const STEALTH_LAUNCH_ARGS = [
   "--disable-blink-features=AutomationControlled",
@@ -149,8 +149,11 @@ async function readStdinJson() {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone browser runner has no Effect runtime; capture the host boundary once.
+const hostPlatform = process.platform;
+
 function defaultUserAgent() {
-  switch (process.platform) {
+  switch (hostPlatform) {
     case "darwin":
       return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
     case "win32":
@@ -162,8 +165,8 @@ function defaultUserAgent() {
 
 function defaultClientHints() {
   let platform = '"Linux"';
-  if (process.platform === "darwin") platform = '"macOS"';
-  else if (process.platform === "win32") platform = '"Windows"';
+  if (hostPlatform === "darwin") platform = '"macOS"';
+  else if (hostPlatform === "win32") platform = '"Windows"';
   return {
     "Sec-CH-UA": '"Chromium";v="146", "Google Chrome";v="146", "Not.A/Brand";v="24"',
     "Sec-CH-UA-Mobile": "?0",
@@ -177,7 +180,7 @@ function defaultClientHints() {
   const startedAt = Date.now();
   const maxResults = Math.min(Math.max(cfg.maxResults ?? 10, 1), 20);
   const timeoutMs = Math.min(Math.max(cfg.timeoutMs ?? 25000, 5000), 120000);
-  fs.mkdirSync(cfg.stateDir, { recursive: true });
+  NodeFS.mkdirSync(cfg.stateDir, { recursive: true });
 
   const language = cfg.language || "de-DE";
   const region = cfg.region || "DE";
@@ -202,7 +205,7 @@ function defaultClientHints() {
     javaScriptEnabled: true,
   });
 
-  await ctx.addInitScript({ path: fileURLToPath(STEALTH_INIT_PATH) });
+  await ctx.addInitScript({ path: NodeURL.fileURLToPath(STEALTH_INIT_PATH) });
 
   const page = await ctx.newPage();
   const outcome = {

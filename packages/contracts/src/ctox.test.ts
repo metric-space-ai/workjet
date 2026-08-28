@@ -45,7 +45,10 @@ const validManualPairing = {
   instanceId: "office-1",
   syncRoom: "ctox-business-os:office-1",
   signalingUrls: ["wss://signal.example.com/room"],
-  roomSecret: "room-secret",
+  signalingAuthVersion: "ctox-role-bound-v1",
+  browserToken: "raw-browser-token",
+  browserTokenHash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97", // gitleaks:allow -- deterministic SHA-256 test vector
+  nativeTokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   capabilityToken: "capability-token",
   capabilityExpiresAtMs: 1_900_000_000_000,
   role: "admin",

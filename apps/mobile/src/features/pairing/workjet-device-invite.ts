@@ -170,8 +170,15 @@ function validateEnvironmentBaseUrl(raw: string): string {
   } catch {
     return fail("environment_url", "Workjet environment URL is invalid.");
   }
+  const hostname = url.hostname.toLowerCase();
+  const httpLoopback =
+    url.protocol === "http:" &&
+    (hostname === "localhost" ||
+      hostname === "::1" ||
+      hostname === "[::1]" ||
+      /^127(?:\.\d{1,3}){3}$/u.test(hostname));
   if (
-    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    (url.protocol !== "https:" && !httpLoopback) ||
     url.username ||
     url.password ||
     url.search ||

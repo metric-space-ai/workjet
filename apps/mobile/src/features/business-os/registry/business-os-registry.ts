@@ -2,10 +2,21 @@ import type { ValidatedBusinessOsInvite } from "../pairing/invite";
 
 const FORBIDDEN_METADATA_KEYS = [
   "signaling_room_password",
+  "signaling_browser_token",
+  "signalingbrowsertoken",
+  "browser_token",
+  "browsertoken",
+  "signaling_native_token",
+  "signalingnativetoken",
+  "native_token",
+  "nativetoken",
   "capability_token",
+  "capabilitytoken",
   "ctox_config",
   "desktop_link",
   "password",
+  "roomsecret",
+  "roompassword",
   "payload=",
 ] as const;
 
@@ -19,7 +30,12 @@ export interface BusinessOsInstance {
   readonly inviteExpiresAt: string;
   readonly capabilityExpiresAtMs: number;
   readonly user: ValidatedBusinessOsInvite["session"]["user"];
-  readonly roomSecretRef: string;
+  readonly browserTokenRef?: string;
+  /** Legacy shared-secret reference. Never accepted for a new launch. */
+  readonly roomSecretRef?: string;
+  readonly signalingAuthVersion: "ctox-role-bound-v1";
+  readonly browserTokenHash: string;
+  readonly nativeTokenHash: string;
   readonly capabilitySecretRef: string;
   readonly storageIdentity: string;
   readonly createdAtMs: number;
@@ -51,7 +67,7 @@ export interface BusinessOsRegistryDependencies {
 }
 
 export interface BusinessOsLaunchSecrets {
-  readonly roomPassword: string;
+  readonly browserToken: string;
   readonly capabilityToken: string;
 }
 
@@ -121,7 +137,7 @@ export async function pairBusinessOsInstance(
   const newReferences: string[] = [];
 
   try {
-    newReferences.push(await dependencies.secrets.write(invite.password));
+    newReferences.push(await dependencies.secrets.write(invite.browserToken));
     newReferences.push(await dependencies.secrets.write(invite.session.capabilityToken));
   } catch (cause) {
     await removeBestEffort(dependencies.secrets, newReferences);
@@ -142,7 +158,10 @@ export async function pairBusinessOsInstance(
     inviteExpiresAt: invite.expiresAt,
     capabilityExpiresAtMs: invite.session.capabilityExpiresAtMs,
     user: invite.session.user,
-    roomSecretRef: newReferences[0]!,
+    browserTokenRef: newReferences[0]!,
+    signalingAuthVersion: invite.signalingAuthVersion,
+    browserTokenHash: invite.browserTokenHash,
+    nativeTokenHash: invite.nativeTokenHash,
     capabilitySecretRef: newReferences[1]!,
     storageIdentity: existing?.storageIdentity ?? dependencies.createOpaqueId(),
     createdAtMs: existing?.createdAtMs ?? now,
@@ -163,7 +182,8 @@ export async function pairBusinessOsInstance(
 
   if (existing) {
     await removeBestEffort(dependencies.secrets, [
-      existing.roomSecretRef,
+      ...(existing.browserTokenRef ? [existing.browserTokenRef] : []),
+      ...(existing.roomSecretRef ? [existing.roomSecretRef] : []),
       existing.capabilitySecretRef,
     ]);
   }
@@ -174,17 +194,23 @@ export async function loadBusinessOsLaunchSecrets(
   instance: BusinessOsInstance,
   secretStore: BusinessOsSecretStorePort,
 ): Promise<BusinessOsLaunchSecrets> {
-  const [roomPassword, capabilityToken] = await Promise.all([
-    secretStore.read(instance.roomSecretRef),
+  if (!instance.browserTokenRef) {
+    throw new BusinessOsRegistryError(
+      "missing-secret",
+      "This pairing uses retired shared signaling credentials. Pair this backend again.",
+    );
+  }
+  const [browserToken, capabilityToken] = await Promise.all([
+    secretStore.read(instance.browserTokenRef),
     secretStore.read(instance.capabilitySecretRef),
   ]);
-  if (!roomPassword || !capabilityToken) {
+  if (!browserToken || !capabilityToken) {
     throw new BusinessOsRegistryError(
       "missing-secret",
       "Business OS credentials are incomplete. Pair this backend again.",
     );
   }
-  return { roomPassword, capabilityToken };
+  return { browserToken, capabilityToken };
 }
 
 export async function forgetBusinessOsInstance(
@@ -204,7 +230,8 @@ export async function forgetBusinessOsInstance(
   }
   await dependencies.registry.remove(instance.id);
   await removeBestEffort(dependencies.secrets, [
-    instance.roomSecretRef,
+    ...(instance.browserTokenRef ? [instance.browserTokenRef] : []),
+    ...(instance.roomSecretRef ? [instance.roomSecretRef] : []),
     instance.capabilitySecretRef,
   ]);
 }

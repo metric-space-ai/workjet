@@ -43,7 +43,7 @@ Das entspricht exakt dem, was `src/dots.mjs` bereits zeichnet — siehe unten.
 
 - **`src/dots.mjs` existiert und ist FERTIG**, wird aber von **niemandem
   importiert**. Genau deshalb „fehlen die Punkte“. `renderDots({width, height,
-  count, active})` malt eine senkrechte Punktspalte; die aktive Position wird
+count, active})` malt eine senkrechte Punktspalte; die aktive Position wird
   als länglicher Strich (3×10 px, Helligkeit 15) statt als Punkt (2×2 px,
   Helligkeit 7) gezeichnet. Wiederverwenden, nicht neu schreiben.
 - **Die Rahmen sitzen in `src/view-to-containers.mjs`, Funktion `actionBoxes`.**

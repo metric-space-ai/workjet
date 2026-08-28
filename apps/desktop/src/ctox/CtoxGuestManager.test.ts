@@ -87,7 +87,10 @@ const sshConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
   transport: "webrtc",
   sync_room: "ctox-business-os:buildbox",
   signaling_urls: ["ws://127.0.0.1:52001/signal"],
-  signaling_room_password: "ssh-room-secret",
+  signaling_auth_version: "ctox-role-bound-v1",
+  signaling_browser_token: "ssh-browser-token",
+  signaling_browser_token_hash: "496d86c57e7e4197a59b97b197dda465eeac31f69a2d5d84d944a42ddd919787",
+  signaling_native_token_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   http_bridge_available: false,
   desktop_instance: {
     id: sshDescriptor.id,
@@ -101,7 +104,10 @@ const localConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
   transport: "webrtc",
   sync_room: "ctox-business-os:workstation",
   signaling_urls: ["ws://127.0.0.1:4444/signal"],
-  signaling_room_password: "local-room-secret",
+  signaling_auth_version: "ctox-role-bound-v1",
+  signaling_browser_token: "local-browser-token",
+  signaling_browser_token_hash: "a649e15b61ba3bc2a444f0286a393cb570d0171e174c83c963d8d729c341884f",
+  signaling_native_token_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   http_bridge_available: false,
   desktop_instance: {
     id: localDescriptor.id,
@@ -115,7 +121,10 @@ const pairedConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
   transport: "webrtc",
   sync_room: "ctox-business-os:office",
   signaling_urls: ["wss://signal.example.com/room"],
-  signaling_room_password: "paired-room-secret",
+  signaling_auth_version: "ctox-role-bound-v1",
+  signaling_browser_token: "paired-browser-token",
+  signaling_browser_token_hash: "6cf182be93b7728813112387c9e40f13bee8e057fded03f47eedc2de1d562d5d",
+  signaling_native_token_hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   http_bridge_available: false,
   desktop_instance: {
     id: pairedDescriptor.id,
@@ -498,7 +507,7 @@ describe("CtoxGuestManager", () => {
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;
-      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      const activation = yield* Effect.forkChild(manager.activate(descriptor.id, bounds));
       yield* Effect.promise(() =>
         vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
       );
@@ -513,7 +522,7 @@ describe("CtoxGuestManager", () => {
         1,
         1,
       );
-      assert.deepEqual(yield* Effect.promise(() => activation), {
+      assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "ready",
         instanceId: descriptor.id,
       });
@@ -533,7 +542,7 @@ describe("CtoxGuestManager", () => {
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;
-      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      const activation = yield* Effect.forkChild(manager.activate(descriptor.id, bounds));
       yield* Effect.promise(() =>
         vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
       );
@@ -548,13 +557,8 @@ describe("CtoxGuestManager", () => {
         2,
         2,
       );
-      const state = yield* Effect.promise(() =>
-        Promise.race([
-          activation.then(() => "settled" as const),
-          new Promise<"pending">((resolve) => setImmediate(() => resolve("pending"))),
-        ]),
-      );
-      expect(state).toBe("pending");
+      expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(1);
+      expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(1);
 
       harness.views[0]?.emit(
         "did-frame-navigate",
@@ -566,7 +570,7 @@ describe("CtoxGuestManager", () => {
         1,
         1,
       );
-      assert.deepEqual(yield* Effect.promise(() => activation), {
+      assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "ready",
         instanceId: descriptor.id,
       });
@@ -582,7 +586,7 @@ describe("CtoxGuestManager", () => {
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;
-      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      const activation = yield* Effect.forkChild(manager.activate(descriptor.id, bounds));
       yield* Effect.promise(() =>
         vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
       );
@@ -597,7 +601,7 @@ describe("CtoxGuestManager", () => {
         1,
         1,
       );
-      assert.deepEqual(yield* Effect.promise(() => activation), {
+      assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "failed",
         code: "guest_failed",
       });
@@ -672,13 +676,13 @@ describe("CtoxGuestManager", () => {
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;
-      const activation = Effect.runPromise(manager.activate(descriptor.id, bounds));
+      const activation = yield* Effect.forkChild(manager.activate(descriptor.id, bounds));
       yield* Effect.promise(() =>
         vi.waitFor(() => expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce()),
       );
 
       harness.views[0]?.destroy();
-      assert.deepEqual(yield* Effect.promise(() => activation), {
+      assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "failed",
         code: "guest_failed",
       });

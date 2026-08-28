@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The lock digests raw artifact bytes and the mutation proofs rewrite them on disk.
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -28,7 +28,8 @@ import {
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 
-const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
+const sha256 = (value: string): string =>
+  NodeCrypto.createHash("sha256").update(value, "utf8").digest("hex");
 
 const realInputs = readCapabilityVersionLockInputs(repoRoot).pipe(
   Effect.provide(NodeServices.layer),

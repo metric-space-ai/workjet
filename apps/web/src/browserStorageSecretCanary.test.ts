@@ -304,22 +304,24 @@ function bearerRegistration(label: string) {
  * dynamically because it reads `window.desktopBridge` and `indexedDB` while the
  * layer is built, and the engine has to be installed first.
  */
-async function persistRealisticSession(options: { readonly connectionLabel: string }) {
-  const { connectionStorageLayer } = await import("./connection/storage");
-  const { writeBrowserClientSettings } = await import("./clientPersistenceStorage");
-  const { persistState } = await import("./uiStateStore");
+function persistRealisticSession(options: { readonly connectionLabel: string }) {
+  return Effect.gen(function* () {
+    const { connectionStorageLayer } = yield* Effect.promise(() => import("./connection/storage"));
+    const { writeBrowserClientSettings } = yield* Effect.promise(
+      () => import("./clientPersistenceStorage"),
+    );
+    const { persistState } = yield* Effect.promise(() => import("./uiStateStore"));
 
-  writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "24-hour" });
-  persistState({
-    projectExpandedById: { [ProjectId.make("project-1")]: true },
-    projectOrder: [ProjectId.make("project-1")],
-    threadLastVisitedAtById: { [ThreadId.make("thread-1")]: "2026-08-20T10:00:00.000Z" },
-    threadChangedFilesExpandedById: {},
-    defaultAdvertisedEndpointKey: null,
-  });
+    writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "24-hour" });
+    persistState({
+      projectExpandedById: { [ProjectId.make("project-1")]: true },
+      projectOrder: [ProjectId.make("project-1")],
+      threadLastVisitedAtById: { [ThreadId.make("thread-1")]: "2026-08-20T10:00:00.000Z" },
+      threadChangedFilesExpandedById: {},
+      defaultAdvertisedEndpointKey: null,
+    });
 
-  await Effect.runPromise(
-    Effect.gen(function* () {
+    yield* Effect.gen(function* () {
       const registrations = yield* ConnectionRegistrationStore;
       yield* registrations.register(bearerRegistration(options.connectionLabel));
 
@@ -341,8 +343,8 @@ async function persistRealisticSession(options: { readonly connectionLabel: stri
 
       const cache = yield* EnvironmentCacheStore;
       yield* cache.saveServerConfig(ENVIRONMENT_ID, SERVER_CONFIG);
-    }).pipe(Effect.provide(connectionStorageLayer)),
-  );
+    }).pipe(Effect.provide(connectionStorageLayer));
+  });
 }
 
 /**
@@ -374,34 +376,39 @@ describe("browser storage secret canary", () => {
     databases.clear();
   });
 
-  it("leaves no undeclared secret shape in localStorage or IndexedDB", async () => {
-    await persistRealisticSession({ connectionLabel: "Workstation" });
-    const dump = dumpBrowserStorage();
+  it.effect("leaves no undeclared secret shape in localStorage or IndexedDB", () =>
+    Effect.gen(function* () {
+      yield* persistRealisticSession({ connectionLabel: "Workstation" });
+      const dump = dumpBrowserStorage();
 
-    expect(dump).toContain("t3code:client-settings:v1");
-    expect(dump).toContain("t3code:connection-runtime/catalog");
-    expect(dump).toContain("t3code:connection-runtime/server-config");
+      expect(dump).toContain("t3code:client-settings:v1");
+      expect(dump).toContain("t3code:connection-runtime/catalog");
+      expect(dump).toContain("t3code:connection-runtime/server-config");
 
-    const leaks = undeclaredSecretShapes(dump);
-    expect(
-      leaks.map((leak) => `${leak.shape} @${leak.index}`),
-      "browser storage must carry no secret shape beyond the declared session credentials",
-    ).toEqual([]);
-  });
+      const leaks = undeclaredSecretShapes(dump);
+      expect(
+        leaks.map((leak) => `${leak.shape} @${leak.index}`),
+        "browser storage must carry no secret shape beyond the declared session credentials",
+      ).toEqual([]);
+    }),
+  );
 
-  it("keeps every declared credential in exactly one place", async () => {
-    await persistRealisticSession({ connectionLabel: "Workstation" });
-    const dump = dumpBrowserStorage();
+  it.effect("keeps every declared credential in exactly one place", () =>
+    Effect.gen(function* () {
+      yield* persistRealisticSession({ connectionLabel: "Workstation" });
+      const dump = dumpBrowserStorage();
 
-    for (const declared of DECLARED_BROWSER_CREDENTIALS) {
-      expect(dump.split(declared.value).length - 1, `${declared.name} occurrence count`).toBe(
-        declared.occurrences,
-      );
-      expect(declared.reason.length, `${declared.name} must say why it is allowed`).toBeGreaterThan(
-        40,
-      );
-    }
-  });
+      for (const declared of DECLARED_BROWSER_CREDENTIALS) {
+        expect(dump.split(declared.value).length - 1, `${declared.name} occurrence count`).toBe(
+          declared.occurrences,
+        );
+        expect(
+          declared.reason.length,
+          `${declared.name} must say why it is allowed`,
+        ).toBeGreaterThan(40);
+      }
+    }),
+  );
 
   /**
    * THE POSITIVE CONTROL. Without it the two assertions above would also pass
@@ -410,12 +417,14 @@ describe("browser storage secret canary", () => {
    * label — an ordinary, user-visible string field, the kind of carrier a real
    * leak travels in — must come back out of the real storage path and be seen.
    */
-  it("fails when a provider key travels into storage on an ordinary field", async () => {
-    await persistRealisticSession({
-      connectionLabel: "sk-ant-api03-9zQx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0Ps",
-    });
-    const leaks = undeclaredSecretShapes(dumpBrowserStorage());
+  it.effect("fails when a provider key travels into storage on an ordinary field", () =>
+    Effect.gen(function* () {
+      yield* persistRealisticSession({
+        connectionLabel: "sk-ant-api03-9zQx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0Ps",
+      });
+      const leaks = undeclaredSecretShapes(dumpBrowserStorage());
 
-    expect(leaks.map((leak) => leak.shape)).toContain("known-credential");
-  });
+      expect(leaks.map((leak) => leak.shape)).toContain("known-credential");
+    }),
+  );
 });

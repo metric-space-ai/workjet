@@ -18,13 +18,13 @@
 // unbeaufsichtigten Lauf gehen auch EVENHUB_EMAIL/EVENHUB_PASSWORD oder
 // EVENHUB_TOKEN aus der Umgebung.
 
-import { readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
-import { createInterface } from 'node:readline';
-import { stdin, stdout } from 'node:process';
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeReadline from "node:readline";
+import * as NodeProcess from "node:process";
 
-const BASIS = process.env.EVENHUB_BASE || 'https://hub.evenrealities.com';
-const HEADER = 'X-Even-Authorization';
+const BASIS = process.env.EVENHUB_BASE || "https://hub.evenrealities.com";
+const HEADER = "X-Even-Authorization";
 
 function raus(nachricht, code = 1) {
   console.error(nachricht);
@@ -34,13 +34,23 @@ function raus(nachricht, code = 1) {
 /** Eingabe abfragen; `verdeckt` unterdrueckt die Anzeige der Zeichen. */
 function frage(text, verdeckt = false) {
   return new Promise((fertig) => {
-    const rl = createInterface({ input: stdin, output: stdout, terminal: true });
+    const rl = NodeReadline.createInterface({
+      input: NodeProcess.stdin,
+      output: NodeProcess.stdout,
+      terminal: true,
+    });
     if (verdeckt) {
       // Nichts zurueckschreiben: das Passwort darf weder auf dem Schirm
       // noch in der Shell-Historie landen.
-      rl._writeToOutput = (s) => { if (s.includes(text)) stdout.write(text); };
+      rl._writeToOutput = (s) => {
+        if (s.includes(text)) NodeProcess.stdout.write(text);
+      };
     }
-    rl.question(text, (antwort) => { rl.close(); if (verdeckt) stdout.write('\n'); fertig(antwort.trim()); });
+    rl.question(text, (antwort) => {
+      rl.close();
+      if (verdeckt) NodeProcess.stdout.write("\n");
+      fertig(antwort.trim());
+    });
   });
 }
 
@@ -48,12 +58,16 @@ async function api(pfad, optionen = {}, weichFehlschlag = false) {
   const antwort = await fetch(`${BASIS}${pfad}`, optionen);
   const text = await antwort.text();
   let daten = null;
-  try { daten = JSON.parse(text); } catch { /* keine JSON-Antwort */ }
+  try {
+    daten = JSON.parse(text);
+  } catch {
+    /* keine JSON-Antwort */
+  }
   const fehler = !antwort.ok
     ? `HTTP ${antwort.status}: ${text.slice(0, 300)}`
-    : (daten && daten.code !== undefined && daten.code !== 0
-      ? `${daten.code}: ${daten.message || 'ohne Meldung'}`
-      : null);
+    : daten && daten.code !== undefined && daten.code !== 0
+      ? `${daten.code}: ${daten.message || "ohne Meldung"}`
+      : null;
   if (fehler) {
     if (weichFehlschlag) return { fehler, daten };
     raus(`${pfad} -> ${fehler}`);
@@ -63,15 +77,15 @@ async function api(pfad, optionen = {}, weichFehlschlag = false) {
 
 async function anmelden() {
   if (process.env.EVENHUB_TOKEN) return process.env.EVENHUB_TOKEN;
-  const email = process.env.EVENHUB_EMAIL || await frage('E-Mail: ');
-  const passwort = process.env.EVENHUB_PASSWORD || await frage('Passwort (verdeckt): ', true);
-  if (!email || !passwort) raus('Ohne E-Mail und Passwort geht es nicht.');
-  const { daten } = await api('/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+  const email = process.env.EVENHUB_EMAIL || (await frage("E-Mail: "));
+  const passwort = process.env.EVENHUB_PASSWORD || (await frage("Passwort (verdeckt): ", true));
+  if (!email || !passwort) raus("Ohne E-Mail und Passwort geht es nicht.");
+  const { daten } = await api("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ email, password: passwort }),
   });
-  if (!daten?.access_token) raus('Anmeldung lieferte keinen Token.');
+  if (!daten?.access_token) raus("Anmeldung lieferte keinen Token.");
   return daten.access_token;
 }
 
@@ -81,21 +95,25 @@ async function anmelden() {
  * mit dem Paket — der Server liest das Manifest selbst — und apps/create.
  */
 async function appAnlegen({ datei, inhalt, name, tagline, token }) {
-  console.log('App existiert noch nicht — lege sie aus dem Paket an …');
+  console.log("App existiert noch nicht — lege sie aus dem Paket an …");
   const entwurfForm = new FormData();
-  entwurfForm.append('ehpk', new Blob([inhalt]), basename(datei));
-  const { daten: entwurf } = await api('/api/v1/apps/draft', {
-    method: 'POST', headers: { [HEADER]: token }, body: entwurfForm,
+  entwurfForm.append("ehpk", new Blob([inhalt]), NodePath.basename(datei));
+  const { daten: entwurf } = await api("/api/v1/apps/draft", {
+    method: "POST",
+    headers: { [HEADER]: token },
+    body: entwurfForm,
   });
-  if (!entwurf?.draft_id) raus('apps/draft lieferte keine draft_id.');
+  if (!entwurf?.draft_id) raus("apps/draft lieferte keine draft_id.");
   console.log(`Manifest gelesen: ${entwurf.manifest?.name} ${entwurf.manifest?.version}`);
 
   const anlegen = new FormData();
-  anlegen.append('draft_id', entwurf.draft_id);
-  anlegen.append('name', entwurf.manifest?.name || name);
-  anlegen.append('tagline', tagline);
-  const { daten: app } = await api('/api/v1/apps/create', {
-    method: 'POST', headers: { [HEADER]: token }, body: anlegen,
+  anlegen.append("draft_id", entwurf.draft_id);
+  anlegen.append("name", entwurf.manifest?.name || name);
+  anlegen.append("tagline", tagline);
+  const { daten: app } = await api("/api/v1/apps/create", {
+    method: "POST",
+    headers: { [HEADER]: token },
+    body: anlegen,
   });
   console.log(`App angelegt: ${app?.package_id} (id ${app?.id})`);
   // apps/create legt die erste Version gleich mit an — fertig.
@@ -103,17 +121,23 @@ async function appAnlegen({ datei, inhalt, name, tagline, token }) {
 }
 
 async function hochladen({ datei, paketId, name, tagline, changelog, token }) {
-  const inhalt = await readFile(datei);
+  const inhalt = await NodeFSP.readFile(datei);
   const form = () => {
     const f = new FormData();
-    f.append('ehpk', new Blob([inhalt]), basename(datei));
+    f.append("ehpk", new Blob([inhalt]), NodePath.basename(datei));
     return f;
   };
   const pfad = `/api/v1/versions/draft?package_id=${encodeURIComponent(paketId)}`;
 
-  let { daten: entwurf, fehler } = await api(pfad, {
-    method: 'POST', headers: { [HEADER]: token }, body: form(),
-  }, true);
+  let { daten: entwurf, fehler } = await api(
+    pfad,
+    {
+      method: "POST",
+      headers: { [HEADER]: token },
+      body: form(),
+    },
+    true,
+  );
 
   if (fehler) {
     // "data not found" heisst: die App gibt es noch nicht. Dann ist der
@@ -124,13 +148,17 @@ async function hochladen({ datei, paketId, name, tagline, changelog, token }) {
 
   const entwurfId = entwurf?.draft_id ?? entwurf?.id;
   if (!entwurfId) raus(`Kein draft_id in der Antwort:\n${JSON.stringify(entwurf).slice(0, 400)}`);
-  console.log(`Entwurf angelegt: ${entwurfId}${entwurf?.version ? ` (Version ${entwurf.version})` : ''}`);
+  console.log(
+    `Entwurf angelegt: ${entwurfId}${entwurf?.version ? ` (Version ${entwurf.version})` : ""}`,
+  );
 
   const anlegen = new FormData();
-  anlegen.append('draft_id', String(entwurfId));
-  if (changelog) anlegen.append('changelog', changelog);
+  anlegen.append("draft_id", String(entwurfId));
+  if (changelog) anlegen.append("changelog", changelog);
   const { daten } = await api(`/api/v1/versions/create?package_id=${encodeURIComponent(paketId)}`, {
-    method: 'POST', headers: { [HEADER]: token }, body: anlegen,
+    method: "POST",
+    headers: { [HEADER]: token },
+    body: anlegen,
   });
   return daten;
 }
@@ -142,22 +170,24 @@ async function hochladen({ datei, paketId, name, tagline, changelog, token }) {
  * und beim Beta-Kanal muss das eigene Konto als Tester eingetragen sein.
  */
 async function veroeffentlichen({ paketId, version, kanal, emails, token }) {
-  const kopf = { [HEADER]: token, 'content-type': 'application/json' };
+  const kopf = { [HEADER]: token, "content-type": "application/json" };
   const ziel = `?package_id=${encodeURIComponent(paketId)}`;
   // Das Feld heisst version_name, nicht version — mit `version` antwortet
   // der Server mit HTTP 500 statt einer Meldung.
   await api(`/api/v1/apps/branch-version${ziel}`, {
-    method: 'POST', headers: kopf,
+    method: "POST",
+    headers: kopf,
     body: JSON.stringify({ branch_name: kanal, version_name: version }),
   });
   console.log(`Version ${version} im Kanal "${kanal}" veröffentlicht.`);
 
-  if (kanal === 'beta' && emails.length) {
+  if (kanal === "beta" && emails.length) {
     await api(`/api/v1/apps/add-branch-users${ziel}`, {
-      method: 'POST', headers: kopf,
-      body: JSON.stringify({ branch_name: 'beta', emails }),
+      method: "POST",
+      headers: kopf,
+      body: JSON.stringify({ branch_name: "beta", emails }),
     });
-    console.log(`Tester freigeschaltet: ${emails.join(', ')}`);
+    console.log(`Tester freigeschaltet: ${emails.join(", ")}`);
   }
 }
 
@@ -165,18 +195,18 @@ async function main() {
   const argumente = process.argv.slice(2);
   const wert = (praefix, standard) =>
     (argumente.find((a) => a.startsWith(praefix)) || `${praefix}${standard}`).slice(praefix.length);
-  const datei = argumente.find((a) => !a.startsWith('--')) || 'decision-hub-0.4.0.ehpk';
-  const paketId = wert('--package=', 'ai.metricspace.decisionhub');
-  const name = wert('--name=', 'Decision Hub');
-  const tagline = wert('--tagline=', 'Entscheidungen im Blickfeld');
-  const changelog = wert('--changelog=', '');
+  const datei = argumente.find((a) => !a.startsWith("--")) || "decision-hub-0.4.0.ehpk";
+  const paketId = wert("--package=", "ai.metricspace.decisionhub");
+  const name = wert("--name=", "Decision Hub");
+  const tagline = wert("--tagline=", "Entscheidungen im Blickfeld");
+  const changelog = wert("--changelog=", "");
 
   const token = await anmelden();
-  console.log('Angemeldet.');
+  console.log("Angemeldet.");
 
-  if (argumente.includes('--check')) {
-    const { daten } = await api('/api/v1/auth/self_check', { headers: { [HEADER]: token } });
-    console.log('Konto:', JSON.stringify(daten).slice(0, 200));
+  if (argumente.includes("--check")) {
+    const { daten } = await api("/api/v1/auth/self_check", { headers: { [HEADER]: token } });
+    console.log("Konto:", JSON.stringify(daten).slice(0, 200));
     return;
   }
 
@@ -189,14 +219,19 @@ async function main() {
   // unveroeffentlichten (privaten) Versionen — sobald eine einem Kanal
   // zugewiesen ist, verschwindet sie dort. Zum Testen auf dem eigenen Geraet
   // ist "privat" also richtig; --branch=beta erst fuer fremde Tester.
-  const kanal = wert('--branch=', 'none');
-  const emails = wert('--testers=', '').split(',').map((e) => e.trim()).filter(Boolean);
-  if (kanal !== 'none') {
+  const kanal = wert("--branch=", "none");
+  const emails = wert("--testers=", "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
+  if (kanal !== "none") {
     await veroeffentlichen({ paketId, version: nummer, kanal, emails, token });
   }
-  console.log(kanal === 'none'
-    ? 'Fertig. Die Version bleibt privat und erscheint im Entwickler-Hub der Even-App.'
-    : 'Fertig. Die App erscheint auf dem Gerät der eingetragenen Tester.');
+  console.log(
+    kanal === "none"
+      ? "Fertig. Die Version bleibt privat und erscheint im Entwickler-Hub der Even-App."
+      : "Fertig. Die App erscheint auf dem Gerät der eingetragenen Tester.",
+  );
 }
 
 main().catch((fehler) => raus(fehler?.stack || String(fehler)));

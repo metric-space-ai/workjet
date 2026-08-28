@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off - shell release verification is owned by Electron main.
-import { createHash, createPublicKey, verify } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import {
   BusinessOsShellChannelPointerV1,
@@ -37,12 +37,12 @@ function verifySignature(value: Readonly<Record<string, unknown>>, trust: TrustM
   const signature = typeof value.signature === "string" ? value.signature : "";
   const publicKeyBase64 = trust[keyId];
   if (publicKeyBase64 === undefined) throw new Error("shell-release-unknown-key");
-  const publicKey = createPublicKey({
+  const publicKey = NodeCrypto.createPublicKey({
     key: Buffer.from(publicKeyBase64, "base64"),
     format: "der",
     type: "spki",
   });
-  if (!verify(null, canonicalPayload(value), publicKey, Buffer.from(signature, "hex"))) {
+  if (!NodeCrypto.verify(null, canonicalPayload(value), publicKey, Buffer.from(signature, "hex"))) {
     throw new Error("shell-release-invalid-signature");
   }
 }
@@ -97,7 +97,7 @@ export async function resolveBusinessOsStableShellRelease(
   );
   if (pointer.channel !== "stable") throw new Error("shell-release-channel-mismatch");
   const manifestBytes = await fetchJsonBytes(fetchFn, pointer.manifestUrl);
-  const digest = createHash("sha256").update(manifestBytes).digest("hex");
+  const digest = NodeCrypto.createHash("sha256").update(manifestBytes).digest("hex");
   if (digest !== pointer.manifestSha256) throw new Error("shell-release-manifest-hash-mismatch");
   const manifest = verifyBusinessOsShellReleaseManifest(
     JSON.parse(manifestBytes.toString("utf8")),

@@ -205,7 +205,7 @@ describe("Workjet managed Business OS backend control contract", () => {
     expect(decoded).not.toHaveProperty("invite");
   });
 
-  it("keeps manual room credentials behind a separate scoped recovery contract", () => {
+  it("keeps the browser-role credential behind a separate scoped recovery contract", () => {
     const input = Schema.decodeUnknownSync(WorkjetManagedDeviceInviteManualConnectionInput)({
       backendControlConnectionId: connectionId,
       businessOsInstanceId: instanceId,
@@ -220,13 +220,19 @@ describe("Workjet managed Business OS backend control contract", () => {
       Schema.decodeUnknownSync(WorkjetManagedDeviceInviteManualConnectionResult)({
         signalingUrls: ["wss://signaling.ctox.dev/v2"],
         room: "ctox-business-os:biz_welsch",
-        password: "room-secret",
+        authVersion: "ctox-role-bound-v1",
+        browserToken: "browser-token",
+        browserTokenHash: "a".repeat(64),
+        nativeTokenHash: "b".repeat(64),
         expiresAt: "2026-08-27T04:00:00Z",
       }),
     ).toEqual({
       signalingUrls: ["wss://signaling.ctox.dev/v2"],
       room: "ctox-business-os:biz_welsch",
-      password: "room-secret",
+      authVersion: "ctox-role-bound-v1",
+      browserToken: "browser-token",
+      browserTokenHash: "a".repeat(64),
+      nativeTokenHash: "b".repeat(64),
       expiresAt: "2026-08-27T04:00:00Z",
     });
   });
@@ -381,7 +387,11 @@ describe("Workjet managed Business OS backend control contract", () => {
         sync_room: "ctox-business-os:biz_welsch",
         native_peer_id: "native-welsch",
         signaling_urls: ["wss://signaling.ctox.dev/v2"],
-        signaling_room_password: "room-secret",
+        signaling_auth_version: "ctox-role-bound-v1",
+        signaling_browser_token: "synthetic-browser-token",
+        signaling_browser_token_hash:
+          "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+        signaling_native_token_hash: "a".repeat(64),
         transport: "webrtc",
         expires_at: "2026-08-27T04:00:00Z",
         data_plane: "rxdb-webrtc",

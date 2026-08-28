@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the wiring invariant is proved by reading the Web Stack's own source.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 import { assert, describe, it } from "@effect/vitest";
 
@@ -51,7 +51,7 @@ import { assert, describe, it } from "@effect/vitest";
  */
 
 const repoRoot = NodePath.resolve(
-  fileURLToPath(new URL(".", import.meta.url)),
+  NodeURL.fileURLToPath(new URL(".", import.meta.url)),
   "../../../../../..",
 );
 const WEB_STACK_SRC = NodePath.join(repoRoot, "native/web-stack/src");

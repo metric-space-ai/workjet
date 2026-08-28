@@ -17,7 +17,10 @@ const config: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
   transport: "webrtc",
   sync_room: "ctox-business-os:office",
   signaling_urls: ["wss://signal.example.com/room"],
-  signaling_room_password: "room-secret-must-not-leak",
+  signaling_auth_version: "ctox-role-bound-v1",
+  signaling_browser_token: "raw-browser-token",
+  signaling_browser_token_hash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97",
+  signaling_native_token_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   http_bridge_available: false,
   desktop_instance: {
     id: "paired:manual_pairing:abcdefghijklmnopqrstuv",

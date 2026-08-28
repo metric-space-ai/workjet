@@ -19,7 +19,11 @@ function invite(overrides: Record<string, unknown> = {}) {
     sync_room: "ctox-business-os:instance-a",
     native_peer_id: "native-a",
     signaling_urls: ["wss://signal.example.test/socket"],
-    signaling_room_password: "synthetic-room-secret",
+    signaling_auth_version: "ctox-role-bound-v1",
+    signaling_browser_token: "synthetic-browser-token",
+    signaling_browser_token_hash:
+      "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+    signaling_native_token_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     transport: "webrtc",
     expires_at: "2026-08-25T13:00:00Z",
     data_plane: "rxdb-webrtc",
@@ -38,14 +42,15 @@ function invite(overrides: Record<string, unknown> = {}) {
 describe("Business OS invite v1", () => {
   it("round-trips through the canonical Workjet link", () => {
     const link = encodeWorkjetBusinessOsPairLink(invite(), { now: NOW });
-    expect(link.startsWith("workjet://business-os/pair?payload=")).toBe(true);
+    expect(link.startsWith("workjet://pair?payload=")).toBe(true);
+    expect(link.length).toBeLessThan(1_000);
     const parsed = parseWorkjetBusinessOsPairLink(link, { now: NOW });
     expect(parsed).toMatchObject({
       displayName: "Operations",
       instanceId: "instance-a",
       signalingUrls: ["wss://signal.example.test/socket"],
     });
-    expect(parsed.password).toBe("synthetic-room-secret");
+    expect(parsed.browserToken).toBe("synthetic-browser-token");
     expect(parsed.session.capabilityToken).toBe("synthetic-capability-token");
   });
 
@@ -54,6 +59,16 @@ describe("Business OS invite v1", () => {
     const payload = new URL(canonical).searchParams.get("payload");
     const legacy = `ctox-business-os-mobile://pair?payload=${payload}`;
     expect(parseWorkjetBusinessOsPairLink(legacy, { now: NOW }).instanceId).toBe("instance-a");
+  });
+
+  it("accepts the former Workjet Business OS route only as an inbound alias", () => {
+    const canonical = encodeWorkjetBusinessOsPairLink(invite(), { now: NOW });
+    const payload = new URL(canonical).searchParams.get("payload");
+    const legacy = `workjet://business-os/pair?payload=${payload}`;
+    expect(parseWorkjetBusinessOsPairLink(legacy, { now: NOW }).instanceId).toBe("instance-a");
+    expect(encodeWorkjetBusinessOsPairLink(invite(), { now: NOW })).toMatch(
+      /^workjet:\/\/pair\?payload=/u,
+    );
   });
 
   it("fails closed for expired invites, capability TTL and non-wss signaling", () => {
@@ -71,6 +86,17 @@ describe("Business OS invite v1", () => {
         { now: NOW },
       ),
     ).toThrowError(expect.objectContaining({ code: "capability_expiry" }));
+    expect(() =>
+      validateBusinessOsInviteV1(
+        invite({
+          session: {
+            ...invite().session,
+            capability_expires_at_ms: Date.parse("2026-08-25T11:59:00Z"),
+          },
+        }),
+        { now: NOW },
+      ),
+    ).toThrowError(expect.objectContaining({ code: "capability_expired" }));
     expect(() =>
       validateBusinessOsInviteV1(invite({ signaling_urls: ["ws://signal.example.test"] }), {
         now: NOW,
@@ -91,6 +117,26 @@ describe("Business OS invite v1", () => {
       expect(String(error)).not.toContain("synthetic-room-secret");
       expect(String(error)).not.toContain("synthetic-capability-token");
     }
+  });
+
+  it("bounds identifiers, credentials and signaling fan-out", () => {
+    expect(() =>
+      validateBusinessOsInviteV1(invite({ instance_id: `a${"b".repeat(256)}` }), { now: NOW }),
+    ).toThrowError(expect.objectContaining({ code: "instance_id" }));
+    expect(() =>
+      validateBusinessOsInviteV1(invite({ native_peer_id: "native\npeer" }), { now: NOW }),
+    ).toThrowError(expect.objectContaining({ code: "native_peer_id" }));
+    expect(() =>
+      validateBusinessOsInviteV1(
+        invite({ signaling_urls: new Array(17).fill("wss://signal.example.test") }),
+        { now: NOW },
+      ),
+    ).toThrowError(expect.objectContaining({ code: "signaling_urls" }));
+    expect(() =>
+      validateBusinessOsInviteV1(invite({ signaling_browser_token: "x".repeat(4_097) }), {
+        now: NOW,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "browser_token" }));
   });
 
   it("returns confirmation metadata without credentials", () => {

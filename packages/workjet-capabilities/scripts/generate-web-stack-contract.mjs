@@ -1,5 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeURL from "node:url";
 
 const CONTRACT_URL = new URL(
   "../../../native/web-stack/schema/web-stack-tools.v1.json",
@@ -297,12 +297,12 @@ const main = async () => {
     throw new Error("Usage: generate-web-stack-contract.mjs [--check]");
   }
 
-  const source = await readFile(CONTRACT_URL, "utf8");
+  const source = await NodeFSP.readFile(CONTRACT_URL, "utf8");
   let contract;
   try {
     contract = JSON.parse(source);
   } catch (error) {
-    throw new Error(`Invalid JSON in ${fileURLToPath(CONTRACT_URL)}.`, {
+    throw new Error(`Invalid JSON in ${NodeURL.fileURLToPath(CONTRACT_URL)}.`, {
       cause: error,
     });
   }
@@ -312,19 +312,19 @@ const main = async () => {
   if (args[0] === "--check") {
     let current;
     try {
-      current = await readFile(OUTPUT_URL, "utf8");
+      current = await NodeFSP.readFile(OUTPUT_URL, "utf8");
     } catch {
-      throw new Error(`Generated contract is missing: ${fileURLToPath(OUTPUT_URL)}.`);
+      throw new Error(`Generated contract is missing: ${NodeURL.fileURLToPath(OUTPUT_URL)}.`);
     }
     if (current !== generated) {
       throw new Error(
-        `Generated contract has drifted. Run node ${fileURLToPath(import.meta.url)}.`,
+        `Generated contract has drifted. Run node ${NodeURL.fileURLToPath(import.meta.url)}.`,
       );
     }
     return;
   }
 
-  await writeFile(OUTPUT_URL, generated, "utf8");
+  await NodeFSP.writeFile(OUTPUT_URL, generated, "utf8");
 };
 
 await main();

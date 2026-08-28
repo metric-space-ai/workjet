@@ -4,7 +4,7 @@ import type {
   WorkjetConfiguration,
   WorkjetHarnessAvailabilitySnapshot,
 } from "@t3tools/contracts";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, PlusIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";

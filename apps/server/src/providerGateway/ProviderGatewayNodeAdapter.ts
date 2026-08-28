@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off globalDate:off -- Explicit Node platform boundary injected into the Effect gateway service.
-import { spawn } from "node:child_process";
-import * as NodeFs from "node:fs/promises";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 
@@ -62,26 +62,26 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   bytesToHex: (value) => Buffer.from(value).toString("hex"),
   withTimeout,
   readText: async (path, maximumBytes) => {
-    const stat = await NodeFs.stat(path);
+    const stat = await NodeFSP.stat(path);
     if (!stat.isFile() || stat.size > maximumBytes) throw new Error("invalid file");
-    return NodeFs.readFile(path, "utf8");
+    return NodeFSP.readFile(path, "utf8");
   },
   writePrivateText: async (path, content) => {
-    await NodeFs.mkdir(NodePath.dirname(path), { recursive: true, mode: 0o700 });
+    await NodeFSP.mkdir(NodePath.dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.${process.pid}.tmp`;
     try {
-      await NodeFs.writeFile(temporary, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
-      await NodeFs.chmod(temporary, 0o600);
-      await NodeFs.rename(temporary, path);
-      await NodeFs.chmod(path, 0o600);
+      await NodeFSP.writeFile(temporary, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await NodeFSP.chmod(temporary, 0o600);
+      await NodeFSP.rename(temporary, path);
+      await NodeFSP.chmod(path, 0o600);
     } catch (error) {
-      await NodeFs.rm(temporary, { force: true }).catch(() => undefined);
+      await NodeFSP.rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
   },
-  remove: async (path) => NodeFs.rm(path, { force: true }),
+  remove: async (path) => NodeFSP.rm(path, { force: true }),
   spawn: (executable, args) => {
-    const child = spawn(executable, [...args], {
+    const child = NodeChildProcess.spawn(executable, [...args], {
       stdio: ["ignore", "pipe", "pipe"],
       env: {},
       windowsHide: true,

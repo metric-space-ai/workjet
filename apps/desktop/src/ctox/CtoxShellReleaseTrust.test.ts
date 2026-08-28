@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off - tests real Ed25519 signatures.
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import { describe, expect, it } from "vite-plus/test";
 
@@ -14,14 +14,18 @@ import {
 } from "./CtoxShellReleaseTrust.ts";
 
 function signedFixture() {
-  const pair = generateKeyPairSync("ed25519");
+  const pair = NodeCrypto.generateKeyPairSync("ed25519");
   const keyId = "test-current";
   const trust = {
     [keyId]: pair.publicKey.export({ format: "der", type: "spki" }).toString("base64"),
   };
   const signed = <T extends Record<string, unknown>>(payload: T) => ({
     ...payload,
-    signature: sign(null, Buffer.from(JSON.stringify(payload)), pair.privateKey).toString("hex"),
+    signature: NodeCrypto.sign(
+      null,
+      Buffer.from(JSON.stringify(payload)),
+      pair.privateKey,
+    ).toString("hex"),
   });
   const release = signed({
     type: "ctox.business-os-shell.release.v2",
@@ -52,7 +56,7 @@ function signedFixture() {
     channel: "stable",
     version: "1.2.3",
     manifestUrl: "https://example.test/release.json",
-    manifestSha256: createHash("sha256").update(releaseBytes).digest("hex"),
+    manifestSha256: NodeCrypto.createHash("sha256").update(releaseBytes).digest("hex"),
     publishedAt: "2026-08-26T12:00:00Z",
     signingKeyId: keyId,
   });

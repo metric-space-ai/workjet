@@ -4,10 +4,12 @@ import {
   WORKJET_MANAGED_DEVICE_CONTROL_CSRF_PATH,
   WORKJET_MANAGED_DEVICE_CONTROL_RESOLVE_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_CREATE_PATH,
+  WORKJET_MANAGED_DEVICE_INVITES_MANUAL_CONNECTION_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_REVOKE_PATH,
   WorkjetDeviceBindingListResult,
   WorkjetDeviceInviteCreateResult,
   WorkjetDeviceInviteRevokeResult,
+  WorkjetManagedDeviceInviteManualConnectionResult,
   WorkjetManagedBackendControlResolveResult,
   WorkjetManagedControlCsrfResult,
   type BusinessOsInstanceId,
@@ -41,6 +43,9 @@ const decodeBackendControlResolve = Schema.decodeUnknownSync(
 const decodeControlCsrf = Schema.decodeUnknownSync(WorkjetManagedControlCsrfResult);
 const decodeDeviceBindingList = Schema.decodeUnknownSync(WorkjetDeviceBindingListResult);
 const decodeDeviceInviteCreate = Schema.decodeUnknownSync(WorkjetDeviceInviteCreateResult);
+const decodeDeviceInviteManualConnection = Schema.decodeUnknownSync(
+  WorkjetManagedDeviceInviteManualConnectionResult,
+);
 const decodeDeviceInviteRevoke = Schema.decodeUnknownSync(WorkjetDeviceInviteRevokeResult);
 
 function clientError(operation: Operation, message: string) {
@@ -230,6 +235,15 @@ export const workjetManagedBackendControlClientLayer = Layer.effect(
             path: WORKJET_MANAGED_DEVICE_INVITES_REVOKE_PATH,
             payload: input,
             decode: decodeDeviceInviteRevoke,
+          }),
+        ),
+      readDeviceInviteManualConnection: (input) =>
+        effect("manual", () =>
+          protectedRequest({
+            operation: "manual",
+            path: WORKJET_MANAGED_DEVICE_INVITES_MANUAL_CONNECTION_PATH,
+            payload: input,
+            decode: decodeDeviceInviteManualConnection,
           }),
         ),
       revokeDeviceBinding: (input) =>

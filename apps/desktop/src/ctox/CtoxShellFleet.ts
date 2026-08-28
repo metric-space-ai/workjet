@@ -15,6 +15,7 @@ import {
   type CtoxShellFleetRow,
   type CtoxShellFleetRolloutResult,
 } from "@t3tools/contracts";
+import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -81,22 +82,33 @@ interface ReleasePauseRecord {
 
 type PauseMap = Readonly<Record<string, PauseRecord>>;
 
-function hostPlatform(instance: CtoxManagedInstance): CtoxShellFleetRow["platform"] {
+interface HostRuntime {
+  readonly platform: NodeJS.Platform;
+  readonly architecture: NodeJS.Architecture;
+}
+
+function hostPlatform(
+  instance: CtoxManagedInstance,
+  host: HostRuntime,
+): CtoxShellFleetRow["platform"] {
   if (instance.platform !== undefined) return instance.platform;
   if (instance.source !== "local_daemon") return "unknown";
-  return process.platform === "darwin"
+  return host.platform === "darwin"
     ? "macos"
-    : process.platform === "win32"
+    : host.platform === "win32"
       ? "windows"
-      : process.platform === "linux"
+      : host.platform === "linux"
         ? "linux"
         : "unknown";
 }
 
-function hostArchitecture(instance: CtoxManagedInstance): CtoxShellFleetRow["architecture"] {
+function hostArchitecture(
+  instance: CtoxManagedInstance,
+  host: HostRuntime,
+): CtoxShellFleetRow["architecture"] {
   if (instance.architecture !== undefined) return instance.architecture;
   if (instance.source !== "local_daemon") return "unknown";
-  return process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : "unknown";
+  return host.architecture === "arm64" ? "arm64" : host.architecture === "x64" ? "x64" : "unknown";
 }
 
 export class CtoxShellFleet extends Context.Service<
@@ -140,14 +152,15 @@ function blockedRow(
   instance: CtoxManagedInstance,
   blocker: CtoxShellFleetBlocker,
   requiredOperatorStep: string,
+  host: HostRuntime,
 ): CtoxShellFleetRow {
   return {
     instanceId: instance.id,
     displayName: instance.displayName,
     source: instance.source,
     reachable: instance.status !== "offline",
-    platform: hostPlatform(instance),
-    architecture: hostArchitecture(instance),
+    platform: hostPlatform(instance, host),
+    architecture: hostArchitecture(instance, host),
     administrativeAccess:
       instance.source === "local_daemon" || instance.source === "ssh_managed"
         ? instance.status === "offline"
@@ -190,6 +203,7 @@ export function ctoxShellFleetRowFromStatus(input: {
   readonly instance: CtoxManagedInstance;
   readonly shell: BusinessOsShellUpdateStatus;
   readonly dataPlane: CtoxDataPlaneProbe;
+  readonly host: HostRuntime;
 }): CtoxShellFleetRow {
   const blocker: CtoxShellFleetBlocker | null = !input.shell.administrable
     ? "no_administrative_access"
@@ -213,8 +227,8 @@ export function ctoxShellFleetRowFromStatus(input: {
     displayName: input.instance.displayName,
     source: input.instance.source,
     reachable: true,
-    platform: hostPlatform(input.instance),
-    architecture: hostArchitecture(input.instance),
+    platform: hostPlatform(input.instance, input.host),
+    architecture: hostArchitecture(input.instance, input.host),
     administrativeAccess: input.shell.administrable ? "available" : "unavailable",
     backendVersion: null,
     shell: {
@@ -375,6 +389,10 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const parentScope = yield* Scope.Scope;
+  const host: HostRuntime = {
+    platform: yield* HostProcessPlatform,
+    architecture: yield* HostProcessArchitecture,
+  };
   const pausePath = NodePath.join(environment.stateDir, PAUSE_FILE);
   const releasePausePath = NodePath.join(environment.stateDir, RELEASE_PAUSE_FILE);
   const rolloutStatePath = NodePath.join(environment.stateDir, ROLLOUT_STATE_FILE);
@@ -678,6 +696,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
             instance,
             "paused",
             "Pause in Workjet fortsetzen oder ablaufen lassen.",
+            host,
           );
           return Effect.succeed({
             ...row,
@@ -686,7 +705,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         }
         if (instance.status === "offline") {
           return Effect.succeed(
-            blockedRow(instance, "offline", "Rechner starten oder Netzwerk prüfen."),
+            blockedRow(instance, "offline", "Rechner starten oder Netzwerk prüfen.", host),
           );
         }
         if (instance.source !== "local_daemon" && instance.source !== "ssh_managed") {
@@ -695,6 +714,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
               instance,
               "no_administrative_access",
               "Instanz als lokalen oder SSH-verwalteten Rechner hinzufügen.",
+              host,
             ),
           );
         }
@@ -704,11 +724,16 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
           backendVersion: readBackendVersion(instance),
         }).pipe(
           Effect.map(({ shell, dataPlane, backendVersion }) => ({
-            ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
+            ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane, host }),
             backendVersion,
           })),
           Effect.orElseSucceed(() =>
-            blockedRow(instance, "backend_unavailable", "CTOX aktualisieren und erneut prüfen."),
+            blockedRow(
+              instance,
+              "backend_unavailable",
+              "CTOX aktualisieren und erneut prüfen.",
+              host,
+            ),
           ),
         );
       },
@@ -760,7 +785,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
           : Effect.succeed(postRestartDataPlane),
       ]);
       const row: CtoxShellFleetRow = {
-        ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane }),
+        ...ctoxShellFleetRowFromStatus({ instance, shell, dataPlane, host }),
         backendVersion,
       };
       const current = yield* inventory;

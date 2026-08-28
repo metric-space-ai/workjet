@@ -63,7 +63,7 @@ async function dismissConsent(page) {
         await page.waitForTimeout(800);
         return true;
       }
-    } catch (_err) {
+    } catch {
       // keep trying the next candidate
     }
   }
@@ -75,7 +75,7 @@ const VERDICT_LABELS = { valid: "valid", invalid: "invalid", unknown: "unknown" 
 function hostOf(value) {
   try {
     return new URL(value).hostname.toLowerCase().replace(/^www\./, "");
-  } catch (_err) {
+  } catch {
     return "";
   }
 }

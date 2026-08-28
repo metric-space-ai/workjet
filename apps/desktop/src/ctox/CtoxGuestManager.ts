@@ -34,6 +34,7 @@ const SENSITIVE_QUERY_PARAMETERS = new Set([
   "ctoxConfig",
   "room_password",
   "signaling_room_password",
+  "signaling_browser_token",
   "pairing_secret",
   "token",
   "launch_token",

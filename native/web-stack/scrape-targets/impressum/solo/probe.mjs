@@ -51,7 +51,7 @@ function toOrigin(value) {
     const url = new URL(withScheme);
     if (!url.hostname.includes(".")) return null;
     return url.origin;
-  } catch (_err) {
+  } catch {
     return null;
   }
 }
@@ -293,12 +293,12 @@ const GENERIC_LINE_RE =
   /^(?:impressum|imprint|angaben|anbieter|diensteanbieter|anbieterkennzeichnung|verantwortlich|verantwortliche|vertreten|inhaltlich|kontakt|contact|firma|company|unternehmen|betreiber|herausgeber|gemäß|gemaess|§|tmg|ddg|mstg|umsatzsteuer|handelsregister|register|aufsicht|geschäftsführung|geschaeftsfuehrung|vorstand|telefon|telefax|fax|e-?mail|internet|web|vertretungsberechtigt|sitz|ladungsfähige|ladungsfaehige|anschrift|adresse|address|postanschrift)\b/i;
 
 const STREET_RE =
-  /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß."()\/-]*(?:[ ][A-Za-zÄÖÜäöüß."()\/-]+){0,5}[ ]?\d+\s*[a-zA-Z]?\s*(?:[\/-]\s*\d+\s*[a-zA-Z]?)?$/;
+  /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß."()/-]*(?:[ ][A-Za-zÄÖÜäöüß."()/-]+){0,5}[ ]?\d+\s*[a-zA-Z]?\s*(?:[/-]\s*\d+\s*[a-zA-Z]?)?$/;
 
 const PLZ_RE =
   /\b(?:[Dd]-|D )?(\d{5})[ ]([A-ZÄÖÜ][A-Za-zÄÖÜäöüß."-]*(?:[ ][A-Za-zÄÖÜäöüß."()-]+){0,3})/;
 
-const PHONE_LABEL_RE = /(?:telefon|tel\.?|phone|zentrale)\b\s*[:.]?\s*(\+?\d[\d\s().\/-]{5,22}\d)/i;
+const PHONE_LABEL_RE = /(?:telefon|tel\.?|phone|zentrale)\b\s*[:.]?\s*(\+?\d[\d\s()./-]{5,22}\d)/i;
 
 const EMAIL_TEXT_RE = /\b([A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b/g;
 
@@ -657,7 +657,7 @@ function extractImpressum(html, finalUrl) {
   let host = "";
   try {
     host = new URL(finalUrl).hostname.replace(/^www\./, "").toLowerCase();
-  } catch (_err) {
+  } catch {
     /* keep empty */
   }
 
@@ -701,7 +701,7 @@ const page = await context.newPage();
 async function goto(url) {
   try {
     return await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
-  } catch (_err) {
+  } catch {
     return null;
   }
 }
@@ -745,7 +745,7 @@ function originVariants(origin) {
     const host = url.hostname;
     if (host.startsWith("www.")) return [origin, url.protocol + "//" + host.slice(4)];
     return [origin, url.protocol + "//www." + host];
-  } catch (_err) {
+  } catch {
     return [origin];
   }
 }
@@ -831,7 +831,7 @@ function printSuccess(result, extra) {
         target: TARGET,
         input: rawInput,
         fetched_at: new Date().toISOString(),
-        ...(extra || {}),
+        ...extra,
         fields: result.fields,
         persons: (result.persons || []).map((person) => ({
           person_vorname: person.vorname,

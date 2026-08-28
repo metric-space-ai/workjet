@@ -11,7 +11,7 @@ export function menuItemFrom(detail) {
 /** IMU-Messwerte, wenn die Brille Bewegungsdaten meldet. */
 export function imuFrom(detail) {
   const data = detail?.sysEvent?.imuData || detail?.sysEvent?.IMU_Data || detail?.jsonData?.imuData;
-  if (data && typeof data === 'object') {
+  if (data && typeof data === "object") {
     return { x: Number(data.x) || 0, y: Number(data.y) || 0, z: Number(data.z) || 0 };
   }
   return null;
@@ -29,19 +29,19 @@ export function osEventFrom(detail) {
   const raw = detail ?? {};
 
   const direct = raw.textEvent?.eventType ?? raw.listEvent?.eventType;
-  if (typeof direct === 'number') return direct;
+  if (typeof direct === "number") return direct;
 
   const sys = raw.sysEvent;
   if (sys) {
     const type = sys.eventType;
     // Vorder-/Hintergrund und Exit sind Lebenszyklus, keine Geste.
     if (type === 4 || type === 5 || type === 6 || type === 7 || type === 8) return null;
-    if (typeof type === 'number') return type;
+    if (typeof type === "number") return type;
     if (sys.eventSource !== undefined) return 0; // CLICK_EVENT
     return null;
   }
 
   const parsed = evenHubEventFromJson(raw);
   const type = parsed?.textEvent?.eventType ?? parsed?.listEvent?.eventType;
-  return typeof type === 'number' ? type : null;
+  return typeof type === "number" ? type : null;
 }

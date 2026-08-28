@@ -62,6 +62,7 @@ import { recordVisitForThread } from "../browserHistoryStore";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
+import { faviconUrlForOrigin } from "../lib/favicon";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
@@ -894,15 +895,22 @@ const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 /** Hosts whose favicon request already failed this session — skip straight to the globe. */
 const failedFaviconHosts = new Set<string>();
 
-const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
+const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({
+  host,
+  href,
+}: {
+  host: string;
+  href: string;
+}) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
+  const faviconUrl = faviconUrlForOrigin(href);
   return (
     <span className="chat-markdown-link-favicon" aria-hidden>
-      {failedHost === host || failedFaviconHosts.has(host) ? (
+      {!faviconUrl || failedHost === host || failedFaviconHosts.has(host) ? (
         <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
       ) : (
         <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`}
+          src={faviconUrl}
           alt=""
           loading="lazy"
           draggable={false}
@@ -1033,10 +1041,12 @@ function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, 
 
 function MarkdownExternalLinkContent({
   host,
+  href,
   plainText,
   children,
 }: {
   host: string;
+  href: string;
   plainText: string | null;
   children: ReactNode;
 }) {
@@ -1045,7 +1055,7 @@ function MarkdownExternalLinkContent({
     return (
       <>
         <span className="chat-markdown-link-leading">
-          <MarkdownLinkFavicon host={host} />
+          <MarkdownLinkFavicon host={host} href={href} />
           {plainText.slice(0, leadingLength)}
         </span>
         {breakableExternalLinkText(plainText.slice(leadingLength))}
@@ -1061,7 +1071,7 @@ function MarkdownExternalLinkContent({
     return (
       <>
         <span className="chat-markdown-link-leading">
-          <MarkdownLinkFavicon host={host} />
+          <MarkdownLinkFavicon host={host} href={href} />
           {firstChild.slice(0, leadingLength)}
         </span>
         {breakableExternalLinkText(firstChild.slice(leadingLength))}
@@ -1073,7 +1083,7 @@ function MarkdownExternalLinkContent({
   return (
     <>
       <span className="chat-markdown-link-leading">
-        <MarkdownLinkFavicon host={host} />
+        <MarkdownLinkFavicon host={host} href={href} />
         {firstChild}
       </span>
       {childNodes.slice(1)}
@@ -1596,8 +1606,12 @@ function ChatMarkdown({
                 });
               }}
             >
-              {faviconHost && hastHasText(node) ? (
-                <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
+              {href && faviconHost && hastHasText(node) ? (
+                <MarkdownExternalLinkContent
+                  host={faviconHost}
+                  href={href}
+                  plainText={plainHastText(node)}
+                >
                   {children}
                 </MarkdownExternalLinkContent>
               ) : (

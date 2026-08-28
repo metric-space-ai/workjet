@@ -4,10 +4,10 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
-import * as NodeTimers from "node:timers/promises";
+import * as NodeTimersPromises from "node:timers/promises";
 import * as NodeURL from "node:url";
 
-import { CdpClient, cdpCommandError, MAX_CDP_MESSAGE_BYTES } from "./lib/cdpClient.ts";
+import { CdpClient, MAX_CDP_MESSAGE_BYTES } from "./lib/cdpClient.ts";
 
 const TMP_ROOT = "/Volumes/tmp";
 const DEBUG_PORT_MIN = 42_000;
@@ -112,6 +112,7 @@ function usage(): string {
 
 export function parseSmokeArguments(
   argv: readonly string[],
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone release smoke boundary; callers can inject a platform for deterministic tests.
   platform = process.platform,
 ): SmokeArguments {
   if (platform !== "darwin")
@@ -593,7 +594,7 @@ async function selectCurrentTarget(
 let interruptedSignal: string | undefined;
 async function pause(milliseconds: number): Promise<void> {
   if (interruptedSignal !== undefined) throw new Error(`interrupted by ${interruptedSignal}`);
-  await NodeTimers.setTimeout(milliseconds);
+  await NodeTimersPromises.setTimeout(milliseconds);
   if (interruptedSignal !== undefined) throw new Error(`interrupted by ${interruptedSignal}`);
 }
 async function waitForTarget(
@@ -1028,13 +1029,13 @@ async function stopProcess(child: NodeChildProcess.ChildProcess): Promise<void> 
   child.kill("SIGTERM");
   const exited = await Promise.race([
     new Promise<boolean>((resolve) => child.once("exit", () => resolve(true))),
-    NodeTimers.setTimeout(5_000).then(() => false),
+    NodeTimersPromises.setTimeout(5_000).then(() => false),
   ]);
   if (!exited && child.exitCode === null && child.signalCode === null) {
     child.kill("SIGKILL");
     await Promise.race([
       new Promise<void>((resolve) => child.once("exit", () => resolve())),
-      NodeTimers.setTimeout(3_000),
+      NodeTimersPromises.setTimeout(3_000),
     ]);
   }
 }

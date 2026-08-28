@@ -1,9 +1,10 @@
 #!/usr/bin/env node
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off -- This release guard scans raw source and artifact bytes before an Effect runtime exists.
 
-import { readFile, readdir, stat } from "node:fs/promises";
-import path from "node:path";
-import process from "node:process";
-import { fileURLToPath } from "node:url";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
+import * as NodeURL from "node:url";
 
 /**
  * Source trees that may ship in a non-mobile Workjet product. Deliberately
@@ -127,7 +128,7 @@ export interface LegacyReleaseFinding {
 }
 
 const normalizePath = (value: string): string =>
-  value.split(path.sep).join("/").replace(/^\.\//u, "");
+  value.split(NodePath.sep).join("/").replace(/^\.\//u, "");
 
 const isWithinActiveProductRoot = (relativePath: string): boolean => {
   const normalized = normalizePath(relativePath);
@@ -182,17 +183,17 @@ export function scanLegacyReleaseText(
 const SKIPPED_DIRECTORY_NAMES = new Set([".git"]);
 
 async function listFiles(root: string): Promise<ReadonlyArray<string>> {
-  const rootStat = await stat(root);
+  const rootStat = await NodeFSP.stat(root);
   if (rootStat.isFile()) return [root];
   if (!rootStat.isDirectory()) return [];
 
   const files: Array<string> = [];
   const visit = async (directory: string): Promise<void> => {
-    const entries = await readdir(directory, { withFileTypes: true });
+    const entries = await NodeFSP.readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
-      const absolutePath = path.join(directory, entry.name);
+      const absolutePath = NodePath.join(directory, entry.name);
       if (entry.isDirectory()) {
         if (!SKIPPED_DIRECTORY_NAMES.has(entry.name)) await visit(absolutePath);
       } else if (entry.isFile()) {
@@ -205,7 +206,7 @@ async function listFiles(root: string): Promise<ReadonlyArray<string>> {
 }
 
 async function readTextFile(absolutePath: string): Promise<string | null> {
-  const bytes = await readFile(absolutePath);
+  const bytes = await NodeFSP.readFile(absolutePath);
   return bytes.includes(0) ? null : bytes.toString("utf8");
 }
 
@@ -220,7 +221,7 @@ export async function checkWorkjetWebRtcOnlyRelease(options: {
   /** Test seam; production callers always use ACTIVE_PRODUCT_ROOTS. */
   readonly sourceRoots?: ReadonlyArray<string>;
 }): Promise<ReleaseGuardResult> {
-  const repoRoot = path.resolve(options.repoRoot);
+  const repoRoot = NodePath.resolve(options.repoRoot);
   const roots = [
     ...(options.sourceRoots ?? ACTIVE_PRODUCT_ROOTS),
     ...(options.artifactPaths ?? []),
@@ -228,7 +229,7 @@ export async function checkWorkjetWebRtcOnlyRelease(options: {
   const absoluteFiles = new Set<string>();
 
   for (const root of roots) {
-    const absoluteRoot = path.resolve(repoRoot, root);
+    const absoluteRoot = NodePath.resolve(repoRoot, root);
     try {
       for (const file of await listFiles(absoluteRoot)) absoluteFiles.add(file);
     } catch (error) {
@@ -249,7 +250,7 @@ export async function checkWorkjetWebRtcOnlyRelease(options: {
     const source = await readTextFile(absolutePath);
     if (source === null) continue;
     filesScanned += 1;
-    const relativePath = normalizePath(path.relative(repoRoot, absolutePath));
+    const relativePath = normalizePath(NodePath.relative(repoRoot, absolutePath));
     findings.push(...scanLegacyReleaseText(relativePath, source));
   }
 
@@ -260,14 +261,14 @@ function parseArguments(argv: ReadonlyArray<string>): {
   readonly repoRoot: string;
   readonly artifactPaths: ReadonlyArray<string>;
 } {
-  let repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+  let repoRoot = NodePath.resolve(NodeURL.fileURLToPath(new URL("..", import.meta.url)));
   const artifactPaths: Array<string> = [];
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--repo-root") {
       const value = argv[index + 1];
       if (value === undefined) throw new Error("--repo-root requires a path");
-      repoRoot = path.resolve(value);
+      repoRoot = NodePath.resolve(value);
       index += 1;
     } else if (argument === "--artifact") {
       const value = argv[index + 1];
@@ -282,7 +283,7 @@ function parseArguments(argv: ReadonlyArray<string>): {
 }
 
 async function main(): Promise<void> {
-  const options = parseArguments(process.argv.slice(2));
+  const options = parseArguments(NodeProcess.argv.slice(2));
   const result = await checkWorkjetWebRtcOnlyRelease(options);
   if (result.findings.length > 0) {
     console.error(
@@ -294,7 +295,7 @@ async function main(): Promise<void> {
         ),
       ].join("\n"),
     );
-    process.exitCode = 1;
+    globalThis.process.exitCode = 1;
     return;
   }
   console.log(
@@ -303,7 +304,8 @@ async function main(): Promise<void> {
 }
 
 const isEntrypoint =
-  process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+  NodeProcess.argv[1] !== undefined &&
+  NodeURL.fileURLToPath(import.meta.url) === NodePath.resolve(NodeProcess.argv[1]);
 
 if (isEntrypoint) {
   await main();

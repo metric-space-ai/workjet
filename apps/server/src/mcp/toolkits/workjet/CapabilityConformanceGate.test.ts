@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The gate reads the CTOX host's own published adapter fixture from disk.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -71,7 +71,7 @@ import * as WebStackTool from "./WebStackTool.ts";
  */
 
 const repoRoot = NodePath.resolve(
-  fileURLToPath(new URL(".", import.meta.url)),
+  NodeURL.fileURLToPath(new URL(".", import.meta.url)),
   "../../../../../..",
 );
 const FIXTURE_PATH = "native/web-stack/fixtures/capability-adapter-v1.json";

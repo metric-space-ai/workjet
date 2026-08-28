@@ -120,7 +120,7 @@ try {
           segments.length >= 2 &&
           identityMatches(segments[0])
         );
-      } catch (err) {
+      } catch {
         return false;
       }
     };
@@ -337,7 +337,7 @@ try {
                 : "";
           if (text.trim()) persons.push(text.trim());
         }
-      } catch (err) {
+      } catch {
         /* selector drift tolerated */
       }
     }

@@ -22,7 +22,6 @@ import {
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
-  Trash2Icon,
   TriangleAlertIcon,
   WrenchIcon,
 } from "lucide-react";

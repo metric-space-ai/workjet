@@ -15,15 +15,14 @@ import {
   WORKJET_GREPPY_BUILD_TEMP_ROOT_ENV,
   WORKJET_GREPPY_EXECUTABLE_ENV,
 } from "@metric-space-ai/workjet-capabilities";
-import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import * as NodeFs from "node:fs/promises";
-import * as Https from "node:https";
-import * as Os from "node:os";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeHttps from "node:https";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { spawn } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 import * as Context from "effect/Context";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -701,7 +700,7 @@ export const make = (options: {
 
 const nodeRun = (command: RuntimeCommand): Promise<RuntimeCommandResult> =>
   new Promise((resolve, reject) => {
-    const child = spawn(command.executable, [...command.args], {
+    const child = NodeChildProcess.spawn(command.executable, [...command.args], {
       cwd: command.cwd,
       env: { ...process.env, ...command.env },
       shell: false,
@@ -760,14 +759,14 @@ const nodeDownload = async (input: {
   if (!isAllowedGreppyDownloadUrl(initial, input.policy, true)) {
     throw new Error("disallowed download URL");
   }
-  await NodeFs.mkdir(NodePath.dirname(input.destination), { recursive: true });
+  await NodeFSP.mkdir(NodePath.dirname(input.destination), { recursive: true });
   const visit = (url: URL, remaining: number): Promise<RuntimeDownloadResult> =>
     new Promise((resolve, reject) => {
       if (!isAllowedGreppyDownloadUrl(url, input.policy, url.toString() === initial.toString())) {
         reject(new Error("disallowed redirect URL"));
         return;
       }
-      const request = Https.get(
+      const request = NodeHttps.get(
         url,
         { headers: { "user-agent": "Workjet-Greppy/0.3.1" } },
         (response) => {
@@ -799,8 +798,8 @@ const nodeDownload = async (input: {
             reject(new Error("download too large"));
             return;
           }
-          const hash = createHash("sha256");
-          const output = createWriteStream(input.destination, { flags: "wx", mode: 0o600 });
+          const hash = NodeCrypto.createHash("sha256");
+          const output = NodeFS.createWriteStream(input.destination, { flags: "wx", mode: 0o600 });
           let bytes = 0;
           let settled = false;
           const fail = (error: Error) => {
@@ -839,50 +838,56 @@ const nodeDownload = async (input: {
   try {
     return await visit(initial, 5);
   } catch (error) {
-    await NodeFs.rm(input.destination, { force: true }).catch(() => undefined);
+    await NodeFSP.rm(input.destination, { force: true }).catch(() => undefined);
     throw error;
   }
 };
 
-export const nodePlatform = (): GreppyRuntimePlatform => ({
-  platform: process.platform,
-  arch: process.arch,
-  environment: process.env,
-  temporaryDirectory: Os.tmpdir(),
-  statExecutable: async (path) => {
-    const stat = await NodeFs.stat(path);
-    return stat.isFile() && (process.platform === "win32" || (stat.mode & 0o111) !== 0);
-  },
-  realpath: NodeFs.realpath,
-  exists: async (path) =>
-    NodeFs.access(path).then(
-      () => true,
-      () => false,
-    ),
-  mkdir: async (path) => {
-    await NodeFs.mkdir(path, { recursive: true });
-  },
-  makeTempDirectory: async (parent, prefix) => {
-    await NodeFs.mkdir(parent, { recursive: true });
-    return NodeFs.mkdtemp(NodePath.join(parent, prefix));
-  },
-  readText: async (path, maximumBytes) => {
-    const stat = await NodeFs.stat(path);
-    if (!stat.isFile() || stat.size > maximumBytes) throw new Error("file too large");
-    return NodeFs.readFile(path, "utf8");
-  },
-  writeText: async (path, content) => {
-    await NodeFs.writeFile(path, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
-  },
-  remove: async (path) => {
-    await NodeFs.rm(path, { recursive: true, force: true });
-  },
-  rename: NodeFs.rename,
-  copyFile: NodeFs.copyFile,
-  chmodExecutable: async (path) => NodeFs.chmod(path, 0o755),
-  run: nodeRun,
-  download: nodeDownload,
-});
+export const nodePlatform = (): GreppyRuntimePlatform => {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Concrete Node boundary behind the injected GreppyRuntimePlatform interface.
+  const hostPlatform = process.platform;
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Same injected boundary; captured once for deterministic consumers.
+  const hostArchitecture = process.arch;
+  return {
+    platform: hostPlatform,
+    arch: hostArchitecture,
+    environment: process.env,
+    temporaryDirectory: NodeOS.tmpdir(),
+    statExecutable: async (path) => {
+      const stat = await NodeFSP.stat(path);
+      return stat.isFile() && (hostPlatform === "win32" || (stat.mode & 0o111) !== 0);
+    },
+    realpath: NodeFSP.realpath,
+    exists: async (path) =>
+      NodeFSP.access(path).then(
+        () => true,
+        () => false,
+      ),
+    mkdir: async (path) => {
+      await NodeFSP.mkdir(path, { recursive: true });
+    },
+    makeTempDirectory: async (parent, prefix) => {
+      await NodeFSP.mkdir(parent, { recursive: true });
+      return NodeFSP.mkdtemp(NodePath.join(parent, prefix));
+    },
+    readText: async (path, maximumBytes) => {
+      const stat = await NodeFSP.stat(path);
+      if (!stat.isFile() || stat.size > maximumBytes) throw new Error("file too large");
+      return NodeFSP.readFile(path, "utf8");
+    },
+    writeText: async (path, content) => {
+      await NodeFSP.writeFile(path, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    },
+    remove: async (path) => {
+      await NodeFSP.rm(path, { recursive: true, force: true });
+    },
+    rename: NodeFSP.rename,
+    copyFile: NodeFSP.copyFile,
+    chmodExecutable: async (path) => NodeFSP.chmod(path, 0o755),
+    run: nodeRun,
+    download: nodeDownload,
+  };
+};
 
 const live = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

@@ -44,32 +44,37 @@ const SCOPED_PACKAGE_REFERENCE_REGEX =
 function collectMentionTokens(text: string): ComposerInlineToken[] {
   const matches: ComposerInlineToken[] = [];
 
-  for (const match of text.matchAll(FILE_LINK_TOKEN_REGEX)) {
-    const fullMatch = match[0];
-    const prefix = match[1] ?? "";
-    const label = (match[2] ?? "").replace(/\\(.)/g, "$1");
-    const encodedPath = match[3] ?? "";
-    let path = encodedPath;
-    try {
-      path = decodeURIComponent(encodedPath);
-    } catch {
-      // Preserve malformed source rather than dropping a user-authored token.
+  // Every supported Markdown file link contains this delimiter. Avoid the
+  // bounded-but-still-costly regex scan for ordinary text and malformed runs
+  // that cannot possibly contain a link.
+  if (text.includes("](")) {
+    for (const match of text.matchAll(FILE_LINK_TOKEN_REGEX)) {
+      const fullMatch = match[0];
+      const prefix = match[1] ?? "";
+      const label = (match[2] ?? "").replace(/\\(.)/g, "$1");
+      const encodedPath = match[3] ?? "";
+      let path = encodedPath;
+      try {
+        path = decodeURIComponent(encodedPath);
+      } catch {
+        // Preserve malformed source rather than dropping a user-authored token.
+      }
+      const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+      const basename = separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
+      const hasExternalScheme = URI_SCHEME_REGEX.test(path) && !WINDOWS_DRIVE_PATH_REGEX.test(path);
+      if (!path || hasExternalScheme || label !== basename) {
+        continue;
+      }
+      const start = (match.index ?? 0) + prefix.length;
+      const end = start + fullMatch.length - prefix.length;
+      matches.push({
+        type: "mention",
+        value: path,
+        source: text.slice(start, end),
+        start,
+        end,
+      });
     }
-    const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-    const basename = separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
-    const hasExternalScheme = URI_SCHEME_REGEX.test(path) && !WINDOWS_DRIVE_PATH_REGEX.test(path);
-    if (!path || hasExternalScheme || label !== basename) {
-      continue;
-    }
-    const start = (match.index ?? 0) + prefix.length;
-    const end = start + fullMatch.length - prefix.length;
-    matches.push({
-      type: "mention",
-      value: path,
-      source: text.slice(start, end),
-      start,
-      end,
-    });
   }
 
   for (const match of text.matchAll(MENTION_TOKEN_REGEX)) {

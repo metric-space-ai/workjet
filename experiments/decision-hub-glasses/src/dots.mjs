@@ -1,7 +1,7 @@
 // Gepunktete Scroll-Leiste zwischen den Spalten — wie im Geraete-Dashboard.
 // Sie zeigt die Position im Panel, ohne wie ein Balken zu wirken.
 
-import { createBitmap, fillRect } from './bitmap.mjs';
+import { createBitmap, fillRect } from "./bitmap.mjs";
 
 /**
  * Durchgehender Balken fuer die Langfassung: dort blaettert man durch EINEN

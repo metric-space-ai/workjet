@@ -6,14 +6,14 @@
 // Druck öffnet, Doppeldruck geht zurück. Weiterscrollen über das Ende der
 // Übersicht führt auf die Entscheidungsleiste.
 
-import { layoutText } from './glasses-renderer.mjs';
+import { layoutText } from "./glasses-renderer.mjs";
 
 const TITEL = {
-  mail: 'MAIL',
-  antwort: 'ANTWORT-VORSCHLAG',
-  aufgabe: 'AUFGABE',
-  notizen: 'NOTIZEN',
-  routing: 'ROUTING',
+  mail: "MAIL",
+  antwort: "ANTWORT-VORSCHLAG",
+  aufgabe: "AUFGABE",
+  notizen: "NOTIZEN",
+  routing: "ROUTING",
 };
 
 /**
@@ -23,7 +23,12 @@ const TITEL = {
  * @param {object|null} vorgang
  * @param {string[]} erlaubt  Abschnitts-IDs aus den Handy-Einstellungen
  */
-export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'aufgabe', 'notizen'], width = 52) {
+export function sectionsOf(
+  decision,
+  vorgang,
+  erlaubt = ["mail", "antwort", "aufgabe", "notizen"],
+  width = 52,
+) {
   const out = [];
   /**
    * Jeder Abschnitt hat ZWEI Fassungen:
@@ -45,7 +50,7 @@ export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'auf
       // `kurz` ist die eigenständige Zusammenfassung für die Übersicht.
       // Fehlt sie, greift der Volltext — dann wird eben doch gekürzt.
       kurz: kurzfassung.length ? kurzfassung : volltext,
-      vorschau: (kurzfassung[0] || volltext.find((z) => z.trim()) || ''),
+      vorschau: kurzfassung[0] || volltext.find((z) => z.trim()) || "",
     });
   };
 
@@ -58,42 +63,50 @@ export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'auf
     // Anhänge gehören in die Langfassung: sie erklären oft erst, worum es geht.
     const anhaenge = quelle.anhaenge || quelle.attachments || [];
     if (anhaenge.length) {
-      mailLang.push('', 'ANHÄNGE');
+      mailLang.push("", "ANHÄNGE");
       for (const a of anhaenge) {
-        const name = typeof a === 'string' ? a : (a.name || 'Anhang');
-        const was = typeof a === 'string' ? '' : (a.beschreibung ? ` — ${a.beschreibung}` : '');
+        const name = typeof a === "string" ? a : a.name || "Anhang";
+        const was = typeof a === "string" ? "" : a.beschreibung ? ` — ${a.beschreibung}` : "";
         mailLang.push(...layoutText(`• ${name}${was}`, width));
       }
     }
   }
-  push('mail', mailLang.length ? mailLang : null,
-    triageJson.zusammenfassung ? layoutText(triageJson.zusammenfassung, width) : null);
+  push(
+    "mail",
+    mailLang.length ? mailLang : null,
+    triageJson.zusammenfassung ? layoutText(triageJson.zusammenfassung, width) : null,
+  );
 
   const triage = triageJson;
-  push('antwort',
+  push(
+    "antwort",
     triage?.antwort_vorschlag ? layoutText(triage.antwort_vorschlag, width) : null,
-    triage?.antwort_kurz ? layoutText(triage.antwort_kurz, width) : null);
+    triage?.antwort_kurz ? layoutText(triage.antwort_kurz, width) : null,
+  );
 
   if (triage?.aufgabe?.beschreibung) {
     const zeilen = [];
     if (triage.aufgabe.agent) zeilen.push(`→ ${triage.aufgabe.agent}`);
     zeilen.push(...layoutText(triage.aufgabe.beschreibung, width));
     const kurz = triage.aufgabe_kurz
-      ? [triage.aufgabe.agent ? `→ ${triage.aufgabe.agent}` : null, ...layoutText(triage.aufgabe_kurz, width)]
+      ? [
+          triage.aufgabe.agent ? `→ ${triage.aufgabe.agent}` : null,
+          ...layoutText(triage.aufgabe_kurz, width),
+        ]
       : null;
-    push('aufgabe', zeilen, kurz);
+    push("aufgabe", zeilen, kurz);
   }
 
-  push('notizen', triage?.notizen ? layoutText(triage.notizen, width) : null);
+  push("notizen", triage?.notizen ? layoutText(triage.notizen, width) : null);
 
   for (const seite of decision?.detail_seiten_json || []) {
-    const id = String(seite.titel || 'detail').toLowerCase();
+    const id = String(seite.titel || "detail").toLowerCase();
     out.push({
       id,
-      titel: String(seite.titel || 'DETAIL').toUpperCase(),
+      titel: String(seite.titel || "DETAIL").toUpperCase(),
       zeilen: seite.zeilen || [],
       kurz: seite.kurz || seite.zeilen || [],
-      vorschau: (seite.zeilen || []).find((z) => z.trim()) || '',
+      vorschau: (seite.zeilen || []).find((z) => z.trim()) || "",
     });
   }
 
@@ -101,10 +114,10 @@ export function sectionsOf(decision, vorgang, erlaubt = ['mail', 'antwort', 'auf
   // damit die Übersicht nie leer ist.
   if (!out.length && decision?.zeilen_json?.length) {
     out.push({
-      id: 'kurz',
-      titel: 'ÜBERSICHT',
+      id: "kurz",
+      titel: "ÜBERSICHT",
       zeilen: decision.zeilen_json,
-      vorschau: decision.zeilen_json.find((z) => z.trim()) || '',
+      vorschau: decision.zeilen_json.find((z) => z.trim()) || "",
     });
   }
   return out;

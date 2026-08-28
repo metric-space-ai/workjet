@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the invariant is proved by reading the provider layer's own source.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 import { assert, describe, it } from "@effect/vitest";
 
@@ -33,7 +33,7 @@ import { assert, describe, it } from "@effect/vitest";
  * JSON serialization of a provider-supplied structure fails this test.
  */
 
-const providerDir = fileURLToPath(new URL("./", import.meta.url));
+const providerDir = NodeURL.fileURLToPath(new URL("./", import.meta.url));
 
 /**
  * Every span attribute the provider layer sets, with why it is safe to write to

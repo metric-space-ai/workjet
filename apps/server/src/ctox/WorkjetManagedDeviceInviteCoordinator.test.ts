@@ -32,7 +32,10 @@ const ctoxInvite = (): CtoxBusinessOsInviteV1 => ({
   sync_room: "ctox-business-os:sync-a",
   native_peer_id: "ctox-business-os:peer-a",
   signaling_urls: ["wss://signal.example.test"],
-  signaling_room_password: "room-password",
+  signaling_auth_version: "ctox-role-bound-v1",
+  signaling_browser_token: "synthetic-browser-token",
+  signaling_browser_token_hash: "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+  signaling_native_token_hash: "a".repeat(64),
   transport: "webrtc",
   expires_at: "2099-08-27T12:05:00.000Z",
   data_plane: "rxdb-webrtc",
@@ -320,7 +323,7 @@ describe("WorkjetManagedDeviceInviteCoordinator", () => {
       assert.notProperty(result, "code_environments");
       const persisted = JSON.stringify(harness.state.activeRecord);
       assert.notInclude(persisted, "e".repeat(43));
-      assert.notInclude(persisted, "room-password");
+      assert.notInclude(persisted, "synthetic-browser-token");
       assert.notInclude(persisted, "capability-token");
     });
   });

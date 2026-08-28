@@ -165,6 +165,7 @@ describe("ctoxShellFleetRowFromStatus", () => {
       },
       shell: { ...current.shell, activeVersion: "0.1.5", phase: "restart" },
       dataPlane: { nativePeerObserved: true, dataPlaneReady: false },
+      host: { platform: "darwin", architecture: "arm64" },
     });
     expect(result.shell.activeVersion).toBe("0.1.5");
     expect(result.shell.recoveryShell).toBe(false);
@@ -189,6 +190,7 @@ describe("ctoxShellFleetRowFromStatus", () => {
       },
       shell: { ...current.shell, health: "degraded" },
       dataPlane: { nativePeerObserved: true, dataPlaneReady: true },
+      host: { platform: "darwin", architecture: "arm64" },
     });
     expect(result.blocker).toBeNull();
     expect(result.shell.health).toBe("healthy");
@@ -211,6 +213,7 @@ describe("ctoxShellFleetRowFromStatus", () => {
       },
       shell: { ...current.shell, phase: "incompatible" },
       dataPlane: { nativePeerObserved: true, dataPlaneReady: true },
+      host: { platform: "darwin", architecture: "arm64" },
     });
     expect(result.blocker).toBe("incompatible");
     expect(result.requiredOperatorStep).toContain("Protokollversion");

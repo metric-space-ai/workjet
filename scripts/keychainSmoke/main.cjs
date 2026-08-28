@@ -17,12 +17,14 @@ const emit = (payload) => {
 };
 
 app.whenReady().then(() => {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone Electron helper has no Effect runtime; capture the host boundary once.
+  const hostPlatform = process.platform;
   const phase = process.argv[process.argv.length - 2];
   const filePath = process.argv[process.argv.length - 1];
   try {
     const available = safeStorage.isEncryptionAvailable();
     const backend =
-      process.platform === "linux" && typeof safeStorage.getSelectedStorageBackend === "function"
+      hostPlatform === "linux" && typeof safeStorage.getSelectedStorageBackend === "function"
         ? safeStorage.getSelectedStorageBackend()
         : null;
 

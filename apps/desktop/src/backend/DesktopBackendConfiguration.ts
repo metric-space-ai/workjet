@@ -1,5 +1,6 @@
 import * as NodeOS from "node:os";
 
+import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -376,6 +377,8 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
   > {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+    const hostPlatform = yield* HostProcessPlatform;
+    const hostArchitecture = yield* HostProcessArchitecture;
     const backendExposure = yield* serverExposure.backendConfig;
 
     // Point the server at the packaged provider-gateway host, when there is
@@ -394,7 +397,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     // staged host from drifting behind the current readiness protocol.
     const resolvedHost = yield* ProviderGatewayHostArtifact.resolveProviderGatewayHostExecutable({
       environment,
-      host: { platform: process.platform, arch: process.arch },
+      host: { platform: hostPlatform, arch: hostArchitecture },
       ...(process.env[ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV] !==
       undefined
         ? {

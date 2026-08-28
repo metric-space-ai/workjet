@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - reads DesktopApp.ts as text to assert pre-ready registration ordering statically.
 import { assert, describe, it } from "@effect/vitest";
-import * as NodeFs from "node:fs";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -288,7 +288,7 @@ describe("pre-ready registration ordering", () => {
   // before the first `whenReady` await. See the DesktopDeepLinkRouter module
   // doc for why this is the bug that only shows up packaged.
   it("registers the OS entry points before startup awaits whenReady", () => {
-    const source = NodeFs.readFileSync(NodePath.join(import.meta.dirname, "DesktopApp.ts"), "utf8");
+    const source = NodeFS.readFileSync(NodePath.join(import.meta.dirname, "DesktopApp.ts"), "utf8");
     const registerIndex = source.indexOf("deepLinkRouter.register");
     const whenReadyIndex = source.indexOf("electronApp.whenReady");
 

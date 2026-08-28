@@ -92,7 +92,7 @@ function isAllowedUrl(value) {
     const url = new URL(value);
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
     return url.protocol === "https:" && host === ALLOWED_HOST;
-  } catch (_err) {
+  } catch {
     return false;
   }
 }
@@ -439,7 +439,7 @@ function browserPage(url, unlockMode = false, sessionId = null) {
   const payload = runCtox(args, source);
   if (!payload) return null;
   return {
-    ...(payload.result || {}),
+    ...payload.result,
     ok: payload.ok === true,
     detection: payload.detection,
     unlock_attempted: unlockMode,
@@ -491,7 +491,7 @@ function organizationObjects(page) {
         if (type.some((value) => /organization|localbusiness/i.test(String(value))))
           values.push(item);
       }
-    } catch (_err) {
+    } catch {
       // Invalid third-party JSON-LD is ignored; no record is synthesized from it.
     }
   }
@@ -557,7 +557,7 @@ function recordsFromPage(page) {
       try {
         const domain = new URL(org.url, sourceUrl).hostname.replace(/^www\./, "");
         if (domain !== ALLOWED_HOST) push("firma_domain", domain, "medium", "FirmenABC JSON-LD");
-      } catch (_err) {}
+      } catch {}
     }
   }
   const body = bodyProfile(page);
@@ -578,7 +578,7 @@ function recordsFromPage(page) {
         "medium",
         "FirmenABC company profile",
       );
-    } catch (_err) {}
+    } catch {}
   }
   return records;
 }

@@ -321,7 +321,11 @@ const CtoxPairingSyncRoom = CtoxPairingInputText.check(
   Schema.isPattern(/^ctox-business-os:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/),
 );
 const CtoxPairingSignalingUrl = CtoxPairingInputText.check(Schema.isMaxLength(2_048));
-const CtoxPairingRoomSecret = CtoxPairingInputText.check(Schema.isMaxLength(4_096));
+const CtoxPairingBrowserToken = CtoxPairingInputText.check(Schema.isMaxLength(4_096));
+const CtoxPairingTokenHash = CtoxPairingInputText.check(
+  Schema.isLengthBetween(64, 64),
+  Schema.isPattern(/^[a-f0-9]{64}$/),
+);
 const CtoxPairingCapabilityToken = CtoxPairingInputText.check(Schema.isMaxLength(16_384));
 const CtoxPairingUserId = CtoxPairingInputText.check(Schema.isMaxLength(256));
 const CtoxPairingExpirationMs = Schema.Int.check(Schema.isGreaterThan(0));
@@ -337,7 +341,10 @@ export const CtoxBusinessOsInviteV1 = Schema.Struct({
     Schema.isMinLength(1),
     Schema.isMaxLength(16),
   ),
-  signaling_room_password: CtoxPairingRoomSecret,
+  signaling_auth_version: Schema.Literal("ctox-role-bound-v1"),
+  signaling_browser_token: CtoxPairingBrowserToken,
+  signaling_browser_token_hash: CtoxPairingTokenHash,
+  signaling_native_token_hash: CtoxPairingTokenHash,
   transport: Schema.Literal("webrtc"),
   expires_at: CtoxPairingInputText.check(Schema.isMaxLength(64)),
   data_plane: Schema.Literal("rxdb-webrtc"),
@@ -485,7 +492,10 @@ export const CtoxManualPairingImportInput = Schema.Struct({
     Schema.isMinLength(1),
     Schema.isMaxLength(16),
   ),
-  roomSecret: CtoxPairingRoomSecret,
+  signalingAuthVersion: Schema.Literal("ctox-role-bound-v1"),
+  browserToken: CtoxPairingBrowserToken,
+  browserTokenHash: CtoxPairingTokenHash,
+  nativeTokenHash: CtoxPairingTokenHash,
   capabilityToken: Schema.optionalKey(CtoxPairingCapabilityToken),
   capabilityExpiresAtMs: Schema.optionalKey(CtoxPairingExpirationMs),
   role: Schema.optionalKey(CtoxManagedInstanceRole),

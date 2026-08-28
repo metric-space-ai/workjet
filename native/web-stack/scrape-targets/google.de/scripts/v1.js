@@ -105,7 +105,7 @@ function runCtox(args, input, timeout = 35_000) {
       timeout,
     });
     return JSON.parse(out);
-  } catch (_err) {
+  } catch {
     // Stay silent on per-hit failures: `classify_outcome` in
     // src/capabilities/scrape.rs substring-matches stderr for "temporary",
     // "timeout", "429", … and would misclassify the whole run if one
@@ -409,7 +409,7 @@ function appendContactHeuristics(records, page, sourceUrl) {
       note: "Email published on the company page discovered by Google",
     });
   }
-  const phones = [...text.matchAll(/(?:\+|00)\d[\d\s()\/-]{7,}\d/g)]
+  const phones = [...text.matchAll(/(?:\+|00)\d[\d\s()/-]{7,}\d/g)]
     .map((match) => match[0].replace(/\s+/g, " ").trim())
     .slice(0, 2);
   for (const phone of phones) {

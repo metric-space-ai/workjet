@@ -23,7 +23,16 @@ function validatedInvite(instanceId = "instance-a", secretSuffix = "a") {
       sync_room: `ctox-business-os:${instanceId}`,
       native_peer_id: `native-${instanceId}`,
       signaling_urls: ["wss://signal.example.test/socket"],
-      signaling_room_password: `room-secret-${secretSuffix}`,
+      signaling_auth_version: "ctox-role-bound-v1",
+      signaling_browser_token: `browser-token-${secretSuffix}`,
+      signaling_browser_token_hash:
+        secretSuffix === "old"
+          ? "8acabe4140526f7112a7a18e0fb425fafd9294e314fe2798bbd6a8f7442e2405"
+          : secretSuffix === "new"
+            ? "b777ac824cfa840c6de9d83b2e5eceee45e616410bdcde28975636355435fe68"
+            : "9088d4fae6905e10d6643643dc4a2acaf9958c148c7628773d83f46b83c05eb9",
+      signaling_native_token_hash:
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       transport: "webrtc",
       expires_at: "2026-08-25T13:00:00Z",
       data_plane: "rxdb-webrtc",
@@ -84,11 +93,11 @@ describe("Business OS registry", () => {
     const instance = await pairBusinessOsInstance(validatedInvite(), state.dependencies);
 
     const serialized = JSON.stringify(instance);
-    expect(serialized).not.toContain("room-secret-a");
+    expect(serialized).not.toContain("browser-token-a");
     expect(serialized).not.toContain("capability-secret-a");
     expect(serialized).not.toContain("signaling_room_password");
     expect(await loadBusinessOsLaunchSecrets(instance, state.secrets)).toEqual({
-      roomPassword: "room-secret-a",
+      browserToken: "browser-token-a",
       capabilityToken: "capability-secret-a",
     });
   });
@@ -109,7 +118,7 @@ describe("Business OS registry", () => {
       ...state.dependencies,
       now: () => NOW,
     });
-    const oldReferences = [first.roomSecretRef, first.capabilitySecretRef];
+    const oldReferences = [first.browserTokenRef!, first.capabilitySecretRef];
     const replacement = await pairBusinessOsInstance(validatedInvite("instance-a", "new"), {
       ...state.dependencies,
       now: () => NOW + 1_000,
@@ -120,7 +129,7 @@ describe("Business OS registry", () => {
     expect(replacement.updatedAtMs).toBe(NOW + 1_000);
     expect(oldReferences.every((reference) => !state.values.has(reference))).toBe(true);
     expect(await loadBusinessOsLaunchSecrets(replacement, state.secrets)).toEqual({
-      roomPassword: "room-secret-new",
+      browserToken: "browser-token-new",
       capabilityToken: "capability-secret-new",
     });
   });
@@ -179,8 +188,17 @@ describe("Business OS registry", () => {
   });
 
   it("rejects accidental credential-shaped metadata", () => {
-    expect(() => assertBusinessOsMetadataSafe({ capability_token: "secret" })).toThrowError(
-      expect.objectContaining({ code: "unsafe-metadata" }),
-    );
+    for (const metadata of [
+      { capability_token: "secret" },
+      { capabilityToken: "secret" },
+      { signaling_browser_token: "secret" },
+      { browserToken: "secret" },
+      { signaling_native_token: "secret" },
+      { roomSecret: "secret" },
+    ]) {
+      expect(() => assertBusinessOsMetadataSafe(metadata)).toThrowError(
+        expect.objectContaining({ code: "unsafe-metadata" }),
+      );
+    }
   });
 });

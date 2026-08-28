@@ -48,7 +48,7 @@ import {
   type WorkjetPayloadByteLength,
   WorkjetSealedPayloadRef,
 } from "@t3tools/contracts";
-import { Buffer } from "node:buffer";
+import * as NodeBuffer from "node:buffer";
 import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -174,7 +174,7 @@ const sha256Hex = (bytes: Uint8Array): WorkjetContentDigest =>
  * with no lookup table to keep in sync.
  */
 export const snapshotRefForDigest = (digest: WorkjetContentDigest): WorkjetSealedPayloadRef =>
-  WorkjetSealedPayloadRef.make(Buffer.from(digest, "hex").toString("base64url"));
+  WorkjetSealedPayloadRef.make(NodeBuffer.Buffer.from(digest, "hex").toString("base64url"));
 
 /**
  * Inverse of {@link snapshotRefForDigest}. `None` for any reference that does
@@ -182,7 +182,7 @@ export const snapshotRefForDigest = (digest: WorkjetContentDigest): WorkjetSeale
  * rejected rather than silently mapped onto some path.
  */
 export const snapshotDigestForRef = (reference: string): Option.Option<WorkjetContentDigest> => {
-  const bytes = Buffer.from(reference, "base64url");
+  const bytes = NodeBuffer.Buffer.from(reference, "base64url");
   if (bytes.byteLength !== SHA256_DIGEST_BYTES) return Option.none();
   // Re-encoding must reproduce the input; base64url decoding is lenient and
   // would otherwise accept several spellings of the same 32 bytes.

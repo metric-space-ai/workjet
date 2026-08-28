@@ -1,7 +1,7 @@
-import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
-import process from "node:process";
-import { fileURLToPath } from "node:url";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
+import * as NodeURL from "node:url";
 
 /**
  * Workjet's user-facing vocabulary guard.
@@ -30,7 +30,7 @@ export const PRODUCT_TERMS = Object.freeze(["Workjet", "Business OS", "CTOX Back
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx"]);
 const METADATA_EXTENSIONS = new Set([".json", ".jsonc", ".yml", ".yaml"]);
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
 /**
  * These are the only reviewed source roots. Keeping the roots explicit makes
@@ -87,7 +87,7 @@ const USER_FACING_CALL_PATTERN =
 const JSX_TEXT_PATTERN = /<([A-Za-z][\w.:/-]*)(?:\s[^>]*)?>\s*([^<>{}]*\p{L}[^<>{}]*)\s*<\/\1>/gu;
 
 function normalizeRelativePath(relativePath) {
-  return relativePath.split(path.sep).join("/");
+  return relativePath.split(NodePath.sep).join("/");
 }
 
 function lineNumberAt(source, offset) {
@@ -511,15 +511,15 @@ export function auditSourceText(source, relativePath, { metadata = false } = {})
 function shouldAuditSource(relativePath) {
   if (EXCLUDED_SOURCE_FILES.has(relativePath)) return false;
   if (/\.test\.(?:js|jsx|mjs|ts|tsx)$/u.test(relativePath)) return false;
-  return SOURCE_EXTENSIONS.has(path.extname(relativePath));
+  return SOURCE_EXTENSIONS.has(NodePath.extname(relativePath));
 }
 
 async function collectFiles(root, relativeDirectory) {
-  const absoluteDirectory = path.join(root, relativeDirectory);
-  const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+  const absoluteDirectory = NodePath.join(root, relativeDirectory);
+  const entries = await NodeFSP.readdir(absoluteDirectory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
-    const relativePath = normalizeRelativePath(path.join(relativeDirectory, entry.name));
+    const relativePath = normalizeRelativePath(NodePath.join(relativeDirectory, entry.name));
     if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".vite-plus") {
       continue;
     }
@@ -540,7 +540,7 @@ export async function auditWorkjetContent(root = repoRoot) {
   const files = [...sourceFiles, ...AUDITED_METADATA_FILES];
   for (const relativePath of OPTIONAL_METADATA_FILES) {
     try {
-      await readFile(path.join(root, relativePath));
+      await NodeFSP.readFile(NodePath.join(root, relativePath));
       files.push(relativePath);
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
@@ -549,11 +549,11 @@ export async function auditWorkjetContent(root = repoRoot) {
   const findings = [];
 
   for (const relativePath of files) {
-    const absolutePath = path.join(root, relativePath);
-    const source = await readFile(absolutePath, "utf8");
+    const absolutePath = NodePath.join(root, relativePath);
+    const source = await NodeFSP.readFile(absolutePath, "utf8");
     findings.push(
       ...auditSourceText(source, relativePath, {
-        metadata: METADATA_EXTENSIONS.has(path.extname(relativePath)),
+        metadata: METADATA_EXTENSIONS.has(NodePath.extname(relativePath)),
       }),
     );
   }
@@ -575,14 +575,14 @@ export function formatFindings(findings) {
     .join("\n");
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (NodeProcess.argv[1] === NodeURL.fileURLToPath(import.meta.url)) {
   const result = await auditWorkjetContent();
   if (result.findings.length > 0) {
     console.error(
       `Workjet content guard found ${result.findings.length} forbidden UI/metadata term(s):`,
     );
     console.error(formatFindings(result.findings));
-    process.exitCode = 1;
+    globalThis.process.exitCode = 1;
   } else {
     console.log(`Workjet content guard passed (${result.filesAudited} files audited).`);
   }

@@ -77,9 +77,9 @@ haben schon ein dokumentiertes Zuhause:
 - Die Board-Regeln laufen als Sektion `## Progress board` durch
   `managedSystemPrompt` (`LegacyWorkjetMapping.ts:224-229`,
   `outcome: "mapped-into-prompt"`), abgesichert durch zwei Tests.
-- Der Verifikationszustand wurde ausdrücklich verworfen: *„Observed
+- Der Verifikationszustand wurde ausdrücklich verworfen: _„Observed
   verification state, not configuration. Re-observed by Code, never
-  imported."* (`:408-435`, fünf Quellen).
+  imported."_ (`:408-435`, fünf Quellen).
 
 Ein eigenes Feld gäbe dem Importeur **zwei Ziele für eine Quelle** und würde
 beobachteten Zustand als Konfiguration einfrieren, wo er veralten kann.

@@ -13,8 +13,9 @@ import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { HttpApiTest } from "effect/unstable/httpapi";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { CtoxMobileInviteService } from "./CtoxMobileInviteService.ts";
 import { CtoxMobileShellPackService } from "./CtoxMobileShellPackService.ts";
@@ -27,6 +28,7 @@ import {
 } from "./http.ts";
 
 const expiresAt = "2099-08-25T12:05:00.000Z";
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const created: CtoxMobileInviteCreateResult = {
   inviteId: "opaque-id",
   expiresAt,
@@ -38,7 +40,11 @@ const created: CtoxMobileInviteCreateResult = {
     sync_room: "ctox-business-os:instance-a",
     native_peer_id: "native-a",
     signaling_urls: ["wss://signaling.ctox.dev/v2"],
-    signaling_room_password: "room-secret-canary",
+    signaling_auth_version: "ctox-role-bound-v1",
+    signaling_browser_token: "browser-token-canary",
+    signaling_browser_token_hash:
+      "8d600d3e754f87bc9d759302261788c6618a2b09cdeecb5ecdf6c15c7f21b64c",
+    signaling_native_token_hash: "a".repeat(64),
     transport: "webrtc",
     expires_at: expiresAt,
     data_plane: "rxdb-webrtc",
@@ -106,7 +112,7 @@ const unauthenticatedAuth = EnvironmentAuthenticatedAuth.of(() =>
   ),
 );
 
-async function fixtureFor(
+function fixtureFor(
   auth: typeof EnvironmentAuthenticatedAuth.Service,
   options: { readonly failFirstOldPairingRevoke?: boolean } = {},
 ) {
@@ -228,27 +234,24 @@ async function fixtureFor(
       listBindings: () => Effect.succeed(binding === null ? [] : [binding]),
     }),
   );
-  const client = await Effect.runPromise(
-    HttpApiTest.groups(EnvironmentHttpApi, ["businessOs"]).pipe(
-      Effect.provide([
-        NodeHttpServer.layerHttpServices,
-        businessOsHttpApiLayer.pipe(
-          Layer.provide(mobileInviteLayer),
-          Layer.provide(mobileShellPackLayer),
-          Layer.provide(environmentAuthLayer),
-          Layer.provide(deviceInviteReferenceLayer),
-        ),
-      ]),
-      Effect.provideService(EnvironmentAuthenticatedAuth, auth),
-      Effect.scoped,
-    ),
+  return HttpApiTest.groups(EnvironmentHttpApi, ["businessOs"]).pipe(
+    Effect.provide([
+      NodeHttpServer.layerHttpServices,
+      businessOsHttpApiLayer.pipe(
+        Layer.provide(mobileInviteLayer),
+        Layer.provide(mobileShellPackLayer),
+        Layer.provide(environmentAuthLayer),
+        Layer.provide(deviceInviteReferenceLayer),
+      ),
+    ]),
+    Effect.provideService(EnvironmentAuthenticatedAuth, auth),
+    Effect.scoped,
+    Effect.map((client) => ({ client, pairingInputs, revokedPairingLinks, revokedCtoxInvites })),
   );
-  return { client, pairingInputs, revokedPairingLinks, revokedCtoxInvites };
 }
 
-async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
-  return (await fixtureFor(auth)).client;
-}
+const clientFor = (auth: typeof EnvironmentAuthenticatedAuth.Service) =>
+  fixtureFor(auth).pipe(Effect.map(({ client }) => client));
 
 describe("Business OS mobile control-plane HTTP safety", () => {
   it("normalizes safe pairing targets and rejects credential-bearing URLs", () => {
@@ -261,196 +264,196 @@ describe("Business OS mobile control-plane HTTP safety", () => {
     expect(normalizeDeviceConnectionUrl("http://127.0.0.1:13773/")).toBe("http://127.0.0.1:13773");
   });
 
-  it("creates a scoped secret-free reference, binds DPoP on redemption, and revokes that edge", async () => {
-    const fixture = await fixtureFor(authenticatedAuth(new Set(["access:write"])));
-    const writable = fixture.client;
-    const result = await Effect.runPromise(
-      writable.businessOs.createDeviceInvite({
-        headers: {},
-        payload: {
-          ttlSeconds: 300,
-          connectionUrl: "https://workjet.example.test/",
-          businessOsInstanceId: "instance-a",
-        },
-      }),
-    );
-    expect(Object.keys(result).sort()).toEqual(["expiresAt", "inviteId", "reference"]);
-    expect(JSON.stringify(result)).not.toMatch(
-      /bootstrap|capability|signaling|room.secret|synthetic-workjet-bootstrap|room-secret-canary/iu,
-    );
-    expect(result.reference).toMatchObject({
-      type: "workjet-device-invite-ref",
-      version: 1,
-      endpoint: "https://workjet.example.test",
-    });
-    expect(result.reference.code).toMatch(/^[A-Za-z0-9_-]{43}$/u);
-    const redeemed = await Effect.runPromise(
-      writable.businessOs.redeemDeviceInvite({
-        payload: {
-          code: result.reference.code,
-          deviceId: "galaxy-fold-8",
-          proofKeyThumbprint: "a".repeat(43),
-        },
-      }),
-    );
-    expect(redeemed).toMatchObject({
-      type: "workjet-device-invite",
-      device_pairing_id: result.inviteId,
-      environment: { bootstrap_credential: "synthetic-workjet-bootstrap-1" },
-      business_os: { instance_id: "instance-a" },
-    });
-    expect(fixture.pairingInputs).toEqual([
-      expect.objectContaining({
-        subject: "workjet-device:galaxy-fold-8",
-        proofKeyThumbprint: "a".repeat(43),
-      }),
-    ]);
-    await expect(
-      Effect.runPromise(
-        writable.businessOs.revokeDeviceInvite({
+  it.effect(
+    "creates a scoped secret-free reference, binds DPoP on redemption, and revokes that edge",
+    () => {
+      return Effect.gen(function* () {
+        const fixture = yield* fixtureFor(authenticatedAuth(new Set(["access:write"])));
+        const writable = fixture.client;
+        const result = yield* writable.businessOs.createDeviceInvite({
           headers: {},
-          payload: { inviteId: result.inviteId },
-        }),
-      ),
-    ).resolves.toEqual({ revoked: true });
-    expect(fixture.revokedPairingLinks).toContain("workjet-link-a");
-    expect(fixture.revokedCtoxInvites).toContain("opaque-id");
-  });
+          payload: {
+            ttlSeconds: 300,
+            connectionUrl: "https://workjet.example.test/",
+            businessOsInstanceId: "instance-a",
+          },
+        });
+        expect(Object.keys(result).sort()).toEqual(["expiresAt", "inviteId", "reference"]);
+        expect(encodeUnknownJson(result)).not.toMatch(
+          /bootstrap|capability|signaling|browser.token|synthetic-workjet-bootstrap|browser-token-canary/iu,
+        );
+        expect(result.reference).toMatchObject({
+          type: "workjet-device-invite-ref",
+          version: 1,
+          endpoint: "https://workjet.example.test",
+        });
+        expect(result.reference.code).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+        const redeemed = yield* writable.businessOs.redeemDeviceInvite({
+          payload: {
+            code: result.reference.code,
+            deviceId: "galaxy-fold-8",
+            proofKeyThumbprint: "a".repeat(43),
+          },
+        });
+        expect(redeemed).toMatchObject({
+          type: "workjet-device-invite",
+          device_pairing_id: result.inviteId,
+          environment: { bootstrap_credential: "synthetic-workjet-bootstrap-1" },
+          business_os: { instance_id: "instance-a" },
+        });
+        expect(fixture.pairingInputs).toEqual([
+          expect.objectContaining({
+            subject: "workjet-device:galaxy-fold-8",
+            proofKeyThumbprint: "a".repeat(43),
+          }),
+        ]);
+        expect(
+          yield* writable.businessOs.revokeDeviceInvite({
+            headers: {},
+            payload: { inviteId: result.inviteId },
+          }),
+        ).toEqual({ revoked: true });
+        expect(fixture.revokedPairingLinks).toContain("workjet-link-a");
+        expect(fixture.revokedCtoxInvites).toContain("opaque-id");
+      });
+    },
+  );
 
-  it("lists only sanitized device bindings for the selected instance", async () => {
-    const fixture = await fixtureFor(authenticatedAuth(new Set(["access:read", "access:write"])));
-    const createdReference = await Effect.runPromise(
-      fixture.client.businessOs.createDeviceInvite({
+  it.effect("lists only sanitized device bindings for the selected instance", () => {
+    return Effect.gen(function* () {
+      const fixture = yield* fixtureFor(
+        authenticatedAuth(new Set(["access:read", "access:write"])),
+      );
+      const createdReference = yield* fixture.client.businessOs.createDeviceInvite({
         headers: {},
         payload: {
           ttlSeconds: 300,
           connectionUrl: "https://workjet.example.test",
           businessOsInstanceId: "instance-a",
         },
-      }),
-    );
-    await Effect.runPromise(
-      fixture.client.businessOs.redeemDeviceInvite({
+      });
+      yield* fixture.client.businessOs.redeemDeviceInvite({
         payload: {
           code: createdReference.reference.code,
           deviceId: "galaxy-fold-8",
           proofKeyThumbprint: "a".repeat(43),
         },
-      }),
-    );
+      });
 
-    const result = await Effect.runPromise(
-      fixture.client.businessOs.listDeviceBindings({
+      const result = yield* fixture.client.businessOs.listDeviceBindings({
         headers: {},
         payload: { businessOsInstanceId: "instance-a" },
-      }),
-    );
-    expect(result).toEqual({
-      devices: [
-        {
-          devicePairingId: createdReference.inviteId,
-          deviceId: "galaxy-fold-8",
-          businessOsInstanceId: "instance-a",
-          pairedAtMillis: expect.any(Number),
-        },
-      ],
+      });
+      expect(result).toEqual({
+        devices: [
+          {
+            devicePairingId: createdReference.inviteId,
+            deviceId: "galaxy-fold-8",
+            businessOsInstanceId: "instance-a",
+            pairedAtMillis: expect.any(Number),
+          },
+        ],
+      });
+      expect(encodeUnknownJson(result)).not.toMatch(
+        /bootstrap|capability|credential|signaling|room|proofKey|ctoxInvite/iu,
+      );
     });
-    expect(JSON.stringify(result)).not.toMatch(
-      /bootstrap|capability|credential|signaling|room|proofKey|ctoxInvite/iu,
-    );
   });
 
-  it("requires read access before listing device bindings", async () => {
-    const unauthenticated = await clientFor(unauthenticatedAuth);
-    await expect(
-      Effect.runPromise(
-        unauthenticated.businessOs.listDeviceBindings({
-          headers: {},
-          payload: { businessOsInstanceId: "instance-a" },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
+  it.effect("requires read access before listing device bindings", () => {
+    return Effect.gen(function* () {
+      const unauthenticated = yield* clientFor(unauthenticatedAuth);
+      expect(
+        yield* Effect.flip(
+          unauthenticated.businessOs.listDeviceBindings({
+            headers: {},
+            payload: { businessOsInstanceId: "instance-a" },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
 
-    const writeOnly = await clientFor(authenticatedAuth(new Set(["access:write"])));
-    await expect(
-      Effect.runPromise(
-        writeOnly.businessOs.listDeviceBindings({
-          headers: {},
-          payload: { businessOsInstanceId: "instance-a" },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
+      const writeOnly = yield* clientFor(authenticatedAuth(new Set(["access:write"])));
+      expect(
+        yield* Effect.flip(
+          writeOnly.businessOs.listDeviceBindings({
+            headers: {},
+            payload: { businessOsInstanceId: "instance-a" },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
+    });
   });
 
-  it("redeems once and rejects a replay with another device or thumbprint", async () => {
-    const writable = await clientFor(authenticatedAuth(new Set(["access:write"])));
-    const result = await Effect.runPromise(
-      writable.businessOs.createDeviceInvite({
+  it.effect("redeems once and rejects a replay with another device or thumbprint", () => {
+    return Effect.gen(function* () {
+      const writable = yield* clientFor(authenticatedAuth(new Set(["access:write"])));
+      const result = yield* writable.businessOs.createDeviceInvite({
         headers: {},
         payload: {
           ttlSeconds: 300,
           connectionUrl: "https://workjet.example.test",
           businessOsInstanceId: "instance-a",
         },
-      }),
-    );
-    await expect(
-      Effect.runPromise(
-        writable.businessOs.redeemDeviceInvite({
+      });
+      expect(
+        yield* writable.businessOs.redeemDeviceInvite({
           payload: {
             code: result.reference.code,
             deviceId: "device-a",
             proofKeyThumbprint: "a".repeat(43),
           },
         }),
-      ),
-    ).resolves.toMatchObject({ business_os: { instance_id: "instance-a" } });
-    await expect(
-      Effect.runPromise(
-        writable.businessOs.redeemDeviceInvite({
-          payload: {
-            code: result.reference.code,
-            deviceId: "device-b",
-            proofKeyThumbprint: "b".repeat(43),
-          },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "WorkjetDeviceInviteRedeemRejectedError" });
-  });
-
-  it("rejects a redemption when the CTOX invite does not match the selected instance", async () => {
-    const fixture = await fixtureFor(authenticatedAuth(new Set(["access:write"])));
-    const result = await Effect.runPromise(
-      fixture.client.businessOs.createDeviceInvite({
-        headers: {},
-        payload: {
-          ttlSeconds: 300,
-          connectionUrl: "https://workjet.example.test",
-          businessOsInstanceId: "instance-b",
-        },
-      }),
-    );
-    await expect(
-      Effect.runPromise(
-        fixture.client.businessOs.redeemDeviceInvite({
-          payload: {
-            code: result.reference.code,
-            deviceId: "device-a",
-            proofKeyThumbprint: "a".repeat(43),
-          },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "WorkjetDeviceInviteRedeemRejectedError" });
-    expect(fixture.revokedPairingLinks).toContain("workjet-link-a");
-    expect(fixture.revokedCtoxInvites).toContain("opaque-id");
-  });
-
-  it("keeps an old edge retryable when replacement credential revocation fails", async () => {
-    const fixture = await fixtureFor(authenticatedAuth(new Set(["access:write"])), {
-      failFirstOldPairingRevoke: true,
+      ).toMatchObject({ business_os: { instance_id: "instance-a" } });
+      expect(
+        yield* Effect.flip(
+          writable.businessOs.redeemDeviceInvite({
+            payload: {
+              code: result.reference.code,
+              deviceId: "device-b",
+              proofKeyThumbprint: "b".repeat(43),
+            },
+          }),
+        ),
+      ).toMatchObject({ _tag: "WorkjetDeviceInviteRedeemRejectedError" });
     });
-    const create = () =>
-      Effect.runPromise(
+  });
+
+  it.effect(
+    "rejects a redemption when the CTOX invite does not match the selected instance",
+    () => {
+      return Effect.gen(function* () {
+        const fixture = yield* fixtureFor(authenticatedAuth(new Set(["access:write"])));
+        const result = yield* fixture.client.businessOs.createDeviceInvite({
+          headers: {},
+          payload: {
+            ttlSeconds: 300,
+            connectionUrl: "https://workjet.example.test",
+            businessOsInstanceId: "instance-b",
+          },
+        });
+        expect(
+          yield* Effect.flip(
+            fixture.client.businessOs.redeemDeviceInvite({
+              payload: {
+                code: result.reference.code,
+                deviceId: "device-a",
+                proofKeyThumbprint: "a".repeat(43),
+              },
+            }),
+          ),
+        ).toMatchObject({ _tag: "WorkjetDeviceInviteRedeemRejectedError" });
+        expect(fixture.revokedPairingLinks).toContain("workjet-link-a");
+        expect(fixture.revokedCtoxInvites).toContain("opaque-id");
+      });
+    },
+  );
+
+  it.effect("keeps an old edge retryable when replacement credential revocation fails", () => {
+    return Effect.gen(function* () {
+      const fixture = yield* fixtureFor(authenticatedAuth(new Set(["access:write"])), {
+        failFirstOldPairingRevoke: true,
+      });
+      const create = () =>
         fixture.client.businessOs.createDeviceInvite({
           headers: {},
           payload: {
@@ -458,78 +461,72 @@ describe("Business OS mobile control-plane HTTP safety", () => {
             connectionUrl: "https://workjet.example.test",
             businessOsInstanceId: "instance-a",
           },
-        }),
-      );
-    const redeem = (code: string) =>
-      Effect.runPromise(
+        });
+      const redeem = (code: string) =>
         fixture.client.businessOs.redeemDeviceInvite({
           payload: {
             code,
             deviceId: "device-a",
             proofKeyThumbprint: "a".repeat(43),
           },
-        }),
-      );
+        });
 
-    const first = await create();
-    await expect(redeem(first.reference.code)).resolves.toMatchObject({
-      device_pairing_id: first.inviteId,
-    });
+      const first = yield* create();
+      expect(yield* redeem(first.reference.code)).toMatchObject({
+        device_pairing_id: first.inviteId,
+      });
 
-    const failedReplacement = await create();
-    await expect(redeem(failedReplacement.reference.code)).rejects.toMatchObject({
-      _tag: "EnvironmentInternalError",
-      reason: "device_invite_issuance_failed",
-    });
+      const failedReplacement = yield* create();
+      expect(yield* Effect.flip(redeem(failedReplacement.reference.code))).toMatchObject({
+        _tag: "EnvironmentInternalError",
+        reason: "device_invite_issuance_failed",
+      });
 
-    const retry = await create();
-    await expect(redeem(retry.reference.code)).resolves.toMatchObject({
-      device_pairing_id: retry.inviteId,
+      const retry = yield* create();
+      expect(yield* redeem(retry.reference.code)).toMatchObject({
+        device_pairing_id: retry.inviteId,
+      });
+      expect(
+        fixture.revokedPairingLinks.filter((identifier) => identifier === "workjet-link-a"),
+      ).toHaveLength(2);
+      expect(fixture.revokedCtoxInvites).toContain("opaque-id");
     });
-    expect(
-      fixture.revokedPairingLinks.filter((identifier) => identifier === "workjet-link-a"),
-    ).toHaveLength(2);
-    expect(fixture.revokedCtoxInvites).toContain("opaque-id");
   });
 
-  it("retries an exact-edge revoke after a downstream failure", async () => {
-    const fixture = await fixtureFor(authenticatedAuth(new Set(["access:write"])), {
-      failFirstOldPairingRevoke: true,
-    });
-    const createdReference = await Effect.runPromise(
-      fixture.client.businessOs.createDeviceInvite({
+  it.effect("retries an exact-edge revoke after a downstream failure", () => {
+    return Effect.gen(function* () {
+      const fixture = yield* fixtureFor(authenticatedAuth(new Set(["access:write"])), {
+        failFirstOldPairingRevoke: true,
+      });
+      const createdReference = yield* fixture.client.businessOs.createDeviceInvite({
         headers: {},
         payload: {
           ttlSeconds: 300,
           connectionUrl: "https://workjet.example.test",
           businessOsInstanceId: "instance-a",
         },
-      }),
-    );
-    await Effect.runPromise(
-      fixture.client.businessOs.redeemDeviceInvite({
+      });
+      yield* fixture.client.businessOs.redeemDeviceInvite({
         payload: {
           code: createdReference.reference.code,
           deviceId: "device-a",
           proofKeyThumbprint: "a".repeat(43),
         },
-      }),
-    );
-    const revoke = () =>
-      Effect.runPromise(
+      });
+      const revoke = () =>
         fixture.client.businessOs.revokeDeviceInvite({
           headers: {},
           payload: { inviteId: createdReference.inviteId },
-        }),
-      );
-    await expect(revoke()).rejects.toMatchObject({
-      _tag: "EnvironmentInternalError",
-      reason: "device_invite_revoke_failed",
+        });
+      expect(yield* Effect.flip(revoke())).toMatchObject({
+        _tag: "EnvironmentInternalError",
+        reason: "device_invite_revoke_failed",
+      });
+      expect(yield* revoke()).toEqual({ revoked: true });
+      expect(
+        fixture.revokedPairingLinks.filter((identifier) => identifier === "workjet-link-a"),
+      ).toHaveLength(2);
     });
-    await expect(revoke()).resolves.toEqual({ revoked: true });
-    expect(
-      fixture.revokedPairingLinks.filter((identifier) => identifier === "workjet-link-a"),
-    ).toHaveLength(2);
   });
 
   it("disables caches and referrers for invite and shell-pack responses", () => {
@@ -540,65 +537,63 @@ describe("Business OS mobile control-plane HTTP safety", () => {
     });
   });
 
-  it("rejects unauthenticated and non-write clients, then creates and revokes", async () => {
-    const unauthenticated = await clientFor(unauthenticatedAuth);
-    await expect(
-      Effect.runPromise(
-        unauthenticated.businessOs.createMobileInvite({
-          headers: {},
-          payload: { ttlSeconds: 300 },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
+  it.effect("rejects unauthenticated and non-write clients, then creates and revokes", () => {
+    return Effect.gen(function* () {
+      const unauthenticated = yield* clientFor(unauthenticatedAuth);
+      expect(
+        yield* Effect.flip(
+          unauthenticated.businessOs.createMobileInvite({
+            headers: {},
+            payload: { ttlSeconds: 300 },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
 
-    const readOnly = await clientFor(authenticatedAuth(new Set(["access:read"])));
-    await expect(
-      Effect.runPromise(
-        readOnly.businessOs.createMobileInvite({
-          headers: {},
-          payload: { ttlSeconds: 300 },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
+      const readOnly = yield* clientFor(authenticatedAuth(new Set(["access:read"])));
+      expect(
+        yield* Effect.flip(
+          readOnly.businessOs.createMobileInvite({
+            headers: {},
+            payload: { ttlSeconds: 300 },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
 
-    const writable = await clientFor(authenticatedAuth(new Set(["access:write"])));
-    await expect(
-      Effect.runPromise(
-        writable.businessOs.createMobileInvite({
+      const writable = yield* clientFor(authenticatedAuth(new Set(["access:write"])));
+      expect(
+        yield* writable.businessOs.createMobileInvite({
           headers: {},
           payload: { ttlSeconds: 300 },
         }),
-      ),
-    ).resolves.toEqual(created);
-    await expect(
-      Effect.runPromise(
-        writable.businessOs.revokeMobileInvite({
+      ).toEqual(created);
+      expect(
+        yield* writable.businessOs.revokeMobileInvite({
           headers: {},
           payload: { inviteId: created.inviteId },
         }),
-      ),
-    ).resolves.toEqual({ revoked: true });
+      ).toEqual({ revoked: true });
+    });
   });
 
-  it("requires read access and resolves the exact shell-pack distribution", async () => {
-    const unauthenticated = await clientFor(unauthenticatedAuth);
-    await expect(
-      Effect.runPromise(
-        unauthenticated.businessOs.resolveMobileShellPack({
-          headers: {},
-          payload: { businessOsRevision: "revision-a", appVersion: "1.0.0" },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
+  it.effect("requires read access and resolves the exact shell-pack distribution", () => {
+    return Effect.gen(function* () {
+      const unauthenticated = yield* clientFor(unauthenticatedAuth);
+      expect(
+        yield* Effect.flip(
+          unauthenticated.businessOs.resolveMobileShellPack({
+            headers: {},
+            payload: { businessOsRevision: "revision-a", appVersion: "1.0.0" },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
 
-    const readOnly = await clientFor(authenticatedAuth(new Set(["access:read"])));
-    await expect(
-      Effect.runPromise(
-        readOnly.businessOs.resolveMobileShellPack({
+      const readOnly = yield* clientFor(authenticatedAuth(new Set(["access:read"])));
+      expect(
+        yield* readOnly.businessOs.resolveMobileShellPack({
           headers: {},
           payload: { businessOsRevision: "revision-a", appVersion: "1.0.0" },
         }),
-      ),
-    ).resolves.toEqual(resolvedShellPack);
+      ).toEqual(resolvedShellPack);
+    });
   });
 });

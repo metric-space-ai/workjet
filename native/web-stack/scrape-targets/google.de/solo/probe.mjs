@@ -186,7 +186,7 @@ function extractContacts(text) {
     .map((m) => m[0].toLowerCase())
     .filter((email) => !/\.(?:png|jpe?g|gif|webp|svg)$/i.test(email))
     .filter((email) => !/(?:example|sentry|wixpress|googleapis|gstatic)/i.test(email));
-  const phones = [...String(text).matchAll(/(?:\+|00)\d[\d\s()\/-]{7,}\d/g)].map((m) =>
+  const phones = [...String(text).matchAll(/(?:\+|00)\d[\d\s()/-]{7,}\d/g)].map((m) =>
     m[0].replace(/\s+/g, " ").trim(),
   );
   const postal = String(text).match(/\b(?:D-)?(\d{5})\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß.'-]+)/);

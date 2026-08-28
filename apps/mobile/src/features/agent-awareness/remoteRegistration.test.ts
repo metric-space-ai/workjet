@@ -48,6 +48,10 @@ const widgetMocks = vi.hoisted(() => ({
   getInstances: vi.fn(() => []),
   start: vi.fn(() => ({})),
 }));
+const capabilitiesMock = vi.hoisted(() => ({
+  liveActivitiesSupported: true,
+  pushSupported: true,
+}));
 const environmentConfigsMock = vi.hoisted(() => ({
   configs: new Map<
     string,
@@ -133,15 +137,16 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
-vi.mock("expo-widgets", () => ({
-  addPushToStartTokenListener: vi.fn(() => ({ remove: vi.fn() })),
-}));
-
-vi.mock("../../widgets/AgentActivity", () => ({
+vi.mock("./disabledLiveActivity", () => ({
   default: {
     getInstances: widgetMocks.getInstances,
     start: widgetMocks.start,
   },
+}));
+
+vi.mock("./capabilities", () => ({
+  supportsAgentAwarenessLiveActivities: () => capabilitiesMock.liveActivitiesSupported,
+  supportsAgentAwarenessPush: () => capabilitiesMock.pushSupported,
 }));
 
 // The state modules pull the whole connection stack (and native expo modules)
@@ -294,6 +299,8 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     secureStore.clear();
     backgroundRuntime.pending.length = 0;
     Constants.expoConfig!.extra = {};
+    capabilitiesMock.liveActivitiesSupported = true;
+    capabilitiesMock.pushSupported = true;
     __resetAgentAwarenessRemoteRegistrationForTest();
     appStateMock.listeners.length = 0;
     registrationRecordStore.current = null;
@@ -367,6 +374,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
 
   it("disables push features in Personal Team relay registrations", () => {
     Constants.expoConfig!.extra = { iosPersonalTeamBuild: true };
+    capabilitiesMock.pushSupported = false;
 
     expect(
       makeRelayDeviceRegistrationRequest({

@@ -12,7 +12,10 @@ const instance = {
   inviteExpiresAt: "2026-08-25T13:00:00Z",
   capabilityExpiresAtMs: Date.parse("2026-08-25T12:30:00Z"),
   user: { id: "user-a", displayName: "Operator", role: "admin", isAdmin: true },
-  roomSecretRef: "room-ref",
+  browserTokenRef: "browser-ref",
+  signalingAuthVersion: "ctox-role-bound-v1",
+  browserTokenHash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97", // gitleaks:allow -- deterministic SHA-256 test vector
+  nativeTokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   capabilitySecretRef: "cap-ref",
   storageIdentity: "00000000-0000-4000-8000-000000000001",
   createdAtMs: 1,
@@ -24,7 +27,7 @@ describe("Business OS launch context", () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-08-25T12:00:00Z"));
     const context = buildBusinessOsLaunchContext(
       instance,
-      { roomPassword: "room-secret", capabilityToken: "capability-secret" },
+      { browserToken: "raw-browser-token", capabilityToken: "capability-secret" },
       "ios",
     );
     const html = injectBusinessOsLaunchContext(
@@ -42,7 +45,7 @@ describe("Business OS launch context", () => {
     expect(() =>
       buildBusinessOsLaunchContext(
         instance,
-        { roomPassword: "room-secret", capabilityToken: "capability-secret" },
+        { browserToken: "raw-browser-token", capabilityToken: "capability-secret" },
         "android",
       ),
     ).toThrowError("expired");

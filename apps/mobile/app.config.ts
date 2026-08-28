@@ -128,26 +128,6 @@ const dmSansFonts = {
   bold: "@expo-google-fonts/dm-sans/700Bold/DMSans_700Bold.ttf",
 } as const;
 
-const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
-  "expo-widgets",
-  {
-    bundleIdentifier: `${iosBundleIdentifier}.widgets`,
-    groupIdentifier: `group.${iosBundleIdentifier}`,
-    enablePushNotifications: true,
-    // Agent activity can update many times an hour; without the
-    // frequent-updates entitlement iOS throttles the update budget sooner.
-    frequentUpdates: true,
-    widgets: [
-      {
-        name: "AgentActivity",
-        displayName: "Agent Activity",
-        description: "Shows the current state of active Workjet agents.",
-        supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
-      },
-    ],
-  },
-];
-
 const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-sharing",
   {
@@ -182,24 +162,14 @@ const config: ExpoConfig = {
   platforms: ["ios", "android"],
   scheme: [...variant.schemes],
   version: "1.0.4",
-  runtimeVersion: {
-    // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
-    // project — native deps, config plugins, AND patches/ — matches the update.
-    // With appVersion, every 0.1.0 build shares a runtime version, so a JS update
-    // could land on a binary missing the native changes it needs and crash.
-    policy: process.env.MOBILE_VERSION_POLICY ?? "fingerprint",
-  },
   // Workjet is a first-class tablet app. Keep both orientations available so
   // iPad and Android tablets work naturally in 3:4 portrait and 4:3 landscape.
   orientation: "default",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: {
-    enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
-  },
+  // Release code only through signed App Store / Play binaries. In particular,
+  // the CTOX pairing and WebRTC boundary must never be replaced over OTA.
+  updates: { enabled: false },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -217,7 +187,7 @@ const config: ExpoConfig = {
     ],
     infoPlist: {
       NSAppTransportSecurity: {
-        NSAllowsArbitraryLoads: true,
+        NSAllowsArbitraryLoads: false,
       },
       NSLocalNetworkUsageDescription:
         "Allow Workjet to connect to CTOX backends on your local network or tailnet.",
@@ -341,24 +311,19 @@ const config: ExpoConfig = {
           deploymentTarget: "26.0",
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.
           extraPods: [
-            { name: "GoogleUtilities", modular_headers: true },
-            { name: "RecaptchaInterop", modular_headers: true },
+            { name: "GoogleUtilities", version: "8.1.3", modular_headers: true },
+            { name: "RecaptchaInterop", version: "101.0.0", modular_headers: true },
           ],
         },
         android: {
-          minSdkVersion: 37,
-          compileSdkVersion: 37,
-          targetSdkVersion: 37,
+          minSdkVersion: 24,
+          compileSdkVersion: 36,
+          targetSdkVersion: 36,
+          buildToolsVersion: "36.0.0",
         },
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
-    // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
-    // first, so registering earlier makes this plugin's mods run AFTER
-    // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
-    // would delete the asset catalog) and its xcodeproj mod creates the widget
-    // target (which must exist before the compile phase can be attached).
-    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",

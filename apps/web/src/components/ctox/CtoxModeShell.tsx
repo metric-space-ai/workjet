@@ -81,7 +81,9 @@ export interface CtoxManualPairingFormValues {
   readonly instanceId: string;
   readonly syncRoom: string;
   readonly signalingUrls: string;
-  readonly roomSecret: string;
+  readonly browserToken: string;
+  readonly browserTokenHash: string;
+  readonly nativeTokenHash: string;
   readonly capabilityToken: string;
   readonly capabilityExpiresAtMs: string;
   readonly role: string;
@@ -305,7 +307,10 @@ export function buildCtoxManualPairingInput(
       .split(/[\n,]+/u)
       .map((value) => value.trim())
       .filter((value) => value !== ""),
-    roomSecret: values.roomSecret,
+    signalingAuthVersion: "ctox-role-bound-v1",
+    browserToken: values.browserToken,
+    browserTokenHash: values.browserTokenHash,
+    nativeTokenHash: values.nativeTokenHash,
     ...(values.instanceId === "" ? {} : { instanceId: values.instanceId }),
     ...(values.capabilityToken === "" ? {} : { capabilityToken: values.capabilityToken }),
     ...(ctoxCapabilityExpiryToEpochMs(values.capabilityExpiresAtMs) === null
@@ -1569,7 +1574,9 @@ export function PairingAddSurface({
   const [instanceId, setInstanceId] = useState("");
   const [syncRoom, setSyncRoom] = useState("");
   const [signalingUrls, setSignalingUrls] = useState("");
-  const [roomSecret, setRoomSecret] = useState("");
+  const [browserToken, setBrowserToken] = useState("");
+  const [browserTokenHash, setBrowserTokenHash] = useState("");
+  const [nativeTokenHash, setNativeTokenHash] = useState("");
   const [capabilityToken, setCapabilityToken] = useState("");
   const [capabilityExpiresAtMs, setCapabilityExpiresAtMs] = useState("");
   const [role, setRole] = useState("");
@@ -1583,7 +1590,9 @@ export function PairingAddSurface({
     setInstanceId("");
     setSyncRoom("");
     setSignalingUrls("");
-    setRoomSecret("");
+    setBrowserToken("");
+    setBrowserTokenHash("");
+    setNativeTokenHash("");
     setCapabilityToken("");
     setCapabilityExpiresAtMs("");
     setRole("");
@@ -1625,7 +1634,9 @@ export function PairingAddSurface({
       instanceId,
       syncRoom,
       signalingUrls,
-      roomSecret,
+      browserToken,
+      browserTokenHash,
+      nativeTokenHash,
       capabilityToken,
       capabilityExpiresAtMs,
       role,
@@ -1828,15 +1839,41 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Verbindungsschlüssel
+            Browser-Signaling-Token
             <input
               type="password"
               className={fieldClassName}
-              value={roomSecret}
-              onChange={(event) => setRoomSecret(event.target.value)}
+              value={browserToken}
+              onChange={(event) => setBrowserToken(event.target.value)}
               autoComplete="off"
               required
               maxLength={4_096}
+            />
+          </label>
+          <label className="block text-xs text-sidebar-muted-foreground">
+            Browser-Token-SHA-256
+            <input
+              className={fieldClassName}
+              value={browserTokenHash}
+              onChange={(event) => setBrowserTokenHash(event.target.value)}
+              autoComplete="off"
+              required
+              minLength={64}
+              maxLength={64}
+              pattern="[a-f0-9]{64}"
+            />
+          </label>
+          <label className="block text-xs text-sidebar-muted-foreground">
+            Native-Token-SHA-256
+            <input
+              className={fieldClassName}
+              value={nativeTokenHash}
+              onChange={(event) => setNativeTokenHash(event.target.value)}
+              autoComplete="off"
+              required
+              minLength={64}
+              maxLength={64}
+              pattern="[a-f0-9]{64}"
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">

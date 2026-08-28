@@ -16,7 +16,10 @@ const invite: CtoxBusinessOsInviteV1 = {
   sync_room: "ctox-business-os:instance-a",
   native_peer_id: "native-a",
   signaling_urls: ["wss://signal.example.test/socket"],
-  signaling_room_password: "synthetic-room-secret",
+  signaling_auth_version: "ctox-role-bound-v1",
+  signaling_browser_token: "synthetic-browser-token",
+  signaling_browser_token_hash: "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+  signaling_native_token_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   transport: "webrtc",
   expires_at: "2026-08-25T17:05:00Z",
   data_plane: "rxdb-webrtc",
@@ -67,13 +70,16 @@ describe("Business OS mobile pairing", () => {
     expect(link.startsWith("workjet://pair?payload=")).toBe(true);
     expect(link.length).toBeLessThan(1_000);
     expect(decodePayload(link)).toEqual([
-      "w1",
+      "w2",
       invite.display_name,
       invite.instance_id,
       invite.sync_room,
       invite.native_peer_id,
       invite.signaling_urls,
-      invite.signaling_room_password,
+      invite.signaling_auth_version,
+      invite.signaling_browser_token,
+      invite.signaling_browser_token_hash,
+      invite.signaling_native_token_hash,
       invite.expires_at,
       invite.session.capability_token,
       invite.session.capability_expires_at_ms,
@@ -89,7 +95,7 @@ describe("Business OS mobile pairing", () => {
     expect(() =>
       encodeWorkjetBusinessOsPairingLink({
         ...invite,
-        signaling_room_password: "x".repeat(3_000),
+        signaling_browser_token: "x".repeat(3_000),
       }),
     ).toThrowError("too large");
   });

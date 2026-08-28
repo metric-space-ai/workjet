@@ -84,8 +84,8 @@ function instanceStatus(instance: CtoxManagedInstance): string {
   return "Verbindung fehlerhaft";
 }
 
-export function manualConnectionPasswordText(password: string, visible: boolean): string {
-  return visible ? password : "••••••••••••";
+export function manualConnectionCredentialText(credential: string, visible: boolean): string {
+  return visible ? credential : "••••••••••••";
 }
 
 function DevicePairingDialog({
@@ -112,7 +112,7 @@ function DevicePairingDialog({
     useState<WorkjetManagedDeviceInviteManualConnectionResult | null>(null);
   const [manualLoading, setManualLoading] = useState(false);
   const [manualError, setManualError] = useState(false);
-  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [credentialVisible, setCredentialVisible] = useState(false);
   const link = invite?.link ?? null;
 
   useEffect(() => {
@@ -120,12 +120,12 @@ function DevicePairingDialog({
     setManualConnection(null);
     setManualLoading(false);
     setManualError(false);
-    setPasswordVisible(false);
+    setCredentialVisible(false);
   }, [invite]);
 
   useEffect(() => {
     const hidePassword = () => {
-      if (document.visibilityState !== "visible") setPasswordVisible(false);
+      if (document.visibilityState !== "visible") setCredentialVisible(false);
     };
     document.addEventListener("visibilitychange", hidePassword);
     return () => document.removeEventListener("visibilitychange", hidePassword);
@@ -161,7 +161,7 @@ function DevicePairingDialog({
   };
 
   const close = () => {
-    setPasswordVisible(false);
+    setCredentialVisible(false);
     setManualConnection(null);
     onClose?.();
   };
@@ -210,7 +210,7 @@ function DevicePairingDialog({
                 className="w-full rounded-xl border border-border/80 bg-muted/20"
                 onToggle={(event) => {
                   if (event.currentTarget.open) loadManualConnection();
-                  else setPasswordVisible(false);
+                  else setCredentialVisible(false);
                 }}
               >
                 <summary className="cursor-pointer px-3 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -275,29 +275,35 @@ function DevicePairingDialog({
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Passwort</dt>
+                        <dt className="text-xs font-medium text-muted-foreground">Browser-Token</dt>
                         <dd className="mt-1 flex items-center gap-2">
                           <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                            {manualConnectionPasswordText(
-                              manualConnection.password,
-                              passwordVisible,
+                            {manualConnectionCredentialText(
+                              manualConnection.browserToken,
+                              credentialVisible,
                             )}
                           </code>
                           <Button
                             size="icon-sm"
                             variant="ghost"
                             aria-label={
-                              passwordVisible ? "Passwort verbergen" : "Passwort anzeigen"
+                              credentialVisible
+                                ? "Browser-Token verbergen"
+                                : "Browser-Token anzeigen"
                             }
-                            onClick={() => setPasswordVisible((visible) => !visible)}
+                            onClick={() => setCredentialVisible((visible) => !visible)}
                           >
-                            {passwordVisible ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
+                            {credentialVisible ? (
+                              <EyeOffIcon aria-hidden />
+                            ) : (
+                              <EyeIcon aria-hidden />
+                            )}
                           </Button>
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Passwort kopieren"
-                            onClick={() => void copyValue(manualConnection.password, true)}
+                            aria-label="Browser-Token kopieren"
+                            onClick={() => void copyValue(manualConnection.browserToken, true)}
                           >
                             <CopyIcon aria-hidden />
                           </Button>

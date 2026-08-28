@@ -27,7 +27,7 @@ export function createGlassesController({ getState, onToggleChecked, onLog }) {
   let bridge = null;
   let started = false;
   let indexMap = [];
-  let deptPos = 0;      // Position in den Abteilungen mit offenen Artikeln
+  let deptPos = 0; // Position in den Abteilungen mit offenen Artikeln
   let deptCount = 0;
 
   function toContainers(page) {
@@ -49,8 +49,11 @@ export function createGlassesController({ getState, onToggleChecked, onLog }) {
     // Nach create/rebuild sind die Bildcontainer leer — immer neu senden
     // (rendering.md: ein Neuaufbau ersetzt die Container).
     for (const b of bau.bitmaps || []) {
-      const r = await bridge.updateImageRawData({ containerID: b.containerID, imageData: b.imageData });
-      if (r !== 0 && r !== 'success') log(`updateImageRawData ${b.containerID} -> ${r}`);
+      const r = await bridge.updateImageRawData({
+        containerID: b.containerID,
+        imageData: b.imageData,
+      });
+      if (r !== 0 && r !== "success") log(`updateImageRawData ${b.containerID} -> ${r}`);
     }
   }
 

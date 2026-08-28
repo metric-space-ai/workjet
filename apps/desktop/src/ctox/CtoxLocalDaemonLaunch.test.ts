@@ -42,7 +42,11 @@ function inviteJson(overrides: Record<string, unknown> = {}): string {
     instance_id: "workshop-1",
     sync_room: "ctox-business-os:workshop-room",
     signaling_urls: ["ws://127.0.0.1:4444/signal"],
-    signaling_room_password: "raw-local-secret",
+    signaling_auth_version: "ctox-role-bound-v1",
+    signaling_browser_token: "local-browser-token",
+    signaling_browser_token_hash:
+      "a649e15b61ba3bc2a444f0286a393cb570d0171e174c83c963d8d729c341884f",
+    signaling_native_token_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     transport: "webrtc",
     expires_at_ms: NOW + 86_400_000,
     data_plane: "rxdb-webrtc",
@@ -187,7 +191,12 @@ describe("CtoxLocalDaemonLaunch", () => {
         transport: "webrtc",
         sync_room: "ctox-business-os:workshop-room",
         signaling_urls: ["ws://127.0.0.1:4444/signal"],
-        signaling_room_password: "raw-local-secret",
+        signaling_auth_version: "ctox-role-bound-v1",
+        signaling_browser_token: "local-browser-token",
+        signaling_browser_token_hash:
+          "a649e15b61ba3bc2a444f0286a393cb570d0171e174c83c963d8d729c341884f",
+        signaling_native_token_hash:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         http_bridge_available: false,
         desktop_instance: {
           id: localDescriptor.id,

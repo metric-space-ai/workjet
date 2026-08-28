@@ -2,7 +2,7 @@
 // mündet unten in die Entscheidungs-Icons. Sie ist gezeichnet, nicht getippt —
 // als Text waere sie wieder nur eine Zeichenkette.
 
-import { createBitmap, fillRect, line, setPixel } from './bitmap.mjs';
+import { createBitmap, fillRect, line, setPixel } from "./bitmap.mjs";
 
 const ON = 15;
 const SOFT = 6;

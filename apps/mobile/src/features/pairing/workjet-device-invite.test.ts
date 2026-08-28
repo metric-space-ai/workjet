@@ -24,7 +24,11 @@ function businessOsInvite(overrides: Record<string, unknown> = {}) {
     sync_room: "ctox-business-os:instance-a",
     native_peer_id: "native-a",
     signaling_urls: ["wss://signal.example.test/socket"],
-    signaling_room_password: "synthetic-room-secret",
+    signaling_auth_version: "ctox-role-bound-v1",
+    signaling_browser_token: "synthetic-browser-token",
+    signaling_browser_token_hash:
+      "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+    signaling_native_token_hash: "a".repeat(64),
     transport: "webrtc",
     expires_at: "2026-08-25T13:00:00Z",
     data_plane: "rxdb-webrtc",
@@ -130,7 +134,7 @@ describe("Workjet device invite v1", () => {
       },
     });
     expect(compact.length).toBeLessThanOrEqual(320);
-    expect(compact).not.toMatch(/bootstrap|room-secret|capability-token/iu);
+    expect(compact).not.toMatch(/bootstrap|browser-token|capability-token/iu);
   });
 
   it("requires HTTPS for reference redemption except on the actual loopback host", () => {
@@ -198,6 +202,19 @@ describe("Workjet device invite v1", () => {
         { now: NOW },
       ),
     ).toThrowError(expect.objectContaining({ code: "environment_url" }));
+    for (const baseUrl of ["http://workjet.example.test", "http://192.168.1.20:13773"]) {
+      expect(() =>
+        parseWorkjetDevicePairLink(
+          link({
+            environment: {
+              ...deviceInvite().environment,
+              base_url: baseUrl,
+            },
+          }),
+          { now: NOW },
+        ),
+      ).toThrowError(expect.objectContaining({ code: "environment_url" }));
+    }
     expect(() => parseWorkjetDevicePairLink(`${link()}&debug=true`, { now: NOW })).toThrowError(
       expect.objectContaining({ code: "query" }),
     );
@@ -210,7 +227,7 @@ describe("Workjet device invite v1", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(WorkjetDeviceInviteValidationError);
       expect(String(error)).not.toContain("synthetic-bootstrap-credential");
-      expect(String(error)).not.toContain("synthetic-room-secret");
+      expect(String(error)).not.toContain("synthetic-browser-token");
       expect(String(error)).not.toContain("synthetic-capability-token");
     }
   });

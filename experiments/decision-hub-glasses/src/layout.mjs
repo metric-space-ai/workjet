@@ -15,15 +15,15 @@
 // Design-Guide: "No background fill", "Selection: Toggle borderWidth",
 // "Buttons: Prefix text with '>'".
 
-import { DISPLAY_W, DISPLAY_H } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
-import { pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { renderCaseList, renderLegend, bitmapPayload, ZEILE_FALL } from './icons.mjs';
-import { renderDots, renderBar } from './dots.mjs';
+import { DISPLAY_W, DISPLAY_H } from "../../kundenpipeline-module/core/glasses-renderer.mjs";
+import { pageOf } from "../../kundenpipeline-module/core/sections.mjs";
+import { renderCaseList, renderLegend, bitmapPayload, ZEILE_FALL } from "./icons.mjs";
+import { renderDots, renderBar } from "./dots.mjs";
 
 // Zeilenhoehe des GERAETEFONTS im Lesekasten. 26 war zu klein gemessen —
 // dadurch passte der Inhalt rechnerisch, real aber nicht, und die Brille
 // scrollte ihn selbst. Genau das war das Wackeln bei jedem Seitenwechsel.
-const LINE_H = 26;          // Listenzeilen links
+const LINE_H = 26; // Listenzeilen links
 // Gemessen an gerenderten Seiten: der Geraetefont setzt rund 28px Zeilen.
 // Zu grosszuegig gerechnet verschenkt eine ganze Zeile, zu knapp schneidet
 // der Kasten den Text ab (er scrollt nicht mehr — er fangt keine Eingaben).
@@ -32,7 +32,7 @@ const CHAR_W = 9.2;
 
 // Linke Spalte
 const COL_X = 6;
-const CH_W = 20;                        // Spalte der Kanal-Icons
+const CH_W = 20; // Spalte der Kanal-Icons
 const TEXT_X = COL_X + CH_W + 2;
 const COL_W = 150;
 const LIST_Y = 8;
@@ -78,7 +78,7 @@ export const CONTAINER = {
 const BRIGHT = 4;
 const DIM = 2;
 
-export const LEVEL = { RUBRIK: 'rubrik', DETAIL: 'detail' };
+export const LEVEL = { RUBRIK: "rubrik", DETAIL: "detail" };
 
 // Eine Zeile Reserve: passt der Inhalt exakt, scrollt die Brille ihn selbst
 // und federt sichtbar zurueck — bei JEDEM Seitenwechsel.
@@ -100,7 +100,7 @@ export const PANEL_CHARS = Math.floor((BOX_W - 26) / CHAR_W);
 // Der Volltext beginnt links neben dem Leseweg-Balken; rechts endet er
 // dort, wo auch die Uebersicht endet.
 const DETAIL_BOX_X = 34;
-export const DETAIL_CHARS = Math.floor(((BOX_X + BOX_W) - DETAIL_BOX_X - 26) / CHAR_W);
+export const DETAIL_CHARS = Math.floor((BOX_X + BOX_W - DETAIL_BOX_X - 26) / CHAR_W);
 // Zeichen je Zeile inklusive Rahmen.
 export const BOX_CHARS = Math.floor(BOX_W / CHAR_W);
 const ITEM_CHARS = Math.floor((COL_W - 6) / CHAR_W);
@@ -112,7 +112,7 @@ function row(left, right, width) {
   // Deshalb zwei Zeichen Reserve.
   const nutz = Math.max(4, width - 5);
   const l = left.slice(0, Math.max(0, nutz - right.length - 1));
-  return `${l}${' '.repeat(Math.max(1, nutz - l.length - right.length))}${right}`;
+  return `${l}${" ".repeat(Math.max(1, nutz - l.length - right.length))}${right}`;
 }
 
 /** Sichtbarer Ausschnitt der Entscheidungsliste. */
@@ -129,9 +129,9 @@ export function itemLines(nav) {
   const lines = [];
   tabs.forEach((label, i) => {
     const active = from + i === nav.tabIndex;
-    lines.push(`${active ? '>' : ' '}${String(label).slice(0, ITEM_CHARS - 2)}`);
+    lines.push(`${active ? ">" : " "}${String(label).slice(0, ITEM_CHARS - 2)}`);
     // Platz fuer die Icon-Leiste direkt unter dem aktiven Eintrag.
-    if (active) lines.push('');
+    if (active) lines.push("");
   });
   return lines;
 }
@@ -153,7 +153,7 @@ export function barY(nav) {
 export function boxTitle(nav) {
   if (nav.picker) return nav.picker.titel;
   const section = nav.sections[nav.sectionIndex];
-  if (!section) return nav.betreff || '';
+  if (!section) return nav.betreff || "";
   // Keine Seitenzahl: im Volltext liest man durch, die Position zeigt der
   // Balken am rechten Rand. Eine Zaehlung "1/4" macht aus dem Lesen ein
   // Blaettern.
@@ -210,7 +210,7 @@ export function framedBoxAlt(title, lines, width, height) {
   // Das Rahmenzeichen ist breiter als ein Durchschnittszeichen; eine Linie
   // ueber die volle Breite bricht um. Eine kurze Linie unter dem Titel
   // trennt ohnehin klarer als ein Strich quer durch die Box.
-  const rule = '─'.repeat(Math.max(4, Math.min(16, Math.round(width * 0.35))));
+  const rule = "─".repeat(Math.max(4, Math.min(16, Math.round(width * 0.35))));
   return [title, rule, ...lines.slice(0, height)];
 }
 
@@ -218,15 +218,15 @@ export function contentLines(nav) {
   // Offene Auswahl (z. B. Wiedervorlage) belegt die Box vollstaendig — sie
   // ist eine Frage, keine Nebeninformation.
   if (nav.picker) {
-    return nav.picker.options.map((option, i) =>
-      `${i === nav.pickerIndex ? '>' : ' '} ${option.label}`,
-    ).slice(0, CONTENT_LINES);
+    return nav.picker.options
+      .map((option, i) => `${i === nav.pickerIndex ? ">" : " "} ${option.label}`)
+      .slice(0, CONTENT_LINES);
   }
   const section = nav.sections[nav.sectionIndex];
-  if (!section) return ['Keine Inhalte.'];
+  if (!section) return ["Keine Inhalte."];
   // Laufendes Diktat gehoert vor den Text: es ist ein Zustand, den man
   // sofort sehen muss, sonst spricht man ins Leere.
-  const kopf = nav.hinweis ? [nav.hinweis, ''] : [];
+  const kopf = nav.hinweis ? [nav.hinweis, ""] : [];
   const rest = CONTENT_LINES - kopf.length;
   if (nav.level === LEVEL.DETAIL) {
     return [...kopf, ...pageOf(section, nav.page, rest).zeilen];
@@ -237,7 +237,7 @@ export function contentLines(nav) {
   const kurz = section.kurz || section.zeilen;
   const lines = kurz.slice(0, rest);
   if (kurz.length > rest) {
-    lines[lines.length - 1] = `${(lines[lines.length - 1] || '').slice(0, PANEL_CHARS - 4)} ...`;
+    lines[lines.length - 1] = `${(lines[lines.length - 1] || "").slice(0, PANEL_CHARS - 4)} ...`;
   }
   return [...kopf, ...lines];
 }
@@ -272,13 +272,13 @@ function bauePage(nav) {
         // Inhalt passt IMMER auf eine Seite, sonst scrollt ihn die Brille
         // selbst und die Gesten erreichen die App nicht mehr.
         containerID: CONTAINER.BOX_BODY,
-        containerName: 'box-body',
+        containerName: "box-body",
         // Der Kasten waechst nach LINKS. Rechte Kante, Titel und die obere
         // wie untere Rahmenkante rechts bleiben damit exakt stehen — beim
         // Aufklappen verschiebt sich nur, was sich verschieben muss.
         xPosition: nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X,
         yPosition: BOX_Y,
-        width: (BOX_X + BOX_W) - (nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X),
+        width: BOX_X + BOX_W - (nav.level === LEVEL.DETAIL ? DETAIL_BOX_X : BOX_X),
         // KONSTANT. Eine inhaltsabhaengige Hoehe waere eine Strukturaenderung
         // und erzwaenge bei jedem Seitenwechsel einen Neuaufbau — sichtbares
         // Neuzeichnen. Gegen das Scrollen hilft isEventCapture, nicht die
@@ -297,7 +297,7 @@ function bauePage(nav) {
           contentLines(nav),
           PANEL_CHARS,
           CONTENT_LINES,
-        ).join('\n'),
+        ).join("\n"),
         // Schriftgroesse gibt es am Geraet nicht — das SDK kennt kein
         // Schriftfeld. Der einzige Hebel fuer Gewichtung ist die Helligkeit:
         // die Kurzfassung steht voll, der Volltext eine Stufe darunter. Man
@@ -313,31 +313,35 @@ function bauePage(nav) {
         // Nimmt die Gesten entgegen, damit die App sie bekommt. Leer und
         // winzig: was keinen Inhalt hat, kann nicht scrollen.
         containerID: CONTAINER.BOX_TITLE,
-        containerName: 'input',
+        containerName: "input",
         xPosition: 0,
         yPosition: DISPLAY_H - 2,
         width: 2,
         height: 2,
-        content: '',
+        content: "",
         isEventCapture: 1,
         zOrderIndex: 0,
       },
     ],
     imageObject: [
-      ...(nav.level === LEVEL.DETAIL ? [] : [{
-        // Icons UND Namen in einem Bild: nur so laesst sich der aktive
-        // Vorgang invertieren, und es spart einen Container.
-        containerID: CONTAINER.CHANNELS,
-        containerName: 'liste',
-        xPosition: COL_X,
-        yPosition: LIST_Y,
-        width: CH_W + COL_W,
-        height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
-        zOrderIndex: 3,
-      }]),
+      ...(nav.level === LEVEL.DETAIL
+        ? []
+        : [
+            {
+              // Icons UND Namen in einem Bild: nur so laesst sich der aktive
+              // Vorgang invertieren, und es spart einen Container.
+              containerID: CONTAINER.CHANNELS,
+              containerName: "liste",
+              xPosition: COL_X,
+              yPosition: LIST_Y,
+              width: CH_W + COL_W,
+              height: Math.min(144, MAX_ITEMS * ZEILE_FALL),
+              zOrderIndex: 3,
+            },
+          ]),
       {
         containerID: CONTAINER.DOTS,
-        containerName: 'rail',
+        containerName: "rail",
         // Im Volltext gehoert der Leseweg an den rechten Rand, neben den
         // Text — nicht zwischen Navigation und Kasten. Mittig, weil ein Bild
         // hoechstens 144 hoch sein darf, der Kasten aber 268.
@@ -351,10 +355,10 @@ function bauePage(nav) {
         // Rubrik-Streifen ueber der oberen Rahmenkante — der Rahmen ist genau
         // dort unterbrochen, wo der Name steht.
         containerID: CONTAINER.LEGEND,
-        containerName: 'legend',
+        containerName: "legend",
         // Der Streifen sitzt ueber der oberen Kante des Kastens — und der
         // steht im Volltext ganz links.
-        xPosition: BOX_X + 14,   // bleibt in beiden Ansichten an derselben Stelle
+        xPosition: BOX_X + 14, // bleibt in beiden Ansichten an derselben Stelle
         yPosition: BOX_Y - 10,
         width: LEGEND_W,
         height: 20,
@@ -378,8 +382,8 @@ export function buildBitmaps(nav) {
         // tabLabel liefert einen String, kein Objekt — das kostete die
         // Namen in der Liste.
         cases: tabs.map((t, i) => ({
-          titel: typeof t === 'string' ? t : (t.titel || ''),
-          kanal: nav.channels?.[from + i] || (typeof t === 'object' ? t.kanal : null) || 'mail',
+          titel: typeof t === "string" ? t : t.titel || "",
+          kanal: nav.channels?.[from + i] || (typeof t === "object" ? t.kanal : null) || "mail",
         })),
         active: nav.tabIndex - from,
         actions: nav.icons || [],
@@ -393,13 +397,12 @@ export function buildBitmaps(nav) {
       // Balken — man muss auf einen Blick unterscheiden koennen, ob man
       // zwischen Rubriken blaettert oder in einem Text liest.
       (nav.level === LEVEL.DETAIL ? renderBar : renderDots)({
-        width: DOTS_W, height: Math.min(144, BOX_H - 16), ...railState(nav),
+        width: DOTS_W,
+        height: Math.min(144, BOX_H - 16),
+        ...railState(nav),
       }),
       CONTAINER.DOTS,
     ),
-    bitmapPayload(
-      renderLegend({ title: titel, width: LEGEND_W, height: 20 }),
-      CONTAINER.LEGEND,
-    ),
+    bitmapPayload(renderLegend({ title: titel, width: LEGEND_W, height: 20 }), CONTAINER.LEGEND),
   ];
 }

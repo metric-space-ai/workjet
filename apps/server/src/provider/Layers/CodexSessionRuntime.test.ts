@@ -203,43 +203,41 @@ describe("buildTurnStartParams", () => {
     }
   });
 
-  it("preserves legacy collaboration instructions for empty managed prompts", () => {
-    const legacy = Effect.runSync(
-      buildTurnStartParams({
+  it.effect("preserves legacy collaboration instructions for empty managed prompts", () =>
+    Effect.gen(function* () {
+      const legacy = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "full-access",
         prompt: "Work",
         interactionMode: "default",
-      }),
-    );
-    const empty = Effect.runSync(
-      buildTurnStartParams({
+      });
+      const empty = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "full-access",
         prompt: "Work",
         interactionMode: "default",
         compiledManagedPrompt: " \n\t ",
-      }),
-    );
+      });
 
-    NodeAssert.deepStrictEqual(empty, legacy);
-  });
+      NodeAssert.deepStrictEqual(empty, legacy);
+    }),
+  );
 
-  it("reports the same fallback model and effort in settings and instructions", () => {
-    const params = Effect.runSync(
-      buildTurnStartParams({
+  it.effect("reports the same fallback model and effort in settings and instructions", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "full-access",
         prompt: "Go",
         interactionMode: "default",
-      }),
-    );
+      });
 
-    const settings = params.collaborationMode?.settings;
-    NodeAssert.equal(settings?.model, DEFAULT_MODEL);
-    NodeAssert.equal(settings?.reasoning_effort, "medium");
-    NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
-  });
+      const settings = params.collaborationMode?.settings;
+      NodeAssert.equal(settings?.model, DEFAULT_MODEL);
+      NodeAssert.equal(settings?.reasoning_effort, "medium");
+      NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
+    }),
+  );
 
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
     Effect.gen(function* () {
@@ -266,30 +264,30 @@ describe("buildTurnStartParams", () => {
     }),
   );
 
-  it("omits collaboration mode when interaction mode is absent", () => {
-    const params = Effect.runSync(
-      buildTurnStartParams({
+  it.effect("omits collaboration mode when interaction mode is absent", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "approval-required",
         prompt: "Review",
-      }),
-    );
+      });
 
-    NodeAssert.deepStrictEqual(params, {
-      threadId: "provider-thread-1",
-      approvalPolicy: "untrusted",
-      approvalsReviewer: "user",
-      sandboxPolicy: {
-        type: "readOnly",
-      },
-      input: [
-        {
-          type: "text",
-          text: "Review",
+      NodeAssert.deepStrictEqual(params, {
+        threadId: "provider-thread-1",
+        approvalPolicy: "untrusted",
+        approvalsReviewer: "user",
+        sandboxPolicy: {
+          type: "readOnly",
         },
-      ],
-    });
-  });
+        input: [
+          {
+            type: "text",
+            text: "Review",
+          },
+        ],
+      });
+    }),
+  );
 });
 
 describe("buildCodexDeveloperInstructions", () => {

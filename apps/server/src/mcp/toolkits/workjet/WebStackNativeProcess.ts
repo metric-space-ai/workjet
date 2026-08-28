@@ -1,5 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- `productionRuntime` is the Node platform implementation injected behind `WebStackRuntimeBoundary`; it needs the raw `stat`/`access(X_OK)`/`mkdir` syscalls that decide whether a native executable exists and is runnable.
-import * as NodeFs from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Executable discovery walks the process `PATH` with the host's own delimiter and resolves argv paths for the spawned `workjet-web-stack` binary; this is the one module in the toolkit allowed to know that.
 import * as NodePath from "node:path";
 import * as Duration from "effect/Duration";
@@ -83,27 +83,31 @@ export const executableCandidates = (input: {
  */
 export const webStackStateRoot = (stateDir: string): string => NodePath.join(stateDir, "web-stack");
 
-export const productionRuntime = (): WebStackRuntimeBoundary => ({
-  executableCandidates: executableCandidates({
-    environment: process.env,
-    platform: process.platform,
-    cwd: process.cwd(),
-    moduleDirectory: import.meta.dirname,
-  }),
-  isExecutable: async (candidate) => {
-    try {
-      const stat = await NodeFs.stat(candidate);
-      if (!stat.isFile()) return false;
-      if (process.platform !== "win32") await NodeFs.access(candidate, NodeFs.constants.X_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  makeDirectory: async (path) => {
-    await NodeFs.mkdir(path, { recursive: true });
-  },
-});
+export const productionRuntime = (): WebStackRuntimeBoundary => {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Concrete Node boundary behind the injected WebStackRuntimeBoundary interface.
+  const hostPlatform = process.platform;
+  return {
+    executableCandidates: executableCandidates({
+      environment: process.env,
+      platform: hostPlatform,
+      cwd: process.cwd(),
+      moduleDirectory: import.meta.dirname,
+    }),
+    isExecutable: async (candidate) => {
+      try {
+        const stat = await NodeFSP.stat(candidate);
+        if (!stat.isFile()) return false;
+        if (hostPlatform !== "win32") await NodeFSP.access(candidate, NodeFSP.constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    makeDirectory: async (path) => {
+      await NodeFSP.mkdir(path, { recursive: true });
+    },
+  };
+};
 
 const collectBounded = <E>(
   stream: Stream.Stream<Uint8Array, E>,

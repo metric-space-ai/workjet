@@ -28,11 +28,14 @@ export interface CtoxLaunchUser {
   readonly role?: string;
 }
 
-/** Room, secret, and capability material for one launch. Never persisted here. */
+/** Room, role-bound signaling, and capability material for one launch. Never persisted here. */
 export interface CtoxLaunchMaterial {
   readonly syncRoom: string;
   readonly signalingUrls: readonly string[];
-  readonly roomSecret: string;
+  readonly signalingAuthVersion: "ctox-role-bound-v1";
+  readonly browserToken: string;
+  readonly browserTokenHash: string;
+  readonly nativeTokenHash: string;
   readonly capabilityToken?: string;
   readonly capabilityExpiresAtMs?: number;
   readonly user?: CtoxLaunchUser;
@@ -66,7 +69,10 @@ export function buildCtoxBusinessOsLaunchConfig(
     transport: "webrtc",
     sync_room: material.syncRoom,
     signaling_urls: material.signalingUrls,
-    signaling_room_password: material.roomSecret,
+    signaling_auth_version: material.signalingAuthVersion,
+    signaling_browser_token: material.browserToken,
+    signaling_browser_token_hash: material.browserTokenHash,
+    signaling_native_token_hash: material.nativeTokenHash,
     http_bridge_available: false,
     desktop_instance: {
       id: input.instanceId,

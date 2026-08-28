@@ -330,7 +330,7 @@ export async function commitNativeManagedWorkjetPairing(input: {
   );
   const newReferences: string[] = [];
   try {
-    newReferences.push(await nativeBusinessOsSecretStore.write(input.invite.password));
+    newReferences.push(await nativeBusinessOsSecretStore.write(input.invite.browserToken));
     newReferences.push(
       await nativeBusinessOsSecretStore.write(input.invite.session.capabilityToken),
     );
@@ -358,7 +358,10 @@ export async function commitNativeManagedWorkjetPairing(input: {
     inviteExpiresAt: input.invite.expiresAt,
     capabilityExpiresAtMs: input.invite.session.capabilityExpiresAtMs,
     user: input.invite.session.user,
-    roomSecretRef: newReferences[0]!,
+    browserTokenRef: newReferences[0]!,
+    signalingAuthVersion: input.invite.signalingAuthVersion,
+    browserTokenHash: input.invite.browserTokenHash,
+    nativeTokenHash: input.invite.nativeTokenHash,
     capabilitySecretRef: newReferences[1]!,
     storageIdentity: existing?.storageIdentity ?? uuidv4(),
     createdAtMs: existing?.createdAtMs ?? now,
@@ -443,7 +446,12 @@ export async function commitNativeManagedWorkjetPairing(input: {
   await Promise.allSettled([
     ...(existing
       ? [
-          nativeBusinessOsSecretStore.remove(existing.roomSecretRef),
+          ...(existing.browserTokenRef
+            ? [nativeBusinessOsSecretStore.remove(existing.browserTokenRef)]
+            : []),
+          ...(existing.roomSecretRef
+            ? [nativeBusinessOsSecretStore.remove(existing.roomSecretRef)]
+            : []),
           nativeBusinessOsSecretStore.remove(existing.capabilitySecretRef),
         ]
       : []),

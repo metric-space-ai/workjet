@@ -99,10 +99,10 @@ const registrationSpans = (): ReadonlyArray<{
     const starts = [...file.body.matchAll(/server\.addTool\(\{/g)].map((match) => match.index);
     for (const [index, start] of starts.entries()) {
       const end = starts[index + 1] ?? file.body.length;
-      const span = file.body.slice(start, end);
+      const span = new Set(file.body.slice(start, end));
       spans.push({
         file: file.name,
-        enforcer: SCOPE_ENFORCERS.find((candidate) => span.includes(`${candidate}(`)),
+        enforcer: SCOPE_ENFORCERS.find((candidate) => span.has(`${candidate}(`)),
       });
     }
   }

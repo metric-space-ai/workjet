@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off
 import * as NodeCrypto from "node:crypto";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -306,7 +306,7 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
       const directory = stack.pop();
       if (!directory) break;
       try {
-        const entries = await NodeFS.readdir(directory, { withFileTypes: true });
+        const entries = await NodeFSP.readdir(directory, { withFileTypes: true });
         for (const entry of entries) {
           if (entry.isSymbolicLink()) continue;
           const entryPath = NodePath.join(directory, entry.name);
@@ -316,12 +316,12 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
           }
           if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
           try {
-            const stat = await NodeFS.stat(entryPath);
+            const stat = await NodeFSP.stat(entryPath);
             files.push({
               sourceKey: sourceKeyFor(
                 location.source,
                 location.providerInstanceId,
-                await NodeFS.realpath(entryPath),
+                await NodeFSP.realpath(entryPath),
               ),
               source: location.source,
               providerInstanceId: location.providerInstanceId,
@@ -346,12 +346,12 @@ const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
   if (file.size > MAX_TRANSCRIPT_BYTES) {
     throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
   }
-  const text = await NodeFS.readFile(file.path, "utf8");
+  const text = await NodeFSP.readFile(file.path, "utf8");
   return parseSession(file, text);
 };
 
 const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | null> => {
-  const handle = await NodeFS.open(file.path, "r");
+  const handle = await NodeFSP.open(file.path, "r");
   try {
     const buffer = Buffer.alloc(Math.min(file.size, MAX_PREVIEW_BYTES));
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
@@ -430,7 +430,7 @@ export const make = Effect.gen(function* () {
           sourceSizeBytes: file.size,
           importedThreadId: imported ? ThreadId.make(imported.thread_id) : null,
           workspaceAvailable: yield* Effect.promise(() =>
-            NodeFS.access(parsed.workspaceRoot).then(
+            NodeFSP.access(parsed.workspaceRoot).then(
               () => true,
               () => false,
             ),

@@ -27,7 +27,10 @@ const invite = {
   sync_room: "ctox-business-os:instance-a",
   native_peer_id: "native-a",
   signaling_urls: ["wss://signal.example.test/socket"],
-  signaling_room_password: "room-secret",
+  signaling_auth_version: "ctox-role-bound-v1" as const,
+  signaling_browser_token: "synthetic-browser-token",
+  signaling_browser_token_hash: "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+  signaling_native_token_hash: "a".repeat(64),
   transport: "webrtc" as const,
   expires_at: "2026-08-25T12:05:00Z",
   data_plane: "rxdb-webrtc" as const,
@@ -63,7 +66,7 @@ describe("production Business OS invite control", () => {
     );
     const created = await control.create({ backend, ttlSeconds: 300 });
     expect(create).toHaveBeenCalledWith({ ttlSeconds: 300 });
-    expect(created.link.startsWith("workjet://business-os/pair?payload=")).toBe(true);
+    expect(created.link.startsWith("workjet://pair?payload=")).toBe(true);
     await control.revoke({ backend, inviteId: created.inviteId });
     expect(revoke).toHaveBeenCalledWith({ inviteId: "invite-a" });
   });

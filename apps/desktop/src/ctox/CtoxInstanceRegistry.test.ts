@@ -40,7 +40,10 @@ const manualPairing = {
   instanceId: "office-1",
   syncRoom: "ctox-business-os:office-room",
   signalingUrls: ["wss://signal.example.com/room"],
-  roomSecret: "raw-room-secret",
+  signalingAuthVersion: "ctox-role-bound-v1",
+  browserToken: "raw-browser-token",
+  browserTokenHash: "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97", // gitleaks:allow -- deterministic SHA-256 test vector
+  nativeTokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   capabilityToken: "raw-capability-token",
   capabilityExpiresAtMs: NOW + 60_000,
   role: "admin",
@@ -60,7 +63,11 @@ function invite(overrides: Record<string, unknown> = {}): string {
     native_peer_id: "native-peer-1",
     sync_room: "ctox-business-os:office-room",
     signaling_urls: ["wss://signal.example.com/room"],
-    signaling_room_password: "raw-invite-secret",
+    signaling_auth_version: "ctox-role-bound-v1",
+    signaling_browser_token: "raw-invite-browser-token",
+    signaling_browser_token_hash:
+      "718b2ac169b1f5a873031dea906385e10cdfa386e071801f64b56989043f254f",
+    signaling_native_token_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     transport: "webrtc",
     expires_at_ms: NOW + 60_000,
     data_plane: "rxdb-webrtc",
@@ -240,8 +247,8 @@ describe("CtoxInstanceRegistry", () => {
       assert.notInclude(publicRaw, "sync_room");
       assert.notInclude(publicRaw, "office-room");
       assert.notInclude(publicRaw, "private-user-id");
-      assert.notInclude(publicRaw, "raw-room-secret");
-      assert.notInclude(secretsRaw, "raw-room-secret");
+      assert.notInclude(publicRaw, "raw-browser-token");
+      assert.notInclude(secretsRaw, "raw-browser-token");
       assert.notInclude(secretsRaw, "raw-capability-token");
       assert.include(secretsRaw, "ciphertext");
 
@@ -268,7 +275,12 @@ describe("CtoxInstanceRegistry", () => {
           transport: "webrtc",
           sync_room: "ctox-business-os:office-room",
           signaling_urls: ["wss://signal.example.com/room"],
-          signaling_room_password: "raw-invite-secret",
+          signaling_auth_version: "ctox-role-bound-v1",
+          signaling_browser_token: "raw-invite-browser-token",
+          signaling_browser_token_hash:
+            "718b2ac169b1f5a873031dea906385e10cdfa386e071801f64b56989043f254f",
+          signaling_native_token_hash:
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           http_bridge_available: false,
           desktop_instance: {
             id: invited.id,
@@ -302,9 +314,12 @@ describe("CtoxInstanceRegistry", () => {
         assert.equal(manualLaunch.config.desktop_instance.source, "manual_pairing");
         assert.notInclude(
           encodeUnknownJson(yield* service.merge({ _tag: "signed_out" })),
-          "raw-room-secret",
+          "raw-browser-token",
         );
-        assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", "raw-room-secret");
+        assert.notInclude(
+          memory.files.get("/state/ctox/instances.json") ?? "",
+          "raw-browser-token",
+        );
       });
     },
   );
@@ -322,7 +337,10 @@ describe("CtoxInstanceRegistry", () => {
           instanceId: manualPairing.instanceId,
           syncRoom: manualPairing.syncRoom,
           signalingUrls: manualPairing.signalingUrls,
-          roomSecret: manualPairing.roomSecret,
+          signalingAuthVersion: manualPairing.signalingAuthVersion,
+          browserToken: manualPairing.browserToken,
+          browserTokenHash: manualPairing.browserTokenHash,
+          nativeTokenHash: manualPairing.nativeTokenHash,
           role: manualPairing.role,
           userId: manualPairing.userId,
         });
@@ -360,7 +378,7 @@ describe("CtoxInstanceRegistry", () => {
             corrupt.failure.message,
             "The CTOX paired instance registry operation failed.",
           );
-          assert.notInclude(corrupt.failure.message, "raw-room-secret");
+          assert.notInclude(corrupt.failure.message, "raw-browser-token");
         }
       });
     },
@@ -865,7 +883,12 @@ describe("CtoxInstanceRegistry", () => {
       instance_id: "workshop-1",
       sync_room: "ctox-business-os:workshop-room",
       signaling_urls: ["ws://127.0.0.1:4444/signal"],
-      signaling_room_password: "raw-local-secret",
+      signaling_auth_version: "ctox-role-bound-v1",
+      signaling_browser_token: "local-browser-token",
+      signaling_browser_token_hash:
+        "a649e15b61ba3bc2a444f0286a393cb570d0171e174c83c963d8d729c341884f",
+      signaling_native_token_hash:
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       capability_token: "raw-local-capability",
       expires_at_ms: NOW + 86_400_000,
     });
@@ -915,7 +938,7 @@ describe("CtoxInstanceRegistry", () => {
         ),
       );
       const launch = yield* launcher.resolveLaunch(local.id);
-      assert.equal(launch.config.signaling_room_password, "raw-local-secret");
+      assert.equal(launch.config.signaling_browser_token, "local-browser-token");
       assert.equal(launch.config.desktop_instance.source, "local_daemon");
 
       // The canary: an activation of a local daemon leaves nothing behind. The

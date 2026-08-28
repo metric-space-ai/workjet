@@ -99,6 +99,7 @@ vi.mock("./runtime", async () => {
   const Persistence = await import("../persistence/layer");
 
   return {
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- The imperative storage facade imports the production runtime singleton; this isolated module mock is the injection boundary for its persistence layer.
     runtime: ManagedRuntime.make(Persistence.layer),
   };
 });

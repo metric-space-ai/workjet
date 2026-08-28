@@ -1,13 +1,13 @@
-import fs from "node:fs";
-import vm from "node:vm";
+import * as NodeFS from "node:fs";
+import * as NodeVM from "node:vm";
 
 const [dashboardPath, auditPath] = process.argv.slice(2);
 if (!dashboardPath || !auditPath) {
   throw new Error("usage: strict_credit_dashboard_test.mjs DASHBOARD AUDIT");
 }
 
-const html = fs.readFileSync(dashboardPath, "utf8");
-const expected = JSON.parse(fs.readFileSync(auditPath, "utf8"));
+const html = NodeFS.readFileSync(dashboardPath, "utf8");
+const expected = JSON.parse(NodeFS.readFileSync(auditPath, "utf8"));
 const match = html.match(/const strictAudit = decodeJson\('([^']+)'\);/);
 if (!match) throw new Error("standalone dashboard does not embed strict-credit audit");
 const embedded = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
@@ -54,7 +54,7 @@ const element = (id) => {
   }
   return elements.get(id);
 };
-vm.runInNewContext(scripts[0][1], {
+NodeVM.runInNewContext(scripts[0][1], {
   document: { getElementById: element },
   requestAnimationFrame: (callback) => callback(),
   atob: (value) => Buffer.from(value, "base64").toString("binary"),

@@ -97,9 +97,7 @@ type DeviceSessionError =
 export class DeviceSessions extends Context.Service<
   DeviceSessions,
   {
-    readonly issue: (
-      input: DeviceSessionIssueInput,
-    ) => Effect.Effect<
+    readonly issue: (input: DeviceSessionIssueInput) => Effect.Effect<
       {
         readonly grantId: string;
         readonly bootstrapCredential: string;

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import * as NodeCrypto from "node:crypto";
+
 import {
   BusinessOsInstanceId,
   BusinessOsShellUpdateStatus,
@@ -99,6 +101,13 @@ const SyncRoom = SafeText.check(
 );
 const SignalingUrl = SafeText.check(Schema.isMaxLength(2_048));
 const RoomSecret = SafeText.check(Schema.isMaxLength(4_096));
+const SignalingAuthVersion = Schema.Literal("ctox-role-bound-v1");
+const BrowserToken = SafeText.check(Schema.isMaxLength(4_096));
+const TokenHash = SafeText.check(
+  Schema.isMinLength(64),
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[a-f0-9]{64}$/),
+);
 const CapabilityToken = SafeText.check(Schema.isMaxLength(16_384));
 const Role = SafeText.check(Schema.isMaxLength(128));
 const UserDisplayName = SafeText.check(Schema.isMaxLength(256));
@@ -131,7 +140,10 @@ const InvitePayload = Schema.Struct({
   native_peer_id: Schema.optionalKey(NativePeerId),
   sync_room: SyncRoom,
   signaling_urls: Schema.Array(SignalingUrl).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
-  signaling_room_password: RoomSecret,
+  signaling_auth_version: SignalingAuthVersion,
+  signaling_browser_token: BrowserToken,
+  signaling_browser_token_hash: TokenHash,
+  signaling_native_token_hash: TokenHash,
   transport: Schema.optionalKey(Schema.Literal("webrtc")),
   expires_at: Schema.optionalKey(SafeText.check(Schema.isMaxLength(64))),
   expires_at_ms: Schema.optionalKey(Expiration),
@@ -165,7 +177,7 @@ const SecretRegistryDocument = Schema.Struct({
 });
 type SecretRegistryDocument = typeof SecretRegistryDocument.Type;
 
-const PairingSecretPayload = Schema.Struct({
+const LegacyPairingSecretPayload = Schema.Struct({
   version: Schema.Literal(1),
   source: PairedSource,
   instanceIdentity: InstanceIdentity,
@@ -183,6 +195,31 @@ const PairingSecretPayload = Schema.Struct({
     }),
   ),
 });
+const RoleBoundPairingSecretPayload = Schema.Struct({
+  version: Schema.Literal(2),
+  source: PairedSource,
+  instanceIdentity: InstanceIdentity,
+  syncRoom: SyncRoom,
+  signalingUrls: Schema.Array(SignalingUrl).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
+  signalingAuthVersion: SignalingAuthVersion,
+  browserToken: BrowserToken,
+  browserTokenHash: TokenHash,
+  nativeTokenHash: TokenHash,
+  expiresAtMs: Schema.optionalKey(Expiration),
+  capabilityToken: Schema.optionalKey(CapabilityToken),
+  capabilityExpiresAtMs: Schema.optionalKey(Expiration),
+  user: Schema.optionalKey(
+    Schema.Struct({
+      id: Schema.optionalKey(UserId),
+      displayName: Schema.optionalKey(UserDisplayName),
+      role: Schema.optionalKey(Role),
+    }),
+  ),
+});
+const PairingSecretPayload = Schema.Union([
+  LegacyPairingSecretPayload,
+  RoleBoundPairingSecretPayload,
+]);
 type PairingSecretPayload = typeof PairingSecretPayload.Type;
 
 const UnknownJson = Schema.fromJsonString(Schema.Unknown);
@@ -220,7 +257,10 @@ export interface ValidatedPairing {
   readonly instanceIdentity: string;
   readonly syncRoom: string;
   readonly signalingUrls: readonly string[];
-  readonly roomSecret: string;
+  readonly signalingAuthVersion: "ctox-role-bound-v1";
+  readonly browserToken: string;
+  readonly browserTokenHash: string;
+  readonly nativeTokenHash: string;
   readonly expiresAtMs?: number;
   readonly capabilityToken?: string;
   readonly capabilityExpiresAtMs?: number;
@@ -532,6 +572,15 @@ function normalizePairing(
   input: ValidatedPairing,
   nowEpochMs: number,
 ): ValidatedPairing | undefined {
+  const actualBrowserTokenHash = NodeCrypto.createHash("sha256")
+    .update(input.browserToken, "utf8")
+    .digest("hex");
+  if (
+    input.browserTokenHash !== actualBrowserTokenHash ||
+    input.browserTokenHash === input.nativeTokenHash
+  ) {
+    return undefined;
+  }
   const normalizedUrls = new Set<string>();
   for (const rawUrl of input.signalingUrls) {
     const url = normalizeSignalingUrl(rawUrl);
@@ -611,7 +660,10 @@ function pairingFromInvite(
       instanceIdentity,
       syncRoom: payload.sync_room,
       signalingUrls: payload.signaling_urls,
-      roomSecret: payload.signaling_room_password,
+      signalingAuthVersion: payload.signaling_auth_version,
+      browserToken: payload.signaling_browser_token,
+      browserTokenHash: payload.signaling_browser_token_hash,
+      nativeTokenHash: payload.signaling_native_token_hash,
       ...(expiresAtMs === undefined ? {} : { expiresAtMs }),
       ...(capabilityToken === undefined ? {} : { capabilityToken }),
       ...(capabilityExpiresAtMs === undefined ? {} : { capabilityExpiresAtMs }),
@@ -666,7 +718,10 @@ function pairingFromManual(
       instanceIdentity,
       syncRoom: input.syncRoom,
       signalingUrls: input.signalingUrls,
-      roomSecret: input.roomSecret,
+      signalingAuthVersion: input.signalingAuthVersion,
+      browserToken: input.browserToken,
+      browserTokenHash: input.browserTokenHash,
+      nativeTokenHash: input.nativeTokenHash,
       ...(input.capabilityToken === undefined ? {} : { capabilityToken: input.capabilityToken }),
       ...(input.capabilityExpiresAtMs === undefined
         ? {}
@@ -1117,26 +1172,31 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       }
       instances.push({
         ...instance,
-        status: pairingIsUnexpired(
-          {
-            source: secret.source,
-            displayName: instance.displayName,
-            instanceIdentity: secret.instanceIdentity,
-            syncRoom: secret.syncRoom,
-            signalingUrls: secret.signalingUrls,
-            roomSecret: secret.roomSecret,
-            ...(secret.expiresAtMs === undefined ? {} : { expiresAtMs: secret.expiresAtMs }),
-            ...(secret.capabilityToken === undefined
-              ? {}
-              : { capabilityToken: secret.capabilityToken }),
-            ...(secret.capabilityExpiresAtMs === undefined
-              ? {}
-              : { capabilityExpiresAtMs: secret.capabilityExpiresAtMs }),
-          },
-          now,
-        )
-          ? "paired"
-          : "pairing_expired",
+        status:
+          secret.version === 2 &&
+          pairingIsUnexpired(
+            {
+              source: secret.source,
+              displayName: instance.displayName,
+              instanceIdentity: secret.instanceIdentity,
+              syncRoom: secret.syncRoom,
+              signalingUrls: secret.signalingUrls,
+              signalingAuthVersion: secret.signalingAuthVersion,
+              browserToken: secret.browserToken,
+              browserTokenHash: secret.browserTokenHash,
+              nativeTokenHash: secret.nativeTokenHash,
+              ...(secret.expiresAtMs === undefined ? {} : { expiresAtMs: secret.expiresAtMs }),
+              ...(secret.capabilityToken === undefined
+                ? {}
+                : { capabilityToken: secret.capabilityToken }),
+              ...(secret.capabilityExpiresAtMs === undefined
+                ? {}
+                : { capabilityExpiresAtMs: secret.capabilityExpiresAtMs }),
+            },
+            now,
+          )
+            ? "paired"
+            : "pairing_expired",
       });
     }
     return instances.sort(compareInstances);
@@ -1173,6 +1233,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     ) {
       return yield* registryError("persistence_failed");
     }
+    if (secret.version !== 2) return yield* registryError("not_found");
     const now = yield* currentTimeMillis;
     const pairing = normalizePairing(
       {
@@ -1181,7 +1242,10 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
         instanceIdentity: secret.instanceIdentity,
         syncRoom: secret.syncRoom,
         signalingUrls: secret.signalingUrls,
-        roomSecret: secret.roomSecret,
+        signalingAuthVersion: secret.signalingAuthVersion,
+        browserToken: secret.browserToken,
+        browserTokenHash: secret.browserTokenHash,
+        nativeTokenHash: secret.nativeTokenHash,
         ...(secret.expiresAtMs === undefined ? {} : { expiresAtMs: secret.expiresAtMs }),
         ...(secret.capabilityToken === undefined
           ? {}
@@ -1207,7 +1271,10 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       material: {
         syncRoom: pairing.syncRoom,
         signalingUrls: pairing.signalingUrls,
-        roomSecret: pairing.roomSecret,
+        signalingAuthVersion: pairing.signalingAuthVersion,
+        browserToken: pairing.browserToken,
+        browserTokenHash: pairing.browserTokenHash,
+        nativeTokenHash: pairing.nativeTokenHash,
         ...(pairing.capabilityToken === undefined
           ? {}
           : { capabilityToken: pairing.capabilityToken }),
@@ -1349,12 +1416,15 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       },
     };
     const secretPayload: PairingSecretPayload = {
-      version: 1,
+      version: 2,
       source: pairing.source,
       instanceIdentity: pairing.instanceIdentity,
       syncRoom: pairing.syncRoom,
       signalingUrls: pairing.signalingUrls,
-      roomSecret: pairing.roomSecret,
+      signalingAuthVersion: pairing.signalingAuthVersion,
+      browserToken: pairing.browserToken,
+      browserTokenHash: pairing.browserTokenHash,
+      nativeTokenHash: pairing.nativeTokenHash,
       ...(pairing.expiresAtMs === undefined ? {} : { expiresAtMs: pairing.expiresAtMs }),
       ...(pairing.capabilityToken === undefined
         ? {}

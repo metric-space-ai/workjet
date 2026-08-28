@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import process from "node:process";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 
 export const WORKJET_INSTALL_MANIFEST_SCHEMA = "workjet.desktop-install-manifest.v1";
 
@@ -28,8 +28,8 @@ function parseArgs(argv) {
 }
 
 async function sha256(filePath) {
-  return createHash("sha256")
-    .update(await readFile(filePath))
+  return NodeCrypto.createHash("sha256")
+    .update(await NodeFSP.readFile(filePath))
     .digest("hex");
 }
 
@@ -52,12 +52,12 @@ export async function generateWorkjetInstallManifest({
   if (!assetsDir || !tag || !version || !repository || !output) {
     throw new Error("assetsDir, tag, version, repository and output are required");
   }
-  const files = await readdir(assetsDir);
+  const files = await NodeFSP.readdir(assetsDir);
   const releaseBase = `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}`;
   const artifacts = [];
   for (const [platform, arch, suffix] of TARGETS) {
     const filename = findUniqueArtifact(files, version, arch, suffix);
-    const filePath = path.join(assetsDir, filename);
+    const filePath = NodePath.join(assetsDir, filename);
     const stat = await import("node:fs/promises").then(({ stat }) => stat(filePath));
     artifacts.push({
       platform,
@@ -80,15 +80,15 @@ export async function generateWorkjetInstallManifest({
     productName: "Workjet",
     artifacts,
   };
-  await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await NodeFSP.writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   return manifest;
 }
 
 if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)
+  NodeProcess.argv[1] &&
+  NodePath.resolve(NodeProcess.argv[1]) === NodePath.resolve(new URL(import.meta.url).pathname)
 ) {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(NodeProcess.argv.slice(2));
   await generateWorkjetInstallManifest({
     assetsDir: args.get("--assets-dir"),
     tag: args.get("--tag"),

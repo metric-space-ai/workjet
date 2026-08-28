@@ -94,7 +94,11 @@ describe("Business OS mobile invite HTTP contract", () => {
         sync_room: "ctox-business-os:instance-a",
         native_peer_id: "native-a",
         signaling_urls: ["wss://signaling.ctox.dev/v2"],
-        signaling_room_password: "not-a-production-secret",
+        signaling_auth_version: "ctox-role-bound-v1",
+        signaling_browser_token: "synthetic-browser-token",
+        signaling_browser_token_hash:
+          "1ef21ba2169d3a33ac0af0ff96d6698758b46ed2cb13409b9d50a5eafdd427fa",
+        signaling_native_token_hash: "a".repeat(64),
         transport: "webrtc",
         expires_at: expiresAt,
         data_plane: "rxdb-webrtc",
@@ -152,7 +156,7 @@ describe("Workjet device invite HTTP contract", () => {
     });
     expect(combined).not.toHaveProperty("invite");
     expect(JSON.stringify(combined)).not.toMatch(
-      /bootstrap_credential|signaling_room_password|capability_token|sync_room/u,
+      /bootstrap_credential|signaling_browser_token|capability_token|sync_room/u,
     );
     expect(Schema.decodeUnknownSync(WorkjetDeviceInviteRefV1)(combined.reference)).toEqual(
       combined.reference,

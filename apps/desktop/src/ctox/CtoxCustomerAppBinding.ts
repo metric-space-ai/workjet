@@ -103,12 +103,14 @@ function parseBinding(value: unknown): CustomerAppBinding {
 }
 
 function readProtectedInstanceId(instanceModuleRoot: string): string {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Synchronous filesystem trust boundary; the platform only selects whether POSIX mode bits are meaningful.
+  const hostPlatform = process.platform;
   const path = NodePath.join(instanceModuleRoot, "..", "business-os-instance-id");
   const stat = NodeFS.lstatSync(path);
   if (
     !stat.isFile() ||
     stat.isSymbolicLink() ||
-    (process.platform !== "win32" && (stat.mode & 0o022) !== 0)
+    (hostPlatform !== "win32" && (stat.mode & 0o022) !== 0)
   ) {
     throw new Error("customer-app-instance-id-insecure");
   }

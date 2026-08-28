@@ -39,7 +39,10 @@ export function strokeRect(bmp, x, y, w, h, level, thickness = 1) {
 export function line(bmp, x0, y0, x1, y1, level, thickness = 2) {
   // Bresenham braucht GANZE Zahlen — mit Kommawerten trifft x0===x1 nie zu
   // und die Schleife laeuft ewig.
-  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  x0 = Math.round(x0);
+  y0 = Math.round(y0);
+  x1 = Math.round(x1);
+  y1 = Math.round(y1);
   let dx = Math.abs(x1 - x0);
   let dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1;
@@ -52,8 +55,14 @@ export function line(bmp, x0, y0, x1, y1, level, thickness = 2) {
     }
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x0 += sx; }
-    if (e2 <= dx) { err += dx; y0 += sy; }
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
   }
 }
 
@@ -61,7 +70,12 @@ export function circle(bmp, cx, cy, r, level, thickness = 2) {
   for (let a = 0; a < 360; a += 2) {
     const rad = (a * Math.PI) / 180;
     for (let t = 0; t < thickness; t += 1) {
-      setPixel(bmp, Math.round(cx + (r - t) * Math.cos(rad)), Math.round(cy + (r - t) * Math.sin(rad)), level);
+      setPixel(
+        bmp,
+        Math.round(cx + (r - t) * Math.cos(rad)),
+        Math.round(cy + (r - t) * Math.sin(rad)),
+        level,
+      );
     }
   }
 }
@@ -76,28 +90,32 @@ export function toBmp(bmp) {
   // doppelt so gross bei null Gewinn: die Brille wandelt ohnehin in Gray4,
   // und unsere Helligkeiten sind bereits 0..15. Ueber die Funkstrecke war
   // das der Unterschied zwischen fluessig und traege.
-  const rowSize = Math.ceil(bmp.width / 2 / 4) * 4;   // Zeilen auf 4 Byte
+  const rowSize = Math.ceil(bmp.width / 2 / 4) * 4; // Zeilen auf 4 Byte
   const pixelBytes = rowSize * bmp.height;
   const paletteBytes = 16 * 4;
   const offset = 14 + 40 + paletteBytes;
   const out = new Uint8Array(offset + pixelBytes);
   const view = new DataView(out.buffer);
 
-  out[0] = 0x42; out[1] = 0x4d;              // "BM"
+  out[0] = 0x42;
+  out[1] = 0x4d; // "BM"
   view.setUint32(2, out.length, true);
   view.setUint32(10, offset, true);
-  view.setUint32(14, 40, true);              // BITMAPINFOHEADER
+  view.setUint32(14, 40, true); // BITMAPINFOHEADER
   view.setInt32(18, bmp.width, true);
-  view.setInt32(22, bmp.height, true);       // positiv = von unten nach oben
+  view.setInt32(22, bmp.height, true); // positiv = von unten nach oben
   view.setUint16(26, 1, true);
-  view.setUint16(28, 4, true);               // 4 Bit je Pixel
+  view.setUint16(28, 4, true); // 4 Bit je Pixel
   view.setUint32(34, pixelBytes, true);
   view.setUint32(46, 16, true);
 
   for (let i = 0; i < 16; i += 1) {
     const p = 14 + 40 + i * 4;
     const g = i * 17;
-    out[p] = g; out[p + 1] = g; out[p + 2] = g; out[p + 3] = 0;
+    out[p] = g;
+    out[p + 1] = g;
+    out[p + 2] = g;
+    out[p + 3] = 0;
   }
   for (let y = 0; y < bmp.height; y += 1) {
     const src = (bmp.height - 1 - y) * bmp.width;
@@ -105,7 +123,7 @@ export function toBmp(bmp) {
     for (let x = 0; x < bmp.width; x += 1) {
       const wert = bmp.px[src + x] & 0x0f;
       const byte = dst + (x >> 1);
-      out[byte] = (x & 1) ? (out[byte] | wert) : (wert << 4);
+      out[byte] = x & 1 ? out[byte] | wert : wert << 4;
     }
   }
   return out;
@@ -123,7 +141,7 @@ export function pack(bmp) {
 }
 
 export function toBase64(bytes) {
-  let binary = '';
+  let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return typeof btoa === 'function' ? btoa(binary) : Buffer.from(bytes).toString('base64');
+  return typeof btoa === "function" ? btoa(binary) : Buffer.from(bytes).toString("base64");
 }

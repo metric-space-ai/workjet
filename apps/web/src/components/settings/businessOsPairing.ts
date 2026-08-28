@@ -21,13 +21,16 @@ function encodeBase64Url(value: string): string {
 
 export function encodeWorkjetBusinessOsPairingLink(invite: CtoxBusinessOsInviteV1): string {
   const compact = [
-    "w1",
+    "w2",
     invite.display_name,
     invite.instance_id,
     invite.sync_room,
     invite.native_peer_id,
     invite.signaling_urls,
-    invite.signaling_room_password,
+    invite.signaling_auth_version,
+    invite.signaling_browser_token,
+    invite.signaling_browser_token_hash,
+    invite.signaling_native_token_hash,
     invite.expires_at,
     invite.session.capability_token,
     invite.session.capability_expires_at_ms,

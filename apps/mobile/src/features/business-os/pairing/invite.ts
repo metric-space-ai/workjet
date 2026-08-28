@@ -1,9 +1,9 @@
 import { buildWorkjetUrl, normalizeIncomingWorkjetUrl } from "../../../lib/workjetLinks";
+import { sha256 } from "@noble/hashes/sha2";
 
 export const BUSINESS_OS_INVITE_TYPE = "ctox-business-os-invite";
 export const BUSINESS_OS_INVITE_VERSION = 1;
-const ROOM_PREFIX = "ctox-business-os:";
-const MAX_ENCODED_PAYLOAD_LENGTH = 262_144;
+const MAX_ENCODED_PAYLOAD_LENGTH = 65_536;
 const RFC3339_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const SUPPORTED_ROLES = new Set(["chef", "admin", "founder", "user"] as const);
 
@@ -17,7 +17,10 @@ export interface ValidatedBusinessOsInvite {
   readonly syncRoom: string;
   readonly nativePeerId: string;
   readonly signalingUrls: readonly string[];
-  readonly password: string;
+  readonly signalingAuthVersion: "ctox-role-bound-v1";
+  readonly browserToken: string;
+  readonly browserTokenHash: string;
+  readonly nativeTokenHash: string;
   readonly expiresAt: string;
   readonly expiresAtMs: number;
   readonly session: {
@@ -53,9 +56,19 @@ function asRecord(value: unknown, code: string, message: string): Record<string,
   return value as Record<string, unknown>;
 }
 
-function requiredString(value: unknown, code: string, label: string): string {
+function requiredString(value: unknown, code: string, label: string, maxLength = 16_384): string {
   if (typeof value !== "string" || !value.trim()) fail(code, `${label} is required`);
-  return value.trim();
+  const text = value.trim();
+  if (text.length > maxLength || /[\u0000-\u001f\u007f]/u.test(text)) {
+    fail(code, `${label} is invalid`);
+  }
+  return text;
+}
+
+function sha256Hex(value: string): string {
+  return Array.from(sha256(new TextEncoder().encode(value)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function parseTime(value: unknown, code: string, label: string): number {
@@ -67,7 +80,7 @@ function parseTime(value: unknown, code: string, label: string): number {
 }
 
 function validateSignalingUrl(value: unknown): string {
-  const text = requiredString(value, "signaling_url", "signaling URL");
+  const text = requiredString(value, "signaling_url", "signaling URL", 2_048);
   let url: URL;
   try {
     url = new URL(text);
@@ -130,11 +143,54 @@ function decodeBase64Url(value: string): string {
 
 function decodePayload(encoded: string): unknown {
   const decoded = decodeBase64Url(encoded);
+  let parsed: unknown;
   try {
-    return JSON.parse(decoded) as unknown;
+    parsed = JSON.parse(decoded) as unknown;
   } catch {
     return fail("json", "pairing payload is not valid JSON");
   }
+  return expandCompactInvite(parsed);
+}
+
+function expandCompactInvite(input: unknown): unknown {
+  if (!Array.isArray(input)) return input;
+  if (input[0] === "w1") {
+    fail("legacy_auth", "shared-secret pairing links are no longer supported; create a new invite");
+  }
+  if (input[0] !== "w2") return input;
+  if (input.length !== 17 || !Array.isArray(input[5])) {
+    fail("payload", "pairing payload is invalid");
+  }
+  return {
+    type: BUSINESS_OS_INVITE_TYPE,
+    version: BUSINESS_OS_INVITE_VERSION,
+    display_name: input[1],
+    instance_id: input[2],
+    sync_room: input[3],
+    native_peer_id: input[4],
+    signaling_urls: input[5],
+    signaling_auth_version: input[6],
+    signaling_browser_token: input[7],
+    signaling_browser_token_hash: input[8],
+    signaling_native_token_hash: input[9],
+    transport: "webrtc",
+    expires_at: input[10],
+    data_plane: "rxdb-webrtc",
+    http_bridge_available: false,
+    secret_value_in_payload: true,
+    session: {
+      authenticated: true,
+      capability_token: input[11],
+      capability_expires_at_ms: input[12],
+      user: {
+        id: input[13],
+        display_name: input[14],
+        role: input[15],
+        is_admin: input[15] === "chef" || input[15] === "admin" || input[15] === "founder",
+      },
+      source: input[16],
+    },
+  };
 }
 
 export function validateBusinessOsInviteV1(
@@ -146,22 +202,57 @@ export function validateBusinessOsInviteV1(
   if (invite.type !== BUSINESS_OS_INVITE_TYPE) fail("type", "unsupported invite type");
   if (invite.version !== BUSINESS_OS_INVITE_VERSION) fail("version", "unsupported invite version");
 
-  const displayName = requiredString(invite.display_name, "display_name", "display_name");
-  const instanceId = requiredString(invite.instance_id, "instance_id", "instance_id");
-  const syncRoom = requiredString(invite.sync_room, "sync_room", "sync_room");
-  if (!syncRoom.startsWith(ROOM_PREFIX) || syncRoom.length <= ROOM_PREFIX.length) {
+  const displayName = requiredString(invite.display_name, "display_name", "display_name", 256);
+  const instanceId = requiredString(invite.instance_id, "instance_id", "instance_id", 256);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(instanceId)) {
+    fail("instance_id", "instance_id is invalid");
+  }
+  const syncRoom = requiredString(invite.sync_room, "sync_room", "sync_room", 273);
+  if (!/^ctox-business-os:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(syncRoom)) {
     fail("sync_room", "sync_room must identify a CTOX Business OS room");
   }
-  const nativePeerId = requiredString(invite.native_peer_id, "native_peer_id", "native_peer_id");
-  if (!Array.isArray(invite.signaling_urls) || invite.signaling_urls.length === 0) {
+  const nativePeerId = requiredString(
+    invite.native_peer_id,
+    "native_peer_id",
+    "native_peer_id",
+    256,
+  );
+  if (
+    !Array.isArray(invite.signaling_urls) ||
+    invite.signaling_urls.length === 0 ||
+    invite.signaling_urls.length > 16
+  ) {
     fail("signaling_urls", "signaling_urls are required");
   }
   const signalingUrls = invite.signaling_urls.map(validateSignalingUrl);
-  const password = requiredString(
-    invite.signaling_room_password,
-    "password",
-    "signaling_room_password",
+  if (invite.signaling_auth_version !== "ctox-role-bound-v1") {
+    fail("signaling_auth", "invite must use role-bound signaling credentials");
+  }
+  const browserToken = requiredString(
+    invite.signaling_browser_token,
+    "browser_token",
+    "signaling_browser_token",
+    4_096,
   );
+  const browserTokenHash = requiredString(
+    invite.signaling_browser_token_hash,
+    "browser_token_hash",
+    "signaling_browser_token_hash",
+  );
+  const nativeTokenHash = requiredString(
+    invite.signaling_native_token_hash,
+    "native_token_hash",
+    "signaling_native_token_hash",
+  );
+  if (!/^[a-f0-9]{64}$/u.test(browserTokenHash) || !/^[a-f0-9]{64}$/u.test(nativeTokenHash)) {
+    fail("signaling_hash", "signaling token commitments must be lowercase SHA-256 hashes");
+  }
+  if (browserTokenHash === nativeTokenHash) {
+    fail("signaling_hash", "browser and native signaling commitments must be distinct");
+  }
+  if (sha256Hex(browserToken) !== browserTokenHash) {
+    fail("signaling_hash", "browser signaling token does not match its commitment");
+  }
   if (invite.transport !== "webrtc") fail("transport", "invite transport must be webrtc");
   const expiresAtMs = parseTime(invite.expires_at, "expires_at", "expires_at");
   if (expiresAtMs <= now) fail("expired", "invite is expired");
@@ -189,11 +280,12 @@ export function validateBusinessOsInviteV1(
   }
 
   const user = asRecord(session.user, "user", "session user is required");
-  const userId = requiredString(user.id, "user_id", "session user id");
+  const userId = requiredString(user.id, "user_id", "session user id", 256);
   const userDisplayName = requiredString(
     user.display_name,
     "user_display_name",
     "session user display_name",
+    256,
   );
   const role = requiredString(user.role, "user_role", "session user role") as BusinessOsRole;
   if (!SUPPORTED_ROLES.has(role)) fail("user_role", "session user role is unsupported");
@@ -206,12 +298,18 @@ export function validateBusinessOsInviteV1(
     syncRoom,
     nativePeerId,
     signalingUrls: Object.freeze(signalingUrls),
-    password,
+    signalingAuthVersion: "ctox-role-bound-v1",
+    browserToken,
+    browserTokenHash,
+    nativeTokenHash,
     expiresAt: new Date(expiresAtMs).toISOString(),
     expiresAtMs,
     session: Object.freeze({
       authenticated: true,
-      source: typeof session.source === "string" ? session.source : "desktop_invite",
+      source:
+        typeof session.source === "string"
+          ? requiredString(session.source, "session_source", "session source", 128)
+          : "desktop_invite",
       capabilityToken,
       capabilityExpiresAtMs,
       user: Object.freeze({
@@ -238,7 +336,9 @@ export function parseWorkjetBusinessOsPairLink(
   if (!["workjet:", "workjet-dev:", "workjet-preview:"].includes(url.protocol)) {
     fail("scheme", "unsupported pairing scheme");
   }
-  if (url.hostname !== "business-os" || url.pathname !== "/pair") {
+  const canonicalPair = url.hostname === "pair" && (!url.pathname || url.pathname === "/");
+  const legacyBusinessOsPair = url.hostname === "business-os" && url.pathname === "/pair";
+  if (!canonicalPair && !legacyBusinessOsPair) {
     fail("host", "unsupported pairing action");
   }
   if (url.username || url.password || url.hash) {
@@ -257,11 +357,28 @@ export function encodeWorkjetBusinessOsPairLink(
   input: unknown,
   options: { readonly now?: number } = {},
 ): string {
-  validateBusinessOsInviteV1(input, options);
-  const invite = { ...asRecord(input, "object", "invite must be an object") };
-  delete invite.desktop_link;
-  const encoded = encodeBase64Url(JSON.stringify(invite));
-  return buildWorkjetUrl("business-os/pair", {
+  const invite = validateBusinessOsInviteV1(input, options);
+  const compact = [
+    "w2",
+    invite.displayName,
+    invite.instanceId,
+    invite.syncRoom,
+    invite.nativePeerId,
+    invite.signalingUrls,
+    invite.signalingAuthVersion,
+    invite.browserToken,
+    invite.browserTokenHash,
+    invite.nativeTokenHash,
+    invite.expiresAt,
+    invite.session.capabilityToken,
+    invite.session.capabilityExpiresAtMs,
+    invite.session.user.id,
+    invite.session.user.displayName,
+    invite.session.user.role,
+    invite.session.source,
+  ] as const;
+  const encoded = encodeBase64Url(JSON.stringify(compact));
+  return buildWorkjetUrl("pair", {
     query: new URLSearchParams([["payload", encoded]]),
   });
 }

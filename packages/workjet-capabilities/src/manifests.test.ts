@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The generator check intentionally spawns Node.
 // @ts-expect-error -- The package omits Node types, but this test runs in Node.
-import { execFileSync } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 // @ts-expect-error -- The package omits Node types, but this test runs in Node.
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 declare const process: { readonly execPath: string };
 
@@ -187,17 +187,21 @@ describe("canonical Web Stack tool contract", () => {
   });
 
   it("has a byte-current generated TypeScript representation", () => {
-    const generator = fileURLToPath(
+    const generator = NodeURL.fileURLToPath(
       new URL("../scripts/generate-web-stack-contract.mjs", import.meta.url),
     );
-    expect(() => execFileSync(process.execPath, [generator, "--check"])).not.toThrow();
+    expect(() =>
+      NodeChildProcess.execFileSync(process.execPath, [generator, "--check"]),
+    ).not.toThrow();
   });
 
   it("keeps the Decision Hub prompt generated from its canonical skill", () => {
-    const generator = fileURLToPath(
+    const generator = NodeURL.fileURLToPath(
       new URL("../scripts/generate-decision-hub-skill.mjs", import.meta.url),
     );
-    expect(() => execFileSync(process.execPath, [generator, "--check"])).not.toThrow();
+    expect(() =>
+      NodeChildProcess.execFileSync(process.execPath, [generator, "--check"]),
+    ).not.toThrow();
   });
 });
 

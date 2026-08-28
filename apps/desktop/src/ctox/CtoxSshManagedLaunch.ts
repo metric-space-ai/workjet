@@ -438,7 +438,10 @@ export const make = Effect.fn("CtoxSshManagedLaunch.make")(function* (
         material: {
           syncRoom: pairing.syncRoom,
           signalingUrls,
-          roomSecret: pairing.roomSecret,
+          signalingAuthVersion: pairing.signalingAuthVersion,
+          browserToken: pairing.browserToken,
+          browserTokenHash: pairing.browserTokenHash,
+          nativeTokenHash: pairing.nativeTokenHash,
           ...(pairing.capabilityToken === undefined
             ? {}
             : { capabilityToken: pairing.capabilityToken }),

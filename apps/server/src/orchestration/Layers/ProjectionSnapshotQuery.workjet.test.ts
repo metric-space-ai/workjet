@@ -1,7 +1,6 @@
 import {
   EnvironmentId,
   ModelSelection,
-  ProjectId,
   ProviderInstanceId,
   ThreadId,
   WorkjetThreadConfig,

@@ -32,13 +32,12 @@ function sdkFromBridge(bridge) {
   return {
     createStartUpPageContainer: (page) =>
       bridge.callEvenApp(EvenAppMethod.CreateStartUpPageContainer, page),
-    updateImageRawData: (data) =>
-      bridge.callEvenApp(EvenAppMethod.UpdateImageRawData, data),
+    updateImageRawData: (data) => bridge.callEvenApp(EvenAppMethod.UpdateImageRawData, data),
     rebuildPageContainer: (page) => bridge.callEvenApp(EvenAppMethod.RebuildPageContainer, page),
     textContainerUpgrade: (update) =>
       bridge.callEvenApp(EvenAppMethod.TextContainerUpgrade, update),
     imuControl: (cmd) => bridge.callEvenApp(EvenAppMethod.ImuControl, cmd),
-    audioControl: (on, quelle = 'glasses') => bridge.audioControl?.(on, quelle),
+    audioControl: (on, quelle = "glasses") => bridge.audioControl?.(on, quelle),
   };
 }
 
@@ -80,20 +79,22 @@ function renderApp() {
 
 /** QR abfotografieren und die Einladung daraus uebernehmen. */
 async function scanAndConnect() {
-  status('Kamera öffnet …', 'warn');
+  status("Kamera öffnet …", "warn");
   const result = await scanInvite(appBridge);
   if (!result.ok) {
     health.lastError = result.reason;
-    status(result.reason, 'error');
+    status(result.reason, "error");
     renderApp();
     return;
   }
-  await connect(JSON.stringify({
-    base_url: result.invite.baseUrl,
-    capability_token: result.invite.token,
-    user_id: result.invite.user,
-    role: result.invite.role,
-  }));
+  await connect(
+    JSON.stringify({
+      base_url: result.invite.baseUrl,
+      capability_token: result.invite.token,
+      user_id: result.invite.user,
+      role: result.invite.role,
+    }),
+  );
 }
 
 /** Einladung annehmen — ohne Passwort, der Token steckt in der Einladung. */
@@ -138,19 +139,21 @@ async function testConnection() {
 // von dem die App selbst geladen wurde.
 const DEV = Boolean(import.meta.env?.DEV);
 function melde(text) {
-  if (!DEV) return;   // Produktion: keine Diagnose-Aufrufe
+  if (!DEV) return; // Produktion: keine Diagnose-Aufrufe
   try {
-    fetch(`${location.origin}/__log`, { method: 'POST', body: String(text) }).catch(() => {});
+    fetch(`${location.origin}/__log`, { method: "POST", body: String(text) }).catch(() => {});
   } catch {}
 }
-window.addEventListener('error', (e) => melde(`FEHLER ${e.message} @ ${e.filename}:${e.lineno}`));
-window.addEventListener('unhandledrejection', (e) => melde(`ABBRUCH ${e.reason?.message || e.reason}`));
+window.addEventListener("error", (e) => melde(`FEHLER ${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) =>
+  melde(`ABBRUCH ${e.reason?.message || e.reason}`),
+);
 
 async function main() {
-  melde('main() gestartet');
+  melde("main() gestartet");
   const bridge = await waitForEvenAppBridge();
   appBridge = bridge;
-  melde('Bruecke zur Even-App da');
+  melde("Bruecke zur Even-App da");
   // Die Instanz liefert die Karten; die Fixture greift nur, solange kein
   // Endpunkt konfiguriert ist (Simulator, Erststart).
   const instance = activeInstance(settings);
@@ -197,14 +200,15 @@ async function main() {
 
   // Gyroskop einschalten: ohne Meldungen gibt es keine Kopfneigung.
   // iMUReportEn=1, reportFrq in Hz — niedrig, es geht nur um die Lage.
-  await bridge.callEvenApp(EvenAppMethod.ImuControl, { iMUReportEn: 1, reportFrq: 5 })
+  await bridge
+    .callEvenApp(EvenAppMethod.ImuControl, { iMUReportEn: 1, reportFrq: 5 })
     .then((r) => melde(`IMU eingeschaltet = ${JSON.stringify(r)}`))
     .catch((error) => melde(`IMU-Einschalten fehlgeschlagen: ${error?.message || error}`));
 
-  melde('Plugin startet');
+  melde("Plugin startet");
   try {
     await plugin.start();
-    melde('Plugin laeuft — Anzeige gesendet');
+    melde("Plugin laeuft — Anzeige gesendet");
   } catch (fehler) {
     // Die Brille kann fehlen oder schweigen — die Handy-Ansicht muss dennoch
     // da sein, sonst steht der Nutzer vor einem leeren Bildschirm.
@@ -212,7 +216,7 @@ async function main() {
     health.lastError = fehler.message;
   }
   renderApp();
-  melde('Handy-Ansicht gezeichnet');
+  melde("Handy-Ansicht gezeichnet");
   const count = plugin.state.count;
   status(
     count === 1 ? "1 offene Entscheidung" : `${count} offene Entscheidungen`,

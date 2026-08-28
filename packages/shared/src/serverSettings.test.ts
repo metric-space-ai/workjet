@@ -336,7 +336,9 @@ describe("serverSettings helpers", () => {
             llmRouteId: oldRouteId,
             modelId: "gpt-old",
             reasoning: "automatic" as const,
+            role: "standard" as const,
             capabilityIds: [],
+            capabilityBindings: [],
           },
         ],
       },
@@ -344,13 +346,11 @@ describe("serverSettings helpers", () => {
 
     const next = applyServerSettingsPatch(current, {
       workjet: {
-        schemaVersion: 2,
+        ...current.workjet,
         computers: [],
         llmRoutes: [],
         workerProfiles: [],
         managedSystemPrompt: "Replacement prompt",
-        telemetry: current.workjet.telemetry,
-        execution: current.workjet.execution,
       },
     });
 

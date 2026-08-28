@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the wiring invariant is proved by reading the mailbox's own source.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 import { assert, describe, it } from "@effect/vitest";
 
@@ -35,7 +35,7 @@ import { assert, describe, it } from "@effect/vitest";
  * call, fails this test.
  */
 
-const mailboxDir = fileURLToPath(new URL(".", import.meta.url));
+const mailboxDir = NodeURL.fileURLToPath(new URL(".", import.meta.url));
 
 const read = (file: string): string => NodeFS.readFileSync(NodePath.join(mailboxDir, file), "utf8");
 

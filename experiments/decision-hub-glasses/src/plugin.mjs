@@ -4,17 +4,30 @@
 // Die Logik liegt in nav.mjs (Bedienung), layout.mjs (Seitenaufbau) und
 // sections.mjs (Inhalt) — hier wird nur verdrahtet.
 
-import { decisionIcons, tabLabel, layoutText } from '../../kundenpipeline-module/core/glasses-renderer.mjs';
-import { sectionsOf, pageOf } from '../../kundenpipeline-module/core/sections.mjs';
-import { buildPage, buildBitmaps, CONTENT_LINES, PANEL_CHARS, DETAIL_CHARS, LEVEL } from './layout.mjs';
-import { navigate, initialNav, SNOOZE_OPTIONS, OS_EVENT } from './nav.mjs';
-import { createTiltGate } from './tilt.mjs';
+import {
+  decisionIcons,
+  tabLabel,
+  layoutText,
+} from "../../kundenpipeline-module/core/glasses-renderer.mjs";
+import { sectionsOf, pageOf } from "../../kundenpipeline-module/core/sections.mjs";
+import {
+  buildPage,
+  buildBitmaps,
+  CONTENT_LINES,
+  PANEL_CHARS,
+  DETAIL_CHARS,
+  LEVEL,
+} from "./layout.mjs";
+import { navigate, initialNav, SNOOZE_OPTIONS, OS_EVENT } from "./nav.mjs";
+import { createTiltGate } from "./tilt.mjs";
 
 // Meldeweg zum Entwicklungsserver; auf der Brille gibt es keine Konsole.
 const DEV = Boolean(import.meta.env?.DEV);
 const melde = (t) => {
-  if (!DEV) return;   // Produktion: kein Beacon, keine Latenz je Geste
-  try { fetch(`${location.origin}/__log`, { method: 'POST', body: String(t) }).catch(() => {}); } catch {}
+  if (!DEV) return; // Produktion: kein Beacon, keine Latenz je Geste
+  try {
+    fetch(`${location.origin}/__log`, { method: "POST", body: String(t) }).catch(() => {});
+  } catch {}
 };
 
 /**
@@ -24,7 +37,9 @@ const melde = (t) => {
 async function mitFrist(name, aufruf, ms = 8000) {
   melde(`-> ${name}`);
   let timer;
-  const frist = new Promise((_, ab) => { timer = setTimeout(() => ab(new Error(`${name} antwortet seit ${ms}ms nicht`)), ms); });
+  const frist = new Promise((_, ab) => {
+    timer = setTimeout(() => ab(new Error(`${name} antwortet seit ${ms}ms nicht`)), ms);
+  });
   try {
     const wert = await Promise.race([aufruf(), frist]);
     melde(`<- ${name} = ${JSON.stringify(wert)}`);
@@ -51,7 +66,7 @@ export function createDecisionHubPlugin({
   onError = () => {},
   onPaint = () => {},
   filter = () => true,
-  sections: allowedSections = ['mail', 'antwort', 'aufgabe', 'notizen'],
+  sections: allowedSections = ["mail", "antwort", "aufgabe", "notizen"],
   tiltOptions = {},
 }) {
   let decisions = [];
@@ -61,8 +76,8 @@ export function createDecisionHubPlugin({
   let started = false;
   let lastSignature = null;
   let visible = true;
-  let diktat = null;   // { seit, frames } solange das Mikrofon laeuft
-  const gesendeteBilder = new Map();  // containerID -> Fingerabdruck
+  let diktat = null; // { seit, frames } solange das Mikrofon laeuft
+  const gesendeteBilder = new Map(); // containerID -> Fingerabdruck
   let letzteStruktur = null;
 
   /**
@@ -73,7 +88,7 @@ export function createDecisionHubPlugin({
   function strukturVon(page) {
     return [...(page.textObject || []), ...(page.imageObject || [])]
       .map((c) => `${c.containerID}:${c.xPosition},${c.yPosition},${c.width},${c.height}`)
-      .join('|');
+      .join("|");
   }
   const tilt = createTiltGate(tiltOptions);
 
@@ -87,7 +102,7 @@ export function createDecisionHubPlugin({
     // der schmalen Uebersicht — sonst passt eine der beiden nie.
     const sections = sectionsOf(d, vorgangOf(d), allowedSections, DETAIL_CHARS).map((sec) => ({
       ...sec,
-      kurz: layoutText((sec.kurz || []).join(' '), PANEL_CHARS),
+      kurz: layoutText((sec.kurz || []).join(" "), PANEL_CHARS),
     }));
     return {
       ...nav,
@@ -96,15 +111,15 @@ export function createDecisionHubPlugin({
       sections,
       icons: decisionIcons(d, {}, nav.level === LEVEL.DETAIL ? 1 : 0),
       detail: nav.level === LEVEL.DETAIL ? 1 : 0,
-      typ: (d.typ || '').toUpperCase(),
+      typ: (d.typ || "").toUpperCase(),
       demo,
       hinweis: nav.hinweis || null,
       diktat: Boolean(diktat),
-      betreff: vorgangOf(d)?.title || d.titel || '',
+      betreff: vorgangOf(d)?.title || d.titel || "",
       // Kanal je Eintrag: bestimmt das Icon links vor dem Text.
       channels: decisions.map((item) => {
         const kanal = vorgaenge.get(item.vorgang_id)?.quelle_json?.kanal;
-        return kanal === 'chat' ? 'chat' : kanal === 'dokument' ? 'doc' : 'mail';
+        return kanal === "chat" ? "chat" : kanal === "dokument" ? "doc" : "mail";
       }),
     };
   }
@@ -126,13 +141,15 @@ export function createDecisionHubPlugin({
     // neu gebaut werden. Bilder tragen Auswahl und Position, also gehen sie
     // bei jeder Aenderung mit.
     const signature = visible
-      // Die Auswahlliste MUSS in die Signatur: sonst aendert sich der Zustand,
-      // aber der Schirm bleibt stehen (genau so verschwand die Wiedervorlage).
-      ? `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}|${view.picker?.kind || ''}|${view.pickerIndex ?? ''}|${view.hinweis || ''}`
-      : 'hidden';
+      ? // Die Auswahlliste MUSS in die Signatur: sonst aendert sich der Zustand,
+        // aber der Schirm bleibt stehen (genau so verschwand die Wiedervorlage).
+        `${index}|${view.level}|${view.sectionIndex}|${view.page}|${view.focusIcon}|${view.picker?.kind || ""}|${view.pickerIndex ?? ""}|${view.hinweis || ""}`
+      : "hidden";
     const page = visible ? buildPage(view) : blankPage();
     if (!started) {
-      const result = await mitFrist('createStartUpPageContainer', () => sdk.createStartUpPageContainer(page));
+      const result = await mitFrist("createStartUpPageContainer", () =>
+        sdk.createStartUpPageContainer(page),
+      );
       if (result !== 0 && result?.code !== 0) {
         throw new Error(`createStartUpPageContainer failed: ${JSON.stringify(result)}`);
       }
@@ -145,7 +162,7 @@ export function createDecisionHubPlugin({
       // Gegen das fruehere Flackern half nicht das Sparen am Neuaufbau,
       // sondern isEventCapture=0 (kein OS-Scrollen) und weniger Bilddaten.
 
-      await mitFrist('rebuildPageContainer', () => sdk.rebuildPageContainer(page));
+      await mitFrist("rebuildPageContainer", () => sdk.rebuildPageContainer(page));
       // Der Neuaufbau ersetzt die Container — ihre Bildinhalte sind damit
       // weg. Wer jetzt "unveraendert" annimmt, laesst Icons und Punkte
       // verschwinden (am Simulator gesehen: nach dem Aufklappen war die
@@ -162,9 +179,14 @@ export function createDecisionHubPlugin({
           // sendFailed — dann fehlen Icons und Punkte ganz.
           const abdruck = payload.fingerprint;
           if (abdruck && gesendeteBilder.get(payload.containerID) === abdruck) continue;
-          const ergebnis = await mitFrist('updateImageRawData', () =>
-            sdk.updateImageRawData({ containerID: payload.containerID, imageData: payload.imageData }));
-          if (ergebnis === 0 || ergebnis === 'success') gesendeteBilder.set(payload.containerID, abdruck);
+          const ergebnis = await mitFrist("updateImageRawData", () =>
+            sdk.updateImageRawData({
+              containerID: payload.containerID,
+              imageData: payload.imageData,
+            }),
+          );
+          if (ergebnis === 0 || ergebnis === "success")
+            gesendeteBilder.set(payload.containerID, abdruck);
           else gesendeteBilder.delete(payload.containerID);
         }
       }
@@ -185,7 +207,7 @@ export function createDecisionHubPlugin({
   async function act(wert) {
     const d = decision();
     if (!d) return;
-    if (wert === 'korrektur') {
+    if (wert === "korrektur") {
       // Korrektur wird diktiert: Mikrofon der Brille an, zweiter Druck
       // beendet. Die Umwandlung in Text passiert serverseitig — das Plugin
       // sammelt nur die Aufnahme und behauptet nichts anderes.
@@ -197,33 +219,38 @@ export function createDecisionHubPlugin({
         await paint();
         return;
       }
-      const ok = await sdk.audioControl?.(true, 'glasses');
+      const ok = await sdk.audioControl?.(true, "glasses");
       if (ok === false) {
-        nav = { ...nav, hinweis: 'Mikrofon nicht verfügbar' };
+        nav = { ...nav, hinweis: "Mikrofon nicht verfügbar" };
       } else {
         diktat = { seit: Date.now(), frames: 0 };
-        nav = { ...nav, hinweis: 'Diktat läuft — Druck beendet' };
+        nav = { ...nav, hinweis: "Diktat läuft — Druck beendet" };
       }
       await paint();
       return;
     }
-    if (wert === 'detail') {
-      nav = { ...nav, level: nav.level === LEVEL.DETAIL ? LEVEL.RUBRIK : LEVEL.DETAIL, page: 0, focusIcon: -1 };
+    if (wert === "detail") {
+      nav = {
+        ...nav,
+        level: nav.level === LEVEL.DETAIL ? LEVEL.RUBRIK : LEVEL.DETAIL,
+        page: 0,
+        focusIcon: -1,
+      };
       await paint();
       return;
     }
-    if (wert === 'vertagt') {
+    if (wert === "vertagt") {
       // Die Uhr fragt zuerst, wie lange vertagt werden soll.
       nav = {
         ...nav,
-        picker: { kind: 'snooze', titel: 'WIEDERVORLAGE', options: SNOOZE_OPTIONS },
+        picker: { kind: "snooze", titel: "WIEDERVORLAGE", options: SNOOZE_OPTIONS },
         pickerIndex: 0,
         focusIcon: -1,
       };
       await paint();
       return;
     }
-    if (wert === '__vertagt_bestaetigt') {
+    if (wert === "__vertagt_bestaetigt") {
       decisions.push(decisions.splice(index, 1)[0]);
       index = Math.min(index, Math.max(0, decisions.length - 1));
       nav = initialNav();
@@ -254,7 +281,7 @@ export function createDecisionHubPlugin({
       visible = false;
       paint().catch(() => {});
     }, ruhezeitMs);
-    if (typeof ruheUhr?.unref === 'function') ruheUhr.unref();
+    if (typeof ruheUhr?.unref === "function") ruheUhr.unref();
   }
 
   async function handleEvent(osEvent) {
@@ -270,31 +297,31 @@ export function createDecisionHubPlugin({
     }
     if (osEvent === OS_EVENT.SCROLL_TOP || osEvent === OS_EVENT.SCROLL_BOTTOM) {
       const jetzt = Date.now();
-      if (jetzt - letzterScroll < scrollSperreMs) return;   // Nachzuegler derselben Geste
+      if (jetzt - letzterScroll < scrollSperreMs) return; // Nachzuegler derselben Geste
       letzterScroll = jetzt;
     }
     const { nav: nextNav, action } = navigate(nav, osEvent, dimsOf(view));
     nav = nextNav;
-    if (action?.type === 'activate') {
+    if (action?.type === "activate") {
       const icon = view.icons[action.icon];
       if (icon?.wert) await act(icon.wert);
       return;
     }
-    if (action?.type === 'pick') {
-      if (action.kind === 'snooze') {
+    if (action?.type === "pick") {
+      if (action.kind === "snooze") {
         // Der Vorgang bleibt offen und wandert ans Ende — mit der gewaehlten
         // Frist, damit die Wiedervorlage nachvollziehbar ist.
         const d = decision();
         if (d) d.wiedervorlage_ms = Date.now() + action.option.minutes * 60000;
-        await act('__vertagt_bestaetigt');
+        await act("__vertagt_bestaetigt");
       }
       return;
     }
-    if (action?.type === 'nextCase') {
+    if (action?.type === "nextCase") {
       await nextCase();
       return;
     }
-    if (action?.type === 'prevCase' && index === 0) {
+    if (action?.type === "prevCase" && index === 0) {
       // Ganz oben angekommen: statt im Kreis zum letzten Vorgang zu springen,
       // blendet die Anzeige aus. Das ist die Geste zum Wegschauen — der
       // naechste Handgriff holt sie zurueck.
@@ -302,7 +329,7 @@ export function createDecisionHubPlugin({
       await paint();
       return;
     }
-    if (action?.type === 'prevCase') {
+    if (action?.type === "prevCase") {
       // Beim Rueckwaertsgehen landet man auf den Icons des vorherigen
       // Vorgangs — dort, wo man ihn nach unten verlassen haette.
       index = (index - 1 + Math.max(1, decisions.length)) % Math.max(1, decisions.length);
@@ -323,18 +350,20 @@ export function createDecisionHubPlugin({
   function blankPage() {
     return {
       containerTotalNum: 1,
-      textObject: [{
-        containerID: 1,
-        containerName: 'blank',
-        xPosition: 0,
-        yPosition: 0,
-        width: 576,
-        height: 288,
-        content: '',
-        textColor: 0,
-        isEventCapture: 1,
-        zOrderIndex: 0,
-      }],
+      textObject: [
+        {
+          containerID: 1,
+          containerName: "blank",
+          xPosition: 0,
+          yPosition: 0,
+          width: 576,
+          height: 288,
+          content: "",
+          textColor: 0,
+          isEventCapture: 1,
+          zOrderIndex: 0,
+        },
+      ],
     };
   }
 
@@ -342,7 +371,7 @@ export function createDecisionHubPlugin({
   async function handleImu(sample) {
     const change = tilt.feed(sample);
     if (!change) return;
-    visible = change === 'show';
+    visible = change === "show";
     await paint();
   }
 
@@ -369,14 +398,28 @@ export function createDecisionHubPlugin({
     act: (wert) => act(wert).catch(onError),
     refresh: () => refresh().catch(onError),
     async showTestCard() {
-      decisions = [{
-        id: 'testkarte', vorgang_id: 'testkarte', typ: 'zuordnung', titel: 'Testkarte',
-        status: 'offen', zeilen_json: ['Wenn du das liest, trägt die Kette.'],
-      }];
-      vorgaenge = new Map([['testkarte', {
-        id: 'testkarte', kunde_name: 'Test',
-        quelle_json: { body_clean: `Testkarte gesendet um ${new Date().toLocaleTimeString('de-DE')}.` },
-      }]]);
+      decisions = [
+        {
+          id: "testkarte",
+          vorgang_id: "testkarte",
+          typ: "zuordnung",
+          titel: "Testkarte",
+          status: "offen",
+          zeilen_json: ["Wenn du das liest, trägt die Kette."],
+        },
+      ];
+      vorgaenge = new Map([
+        [
+          "testkarte",
+          {
+            id: "testkarte",
+            kunde_name: "Test",
+            quelle_json: {
+              body_clean: `Testkarte gesendet um ${new Date().toLocaleTimeString("de-DE")}.`,
+            },
+          },
+        ],
+      ]);
       index = 0;
       nav = initialNav();
       await paint();

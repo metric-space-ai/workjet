@@ -125,7 +125,7 @@ function runPhase(phase: "encrypt" | "decrypt", filePath: string): KeychainPhase
   });
   const line = (result.stdout ?? "")
     .split("\n")
-    .reverse()
+    .toReversed()
     .find((candidate) => candidate.trim().startsWith("{"));
   if (line === undefined) {
     return {
@@ -138,6 +138,8 @@ function runPhase(phase: "encrypt" | "decrypt", filePath: string): KeychainPhase
 }
 
 export function main(): number {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone native keychain probe has no Effect runtime; capture the host boundary once.
+  const hostPlatform = process.platform;
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "keychain-smoke-"));
   const filePath = NodePath.join(directory, "ciphertext.bin");
   try {
@@ -149,13 +151,13 @@ export function main(): number {
     const { verdict, detail } = interpretKeychainSmoke({ encrypt, decrypt });
     process.stdout.write(`keychain smoke: ${verdict} — ${detail}\n`);
 
-    if (process.platform === "linux") {
+    if (hostPlatform === "linux") {
       const linux = checkLinuxBackendFailsClosed(encrypt.backend ?? null);
       process.stdout.write(`linux backend guard: ${linux.ok ? "ok" : "FAIL"} — ${linux.detail}\n`);
       if (!linux.ok) return 1;
     } else {
       process.stdout.write(
-        `linux backend guard: skipped on ${process.platform}; it needs a Linux host.\n`,
+        `linux backend guard: skipped on ${hostPlatform}; it needs a Linux host.\n`,
       );
     }
 

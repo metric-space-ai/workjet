@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- host validation needs statfs and exclusive file creation.
-import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { open, statfs, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
 
 import type { WorktreeStorageInvalidReason } from "@t3tools/contracts";
 import * as Data from "effect/Data";
@@ -84,7 +84,7 @@ export const canonicalizeBoundary = (value: string) =>
 
 /** Stable hash used to keep human-readable path components collision resistant. */
 export function collisionResistantPathHash(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+  return NodeCrypto.createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
 export interface WorktreeRootValidationPlatform {
@@ -98,20 +98,20 @@ export interface WorktreeRootValidationPlatform {
 }
 
 const nodeValidationPlatform: WorktreeRootValidationPlatform = {
-  homeDirectory: homedir(),
+  homeDirectory: NodeOS.homedir(),
   checkWritable: (root) =>
     Effect.tryPromise({
       try: async () => {
-        const probePath = `${root}/.workjet-write-probe-${process.pid}-${randomUUID()}`;
-        const handle = await open(
+        const probePath = `${root}/.workjet-write-probe-${process.pid}-${NodeCrypto.randomUUID()}`;
+        const handle = await NodeFSP.open(
           probePath,
-          constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+          NodeFS.constants.O_CREAT | NodeFS.constants.O_EXCL | NodeFS.constants.O_WRONLY,
           0o600,
         );
         try {
           await handle.close();
         } finally {
-          await unlink(probePath).catch(() => undefined);
+          await NodeFSP.unlink(probePath).catch(() => undefined);
         }
       },
       catch: (cause) => new WorktreeRootValidationPlatformError({ cause }),
@@ -119,7 +119,7 @@ const nodeValidationPlatform: WorktreeRootValidationPlatform = {
   readAvailableBytes: (root) =>
     Effect.tryPromise({
       try: async () => {
-        const info = await statfs(root, { bigint: true });
+        const info = await NodeFSP.statfs(root, { bigint: true });
         return Number(info.bavail * info.bsize);
       },
       catch: (cause) => new WorktreeRootValidationPlatformError({ cause }),

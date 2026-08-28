@@ -216,7 +216,10 @@ export type WorkjetManagedDeviceInviteManualConnectionInput =
 export const WorkjetManagedDeviceInviteManualConnectionResult = Schema.Struct({
   signalingUrls: CtoxBusinessOsInviteV1.fields.signaling_urls,
   room: CtoxBusinessOsInviteV1.fields.sync_room,
-  password: CtoxBusinessOsInviteV1.fields.signaling_room_password,
+  authVersion: CtoxBusinessOsInviteV1.fields.signaling_auth_version,
+  browserToken: CtoxBusinessOsInviteV1.fields.signaling_browser_token,
+  browserTokenHash: CtoxBusinessOsInviteV1.fields.signaling_browser_token_hash,
+  nativeTokenHash: CtoxBusinessOsInviteV1.fields.signaling_native_token_hash,
   expiresAt: Rfc3339Timestamp,
 });
 export type WorkjetManagedDeviceInviteManualConnectionResult =

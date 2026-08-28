@@ -1,12 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off -- This repository guard inspects tracked source files.
-import { access, readdir, readFile } from "node:fs/promises";
-import { constants } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import { describe, expect, it } from "vite-plus/test";
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
 const SCAN_ROOTS = [
   "README.md",
@@ -62,10 +62,10 @@ function isTestOrFixture(relativePath: string): boolean {
 }
 
 async function collectTextFiles(relativePath: string): Promise<string[]> {
-  const absolutePath = path.join(REPO_ROOT, relativePath);
-  const entries = await readdir(absolutePath, { withFileTypes: true }).catch(() => null);
+  const absolutePath = NodePath.join(REPO_ROOT, relativePath);
+  const entries = await NodeFSP.readdir(absolutePath, { withFileTypes: true }).catch(() => null);
   if (entries === null) {
-    return TEXT_EXTENSIONS.has(path.extname(relativePath)) || relativePath.endsWith("README.md")
+    return TEXT_EXTENSIONS.has(NodePath.extname(relativePath)) || relativePath.endsWith("README.md")
       ? [relativePath]
       : [];
   }
@@ -73,7 +73,7 @@ async function collectTextFiles(relativePath: string): Promise<string[]> {
   const nested = await Promise.all(
     entries
       .filter((entry) => entry.name !== "dist" && entry.name !== "node_modules")
-      .map((entry) => collectTextFiles(path.join(relativePath, entry.name))),
+      .map((entry) => collectTextFiles(NodePath.join(relativePath, entry.name))),
   );
   return nested.flat();
 }
@@ -86,7 +86,7 @@ describe("Workjet product identity", () => {
     for (const relativePath of files) {
       if (isTestOrFixture(relativePath)) continue;
 
-      const contents = await readFile(path.join(REPO_ROOT, relativePath), "utf8");
+      const contents = await NodeFSP.readFile(NodePath.join(REPO_ROOT, relativePath), "utf8");
       contents.split("\n").forEach((line, index) => {
         const normalizedLine = line.trim();
         if (
@@ -115,7 +115,10 @@ describe("Workjet product identity", () => {
 
     const existing: string[] = [];
     for (const relativePath of retiredScreenshots) {
-      const exists = await access(path.join(REPO_ROOT, relativePath), constants.F_OK)
+      const exists = await NodeFSP.access(
+        NodePath.join(REPO_ROOT, relativePath),
+        NodeFS.constants.F_OK,
+      )
         .then(() => true)
         .catch(() => false);
       if (exists) existing.push(relativePath);

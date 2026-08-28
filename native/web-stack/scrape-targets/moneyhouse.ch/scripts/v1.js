@@ -95,7 +95,7 @@ function isAllowedUrl(value) {
     return (
       url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST
     );
-  } catch (_err) {
+  } catch {
     return false;
   }
 }
@@ -187,7 +187,7 @@ function managementUrl(value) {
     url.search = "";
     url.hash = "";
     return url.href;
-  } catch (_err) {
+  } catch {
     return null;
   }
 }
@@ -235,7 +235,7 @@ function searchHitsFromHtml(html) {
       .trim();
     try {
       hits.push({ name, url: new URL(match[1], `https://www.${ALLOWED_HOST}/`).href });
-    } catch (_err) {}
+    } catch {}
   }
   return hits;
 }
@@ -272,7 +272,7 @@ function portalSearch(company, country = "CH") {
   `;
   const payload = runCtox(["web", "browser-automation", "--timeout-ms", "90000"], source);
   if (!payload) return null;
-  return { ...(payload.result || {}), ok: payload.ok === true, detection: payload.detection };
+  return { ...payload.result, ok: payload.ok === true, detection: payload.detection };
 }
 
 function candidateUrls(input, company, country) {
@@ -433,7 +433,7 @@ function browserPage(url) {
   `;
   const payload = runCtox(["web", "browser-automation", "--timeout-ms", "90000"], source);
   if (!payload) return null;
-  return { ...(payload.result || {}), ok: payload.ok === true, detection: payload.detection };
+  return { ...payload.result, ok: payload.ok === true, detection: payload.detection };
 }
 
 function recordUnlockSignal(url, markers) {
@@ -494,7 +494,7 @@ function jsonLdOrganizations(page) {
         if (types.some((type) => /organization|localbusiness/i.test(String(type))))
           result.push(item);
       }
-    } catch (_err) {
+    } catch {
       // Ignore malformed third-party JSON-LD.
     }
   }
@@ -522,7 +522,7 @@ function managementFromHtml(html) {
       let sourceUrl = null;
       try {
         sourceUrl = href ? new URL(href, `https://www.${ALLOWED_HOST}/`).href : null;
-      } catch (_err) {}
+      } catch {}
       people.push({ first: parts.slice(0, -1).join(" "), last: parts.at(-1), role, sourceUrl });
     }
   }

@@ -1,7 +1,6 @@
 import {
   DEFAULT_WORKJET_CONFIGURATION,
   EnvironmentId,
-  WorkjetGatewayAccountId,
   WorkjetGreppyOperationError,
   type GreppyRuntimeSnapshot,
 } from "@t3tools/contracts";

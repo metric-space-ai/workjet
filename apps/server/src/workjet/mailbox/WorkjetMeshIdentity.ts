@@ -242,21 +242,22 @@ export const canonicalRoutingEnvelopeBytes = (
  * Three candidates were checked against the actual reachable surface, and all
  * three fail for reasons worth writing down so nobody re-derives them:
  *
- *  1. **The CTOX room secret.** It IS reachable server-side: the local daemon
- *     mints `ctox business-os desktop invite --format json`, whose
- *     `signaling_room_password` is the room secret, and every machine in the
- *     room resolves the same value. It is nevertheless USELESS here, because
+ *  1. **The CTOX browser-role signaling credential.** It is intentionally
+ *     carried only by a short-lived `w2` browser invite; the native-role
+ *     credential remains in CTOX's secret store and only its commitment
+ *     crosses the boundary. The browser credential is nevertheless USELESS
+ *     here, because
  *     the adversary is a peer that can write into the replicated
  *     `workjet_mailbox_envelopes` collection — and writing into it requires
- *     room membership, which requires knowing that very secret. A MAC keyed on
+ *     browser-role room membership, which requires knowing that credential. A MAC keyed on
  *     it would prove only "the author is in the room", which the write itself
  *     already proved. That is security theater, so it is not implemented.
  *  2. **`business_os/mcp_inbound_auth_token`.** Per-daemon and local-only; two
  *     machines never hold the same value, so it cannot bind anything across
  *     the mesh.
  *  3. **The pairing invite.** Its binding-relevant fields (`sync_room`,
- *     `signaling_room_password`, `capability_token`) are room-wide join
- *     material handed to every guest, not a per-environment attestation. It
+ *     `signaling_browser_token`, `capability_token`) are browser-role join
+ *     material handed to every authorized guest, not a per-environment attestation. It
  *     also lives in the desktop's encrypted pairing registry, which the server
  *     has no path to.
  *

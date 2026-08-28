@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - the construction path must stay free of macrotask yields (pre-ready ordering), so it uses Node's synchronous fs; see syncFileSystemLayer.
-import * as NodeFs from "node:fs";
+import * as NodeFS from "node:fs";
 
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -258,11 +258,11 @@ export const copyAllowlistedUserData = Effect.fn("desktop.userDataMigration.copy
  * launch after the user accepted the import.
  */
 export const syncFileSystemLayer = FileSystem.layerNoop({
-  exists: (path) => Effect.sync(() => NodeFs.existsSync(path)),
+  exists: (path) => Effect.sync(() => NodeFS.existsSync(path)),
   stat: (path) =>
     Effect.try({
       try: () => {
-        const info = NodeFs.lstatSync(path);
+        const info = NodeFS.lstatSync(path);
         const type = info.isDirectory() ? "Directory" : info.isFile() ? "File" : "Unknown";
         return { type } as FileSystem.File.Info;
       },
@@ -277,7 +277,7 @@ export const syncFileSystemLayer = FileSystem.layerNoop({
     }),
   readDirectory: (path) =>
     Effect.try({
-      try: () => NodeFs.readdirSync(path),
+      try: () => NodeFS.readdirSync(path),
       catch: () =>
         PlatformError.systemError({
           _tag: "NotFound",
@@ -290,7 +290,7 @@ export const syncFileSystemLayer = FileSystem.layerNoop({
   makeDirectory: (path) =>
     Effect.try({
       try: () => {
-        NodeFs.mkdirSync(path, { recursive: true });
+        NodeFS.mkdirSync(path, { recursive: true });
       },
       catch: () =>
         PlatformError.systemError({
@@ -304,7 +304,7 @@ export const syncFileSystemLayer = FileSystem.layerNoop({
   copyFile: (from, to) =>
     Effect.try({
       try: () => {
-        NodeFs.copyFileSync(from, to);
+        NodeFS.copyFileSync(from, to);
       },
       catch: () =>
         PlatformError.systemError({
@@ -317,7 +317,7 @@ export const syncFileSystemLayer = FileSystem.layerNoop({
     }),
   readFileString: (path) =>
     Effect.try({
-      try: () => NodeFs.readFileSync(path, "utf8"),
+      try: () => NodeFS.readFileSync(path, "utf8"),
       catch: () =>
         PlatformError.systemError({
           _tag: "NotFound",
@@ -330,7 +330,7 @@ export const syncFileSystemLayer = FileSystem.layerNoop({
   writeFileString: (path, content) =>
     Effect.try({
       try: () => {
-        NodeFs.writeFileSync(path, content, "utf8");
+        NodeFS.writeFileSync(path, content, "utf8");
       },
       catch: () =>
         PlatformError.systemError({

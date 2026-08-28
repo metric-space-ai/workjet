@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { appendFileSync, readFileSync } from "node:fs";
+import * as NodeFS from "node:fs";
 
 const fixturePath = process.env.CTOX_SCRAPE_FIXTURE;
 if (!fixturePath) throw new Error("CTOX_SCRAPE_FIXTURE is required");
 
-const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+const fixture = JSON.parse(NodeFS.readFileSync(fixturePath, "utf8"));
 const args = process.argv.slice(2);
 const mode = process.env.CTOX_SCRAPE_FIXTURE_MODE || "success";
 const expectedCompany = String(fixture.input?.company || "");
@@ -13,7 +13,7 @@ const foreignCompany = "Fremdwerk AG";
 const callLog = process.env.CTOX_SCRAPE_CALL_LOG;
 
 if (callLog) {
-  appendFileSync(callLog, `${JSON.stringify({ args })}\n`, { mode: 0o600 });
+  NodeFS.appendFileSync(callLog, `${JSON.stringify({ args })}\n`, { mode: 0o600 });
 }
 
 function deepReplace(value, from, to) {
@@ -61,7 +61,7 @@ function flagValue(name) {
 let response;
 if (args[0] === "business-os" && args.includes("source-capture")) {
   const captureCalls = callLog
-    ? readFileSync(callLog, "utf8")
+    ? NodeFS.readFileSync(callLog, "utf8")
         .trim()
         .split("\n")
         .filter(Boolean)

@@ -57,7 +57,7 @@ function runCtox(args, input, timeout = 90_000) {
       timeout,
     });
     return JSON.parse(out);
-  } catch (_err) {
+  } catch {
     // Stay silent on per-attempt failures: `classify_outcome` in
     // src/capabilities/scrape.rs runs a substring search for "temporary",
     // "timeout", "429", … on stderr and would misclassify the whole run.
@@ -94,7 +94,7 @@ function isAllowedUrl(value) {
     return (
       url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST
     );
-  } catch (_err) {
+  } catch {
     return false;
   }
 }
@@ -227,7 +227,7 @@ function validateEmail(email) {
     130_000,
   );
   if (!payload) return null;
-  return { ...(payload.result || {}), ok: payload.ok === true, detection: payload.detection };
+  return { ...payload.result, ok: payload.ok === true, detection: payload.detection };
 }
 
 function recordUnlockSignal(url, markers) {

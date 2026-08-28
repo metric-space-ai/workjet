@@ -39,7 +39,11 @@ function inviteJson(overrides: Record<string, unknown> = {}): string {
     instance_id: "buildbox-1",
     sync_room: "ctox-business-os:buildbox-room",
     signaling_urls: ["ws://127.0.0.1:4444/signal"],
-    signaling_room_password: "raw-remote-secret",
+    signaling_auth_version: "ctox-role-bound-v1",
+    signaling_browser_token: "remote-browser-token",
+    signaling_browser_token_hash:
+      "9d60995f03af7959dadf3ca4ee4c649b86939e75d69e384f376a74e5535a31d2",
+    signaling_native_token_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     transport: "webrtc",
     expires_at_ms: NOW + 86_400_000,
     data_plane: "rxdb-webrtc",
@@ -256,7 +260,7 @@ describe("CtoxSshManagedLaunch", () => {
       assert.equal(resolved.config.desktop_instance.source, "ssh_managed");
       assert.equal(resolved.config.desktop_instance.id, sshDescriptor.id);
       assert.equal(resolved.config.http_bridge_available, false);
-      assert.equal(resolved.config.signaling_room_password, "raw-remote-secret");
+      assert.equal(resolved.config.signaling_browser_token, "remote-browser-token");
       assert.equal(resolved.config.session?.user?.is_admin, true);
 
       // The remote loopback port never survives into the packed config.

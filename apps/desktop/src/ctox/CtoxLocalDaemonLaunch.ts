@@ -210,7 +210,10 @@ export const make = Effect.fn("CtoxLocalDaemonLaunch.make")(function* (
         material: {
           syncRoom: pairing.syncRoom,
           signalingUrls: pairing.signalingUrls,
-          roomSecret: pairing.roomSecret,
+          signalingAuthVersion: pairing.signalingAuthVersion,
+          browserToken: pairing.browserToken,
+          browserTokenHash: pairing.browserTokenHash,
+          nativeTokenHash: pairing.nativeTokenHash,
           ...(pairing.capabilityToken === undefined
             ? {}
             : { capabilityToken: pairing.capabilityToken }),

@@ -139,7 +139,7 @@ describe("CtoxManagedLaunch", () => {
           http_bridge_available: false,
           instance_id: "business-os-welsch",
           sync_room: "never-return-this-room",
-          signaling_room_password: "never-return-this-secret",
+          signaling_browser_token: "never-return-this-secret",
         },
       });
     });
@@ -245,7 +245,12 @@ describe("CtoxManagedLaunch", () => {
       transport: "webrtc",
       http_bridge_available: false,
       sync_room: "real-room",
-      signaling_room_password: "real-secret",
+      signaling_auth_version: "ctox-role-bound-v1",
+      signaling_browser_token: "real-browser-token",
+      signaling_browser_token_hash:
+        "bd37e588e3f74500fa9ccb2f89c95a4b3daefc17af3c359173193b57c1e10b83",
+      signaling_native_token_hash:
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     };
     const packed = Buffer.from(encodeUnknownJson(packedConfig), "utf8").toString("base64url");
     const fetchImpl = vi.fn(async (url: string) => {
@@ -258,7 +263,7 @@ describe("CtoxManagedLaunch", () => {
           transport: "webrtc",
           http_bridge_available: false,
           sync_room: "<redacted>",
-          signaling_room_password: "<redacted>",
+          signaling_browser_token: "<redacted>",
         },
       });
     });
@@ -268,7 +273,7 @@ describe("CtoxManagedLaunch", () => {
       const launch = yield* launches.launch(descriptor);
       const config = decodeConfig(launch.launchUrl);
       assert.equal(config.sync_room, "real-room");
-      assert.equal(config.signaling_room_password, "real-secret");
+      assert.equal(config.signaling_browser_token, "real-browser-token");
       assert.notInclude(launch.launchUrl, "<redacted>");
     }).pipe(Effect.provide(harness(fetchImpl)));
   });

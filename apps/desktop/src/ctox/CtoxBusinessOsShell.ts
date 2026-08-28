@@ -98,7 +98,10 @@ export interface CtoxBusinessOsLaunchConfig {
   readonly transport: "webrtc";
   readonly sync_room: string;
   readonly signaling_urls: readonly string[];
-  readonly signaling_room_password: string;
+  readonly signaling_auth_version: "ctox-role-bound-v1";
+  readonly signaling_browser_token: string;
+  readonly signaling_browser_token_hash: string;
+  readonly signaling_native_token_hash: string;
   readonly http_bridge_available: false;
   readonly desktop_instance: {
     readonly id: string;

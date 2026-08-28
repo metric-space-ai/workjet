@@ -1,10 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off - Tests build tiny byte-level gzip/USTAR fixtures and coordinate concurrent publishers.
 
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeOs from "node:os";
-import { gzipSync } from "node:zlib";
+import * as NodeOS from "node:os";
+import * as NodeZlib from "node:zlib";
 
 import { assert, it } from "@effect/vitest";
 
@@ -60,7 +60,7 @@ interface Fixture {
 }
 
 function sha256(data: Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
+  return NodeCrypto.createHash("sha256").update(data).digest("hex");
 }
 
 function writeString(header: Buffer, offset: number, length: number, value: string): void {
@@ -174,7 +174,7 @@ function makeFixture(
     },
   ];
   const tarBytes = options.mutateTar?.(tar(entries)) ?? tar(entries);
-  const archive = gzipSync(tarBytes, { level: 9 });
+  const archive = NodeZlib.gzipSync(tarBytes, { level: 9 });
   const archiveSha = options.archiveShaOverride ?? sha256(archive);
   const archiveLength = options.archiveLengthOverride ?? archive.length;
   const embeddedSha = options.embeddedShaOverride ?? sha256(embeddedBytes);
@@ -232,7 +232,7 @@ function fixtureFetch(fixture: Fixture, counts?: { value: number }): CtoxBusines
 }
 
 async function withTempDirectory(run: (dependencyRoot: string) => Promise<void>): Promise<void> {
-  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOs.tmpdir(), "ctox-shell-test-"));
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "ctox-shell-test-"));
   try {
     await run(NodePath.join(root, ".deps"));
   } finally {

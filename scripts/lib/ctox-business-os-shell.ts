@@ -1,11 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off globalDate:off - Release preparation needs byte-level archive validation and bounded HTTP streaming before entering an Effect runtime.
 
-import { createHash, randomBytes } from "node:crypto";
-import { constants as NodeFSConstants, createReadStream } from "node:fs";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
-import { createGunzip } from "node:zlib";
+import * as NodeURL from "node:url";
+import * as NodeZlib from "node:zlib";
 
 import pinnedManifestJson from "../../apps/desktop/resources/ctox/business-os-shell.manifest.json" with { type: "json" };
 
@@ -430,7 +430,7 @@ function validateRedirectUrl(value: string, base: string): URL {
 }
 
 function sha256(data: Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
+  return NodeCrypto.createHash("sha256").update(data).digest("hex");
 }
 
 async function removePath(targetPath: string): Promise<void> {
@@ -485,7 +485,7 @@ async function downloadVerified(
     if (response.body === null) fail("download-failed", "Release download returned no body.");
 
     const file = await NodeFSP.open(destinationPath, "wx", 0o600);
-    const hash = createHash("sha256");
+    const hash = NodeCrypto.createHash("sha256");
     let byteLength = 0;
     try {
       const reader = response.body.getReader();
@@ -639,7 +639,7 @@ async function parseGzipTar(
   let expandedBytes = 0;
 
   try {
-    const gunzip = createReadStream(archivePath).pipe(createGunzip());
+    const gunzip = NodeFS.createReadStream(archivePath).pipe(NodeZlib.createGunzip());
     for await (const rawChunk of gunzip) {
       const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
       expandedBytes += chunk.length;
@@ -903,8 +903,8 @@ async function hashFile(
   if (!before.isFile() || before.isSymbolicLink() || before.size !== expectedByteSize) {
     fail("cache-invalid", "Cached shell inventory entry is not a regular file.");
   }
-  const noFollow = NodeFSConstants.O_NOFOLLOW ?? 0;
-  const handle = await NodeFSP.open(filePath, NodeFSConstants.O_RDONLY | noFollow);
+  const noFollow = NodeFS.constants.O_NOFOLLOW ?? 0;
+  const handle = await NodeFSP.open(filePath, NodeFS.constants.O_RDONLY | noFollow);
   try {
     const opened = await handle.stat();
     if (
@@ -915,7 +915,7 @@ async function hashFile(
     ) {
       fail("cache-invalid", "Cached shell file changed while being opened.");
     }
-    const hash = createHash("sha256");
+    const hash = NodeCrypto.createHash("sha256");
     let byteSize = 0;
     const stream = handle.createReadStream({ autoClose: false });
     for await (const rawChunk of stream) {
@@ -944,8 +944,8 @@ async function readBoundedRegularFile(filePath: string, maxBytes: number): Promi
   if (!before.isFile() || before.isSymbolicLink() || before.size < 0 || before.size > maxBytes) {
     fail("cache-invalid", "Cached shell metadata file exceeds its byte budget.");
   }
-  const noFollow = NodeFSConstants.O_NOFOLLOW ?? 0;
-  const handle = await NodeFSP.open(filePath, NodeFSConstants.O_RDONLY | noFollow);
+  const noFollow = NodeFS.constants.O_NOFOLLOW ?? 0;
+  const handle = await NodeFSP.open(filePath, NodeFS.constants.O_RDONLY | noFollow);
   try {
     const opened = await handle.stat();
     if (
@@ -1107,7 +1107,7 @@ function installPathFor(
 }
 
 function randomSuffix(): string {
-  return `${process.pid}-${randomBytes(8).toString("hex")}`;
+  return `${process.pid}-${NodeCrypto.randomBytes(8).toString("hex")}`;
 }
 
 async function sleep(milliseconds: number): Promise<void> {
@@ -1156,7 +1156,7 @@ async function publishInstall(
 
 function resolveRepoRoot(explicitRepoRoot: string | undefined): string {
   return explicitRepoRoot === undefined
-    ? fileURLToPath(new URL("../..", import.meta.url))
+    ? NodeURL.fileURLToPath(new URL("../..", import.meta.url))
     : NodePath.resolve(explicitRepoRoot);
 }
 

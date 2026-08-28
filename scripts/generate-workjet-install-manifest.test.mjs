@@ -1,13 +1,13 @@
-import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import test from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeTest from "node:test";
 
 import { generateWorkjetInstallManifest } from "./generate-workjet-install-manifest.mjs";
 
-test("generates the complete signed-release target matrix", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "workjet-install-manifest-"));
+NodeTest.test("generates the complete signed-release target matrix", async () => {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-install-manifest-"));
   try {
     for (const name of [
       "Workjet-1.2.3-arm64.dmg",
@@ -16,8 +16,8 @@ test("generates the complete signed-release target matrix", async () => {
       "Workjet-1.2.3-x64.AppImage",
       "Workjet-1.2.3-x64.exe",
     ])
-      await writeFile(path.join(root, name), name);
-    const output = path.join(root, "manifest.json");
+      await NodeFSP.writeFile(NodePath.join(root, name), name);
+    const output = NodePath.join(root, "manifest.json");
     const manifest = await generateWorkjetInstallManifest({
       assetsDir: root,
       tag: "v1.2.3",
@@ -25,14 +25,14 @@ test("generates the complete signed-release target matrix", async () => {
       repository: "metric-space-ai/workjet",
       output,
     });
-    assert.equal(manifest.productName, "Workjet");
-    assert.equal(manifest.artifacts.length, 5);
-    assert.deepEqual(
+    NodeAssert.equal(manifest.productName, "Workjet");
+    NodeAssert.equal(manifest.artifacts.length, 5);
+    NodeAssert.deepEqual(
       manifest.artifacts.map(({ platform, arch }) => `${platform}/${arch}`),
       ["macos/arm64", "macos/x64", "linux/arm64", "linux/x64", "windows/x64"],
     );
-    assert.ok(manifest.artifacts.every((artifact) => /^[a-f0-9]{64}$/.test(artifact.sha256)));
+    NodeAssert.ok(manifest.artifacts.every((artifact) => /^[a-f0-9]{64}$/.test(artifact.sha256)));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await NodeFSP.rm(root, { recursive: true, force: true });
   }
 });

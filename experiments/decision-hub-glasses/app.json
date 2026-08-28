@@ -10,13 +10,8 @@
     {
       "name": "network",
       "desc": "Laedt offene Entscheidungen der eigenen CTOX-Instanz und meldet die Antwort zurueck.",
-      "whitelist": [
-        "https://welsch.ctox.dev"
-      ]
+      "whitelist": ["https://welsch.ctox.dev"]
     }
   ],
-  "supported_languages": [
-    "de",
-    "en"
-  ]
+  "supported_languages": ["de", "en"]
 }

@@ -31,7 +31,7 @@ export function resolveThreadCapabilityContext(
   const activation = validateCapabilityActivation({
     config: workjetConfig,
     registry,
-    ...(connections ?? {}),
+    ...connections,
   });
   const blocked = new Set(activation.issues.map(({ capabilityId }) => capabilityId));
   const enabled = activation.config.enabledCapabilityIds.filter(

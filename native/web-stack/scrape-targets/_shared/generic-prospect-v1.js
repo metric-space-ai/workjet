@@ -126,7 +126,7 @@ function isPortalOrLoginTitle(title) {
 function readInput() {
   try {
     return JSON.parse(process.env.CTOX_SCRAPE_INPUT_JSON || "{}");
-  } catch (error) {
+  } catch {
     return {};
   }
 }
@@ -220,7 +220,7 @@ function hostOf(url) {
       return "";
     }
     return parsed.hostname.replace(/^www\./, "").toLowerCase();
-  } catch (error) {
+  } catch {
     return "";
   }
 }
@@ -835,7 +835,7 @@ function appendPublicHeuristics(records, sourceId, hit, page, company) {
   const mayUseGenericPhone =
     sourceId !== "maps.google.com" && !sourceUrlIsProvider(sourceId, sourceUrl);
   const phones = mayUseGenericPhone
-    ? [...text.matchAll(/(?:\+|00)\d[\d\s()\/-]{7,}\d/g)]
+    ? [...text.matchAll(/(?:\+|00)\d[\d\s()/-]{7,}\d/g)]
         .map((match) => match[0].replace(/\s+/g, " ").trim())
         .slice(0, 2)
     : [];

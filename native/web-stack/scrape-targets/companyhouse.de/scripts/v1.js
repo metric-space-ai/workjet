@@ -128,13 +128,13 @@ const alignBrowserIdentity = async () => {
   if (browser && typeof browser.version === "function") {
     try { runtimeVersion = String(await browser.version() || ""); } catch {}
   }
-  const version = runtimeVersion || currentUa.match(/Chrome\/(\d+(?:\.\d+){0,3})/)?.[1] || "";
+  const version = runtimeVersion || currentUa.match(/Chrome/(d+(?:.\d+){0,3})/)?.[1] || "";
   const major = String(version || "").match(/^(\\d+)/)?.[1];
   if (!major) return;
   // The site WAF hard-blocks (403) any UA announcing "HeadlessChrome" —
   // announce the same browser build as plain Chrome (live finding 29.07.2026).
   const userAgent = currentUa
-    .replace(/Headless(?=Chrome\/)/, "")
+    .replace(/Headless(?=Chrome/)/, "")
     .replace(/Chrome\\/\\d+(?:\\.\\d+){0,3}/, "Chrome/" + version);
   const platformName = process.platform === "darwin" ? "macOS"
     : process.platform === "win32" ? "Windows" : "Linux";

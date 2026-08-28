@@ -115,6 +115,8 @@ function containsRedactedPairingSecret(config: Record<string, unknown>): boolean
     config.signalingRoomPassword,
     config.room_password,
     config.roomPassword,
+    config.signaling_browser_token,
+    config.signalingBrowserToken,
     ...signalingUrls,
   ].some((entry) => /<redacted>|\[redacted\]/i.test(String(entry ?? "")));
 }

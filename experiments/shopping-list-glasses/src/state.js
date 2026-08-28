@@ -80,7 +80,10 @@ export function editItem(state, id, changes) {
       it.id === id
         ? {
             ...it,
-            text: typeof changes.text === "string" && changes.text.trim() ? changes.text.trim() : it.text,
+            text:
+              typeof changes.text === "string" && changes.text.trim()
+                ? changes.text.trim()
+                : it.text,
             dept: changes.dept && DEPARTMENTS.includes(changes.dept) ? changes.dept : it.dept,
           }
         : it,

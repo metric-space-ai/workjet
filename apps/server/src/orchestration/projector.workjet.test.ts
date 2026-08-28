@@ -10,7 +10,7 @@ import {
   type WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
 
@@ -78,9 +78,9 @@ function createdPayload(threadId: string, title: string, workjetConfig?: Workjet
 }
 
 describe("Workjet thread configuration projector", () => {
-  it("materializes an explicit orchestrator configuration on thread.created", async () => {
-    const projected = await Effect.runPromise(
-      projectEvent(
+  it.effect("materializes an explicit orchestrator configuration on thread.created", () =>
+    Effect.gen(function* () {
+      const projected = yield* projectEvent(
         createEmptyReadModel(NOW),
         makeThreadEvent(
           1,
@@ -89,15 +89,15 @@ describe("Workjet thread configuration projector", () => {
           NOW,
           createdPayload("thread-1", "Orchestrator", orchestratorConfig),
         ),
-      ),
-    );
+      );
 
-    expect(projected.threads[0]?.workjetConfig).toEqual(orchestratorConfig);
-  });
+      expect(projected.threads[0]?.workjetConfig).toEqual(orchestratorConfig);
+    }),
+  );
 
-  it("uses the canonical default for historical thread.created events", async () => {
-    const projected = await Effect.runPromise(
-      projectEvent(
+  it.effect("uses the canonical default for historical thread.created events", () =>
+    Effect.gen(function* () {
+      const projected = yield* projectEvent(
         createEmptyReadModel(NOW),
         makeThreadEvent(
           1,
@@ -106,57 +106,55 @@ describe("Workjet thread configuration projector", () => {
           NOW,
           createdPayload("thread-1", "Legacy thread"),
         ),
-      ),
-    );
+      );
 
-    expect(projected.threads[0]?.workjetConfig).toEqual(DEFAULT_WORKJET_THREAD_CONFIG);
-  });
+      expect(projected.threads[0]?.workjetConfig).toEqual(DEFAULT_WORKJET_THREAD_CONFIG);
+    }),
+  );
 
-  it("replaces the whole configuration and leaves unrelated threads and fields unchanged", async () => {
-    const withFirst = await Effect.runPromise(
-      projectEvent(
-        createEmptyReadModel(NOW),
-        makeThreadEvent(
-          1,
-          "thread.created",
-          "thread-1",
-          NOW,
-          createdPayload("thread-1", "Target", orchestratorConfig),
-        ),
-      ),
-    );
-    const before = await Effect.runPromise(
-      projectEvent(
-        withFirst,
-        makeThreadEvent(
-          2,
-          "thread.created",
-          "thread-2",
-          NOW,
-          createdPayload("thread-2", "Unrelated", DEFAULT_WORKJET_THREAD_CONFIG),
-        ),
-      ),
-    );
-    const targetBefore = before.threads[0];
-    const unrelatedBefore = before.threads[1];
+  it.effect(
+    "replaces the whole configuration and leaves unrelated threads and fields unchanged",
+    () =>
+      Effect.gen(function* () {
+        const withFirst = yield* projectEvent(
+          createEmptyReadModel(NOW),
+          makeThreadEvent(
+            1,
+            "thread.created",
+            "thread-1",
+            NOW,
+            createdPayload("thread-1", "Target", orchestratorConfig),
+          ),
+        );
+        const before = yield* projectEvent(
+          withFirst,
+          makeThreadEvent(
+            2,
+            "thread.created",
+            "thread-2",
+            NOW,
+            createdPayload("thread-2", "Unrelated", DEFAULT_WORKJET_THREAD_CONFIG),
+          ),
+        );
+        const targetBefore = before.threads[0];
+        const unrelatedBefore = before.threads[1];
 
-    const projected = await Effect.runPromise(
-      projectEvent(
-        before,
-        makeThreadEvent(3, "thread.workjet-config-set", "thread-1", LATER, {
-          threadId: ThreadId.make("thread-1"),
+        const projected = yield* projectEvent(
+          before,
+          makeThreadEvent(3, "thread.workjet-config-set", "thread-1", LATER, {
+            threadId: ThreadId.make("thread-1"),
+            workjetConfig: workerConfig,
+            updatedAt: LATER,
+          }),
+        );
+
+        expect(projected.threads[0]).toEqual({
+          ...targetBefore,
           workjetConfig: workerConfig,
           updatedAt: LATER,
-        }),
-      ),
-    );
-
-    expect(projected.threads[0]).toEqual({
-      ...targetBefore,
-      workjetConfig: workerConfig,
-      updatedAt: LATER,
-    });
-    expect(projected.threads[1]).toEqual(unrelatedBefore);
-    expect(projected.threads[0]?.workjetConfig).not.toHaveProperty("role", "orchestrator");
-  });
+        });
+        expect(projected.threads[1]).toEqual(unrelatedBefore);
+        expect(projected.threads[0]?.workjetConfig).not.toHaveProperty("role", "orchestrator");
+      }),
+  );
 });

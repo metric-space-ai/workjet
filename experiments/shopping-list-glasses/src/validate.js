@@ -62,7 +62,9 @@ export function validatePageLayout(layout) {
     const ic = list.itemContainer || {};
     const names = ic.itemName || [];
     if (names.length > MAX_LIST_ITEMS) {
-      fail(`zu viele Listeneintraege: ${names.length} > ${MAX_LIST_ITEMS} (Container ${list.containerID})`);
+      fail(
+        `zu viele Listeneintraege: ${names.length} > ${MAX_LIST_ITEMS} (Container ${list.containerID})`,
+      );
     }
     if (ic.itemCount !== names.length) {
       fail(

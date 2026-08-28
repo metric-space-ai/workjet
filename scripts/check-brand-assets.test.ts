@@ -11,7 +11,7 @@
  * Comparing CONTENT rather than "does the file exist" is the point: a stale
  * copy is exactly the failure mode here, and only a hash can catch it.
  */
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -39,7 +39,7 @@ const digestOf = Effect.fn("digestOf")(function* (relativePath: string) {
   const here = yield* path.fromFileUrl(new URL(import.meta.url));
   const repoRoot = path.resolve(path.dirname(here), "..");
   const bytes = yield* fs.readFile(path.join(repoRoot, relativePath));
-  return createHash("sha256").update(bytes).digest("hex");
+  return NodeCrypto.createHash("sha256").update(bytes).digest("hex");
 });
 
 describe("shipped brand assets", () => {

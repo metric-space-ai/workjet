@@ -4,7 +4,7 @@ import type {
   WorkjetLlmRoute,
 } from "@t3tools/contracts";
 import { Fragment, useState } from "react";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, PlusIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
 import { searchableSetting } from "./settingsSearch";

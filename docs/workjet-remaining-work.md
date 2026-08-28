@@ -537,8 +537,9 @@ finishes. Scope estimates are rough and name the files.
     dying port all yield no commit rather than failing a delegation that
     already ran.
     **BLOCKED on item 14, by construction:** a `branch` ref cannot be added
-    without lying. `WorkjetGitBranchRef` REQUIRES `delivery: "pushed" |
-"sync-bundled"`, and this executor neither pushes nor bundles, so either
+    without lying. `WorkjetGitBranchRef` REQUIRES
+    `delivery: "pushed" | "sync-bundled"`, and this executor neither pushes nor
+    bundles, so either
     value asserts a delivery that did not happen and sends the source after a
     branch it cannot fetch. A test pins `branch` as absent so a later change
     must face that decision instead of drifting into it.
@@ -551,41 +552,41 @@ finishes. Scope estimates are rough and name the files.
     required turned six round-trip tests red, which is exactly what an older
     sender's payload would do on a newer receiver. Mutation-verified.
 
-            **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
-            the server's ONLY Greppy surface is
-            `greppy search --root <cwd> --json … <task>`
-            (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
-            entry point to reference instead. Since the plan requires that "remote
-            servers resolve references against their own authorized environment
-            state", a Greppy reference must be RE-RUNNABLE, which means carrying that
-            free text. That would be the first prose channel in a contract whose stated
-            discipline is bounded ids and closed literals with no field a payload can
-            travel in. Either accept a bounded query field as a deliberate, documented
-            exception, or add a symbol-shaped Greppy entry point first and reference
-            that. Not a schema addition.
+        **GREPPY REFERENCE — DECISION NEEDED, do not just add a field.** Measured:
+        the server's ONLY Greppy surface is
+        `greppy search --root <cwd> --json … <task>`
+        (`GreppySearch.ts:245-258`) — a FREE-TEXT query. There is no symbol-based
+        entry point to reference instead. Since the plan requires that "remote
+        servers resolve references against their own authorized environment
+        state", a Greppy reference must be RE-RUNNABLE, which means carrying that
+        free text. That would be the first prose channel in a contract whose stated
+        discipline is bounded ids and closed literals with no field a payload can
+        travel in. Either accept a bounded query field as a deliberate, documented
+        exception, or add a symbol-shaped Greppy entry point first and reference
+        that. Not a schema addition.
 
-            **`paths` DONE 2026-08-21, commit 8f3bad5ef.** Results now carry the
-            repository-relative paths the turn changed, as references — the source
-            learns which files moved and reads them from the branch, so no
-            contents travel. `isWorkjetRepositoryPath` (new in contracts) refuses
-            absolute and traversing entries, and the producer resolves git's
-            rename syntax to its DESTINATION: `old -> new` otherwise passes the
-            path pattern outright and would brand a string that is not a path.
-            Mutation-verified.
+        **`paths` DONE 2026-08-21, commit 8f3bad5ef.** Results now carry the
+        repository-relative paths the turn changed, as references — the source
+        learns which files moved and reads them from the branch, so no
+        contents travel. `isWorkjetRepositoryPath` (new in contracts) refuses
+        absolute and traversing entries, and the producer resolves git's
+        rename syntax to its DESTINATION: `old -> new` otherwise passes the
+        path pattern outright and would brand a string that is not a path.
+        Mutation-verified.
 
-            **RECEIVING-SIDE RESOLUTION DONE 2026-08-21, commit c330acda3.**
-            `WorkjetArtifactResolution.ts` answers a peer's references from THIS
-            machine's state, never from the claim. Three states, and `unchecked` is
-            deliberately distinct from `absent`: "I could not look" and "I looked
-            and it is not here" lead an operator to different actions, and
-            collapsing them reports a peer's work as missing when nothing was
-            checked. No network — a commit that exists only on a remote is `absent`
-            here. Bounded below the contract's caps so a peer cannot turn one
-            result into hundreds of local reads, and the summary line is built from
-            counts only, never from peer-supplied text. Mutation-verified.
+        **RECEIVING-SIDE RESOLUTION DONE 2026-08-21, commit c330acda3.**
+        `WorkjetArtifactResolution.ts` answers a peer's references from THIS
+        machine's state, never from the claim. Three states, and `unchecked` is
+        deliberately distinct from `absent`: "I could not look" and "I looked
+        and it is not here" lead an operator to different actions, and
+        collapsing them reports a peer's work as missing when nothing was
+        checked. No network — a commit that exists only on a remote is `absent`
+        here. Bounded below the contract's caps so a peer cannot turn one
+        result into hundreds of local reads, and the summary line is built from
+        counts only, never from peer-supplied text. Mutation-verified.
 
-            **Item 13 is now complete** except the Greppy reference kind, which is
-            the owner decision recorded above.
+        **Item 13 is now complete** except the Greppy reference kind, which is
+        the owner decision recorded above.
 
 14. **Handoff head commit and acknowledgement envelope.** §8.
     **HEAD-COMMIT HALF DONE 2026-08-20, commit 1d96de50b.** A new

@@ -62,7 +62,7 @@ function runCtox(args, input, timeout = 35_000) {
       timeout,
     });
     return JSON.parse(out);
-  } catch (err) {
+  } catch {
     // Stay silent on per-hit failures: `classify_outcome` in
     // src/capabilities/scrape.rs runs a substring search for "temporary",
     // "timeout", "429", … on stderr and would misclassify the whole run
@@ -120,7 +120,7 @@ function isAllowedUrl(value) {
     return (
       url.protocol === "https:" && url.hostname.toLowerCase().replace(/^www\./, "") === ALLOWED_HOST
     );
-  } catch (_err) {
+  } catch {
     return false;
   }
 }
@@ -435,7 +435,7 @@ function browserPage(url, company, sessionId = null) {
   // plus the marker waits.
   const payload = runCtox(browserAutomationArgs(150_000, sessionId), source, 160_000);
   if (!payload) return null;
-  return { ...(payload.result || {}), ok: payload.ok === true, detection: payload.detection };
+  return { ...payload.result, ok: payload.ok === true, detection: payload.detection };
 }
 
 function recordUnlockSignal(url, markers) {
@@ -505,7 +505,7 @@ function requestedPathMatches(company, value) {
     if (!isAllowedUrl(value) || segments.length < 2) return false;
     const firstSegment = segments[0];
     return identityMatches(company, firstSegment) && legalFormMatches(company, firstSegment);
-  } catch (_err) {
+  } catch {
     return false;
   }
 }
@@ -811,7 +811,7 @@ function parseBizqPersons(html) {
               : "";
         if (text.trim()) out.push(text.trim());
       }
-    } catch (err) {
+    } catch {
       // Selector drifted; let the empty-records path trigger portal_drift.
     }
   }
@@ -892,7 +892,7 @@ function splitPersonClause(text) {
   if (splitIdx === 0) {
     // No explicit role token — require the legacy "Role First Last" shape.
     const m = trimmed.match(
-      /^([A-Za-zÄÖÜäöü\-\s.]+?)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöü\-]+)*)$/,
+      /^([A-Za-zÄÖÜäöü\-\s.]+?)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü-]+)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü-]+(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöü-]+)*)$/,
     );
     if (!m) return null;
     return { position: expandPosition(m[1]), first: m[2].trim(), last: m[3].trim() };

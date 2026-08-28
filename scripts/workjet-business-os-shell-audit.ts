@@ -284,10 +284,10 @@ const AUDIT_EXPRESSION = `(() => {
       busy: Boolean(windowNode.querySelector('[aria-busy="true"], [data-loading="true"], .is-loading')),
       statusText: [...windowNode.querySelectorAll('[role="status"], [role="alert"], .empty-state, .module-loading-shadow-pane')]
         .filter(visible)
-        .map((node) => (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 240))
+        .map((node) => (node.textContent || '').trim().replace(/s+/g, ' ').slice(0, 240))
         .filter(Boolean)
         .slice(0, 8),
-      text: (windowNode.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 1200),
+      text: (windowNode.textContent || '').trim().replace(/s+/g, ' ').slice(0, 1200),
     })),
     visibleText: (document.body.innerText || '').slice(0, 4000),
   };

@@ -16,7 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { HttpApiTest } from "effect/unstable/httpapi";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { WorkjetBusinessOsComputerOwnershipStore } from "./WorkjetBusinessOsComputerOwnershipStore.ts";
 import {
@@ -76,7 +76,7 @@ const unauthenticatedAuth = EnvironmentAuthenticatedAuth.of(() =>
   ),
 );
 
-async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
+function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
   const owners = new Map<
     string,
     {
@@ -159,108 +159,100 @@ async function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
       },
     }),
   );
-  return Effect.runPromise(
-    HttpApiTest.groups(WorkjetBusinessOsComputerMembershipHttpApi, ["businessOsComputers"]).pipe(
-      Effect.provide([
-        NodeHttpServer.layerHttpServices,
-        businessOsComputerMembershipHttpApiLayer.pipe(Layer.provide(storeLayer)),
-      ]),
-      Effect.provideService(EnvironmentAuthenticatedAuth, auth),
-      Effect.scoped,
-    ),
+  return HttpApiTest.groups(WorkjetBusinessOsComputerMembershipHttpApi, [
+    "businessOsComputers",
+  ]).pipe(
+    Effect.provide([
+      NodeHttpServer.layerHttpServices,
+      businessOsComputerMembershipHttpApiLayer.pipe(Layer.provide(storeLayer)),
+    ]),
+    Effect.provideService(EnvironmentAuthenticatedAuth, auth),
+    Effect.scoped,
   );
 }
 
 describe("Business OS computer membership HTTP", () => {
-  it("lists and mutates only the explicitly scoped instance", async () => {
-    const client = await clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
-    await Effect.runPromise(
-      client.businessOsComputers.assign({
+  it.effect("lists and mutates only the explicitly scoped instance", () =>
+    Effect.gen(function* () {
+      const client = yield* clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
+      yield* client.businessOsComputers.assign({
         headers: {},
         payload: { businessOsInstanceId: A, environmentId: environment("gpu-1") },
-      }),
-    );
-    const moved = await Effect.runPromise(
-      client.businessOsComputers.assign({
+      });
+      const moved = yield* client.businessOsComputers.assign({
         headers: {},
         payload: { businessOsInstanceId: B, environmentId: environment("gpu-1") },
-      }),
-    );
-    expect(moved.previousBusinessOsInstanceId).toBe(A);
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.unassign({
+      });
+      expect(moved.previousBusinessOsInstanceId).toBe(A);
+      expect(
+        yield* client.businessOsComputers.unassign({
           headers: {},
           payload: { businessOsInstanceId: A, environmentId: environment("gpu-1") },
         }),
-      ),
-    ).resolves.toMatchObject({ unassigned: false });
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.list({
+      ).toMatchObject({ unassigned: false });
+      expect(
+        yield* client.businessOsComputers.list({
           headers: {},
           payload: { businessOsInstanceId: A },
         }),
-      ),
-    ).resolves.toMatchObject({ businessOsInstanceId: A, assigned: [] });
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.list({
+      ).toMatchObject({ businessOsInstanceId: A, assigned: [] });
+      expect(
+        yield* client.businessOsComputers.list({
           headers: {},
           payload: { businessOsInstanceId: B },
         }),
-      ),
-    ).resolves.toMatchObject({
-      businessOsInstanceId: B,
-      assigned: [{ environmentId: environment("gpu-1") }],
-    });
-  });
+      ).toMatchObject({
+        businessOsInstanceId: B,
+        assigned: [{ environmentId: environment("gpu-1") }],
+      });
+    }),
+  );
 
-  it("never offers or assigns a managed backend host", async () => {
-    const client = await clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
-    const listed = await Effect.runPromise(
-      client.businessOsComputers.list({
+  it.effect("never offers or assigns a managed backend host", () =>
+    Effect.gen(function* () {
+      const client = yield* clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
+      const listed = yield* client.businessOsComputers.list({
         headers: {},
         payload: { businessOsInstanceId: MANAGED },
-      }),
-    );
-    expect(listed.available.map((candidate) => candidate.environmentId)).not.toContain(
-      environment("managed-backend"),
-    );
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.assign({
-          headers: {},
-          payload: {
-            businessOsInstanceId: MANAGED,
-            environmentId: environment("managed-backend"),
-            coLocationRiskConfirmation: { policyVersion: 1, confirmed: true },
-          },
-        }),
-      ),
-    ).rejects.toMatchObject({
-      _tag: "WorkjetBusinessOsComputerMembershipPolicyError",
-      reason: "managed-backend-host",
-    });
-  });
+      });
+      expect(listed.available.map((candidate) => candidate.environmentId)).not.toContain(
+        environment("managed-backend"),
+      );
+      expect(
+        yield* Effect.flip(
+          client.businessOsComputers.assign({
+            headers: {},
+            payload: {
+              businessOsInstanceId: MANAGED,
+              environmentId: environment("managed-backend"),
+              coLocationRiskConfirmation: { policyVersion: 1, confirmed: true },
+            },
+          }),
+        ),
+      ).toMatchObject({
+        _tag: "WorkjetBusinessOsComputerMembershipPolicyError",
+        reason: "managed-backend-host",
+      });
+    }),
+  );
 
-  it("requires explicit high-risk confirmation for self-hosted co-location", async () => {
-    const client = await clientFor(authenticatedAuth(new Set(["access:write"])));
-    const backend = environment(`${A}-backend`);
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.assign({
-          headers: {},
-          payload: { businessOsInstanceId: A, environmentId: backend },
-        }),
-      ),
-    ).rejects.toMatchObject({
-      _tag: "WorkjetBusinessOsComputerMembershipPolicyError",
-      reason: "colocation-confirmation-required",
-    });
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.assign({
+  it.effect("requires explicit high-risk confirmation for self-hosted co-location", () =>
+    Effect.gen(function* () {
+      const client = yield* clientFor(authenticatedAuth(new Set(["access:write"])));
+      const backend = environment(`${A}-backend`);
+      expect(
+        yield* Effect.flip(
+          client.businessOsComputers.assign({
+            headers: {},
+            payload: { businessOsInstanceId: A, environmentId: backend },
+          }),
+        ),
+      ).toMatchObject({
+        _tag: "WorkjetBusinessOsComputerMembershipPolicyError",
+        reason: "colocation-confirmation-required",
+      });
+      expect(
+        yield* client.businessOsComputers.assign({
           headers: {},
           payload: {
             businessOsInstanceId: A,
@@ -268,64 +260,68 @@ describe("Business OS computer membership HTTP", () => {
             coLocationRiskConfirmation: { policyVersion: 1, confirmed: true },
           },
         }),
-      ),
-    ).resolves.toMatchObject({
-      assignment: {
-        environmentId: backend,
-        coLocationRiskAcceptance: { policyVersion: 1 },
-      },
-    });
-  });
+      ).toMatchObject({
+        assignment: {
+          environmentId: backend,
+          coLocationRiskAcceptance: { policyVersion: 1 },
+        },
+      });
+    }),
+  );
 
-  it("enforces authentication and read/write scopes", async () => {
-    const unauthenticated = await clientFor(unauthenticatedAuth);
-    await expect(
-      Effect.runPromise(
-        unauthenticated.businessOsComputers.list({
-          headers: {},
-          payload: { businessOsInstanceId: A },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
+  it.effect("enforces authentication and read/write scopes", () =>
+    Effect.gen(function* () {
+      const unauthenticated = yield* clientFor(unauthenticatedAuth);
+      expect(
+        yield* Effect.flip(
+          unauthenticated.businessOsComputers.list({
+            headers: {},
+            payload: { businessOsInstanceId: A },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentAuthInvalidError" });
 
-    const readOnly = await clientFor(authenticatedAuth(new Set(["access:read"])));
-    await expect(
-      Effect.runPromise(
-        readOnly.businessOsComputers.assign({
-          headers: {},
-          payload: { businessOsInstanceId: A, environmentId: environment("gpu-1") },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
+      const readOnly = yield* clientFor(authenticatedAuth(new Set(["access:read"])));
+      expect(
+        yield* Effect.flip(
+          readOnly.businessOsComputers.assign({
+            headers: {},
+            payload: { businessOsInstanceId: A, environmentId: environment("gpu-1") },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
 
-    const writeOnly = await clientFor(authenticatedAuth(new Set(["access:write"])));
-    await expect(
-      Effect.runPromise(
-        writeOnly.businessOsComputers.list({
-          headers: {},
-          payload: { businessOsInstanceId: A },
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
-  });
+      const writeOnly = yield* clientFor(authenticatedAuth(new Set(["access:write"])));
+      expect(
+        yield* Effect.flip(
+          writeOnly.businessOsComputers.list({
+            headers: {},
+            payload: { businessOsInstanceId: A },
+          }),
+        ),
+      ).toMatchObject({ _tag: "EnvironmentScopeRequiredError" });
+    }),
+  );
 
-  it("rejects missing identifiers and disables caches and referrers", async () => {
-    const client = await clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
-    await expect(
-      Effect.runPromise(client.businessOsComputers.list({ headers: {}, payload: {} } as never)),
-    ).rejects.toBeDefined();
-    await expect(
-      Effect.runPromise(
-        client.businessOsComputers.unassign({
-          headers: {},
-          payload: { businessOsInstanceId: A },
-        } as never),
-      ),
-    ).rejects.toBeDefined();
-    expect(WORKJET_BUSINESS_OS_COMPUTER_RESPONSE_HEADERS).toEqual({
-      "cache-control": "no-store",
-      pragma: "no-cache",
-      "referrer-policy": "no-referrer",
-    });
-  });
+  it.effect("rejects missing identifiers and disables caches and referrers", () =>
+    Effect.gen(function* () {
+      const client = yield* clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
+      expect(
+        yield* Effect.flip(client.businessOsComputers.list({ headers: {}, payload: {} } as never)),
+      ).toBeDefined();
+      expect(
+        yield* Effect.flip(
+          client.businessOsComputers.unassign({
+            headers: {},
+            payload: { businessOsInstanceId: A },
+          } as never),
+        ),
+      ).toBeDefined();
+      expect(WORKJET_BUSINESS_OS_COMPUTER_RESPONSE_HEADERS).toEqual({
+        "cache-control": "no-store",
+        pragma: "no-cache",
+        "referrer-policy": "no-referrer",
+      });
+    }),
+  );
 });

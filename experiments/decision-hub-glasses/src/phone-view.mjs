@@ -2,7 +2,7 @@
 // WAS auf der Brille erscheint. Die Vorgaenge selbst gehoeren auf die Brille;
 // unten steht nur eine kompakte Vorschau, damit man sieht, dass Daten fliessen.
 
-import { DECISION_TYPES, GLASS_SECTIONS, MODES, RUHEZEITEN, activeInstance, isLive } from "./settings.mjs";
+import { GLASS_SECTIONS, MODES, RUHEZEITEN, activeInstance, isLive } from "./settings.mjs";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -67,19 +67,22 @@ export function renderSettings(root, ctx) {
   // --- Betriebsart: zuoberst, weil davon abhaengt, ob eine Entscheidung
   //     wirklich eine Mail verschickt. ---
   const live = isLive(settings);
-  const modus = card('Betriebsart', live ? 'Live — Entscheidungen wirken sofort' : 'Demo — es wird nichts versendet');
-  const wahl = el('div', 'dh-chips');
+  const modus = card(
+    "Betriebsart",
+    live ? "Live — Entscheidungen wirken sofort" : "Demo — es wird nichts versendet",
+  );
+  const wahl = el("div", "dh-chips");
   for (const mode of MODES) {
     const aktiv = settings.mode === mode.id;
-    const chip = el('button', `dh-chip${aktiv ? ' is-active' : ''}`, mode.label);
-    chip.type = 'button';
-    chip.addEventListener('click', () => ctx.onSettings({ mode: mode.id }));
+    const chip = el("button", `dh-chip${aktiv ? " is-active" : ""}`, mode.label);
+    chip.type = "button";
+    chip.addEventListener("click", () => ctx.onSettings({ mode: mode.id }));
     wahl.append(chip);
   }
   modus.append(wahl);
-  modus.append(el('p', 'dh-note', MODES.find((m) => m.id === settings.mode)?.hint || ''));
-  if (settings.mode === 'live' && !activeInstance(settings)) {
-    modus.append(el('p', 'dh-note', 'Ohne verbundene Instanz bleibt es bei Demo-Daten.'));
+  modus.append(el("p", "dh-note", MODES.find((m) => m.id === settings.mode)?.hint || ""));
+  if (settings.mode === "live" && !activeInstance(settings)) {
+    modus.append(el("p", "dh-note", "Ohne verbundene Instanz bleibt es bei Demo-Daten."));
   }
   root.append(modus);
 
@@ -87,13 +90,23 @@ export function renderSettings(root, ctx) {
   const anzeige = card("Anzeige", "Nach dieser Ruhezeit blendet die Brille aus");
   const zeiten = el("div", "dh-chips");
   for (const zeit of RUHEZEITEN) {
-    const chip = el("button", `dh-chip${settings.ruhezeit === zeit.id ? " is-active" : ""}`, zeit.label);
+    const chip = el(
+      "button",
+      `dh-chip${settings.ruhezeit === zeit.id ? " is-active" : ""}`,
+      zeit.label,
+    );
     chip.type = "button";
     chip.addEventListener("click", () => ctx.onSettings({ ruhezeit: zeit.id }));
     zeiten.append(chip);
   }
   anzeige.append(zeiten);
-  anzeige.append(el("p", "dh-note", "Der nächste Handgriff holt sie zurück. Ganz nach oben scrollen blendet sofort aus."));
+  anzeige.append(
+    el(
+      "p",
+      "dh-note",
+      "Der nächste Handgriff holt sie zurück. Ganz nach oben scrollen blendet sofort aus.",
+    ),
+  );
   root.append(anzeige);
 
   // --- Verbindung: der Grund, warum diese App auf dem Handy existiert. ---
@@ -133,11 +146,7 @@ export function renderSettings(root, ctx) {
     scan.addEventListener("click", () => ctx.onScan?.());
     conn.append(scan);
     conn.append(
-      el(
-        "p",
-        "dh-note",
-        "Decision Hub im Browser öffnen → Brille koppeln → Code abfotografieren.",
-      ),
+      el("p", "dh-note", "Decision Hub im Browser öffnen → Brille koppeln → Code abfotografieren."),
     );
     conn.append(
       el(

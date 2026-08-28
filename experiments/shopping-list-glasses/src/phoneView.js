@@ -60,7 +60,11 @@ export function renderPhoneView(root, state, actions) {
     placeholder: "Artikel eingeben…",
     "aria-label": "Artikeltext",
   });
-  const deptSelect = el("select", { class: "dept-select", "aria-label": "Abteilung" }, departmentOptions());
+  const deptSelect = el(
+    "select",
+    { class: "dept-select", "aria-label": "Abteilung" },
+    departmentOptions(),
+  );
 
   function submitAdd() {
     const text = textInput.value.trim();
@@ -126,7 +130,10 @@ export function renderPhoneView(root, state, actions) {
       checkbox.addEventListener("change", () => actions.onToggle(item.id));
 
       const row = el("div", { class: item.checked ? "item-row checked" : "item-row" }, [
-        el("label", { class: "item-check" }, [checkbox, el("span", { class: "item-text", text: item.text })]),
+        el("label", { class: "item-check" }, [
+          checkbox,
+          el("span", { class: "item-text", text: item.text }),
+        ]),
         el("div", { class: "item-actions" }, [
           el("button", {
             class: "btn btn-icon",

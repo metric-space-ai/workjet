@@ -111,7 +111,7 @@ export function actionBoxes(view, y, height) {
       yPosition: y,
       width,
       height,
-      content: `${' '.repeat(pad)}${label}`,
+      content: `${" ".repeat(pad)}${label}`,
       textColor: focused ? BRIGHT : DIM,
       borderWidth: focused ? 2 : 1,
       // Ohne borderColor zeichnet die Brille nur eine Kante — am Simulator
@@ -135,7 +135,7 @@ export function viewToPageContainer(view) {
     textObject: [
       {
         containerID: CONTAINER.TABS,
-        containerName: 'tabs',
+        containerName: "tabs",
         xPosition: PAD_X,
         yPosition: 0,
         width: DISPLAY_W - PAD_X * 2,
@@ -151,7 +151,7 @@ export function viewToPageContainer(view) {
         // laeuft er ueber, scrollt die Brille ihn selbst und die Ereignisse
         // erreichen die App nicht mehr (am Geraet beobachtet).
         containerID: CONTAINER.BODY,
-        containerName: 'body',
+        containerName: "body",
         xPosition: PAD_X,
         yPosition: TAB_H,
         width: DISPLAY_W - PAD_X * 2,
@@ -166,7 +166,10 @@ export function viewToPageContainer(view) {
     // Zusaetzlich das native Aktionsmenue: solange der Druck aufs Kaestchen am
     // Geraet nicht bestaetigt ist, gibt es so IMMER einen Weg zur Entscheidung.
     menuObject: {
-      menuItems: view.icons.map((icon, i) => ({ itemID: i + 1, itemName: icon.label || icon.glyph })),
+      menuItems: view.icons.map((icon, i) => ({
+        itemID: i + 1,
+        itemName: icon.label || icon.glyph,
+      })),
     },
   };
 }
@@ -174,7 +177,7 @@ export function viewToPageContainer(view) {
 /** Kopfzeile: Reiter plus Leseposition — sonst weiss niemand, wie viel folgt. */
 export function headerLine(view) {
   const pos = view.position;
-  const marker = pos && pos.total > 0 ? ` ${pos.line}/${pos.total}` : '';
+  const marker = pos && pos.total > 0 ? ` ${pos.line}/${pos.total}` : "";
   const room = Math.max(10, 52 - marker.length);
   return `${tabsLine(view.tabs, room)}${marker}`;
 }

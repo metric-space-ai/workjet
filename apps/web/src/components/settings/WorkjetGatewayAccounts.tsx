@@ -15,7 +15,6 @@ import {
   PlusIcon,
   RefreshCwIcon,
   TriangleAlertIcon,
-  Trash2Icon,
 } from "lucide-react";
 import {
   AntigravityIcon,

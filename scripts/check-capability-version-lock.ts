@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off -- The lock digests raw artifact bytes before entering an Effect runtime.
 
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -73,7 +73,8 @@ export class CapabilityLockOutOfDateError extends Schema.TaggedErrorClass<Capabi
   }
 }
 
-const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
+const sha256 = (value: string): string =>
+  NodeCrypto.createHash("sha256").update(value, "utf8").digest("hex");
 
 const WebStackContractSchema = Schema.Struct({
   schemaVersion: Schema.Number,

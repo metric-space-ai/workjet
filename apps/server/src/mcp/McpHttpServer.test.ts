@@ -1,11 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
@@ -189,6 +189,7 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
 it.effect("filters tools/list by the authoritative bearer scope and preserves Preview tools", () =>
   Effect.scoped(
     Effect.gen(function* () {
+      const path = yield* Path.Path;
       const scopes = new Map<string, McpInvocationContext.McpInvocationScope>([
         [
           "hidden-token",
@@ -277,7 +278,7 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
         Layer.provide(
           ServerConfig.layerTest(
             process.cwd(),
-            NodePath.join(NodeOS.tmpdir(), `workjet-mcp-http-server-test-${process.pid}`),
+            path.join(NodeOS.tmpdir(), `workjet-mcp-http-server-test-${process.pid}`),
           ).pipe(Layer.provide(NodeServices.layer)),
         ),
         Layer.provide(NodeServices.layer),

@@ -47,7 +47,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -92,15 +91,6 @@ import {
   type WorkerDispatchSources,
 } from "./WorkerDispatch.ts";
 
-/**
- * The operator-selected storage root and the project checkout must live on
- * different subtrees, because `WorktreeRootValidation` rejects a root nested in
- * the project, the home directory, or the server state directory.
- */
-const TEST_CONTAINER = NodePath.join(NodeOS.tmpdir(), `workjet-worker-dispatch-e2e-${process.pid}`);
-const REPOSITORY_CONTAINER = NodePath.join(TEST_CONTAINER, "repositories");
-const WORKTREE_ROOT_CONTAINER = NodePath.join(TEST_CONTAINER, "worktrees");
-
 const environmentId = EnvironmentId.make("environment-workjet-e2e");
 const projectId = ProjectId.make("project-workjet-e2e");
 const parentThreadId = ThreadId.make("thread-workjet-e2e-orchestrator");
@@ -129,19 +119,24 @@ interface Fixture {
 const makeFixture = Effect.fn("WorkerDispatch.e2e.makeFixture")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* Effect.forEach([REPOSITORY_CONTAINER, WORKTREE_ROOT_CONTAINER], (directory) =>
+  // The operator-selected storage root and project checkout must live on
+  // different subtrees because WorktreeRootValidation rejects nested roots.
+  const testContainer = path.join(NodeOS.tmpdir(), `workjet-worker-dispatch-e2e-${process.pid}`);
+  const repositoryContainer = path.join(testContainer, "repositories");
+  const worktreeRootContainer = path.join(testContainer, "worktrees");
+  yield* Effect.forEach([repositoryContainer, worktreeRootContainer], (directory) =>
     fileSystem.makeDirectory(directory, { recursive: true }),
   );
   // Canonicalize so path comparisons survive any symlinked container.
   const container = yield* fileSystem.realPath(
     yield* fileSystem.makeTempDirectoryScoped({
-      directory: REPOSITORY_CONTAINER,
+      directory: repositoryContainer,
       prefix: "dispatch-",
     }),
   );
   const worktreeRoot = yield* fileSystem.realPath(
     yield* fileSystem.makeTempDirectoryScoped({
-      directory: WORKTREE_ROOT_CONTAINER,
+      directory: worktreeRootContainer,
       prefix: "root-",
     }),
   );

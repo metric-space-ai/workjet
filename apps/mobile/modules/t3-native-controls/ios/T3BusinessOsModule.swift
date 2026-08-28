@@ -45,8 +45,7 @@ private enum WorkjetDeviceProofKey {
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     if status == errSecSuccess, let item {
       guard CFGetTypeID(item) == SecKeyGetTypeID() else { throw CocoaError(.coderInvalidValue) }
-      guard let key = item as? SecKey else { throw CocoaError(.coderInvalidValue) }
-      return key
+      return item as! SecKey // swiftlint:disable:this force_cast
     }
     guard status == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
     let attributes: [String: Any] = [

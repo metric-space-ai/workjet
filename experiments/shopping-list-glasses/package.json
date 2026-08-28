@@ -1,0 +1,21 @@
+{
+  "name": "shopping-list-glasses",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Even Hub plugin: shopping list for the Even Realities G2",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "dev": "vite --port 5174",
+    "build": "vite build",
+    "sim": "evenhub-simulator --automation-port 9899 http://localhost:5174"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.14"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-simulator": "^0.9.1",
+    "vite": "^5.4.21"
+  }
+}

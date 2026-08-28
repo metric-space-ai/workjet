@@ -43,6 +43,10 @@ export function buildHomeListFilterMenu(props: {
   readonly onProjectChange: (projectKey: string | null) => void;
   readonly onProjectSortOrderChange: (sortOrder: HomeProjectSortOrder) => void;
   readonly onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
+  readonly allowAllEnvironments?: boolean;
+  readonly environmentMenuTitle?: string;
+  readonly allEnvironmentsLabel?: string;
+  readonly allEnvironmentsSubtitle?: string;
   /** False hides the sort/group submenus. Thread List v2 uses a fixed
       creation-order layout, so offering those controls while it silently
       ignores them would be a lie; the environment filter still applies. */
@@ -52,15 +56,19 @@ export function buildHomeListFilterMenu(props: {
 
   items.push({
     type: "submenu",
-    title: "Environment",
+    title: props.environmentMenuTitle ?? "Environment",
     items: [
-      {
-        type: "action",
-        title: "All environments",
-        subtitle: "Show threads from every environment",
-        state: props.selectedEnvironmentId === null ? "on" : "off",
-        onPress: () => props.onEnvironmentChange(null),
-      },
+      ...(props.allowAllEnvironments === false
+        ? []
+        : [
+            {
+              type: "action" as const,
+              title: props.allEnvironmentsLabel ?? "All environments",
+              subtitle: props.allEnvironmentsSubtitle ?? "Show threads from every environment",
+              state: props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
+              onPress: () => props.onEnvironmentChange(null),
+            },
+          ]),
       ...props.environments.map((environment) => ({
         type: "action" as const,
         title: environment.label,

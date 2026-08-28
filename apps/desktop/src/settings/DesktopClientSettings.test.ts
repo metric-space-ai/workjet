@@ -43,6 +43,7 @@ const clientSettings: ClientSettings = {
   legacySidebarEnabled: false,
   timestampFormat: "24-hour",
   wordWrap: true,
+  workjetProductMode: "ctox",
 };
 
 const decodeClientSettingsJson = Schema.decodeEffect(Schema.fromJsonString(ClientSettingsSchema));
@@ -162,6 +163,7 @@ describe("DesktopClientSettings", () => {
         assert.isTrue(Option.isSome(persisted));
         if (Option.isSome(persisted)) {
           assert.equal(persisted.value.timestampFormat, "24-hour");
+          assert.equal(persisted.value.workjetProductMode, "code");
         }
       }),
     ),

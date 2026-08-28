@@ -6,6 +6,7 @@ import {
   type ProjectId,
   type ProviderInteractionMode,
   type RuntimeMode,
+  DEFAULT_WORKJET_THREAD_CONFIG,
 } from "@t3tools/contracts";
 
 import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
@@ -68,6 +69,9 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
         modelSelection: spec.modelSelection,
         runtimeMode: spec.runtimeMode,
         interactionMode: spec.interactionMode,
+        // Mobile creates plain Code threads; the orchestrator/worker roles are
+        // set from Code mode, so the default is the honest value here.
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: spec.branch,
         worktreePath: isWorktree ? null : spec.worktreePath,
         createdAt: spec.createdAt,

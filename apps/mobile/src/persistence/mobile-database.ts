@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 const DATABASE_NAME = "t3code-client.db";
+export const MOBILE_DATABASE_NAME = DATABASE_NAME;
 const DATABASE_SCHEMA_VERSION = 1;
 const LEGACY_CACHE_DIRECTORIES = [
   "connection-shell-snapshots",
@@ -232,7 +233,7 @@ const makeAvailable = Effect.gen(function* () {
     Effect.tryPromise({
       try: async () => {
         const SQLite = await import("expo-sqlite");
-        return SQLite.openDatabaseAsync(DATABASE_NAME);
+        return SQLite.openDatabaseAsync(MOBILE_DATABASE_NAME);
       },
       catch: databaseError("open"),
     }),

@@ -1,14 +1,24 @@
-# Brand icons
+# Workjet brand icons
 
-The three Icon Composer projects are the source of truth for full application icons:
+The only product identity shipped by desktop, mobile, web, and marketing is
+**Workjet**. Canonical cross-platform release assets live in `workjet/`.
+
+The older Icon Composer projects below are retained only as compatibility inputs
+for the existing export tooling; release and hosted-web code must not select
+them as product artwork:
 
 - `dev/app-icon.icon`
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+Each older project uses `text.svg` for its historical mark and `background.svg`
+when the background is a vector layer. Additional layers use semantic names
+that describe their role and placement.
 
-Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
+Run `vp run icons:export` from the repository root only when maintaining those
+compatibility inputs. The public browser copies are always overwritten from
+`assets/workjet/`, never from a historical brand. Run `vp run icons:check` to
+verify generated assets without changing files.
 
 Exporting requires Icon Composer 2 or newer on macOS. The script selects the newest compatible exporter from Xcode or a standalone Icon Composer installation and pins design generation 26. Set `ICON_COMPOSER_TOOL` to the full path of `Icon Composer.app/Contents/Executables/ictool` to override automatic discovery.
 

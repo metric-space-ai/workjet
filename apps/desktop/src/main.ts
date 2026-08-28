@@ -11,6 +11,8 @@ import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Socket from "effect/unstable/socket/Socket";
+import { RpcSessionFactoryLive } from "@t3tools/client-runtime/rpc";
 
 import * as Electron from "electron";
 
@@ -21,7 +23,19 @@ import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
+import * as CtoxAppRail from "./ctox/CtoxAppRail.ts";
+import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
+import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
+import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
+import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
+import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
+import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
+import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
+import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
+import * as CtoxShellFleet from "./ctox/CtoxShellFleet.ts";
+import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
+import * as ElectronCrashReporter from "./electron/ElectronCrashReporter.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
 import * as ElectronPowerMonitor from "./electron/ElectronPowerMonitor.ts";
@@ -35,6 +49,7 @@ import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
 import * as DesktopClerk from "./app/DesktopClerk.ts";
+import * as DesktopDeepLinkRouter from "./app/DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
 import * as DesktopAssets from "./app/DesktopAssets.ts";
 import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
@@ -51,10 +66,14 @@ import * as DesktopClientSettings from "./settings/DesktopClientSettings.ts";
 import * as DesktopSavedEnvironments from "./settings/DesktopSavedEnvironments.ts";
 import * as DesktopAppSettings from "./settings/DesktopAppSettings.ts";
 import * as DesktopPreReadyPlatform from "./app/DesktopPreReadyPlatform.ts";
+import * as DesktopCrashReporting from "./support/DesktopCrashReporting.ts";
+import * as DesktopSupportBundle from "./support/DesktopSupportBundle.ts";
 import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
 import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
+import * as DesktopComputerProvisioner from "./provisioning/DesktopComputerProvisioner.ts";
 import * as DesktopState from "./app/DesktopState.ts";
+import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
@@ -115,6 +134,7 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
 
 const electronLayer = Layer.mergeAll(
   ElectronApp.layer,
+  ElectronCrashReporter.layer,
   ElectronDialog.layer,
   ElectronMenu.layer,
   ElectronPowerMonitor.layer,
@@ -180,19 +200,95 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
+const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
+  Layer.provide(Socket.layerWebSocketConstructorGlobal),
+);
+
+// The local-daemon launch service resolves its target through the one
+// registry instance, so the registry is provided to (and re-exported by) the
+// merged control layer rather than merged beside it.
+const desktopCtoxControlLayer = Layer.mergeAll(
+  CtoxBusinessOsShell.layer,
+  CtoxDevAuth.layer(),
+  CtoxAppRail.layer(),
+  CtoxManagedLaunch.layer(),
+  CtoxLocalDaemonLaunch.layer(),
+  CtoxSshManagedLaunch.layer(),
+).pipe(
+  Layer.provideMerge(
+    CtoxInstanceRegistry.layer({
+      localDaemon: {
+        probe: (url, { signal }) =>
+          Electron.net
+            .fetch(url, { method: "GET", redirect: "error", signal })
+            .then((response) => ({
+              ok: response.ok,
+            })),
+      },
+    }),
+  ),
+  Layer.provideMerge(CtoxElectronSessions.layer),
+);
+
+const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
+  // Reuse both the registry and the exact password-prompt instance whose
+  // resolve IPC handler lives in desktopSshLayer.
+  Layer.provideMerge(desktopSshLayer),
+  Layer.provideMerge(desktopCtoxControlLayer),
+);
+
+const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
+const desktopCtoxFleetLayer = CtoxShellFleet.layer().pipe(
+  Layer.provideMerge(desktopCtoxControlLayer),
+);
+const desktopDecisionHubLayer = CtoxDecisionHubProvisioner.layer.pipe(
+  Layer.provideMerge(desktopRpcSessionLayer),
+  Layer.provideMerge(desktopBackendLayer),
+  Layer.provideMerge(desktopCtoxControlLayer),
+);
+
+// The support bundle reads the migration decision and the crash-reporter
+// state, so it hangs off the same graph the application menu resolves from;
+// the menu item and the renderer IPC method share this one instance.
+const desktopSupportLayer = DesktopSupportBundle.layer.pipe(
+  Layer.provideMerge(DesktopCrashReporting.layer),
+);
+
 const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
+  DesktopDeepLinkRouter.layer,
   DesktopShellEnvironment.layer,
+  desktopCtoxLayer,
+  desktopCtoxFleetLayer,
   desktopSshLayer,
+  desktopProvisioningLayer,
 ).pipe(
+  // provideMerge, not mergeAll: the application menu resolves the bundle
+  // service, and the IPC handler resolves the same instance from the
+  // re-exported context.
+  Layer.provideMerge(desktopSupportLayer),
+  Layer.provideMerge(desktopDecisionHubLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),
 );
 
+// The migration layer runs the pending legacy user-data import while it is
+// constructed, and DesktopClerk depends on it, so the import always completes
+// before the single-instance lock opens the profile.
+const desktopUserDataMigrationLayer = DesktopUserDataMigration.layer.pipe(
+  // The sync FileSystem keeps this construction free of macrotask yields so
+  // Electron's `ready` cannot fire before the Clerk bridge registers its
+  // privileged schemes (see syncFileSystemLayer).
+  Layer.provide(DesktopUserDataMigration.syncFileSystemLayer),
+  Layer.provideMerge(desktopEnvironmentLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
 const desktopClerkLayer = DesktopClerk.layer.pipe(
+  Layer.provideMerge(desktopUserDataMigrationLayer),
   Layer.provideMerge(desktopEnvironmentLayer),
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(ElectronApp.layer),

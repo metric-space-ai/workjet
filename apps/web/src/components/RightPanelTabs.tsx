@@ -85,12 +85,10 @@ export interface PullRequestTabStatus {
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Browser previews are only available in the T3 Code desktop app.",
-  terminal: "Terminal surfaces are only available from a project thread.",
+  browser: "Browser previews are only available in the Workjet desktop app.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
-  agents: "Agents are only available from a thread.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -108,11 +106,9 @@ const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
 /** One-line unavailability hints for the empty-state cards. */
 const SURFACE_UNAVAILABLE_HINTS = {
   browser: "Only available in the desktop app.",
-  terminal: "Available when a project is open.",
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
-  agents: "Available from a thread.",
 } as const;
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
@@ -154,18 +150,13 @@ function SurfaceMenuItem(props: {
  */
 function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
-  onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
-  onAddAgents: () => void;
   browserAvailable: boolean;
-  terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
-  agentsAvailable: boolean;
-  liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
@@ -179,16 +170,6 @@ function RightPanelEmptyState(props: {
       available: props.browserAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
       onClick: props.onAddBrowser,
-      badgeCount: 0,
-    },
-    {
-      label: "Terminal",
-      description: "Start a shell in this workspace.",
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
-      onClick: props.onAddTerminal,
       badgeCount: 0,
     },
     {
@@ -220,16 +201,6 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
       onClick: props.onAddPullRequest,
       badgeCount: 0,
-    },
-    {
-      label: "Agents",
-      description: "Follow subagents and workflows.",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-      onClick: props.onAddAgents,
-      badgeCount: props.liveAgentCount,
     },
   ] as const;
 
@@ -439,7 +410,7 @@ function surfaceTitle(
 }
 
 function PreviewFavicon({ capturedUrl, url }: { capturedUrl: string | null; url: string | null }) {
-  const publicProviderUrl = faviconUrlForOrigin(url, 32);
+  const publicProviderUrl = faviconUrlForOrigin(url);
   return (
     <FaviconImage
       sources={[capturedUrl, publicProviderUrl]}
@@ -695,14 +666,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     Browser
                   </SurfaceMenuItem>
                   <SurfaceMenuItem
-                    available={props.terminalAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.terminal}
-                    onClick={props.onAddTerminal}
-                  >
-                    <TerminalSquare />
-                    Terminal
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
                     available={props.filesAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.files}
                     onClick={props.onAddFiles}
@@ -726,14 +689,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <GitPullRequest />
                     Pull request
                   </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.agentsAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.agents}
-                    onClick={props.onAddAgents}
-                  >
-                    <Bot />
-                    Agents
-                  </SurfaceMenuItem>
                 </MenuPopup>
               </Menu>
             ) : null}
@@ -745,18 +700,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
-            onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
-            onAddAgents={props.onAddAgents}
             browserAvailable={props.browserAvailable}
-            terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
-            agentsAvailable={props.agentsAvailable}
-            liveAgentCount={props.liveAgentCount}
           />
         ) : (
           props.children

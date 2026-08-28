@@ -31,7 +31,7 @@ import {
   RefreshCwIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
@@ -40,10 +40,12 @@ import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hook
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
-  useEnvironments,
+  useBusinessOsScopedEnvironments,
   usePrimaryEnvironmentId,
   type EnvironmentPresentation,
 } from "../../state/environments";
+import { PiCodeIcon } from "../Icons";
+import { useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useEnvironmentSessionState } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -89,6 +91,11 @@ import {
   SettingsSection,
   useRelativeTimeTick,
 } from "./settingsLayout";
+import { WorkjetGatewayAccountsSectionView } from "./WorkjetGatewayAccounts";
+import { WorkjetGatewayPoolsSectionView } from "./WorkjetGatewayPools";
+import { WorkjetLlmRoutesSection } from "./WorkjetLlmRoutesSection";
+import { SessionImportSection } from "./SessionImportSection";
+import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
   buildProviderEnvironmentOptions,
   classifyProviderEnvironmentAccess,
@@ -118,6 +125,32 @@ function withoutProviderInstanceFavorites(
 const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
   provider: definition.value,
 }));
+
+/**
+ * A cached health claim ages badly: "Authenticated" from an hour ago survives
+ * an expired CLI login. Opening the page therefore re-probes, but navigation
+ * spam must not hammer the harness CLIs, so a per-environment cooldown gates
+ * the automatic probe. The manual refresh button is never gated.
+ */
+export const PROVIDER_AUTO_REFRESH_COOLDOWN_MS = 30_000;
+
+/**
+ * Last automatic probe per environment. Module-level so it survives the
+ * remount that every settings navigation performs — that remount is exactly
+ * what the cooldown has to absorb. Exported so tests can start from a known
+ * state; nothing else writes it.
+ */
+export const providerAutoRefreshTracker = new Map<EnvironmentId, number>();
+
+export function shouldAutoRefreshProviders(
+  lastAutoRefreshAtMs: number | undefined,
+  nowMs: number,
+): boolean {
+  return (
+    lastAutoRefreshAtMs === undefined ||
+    nowMs - lastAutoRefreshAtMs >= PROVIDER_AUTO_REFRESH_COOLDOWN_MS
+  );
+}
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
   useRelativeTimeTick();
@@ -155,7 +188,7 @@ function providerEnvironmentIcon(environment: EnvironmentPresentation) {
 
 function providerEnvironmentDetail(environment: EnvironmentPresentation): string {
   if (environment.entry.target._tag === "PrimaryConnectionTarget") return "Primary device";
-  if (environment.relayManaged) return "T3 Connect";
+  if (environment.relayManaged) return "Workjet Connect";
   if (environment.entry.target._tag === "SshConnectionTarget") return "SSH";
   if (isDesktopLocalConnectionTarget(environment.entry.target)) return "Local device";
   return environment.displayUrl ?? "Remote device";
@@ -182,14 +215,35 @@ function EnvironmentUnavailableRow({
   // No spinner: this state can persist indefinitely for a wedged device, and a
   // continuously repainting animation would run the whole time.
   return (
-    <SettingsSection title="Providers">
+    // Titled like the section it stands in for, so the placeholder never
+    // reads as a different page than the loaded state.
+    <SettingsSection title="Harness runtimes">
       <SettingsRow title={title} description={description} />
     </SettingsSection>
   );
 }
 
-export function ProviderSettingsPanel() {
-  const { environments, isReady } = useEnvironments();
+/**
+ * Which half of this surface to render.
+ *
+ * Harness runtimes and LLM accounts were merged onto one "Providers" page on
+ * the theory that one surface is simpler. In practice the page held two
+ * unrelated things behind a name that read as one, and the LLM accounts —
+ * where Kimi, GLM, MiniMax and the rest are added — sat below the fold with
+ * no menu entry of their own. They were, in the owner's words, impossible to
+ * find. So the page splits: harnesses are CLI runtimes, models are the LLM
+ * accounts, and each gets its own entry in the settings sidebar.
+ *
+ * The device picker stays on both, because both are per-environment.
+ */
+export type ProviderSettingsSections = "harnesses" | "models";
+
+export function ProviderSettingsPanel({
+  sections = "harnesses",
+}: {
+  readonly sections?: ProviderSettingsSections;
+} = {}) {
+  const { environments, isReady } = useBusinessOsScopedEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const options = useMemo(
     () => buildProviderEnvironmentOptions(environments, primaryEnvironmentId),
@@ -214,7 +268,7 @@ export function ProviderSettingsPanel() {
   return (
     <SettingsPageContainer>
       {!onlyPrimaryDevice ? (
-        <SettingsSection title="Devices">
+        <SettingsSection title="Environments">
           {options.length === 0 ? (
             // The catalog hydrates asynchronously, so an empty list before it is
             // ready means "not loaded yet", not "nothing is connected".
@@ -271,13 +325,64 @@ export function ProviderSettingsPanel() {
         </SettingsSection>
       ) : null}
 
-      {selectedEnvironment ? (
+      {sections === "harnesses" && selectedEnvironment ? (
         <SelectedEnvironmentProviderSettings
           key={selectedEnvironment.environmentId}
           environment={selectedEnvironment}
         />
       ) : null}
+
+      {sections === "models" ? (
+        <WorkjetGatewayAccountsSection environmentId={effectiveEnvironmentId} />
+      ) : null}
     </SettingsPageContainer>
+  );
+}
+
+export function WorkjetGatewayAccountsSection({
+  environmentId,
+}: {
+  readonly environmentId: EnvironmentId | null;
+}) {
+  if (environmentId === null) {
+    return (
+      <SettingsSection title="Model access">
+        <SettingsRow
+          title="No Code computer assigned"
+          description="Assign a Code computer to the active Business OS before configuring models. Data from another instance is never used as a fallback."
+        />
+      </SettingsSection>
+    );
+  }
+  return <ScopedWorkjetGatewayAccountsSection key={environmentId} environmentId={environmentId} />;
+}
+
+function ScopedWorkjetGatewayAccountsSection({
+  environmentId,
+}: {
+  readonly environmentId: EnvironmentId;
+}) {
+  const gateway = useWorkjetGatewaySection(environmentId);
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  return (
+    <>
+      <WorkjetGatewayAccountsSectionView {...gateway} />
+      {/*
+        Pools, health, and model discovery sit beside the account list rather
+        than inside it: they describe how the gateway uses those accounts, and
+        the account list stays the place where accounts are added.
+      */}
+      <WorkjetGatewayPoolsSectionView {...gateway.pools} />
+      {/* Routes complete the Models page: accounts → pools → the routes
+          workers reference. They lived as tab four inside the Worker section,
+          away from the accounts they point at. */}
+      <WorkjetLlmRoutesSection
+        configuration={settings.workjet}
+        catalog={gateway.catalog ?? null}
+        onChange={(workjet) => updateSettings({ workjet })}
+      />
+    </>
   );
 }
 
@@ -371,6 +476,15 @@ export function EnvironmentProviderSettings({
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
+  // Live Workjet harness probe of the selected environment. Pi Code has no
+  // chat driver (no instance card), but it IS a harness runtime — Workjet
+  // workers run on it — so the page reports its real installed state instead
+  // of omitting it (operator: "pi code fehlt bei den harnesses").
+  const workjetHarnessProbe = useEnvironmentQuery(
+    serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
+  );
+  const piCodeProbe =
+    workjetHarnessProbe.data?.harnesses.find((entry) => entry.harness === "pi-code") ?? null;
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -440,6 +554,18 @@ export function EnvironmentProviderSettings({
       }
     })();
   }, [environmentId, refreshServerProviders]);
+
+  useEffect(() => {
+    // A read-only session cannot act on the result and must not spend the
+    // remote host's probe budget on a page view.
+    if (readOnly) return;
+    const nowMs = Date.now();
+    if (!shouldAutoRefreshProviders(providerAutoRefreshTracker.get(environmentId), nowMs)) {
+      return;
+    }
+    providerAutoRefreshTracker.set(environmentId, nowMs);
+    refreshProviders();
+  }, [environmentId, readOnly, refreshProviders]);
 
   const runProviderUpdate = useCallback(
     async (candidate: ProviderUpdateCandidate) => {
@@ -660,7 +786,10 @@ export function EnvironmentProviderSettings({
   return (
     <>
       <SettingsSection
-        {...searchableSetting("providers")}
+        id={searchableSetting("harnesses").id}
+        // Named for what these actually are — harness CLI runtimes — so the
+        // gateway account section below can never read as a rival "providers".
+        title="Harness runtimes"
         headerAction={
           <div className="flex items-center gap-1.5">
             <ProviderLastChecked lastCheckedAt={lastCheckedAt} />
@@ -832,6 +961,10 @@ export function EnvironmentProviderSettings({
                 instance={row.instance}
                 driverOption={driverOption}
                 liveProvider={liveProvider}
+                // This list IS the harness runtimes section, so every card here
+                // describes a CLI runtime and never a login. LLM account state
+                // lives on Settings → Models.
+                runtimeOnly
                 isExpanded={openInstanceDetails[row.instanceId] ?? false}
                 onExpandedChange={(open) =>
                   setOpenInstanceDetails((existing) => ({
@@ -886,8 +1019,66 @@ export function EnvironmentProviderSettings({
               />
             );
           })}
+          {/* Pi Code has no chat-driver instance yet, but it IS a harness
+              runtime this app can run Workjet workers on — so it appears
+              here like the other runtimes: mark, status dot, version, and
+              the same "Installed · checked" line. */}
+          {/* Same silhouette as ProviderInstanceCard's shell — the bordered
+              card broke the list rhythm (Befund F12); missing toggle/chevron
+              stay deliberate, there is no chat driver to configure. */}
+          <div className="rounded-xl transition-colors hover:bg-muted/20">
+            <div className="px-3 py-3 sm:px-4">
+              <div className="flex items-center gap-2">
+                <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+                  <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
+                  <span
+                    className={cn(
+                      "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
+                      // Green = probed available, muted = not probed yet,
+                      // red = probe answered "not available" — two greys made
+                      // failure indistinguishable from unknown (Befund K-B16).
+                      piCodeProbe?.availability === "available"
+                        ? "bg-emerald-500"
+                        : piCodeProbe === null
+                          ? "bg-muted-foreground/40"
+                          : "bg-red-500/80",
+                    )}
+                    aria-hidden
+                  />
+                </span>
+                <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
+                  Pi Code
+                </h3>
+                {piCodeProbe?.availability === "available" &&
+                "version" in piCodeProbe &&
+                piCodeProbe.version ? (
+                  <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+                    v{piCodeProbe.version}
+                  </code>
+                ) : null}
+              </div>
+              <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
+                {piCodeProbe === null
+                  ? "Checking…"
+                  : piCodeProbe.availability === "available"
+                    ? "Installed · available to Workjet workers"
+                    : "Not installed on this machine"}
+              </p>
+            </div>
+          </div>
         </div>
       </SettingsSection>
+
+      {readOnly ? (
+        <SettingsSection title="Import sessions">
+          <SettingsRow
+            title="Import unavailable"
+            description="This Code computer does not grant permission to inspect or copy local Codex and Claude Code sessions. No session metadata has been loaded."
+          />
+        </SettingsSection>
+      ) : (
+        <SessionImportSection environmentId={environmentId} readOnly={false} />
+      )}
 
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog

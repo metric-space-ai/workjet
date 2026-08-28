@@ -1,4 +1,5 @@
 import type {
+  CtoxShellFleetRolloutStatus,
   DesktopBridge,
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
@@ -25,6 +26,59 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
     throw new Error(message);
   }
   return result as Awaited<ReturnType<DesktopBridge["ensureSshEnvironment"]>>;
+}
+
+const shellFleetRolloutPhases = new Set([
+  "idle",
+  "inventory",
+  "local_canary",
+  "platform_canary",
+  "wave",
+  "observing",
+  "completed",
+  "paused",
+  "failed",
+]);
+
+function isBoundedString(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim() === value &&
+    value.length > 0 &&
+    value.length <= maximum
+  );
+}
+
+function isIdList(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 1_000 &&
+    value.every((entry) => isBoundedString(entry, 256))
+  );
+}
+
+function isShellFleetRolloutStatus(value: unknown): value is CtoxShellFleetRolloutStatus {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const status = value as Record<string, unknown>;
+  const nullableString = (candidate: unknown, maximum: number) =>
+    candidate === null || isBoundedString(candidate, maximum);
+  return (
+    typeof status.phase === "string" &&
+    shellFleetRolloutPhases.has(status.phase) &&
+    nullableString(status.releaseVersion, 128) &&
+    nullableString(status.startedAt, 64) &&
+    isBoundedString(status.updatedAt, 64) &&
+    Number.isInteger(status.currentWave) &&
+    Number(status.currentWave) >= 0 &&
+    Number.isInteger(status.totalWaves) &&
+    Number(status.totalWaves) >= 0 &&
+    isIdList(status.instanceIds) &&
+    isIdList(status.completedInstanceIds) &&
+    nullableString(status.failedInstanceId, 256) &&
+    nullableString(status.errorCode, 128) &&
+    nullableString(status.pauseReason, 256) &&
+    nullableString(status.pausedAt, 64)
+  );
 }
 
 contextBridge.exposeInMainWorld("desktopBridge", {
@@ -91,6 +145,25 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   setTailscaleServeEnabled: (input) =>
     ipcRenderer.invoke(IpcChannels.SET_TAILSCALE_SERVE_ENABLED_CHANNEL, input),
   getAdvertisedEndpoints: () => ipcRenderer.invoke(IpcChannels.GET_ADVERTISED_ENDPOINTS_CHANNEL),
+  getUserDataMigrationOffer: () =>
+    ipcRenderer.invoke(IpcChannels.GET_USER_DATA_MIGRATION_OFFER_CHANNEL),
+  acceptUserDataMigration: () => ipcRenderer.invoke(IpcChannels.ACCEPT_USER_DATA_MIGRATION_CHANNEL),
+  declineUserDataMigration: () =>
+    ipcRenderer.invoke(IpcChannels.DECLINE_USER_DATA_MIGRATION_CHANNEL),
+  createSupportBundle: () => ipcRenderer.invoke(IpcChannels.CREATE_SUPPORT_BUNDLE_CHANNEL),
+  takePendingDeepLinks: () => ipcRenderer.invoke(IpcChannels.TAKE_PENDING_DEEP_LINKS_CHANNEL),
+  onDeepLinkPending: (listener: () => void) => {
+    // Payload-free by design: the listener drains through
+    // takePendingDeepLinks, so the signal can never duplicate a link.
+    const wrappedListener = () => {
+      listener();
+    };
+
+    ipcRenderer.on(IpcChannels.DEEP_LINK_PENDING_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.DEEP_LINK_PENDING_CHANNEL, wrappedListener);
+    };
+  },
   getWslState: () => ipcRenderer.invoke(IpcChannels.GET_WSL_STATE_CHANNEL),
   setWslBackendEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_WSL_BACKEND_ENABLED_CHANNEL, enabled),
@@ -135,6 +208,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   checkForUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_CHECK_CHANNEL),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_DOWNLOAD_CHANNEL),
   installUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL_CHANNEL),
+  inspectProvisioningHostKey: (target) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_INSPECT_HOST_KEY_CHANNEL, { target }),
+  preflightProvisioningTarget: (input) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_PREFLIGHT_CHANNEL, input),
+  startProvisioningOperation: (input) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_START_CHANNEL, input),
+  getProvisioningOperation: (operationId) =>
+    ipcRenderer.invoke(IpcChannels.PROVISIONING_GET_CHANNEL, { operationId }),
   onUpdateState: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
       if (typeof state !== "object" || state === null) return;
@@ -145,6 +226,96 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
     };
+  },
+  ctox: {
+    refresh: () => ipcRenderer.invoke(IpcChannels.CTOX_REFRESH_CHANNEL),
+    login: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGIN_CHANNEL),
+    logout: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGOUT_CHANNEL),
+    provisionDecisionHub: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_PROVISION_DECISION_HUB_CHANNEL, input),
+    disconnectDecisionHub: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_DISCONNECT_DECISION_HUB_CHANNEL, input),
+    importInvite: (invite) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_INVITE_CHANNEL, { invite }),
+    importManualPairing: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_MANUAL_PAIRING_CHANNEL, input),
+    removePairedInstance: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL, { instanceId }),
+    resolveInstanceAuthority: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_RESOLVE_INSTANCE_AUTHORITY_CHANNEL, { instanceId }),
+    addSshManagedInstance: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_ADD_SSH_MANAGED_INSTANCE_CHANNEL, input),
+    removeSshManagedInstance: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL, { instanceId }),
+    enterBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL),
+    exitBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL),
+    activate: (instanceId, bounds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
+    suspend: () => ipcRenderer.invoke(IpcChannels.CTOX_SUSPEND_CHANNEL),
+    deactivate: () => ipcRenderer.invoke(IpcChannels.CTOX_DEACTIVATE_CHANNEL),
+    setGuestBounds: (bounds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SET_GUEST_BOUNDS_CHANNEL, { bounds }),
+    listApps: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_LIST_APPS_CHANNEL, { instanceId }),
+    requestDeviceControl: (instanceId, request) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_DEVICE_CONTROL_CHANNEL, {
+        instanceId,
+        request,
+      }),
+    openApp: (instanceId, moduleId, bounds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_OPEN_APP_CHANNEL, { instanceId, moduleId, bounds }),
+    openSettings: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_OPEN_SETTINGS_CHANNEL, { instanceId }),
+    setAppDocked: (instanceId, moduleId, docked) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SET_APP_DOCKED_CHANNEL, {
+        instanceId,
+        moduleId,
+        docked,
+      }),
+    setHostTheme: (theme) => ipcRenderer.invoke(IpcChannels.CTOX_SET_HOST_THEME_CHANNEL, theme),
+    getShellFleetInventory: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_INVENTORY_CHANNEL),
+    runShellFleetAction: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ACTION_CHANNEL, input),
+    pauseShellFleetInstance: (input) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_PAUSE_CHANNEL, input),
+    resumeShellFleetInstance: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_RESUME_CHANNEL, { instanceId }),
+    startShellFleetRollout: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_START_CHANNEL),
+    getShellFleetRolloutStatus: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL),
+    resumeShellFleetRollout: () =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_RESUME_CHANNEL),
+    onShellFleetRolloutStatus: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, status: unknown) => {
+        if (!isShellFleetRolloutStatus(status)) return;
+        listener(status);
+      };
+      ipcRenderer.on(IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(
+          IpcChannels.CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT,
+          wrappedListener,
+        );
+    },
+    onGuestState: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        if (typeof payload !== "object" || payload === null) return;
+        const { instanceId, state } = payload as {
+          readonly instanceId?: unknown;
+          readonly state?: unknown;
+        };
+        if (typeof instanceId !== "string" || instanceId === "") return;
+        if (state !== "none" && state !== "loading" && state !== "warm") return;
+        listener({ instanceId, state });
+      };
+
+      ipcRenderer.on(IpcChannels.CTOX_GUEST_STATE_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.CTOX_GUEST_STATE_CHANNEL, wrappedListener);
+      };
+    },
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

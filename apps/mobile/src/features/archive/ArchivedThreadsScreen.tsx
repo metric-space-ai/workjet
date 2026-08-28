@@ -57,6 +57,8 @@ type ArchivedThreadListItem =
     };
 
 function ArchivedThreadsHeader(props: {
+  readonly allowAllEnvironments: boolean;
+  readonly allEnvironmentsLabel?: string;
   readonly environments: ReadonlyArray<ArchivedThreadsHeaderEnvironment>;
   readonly searchQuery: string;
   readonly selectedEnvironmentId: EnvironmentId | null;
@@ -69,7 +71,9 @@ function ArchivedThreadsHeader(props: {
   const { width } = useWindowDimensions();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const hasCustomFilter = props.selectedEnvironmentId !== null || props.sortOrder !== "newest";
+  const hasCustomFilter =
+    (props.allowAllEnvironments && props.selectedEnvironmentId !== null) ||
+    props.sortOrder !== "newest";
   const searchIconColor = useThemeColor("--color-icon");
   const searchTextColor = useThemeColor("--color-foreground");
   const usesNativeChrome = Platform.OS === "ios";
@@ -79,13 +83,17 @@ function ArchivedThreadsHeader(props: {
     () => [
       {
         id: "environment",
-        title: "Environment",
+        title: "Machine",
         subactions: [
-          {
-            id: "environment:all",
-            title: "All environments",
-            state: props.selectedEnvironmentId === null ? ("on" as const) : undefined,
-          },
+          ...(props.allowAllEnvironments
+            ? [
+                {
+                  id: "environment:all",
+                  title: props.allEnvironmentsLabel ?? "All machines",
+                  state: props.selectedEnvironmentId === null ? ("on" as const) : undefined,
+                },
+              ]
+            : []),
           ...props.environments.map((environment) => ({
             id: `environment:${environment.environmentId}`,
             title: environment.label,
@@ -113,7 +121,13 @@ function ArchivedThreadsHeader(props: {
         ],
       },
     ],
-    [props.environments, props.selectedEnvironmentId, props.sortOrder],
+    [
+      props.allowAllEnvironments,
+      props.allEnvironmentsLabel,
+      props.environments,
+      props.selectedEnvironmentId,
+      props.sortOrder,
+    ],
   );
   const handleAndroidFilterAction = useCallback(
     (event: { nativeEvent: { event: string } }) => {
@@ -207,14 +221,18 @@ function ArchivedThreadsHeader(props: {
     items: [
       {
         type: "submenu" as const,
-        title: "Environment",
+        title: "Machine",
         items: [
-          {
-            type: "action" as const,
-            title: "All environments",
-            state: props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
-            onPress: () => props.onEnvironmentChange(null),
-          },
+          ...(props.allowAllEnvironments
+            ? [
+                {
+                  type: "action" as const,
+                  title: props.allEnvironmentsLabel ?? "All machines",
+                  state: props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
+                  onPress: () => props.onEnvironmentChange(null),
+                },
+              ]
+            : []),
           ...props.environments.map((environment) => ({
             type: "action" as const,
             title: environment.label,
@@ -319,14 +337,18 @@ function ArchivedThreadsHeader(props: {
             separateBackground
             title="Archived thread options"
           >
-            <NativeHeaderToolbar.Menu title="Environment">
-              <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.selectedEnvironmentId === null}
-                onPress={() => props.onEnvironmentChange(null)}
-              >
-                <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
+            <NativeHeaderToolbar.Menu title="Machine">
+              <NativeHeaderToolbar.Label>Machine</NativeHeaderToolbar.Label>
+              {props.allowAllEnvironments ? (
+                <NativeHeaderToolbar.MenuAction
+                  isOn={props.selectedEnvironmentId === null}
+                  onPress={() => props.onEnvironmentChange(null)}
+                >
+                  <NativeHeaderToolbar.Label>
+                    {props.allEnvironmentsLabel ?? "All machines"}
+                  </NativeHeaderToolbar.Label>
+                </NativeHeaderToolbar.MenuAction>
+              ) : null}
               {props.environments.map((environment) => (
                 <NativeHeaderToolbar.MenuAction
                   key={environment.environmentId}
@@ -496,6 +518,8 @@ function ArchiveError(props: { readonly message: string; readonly onRetry: () =>
 }
 
 export function ArchivedThreadsScreen(props: {
+  readonly allowAllEnvironments: boolean;
+  readonly allEnvironmentsLabel?: string;
   readonly environments: ReadonlyArray<ArchivedThreadsHeaderEnvironment>;
   readonly error: string | null;
   readonly groups: ReadonlyArray<ArchivedThreadGroup>;
@@ -557,7 +581,9 @@ export function ArchivedThreadsScreen(props: {
     }
   }, []);
   const isInitialLoad = props.isLoading && props.groups.length === 0 && props.error === null;
-  const isFiltered = props.searchQuery.trim().length > 0 || props.selectedEnvironmentId !== null;
+  const isFiltered =
+    props.searchQuery.trim().length > 0 ||
+    (props.allowAllEnvironments && props.selectedEnvironmentId !== null);
   const renderListItem = useCallback(
     ({ item }: { item: ArchivedThreadListItem }) => {
       if (item.kind === "project") {
@@ -615,6 +641,8 @@ export function ArchivedThreadsScreen(props: {
   return (
     <View className="flex-1 bg-sheet">
       <ArchivedThreadsHeader
+        allowAllEnvironments={props.allowAllEnvironments}
+        allEnvironmentsLabel={props.allEnvironmentsLabel}
         environments={props.environments}
         searchQuery={props.searchQuery}
         onEnvironmentChange={props.onEnvironmentChange}

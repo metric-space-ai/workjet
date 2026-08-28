@@ -15,32 +15,46 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  useBusinessOsCodeScope,
+} from "../businessOsCodeScope";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
   const threadRef = Route.useParams({
     select: (params) => resolveThreadRouteRef(params),
   });
+  const businessOsCodeScope = useBusinessOsCodeScope();
+  const authorizedThreadRef =
+    threadRef !== null &&
+    businessOsCodeScopeContainsEnvironment(businessOsCodeScope, threadRef.environmentId)
+      ? threadRef
+      : null;
   const shell = useEnvironmentQuery(
-    threadRef === null ? null : environmentShell.stateAtom(threadRef.environmentId),
+    authorizedThreadRef === null
+      ? null
+      : environmentShell.stateAtom(authorizedThreadRef.environmentId),
   );
-  const serverThreadShell = useThreadShell(threadRef);
-  const serverThreadDetail = useThreadDetail(threadRef);
-  const serverThreadStatus = useThreadStatus(threadRef);
-  const environmentThreadRefs = useEnvironmentThreadRefs(threadRef?.environmentId ?? null);
+  const serverThreadShell = useThreadShell(authorizedThreadRef);
+  const serverThreadDetail = useThreadDetail(authorizedThreadRef);
+  const serverThreadStatus = useThreadStatus(authorizedThreadRef);
+  const environmentThreadRefs = useEnvironmentThreadRefs(
+    authorizedThreadRef?.environmentId ?? null,
+  );
   const bootstrapComplete = shell.data?.snapshot._tag === "Some";
   const environmentHasServerThreads = environmentThreadRefs.length > 0;
   const draftThreadExists = useComposerDraftStore((store) =>
-    threadRef ? store.getDraftThreadByRef(threadRef) !== null : false,
+    authorizedThreadRef ? store.getDraftThreadByRef(authorizedThreadRef) !== null : false,
   );
   const draftThread = useComposerDraftStore((store) =>
-    threadRef ? store.getDraftThreadByRef(threadRef) : null,
+    authorizedThreadRef ? store.getDraftThreadByRef(authorizedThreadRef) : null,
   );
   const environmentHasDraftThreads = useComposerDraftStore((store) => {
-    if (!threadRef) {
+    if (!authorizedThreadRef) {
       return false;
     }
-    return store.hasDraftThreadsInEnvironment(threadRef.environmentId);
+    return store.hasDraftThreadsInEnvironment(authorizedThreadRef.environmentId);
   });
   const renderState = resolveThreadRouteRenderState({
     bootstrapComplete,
@@ -58,23 +72,33 @@ function ChatThreadRouteView() {
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
 
   useEffect(() => {
-    if (!threadRef || !bootstrapComplete) {
+    if (!authorizedThreadRef || !bootstrapComplete) {
       return;
     }
 
     if (renderState === "missing" && environmentHasAnyThreads) {
       void navigate({ to: "/", replace: true });
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, threadRef]);
+  }, [authorizedThreadRef, bootstrapComplete, environmentHasAnyThreads, navigate, renderState]);
 
   useEffect(() => {
-    if (!threadRef || !serverThreadStarted || !draftThread) {
+    if (
+      threadRef !== null &&
+      authorizedThreadRef === null &&
+      businessOsCodeScope.phase !== "resolving"
+    ) {
+      void navigate({ to: "/", replace: true });
+    }
+  }, [authorizedThreadRef, businessOsCodeScope.phase, navigate, threadRef]);
+
+  useEffect(() => {
+    if (!authorizedThreadRef || !serverThreadStarted || !draftThread) {
       return;
     }
-    finalizePromotedDraftThreadByRef(threadRef);
-  }, [draftThread, serverThreadStarted, threadRef]);
+    finalizePromotedDraftThreadByRef(authorizedThreadRef);
+  }, [authorizedThreadRef, draftThread, serverThreadStarted]);
 
-  if (!threadRef) {
+  if (!authorizedThreadRef) {
     return null;
   }
 
@@ -82,8 +106,8 @@ function ChatThreadRouteView() {
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       {renderState === "ready" || (renderState === "loading" && serverThreadShell !== null) ? (
         <ChatView
-          environmentId={threadRef.environmentId}
-          threadId={threadRef.threadId}
+          environmentId={authorizedThreadRef.environmentId}
+          threadId={authorizedThreadRef.threadId}
           routeKind="server"
           threadSyncPhase={threadSyncPhase}
         />

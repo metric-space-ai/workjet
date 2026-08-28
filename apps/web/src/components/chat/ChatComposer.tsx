@@ -6,16 +6,23 @@ import type {
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ResolvedKeybindingsConfig,
-  RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
+  WorkjetThreadRole,
 } from "@t3tools/contracts";
 import {
+  composeWorkjetWorkerManagedInstructions,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  normalizeWorkjetThreadConfig,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type WorkjetGatewayModelSummary,
+  WorkjetConnectionId,
+  type WorkjetCapabilityBinding,
+  type WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -61,6 +68,9 @@ import {
   usePromptStashStore,
   type PromptStashEntry,
 } from "../../promptStashStore";
+import { providerInstanceIdForHarness } from "./ComposerWorkerControl";
+import { workerReasoningSelections } from "./workerReasoning";
+import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
@@ -88,12 +98,30 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { ComposerFooterControls, composerFooterRowCountForWidth } from "./ComposerFooterControls";
+import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
+import {
+  COMPOSER_COMPUTER_LOCKED_REASON,
+  ComposerComputerControl,
+  ComposerManualTargetControls,
+  ComposerSystemPromptControl,
+  ComposerWorkjetCompactMenuContent,
+  GREPPY_CAPABILITY_ID,
+  harnessForProviderInstanceId,
+  WorkjetCapabilityMenu,
+  type WorkjetSelectableRole,
+} from "./workjetSurfaces";
+import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
-import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  useBusinessOsCodeScope,
+} from "../../businessOsCodeScope";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
   getComposerPromptInjectionState,
@@ -105,7 +133,6 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
-import { Separator } from "../ui/separator";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -188,20 +215,9 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
-import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import {
-  BotIcon,
-  CircleAlertIcon,
-  PencilRulerIcon,
-  type LucideIcon,
-  LockIcon,
-  LockOpenIcon,
-  PenLineIcon,
-  SparklesIcon,
-  XIcon,
-} from "lucide-react";
+import { CircleAlertIcon, XIcon } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -227,33 +243,6 @@ import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
-const runtimeModeConfig: Record<
-  RuntimeMode,
-  { label: string; description: string; icon: LucideIcon }
-> = {
-  "approval-required": {
-    label: "Supervised",
-    description: "Ask before commands and file changes.",
-    icon: LockIcon,
-  },
-  "auto-accept-edits": {
-    label: "Auto-accept edits",
-    description: "Auto-approve edits, ask before other actions.",
-    icon: PenLineIcon,
-  },
-  auto: {
-    label: "Auto",
-    description: "Supported providers approve routine actions; others still ask.",
-    icon: SparklesIcon,
-  },
-  "full-access": {
-    label: "Full access",
-    description: "Allow commands and edits without prompts.",
-    icon: LockOpenIcon,
-  },
-};
-
-const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="popover-popup"]',
   '[data-slot="menu-popup"]',
@@ -294,102 +283,8 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
   return element.closest(COMPOSER_FLOATING_LAYER_SELECTOR) !== null;
 }
 
-const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
-  showInteractionModeToggle: boolean;
-  interactionMode: ProviderInteractionMode;
-  runtimeMode: RuntimeMode;
-  onToggleInteractionMode: () => void;
-  onRuntimeModeChange: (mode: RuntimeMode) => void;
-}) {
-  const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
-  const RuntimeModeIcon = runtimeModeOption.icon;
-  const interactionModeTooltip =
-    props.interactionMode === "plan"
-      ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode";
-
-  const interactionModeToggle = props.showInteractionModeToggle ? (
-    <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComposerControl
-              className={cn(
-                "shrink-0 whitespace-nowrap",
-                props.interactionMode === "plan"
-                  ? "bg-accent text-accent-foreground hover:bg-accent/80"
-                  : "text-secondary-label hover:text-foreground",
-              )}
-              type="button"
-              onClick={props.onToggleInteractionMode}
-              aria-label={interactionModeTooltip}
-            />
-          }
-        >
-          {props.interactionMode === "plan" ? (
-            <ComposerControlIcon icon={PencilRulerIcon} className="text-current opacity-100" />
-          ) : (
-            <ComposerControlIcon icon={BotIcon} opticalSize="large" />
-          )}
-          <span className="sr-only sm:not-sr-only">
-            {props.interactionMode === "plan" ? "Plan" : "Build"}
-          </span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
-      </Tooltip>
-    </>
-  ) : null;
-
-  return (
-    <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-
-      <Tooltip>
-        <Select
-          value={props.runtimeMode}
-          onValueChange={(value) => props.onRuntimeModeChange(value!)}
-        >
-          <TooltipTrigger
-            render={<ComposerSelectControl className="font-medium" aria-label="Runtime mode" />}
-          >
-            <ComposerControlIcon icon={RuntimeModeIcon} />
-            <SelectValue>{runtimeModeOption.label}</SelectValue>
-          </TooltipTrigger>
-          <SelectPopup alignItemWithTrigger={false}>
-            {runtimeModeOptions.map((mode) => {
-              const option = runtimeModeConfig[mode];
-              const OptionIcon = option.icon;
-              return (
-                <SelectItem key={mode} value={mode} hideIndicator className="min-w-64 py-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                        <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                        {option.label}
-                      </span>
-                      <span className="text-muted-foreground text-xs leading-4">
-                        {option.description}
-                      </span>
-                    </div>
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
-      </Tooltip>
-
-      {interactionModeToggle}
-    </>
-  );
-});
-
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
-  activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
-  activeThreadProviderDisplayName: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -413,12 +308,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          providerDisplayName={props.activeThreadProviderDisplayName}
-        />
-      ) : null}
       {props.isPreparingWorktree ? (
         <span className="text-secondary-label text-xs">Preparing worktree...</span>
       ) : null}
@@ -538,9 +427,27 @@ export interface ChatComposerProps {
   showPlanFollowUpPrompt: boolean;
   activeProposedPlan: Thread["proposedPlans"][number] | null;
 
-  // Mode
-  runtimeMode: RuntimeMode;
+  // Mode / Workjet
   interactionMode: ProviderInteractionMode;
+  /**
+   * The current thread's Workjet role, or `null` on a draft thread that has no
+   * server-side configuration yet. It drives the `Code | Orchestrator` control,
+   * which sits BESIDE the provider-specific Plan/Build toggle.
+   */
+  workjetRole: WorkjetThreadRole | null;
+  workjetGreppyEnabled: boolean | null;
+  /**
+   * The "Send to worker" affordance, supplied only for an ORCHESTRATOR thread.
+   * The composer owns the slot, not the decision: role, recipients and the
+   * mailbox RPCs all live with the caller.
+   *
+   * It is a RENDER function rather than a node because only the composer knows
+   * whether the footer has collapsed: the full footer gets the labelled
+   * control, the compact footer the icon-only one.
+   */
+  workjetSendToWorkerControl?: (options: { readonly compact: boolean }) => ReactNode;
+  workjetCapabilityBusy: boolean;
+  workjetCapabilityDisabled: boolean;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -587,8 +494,36 @@ export interface ChatComposerProps {
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
-  handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  onWorkjetGreppyEnabledChange: (enabled: boolean) => void;
+  /** Toggles any capability the host can activate, not only Greppy. */
+  onWorkjetCapabilityEnabledChange?: ((capabilityId: string, enabled: boolean) => void) | undefined;
+  /**
+   * Sets the thread's capability list and/or managed instructions in ONE
+   * dispatch (worker-bundle apply, custom system prompt).
+   */
+  onWorkjetConfigApply?:
+    | ((input: {
+        readonly capabilityIds?: ReadonlyArray<string>;
+        readonly managedInstructions?: string;
+        readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
+      }) => void)
+    | undefined;
+  workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
+  workjetCapabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding> | undefined;
+  /** The thread's managed instructions, `null` on a draft thread. */
+  workjetManagedInstructions: string | null;
+  /**
+   * Environments the current DRAFT can move to (same logical project). A
+   * computer whose environment is not in this list renders as unavailable for
+   * this project. Device pairing is a separate Business OS relation.
+   */
+  selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  /** Moves a draft to another environment; the caller guards started threads. */
+  onDraftEnvironmentChange?: ((environmentId: EnvironmentId) => void) | undefined;
+  onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
+  /** Routes to Settings → Workjet; the composer never hosts a second surface. */
+  onOpenWorkjetSettings: () => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -631,8 +566,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     respondingRequestIds,
     showPlanFollowUpPrompt,
     activeProposedPlan,
-    runtimeMode,
     interactionMode,
+    workjetRole,
+    workjetGreppyEnabled,
+    workjetSendToWorkerControl,
+    workjetCapabilityBusy,
+    workjetCapabilityDisabled,
     lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
@@ -659,14 +598,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onProviderModelSelect,
     getModelDisabledReason,
     toggleInteractionMode,
-    handleRuntimeModeChange,
     handleInteractionModeChange,
+    onWorkjetGreppyEnabledChange,
+    onWorkjetCapabilityEnabledChange,
+    onWorkjetConfigApply,
+    workjetEnabledCapabilityIds,
+    workjetCapabilityBindings,
+    workjetManagedInstructions,
+    selectableEnvironmentIds,
+    onDraftEnvironmentChange,
+    onWorkjetRoleChange,
+    onOpenWorkjetSettings,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
     onExpandImage,
   } = props;
-  const isSendDisabled = sendDisabledReason !== null;
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -932,6 +879,609 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Composer-local state
   // ------------------------------------------------------------------
+  /**
+   * Saved Workjet workers, offered as the bar's leftmost choice. `null` is
+   * manual — the individual model and effort controls apply, exactly as
+   * before — so a setup with no saved workers behaves as it always has.
+   * `settings.workjet` is required-with-default in the contract, so no
+   * optional chain: the one at the footer never had one either.
+   */
+  const businessOsCodeScope = useBusinessOsCodeScope();
+  const workjetComputers = useMemo(
+    () =>
+      settings.workjet.computers.filter((computer) =>
+        businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId),
+      ),
+    [businessOsCodeScope, settings.workjet.computers],
+  );
+  const scopedComputerIds = useMemo(
+    () => new Set(workjetComputers.map((computer) => computer.id)),
+    [workjetComputers],
+  );
+  const workjetWorkers = useMemo(
+    () =>
+      settings.workjet.workerProfiles.filter((worker) => scopedComputerIds.has(worker.computerId)),
+    [scopedComputerIds, settings.workjet.workerProfiles],
+  );
+  const workjetLlmRoutes = settings.workjet.llmRoutes;
+  // Persisted with the draft (F1): the worker's model lands in the shared
+  // per-instance selection, so a component-local worker choice that dies on
+  // unmount left the bar in "Manual" WITH the worker's model — a corrupted
+  // state the operator measured. The draft store is the single owner now.
+  const selectedWorkjetWorkerId = composerDraft.workjetWorkerId ?? null;
+  const setWorkjetWorkerSelection = useComposerDraftStore(
+    (store) => store.setWorkjetWorkerSelection,
+  );
+  const setComposerDraftWorkjetConfig = useComposerDraftStore((store) => store.setWorkjetConfig);
+  const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
+  /**
+   * Choosing a worker must MOVE the turn, not just relabel the bar. A worker
+   * names a harness and a model, so both are applied together: applying the
+   * model alone would run this worker's model on the previous worker's
+   * runtime, which is worse than applying nothing.
+   *
+   * A harness this build has no runtime for changes nothing but the label —
+   * guessing a runtime would send the turn somewhere unchosen.
+   */
+  /**
+   * Worker mode hides the manual controls. A worker BUNDLES harness, model
+   * and effort, so showing pickers beside it displays two sources of truth
+   * for one decision — the operator called that mix a farce, correctly. The
+   * pickers return the moment Manual is chosen. Mid-session switching stays
+   * gated on the session-ownership migration (correction -1); this governs
+   * the draft, where the next turn is composed.
+   */
+  const workerModeActive = selectedWorkjetWorkerId !== null;
+  const selectedWorkjetWorker =
+    selectedWorkjetWorkerId === null
+      ? null
+      : (workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId) ?? null);
+  const normalizedDraftWorkjetConfig = normalizeWorkjetThreadConfig(
+    composerDraft.workjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG,
+  );
+  // A composer draft is always a root thread. Persisted worker configs are
+  // rejected here instead of leaking a child role into first-turn bootstrap.
+  const draftWorkjetConfig =
+    normalizedDraftWorkjetConfig.role === "worker"
+      ? DEFAULT_WORKJET_THREAD_CONFIG
+      : normalizedDraftWorkjetConfig;
+  /**
+   * Worker-mode EXTRAS on a draft, held locally: the menu edits this list
+   * (seeded from the worker's own `capabilityIds`), and the draft→thread
+   * apply below dispatches it instead of the profile's — what the operator
+   * changed in the bar wins over what the profile says. `null` means
+   * untouched; the worker's list applies as-is.
+   */
+  const [draftWorkerCapabilityIds, setDraftWorkerCapabilityIds] =
+    useState<ReadonlyArray<string> | null>(null);
+  /**
+   * Manual-mode custom system prompt on a draft, held locally until the
+   * thread exists — the thread-config write path only exists on server
+   * threads. `null` means never edited.
+   */
+  const [draftManagedInstructions, setDraftManagedInstructions] = useState<string | null>(null);
+  /**
+   * Apply the selected worker's EXTRAS and TASK TEXT once the draft becomes a
+   * server thread — one dispatch, because the caller's in-flight guard drops
+   * concurrent config changes. A manual draft with a locally edited system
+   * prompt takes the same path with only `managedInstructions` set. The ref
+   * guards against re-applying on every render and against overriding what
+   * the operator changes afterwards.
+   */
+  const appliedWorkerCapabilitiesRef = useRef<string | null>(null);
+  const composerTargetIsThread =
+    typeof composerDraftTarget === "object" && composerDraftTarget !== null;
+  useEffect(() => {
+    if (!composerTargetIsThread || onWorkjetConfigApply === undefined) return;
+    const worker =
+      selectedWorkjetWorkerId === null
+        ? undefined
+        : workjetWorkers.find((candidate) => candidate.id === selectedWorkjetWorkerId);
+    let payload: {
+      readonly capabilityIds?: ReadonlyArray<string>;
+      readonly managedInstructions?: string;
+    };
+    if (worker !== undefined) {
+      // Model rules travel with every worker on this model (the Swift app's
+      // Modellregeln), ahead of the worker's own task.
+      const modelRules = settings.workjet.modelPrompts
+        .find((entry) => entry.modelId === worker.modelId)
+        ?.prompt.trim();
+      payload = {
+        capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
+        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
+          currentWorkerId: worker.id,
+          workers: workjetWorkers,
+          graph: settings.workjet.workerGraph,
+        }),
+      };
+    } else if (draftManagedInstructions !== null) {
+      payload = { managedInstructions: draftManagedInstructions };
+    } else {
+      return;
+    }
+    const targetKey = JSON.stringify(composerDraftTarget);
+    if (appliedWorkerCapabilitiesRef.current === targetKey) return;
+    appliedWorkerCapabilitiesRef.current = targetKey;
+    onWorkjetConfigApply(payload);
+  }, [
+    composerDraftTarget,
+    composerTargetIsThread,
+    draftManagedInstructions,
+    draftWorkerCapabilityIds,
+    onWorkjetConfigApply,
+    selectedWorkjetWorkerId,
+    settings.workjet.modelPrompts,
+    settings.workjet.workerGraph,
+    workjetWorkers,
+  ]);
+  /**
+   * Manual-mode system prompt, parked while a worker is selected: entering
+   * worker mode rightly clears the bar's local edits, but a prompt typed in
+   * Manual must survive a worker round-trip (Befund K-AH1).
+   */
+  const manualInstructionsReturnRef = useRef<string | null>(null);
+  const manualWorkjetConfigReturnRef = useRef<WorkjetThreadConfig | null>(null);
+  const handleSelectWorkjetWorker = useCallback(
+    (workerId: string | null) => {
+      // A different choice invalidates the local bar edits: extras belong to
+      // the newly chosen worker, and a worker carries its own task text.
+      setDraftWorkerCapabilityIds(null);
+      if (workerId !== null && selectedWorkjetWorkerId === null) {
+        manualInstructionsReturnRef.current = draftManagedInstructions;
+        manualWorkjetConfigReturnRef.current = draftWorkjetConfig;
+      }
+      setDraftManagedInstructions(workerId === null ? manualInstructionsReturnRef.current : null);
+      if (workerId === null) {
+        manualInstructionsReturnRef.current = null;
+        // Back to Manual: restore the model that was chosen BEFORE the worker
+        // took over the shared selection — without this, the worker's model
+        // stays behind masquerading as a manual choice (F1).
+        const manualReturn = composerDraft.workjetManualReturn;
+        setWorkjetWorkerSelection(composerDraftTarget, null, null);
+        setComposerDraftWorkjetConfig(
+          composerDraftTarget,
+          manualWorkjetConfigReturnRef.current ?? DEFAULT_WORKJET_THREAD_CONFIG,
+        );
+        manualWorkjetConfigReturnRef.current = null;
+        if (manualReturn !== null) {
+          onProviderModelSelect(manualReturn.provider, manualReturn.model);
+        }
+        return;
+      }
+      const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
+      if (worker === undefined) return;
+      const modelRules = settings.workjet.modelPrompts
+        .find((entry) => entry.modelId === worker.modelId)
+        ?.prompt.trim();
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        schemaVersion: 2,
+        role: worker.role,
+        parent: null,
+        managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
+          currentWorkerId: worker.id,
+          workers: workjetWorkers,
+          graph: settings.workjet.workerGraph,
+        }),
+        enabledCapabilityIds: worker.capabilityIds,
+        capabilityBindings: worker.capabilityBindings,
+      });
+      // Entering worker mode from Manual snapshots the manual model for the
+      // way back; worker-to-worker switches keep the original snapshot.
+      setWorkjetWorkerSelection(
+        composerDraftTarget,
+        workerId,
+        selectedWorkjetWorkerId === null
+          ? { provider: selectedInstanceId, model: selectedModel }
+          : (composerDraft.workjetManualReturn ?? null),
+      );
+
+      // Apply the worker's COMPUTER: a worker names where it runs, so a
+      // draft moves to that computer's environment through the same path the
+      // environment selector uses. Only drafts move — a started thread's
+      // session owns its environment. An unresolvable computer changes
+      // nothing; the Computer control shows the mismatch instead of lying.
+      if (!composerTargetIsThread && onDraftEnvironmentChange !== undefined) {
+        const workerEnvironmentId = workjetComputers.find(
+          (computer) => computer.id === worker.computerId,
+        )?.environmentId;
+        if (
+          workerEnvironmentId !== undefined &&
+          workerEnvironmentId !== environmentId &&
+          selectableEnvironmentIds.includes(workerEnvironmentId)
+        ) {
+          onDraftEnvironmentChange(workerEnvironmentId);
+        }
+      }
+
+      const instanceId = providerInstanceIdForHarness(worker.harness);
+      if (instanceId === null || !worker.modelId) return;
+      const targetInstance = ProviderInstanceId.make(instanceId);
+      onProviderModelSelect(targetInstance, worker.modelId);
+
+      // Effort too, but only where the provider offers that exact value. The
+      // Workjet list and a provider's own options are not the same list and
+      // are mapped nowhere, so a near-miss is left alone rather than guessed.
+      const status = providerStatuses.find((entry) => entry.instanceId === targetInstance);
+      if (status === undefined) return;
+      const selections = workerReasoningSelections({
+        caps: getProviderModelCapabilities(status.models, worker.modelId, status.driver),
+        reasoning: worker.reasoning,
+      });
+      if (selections === null) return;
+      setProviderModelOptions(composerDraftTarget, status.driver, selections, {
+        instanceId: targetInstance,
+        model: worker.modelId,
+        persistSticky: true,
+      });
+    },
+    [
+      composerDraft.workjetManualReturn,
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftManagedInstructions,
+      environmentId,
+      onDraftEnvironmentChange,
+      onProviderModelSelect,
+      providerStatuses,
+      selectableEnvironmentIds,
+      selectedInstanceId,
+      selectedModel,
+      selectedWorkjetWorkerId,
+      setProviderModelOptions,
+      setComposerDraftWorkjetConfig,
+      setWorkjetWorkerSelection,
+      workjetComputers,
+      workjetWorkers,
+      settings.workjet.modelPrompts,
+      settings.workjet.workerGraph,
+      draftWorkjetConfig,
+    ],
+  );
+
+  /**
+   * The Computer ("Rechner") control, selectable in BOTH modes. On a draft,
+   * choosing a computer moves the draft to that computer's environment; on a
+   * started server thread the control is disabled with the reason — moving a
+   * live session between machines is a separate project.
+   */
+  const composerComputerDisabledReason =
+    composerTargetIsThread || routeKind === "server"
+      ? COMPOSER_COMPUTER_LOCKED_REASON
+      : onDraftEnvironmentChange === undefined
+        ? "This draft cannot change its environment here."
+        : null;
+  const workerBoundComputer =
+    selectedWorkjetWorker === null
+      ? null
+      : (workjetComputers.find((computer) => computer.id === selectedWorkjetWorker.computerId) ??
+        null);
+  const activeEnvironmentComputer =
+    workjetComputers.find((computer) => computer.environmentId === environmentId) ?? null;
+  const composerSelectedComputerId = workerModeActive
+    ? (workerBoundComputer?.id ?? null)
+    : (activeEnvironmentComputer?.id ?? null);
+  // Worker mode surfaces the mismatch instead of lying: the worker names a
+  // computer this draft could not move to, so the thread stays where it is.
+  const composerComputerMismatchNote = !workerModeActive
+    ? null
+    : selectedWorkjetWorker === null
+      ? null
+      : workerBoundComputer === null
+        ? "This worker's computer is no longer in the Workjet catalog — the thread stays on its current environment."
+        : workerBoundComputer.environmentId !== environmentId
+          ? `${workerBoundComputer.label} does not have this project — the thread stays on its current environment.`
+          : null;
+  const handleSelectComposerComputer = useCallback(
+    (computerId: string) => {
+      if (composerTargetIsThread || onDraftEnvironmentChange === undefined) return;
+      const computer = workjetComputers.find((candidate) => candidate.id === computerId);
+      if (computer === undefined) return;
+      if (computer.environmentId === environmentId) return;
+      if (!selectableEnvironmentIds.includes(computer.environmentId)) return;
+      onDraftEnvironmentChange(computer.environmentId);
+    },
+    [
+      composerTargetIsThread,
+      environmentId,
+      onDraftEnvironmentChange,
+      selectableEnvironmentIds,
+      workjetComputers,
+    ],
+  );
+
+  /**
+   * Worker-mode EXTRAS resolve against the thread config on a server thread
+   * and against the local draft list on a draft, so the menu exists in both
+   * places and one dispatch applies the final list when the thread starts.
+   */
+  const workerDraftExtrasActive = workerModeActive && !composerTargetIsThread;
+  const effectiveEnabledCapabilityIds = workerDraftExtrasActive
+    ? (draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [])
+    : composerTargetIsThread
+      ? workjetEnabledCapabilityIds
+      : draftWorkjetConfig.enabledCapabilityIds;
+  const effectiveWorkjetGreppyEnabled = workerDraftExtrasActive
+    ? (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID)
+    : composerTargetIsThread
+      ? workjetGreppyEnabled
+      : (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID);
+  const handleDraftWorkerCapabilityChange = useCallback(
+    (capabilityId: string, enabled: boolean) => {
+      const base = draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [];
+      const without = base.filter((id) => id !== capabilityId);
+      const next = enabled ? [...without, capabilityId] : without;
+      setDraftWorkerCapabilityIds(next);
+      if (selectedWorkjetWorker !== null) {
+        const persisted = normalizeWorkjetThreadConfig(
+          composerDraft.workjetConfig ?? draftWorkjetConfig,
+        );
+        const current = persisted.role === "worker" ? draftWorkjetConfig : persisted;
+        setComposerDraftWorkjetConfig(composerDraftTarget, {
+          ...current,
+          enabledCapabilityIds: next as WorkjetThreadConfig["enabledCapabilityIds"],
+          capabilityBindings: enabled
+            ? current.capabilityBindings
+            : current.capabilityBindings.filter((binding) => binding.capabilityId !== capabilityId),
+        });
+      }
+    },
+    [
+      composerDraft.workjetConfig,
+      composerDraftTarget,
+      draftWorkerCapabilityIds,
+      draftWorkjetConfig,
+      selectedWorkjetWorker,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
+  const handleDraftCapabilityChange = useCallback(
+    (capabilityId: string, enabled: boolean) => {
+      if (workerModeActive) {
+        handleDraftWorkerCapabilityChange(capabilityId, enabled);
+        return;
+      }
+      const without = draftWorkjetConfig.enabledCapabilityIds.filter((id) => id !== capabilityId);
+      const enabledCapabilityIds = enabled
+        ? [...without, capabilityId as (typeof without)[number]]
+        : without;
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        enabledCapabilityIds,
+        capabilityBindings: enabled
+          ? draftWorkjetConfig.capabilityBindings
+          : draftWorkjetConfig.capabilityBindings.filter(
+              (binding) => binding.capabilityId !== capabilityId,
+            ),
+      });
+    },
+    [
+      composerDraftTarget,
+      draftWorkjetConfig,
+      handleDraftWorkerCapabilityChange,
+      setComposerDraftWorkjetConfig,
+      workerModeActive,
+    ],
+  );
+  const effectiveCapabilityEnabledChange = composerTargetIsThread
+    ? onWorkjetCapabilityEnabledChange
+    : handleDraftCapabilityChange;
+  const effectiveGreppyEnabledChange = useCallback(
+    (enabled: boolean) => {
+      if (workerDraftExtrasActive) {
+        handleDraftWorkerCapabilityChange(GREPPY_CAPABILITY_ID, enabled);
+        return;
+      }
+      if (!composerTargetIsThread) {
+        handleDraftCapabilityChange(GREPPY_CAPABILITY_ID, enabled);
+        return;
+      }
+      onWorkjetGreppyEnabledChange(enabled);
+    },
+    [
+      composerTargetIsThread,
+      handleDraftCapabilityChange,
+      handleDraftWorkerCapabilityChange,
+      onWorkjetGreppyEnabledChange,
+      workerDraftExtrasActive,
+    ],
+  );
+  const effectiveWorkjetCapabilityBusy = workerDraftExtrasActive ? false : workjetCapabilityBusy;
+  const effectiveWorkjetCapabilityDisabled = workerDraftExtrasActive
+    ? false
+    : workjetCapabilityDisabled;
+  const effectiveWorkjetRole = composerTargetIsThread ? workjetRole : draftWorkjetConfig.role;
+  const effectiveWorkjetRoleChange = useCallback(
+    (role: WorkjetSelectableRole) => {
+      if (composerTargetIsThread) {
+        onWorkjetRoleChange(role);
+        return;
+      }
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        role,
+      });
+    },
+    [
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftWorkjetConfig,
+      onWorkjetRoleChange,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
+
+  /**
+   * Manual mode replaces the single provider/model picker with the Workjet
+   * target controls (Harness · Provider · Model) whenever the Workjet catalog
+   * exists at all. With NO computers and NO LLM routes this is a pre-Workjet
+   * product install, and the classic picker stays.
+   */
+  const workjetManualControlsAvailable = workjetComputers.length > 0 || workjetLlmRoutes.length > 0;
+  const workjetGatewayCatalogQuery = useEnvironmentQuery(
+    workjetManualControlsAvailable && !workerModeActive
+      ? serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} })
+      : null,
+  );
+  const decisionHubConnectionsQuery = useEnvironmentQuery(
+    serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
+  );
+  const decisionHubConnections = decisionHubConnectionsQuery.data?.connections ?? [];
+  const effectiveCapabilityBindings = composerTargetIsThread
+    ? (workjetCapabilityBindings ?? [])
+    : draftWorkjetConfig.capabilityBindings;
+  const decisionHubConnectionId =
+    effectiveCapabilityBindings.find((binding) => binding.capabilityId === "decision-hub")?.target
+      .connectionId ?? null;
+  const handleDecisionHubConnectionChange = useCallback(
+    (connectionId: string) => {
+      const capabilityBindings: WorkjetCapabilityBinding[] = [
+        ...effectiveCapabilityBindings.filter((binding) => binding.capabilityId !== "decision-hub"),
+        {
+          capabilityId: "decision-hub",
+          target: {
+            kind: "ctox-connection",
+            connectionId: WorkjetConnectionId.make(connectionId),
+          },
+        },
+      ];
+      if (composerTargetIsThread) {
+        onWorkjetConfigApply?.({ capabilityBindings });
+      } else {
+        setComposerDraftWorkjetConfig(composerDraftTarget, {
+          ...draftWorkjetConfig,
+          schemaVersion: 2,
+          capabilityBindings,
+        });
+      }
+    },
+    [
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftWorkjetConfig,
+      effectiveCapabilityBindings,
+      onWorkjetConfigApply,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
+  const selectedDecisionHubConnection = decisionHubConnections.find(
+    (connection) => connection.connectionId === decisionHubConnectionId,
+  );
+  const decisionHubSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("decision-hub")
+    ? null
+    : decisionHubConnectionId === null
+      ? "Choose a Decision Hub CTOX connection before sending"
+      : selectedDecisionHubConnection === undefined
+        ? "The selected Decision Hub connection does not belong to this environment"
+        : selectedDecisionHubConnection.status !== "ready"
+          ? `Decision Hub is ${selectedDecisionHubConnection.status}${selectedDecisionHubConnection.reason ? `: ${selectedDecisionHubConnection.reason}` : ""}`
+          : null;
+  const effectiveSendDisabledReason = sendDisabledReason ?? decisionHubSendDisabledReason;
+  const isSendDisabled = effectiveSendDisabledReason !== null;
+  // Live per-provider model discovery — the same source the settings pools
+  // use. The catalog alone lists the accounts' route PATTERNS (grok-*), which
+  // read as broken entries in the picker; the discovery holds the concrete
+  // model ids the providers actually serve.
+  const workjetGatewayModelsQuery = useEnvironmentQuery(
+    workjetManualControlsAvailable && !workerModeActive
+      ? serverEnvironment.workjetGatewayModels({ environmentId, input: {} })
+      : null,
+  );
+  // The FULL gateway catalog: the model menu groups by provider itself; a
+  // separate route/provider pre-filter was the redundant third field the
+  // operator rejected.
+  const manualGatewayModels = useMemo(() => {
+    const catalog = workjetGatewayCatalogQuery.data?.models ?? [];
+    const discovery = workjetGatewayModelsQuery.data ?? null;
+    if (discovery === null) return catalog;
+    const concrete: WorkjetGatewayModelSummary[] = [];
+    const covered = new Set<string>();
+    for (const providerModels of discovery.providers) {
+      if (providerModels.models.length === 0) continue;
+      covered.add(providerModels.provider);
+      for (const discovered of providerModels.models) {
+        concrete.push({
+          id: discovered.id,
+          displayName: discovered.displayName,
+          providers: [providerModels.provider],
+          accountIds: [],
+        });
+      }
+    }
+    // Catalog patterns stay only for providers the discovery has nothing for —
+    // better a wildcard than an empty group.
+    const remaining = catalog.filter((entry) => {
+      const provider = entry.providers[0];
+      return provider === undefined || !covered.has(provider);
+    });
+    return [...concrete, ...remaining];
+  }, [workjetGatewayCatalogQuery.data, workjetGatewayModelsQuery.data]);
+  const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
+    ? "Loading the gateway model catalog…"
+    : (workjetGatewayCatalogQuery.error ??
+      (workjetGatewayCatalogQuery.data === null
+        ? "The Workjet gateway catalog is not available — type a model id."
+        : "The gateway catalog lists no models — type a model id."));
+  /**
+   * The instances a manual harness choice may target: configured in this
+   * build, and — on a thread locked to a continuation provider — of the
+   * locked driver kind. Everything else renders disabled with the hint.
+   */
+  const configuredProviderInstanceIds = useMemo(
+    () =>
+      new Set<string>(
+        providerInstanceEntries
+          .filter((entry) => lockedProvider === null || entry.driverKind === lockedProvider)
+          // A product-disabled instance (Cursor: "not offered for new
+          // sessions") must not look pickable — its menu entry was clickable
+          // with zero effect (Befund F4). Filtered here, the harness option
+          // renders disabled with its reason instead.
+          .filter((entry) => entry.enabled)
+          .map((entry) => entry.instanceId),
+      ),
+    [lockedProvider, providerInstanceEntries],
+  );
+  const handleSelectManualHarness = useCallback(
+    (harness: Parameters<typeof providerInstanceIdForHarness>[0]) => {
+      const instanceId = providerInstanceIdForHarness(harness);
+      if (instanceId === null || !configuredProviderInstanceIds.has(instanceId)) return;
+      onProviderModelSelect(ProviderInstanceId.make(instanceId), selectedModel);
+    },
+    [configuredProviderInstanceIds, onProviderModelSelect, selectedModel],
+  );
+  const handleSelectManualModel = useCallback(
+    (modelId: string) => {
+      onProviderModelSelect(selectedInstanceId, modelId);
+    },
+    [onProviderModelSelect, selectedInstanceId],
+  );
+
+  /**
+   * The custom-system-prompt affordance (manual mode). On a server thread the
+   * edit dispatches immediately through the one thread-config path; on a
+   * draft it is held locally and applied by the draft→thread effect above.
+   */
+  const handleApplyManagedInstructions = useCallback(
+    (text: string) => {
+      if (composerTargetIsThread) {
+        onWorkjetConfigApply?.({ managedInstructions: text });
+        return;
+      }
+      setDraftManagedInstructions(text);
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        managedInstructions: text,
+      });
+    },
+    [
+      composerDraftTarget,
+      composerTargetIsThread,
+      draftWorkjetConfig,
+      onWorkjetConfigApply,
+      setComposerDraftWorkjetConfig,
+    ],
+  );
+
   const [composerCursor, setComposerCursor] = useState(() =>
     collapseExpandedComposerCursor(prompt, prompt.length),
   );
@@ -944,6 +1494,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
+  const [composerFooterRowCount, setComposerFooterRowCount] = useState<1 | 2 | 3>(1);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
@@ -962,6 +1513,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
+  const composerFooterFlowRef = useRef<HTMLDivElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const composerSelectLockRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
@@ -1172,10 +1724,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
     }
-    return composerTriggerKind === "path"
-      ? "No matching files or folders."
-      : "No matching command.";
-  }, [composerTriggerKind]);
+    if (composerTriggerKind === "path") {
+      return pathTriggerQuery.length === 0
+        ? "Type to search project files."
+        : "No matching files or folders.";
+    }
+    return "No matching command.";
+  }, [composerTriggerKind, pathTriggerQuery.length]);
 
   // ------------------------------------------------------------------
   // Provider traits UI
@@ -1408,10 +1963,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   useLayoutEffect(() => {
     const composerForm = composerFormRef.current;
+    const composerFooterFlow = composerFooterFlowRef.current;
     if (!composerForm) return;
     const measureComposerFormWidth = () => composerForm.clientWidth;
-    const measureFooterCompactness = () => {
-      const composerFormWidth = measureComposerFormWidth();
+    // The primary send action is a separate shrink-0 sibling of this flow.
+    // Measuring the whole form made the row tiers optimistic by exactly that
+    // reserved width, so a nominal one-row layout could wrap unexpectedly at
+    // the boundary. Observe and measure the actual left flow instead.
+    const measureComposerFooterFlowWidth = () =>
+      composerFooterFlow?.clientWidth ?? measureComposerFormWidth();
+    const measureFooterCompactness = (composerFormWidth = measureComposerFormWidth()) => {
       const footerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
         hasWideActions: composerFooterHasWideActions,
       });
@@ -1426,13 +1987,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       };
     };
 
-    const initialCompactness = measureFooterCompactness();
+    const initialComposerFormWidth = measureComposerFormWidth();
+    const initialCompactness = measureFooterCompactness(initialComposerFormWidth);
+    setComposerFooterRowCount(composerFooterRowCountForWidth(measureComposerFooterFlowWidth()));
     setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
     setIsComposerFooterCompact(initialCompactness.footerCompact);
     if (typeof ResizeObserver === "undefined") return;
 
     const observer = new ResizeObserver(() => {
-      const nextCompactness = measureFooterCompactness();
+      const composerFormWidth = measureComposerFormWidth();
+      const nextCompactness = measureFooterCompactness(composerFormWidth);
+      const nextRowCount = composerFooterRowCountForWidth(measureComposerFooterFlowWidth());
+      setComposerFooterRowCount((previous) =>
+        previous === nextRowCount ? previous : nextRowCount,
+      );
       setIsComposerPrimaryActionsCompact((previous) =>
         previous === nextCompactness.primaryActionsCompact
           ? previous
@@ -1444,10 +2012,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
 
     observer.observe(composerForm);
+    if (composerFooterFlow) observer.observe(composerFooterFlow);
     return () => {
       observer.disconnect();
     };
-  }, [activeThreadId, composerFooterActionLayoutKey, composerFooterHasWideActions]);
+  }, [
+    activeThreadId,
+    composerFooterActionLayoutKey,
+    composerFooterHasWideActions,
+    isComposerApprovalState,
+    isComposerCollapsedMobile,
+  ]);
 
   // ------------------------------------------------------------------
   // Image persist effect
@@ -1975,7 +2550,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // unique image into the overflow list for nothing.
         const existingDedupKeys = new Set(
           composerImagesRef.current.map(
-            (image) => `${image.mimeType} ${image.sizeBytes} ${image.name}`,
+            (image) => `${image.mimeType}\0${image.sizeBytes}\0${image.name}`,
           ),
         );
         const capacity = Math.max(
@@ -1986,7 +2561,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (attachment) =>
             !existingIds.has(attachment.id) &&
             !existingDedupKeys.has(
-              `${attachment.mimeType} ${attachment.sizeBytes} ${attachment.name}`,
+              `${attachment.mimeType}\0${attachment.sizeBytes}\0${attachment.name}`,
             ),
         );
         // Anything past the attachment limit cannot be restored. The entry is
@@ -2078,7 +2653,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // the composer has been cleared the user can type something genuinely
     // new (or switch threads) while encoding continues, and that deserves its
     // own entry.
-    const snapshotKey = `${String(composerDraftTarget)} ${prompt} ${images
+    const snapshotKey = `${String(composerDraftTarget)}\0${prompt}\0${images
       .map((image) => image.id)
       .join(",")}`;
     if (stashInFlightRef.current.has(snapshotKey)) return;
@@ -2648,11 +3223,93 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Render
   // ------------------------------------------------------------------
+  const renderLegacyProviderTargetControl = (compact: boolean) => {
+    if (workerModeActive || workjetManualControlsAvailable) return null;
+    if (noProviderAvailable) {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled
+          data-chat-provider-unavailable="true"
+          className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
+        >
+          <CircleAlertIcon className="size-4" />
+          No provider available
+        </Button>
+      );
+    }
+    return (
+      <ProviderModelPicker
+        compact={compact}
+        activeInstanceId={selectedInstanceId}
+        model={selectedModelForPickerWithCustomFallback}
+        lockedProvider={lockedProvider}
+        lockedContinuationGroupKey={lockedContinuationGroupKey}
+        instanceEntries={providerInstanceEntries}
+        keybindings={keybindings}
+        modelOptionsByInstance={modelOptionsByInstance}
+        triggerClassName="-ms-2.5"
+        terminalOpen={terminalOpen}
+        open={isComposerModelPickerOpen}
+        {...(composerProviderState.modelPickerIconClassName
+          ? { activeProviderIconClassName: composerProviderState.modelPickerIconClassName }
+          : {})}
+        onOpenChange={setIsComposerModelPickerOpen}
+        getModelDisabledReason={getModelDisabledReason}
+        onInstanceModelChange={onProviderModelSelect}
+      />
+    );
+  };
+
+  const composerSystemPromptControl =
+    workerModeActive || !workjetManualControlsAvailable ? null : (
+      <ComposerSystemPromptControl
+        value={
+          composerTargetIsThread
+            ? (workjetManagedInstructions ?? "")
+            : (draftManagedInstructions ?? "")
+        }
+        busy={workjetCapabilityBusy}
+        disabled={composerTargetIsThread && workjetCapabilityDisabled}
+        draftPending={!composerTargetIsThread}
+        onApply={handleApplyManagedInstructions}
+      />
+    );
+
+  const composerContextWindowControl = activeContextWindow ? (
+    <ContextWindowMeter
+      usage={activeContextWindow}
+      providerDisplayName={activeThreadProviderDisplayName}
+    />
+  ) : null;
+  const composerContextWindowMenuContent = composerContextWindowControl ? (
+    <div
+      className="flex items-center justify-between gap-2 px-2 py-1"
+      data-composer-context-window-menu="true"
+    >
+      <span className="text-sm text-muted-foreground">Context window</span>
+      {composerContextWindowControl}
+    </div>
+  ) : null;
+
+  const composerAttachmentControl =
+    !isComposerApprovalState && pendingUserInputs.length === 0 ? (
+      <ComposerAttachmentMenu
+        disabled={projectSelectionRequired || isConnecting}
+        onAttachImages={(files) => void addComposerImages(files)}
+        onAddProjectFile={() => {
+          insertComposerTextAtEnd("@", { ensureLeadingBoundary: true });
+        }}
+      />
+    ) : null;
+
   return (
     <form
       ref={composerFormRef}
       onSubmit={submitComposer}
-      className="mx-auto w-full min-w-0 max-w-3xl"
+      className="mx-auto w-full min-w-0 max-w-5xl"
       data-chat-composer-form="true"
     >
       <div
@@ -2784,7 +3441,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showPlanFollowUpPrompt={false}
                       promptHasText={false}
                       isSendBusy={isSendBusy}
-                      sendDisabledReason={sendDisabledReason}
+                      sendDisabledReason={effectiveSendDisabledReason}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={
                         environmentUnavailable !== null ||
@@ -3049,9 +3706,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           ? "Choose a project above to start a thread"
                           : noProviderAvailable
                             ? "Enable a provider in Settings to send a message"
-                            : phase === "disconnected"
-                              ? "Ask for follow-up changes or attach images"
-                              : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                            : activeThreadId === null
+                              ? "Describe what you want to build, or add images and project files"
+                              : phase === "disconnected"
+                                ? "Ask for follow-up changes or attach images"
+                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
                 }
                 disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
               />
@@ -3067,7 +3726,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     showPlanFollowUpPrompt={false}
                     promptHasText={false}
                     isSendBusy={isSendBusy}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={effectiveSendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||
@@ -3100,77 +3759,166 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               data-chat-composer-footer="true"
               data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
               className={cn(
-                "flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4",
+                "flex min-w-0 flex-nowrap items-end justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4",
                 pendingUserInputs.length > 0 && "pt-2",
                 isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                 showMobilePendingAnswerActions && "hidden sm:flex",
               )}
             >
-              <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {noProviderAvailable ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled
-                    data-chat-provider-unavailable="true"
-                    className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
-                  >
-                    <CircleAlertIcon className="size-4" />
-                    No provider available
-                  </Button>
-                ) : (
-                  <ProviderModelPicker
-                    compact={isComposerFooterCompact}
-                    activeInstanceId={selectedInstanceId}
-                    model={selectedModelForPickerWithCustomFallback}
-                    lockedProvider={lockedProvider}
-                    lockedContinuationGroupKey={lockedContinuationGroupKey}
-                    instanceEntries={providerInstanceEntries}
-                    keybindings={keybindings}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    triggerClassName="-ms-2.5"
-                    terminalOpen={terminalOpen}
-                    open={isComposerModelPickerOpen}
-                    {...(composerProviderState.modelPickerIconClassName
-                      ? {
-                          activeProviderIconClassName:
-                            composerProviderState.modelPickerIconClassName,
-                        }
-                      : {})}
-                    onOpenChange={(open) => {
-                      setIsComposerModelPickerOpen(open);
-                    }}
-                    getModelDisabledReason={getModelDisabledReason}
-                    onInstanceModelChange={onProviderModelSelect}
-                  />
-                )}
+              {/* The left flow owns the ordered Workjet controls. It wraps at
+                  measured flow widths; the primary send action is bottom-
+                  aligned with the last row and never overlaps the flow. */}
+              <div
+                ref={composerFooterFlowRef}
+                className="@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 flex-wrap items-start gap-1 p-1 ps-3.5"
+              >
+                {/* With Workjet manual controls the retired provider picker
+                    stays hidden in BOTH layouts — compact used to fall back
+                    to it, resurrecting the removed provider chip (K-A2). */}
+                {isComposerFooterCompact ? renderLegacyProviderTargetControl(true) : null}
 
                 {isComposerFooterCompact ? (
-                  <CompactComposerControlsMenu
-                    interactionMode={interactionMode}
-                    runtimeMode={runtimeMode}
-                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                    traitsMenuContent={providerTraitsMenuContent}
-                    onToggleInteractionMode={toggleInteractionMode}
-                    onRuntimeModeChange={handleRuntimeModeChange}
-                  />
-                ) : (
                   <>
-                    {providerTraitsPicker ? (
-                      <>
-                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-                        {providerTraitsPicker}
-                      </>
-                    ) : null}
-                    <ComposerFooterModeControls
-                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                    <CompactComposerControlsMenu
                       interactionMode={interactionMode}
-                      runtimeMode={runtimeMode}
+                      showInteractionModeToggle={
+                        workerModeActive
+                          ? false
+                          : composerProviderControls.showInteractionModeToggle
+                      }
+                      workerMenuContent={
+                        <ComposerWorkjetCompactMenuContent
+                          workers={workjetWorkers}
+                          selectedWorkerId={selectedWorkjetWorkerId}
+                          onSelectWorker={handleSelectWorkjetWorker}
+                          computers={workjetComputers}
+                          selectedComputerId={composerSelectedComputerId}
+                          activeEnvironmentId={environmentId}
+                          selectableEnvironmentIds={selectableEnvironmentIds}
+                          computerDisabledReason={composerComputerDisabledReason}
+                          onSelectComputer={handleSelectComposerComputer}
+                          manualTarget={
+                            workerModeActive || !workjetManualControlsAvailable
+                              ? null
+                              : {
+                                  configuredInstanceIds: configuredProviderInstanceIds,
+                                  selectedHarness: harnessForProviderInstanceId(selectedInstanceId),
+                                  onSelectHarness: handleSelectManualHarness,
+                                  models: manualGatewayModels,
+                                  modelsUnavailableReason:
+                                    manualGatewayModels.length === 0
+                                      ? manualModelsUnavailableReason
+                                      : null,
+                                  selectedModelId: selectedModelForPickerWithCustomFallback,
+                                  onSelectModel: handleSelectManualModel,
+                                }
+                          }
+                        />
+                      }
+                      traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
+                      contextWindowMenuContent={composerContextWindowMenuContent}
+                      systemPromptMenuContent={composerSystemPromptControl}
+                      workjetMenuContent={
+                        effectiveWorkjetGreppyEnabled === null ? undefined : (
+                          <WorkjetCapabilityMenu
+                            compact
+                            greppyEnabled={effectiveWorkjetGreppyEnabled}
+                            busy={effectiveWorkjetCapabilityBusy}
+                            disabled={effectiveWorkjetCapabilityDisabled}
+                            onGreppyEnabledChange={effectiveGreppyEnabledChange}
+                            onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                            enabledCapabilityIds={effectiveEnabledCapabilityIds}
+                            decisionHubConnections={decisionHubConnections}
+                            decisionHubConnectionId={decisionHubConnectionId}
+                            onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                            workjetRole={workerModeActive ? null : effectiveWorkjetRole}
+                            onWorkjetRoleChange={effectiveWorkjetRoleChange}
+                          />
+                        )
+                      }
                       onToggleInteractionMode={toggleInteractionMode}
-                      onRuntimeModeChange={handleRuntimeModeChange}
                     />
+                    {composerAttachmentControl}
+                    {workerModeActive
+                      ? null
+                      : (workjetSendToWorkerControl?.({ compact: true }) ?? null)}
                   </>
+                ) : (
+                  <ComposerFooterControls
+                    workerMode={workerModeActive}
+                    workjetWorkers={workjetWorkers}
+                    selectedWorkjetWorkerId={selectedWorkjetWorkerId}
+                    onSelectWorkjetWorker={handleSelectWorkjetWorker}
+                    computerControl={
+                      /* A pre-Workjet install (no computers, no llmRoutes)
+                         keeps its bar unchanged. */
+                      !workjetManualControlsAvailable && !workerModeActive ? null : (
+                        <ComposerComputerControl
+                          computers={workjetComputers}
+                          selectedComputerId={composerSelectedComputerId}
+                          activeEnvironmentId={environmentId}
+                          selectableEnvironmentIds={selectableEnvironmentIds}
+                          disabledReason={composerComputerDisabledReason}
+                          mismatchNote={composerComputerMismatchNote}
+                          onSelectComputer={handleSelectComposerComputer}
+                          onAddComputer={() => {
+                            try {
+                              window.sessionStorage.setItem("workjet-computer-create", "1");
+                            } catch {
+                              // Without storage the page still opens.
+                            }
+                            window.location.hash = "#/settings/computers";
+                          }}
+                        />
+                      )
+                    }
+                    providerTargetControl={renderLegacyProviderTargetControl(false)}
+                    manualTargetControls={
+                      workerModeActive || !workjetManualControlsAvailable ? null : (
+                        <ComposerManualTargetControls
+                          configuredInstanceIds={configuredProviderInstanceIds}
+                          unavailableHint={
+                            lockedProvider === null
+                              ? undefined
+                              : "Locked — this thread continues on its current provider"
+                          }
+                          selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
+                          onSelectHarness={handleSelectManualHarness}
+                          models={manualGatewayModels}
+                          modelsUnavailableReason={
+                            manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+                          }
+                          selectedModelId={selectedModelForPickerWithCustomFallback}
+                          onSelectModel={handleSelectManualModel}
+                        />
+                      )
+                    }
+                    contextWindowControl={composerContextWindowControl}
+                    systemPromptControl={composerSystemPromptControl}
+                    attachmentControl={composerAttachmentControl}
+                    rowCount={
+                      !workerModeActive && workjetManualControlsAvailable
+                        ? composerFooterRowCount
+                        : 1
+                    }
+                    traitsPicker={workerModeActive ? null : providerTraitsPicker}
+                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                    interactionMode={interactionMode}
+                    workjetRole={effectiveWorkjetRole}
+                    workjetGreppyEnabled={effectiveWorkjetGreppyEnabled}
+                    workjetBusy={effectiveWorkjetCapabilityBusy}
+                    workjetDisabled={effectiveWorkjetCapabilityDisabled}
+                    sendToWorkerControl={workjetSendToWorkerControl?.({ compact: false }) ?? null}
+                    onToggleInteractionMode={toggleInteractionMode}
+                    onWorkjetRoleChange={effectiveWorkjetRoleChange}
+                    onWorkjetGreppyEnabledChange={effectiveGreppyEnabledChange}
+                    onWorkjetCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                    workjetEnabledCapabilityIds={effectiveEnabledCapabilityIds}
+                    decisionHubConnections={decisionHubConnections}
+                    decisionHubConnectionId={decisionHubConnectionId}
+                    onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                    onOpenWorkjetSettings={onOpenWorkjetSettings}
+                  />
                 )}
               </div>
 
@@ -3184,14 +3932,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               >
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
-                  activeContextWindow={activeContextWindow}
-                  activeThreadProviderDisplayName={activeThreadProviderDisplayName}
                   pendingAction={pendingPrimaryAction}
                   isRunning={phase === "running"}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}
                   promptHasText={prompt.trim().length > 0}
                   isSendBusy={isSendBusy}
-                  sendDisabledReason={sendDisabledReason}
+                  sendDisabledReason={effectiveSendDisabledReason}
                   isConnecting={isConnecting}
                   isEnvironmentUnavailable={
                     environmentUnavailable !== null ||

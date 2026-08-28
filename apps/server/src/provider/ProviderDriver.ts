@@ -100,6 +100,13 @@ export interface ProviderDriverCreateInput<Config> {
   readonly accentColor?: string | undefined;
   readonly environment: ProviderInstanceEnvironment;
   readonly enabled: boolean;
+  /**
+   * Whether this instance's sessions are routed through the Workjet
+   * provider gateway. Drivers that support routing resolve the gateway
+   * endpoint lazily at session start (see `ProviderGatewayRouting`); this
+   * flag only records the operator's opt-in.
+   */
+  readonly routeViaGateway: boolean;
   readonly config: Config;
 }
 

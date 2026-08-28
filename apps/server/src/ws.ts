@@ -1,7 +1,9 @@
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -26,6 +28,9 @@ import {
   type OrchestrationShellStreamEvent,
   type OrchestrationShellStreamItem,
   type OrchestrationThreadStreamItem,
+  isWorkjetGitCommitHash,
+  WorkjetHarness,
+  WorkjetGitCommitHash,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationSearchThreadsError,
@@ -50,15 +55,21 @@ import {
   AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
+  type EnvironmentId,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
+  WorkjetMailboxError,
+  WorkjetDecisionHubConnectionError,
+  WORKJET_MESH_OVERVIEW_MAX_PEERS,
+  WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { validateCapabilityActivation } from "@metric-space-ai/workjet-capabilities";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -66,6 +77,7 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
+import * as ProcessRunner from "./processRunner.ts";
 import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
@@ -73,6 +85,22 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossModeCtoxClient.ts";
+import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
+import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
+import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
+import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
+import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
+import * as WorkjetSessionImport from "./workjet/sessionImport/WorkjetSessionImport.ts";
+import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
+import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
+import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
+import * as WorkjetMailboxRpc from "./workjet/mailbox/WorkjetMailboxRpc.ts";
+import * as WorkjetMailboxStore from "./workjet/mailbox/WorkjetMailboxStore.ts";
+import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
+import { revokeMeshPeer as revokeWorkjetMeshPeer } from "./workjet/mailbox/WorkjetMeshRevocationRpc.ts";
+import * as WorkjetSnapshotStore from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -86,6 +114,8 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
+import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -116,6 +146,8 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as WorkjetHarnessAvailability from "./workjet/WorkjetHarnessAvailability.ts";
+import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
@@ -279,6 +311,7 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
       | "thread.reverted"
+      | "thread.workjet-config-set"
       | "thread.session-set";
   }
 > {
@@ -288,6 +321,7 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
     event.type === "thread.reverted" ||
+    event.type === "thread.workjet-config-set" ||
     event.type === "thread.session-set"
   );
 }
@@ -351,6 +385,12 @@ function toAuthAccessStreamEvent(
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  workjetMailboxIdentity: WorkjetMeshIdentity.WorkjetMeshIdentity["Service"],
+  workjetMailboxStore: WorkjetMailboxStore.WorkjetMailboxStore["Service"],
+  workjetDelegationExecutor: WorkjetDelegationExecutor.WorkjetDelegationExecutor["Service"],
+  workjetCrossModeLinkStore: WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore["Service"],
+  legacyWorkjetImport: LegacyWorkjetImport.LegacyWorkjetImport["Service"],
+  workjetSessionImport: WorkjetSessionImport.WorkjetSessionImport["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -362,6 +402,10 @@ const makeWsRpcLayer = (
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+      const gitVcsDriver = yield* GitVcsDriver.GitVcsDriver;
+      const harnessProbePort = WorkjetHarnessAvailability.makeChildProcessHarnessProbePort(
+        yield* ChildProcessSpawner.ChildProcessSpawner,
+      );
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -374,6 +418,7 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const worktreeStorage = yield* Effect.serviceOption(WorktreeStorage.WorktreeStorage);
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -416,7 +461,156 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
+      const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
+      const providerGateway = yield* ProviderGateway.ProviderGatewayService;
+      const decisionHubConnections = yield* Effect.serviceOption(
+        DecisionHubConnectionRegistry.DecisionHubConnectionRegistry,
+      );
+      const withDecisionHubConnections = <A>(
+        use: (
+          registry: DecisionHubConnectionRegistry.DecisionHubConnectionRegistryShape,
+        ) => Effect.Effect<A, WorkjetDecisionHubConnectionError>,
+      ): Effect.Effect<A, WorkjetDecisionHubConnectionError> => {
+        if (Option.isNone(decisionHubConnections)) {
+          return Effect.fail(
+            new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" }),
+          );
+        }
+        return use(decisionHubConnections.value);
+      };
       const relayClient = yield* RelayClient.RelayClient;
+      // The client-facing half of the durable Workjet mailbox. It reuses the
+      // delivery service and snapshot store the MCP tools use; only the caller
+      // identity differs, so the handlers below add no second implementation.
+      const workjetMailboxAudit = yield* WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter;
+      const workjetMailbox = WorkjetMailboxRpc.makeWorkjetMailboxRpcHandlers({
+        delivery: yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+        snapshots: yield* WorkjetSnapshotStore.WorkjetSnapshotStore,
+        query: projectionSnapshotQuery,
+        workspaceId: workjetMailboxIdentity.workspaceId,
+        environmentId: yield* serverEnvironment.getEnvironmentId,
+        // The reconciler's OWN reassignment port. The executor is a
+        // server-lifetime service provided to this route layer (see
+        // `makeRoutesLayer`), so the WebSocket surface and the reconciler share
+        // one implementation of the guard — the foreign-environment refusal
+        // lives in `WorkjetDelegationExecutor.reassign`, not duplicated here —
+        // and the reconciler picks the moved delegation up on its next cycle.
+        reassign: workjetDelegationExecutor.reassign,
+        nowIso,
+        // A LOCAL configuration read and nothing more: does the source thread's
+        // repository have a primary remote at all. It never runs `git ls-remote`
+        // and never pushes — a handoff must not move code behind the operator's
+        // back — so the honest answer to "is the branch reachable there" stays
+        // the target's to discover. Any failure answers `false`, which
+        // understates rather than overstates reachability.
+        sourceRemoteConfigured: (threadId) =>
+          projectionSnapshotQuery.getThreadWorktreeCleanupContext(threadId).pipe(
+            Effect.flatMap((option) =>
+              Option.match(option, {
+                onNone: () => Effect.succeed(false),
+                onSome: (context) =>
+                  gitWorkflow
+                    .localStatus({ cwd: context.worktreePath ?? context.workspaceRoot })
+                    .pipe(Effect.map((status) => status.hasPrimaryRemote)),
+              }),
+            ),
+            Effect.orElseSucceed(() => false),
+          ),
+        // Reads the delegation's target thread so a WORKER caller can be shown
+        // to own the delegation it is acting on. Any failure answers `None`,
+        // which DENIES — the safe direction, since the alternative would let a
+        // worker act on a delegation this server cannot vouch for.
+        delegationTargetThreadId: (delegationId) =>
+          workjetMailboxStore.getDelegation(delegationId).pipe(
+            Effect.map(Option.map((record) => record.delegation.target.threadId)),
+            Effect.orElseSucceed(() => Option.none()),
+          ),
+        // A LOCAL head read, in the same spirit as sourceRemoteConfigured
+        // above: it says which commit the branch sits on HERE and never that
+        // the commit is reachable anywhere else, so it stays offline —
+        // `rev-parse`, never `ls-remote`, never a push. Any failure answers
+        // `None`, and the contract already defines an absent commit as
+        // "resolve the branch head yourself", not "the branch is empty".
+        sourceHeadCommit: (threadId) =>
+          projectionSnapshotQuery.getThreadWorktreeCleanupContext(threadId).pipe(
+            Effect.flatMap((option) =>
+              Option.match(option, {
+                onNone: () => Effect.succeed(Option.none<WorkjetGitCommitHash>()),
+                onSome: (context) =>
+                  gitVcsDriver
+                    .resolveCommit({
+                      cwd: context.worktreePath ?? context.workspaceRoot,
+                      revision: "HEAD",
+                    })
+                    .pipe(
+                      Effect.map((result) =>
+                        isWorkjetGitCommitHash(result.commitSha)
+                          ? Option.some(WorkjetGitCommitHash.make(result.commitSha))
+                          : Option.none<WorkjetGitCommitHash>(),
+                      ),
+                    ),
+              }),
+            ),
+            Effect.orElseSucceed(() => Option.none<WorkjetGitCommitHash>()),
+          ),
+      });
+      // The one-shot legacy Swift Workjet import. Same construction discipline:
+      // a handler factory over injected ports. The runner itself is resolved
+      // ONCE for the whole server (see `websocketRpcRouteLayer` below), so its
+      // lazily resolved decision is shared by every client instead of being
+      // re-read per connection, and the two authorities a binding is checked
+      // against are this server's own: the environment id it persists for
+      // itself plus whatever `settings.workjet` already references, and the
+      // environment's provider-gateway catalog.
+      const workjetLegacyImport = LegacyWorkjetImportRpc.makeLegacyWorkjetImportRpcHandlers({
+        importer: legacyWorkjetImport,
+        gatewayCatalog: providerGateway.catalog(),
+        environmentId: serverEnvironment.getEnvironmentId,
+        configuredEnvironmentIds: serverSettings.getSettings.pipe(
+          Effect.map((settings) =>
+            settings.workjet.computers.map((computer) => computer.environmentId),
+          ),
+          // A settings read that fails yields no verifiable environments, which
+          // refuses more bindings rather than fewer.
+          Effect.orElseSucceed(() => [] as readonly EnvironmentId[]),
+        ),
+      });
+      // The cross-mode workflow bridge. Same construction discipline as the
+      // mailbox above: a pure handler factory whose every capability is an
+      // injected port, so the authority rules it enforces are the ones its own
+      // tests state.
+      //
+      // The CTOX port is the REAL one: a bounded JSON-RPC client over the local
+      // daemon's `POST /mcp` surface, on the same loopback origin and behind the
+      // same bearer token the mailbox transport already resolves. It verifies an
+      // instance against the identity the running daemon publishes in its own
+      // descriptor and dispatches through `business_os.execute_action`.
+      //
+      // No "is CTOX installed" branch is needed here, and adding one would be a
+      // mistake: the client re-resolves the descriptor and the token on every
+      // call, so a machine with no daemon degrades to exactly
+      // `workjetCrossModeCtoxPortUnavailable` — verify answers `false`, dispatch
+      // refuses with `ctox-command-unavailable` — while a daemon installed or
+      // started later begins working without restarting this server.
+      const workjetCrossMode = WorkjetCrossModeRpc.makeWorkjetCrossModeRpcHandlers({
+        links: workjetCrossModeLinkStore,
+        // `ProcessRunner` is provided right here rather than added to this
+        // module's context: the port needs it only to shell out READ-ONLY to
+        // `ctox secret get`, it is a stateless wrapper over the
+        // `ChildProcessSpawner` this scope already has, and widening ws.ts's
+        // requirements would ripple into every caller that builds it.
+        ctox: yield* WorkjetCrossModeCtoxClient.makeWorkjetCrossModeCtoxPort().pipe(
+          Effect.provide(ProcessRunner.layer),
+        ),
+        query: projectionSnapshotQuery,
+        threads: yield* WorkjetCrossModeThreads.makeWorkjetCrossModeThreadPortWithSources({
+          randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
+          nowIso,
+        }),
+        environmentId: yield* serverEnvironment.getEnvironmentId,
+        nowIso,
+        randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
+      });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
@@ -894,6 +1088,30 @@ const makeWsRpcLayer = (
 
           const bootstrapProgram = Effect.gen(function* () {
             if (bootstrap?.createThread) {
+              const workjetConfig = bootstrap.createThread.workjetConfig;
+              if (workjetConfig.enabledCapabilityIds.includes("decision-hub")) {
+                const connections = yield* withDecisionHubConnections((registry) => registry.list);
+                const validation = validateCapabilityActivation({
+                  config: workjetConfig,
+                  knownConnectionIds: new Set(connections.map(({ connectionId }) => connectionId)),
+                  reachableConnectionIds: new Set(
+                    connections
+                      .filter(({ status }) => status === "ready")
+                      .map(({ connectionId }) => connectionId),
+                  ),
+                });
+                const issue = validation.issues.find(
+                  ({ capabilityId }) => capabilityId === "decision-hub",
+                );
+                if (issue !== undefined) {
+                  return yield* new WorkjetDecisionHubConnectionError({
+                    reason:
+                      issue.code === "binding-foreign"
+                        ? "foreign-environment"
+                        : "connection-unavailable",
+                  });
+                }
+              }
               yield* orchestrationEngine.dispatch({
                 type: "thread.create",
                 commandId: yield* serverCommandId("bootstrap-thread-create"),
@@ -903,6 +1121,7 @@ const makeWsRpcLayer = (
                 modelSelection: bootstrap.createThread.modelSelection,
                 runtimeMode: bootstrap.createThread.runtimeMode,
                 interactionMode: bootstrap.createThread.interactionMode,
+                workjetConfig: bootstrap.createThread.workjetConfig,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
                 createdAt: bootstrap.createThread.createdAt,
@@ -1603,6 +1822,357 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetBackgroundPolicy, backgroundPolicy.snapshot, {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.workjetGreppyInspect]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGreppyInspect, greppyRuntime.inspect(), {
+            "rpc.aggregate": "workjet",
+          }),
+        [WS_METHODS.workjetGreppyInstall]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGreppyInstall,
+            greppyRuntime
+              .install()
+              .pipe(Effect.mapError(GreppyRuntime.toWorkjetGreppyOperationError)),
+            { "rpc.aggregate": "workjet" },
+          ),
+        // Probes the harnesses named by the configured worker profiles, so the
+        // answer covers what this server would actually dispatch to rather
+        // than the whole catalog. No configured profiles probes nothing, which
+        // is the honest answer to "which of your harnesses work" when none are
+        // configured.
+        // Probes the harnesses named by the configured worker profiles, so the
+        // answer covers what this server would actually dispatch to rather than
+        // the whole catalog.
+        [WS_METHODS.workjetHarnessInspect]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetHarnessInspect,
+            serverSettings.getSettings.pipe(
+              // Probe EVERY known harness kind, not only the ones current
+              // worker profiles reference: the settings surfaces (Harnesses
+              // page, Computers rows) report per-harness install state, and a
+              // harness nobody uses yet — Pi Code was the reported case —
+              // otherwise never appears in the snapshot at all. Probing wider
+              // only ever widens what the dispatch gate accepts, and each
+              // entry is still a real measurement.
+              Effect.map((settings) => [
+                ...new Set([
+                  ...WorkjetHarness.literals,
+                  ...settings.workjet.workerProfiles.map((profile) => profile.harness),
+                ]),
+              ]),
+              // A settings read that fails yields NO harnesses to probe, and
+              // that is the safe direction rather than a convenient one: the
+              // dispatch gate refuses any harness the snapshot does not list,
+              // so an unreadable configuration refuses everything instead of
+              // reporting a working host it could not actually inspect.
+              Effect.catch((cause) =>
+                Effect.logWarning("Failed to read worker profiles for the harness probe", {
+                  detail: cause.message,
+                }).pipe(Effect.as([] as ReadonlyArray<WorkjetHarness>)),
+              ),
+              Effect.flatMap((harnesses) =>
+                WorkjetHarnessAvailability.probeHarnessAvailability({
+                  port: harnessProbePort,
+                  harnesses,
+                  nowIso,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "workjet" },
+          ),
+        [WS_METHODS.workjetWorktreesInspect]: ({ root }) =>
+          observeRpcEffect(
+            WS_METHODS.workjetWorktreesInspect,
+            Option.match(worktreeStorage, {
+              onNone: () => Effect.die("Automatic worktree storage is not configured."),
+              onSome: (storage) => storage.inspect(root),
+            }),
+            { "rpc.aggregate": "workjet" },
+          ),
+        [WS_METHODS.workjetGatewayStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayStatus, providerGateway.status(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayCatalog]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayCatalog, providerGateway.catalog(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayStart]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayStart, providerGateway.start(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayStop]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayStop, providerGateway.stop(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayOauthStart]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayOauthStart, providerGateway.oauthStart(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayOauthPoll]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayOauthPoll, providerGateway.oauthPoll(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayOauthCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayOauthCancel,
+            providerGateway.oauthCancel(input).pipe(Effect.as({})),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        // The payload carries an API key exactly once. Only the method name and
+        // the aggregate label are observable; the input is never attached to a
+        // span attribute or a log line.
+        [WS_METHODS.workjetGatewayAddApiKeyAccount]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayAddApiKeyAccount,
+            providerGateway.addApiKeyAccount(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        [WS_METHODS.workjetGatewayRemoveAccount]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayRemoveAccount,
+            providerGateway.removeAccount(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        [WS_METHODS.workjetGatewayHealth]: (_input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayHealth, providerGateway.health(), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayDiscoverModels]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayDiscoverModels,
+            providerGateway.discoverModels(),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        [WS_METHODS.workjetGatewayUpdateRouting]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayUpdateRouting,
+            providerGateway.updateRouting(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        [WS_METHODS.workjetLegacyImportInspect]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetLegacyImportInspect,
+            workjetLegacyImport.inspect(input),
+            {
+              "rpc.aggregate": "workjet-legacy-import",
+            },
+          ),
+        [WS_METHODS.workjetLegacyImportDecide]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetLegacyImportDecide,
+            workjetLegacyImport.decide(input),
+            {
+              "rpc.aggregate": "workjet-legacy-import",
+            },
+          ),
+        [WS_METHODS.workjetSessionImportInspect]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetSessionImportInspect,
+            workjetSessionImport.inspect(input.limit),
+            { "rpc.aggregate": "workjet-session-import" },
+          ),
+        [WS_METHODS.workjetSessionImport]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetSessionImport,
+            workjetSessionImport.importSessions(input),
+            { "rpc.aggregate": "workjet-session-import" },
+          ),
+        [WS_METHODS.workjetMailboxSendMessage]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxSendMessage,
+            workjetMailbox.sendMessage(input),
+            {
+              "rpc.aggregate": "workjet-mailbox",
+            },
+          ),
+        [WS_METHODS.workjetMailboxDelegateTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxDelegateTask,
+            workjetMailbox.delegateTask(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxReply]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetMailboxReply, workjetMailbox.reply(input), {
+            "rpc.aggregate": "workjet-mailbox",
+          }),
+        [WS_METHODS.workjetMailboxRequestReview]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxRequestReview,
+            workjetMailbox.requestReview(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxUpdateDelegation]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxUpdateDelegation,
+            workjetMailbox.updateDelegation(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxReassignDelegation]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxReassignDelegation,
+            workjetMailbox.reassignDelegation(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        // The typed thread handoff. The snapshot is composed and stored inside
+        // the handler from this server's own thread projection, so nothing a
+        // client sends can pin a snapshot the server never wrote.
+        [WS_METHODS.workjetMailboxSendHandoff]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxSendHandoff,
+            workjetMailbox.sendHandoff(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxListHandoffs]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxListHandoffs,
+            workjetMailbox.listHandoffs(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        [WS_METHODS.workjetMailboxAcceptHandoff]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMailboxAcceptHandoff,
+            workjetMailbox.acceptHandoff(input),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+
+        // The cross-mode workflow bridge. `openInCode` is the server half of
+        // `Delegate to Code` / `Open in Code`; `submit` is the server half of
+        // `Return to Business OS` and its result/review/follow-up operations.
+        [WS_METHODS.workjetCrossModeOpenInCode]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeOpenInCode,
+            workjetCrossMode.openInCode(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeGetThreadLink]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeGetThreadLink,
+            workjetCrossMode.getThreadLink(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeListLinks]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeListLinks,
+            workjetCrossMode.listLinks(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeSubmit]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetCrossModeSubmit, workjetCrossMode.submit(input), {
+            "rpc.aggregate": "workjet-crossmode",
+          }),
+        [WS_METHODS.workjetDecisionHubListConnections]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubListConnections,
+            withDecisionHubConnections((registry) =>
+              registry.list.pipe(Effect.map((connections) => ({ connections }))),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        // The bearer token crosses this authenticated transport exactly once
+        // and is never attached to instrumentation or returned to the caller.
+        [WS_METHODS.workjetDecisionHubProvisionConnection]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubProvisionConnection,
+            withDecisionHubConnections((registry) => registry.provision(input)).pipe(
+              Effect.map((connection) => ({ connection })),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        [WS_METHODS.workjetDecisionHubProbeConnection]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubProbeConnection,
+            withDecisionHubConnections((registry) => registry.probe(input.connectionId)).pipe(
+              Effect.map((connection) => ({ connection })),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        [WS_METHODS.workjetDecisionHubDisconnectConnection]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetDecisionHubDisconnectConnection,
+            withDecisionHubConnections((registry) => registry.disconnect(input.connectionId)).pipe(
+              Effect.map((disconnected) => ({ connectionId: input.connectionId, disconnected })),
+            ),
+            { "rpc.aggregate": "workjet-decision-hub" },
+          ),
+        // The recipient roster: this environment's own mesh address plus every
+        // peer whose key it has pinned. Ids, a first-contact timestamp, and the
+        // derived "can this be sealed" flag only — never key material, and
+        // deliberately no online/offline field, because no liveness signal for
+        // another machine exists to back one.
+        [WS_METHODS.workjetMeshRoster]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMeshRoster,
+            Effect.gen(function* () {
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              const page = yield* workjetMailboxStore.listMeshPeers(WORKJET_MESH_ROSTER_MAX_PEERS);
+              return WorkjetMeshIdentity.workjetMeshRosterOf({
+                workspaceId: workjetMailboxIdentity.workspaceId,
+                environmentId,
+                page,
+              });
+            }).pipe(
+              // A store outage or an undecodable pin row is the bounded
+              // "mailbox-unavailable" the other mailbox RPCs already use; the
+              // cause never reaches the client.
+              Effect.mapError(() => new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
+            ),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        // The global multi-computer activity overview: the roster projection
+        // widened by the last envelope contact this machine has ON RECORD with
+        // each peer and its cross-environment delegation counts. Every value is
+        // derived from rows this server already owns; nothing new replicates,
+        // and there is still no liveness field, because the CTOX loopback
+        // surface (publish / pending / consumed) exposes no presence signal.
+        [WS_METHODS.workjetMeshOverview]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMeshOverview,
+            Effect.gen(function* () {
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              const page = yield* workjetMailboxStore.listMeshPeers(
+                WORKJET_MESH_OVERVIEW_MAX_PEERS,
+              );
+              const contact = yield* workjetMailboxStore.listMeshEnvelopeContact(
+                environmentId,
+                WORKJET_MESH_OVERVIEW_MAX_PEERS,
+              );
+              const delegationCounts = yield* workjetMailboxStore.listMeshDelegationCounts(
+                environmentId,
+                WORKJET_MESH_OVERVIEW_MAX_PEERS,
+              );
+              const observedAtMillis = yield* Clock.currentTimeMillis;
+              return WorkjetMeshIdentity.workjetMeshOverviewOf({
+                workspaceId: workjetMailboxIdentity.workspaceId,
+                environmentId,
+                page,
+                contact,
+                delegationCounts,
+                observedAtMillis,
+              });
+            }).pipe(
+              // Same bounded failure as the roster: a store outage or an
+              // undecodable row is "mailbox-unavailable"; the cause never
+              // reaches the client.
+              Effect.mapError(() => new WorkjetMailboxError({ reason: "mailbox-unavailable" })),
+            ),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
+        // The ONE mesh-trust WRITE: destroy a peer's pinned keys so a
+        // legitimately rotated peer can be re-pinned. It carries
+        // `orchestration:operate`, it is reachable only over this
+        // authenticated socket (never from an envelope, a daemon route, or an
+        // MCP tool), and it is audited — see `WorkjetMeshRevocationRpc.ts` for
+        // why that is what stops revocation from being the attack.
+        [WS_METHODS.workjetMeshRevokePeer]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetMeshRevokePeer,
+            revokeWorkjetMeshPeer({
+              store: workjetMailboxStore,
+              peer: input,
+              audit: { emit: workjetMailboxAudit.publish },
+            }),
+            { "rpc.aggregate": "workjet-mailbox" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",
@@ -2279,6 +2849,16 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
+        [WS_METHODS.subscribeWorkjetMailboxAudit]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeWorkjetMailboxAudit,
+            Stream.unwrap(
+              Effect.map(workjetMailboxAudit.subscribe, ({ recent, changes }) =>
+                Stream.concat(Stream.fromIterable(recent), changes),
+              ),
+            ),
+            { "rpc.aggregate": "mailbox" },
+          ),
       });
     }),
   );
@@ -2286,6 +2866,35 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    // Resolved out here, exactly like the Greppy runtime and provider gateway
+    // below: one server-lifetime mailbox shared by every WebSocket client,
+    // never one delivery service per connection.
+    const workjetMailboxDelivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+    const workjetMailboxAuditEmitter = yield* WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter;
+    const workjetSnapshotStore = yield* WorkjetSnapshotStore.WorkjetSnapshotStore;
+    const workjetMeshIdentity = yield* WorkjetMeshIdentity.WorkjetMeshIdentity;
+    // The recipient roster reads the trust-on-first-use peer pin table
+    // directly. It is the same server-lifetime store the delivery service
+    // writes through, resolved here once rather than per connection.
+    const workjetMailboxStore = yield* WorkjetMailboxStore.WorkjetMailboxStore;
+    // The delegation reconciler. It is a background loop, but it also OWNS the
+    // reassignment write (guard included), so the client-facing RPC calls the
+    // same implementation instead of re-deriving it from the store. Resolved
+    // here once, exactly like the mailbox services above: `makeRoutesLayer`
+    // provides the SAME layer reference to this route layer and to the merged
+    // background loop, so Effect's layer memoization yields ONE executor.
+    const workjetDelegationExecutor = yield* WorkjetDelegationExecutor.WorkjetDelegationExecutor;
+    // The durable cross-mode link table, resolved once for the whole server
+    // exactly like the mailbox store above: one link store shared by every
+    // WebSocket client, never one per connection.
+    const workjetCrossModeLinkStore = yield* WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStore;
+    const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
+    // The one-shot legacy import runner, resolved once for the whole server.
+    // Constructing it is FREE: it resolves its decision lazily on the first
+    // inspect, so a server that nobody asks never reads the legacy document.
+    const legacyWorkjetImport = yield* LegacyWorkjetImport.LegacyWorkjetImport;
+    const workjetSessionImport = yield* WorkjetSessionImport.WorkjetSessionImport;
+    const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     return HttpRouter.add(
@@ -2307,10 +2916,36 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, previewAutomationBroker).pipe(
+            makeWsRpcLayer(
+              session,
+              previewAutomationBroker,
+              workjetMeshIdentity,
+              workjetMailboxStore,
+              workjetDelegationExecutor,
+              workjetCrossModeLinkStore,
+              legacyWorkjetImport,
+              workjetSessionImport,
+            ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+              Layer.provide(Layer.succeed(GreppyRuntime.GreppyRuntime, greppyRuntime)),
+              Layer.provide(
+                Layer.succeed(
+                  WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+                  workjetMailboxDelivery,
+                ),
+              ),
+              Layer.provide(
+                Layer.succeed(
+                  WorkjetMailboxAuditEmitter.WorkjetMailboxAuditEmitter,
+                  workjetMailboxAuditEmitter,
+                ),
+              ),
+              Layer.provide(
+                Layer.succeed(WorkjetSnapshotStore.WorkjetSnapshotStore, workjetSnapshotStore),
+              ),
+              Layer.provide(Layer.succeed(ProviderGateway.ProviderGatewayService, providerGateway)),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
@@ -2351,4 +2986,17 @@ export const websocketRpcRouteLayer = Layer.unwrap(
       ),
     );
   }),
+).pipe(
+  // The mailbox store is a stateless SQL facade over the ambient `SqlClient`,
+  // so building it here keeps the new roster read self-contained instead of
+  // widening what the server's route graph has to hand this layer.
+  Layer.provide(WorkjetMailboxStore.WorkjetMailboxStoreLive),
+  // The cross-mode link store is the same kind of stateless SQL facade over the
+  // ambient `SqlClient`, so it is built here for the same reason.
+  Layer.provide(WorkjetCrossModeLinkStore.WorkjetCrossModeLinkStoreLive),
+  // The legacy import runner is built here for the same reason again: it needs
+  // only services this route graph already has (server config, filesystem,
+  // settings), and building it performs no I/O at all.
+  Layer.provide(LegacyWorkjetImport.layer),
+  Layer.provide(WorkjetSessionImport.layer),
 );

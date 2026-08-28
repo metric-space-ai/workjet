@@ -94,6 +94,16 @@ vi.mock("react-native", () => ({
   },
 }));
 
+vi.mock("./runtime", async () => {
+  const ManagedRuntime = await import("effect/ManagedRuntime");
+  const Persistence = await import("../persistence/layer");
+
+  return {
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- The imperative storage facade imports the production runtime singleton; this isolated module mock is the injection boundary for its persistence layer.
+    runtime: ManagedRuntime.make(Persistence.layer),
+  };
+});
+
 import {
   loadPreferences,
   loadSavedConnections,
@@ -175,6 +185,14 @@ describe("mobile connection storage", () => {
     await mocks.setItemAsync("t3code.preferences", JSON.stringify({ baseFontSize: 17 }));
 
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
+  });
+
+  it("persists the Workjet root mode in the existing preference identity", async () => {
+    mocks.setPreferencesJson(JSON.stringify({ workjetMode: "business_os" }), 10);
+    await expect(loadPreferences()).resolves.toEqual({ workjetMode: "business_os" });
+    await expect(savePreferencesPatch({ workjetMode: "code" })).resolves.toEqual({
+      workjetMode: "code",
+    });
   });
 
   it("falls back to secure storage when SQLite cannot save preferences", async () => {

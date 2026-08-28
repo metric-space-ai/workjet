@@ -266,7 +266,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @layer base {
   :root {
-    /* Keep the original T3 Code artwork palettes as the defaults. Built-in
+    /* Keep the original Workjet artwork palettes as the defaults. Built-in
        themes override them with their own pigments in the components layer. */
     --stage-art-top: oklch(0.782169 0.123386 240.226);
     --stage-art-mid: oklch(0.616111 0.195824 259.735);
@@ -323,6 +323,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 @layer components {
   .sidebar-brand {
     display: none;
+  }
+
+  /* The product-mode switch is the ONLY way between Code and Business OS —
+     it must never vanish with the brand link below 48rem (Befund K-B1). */
+  .product-mode-switch.sidebar-brand {
+    display: flex;
   }
 
   .sidebar-brand-stage {
@@ -778,14 +784,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   .dark .chat-composer-context-strip::before {
     border-color: rgb(255 255 255 / 7%);
-    background:
-      linear-gradient(
-        to bottom,
-        transparent 0 1rem,
-        rgb(0 0 0 / 18%) 1rem,
-        transparent calc(1rem + 10px)
-      ),
-      rgb(255 255 255 / 2%);
     box-shadow: 0 14px 32px -18px rgb(0 0 0 / 75%);
   }
 
@@ -1344,7 +1342,7 @@ html.dark[data-theme-id] {
   --terminal-scrollbar-hover: var(--app-theme-terminal-scrollbar-hover);
 }
 
-/* T3 Chat's composer is a translucent lift over --chat-background. Route its
+/* Workjet Chat's composer is a translucent lift over --chat-background. Route its
    measured flattened color through the raised-surface role instead of deriving
    another tint from the canvas, which made the dark composer too red. */
 html[data-theme-id] .chat-composer-glass-shell {
@@ -1361,7 +1359,7 @@ html.dark[data-theme-id] .chat-composer-glass-shell {
 }
 
 html.dark[data-theme-id="t3-chat"] .chat-composer-glass-shell {
-  /* T3 Chat's visible composer edge is a dark plum, not the stock translucent
+  /* Workjet Chat's visible composer edge is a dark plum, not the stock translucent
      white outline. Its highlight is derived from --chat-input-gradient. */
   --chat-composer-outline: #241e28;
   --chat-composer-highlight: color-mix(in srgb, #432d48 12%, transparent);
@@ -1519,7 +1517,7 @@ html[data-theme-id] .chat-markdown .chat-markdown-chrome-action {
   color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
 }
 
-/* T3 Chat renders inline code and compact chat artifacts with its translucent
+/* Workjet Chat renders inline code and compact chat artifacts with its translucent
    secondary surface flattened over the light chat canvas. The raw muted and
    secondary tokens are substantially darker than those visible pixels. */
 html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code,
@@ -1576,7 +1574,7 @@ html.dark[data-theme-id] [data-app-sidebar] {
   border-color: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
 }
 
-/* T3 Chat's panel divider is deliberately pink, and its resize affordance
+/* Workjet Chat's panel divider is deliberately pink, and its resize affordance
    keeps that color while hovered. Do not neutralize this branded edge. */
 html.dark[data-theme-id="t3-chat"] [data-app-sidebar] {
   border-color: var(--sidebar-border);
@@ -1645,7 +1643,7 @@ body {
   --surface-grain-size: 256px 256px;
 }
 
-/* The live T3 Chat texture is a 128px grayscale tile with a constant 7/255
+/* The live Workjet Chat texture is a 128px grayscale tile with a constant 7/255
    alpha. Keep our procedural texture cheap while matching that scale and
    strength for the branded preset. */
 html[data-theme-id="t3-chat"] {
@@ -1694,6 +1692,25 @@ code {
 .drag-region textarea,
 .drag-region select,
 .drag-region a {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * Popups, menus, and dialogs render in portals with high z-index, but the
+ * frameless window's drag region is an OS-level hit area that wins over
+ * z-index: a menu opening upward into the titlebar strip silently swallowed
+ * clicks on its topmost items (measured: the worker menu's "Manual" entry —
+ * switching back out of worker mode looked broken). Portal layers must never
+ * be draggable.
+ */
+[data-slot$="popup"],
+[data-slot$="popup"] *,
+[role="dialog"],
+[role="dialog"] *,
+[role="listbox"],
+[role="listbox"] *,
+[role="menu"],
+[role="menu"] * {
   -webkit-app-region: no-drag;
 }
 

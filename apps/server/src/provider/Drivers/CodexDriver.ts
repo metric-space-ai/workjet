@@ -42,6 +42,8 @@ import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import type { ProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { resolveGatewayRoutedEnvironment } from "../ProviderGatewayRouting.ts";
+import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makePackageManagedProviderMaintenanceResolver,
@@ -73,6 +75,7 @@ const UPDATE = makePackageManagedProviderMaintenanceResolver({
  * registered driver and the runtime satisfies them once.
  */
 export type CodexDriverEnv =
+  | ProviderGatewayService
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
@@ -113,7 +116,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
   },
   configSchema: CodexSettings,
   defaultConfig: (): CodexSettings => decodeCodexSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    routeViaGateway,
+    config,
+  }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
@@ -155,9 +166,29 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // here; the registry only has to worry about snapshot-build and
       // spawner-availability failures surfaced from `checkCodexProviderStatus`
       // below.
+      // Captured eagerly so the resolver closure carries the gateway service
+      // rather than requiring it from the adapter's own R channel; the
+      // gateway STATUS itself is still read lazily, per session start.
+      const gateway = yield* ProviderGatewayService;
+      const resolveSessionEnvironment = (session?: { readonly model?: string | undefined }) =>
+        resolveGatewayRoutedEnvironment({
+          driver: DRIVER_KIND,
+          instanceId,
+          routeViaGateway,
+          environment,
+          // The composer's model decides which gateway upstream serves the
+          // session, so it has to reach the resolver per session start.
+          ...(session?.model === undefined ? {} : { model: session.model }),
+          // Codex routing rides on the launch-args env var, so the operator's
+          // configured launch arguments must be carried through rather than
+          // shadowed.
+          launchArgs: effectiveConfig.launchArgs,
+        }).pipe(Effect.provideService(ProviderGatewayService, gateway));
+
       const adapter = yield* makeCodexAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
+        resolveSessionEnvironment,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv);
@@ -167,6 +198,29 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // updates. Pre-provide `ChildProcessSpawner` so the check fits
       // `makeManagedServerProvider.checkProvider`'s `R = never`.
       const checkProvider = checkCodexProviderStatus(effectiveConfig, undefined, processEnv).pipe(
+        // A gateway-routed instance authenticates through the Workjet
+        // provider gateway at session start; the CLI's own login state is
+        // irrelevant to it. Reporting "unauthenticated" here made every app
+        // restart demand a CLI re-login that the instance never needs.
+        Effect.map((draft) => {
+          if (
+            !routeViaGateway ||
+            draft.status !== "error" ||
+            draft.auth.status !== "unauthenticated"
+          ) {
+            return draft;
+          }
+          // Drop the message KEY entirely — an explicit `message: undefined`
+          // is not a JSON value and killed the client's config decode
+          // (measured: "Expected JSON value at providers[1]", connection
+          // retry loop, app fell back to its cached config).
+          const { message: _message, ...rest } = draft;
+          return {
+            ...rest,
+            status: "ready" as const,
+            auth: { status: "authenticated" as const, label: "Workjet provider gateway" },
+          };
+        }),
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );

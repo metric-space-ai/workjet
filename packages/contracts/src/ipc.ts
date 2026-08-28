@@ -25,6 +25,7 @@ import type {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
+import type { DesktopSupportBundleResult } from "./supportBundle.ts";
 import type { AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import type {
   ProjectListEntriesInput,
@@ -93,6 +94,36 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings } from "./settings.ts";
 import type {
+  CtoxAppActionResult,
+  CtoxDiscoveryResult,
+  CtoxDecisionHubDisconnectInput,
+  CtoxDecisionHubDisconnectResult,
+  CtoxDecisionHubProvisionInput,
+  CtoxDecisionHubProvisionResult,
+  CtoxGuestStateEvent,
+  CtoxHostThemeInput,
+  CtoxGuestBounds,
+  CtoxInstanceAppsResult,
+  CtoxInstanceAuthorityResolveResult,
+  CtoxManagedActionResult,
+  CtoxManagedGuestResult,
+  CtoxManagedLoginResult,
+  CtoxManualPairingImportInput,
+  CtoxWorkjetDeviceControlResult,
+  CtoxPairedInstanceImportResult,
+  CtoxPairedInstanceRemoveResult,
+  CtoxSshManagedInstanceAddInput,
+  CtoxSshManagedInstanceAddResult,
+  CtoxSshManagedInstanceRemoveResult,
+  CtoxShellFleetActionInput,
+  CtoxShellFleetActionResult,
+  CtoxShellFleetInventoryResult,
+  CtoxShellFleetPauseInput,
+  CtoxShellFleetRolloutResult,
+  CtoxShellFleetRolloutStatus,
+  WorkjetDeviceWebRtcRequestV1,
+} from "./ctox.ts";
+import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlPublishRepositoryInput,
@@ -100,7 +131,15 @@ import type {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
-
+import type {
+  WorkjetProvisioningGetResult,
+  WorkjetProvisioningPreflightInput,
+  WorkjetProvisioningPreflightResult,
+  WorkjetProvisioningStartInput,
+  WorkjetProvisioningStartResult,
+  WorkjetProvisioningTarget,
+  WorkjetSshHostKeyInspectResult,
+} from "./computerProvisioning.ts";
 export interface ContextMenuItem<T extends string = string> {
   id: T;
   label: string;
@@ -150,7 +189,7 @@ export type DesktopUpdateStatus =
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 export type DesktopUpdateChannel = "latest" | "nightly";
-export type DesktopAppStageLabel = "Alpha" | "Dev" | "Nightly";
+export type DesktopAppStageLabel = "Latest" | "Dev" | "Nightly";
 
 export const DesktopUpdateStatusSchema = Schema.Literals([
   "disabled",
@@ -165,7 +204,7 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
 export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
 export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
 export const DesktopUpdateChannelSchema = Schema.Literals(["latest", "nightly"]);
-export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Dev", "Nightly"]);
+export const DesktopAppStageLabelSchema = Schema.Literals(["Latest", "Dev", "Nightly"]);
 
 export interface DesktopAppBranding {
   baseName: string;
@@ -468,6 +507,40 @@ export const DesktopWslDistroSchema = Schema.Struct({
   isDefault: Schema.Boolean,
   version: Schema.Literals([1, 2]),
 });
+
+/**
+ * One-time offer to copy a compatible previous user-data directory into the
+ * current Workjet profile. The source directory is never modified or removed.
+ */
+export interface DesktopUserDataMigrationOffer {
+  /** Absolute path of the legacy directory the data would be copied from. */
+  legacyPath: string;
+  /** Absolute path of the current Workjet user-data directory. */
+  targetPath: string;
+  /** Top-level entries the import would copy. Caches are never copied. */
+  entries: readonly string[];
+}
+
+/**
+ * One OS-delivered deep link the main process has parsed and is holding until
+ * the user explicitly confirms it. Deep links are never acted on silently:
+ * the main process only ever hands the renderer this description, and the
+ * renderer navigates only after the user picks "Open".
+ */
+export interface DesktopPendingDeepLink {
+  /** Stable per-launch id, used as the renderer's queue key. */
+  linkId: string;
+  /** Scheme the link arrived on, without the trailing colon. */
+  scheme: string;
+  /** The same link expressed on the renderer's serving origin. */
+  canonicalUrl: string;
+  /** Path portion of the canonical URL, always starting with `/`. */
+  path: string;
+  /** Query string including the leading `?`, or an empty string. */
+  search: string;
+  /** Fragment including the leading `#`, or an empty string. */
+  hash: string;
+}
 
 export interface DesktopWslState {
   // True when the user has opted the WSL backend in; the actual backend
@@ -1055,6 +1128,38 @@ export interface DesktopBridge {
     readonly port?: number;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
+  /**
+   * One-time offer to import a compatible previous user-data directory into the
+   * current Workjet profile. Null means nothing to offer. Optional: older
+   * desktop builds do not expose it.
+   */
+  getUserDataMigrationOffer?: () => Promise<DesktopUserDataMigrationOffer | null>;
+  /** Records acceptance and relaunches; the copy runs during the next launch. */
+  acceptUserDataMigration?: () => Promise<void>;
+  /** Records refusal. The offer is never shown again. */
+  declineUserDataMigration?: () => Promise<void>;
+  /**
+   * Writes a redacted support bundle to disk and returns where it landed.
+   *
+   * Optional, and the renderer's feature flag for the whole surface: a build
+   * without this method has no support-bundle action. The bundle is NEVER
+   * uploaded — there is no companion send method, by design (see
+   * `SUPPORT_BUNDLE_UPLOAD_SUPPORTED`). Only the result crosses the bridge;
+   * the document itself stays on disk for the user to read first.
+   */
+  createSupportBundle?: () => Promise<DesktopSupportBundleResult>;
+  /**
+   * Drains the OS deep links the main process is holding. Draining is the
+   * only way links leave the main process, so a link is delivered exactly
+   * once. Optional: older desktop builds have no OS deep-link entry point.
+   */
+  takePendingDeepLinks?: () => Promise<readonly DesktopPendingDeepLink[]>;
+  /**
+   * Signal that at least one deep link is waiting. The signal carries no
+   * payload — the listener calls `takePendingDeepLinks` — so a link can never
+   * be delivered twice by racing the push against the drain.
+   */
+  onDeepLinkPending?: (listener: () => void) => () => void;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;
@@ -1080,12 +1185,95 @@ export interface DesktopBridge {
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
+  inspectProvisioningHostKey?: (
+    target: WorkjetProvisioningTarget,
+  ) => Promise<WorkjetSshHostKeyInspectResult>;
+  preflightProvisioningTarget?: (
+    input: WorkjetProvisioningPreflightInput,
+  ) => Promise<WorkjetProvisioningPreflightResult>;
+  startProvisioningOperation?: (
+    input: WorkjetProvisioningStartInput,
+  ) => Promise<WorkjetProvisioningStartResult>;
+  getProvisioningOperation?: (operationId: string) => Promise<WorkjetProvisioningGetResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
+  /** Desktop-only managed CTOX guest surface. */
+  ctox?: DesktopCtoxBridge;
+}
+
+export interface DesktopCtoxBridge {
+  refresh: () => Promise<CtoxDiscoveryResult>;
+  login: () => Promise<CtoxManagedLoginResult>;
+  logout: () => Promise<CtoxManagedActionResult>;
+  provisionDecisionHub?: (
+    input: CtoxDecisionHubProvisionInput,
+  ) => Promise<CtoxDecisionHubProvisionResult>;
+  disconnectDecisionHub?: (
+    input: CtoxDecisionHubDisconnectInput,
+  ) => Promise<CtoxDecisionHubDisconnectResult>;
+  importInvite: (invite: string) => Promise<CtoxPairedInstanceImportResult>;
+  importManualPairing: (
+    input: CtoxManualPairingImportInput,
+  ) => Promise<CtoxPairedInstanceImportResult>;
+  removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
+  resolveInstanceAuthority?: (instanceId: string) => Promise<CtoxInstanceAuthorityResolveResult>;
+  /** Device management through the selected warm CTOX RxDB/WebRTC guest only. */
+  requestDeviceControl?: (
+    instanceId: string,
+    request: WorkjetDeviceWebRtcRequestV1,
+  ) => Promise<CtoxWorkjetDeviceControlResult>;
+  /** Configure one SSH-managed CTOX instance; carries no credential. */
+  addSshManagedInstance: (
+    input: CtoxSshManagedInstanceAddInput,
+  ) => Promise<CtoxSshManagedInstanceAddResult>;
+  removeSshManagedInstance: (instanceId: string) => Promise<CtoxSshManagedInstanceRemoveResult>;
+  enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
+  exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
+  activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
+  /** Detach the active native guest while keeping it warm for later re-attachment. */
+  suspend: () => Promise<CtoxManagedActionResult>;
+  deactivate: () => Promise<CtoxManagedActionResult>;
+  setGuestBounds: (bounds: CtoxGuestBounds) => Promise<CtoxManagedActionResult>;
+  /** Docked-or-open apps of one instance (live from the guest, cache otherwise). */
+  listApps: (instanceId: string) => Promise<CtoxInstanceAppsResult>;
+  /** Activate the instance guest if needed and open the module directly. */
+  openApp: (
+    instanceId: string,
+    moduleId: string,
+    bounds: CtoxGuestBounds,
+  ) => Promise<CtoxAppActionResult>;
+  /** Open the active CTOX instance's own Business OS settings drawer. */
+  openSettings?: (instanceId: string) => Promise<CtoxAppActionResult>;
+  /** Pin or unpin an app on the instance's rail (taskbar model). */
+  setAppDocked: (
+    instanceId: string,
+    moduleId: string,
+    docked: boolean,
+  ) => Promise<CtoxAppActionResult>;
+  /** Project the host appearance theme into the Business OS guest. */
+  setHostTheme: (theme: CtoxHostThemeInput) => Promise<CtoxManagedActionResult>;
+  getShellFleetInventory?: () => Promise<CtoxShellFleetInventoryResult>;
+  runShellFleetAction?: (input: CtoxShellFleetActionInput) => Promise<CtoxShellFleetActionResult>;
+  pauseShellFleetInstance?: (
+    input: CtoxShellFleetPauseInput,
+  ) => Promise<CtoxShellFleetInventoryResult>;
+  resumeShellFleetInstance?: (instanceId: string) => Promise<CtoxShellFleetInventoryResult>;
+  startShellFleetRollout?: () => Promise<CtoxShellFleetRolloutResult>;
+  getShellFleetRolloutStatus?: () => Promise<CtoxShellFleetRolloutStatus>;
+  resumeShellFleetRollout?: () => Promise<CtoxShellFleetRolloutStatus>;
+  onShellFleetRolloutStatus?: (
+    listener: (status: CtoxShellFleetRolloutStatus) => void,
+  ) => () => void;
+  /**
+   * Subscribe to per-instance guest lifecycle changes ("none" | "loading" |
+   * "warm"); returns the unsubscribe. The payload carries the instance id and
+   * state only — never guest content. Optional so older preloads keep working.
+   */
+  onGuestState?: (listener: (event: CtoxGuestStateEvent) => void) => () => void;
 }
 
 export interface DesktopPreviewBridge {

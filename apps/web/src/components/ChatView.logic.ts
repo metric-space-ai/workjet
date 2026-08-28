@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   type EnvironmentId,
   isProviderDriverKind,
   ProjectId,
@@ -15,6 +16,10 @@ import { type ComposerImageAttachment, type DraftThreadState } from "../composer
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  readBusinessOsCodeScope,
+} from "../businessOsCodeScope";
 import {
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
@@ -91,6 +96,7 @@ export function buildLocalDraftThread(
     modelSelection: fallbackModelSelection,
     runtimeMode: draftThread.runtimeMode,
     interactionMode: draftThread.interactionMode,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     createdAt: draftThread.createdAt,
@@ -447,6 +453,9 @@ export async function waitForStartedServerThread(
   threadRef: ScopedThreadRef,
   timeoutMs = 1_000,
 ): Promise<boolean> {
+  if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), threadRef.environmentId)) {
+    return false;
+  }
   const threadAtom = environmentThreadDetails.detailAtom(threadRef);
   const getThread = () => appAtomRegistry.get(threadAtom);
   const thread = getThread();

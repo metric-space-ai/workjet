@@ -1,0 +1,294 @@
+# Publishes `workjet-provider-gateway-host` release artifacts for the six
+# targets Workjet and CTOX packaging require.
+#
+# This workflow is deliberately separate from `release.yml`: it is triggered by
+# `provider-gateway-host-v*` tags, which cannot match that workflow's `v*.*.*`
+# trigger, so cutting a gateway release never starts a desktop release and vice
+# versa. CTOX pins a gateway release produced here by tag + SHA-256; the naming
+# and manifest contract lives in `scripts/lib/provider-gateway-host-artifacts.ts`
+# and is documented in `docs/workjet-provider-gateway-host-artifacts.md`.
+name: Provider gateway host release
+
+on:
+  push:
+    tags:
+      - "provider-gateway-host-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Gateway host version to build (for example 0.1.0). Must match the crate version."
+        required: true
+        type: string
+      publish:
+        description: "Publish a GitHub release. Off performs a full build + verify dry run."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: none
+
+env:
+  GATEWAY_HOST_MANIFEST: native/provider-gateway-workjet-host/Cargo.toml
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      publish: ${{ steps.resolve.outputs.publish }}
+      source_commit: ${{ steps.resolve.outputs.source_commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: rustfmt, clippy
+
+      - id: resolve
+        name: Resolve version, tag, and source commit
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            tag="$GITHUB_REF_NAME"
+            version="${tag#provider-gateway-host-v}"
+            publish=true
+          else
+            version="${INPUT_VERSION#v}"
+            tag="provider-gateway-host-v${version}"
+            publish="${INPUT_PUBLISH}"
+          fi
+
+          # The tag must name exactly the crate version it builds; otherwise a
+          # consumer pinning `provider-gateway-host-v0.2.0` could receive a
+          # binary that reports 0.1.0.
+          crate_version="$(sed -n '/^\[package\]/,/^\[/p' "$GATEWAY_HOST_MANIFEST" \
+            | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1)"
+          if [[ "$crate_version" != "$version" ]]; then
+            echo "Tag version $version does not match crate version $crate_version in $GATEWAY_HOST_MANIFEST." >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "publish=$publish"
+            echo "source_commit=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Format
+        run: cargo fmt --manifest-path "$GATEWAY_HOST_MANIFEST" -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path "$GATEWAY_HOST_MANIFEST" --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --manifest-path "$GATEWAY_HOST_MANIFEST"
+
+      - name: Artifact contract tests
+        run: vp run --filter @t3tools/scripts test
+
+      - name: Release notice is current
+        run: node scripts/generate-release-notice.ts --check
+
+  build:
+    name: Build ${{ matrix.triple }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Keep in exact sync with PROVIDER_GATEWAY_HOST_TARGETS in
+          # scripts/lib/provider-gateway-host-artifacts.ts. `collect` refuses a
+          # release that is missing any of these triples, so a dropped entry
+          # fails the run instead of publishing a partial release.
+          - triple: aarch64-apple-darwin
+            runner: blacksmith-12vcpu-macos-26
+          - triple: x86_64-apple-darwin
+            runner: blacksmith-12vcpu-macos-26
+          - triple: x86_64-unknown-linux-gnu
+            runner: blacksmith-32vcpu-ubuntu-2404
+          - triple: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - triple: x86_64-pc-windows-msvc
+            runner: blacksmith-32vcpu-windows-2025
+          - triple: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Build gateway host
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release \
+            --manifest-path "$GATEWAY_HOST_MANIFEST" \
+            --bin workjet-provider-gateway-host \
+            --target "${{ matrix.triple }}"
+
+      - name: Stage release artifact
+        shell: bash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          suffix=""
+          case "${{ matrix.triple }}" in *windows-msvc) suffix=".exe";; esac
+          node scripts/provider-gateway-host-artifacts.ts stage \
+            --triple "${{ matrix.triple }}" \
+            --version "$VERSION" \
+            --binary "native/provider-gateway-workjet-host/target/${{ matrix.triple }}/release/workjet-provider-gateway-host${suffix}" \
+            --out-dir gateway-host-staged
+
+      - name: Upload staged artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gateway-host-${{ matrix.triple }}
+          path: gateway-host-staged/*
+          if-no-files-found: error
+
+  release:
+    name: Publish gateway host release
+    needs: [preflight, build]
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Download every staged artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: gateway-host-*
+          merge-multiple: true
+          path: gateway-host-release
+
+      # Builds the detached manifest and the sha256sums file, and copies the
+      # MIT / AGPL-3.0-only / upstream-MIT license texts and NOTICE.md next to
+      # the binaries. The host is distributed here as a standalone executable,
+      # so those notices must travel with the release, not only with the source
+      # tree (see NOTICE.md section 2 and scripts/lib/release-notice.ts).
+      - name: Collect release manifest, checksums, and notices
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          SOURCE_COMMIT: ${{ needs.preflight.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+          node scripts/provider-gateway-host-artifacts.ts collect \
+            --version "$VERSION" \
+            --source-commit "$SOURCE_COMMIT" \
+            --license "MIT OR AGPL-3.0-only" \
+            --dir gateway-host-release
+
+      - name: Verify every published byte against the manifest
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/provider-gateway-host-artifacts.ts verify \
+            --version "$VERSION" --dir gateway-host-release
+          # Independently re-check with coreutils so the contract is not only
+          # verified by the code that produced it.
+          (cd gateway-host-release && sha256sum --check "workjet-provider-gateway-host-${VERSION}.sha256sums.txt")
+
+      - name: Emit the consumer pin for review
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/provider-gateway-host-artifacts.ts pin \
+            --version "$VERSION" \
+            --dir gateway-host-release \
+            --out gateway-host-pin/host-release.pin.json
+          echo "Commit this to apps/desktop/resources/provider-gateway/host-release.pin.json:"
+          cat gateway-host-pin/host-release.pin.json
+
+      # The pin is uploaded, never auto-committed: promoting a release to the
+      # pinned dependency is a reviewed change, not a side effect of tagging.
+      - name: Upload the consumer pin
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gateway-host-consumer-pin
+          path: gateway-host-pin/host-release.pin.json
+          if-no-files-found: error
+
+      - name: Publish release
+        if: ${{ needs.preflight.outputs.publish == 'true' }}
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          target_commitish: ${{ needs.preflight.outputs.source_commit }}
+          name: Provider gateway host ${{ needs.preflight.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ contains(needs.preflight.outputs.version, '-') }}
+          make_latest: false
+          files: |
+            gateway-host-release/workjet-provider-gateway-host-*
+            gateway-host-release/LICENSE.*
+            gateway-host-release/NOTICE.md
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}

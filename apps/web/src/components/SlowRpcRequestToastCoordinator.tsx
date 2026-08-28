@@ -3,17 +3,38 @@ import { useEffect, useRef } from "react";
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
 import { toastManager } from "./ui/toast";
 
-function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>): string {
+export type SlowRequestLocale = "de" | "en";
+
+export function resolveSlowRequestLocale(language?: string): SlowRequestLocale {
+  const resolved = language ?? globalThis.navigator?.language ?? "en";
+  return resolved.toLowerCase().startsWith("de") ? "de" : "en";
+}
+
+export function describeSlowRequests(
+  requests: ReadonlyArray<SlowRpcAckRequest>,
+  locale: SlowRequestLocale,
+): string {
   const count = requests.length;
   // Thresholds vary per method, so report the smallest one the batch has passed.
   const thresholdSeconds = Math.round(
     Math.min(...requests.map((request) => request.thresholdMs)) / 1000,
   );
 
+  if (locale === "de") {
+    return count === 1
+      ? `1 Anfrage wartet länger als ${thresholdSeconds} s.`
+      : `${count} Anfragen warten länger als ${thresholdSeconds} s.`;
+  }
   return `${count} request${count === 1 ? "" : "s"} waiting longer than ${thresholdSeconds}s.`;
 }
 
-function SlowRequestDetails({ requests }: { requests: ReadonlyArray<SlowRpcAckRequest> }) {
+function SlowRequestDetails({
+  requests,
+  locale,
+}: {
+  requests: ReadonlyArray<SlowRpcAckRequest>;
+  locale: SlowRequestLocale;
+}) {
   return (
     <ul className="space-y-2.5 text-xs text-muted-foreground">
       {requests.map((request) => (
@@ -23,7 +44,8 @@ function SlowRequestDetails({ requests }: { requests: ReadonlyArray<SlowRpcAckRe
         >
           <div className="wrap-break-word font-medium text-foreground">{request.tag}</div>
           <div className="mt-0.5 text-[10px] opacity-75">
-            Started {new Date(request.startedAt).toLocaleTimeString()}
+            {locale === "de" ? "Gestartet" : "Started"}{" "}
+            {new Date(request.startedAt).toLocaleTimeString(locale === "de" ? "de-DE" : "en-US")}
           </div>
         </li>
       ))}
@@ -34,6 +56,7 @@ function SlowRequestDetails({ requests }: { requests: ReadonlyArray<SlowRpcAckRe
 export function SlowRpcRequestToastCoordinator() {
   const slowRequests = useSlowRpcAckRequests();
   const toastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
+  const locale = resolveSlowRequestLocale();
 
   useEffect(() => {
     if (slowRequests.length === 0) {
@@ -46,13 +69,16 @@ export function SlowRpcRequestToastCoordinator() {
 
     const nextToast = {
       data: {
-        expandableContent: <SlowRequestDetails requests={slowRequests} />,
+        expandableContent: <SlowRequestDetails locale={locale} requests={slowRequests} />,
         expandableDescriptionTrigger: true,
-        expandableLabels: { collapse: "Hide requests", expand: "Show requests" },
+        expandableLabels:
+          locale === "de"
+            ? { collapse: "Anfragen ausblenden", expand: "Anfragen anzeigen" }
+            : { collapse: "Hide requests", expand: "Show requests" },
       },
-      description: describeSlowRequests(slowRequests),
+      description: describeSlowRequests(slowRequests, locale),
       timeout: 0,
-      title: "Some requests are slow",
+      title: locale === "de" ? "Einige Anfragen dauern länger" : "Some requests are slow",
       type: "warning" as const,
     };
 
@@ -61,7 +87,7 @@ export function SlowRpcRequestToastCoordinator() {
     } else {
       toastManager.update(toastIdRef.current, nextToast);
     }
-  }, [slowRequests]);
+  }, [locale, slowRequests]);
 
   useEffect(
     () => () => {

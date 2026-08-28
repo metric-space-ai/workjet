@@ -1,0 +1,20 @@
+{
+  "_provenance": "Derived from https://github.com/run-llama/liteparse.git at commit 67726fc153393439f43d70268ba67d08bf49ed87; SPDX-License-Identifier: Apache-2.0 AND (MIT OR AGPL-3.0-only)",
+  "cases": [
+    {
+      "name": "strip_numeric_cell",
+      "input": "| 123 |",
+      "expected": "123"
+    },
+    {
+      "name": "preserve_word_cell",
+      "input": "| Revenue |",
+      "expected": "| Revenue |"
+    },
+    {
+      "name": "preserve_na",
+      "input": "N/A",
+      "expected": "N/A"
+    }
+  ]
+}

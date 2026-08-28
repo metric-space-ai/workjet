@@ -1,0 +1,22 @@
+{
+  "_fixture": "original synthetic Workjet registry-shaped data; all identifiers are invented",
+  "list": [
+    {
+      "name": "Workjet Example Holdings AG",
+      "ehraid": 900001,
+      "uidFormatted": "CHE-000.000.001",
+      "legalSeat": "Beispielwil",
+      "status": "EXISTIEREND"
+    },
+    {
+      "name": "Workjet Fixture Systems GmbH",
+      "chid": "CH00000000002",
+      "uidFormatted": "CHE-000.000.002",
+      "legalSeat": "Musterort",
+      "status": "EXISTIEREND"
+    }
+  ],
+  "offset": 0,
+  "maxEntries": 50,
+  "maxOffset": 2
+}

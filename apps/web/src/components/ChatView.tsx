@@ -1,6 +1,9 @@
 import {
   type ApprovalRequestId,
+  type CtoxAppModuleId,
+  type CtoxManagedInstanceId,
   DEFAULT_MODEL,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   defaultInstanceIdForDriver,
   type EnvironmentId,
   type MessageId,
@@ -14,13 +17,18 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
+  type WorkjetHandoffId,
   type TurnId,
   type KeybindingCommand,
+  type WorkjetThreadConfig,
+  type WorkjetCapabilityBinding,
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
+  type WorkjetBusinessOsObjectId,
+  type WorkjetBusinessOsObjectKind,
 } from "@t3tools/contracts";
 import {
   connectionStatusTitle,
@@ -237,20 +245,53 @@ import {
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { useBusinessOsScopedEnvironments } from "../state/environments";
 import {
   useProject,
   useProjects,
   useThread,
   useThreadRefs,
   useThreadShell,
+  useThreadShells,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  executeWorkjetCapabilitySet,
+  executeWorkjetCapabilityToggle,
+  GREPPY_CAPABILITY_ID,
+  WORKJET_GREPPY_FAILURE_TOAST,
+} from "./chat/WorkjetCapabilityMenu";
+import {
+  executeWorkjetRoleChange,
+  WORKJET_ROLE_FAILURE_TOAST,
+  WORKJET_SETTINGS_ROUTE,
+  type WorkjetSelectableRole,
+} from "./chat/WorkjetRoleControl";
+import {
+  buildWorkjetDelegateTaskInput,
+  buildWorkjetSendHandoffInput,
+  buildWorkjetSendMessageInput,
+  EMPTY_WORKJET_SEND_DRAFT,
+  workjetMailboxFailureMessage,
+  WorkjetSendToWorkerPanel,
+  type WorkjetSendDraft,
+  type WorkjetSendOutcome,
+} from "./chat/WorkjetSendToWorkerPanel";
+import {
+  workjetCrossModeFailureMessage,
+  type WorkjetCrossModeAction,
+  type WorkjetCrossModeCardModel,
+} from "./chat/WorkjetCrossModeLinkCard";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
+import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import type {
+  WorkjetDelegationAction,
+  WorkjetMailboxCardModel,
+} from "./chat/WorkjetMailboxActivityCard";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
@@ -275,6 +316,9 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
+import { WorkjetHandoffInbox, WorkjetWorkerOverview } from "./workjetSurfaces";
+import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
+import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
@@ -1224,6 +1268,9 @@ function ChatViewContent(props: ChatViewProps) {
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
     reportFailure: false,
   });
+  const setThreadWorkjetConfig = useAtomCommand(threadEnvironment.setWorkjetConfig, {
+    reportFailure: false,
+  });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
@@ -1239,8 +1286,7 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
-  const { environments } = useEnvironments();
-  const primaryEnvironment = usePrimaryEnvironment();
+  const { environments } = useBusinessOsScopedEnvironments();
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const environmentById = useMemo(
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
@@ -1317,7 +1363,6 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
-  const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
   );
@@ -1349,6 +1394,9 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  const [workjetConfigOverridesByThreadKey, setWorkjetConfigOverridesByThreadKey] = useState<
+    Record<string, { readonly config: WorkjetThreadConfig; readonly busy: boolean }>
+  >({});
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -1389,6 +1437,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const workjetToggleInFlightThreadKeysRef = useRef<Set<string>>(new Set());
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -1582,6 +1631,431 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadEnvironmentId, activeThreadId],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  const activeWorkjetConfigOverride = activeThreadKey
+    ? workjetConfigOverridesByThreadKey[activeThreadKey]
+    : undefined;
+  const visibleWorkjetConfig =
+    isServerThread && activeServerThread
+      ? (activeWorkjetConfigOverride?.config ?? activeServerThread.workjetConfig)
+      : null;
+  const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
+  // "Send to worker" exists only on an ORCHESTRATOR thread. That is the same
+  // boundary the server enforces on the RPC, restated in the UI so a worker or
+  // standard thread is never offered an action it would be refused.
+  const workjetIsOrchestratorThread = visibleWorkjetConfig?.role === "orchestrator";
+  const [workjetSendDraft, setWorkjetSendDraft] =
+    useState<WorkjetSendDraft>(EMPTY_WORKJET_SEND_DRAFT);
+  const [workjetSendOutcome, setWorkjetSendOutcome] = useState<WorkjetSendOutcome | null>(null);
+  const [workjetSendBusy, setWorkjetSendBusy] = useState(false);
+  // The handoff whose continuation is in flight, plus the last refusal. Nothing
+  // optimistic: the inbox row changes only when the server's listing does.
+  const [workjetContinuingHandoffId, setWorkjetContinuingHandoffId] = useState<string | null>(null);
+  const [workjetHandoffError, setWorkjetHandoffError] = useState<string | null>(null);
+  const sendWorkjetMailboxMessage = useAtomCommand(serverEnvironment.sendWorkjetMailboxMessage, {
+    reportFailure: false,
+  });
+  const delegateWorkjetMailboxTask = useAtomCommand(serverEnvironment.delegateWorkjetMailboxTask, {
+    reportFailure: false,
+  });
+  const replyWorkjetMailbox = useAtomCommand(serverEnvironment.replyWorkjetMailbox, {
+    reportFailure: false,
+  });
+  const requestReviewWorkjetMailbox = useAtomCommand(
+    serverEnvironment.requestReviewWorkjetMailbox,
+    {
+      reportFailure: false,
+    },
+  );
+  const updateDelegationWorkjetMailbox = useAtomCommand(
+    serverEnvironment.updateDelegationWorkjetMailbox,
+    { reportFailure: false },
+  );
+  const reassignDelegationWorkjetMailbox = useAtomCommand(
+    serverEnvironment.reassignDelegationWorkjetMailbox,
+    { reportFailure: false },
+  );
+  const sendHandoffWorkjetMailbox = useAtomCommand(serverEnvironment.sendHandoffWorkjetMailbox, {
+    reportFailure: false,
+  });
+  const acceptHandoffWorkjetMailbox = useAtomCommand(
+    serverEnvironment.acceptHandoffWorkjetMailbox,
+    { reportFailure: false },
+  );
+  // The cross-mode return. Like every other timeline-card write it reports its
+  // own refusal on the card, so the global failure toast stays off.
+  const submitWorkjetCrossMode = useAtomCommand(serverEnvironment.submitWorkjetCrossMode, {
+    reportFailure: false,
+  });
+  // The mesh roster feeds the send-to-worker recipient picker; queried only
+  // while an orchestrator thread is active so ordinary threads pay nothing.
+  const workjetMeshRosterQuery = useEnvironmentQuery(
+    workjetIsOrchestratorThread && activeThreadEnvironmentId
+      ? serverEnvironment.workjetMeshRoster({
+          environmentId: activeThreadEnvironmentId,
+          input: {},
+        })
+      : null,
+  );
+  const workjetMeshRoster = workjetMeshRosterQuery.data ?? null;
+  // Handoffs arrive addressed to this MACHINE, so the inbox is read per
+  // environment and only while an orchestrator thread is open — the same
+  // scoping the roster read uses, so ordinary threads pay nothing for it.
+  const workjetHandoffInboxQuery = useEnvironmentQuery(
+    workjetIsOrchestratorThread && activeThreadEnvironmentId
+      ? serverEnvironment.workjetMailboxHandoffs({
+          environmentId: activeThreadEnvironmentId,
+          input: {},
+        })
+      : null,
+  );
+  const workjetReceivedHandoffs = workjetHandoffInboxQuery.data?.handoffs ?? [];
+  const allThreadShells = useThreadShells();
+  // Recipients are the OTHER live threads on this machine; a thread cannot be
+  // offered itself, and a deleted thread is not a destination.
+  const workjetRecipientThreads = useMemo(
+    () =>
+      activeThreadEnvironmentId && activeThreadId
+        ? allThreadShells
+            .filter(
+              (shell) =>
+                shell.environmentId === activeThreadEnvironmentId && shell.id !== activeThreadId,
+            )
+            .map((shell) => ({ threadId: String(shell.id), title: shell.title }))
+        : [],
+    [activeThreadEnvironmentId, activeThreadId, allThreadShells],
+  );
+  const onSubmitWorkjetSend = useCallback(() => {
+    if (!activeThreadEnvironmentId || !activeThreadId || workjetSendBusy) return;
+    setWorkjetSendBusy(true);
+    setWorkjetSendOutcome(null);
+    void (async () => {
+      const payloadArguments = {
+        draft: workjetSendDraft,
+        sourceThreadId: activeThreadId,
+        activeEnvironmentId: activeThreadEnvironmentId,
+      };
+      // The two sends answer with different result schemas, so each branch
+      // narrows its own receipt; both collapse onto the one inline outcome the
+      // panel renders.
+      const receipt =
+        workjetSendDraft.tab === "handoff"
+          ? await sendHandoffWorkjetMailbox({
+              environmentId: activeThreadEnvironmentId,
+              input: buildWorkjetSendHandoffInput(payloadArguments),
+            }).then((result) =>
+              result._tag === "Failure"
+                ? result
+                : ({
+                    status: result.value.status,
+                    envelopeId: String(result.value.envelopeId),
+                    disposition: result.value.disposition,
+                  } as const),
+            )
+          : workjetSendDraft.tab === "task"
+            ? await delegateWorkjetMailboxTask({
+                environmentId: activeThreadEnvironmentId,
+                input: buildWorkjetDelegateTaskInput(payloadArguments),
+              }).then((result) =>
+                result._tag === "Failure"
+                  ? result
+                  : ({
+                      status: result.value.status,
+                      envelopeId: String(result.value.envelopeId),
+                      disposition: result.value.disposition,
+                    } as const),
+              )
+            : await sendWorkjetMailboxMessage({
+                environmentId: activeThreadEnvironmentId,
+                input: buildWorkjetSendMessageInput(payloadArguments),
+              }).then((result) =>
+                result._tag === "Failure"
+                  ? result
+                  : ({
+                      status: result.value.status,
+                      envelopeId: String(result.value.envelopeId),
+                      disposition: result.value.disposition,
+                    } as const),
+              );
+      setWorkjetSendBusy(false);
+      if ("_tag" in receipt) {
+        if (isAtomCommandInterrupted(receipt)) return;
+        setWorkjetSendOutcome({
+          _tag: "error",
+          message: workjetMailboxFailureMessage(squashAtomCommandFailure(receipt)),
+        });
+        return;
+      }
+      setWorkjetSendOutcome(
+        receipt.status === "queued"
+          ? { _tag: "queued", envelopeId: receipt.envelopeId }
+          : {
+              _tag: "acknowledged",
+              envelopeId: receipt.envelopeId,
+              disposition: receipt.disposition ?? "accepted-new",
+            },
+      );
+    })();
+  }, [
+    activeThreadEnvironmentId,
+    activeThreadId,
+    delegateWorkjetMailboxTask,
+    sendHandoffWorkjetMailbox,
+    sendWorkjetMailboxMessage,
+    workjetSendBusy,
+    workjetSendDraft,
+  ]);
+  // Dispatch a delegation lifecycle action (reply / request review / cancel /
+  // review verdict) from a mailbox timeline card. The durable activity
+  // re-render carries the resulting state back through the normal
+  // subscription, so nothing here holds optimistic state.
+  const onWorkjetDelegationAction = useCallback(
+    async (
+      action: WorkjetDelegationAction,
+      model: WorkjetMailboxCardModel,
+    ): Promise<string | null> => {
+      if (!activeThreadEnvironmentId || !activeThreadId || model.delegationId === null) return null;
+      const environmentId = activeThreadEnvironmentId;
+      const sourceThreadId = activeThreadId;
+      const delegationId = model.delegationId;
+      const address = {
+        sourceThreadId,
+        targetWorkspaceId: model.peerWorkspaceId,
+        targetEnvironmentId: model.peerEnvironmentId,
+        targetThreadId: model.peerThreadId,
+      } as const;
+      // Only a REFUSAL needs reporting: a success re-renders the card through
+      // the ordinary thread subscription, and an interrupted command is not a
+      // refusal at all.
+      const refusal = (result: unknown): string | null =>
+        typeof result === "object" &&
+        result !== null &&
+        "_tag" in result &&
+        (result as { readonly _tag: string })._tag === "Failure"
+          ? isAtomCommandInterrupted(result as never)
+            ? null
+            : workjetMailboxFailureMessage(squashAtomCommandFailure(result as never))
+          : null;
+      switch (action.kind) {
+        case "reply":
+          return refusal(
+            await replyWorkjetMailbox({
+              environmentId,
+              input: { ...address, delegationId, body: { _tag: "inline", text: action.text } },
+            }),
+          );
+        case "request-review":
+          return refusal(
+            await requestReviewWorkjetMailbox({
+              environmentId,
+              input: {
+                ...address,
+                delegationId,
+                round: action.round,
+                body: { _tag: "inline", text: action.text },
+              },
+            }),
+          );
+        case "follow-up": {
+          // The update RPC's `follow-up` variant carries no message, so an
+          // optional note travels as an ordinary reply on the same delegation
+          // FIRST — a note that could not be delivered must not be followed by
+          // a state change that silently drops it.
+          const note = action.note.trim();
+          if (note.length > 0) {
+            const noteRefusal = refusal(
+              await replyWorkjetMailbox({
+                environmentId,
+                input: { ...address, delegationId, body: { _tag: "inline", text: note } },
+              }),
+            );
+            if (noteRefusal !== null) return noteRefusal;
+          }
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: { sourceThreadId, delegationId, update: { _tag: "follow-up" } },
+            }),
+          );
+        }
+        case "revise":
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: { sourceThreadId, delegationId, update: { _tag: "revise" } },
+            }),
+          );
+        case "reassign":
+          return refusal(
+            await reassignDelegationWorkjetMailbox({
+              environmentId,
+              input: {
+                sourceThreadId,
+                delegationId,
+                // Reassignment is LOCAL only, so the target is this thread's own
+                // environment and workspace, never the card's peer address.
+                targetWorkspaceId: model.peerWorkspaceId,
+                targetEnvironmentId: environmentId,
+                targetThreadId: action.targetThreadId as ThreadId,
+              },
+            }),
+          );
+        case "cancel":
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: { sourceThreadId, delegationId, update: { _tag: "cancel" } },
+            }),
+          );
+        case "approve":
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: {
+                sourceThreadId,
+                delegationId,
+                update: { _tag: "review", decision: "approve", round: action.round },
+              },
+            }),
+          );
+        case "request-changes":
+          return refusal(
+            await updateDelegationWorkjetMailbox({
+              environmentId,
+              input: {
+                sourceThreadId,
+                delegationId,
+                update: {
+                  _tag: "review",
+                  decision: "changes-requested",
+                  round: action.round,
+                  reasons: action.reasons,
+                },
+              },
+            }),
+          );
+      }
+    },
+    [
+      activeThreadEnvironmentId,
+      activeThreadId,
+      reassignDelegationWorkjetMailbox,
+      replyWorkjetMailbox,
+      requestReviewWorkjetMailbox,
+      updateDelegationWorkjetMailbox,
+    ],
+  );
+  /**
+   * `Return to Business OS`: submit a result with evidence, request a review, or
+   * ask for a follow-up on the linked Business OS work item.
+   *
+   * The link id and the ACTIVE thread are the only things that travel — the CTOX
+   * instance, module, and object are read from the stored link on the server, so
+   * this client cannot redirect a submission at a different object even by
+   * mistake. Only a refusal is reported: a success writes a durable
+   * `workjet.crossmode.returned` activity that re-renders the timeline.
+   */
+  const onWorkjetCrossModeAction = useCallback(
+    async (
+      action: WorkjetCrossModeAction,
+      _model: WorkjetCrossModeCardModel,
+    ): Promise<string | null> => {
+      if (!activeThreadEnvironmentId || !activeThreadId) return null;
+      const result = await submitWorkjetCrossMode({
+        environmentId: activeThreadEnvironmentId,
+        input: {
+          linkId: action.linkId,
+          threadId: activeThreadId,
+          operation: action.kind,
+          evidence: {
+            schemaVersion: 1,
+            summary: action.summary,
+            artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+          },
+          ...(action.kind === "submit-result" ? { outcome: action.outcome } : {}),
+        },
+      });
+      const failed =
+        typeof result === "object" &&
+        result !== null &&
+        "_tag" in result &&
+        (result as { readonly _tag: string })._tag === "Failure";
+
+      // Raise the moment only on SUCCESS. A notification for a submission the
+      // server refused would point the user at work that was never reported,
+      // which is worse than no notification at all.
+      if (!failed && action.kind === "submit-result") {
+        publishCrossModeResultSubmitted({
+          linkId: action.linkId,
+          // Always "submitted", and the two vocabularies are why. The action's
+          // completed/failed/cancelled describes the WORK; the notification's
+          // submitted/accepted/rejected describes the LINK. Code can only
+          // report that it submitted — accepting or rejecting is the
+          // counterpart's verdict, and claiming it here would put this side's
+          // opinion in the other authority's mouth.
+          outcome: "submitted",
+          occurredAt: new Date().toISOString(),
+          target: {
+            mode: "code",
+            environmentId: activeThreadEnvironmentId,
+            threadId: activeThreadId,
+          },
+        });
+      }
+
+      return failed
+        ? isAtomCommandInterrupted(result as never)
+          ? null
+          : workjetCrossModeFailureMessage(squashAtomCommandFailure(result as never))
+        : null;
+    },
+    [activeThreadEnvironmentId, activeThreadId, submitWorkjetCrossMode],
+  );
+  // "Return to Business OS": hand the counterpart to the cross-mode navigator,
+  // which tears the Code surface down before the guest mounts. This is the
+  // in-app path — an OS-delivered link still goes through the deep-link
+  // confirmation dialog first and only reaches the navigator after consent.
+  const navigateCrossMode = useCrossModeNavigator();
+  const onOpenBusinessOsObject = useCallback(
+    (target: {
+      readonly instanceId: CtoxManagedInstanceId;
+      readonly moduleId: CtoxAppModuleId;
+      readonly objectKind: WorkjetBusinessOsObjectKind;
+      readonly objectId: WorkjetBusinessOsObjectId;
+    }): void => {
+      void navigateCrossMode({
+        mode: "business-os",
+        ctoxInstanceId: target.instanceId,
+        businessOsObject: {
+          kind: target.objectKind,
+          id: target.objectId,
+          moduleId: target.moduleId,
+        },
+      });
+    },
+    [navigateCrossMode],
+  );
+  useEffect(() => {
+    if (!activeServerThread || !activeThreadKey) return;
+    setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
+      const current = currentByThreadKey[activeThreadKey];
+      if (!current || current.busy) return currentByThreadKey;
+      const serverCapabilityIds = activeServerThread.workjetConfig.enabledCapabilityIds;
+      const optimisticCapabilityIds = current.config.enabledCapabilityIds;
+      // The role is compared too: a role change leaves the capability list
+      // untouched, so capability equality alone would drop the override before
+      // the projection carried the new role and flick the control back.
+      const serverCaughtUp =
+        activeServerThread.workjetConfig.role === current.config.role &&
+        serverCapabilityIds.length === optimisticCapabilityIds.length &&
+        serverCapabilityIds.every(
+          (capabilityId, index) => capabilityId === optimisticCapabilityIds[index],
+        );
+      if (!serverCaughtUp) return currentByThreadKey;
+      const nextByThreadKey = { ...currentByThreadKey };
+      delete nextByThreadKey[activeThreadKey];
+      return nextByThreadKey;
+    });
+  }, [activeServerThread, activeThreadKey, activeWorkjetConfigOverride]);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
     readonly messageId: MessageId | null;
@@ -1760,7 +2234,6 @@ function ChatViewContent(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
-  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
     registerFaviconProjectForThread(activeThreadRef, activeProjectRef);
@@ -1773,7 +2246,7 @@ function ChatViewContent(props: ChatViewProps) {
     const logicalKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
       projects: allProjects,
       settings: projectGroupingSettings,
-      primaryEnvironmentId,
+      primaryEnvironmentId: null,
     });
     useBrowserHistoryStore
       .getState()
@@ -1787,11 +2260,9 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadRef,
     allProjects,
     clientSettingsHydrated,
-    primaryEnvironmentId,
     projectGroupingSettings,
   ]);
-  const activeEnvironment =
-    activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
+  const activeEnvironment = environmentById.get(environmentId) ?? null;
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
   const activeEnvironmentUnavailable =
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
@@ -1857,7 +2328,7 @@ function ChatViewContent(props: ChatViewProps) {
     for (const p of memberProjects) {
       if (seen.has(p.environmentId)) continue;
       seen.add(p.environmentId);
-      const isPrimary = p.environmentId === primaryEnvironmentId;
+      const isPrimary = false;
       const label = environmentById.get(p.environmentId)?.label ?? p.environmentId;
       envs.push({
         environmentId: p.environmentId,
@@ -1872,8 +2343,17 @@ function ChatViewContent(props: ChatViewProps) {
       return a.label.localeCompare(b.label);
     });
     return envs;
-  }, [activeProject, allProjects, projectGroupingSettings, primaryEnvironmentId, environmentById]);
+  }, [activeProject, allProjects, projectGroupingSettings, environmentById]);
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
+  /**
+   * The environments the composer's Computer ("Rechner") control may move a
+   * draft to — exactly the set `onEnvironmentChange` accepts. A Workjet
+   * computer whose environment is not in this list renders as "not paired".
+   */
+  const selectableEnvironmentIds = useMemo(
+    () => logicalProjectEnvironments.map((environment) => environment.environmentId),
+    [logicalProjectEnvironments],
+  );
   const activeEnvironmentOption =
     logicalProjectEnvironments.find(
       (environment) => environment.environmentId === activeThread?.environmentId,
@@ -2000,9 +2480,7 @@ function ChatViewContent(props: ChatViewProps) {
   });
   // Once a thread selects an environment, never substitute the primary
   // environment's config while the selected environment is still loading.
-  const serverConfig = activeThread
-    ? (activeEnvironment?.serverConfig ?? null)
-    : (primaryEnvironment?.serverConfig ?? null);
+  const serverConfig = activeEnvironment?.serverConfig ?? null;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
@@ -2091,9 +2569,9 @@ function ChatViewContent(props: ChatViewProps) {
               <Button
                 size="xs"
                 variant="outline"
-                onClick={() => void navigate({ to: "/settings/connections" })}
+                onClick={() => void navigate({ to: "/settings/computers" })}
               >
-                Connections
+                Computers
               </Button>
             </>
           ),
@@ -3224,24 +3702,8 @@ function ChatViewContent(props: ChatViewProps) {
     [activeProject, persistProjectScripts],
   );
 
-  const handleRuntimeModeChange = useCallback(
-    (mode: RuntimeMode) => {
-      if (mode === runtimeMode) return;
-      setComposerDraftRuntimeMode(composerDraftTarget, mode);
-      if (isLocalDraftThread) {
-        setDraftThreadContext(composerDraftTarget, { runtimeMode: mode });
-      }
-      scheduleComposerFocus();
-    },
-    [
-      isLocalDraftThread,
-      runtimeMode,
-      scheduleComposerFocus,
-      composerDraftTarget,
-      setComposerDraftRuntimeMode,
-      setDraftThreadContext,
-    ],
-  );
+  // No runtime-mode handler: permission is ALWAYS full (operator rule), the
+  // picker is gone, and the composer no longer threads a change callback.
 
   const handleInteractionModeChange = useCallback(
     (mode: ProviderInteractionMode) => {
@@ -3264,6 +3726,192 @@ function ChatViewContent(props: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
+  // The composer decides whether its footer has collapsed, so it asks for the
+  // control rather than receiving a node: the full footer gets the labelled
+  // variant, the compact footer the icon-only one.
+  const renderWorkjetSendToWorkerControl = useCallback(
+    ({ compact }: { readonly compact: boolean }) =>
+      workjetIsOrchestratorThread ? (
+        <WorkjetSendToWorkerPanel
+          compact={compact}
+          draft={workjetSendDraft}
+          threads={workjetRecipientThreads}
+          roster={workjetMeshRoster}
+          busy={workjetSendBusy}
+          disabled={threadDetailLoading || activeEnvironmentUnavailable}
+          outcome={workjetSendOutcome}
+          onDraftChange={setWorkjetSendDraft}
+          onSubmit={onSubmitWorkjetSend}
+        />
+      ) : null,
+    [
+      activeEnvironmentUnavailable,
+      onSubmitWorkjetSend,
+      threadDetailLoading,
+      workjetIsOrchestratorThread,
+      workjetMeshRoster,
+      workjetRecipientThreads,
+      workjetSendBusy,
+      workjetSendDraft,
+      workjetSendOutcome,
+    ],
+  );
+  /**
+   * The one optimistic-with-revert runner every thread Workjet config edit goes
+   * through — the Greppy toggle and the `Code | Orchestrator` role alike. It
+   * owns the per-thread in-flight guard, the visible override and clearing that
+   * override once the change settles; the caller supplies only the transition.
+   */
+  const runWorkjetConfigChange = useCallback(
+    (
+      execute: (input: {
+        readonly currentConfig: WorkjetThreadConfig;
+        readonly dispatch: (
+          nextConfig: WorkjetThreadConfig,
+        ) => ReturnType<typeof setThreadWorkjetConfig>;
+        readonly setVisibleConfig: (config: WorkjetThreadConfig) => void;
+      }) => Promise<WorkjetThreadConfig>,
+    ) => {
+      if (!activeServerThread || !activeThreadKey || !visibleWorkjetConfig) return;
+      if (workjetToggleInFlightThreadKeysRef.current.has(activeThreadKey)) return;
+
+      const threadKey = activeThreadKey;
+      const currentConfig = visibleWorkjetConfig;
+      workjetToggleInFlightThreadKeysRef.current.add(threadKey);
+      void (async () => {
+        try {
+          const retainedConfig = await execute({
+            currentConfig,
+            dispatch: (nextConfig) =>
+              setThreadWorkjetConfig({
+                environmentId: activeServerThread.environmentId,
+                input: {
+                  threadId: activeServerThread.id,
+                  workjetConfig: nextConfig,
+                },
+              }),
+            setVisibleConfig: (config) => {
+              setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => ({
+                ...currentByThreadKey,
+                [threadKey]: {
+                  config,
+                  busy: config !== currentConfig,
+                },
+              }));
+            },
+          });
+          setWorkjetConfigOverridesByThreadKey((currentByThreadKey) => {
+            const current = currentByThreadKey[threadKey];
+            if (!current) return currentByThreadKey;
+            if (retainedConfig === currentConfig) {
+              const nextByThreadKey = { ...currentByThreadKey };
+              delete nextByThreadKey[threadKey];
+              return nextByThreadKey;
+            }
+            if (current.config !== retainedConfig) return currentByThreadKey;
+            return {
+              ...currentByThreadKey,
+              [threadKey]: { ...current, busy: false },
+            };
+          });
+        } finally {
+          workjetToggleInFlightThreadKeysRef.current.delete(threadKey);
+        }
+      })();
+    },
+    [activeServerThread, activeThreadKey, setThreadWorkjetConfig, visibleWorkjetConfig],
+  );
+  const handleWorkjetGreppyEnabledChange = useCallback(
+    (enabled: boolean) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetCapabilityToggle({
+          ...input,
+          capabilityId: GREPPY_CAPABILITY_ID,
+          enabled,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
+  /**
+   * Any capability, not just Greppy. executeWorkjetCapabilityToggle already
+   * took an id — only this caller pinned it, which is why two capabilities the
+   * thread config could already store were unreachable from the composer.
+   */
+  const handleWorkjetCapabilityEnabledChange = useCallback(
+    (capabilityId: string, enabled: boolean) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetCapabilityToggle({
+          ...input,
+          capabilityId: capabilityId as typeof GREPPY_CAPABILITY_ID,
+          enabled,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
+  /**
+   * Set the whole capability list and/or the managed instructions in ONE
+   * dispatch — the worker-bundle apply and the composer's custom system
+   * prompt. Per-field dispatches cannot do this: runWorkjetConfigChange drops
+   * concurrent changes via its in-flight guard, so only the first would land.
+   */
+  const handleWorkjetConfigApply = useCallback(
+    (input: {
+      readonly capabilityIds?: ReadonlyArray<string>;
+      readonly managedInstructions?: string;
+      readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
+    }) => {
+      runWorkjetConfigChange((run) =>
+        executeWorkjetCapabilitySet({
+          ...run,
+          ...(input.capabilityIds === undefined
+            ? {}
+            : {
+                capabilityIds: input.capabilityIds as ReadonlyArray<
+                  WorkjetThreadConfig["enabledCapabilityIds"][number]
+                >,
+              }),
+          ...(input.managedInstructions === undefined
+            ? {}
+            : { managedInstructions: input.managedInstructions }),
+          ...(input.capabilityBindings === undefined
+            ? {}
+            : { capabilityBindings: input.capabilityBindings }),
+          notifyFailure: () => {
+            toastManager.add(WORKJET_GREPPY_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
+  const handleWorkjetRoleChange = useCallback(
+    (role: WorkjetSelectableRole) => {
+      runWorkjetConfigChange((input) =>
+        executeWorkjetRoleChange({
+          ...input,
+          role,
+          notifyFailure: () => {
+            toastManager.add(WORKJET_ROLE_FAILURE_TOAST);
+          },
+        }),
+      );
+    },
+    [runWorkjetConfigChange],
+  );
+  // Settings → Workjet is the ONE configuration surface; the gear routes there
+  // instead of growing a second one in the composer. A plain push keeps the
+  // thread in history, so the settings screen's own back/Escape returns to it.
+  const handleOpenWorkjetSettings = useCallback(() => {
+    void navigate({ to: WORKJET_SETTINGS_ROUTE });
+  }, [navigate]);
   const createBrowserSurface = useCallback(() => {
     if (!activeThreadRef) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
@@ -3281,6 +3929,51 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  // A Workjet mailbox card links to the OTHER end of the envelope. The card
+  // only offers the link for a same-environment peer, so this is the ordinary
+  // thread route every other thread link uses.
+  const onOpenWorkjetPeerThread = useCallback(
+    (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: peer.environmentId, threadId: peer.threadId },
+      });
+    },
+    [navigate],
+  );
+  // Continue a received handoff HERE. The server creates the thread, seeds it
+  // from its own stored snapshot, and takes the exactly-once claim; this only
+  // navigates to whatever it created.
+  const onContinueWorkjetHandoff = useCallback(
+    (handoffId: string) => {
+      if (!activeThreadEnvironmentId || workjetContinuingHandoffId !== null) return;
+      const environmentId = activeThreadEnvironmentId;
+      const hostThreadId = activeThreadId;
+      if (!hostThreadId) return;
+      setWorkjetContinuingHandoffId(handoffId);
+      setWorkjetHandoffError(null);
+      void (async () => {
+        const result = await acceptHandoffWorkjetMailbox({
+          environmentId,
+          input: { handoffId: handoffId as WorkjetHandoffId, hostThreadId },
+        });
+        setWorkjetContinuingHandoffId(null);
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) return;
+          setWorkjetHandoffError(workjetMailboxFailureMessage(squashAtomCommandFailure(result)));
+          return;
+        }
+        onOpenWorkjetPeerThread({ environmentId, threadId: result.value.threadId });
+      })();
+    },
+    [
+      acceptHandoffWorkjetMailbox,
+      activeThreadEnvironmentId,
+      activeThreadId,
+      onOpenWorkjetPeerThread,
+      workjetContinuingHandoffId,
+    ],
+  );
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -5023,6 +5716,24 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return;
     }
+    const workjetConfigForFirstTurn =
+      useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
+      DEFAULT_WORKJET_THREAD_CONFIG;
+    if (
+      workjetConfigForFirstTurn.enabledCapabilityIds.includes("decision-hub") &&
+      (!("capabilityBindings" in workjetConfigForFirstTurn) ||
+        workjetConfigForFirstTurn.capabilityBindings.filter(
+          (binding) => binding.capabilityId === "decision-hub",
+        ).length !== 1)
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Decision Hub connection required",
+        description: "Choose one MCP-capable CTOX connection before sending.",
+        data: { hideCopyButton: true },
+      });
+      return;
+    }
     if (!activeProject) {
       toastManager.add(
         stackedThreadToast({
@@ -5231,6 +5942,7 @@ function ChatViewContent(props: ChatViewProps) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode,
+                      workjetConfig: workjetConfigForFirstTurn,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
@@ -5728,6 +6440,7 @@ function ChatViewContent(props: ChatViewProps) {
         modelSelection: nextThreadModelSelection,
         runtimeMode,
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
         createdAt,
@@ -5999,6 +6712,10 @@ function ChatViewContent(props: ChatViewProps) {
   if (!activeThread) {
     return <NoActiveThreadState />;
   }
+  // The terminal consumes vertical space below the chat column. Keeping the tall draft hero
+  // centered in the remaining area makes its headline collide with the cross-mode status above.
+  // In that split layout the composer behaves like the normal bottom-docked composer instead.
+  const shouldCenterDraftComposer = isDraftHeroState && !terminalUiState.terminalOpen;
 
   const panelToggleControls = (
     <PanelLayoutControls
@@ -6081,7 +6798,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
       <PullRequestsUnavailableState
         title="Pull requests unavailable"
-        error="Update this environment's T3 Code server to browse pull requests."
+        error="Update this environment's CTOX server to browse pull requests."
       />
     ) : activeRightPanelSurface?.kind === "pull-request" ? (
       // No onClose: the surface tab's own X owns closing here, and a second X in the header
@@ -6176,32 +6893,16 @@ function ChatViewContent(props: ChatViewProps) {
         >
           {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
-            {...(!supportsPullRequests || threadRepository === null
-              ? {}
-              : { onOpenPullRequest: openThreadPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
             isServerThread={isServerThread}
             changeRequestState={activeThreadPr?.state ?? null}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
-            openInCwd={gitCwd}
-            activeProjectScripts={activeProject?.scripts}
-            preferredScriptId={
-              activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
-            }
-            keybindings={keybindings}
-            availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
-            onRunProjectScript={runProjectScript}
-            onAddProjectScript={saveProjectScript}
-            onUpdateProjectScript={updateProjectScript}
-            onDeleteProjectScript={deleteProjectScript}
           />
         </header>
 
@@ -6213,6 +6914,46 @@ function ChatViewContent(props: ChatViewProps) {
             setThreadErrorBannerDismissTick((tick) => tick + 1);
           }}
         />
+        {/*
+          Orchestrator-scoped worker overview: an additive "Workers (N)" section
+          listing the child worker threads dispatched from this orchestrator.
+          It never replaces the normal thread list — every worker also remains
+          an ordinary thread in the sidebar. Hidden for non-orchestrator threads
+          and when the orchestrator owns no workers (the component returns null).
+        */}
+        {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
+          <WorkjetWorkerOverview
+            environmentId={activeThreadEnvironmentId}
+            orchestratorThreadId={activeThreadId}
+            threads={allThreadShells}
+            onOpenWorker={onOpenWorkjetPeerThread}
+          />
+        ) : null}
+        {/*
+          The receiving half of the typed thread handoff: work another machine
+          offered this one. It renders nothing until something arrives, and it
+          offers "Continue here" only for a handoff whose context snapshot is
+          actually readable on this machine.
+        */}
+        {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
+          <WorkjetHandoffInbox
+            handoffs={workjetReceivedHandoffs}
+            busyHandoffId={workjetContinuingHandoffId}
+            error={workjetHandoffError}
+            onContinue={onContinueWorkjetHandoff}
+            onOpenThread={(threadId) =>
+              onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })
+            }
+          />
+        ) : null}
+        {/*
+          Cross-mode activity: links minted into Code and results reported back
+          out of it. Unlike the two surfaces above it is NOT orchestrator-only —
+          a cross-mode link can be raised on any thread — and it renders its own
+          empty state, so it is mounted unconditionally and holds no state of
+          its own (mounting it twice is harmless, per its own doc).
+        */}
+        <CrossModeNotificationCenter />
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Chat column */}
@@ -6230,6 +6971,11 @@ function ChatViewContent(props: ChatViewProps) {
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
+                onOpenThread={onOpenWorkjetPeerThread}
+                onWorkjetDelegationAction={onWorkjetDelegationAction}
+                onWorkjetCrossModeAction={onWorkjetCrossModeAction}
+                onOpenBusinessOsObject={onOpenBusinessOsObject}
+                workjetReassignThreads={workjetRecipientThreads}
                 key={activeThread.id}
                 isWorking={isWorking}
                 workingStepLabel={workingStepLabel}
@@ -6292,7 +7038,7 @@ function ChatViewContent(props: ChatViewProps) {
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
               className={
-                isDraftHeroState
+                shouldCenterDraftComposer
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
@@ -6302,7 +7048,7 @@ function ChatViewContent(props: ChatViewProps) {
                 className="chat-composer-horizontal-inset w-full"
               >
                 <div className="pointer-events-auto relative z-10">
-                  {isDraftHeroState ? (
+                  {shouldCenterDraftComposer ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
                         className="pb-8"
@@ -6337,7 +7083,7 @@ function ChatViewContent(props: ChatViewProps) {
                   >
                     <div
                       className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
+                        "chat-composer-glass-shell relative mx-auto w-full max-w-5xl",
                         showComposerContextStrip && "chat-composer-glass-shell-with-context",
                       )}
                     >
@@ -6374,8 +7120,20 @@ function ChatViewContent(props: ChatViewProps) {
                             respondingRequestIds={respondingRequestIds}
                             showPlanFollowUpPrompt={showPlanFollowUpPrompt}
                             activeProposedPlan={activeProposedPlan}
-                            runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            workjetRole={visibleWorkjetConfig?.role ?? null}
+                            workjetGreppyEnabled={
+                              visibleWorkjetConfig
+                                ? visibleWorkjetConfig.enabledCapabilityIds.includes(
+                                    GREPPY_CAPABILITY_ID,
+                                  )
+                                : null
+                            }
+                            workjetSendToWorkerControl={renderWorkjetSendToWorkerControl}
+                            workjetCapabilityBusy={workjetCapabilityBusy}
+                            workjetCapabilityDisabled={
+                              threadDetailLoading || activeEnvironmentUnavailable
+                            }
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             activeProjectDefaultModelSelection={
@@ -6409,8 +7167,26 @@ function ChatViewContent(props: ChatViewProps) {
                             onProviderModelSelect={onProviderModelSelect}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
-                            handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
+                            onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
+                            onWorkjetCapabilityEnabledChange={handleWorkjetCapabilityEnabledChange}
+                            onWorkjetConfigApply={handleWorkjetConfigApply}
+                            workjetEnabledCapabilityIds={
+                              visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
+                            }
+                            workjetCapabilityBindings={
+                              visibleWorkjetConfig !== null &&
+                              "capabilityBindings" in visibleWorkjetConfig
+                                ? visibleWorkjetConfig.capabilityBindings
+                                : undefined
+                            }
+                            workjetManagedInstructions={
+                              visibleWorkjetConfig?.managedInstructions ?? null
+                            }
+                            selectableEnvironmentIds={selectableEnvironmentIds}
+                            onDraftEnvironmentChange={onEnvironmentChange}
+                            onWorkjetRoleChange={handleWorkjetRoleChange}
+                            onOpenWorkjetSettings={handleOpenWorkjetSettings}
                             focusComposer={focusComposer}
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}

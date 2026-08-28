@@ -6,7 +6,7 @@ import { Button } from "../ui/button";
 import { SelectTrigger } from "../ui/select";
 
 const composerControlClassName =
-  "h-7 min-h-7 gap-1.5 px-2.5 text-secondary-label transition-none hover:text-foreground [&_svg[data-composer-control-icon]]:mx-0 [&_svg[data-composer-control-chevron]]:-mx-0.5";
+  "h-[var(--composer-control-height,1.75rem)] min-h-[var(--composer-control-height,1.75rem)] gap-[var(--composer-control-gap,0.125rem)] px-[var(--composer-control-padding,0.375rem)] text-[length:var(--composer-control-font-size,13px)] text-secondary-label transition-none hover:text-foreground [&_svg[data-composer-control-icon]]:mx-0 [&_svg[data-composer-control-chevron]]:-mx-0.5";
 
 export function ComposerControl({
   className,

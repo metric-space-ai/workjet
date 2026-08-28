@@ -1,0 +1,21 @@
+{
+  "_fixture": "original synthetic Workjet JSON:API data; ids are invented",
+  "data": [
+    {
+      "id": "synthetic-contact-001",
+      "type": "contacts",
+      "attributes": {
+        "name": "Avery Fixture",
+        "title": "Fixture Operations Lead",
+        "email": "avery@fixture-systems.example"
+      }
+    },
+    {
+      "id": "synthetic-contact-002",
+      "type": "contacts",
+      "attributes": { "name": "Riley Sample", "title": "Test Analyst", "email": "missing" }
+    }
+  ],
+  "meta": { "total": 2, "page": 2, "per_page": 25 },
+  "links": { "self": "https://api.leadfeeder.com/accounts/me/contacts?search=synthetic&page=2" }
+}

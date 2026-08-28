@@ -22,6 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "./workjet.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -370,6 +371,9 @@ export const OrchestrationThread = Schema.Struct({
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
+  workjetConfig: WorkjetThreadConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_THREAD_CONFIG)),
+  ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
@@ -439,6 +443,9 @@ export const OrchestrationThreadShell = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+  workjetConfig: WorkjetThreadConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_THREAD_CONFIG)),
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
@@ -650,7 +657,7 @@ const ProjectDeleteCommand = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 
-const ThreadCreateCommand = Schema.Struct({
+export const ThreadCreateCommand = Schema.Struct({
   type: Schema.Literal("thread.create"),
   commandId: CommandId,
   threadId: ThreadId,
@@ -660,6 +667,9 @@ const ThreadCreateCommand = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+  workjetConfig: WorkjetThreadConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_THREAD_CONFIG)),
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
@@ -782,12 +792,23 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadWorkjetConfigSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.workjet-config.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  workjetConfig: WorkjetThreadConfig,
+  createdAt: IsoDateTime,
+});
+
 const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
+  workjetConfig: WorkjetThreadConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_THREAD_CONFIG)),
+  ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
@@ -913,6 +934,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadWorkjetConfigSetCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -941,6 +963,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadWorkjetConfigSetCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -974,6 +997,25 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   turnId: Schema.optional(TurnId),
+  createdAt: IsoDateTime,
+});
+
+/**
+ * Server-internal static history import. It deliberately creates message events
+ * without starting a provider turn or binding a native provider session.
+ */
+const ThreadHistoryImportCommand = Schema.Struct({
+  type: Schema.Literal("thread.history.import"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messages: Schema.Array(
+    Schema.Struct({
+      messageId: MessageId,
+      role: Schema.Literals(["user", "assistant"]),
+      text: Schema.String,
+      createdAt: IsoDateTime,
+    }),
+  ).check(Schema.isMinLength(1), Schema.isMaxLength(200)),
   createdAt: IsoDateTime,
 });
 
@@ -1027,6 +1069,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
+  ThreadHistoryImportCommand,
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
@@ -1059,6 +1102,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
+  "thread.workjet-config-set",
   "thread.message-sent",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
@@ -1116,6 +1160,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+  workjetConfig: WorkjetThreadConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_THREAD_CONFIG)),
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
@@ -1215,6 +1262,12 @@ export const ThreadInteractionModeSetPayload = Schema.Struct({
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadWorkjetConfigSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  workjetConfig: WorkjetThreadConfig,
   updatedAt: IsoDateTime,
 });
 
@@ -1411,6 +1464,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.interaction-mode-set"),
     payload: ThreadInteractionModeSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.workjet-config-set"),
+    payload: ThreadWorkjetConfigSetPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

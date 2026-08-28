@@ -1,6 +1,6 @@
 # Release Checklist
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Workjet? See [docs/user](../user/).
 
 This document covers the unified release workflow for stable and nightly desktop releases.
 
@@ -12,7 +12,7 @@ This document covers the unified release workflow for stable and nightly desktop
   - scheduled nightly check every three hours
   - manual `workflow_dispatch` for either channel
 - Runs quality gates first: lint, typecheck, test.
-- Reads the shared production T3 Connect relay URL and Clerk client configuration before packaging clients.
+- Reads the shared production Workjet Connect relay URL and Clerk client configuration before packaging clients.
 - Builds four artifacts in parallel for both channels:
   - macOS `arm64` DMG
   - macOS `x64` DMG
@@ -44,28 +44,23 @@ The finalize job uses them to commit and push aligned package versions to `main`
 GitHub Release publication uses the repository-scoped workflow token so it has a rate-limit quota
 independent from the shared Release App installation.
 
-## T3 Connect relay deployment
+## Workjet Connect relay deployment
 
 The relay is a shared control plane versioned separately from client releases. Stable and nightly
 client builds must point at the same relay so users see the same linked environments when switching
 release channels.
 
-`.github/workflows/deploy-relay.yml` deploys Alchemy stage `prod` on every push to `main`. The
-release workflow reads the relay URL and Clerk client configuration from the existing `production`
-GitHub Actions environment before building desktop, CLI, or hosted web artifacts.
+The relay and signaling services are deployed on Cloudflare. The release workflow reads their
+public origins and Clerk client configuration from the existing `production` GitHub Actions
+environment before building desktop, CLI, or hosted web artifacts.
 
 Required repository variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `PLANETSCALE_ORGANIZATION`
-- `AXIOM_ORG_ID`
 
 Required repository secrets shared by relay deployments:
 
 - `CLOUDFLARE_API_TOKEN`
-- `PLANETSCALE_API_TOKEN_ID`
-- `PLANETSCALE_API_TOKEN`
-- `AXIOM_TOKEN`
 
 Required `production` environment variables:
 
@@ -89,17 +84,14 @@ Required `production` environment secrets:
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY`
 
-The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
-are not bound into the relay Worker. The production deployment uses an Axiom personal access token,
-so `AXIOM_ORG_ID` must accompany `AXIOM_TOKEN`. The `prod` stage owns the retained PlanetScale
-database. Local personal stages provision isolated branches from it and are never deployed by CI.
 Production adopts the configured relay API and tunnel DNS zones as retained Cloudflare resources.
-Personal stages reference the production-owned zones.
+Pairing/session control state is stored in Cloudflare D1 or Durable Objects; Business OS records are
+never stored in the relay and continue to use CTOX Sync Engine over WebRTC.
 
-Developers deploy personal stages locally rather than through pull-request automation:
+Developers validate Cloudflare changes locally before deployment:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage "$USER" --env-file .env.local
+wrangler deploy --dry-run
 ```
 
 ## Hosted web app release deployment
@@ -289,7 +281,7 @@ Checklist:
    - `APPLE_API_KEY`: contents of the downloaded `.p8`
    - `APPLE_API_KEY_ID`: Key ID
    - `APPLE_API_ISSUER`: Issuer ID
-10. Complete the Clerk Native API and AASA setup in [T3 Connect Clerk Setup](../internals/t3-connect.md#desktop-passkeys).
+10. Complete the Clerk Native API and AASA setup in [Workjet Connect Clerk Setup](../internals/t3-connect.md#desktop-passkeys).
 11. Re-run a tag release and confirm macOS artifacts are signed/notarized and contain the expected
     `com.apple.developer.associated-domains` entitlement.
 

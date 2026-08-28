@@ -22,6 +22,9 @@ export interface CloudPublicConfig {
   readonly relay: {
     readonly url: string | null;
   };
+  readonly managedControl: {
+    readonly url: string | null;
+  };
   readonly observability: {
     readonly tracesUrl: string | null;
     readonly tracesDataset: string | null;
@@ -56,6 +59,19 @@ function normalizeSecureUrl(value: unknown): string | null {
   }
 }
 
+function normalizeSecureOrigin(value: unknown): string | null {
+  const raw = normalizeSecureUrl(value);
+  if (raw === null) return null;
+  try {
+    const url = new URL(raw);
+    if (url.username || url.password || url.search || url.hash || !/^\/+$/u.test(url.pathname))
+      return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig?.extra) {
   return {
     clerk: {
@@ -64,6 +80,9 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
     },
     relay: {
       url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
+    },
+    managedControl: {
+      url: normalizeSecureOrigin(extra?.managedControl?.url),
     },
     observability: {
       tracesUrl: normalizeSecureUrl(extra?.observability?.tracesUrl),

@@ -15,13 +15,14 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { EnvironmentId } from "@t3tools/contracts";
-import { RelayEnvironmentAuth } from "@t3tools/contracts/relay";
+import { RelayDpopClientAuth, RelayEnvironmentAuth } from "@t3tools/contracts/relay";
 
 import {
   RELAY_REQUEST_DEADLINE_MS,
   relayCors,
   relayDocsRedirectRoute,
   relayEnvironmentAuthLayer,
+  relayDpopClientAuthLayer,
   relayNotFoundRoute,
   revokeEnvironmentLinkRecord,
   traceRelayHttpRequestWith,
@@ -34,6 +35,8 @@ import * as RelayDb from "../db.ts";
 import * as EnvironmentCredentials from "../environments/EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as ManagedEndpointProvider from "../environments/ManagedEndpointProvider.ts";
+import * as RelayTokens from "../auth/RelayTokens.ts";
+import * as DeviceSessions from "../workjet/DeviceSessions.ts";
 
 vi.mock("@clerk/backend", () => ({
   createClerkClient: vi.fn(),
@@ -154,6 +157,76 @@ describe("relay environment authentication", () => {
       Effect.provide(
         relayEnvironmentAuthLayer.pipe(
           Layer.provide(Layer.succeed(EnvironmentCredentials.EnvironmentCredentials, credentials)),
+        ),
+      ),
+      Effect.scoped,
+    );
+  });
+});
+
+describe("relay Workjet device-session authentication", () => {
+  it.effect("fails closed when the persisted grant was revoked", () => {
+    const relayTokens = RelayTokens.RelayTokens.of({
+      resolveDpopAccessTokenScopes: () => ["environment:connect", "environment:status"],
+      issueLinkChallenge: () => Effect.die("unused"),
+      verifyLinkChallenge: () => Effect.die("unused"),
+      issueDpopAccessToken: () => Effect.die("unused"),
+      verifyDpopAccessToken: () =>
+        Effect.succeed({
+          iss: "https://relay.example.test",
+          aud: "https://relay.example.test",
+          sub: "user-1",
+          jti: "access-1",
+          iat: 100,
+          exp: 1_900,
+          client_id: "t3-mobile" as const,
+          scope: ["environment:connect" as const, "environment:status" as const],
+          cnf: { jkt: "jkt-1" },
+          workjet: {
+            grantId: "grant-1",
+            businessOsInstanceId: "business-os-1",
+            deviceId: "mobile-1",
+            accessGeneration: 1,
+          },
+        }),
+    });
+    const deviceSessions = DeviceSessions.DeviceSessions.of({
+      issue: () => Effect.die("unused"),
+      revoke: () => Effect.die("unused"),
+      findBootstrap: () => Effect.die("unused"),
+      exchangeBootstrap: () => Effect.die("unused"),
+      findRefresh: () => Effect.die("unused"),
+      renew: () => Effect.die("unused"),
+      // A revoked/missing/generation-stale persisted grant resolves to no active principal.
+      authorizeAccess: () => Effect.succeed(null),
+    });
+
+    return Effect.gen(function* () {
+      const auth = yield* RelayDpopClientAuth;
+      const error = yield* Effect.flip(
+        auth.relayDpop(Effect.succeed(HttpServerResponse.empty()), {
+          credential: Redacted.make("device-session-access-token"),
+          endpoint: {} as never,
+          group: {} as never,
+        }),
+      );
+      expect(Predicate.isTagged(error, "RelayAuthInvalidError")).toBe(true);
+    }).pipe(
+      Effect.provideService(
+        HttpServerRequest.HttpServerRequest,
+        HttpServerRequest.fromWeb(
+          new Request("https://relay.example.test/v1/workjet/control-identity/assertion", {
+            method: "POST",
+            headers: { authorization: "DPoP device-session-access-token" },
+          }),
+        ),
+      ),
+      Effect.provideService(HttpServerRequest.ParsedSearchParams, {}),
+      Effect.provideService(HttpRouter.RouteContext, { params: {}, route: {} as never }),
+      Effect.provide(
+        relayDpopClientAuthLayer.pipe(
+          Layer.provide(Layer.succeed(RelayTokens.RelayTokens, relayTokens)),
+          Layer.provide(Layer.succeed(DeviceSessions.DeviceSessions, deviceSessions)),
         ),
       ),
       Effect.scoped,

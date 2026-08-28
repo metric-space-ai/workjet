@@ -136,7 +136,7 @@ function categoryLabel(category: ResourceTelemetryProcessCategory): string {
     case "resource-monitor":
       return "Monitor";
     case "unknown-t3":
-      return "T3 process";
+      return "Workjet process";
   }
 }
 
@@ -252,11 +252,11 @@ function IconStat({
         <span className="text-muted-foreground/55 transition-colors group-hover:text-foreground/65">
           {icon}
         </span>
-        <span className="truncate">{label}</span>
+        <span>{label}</span>
       </div>
       <div
         className={cn(
-          "mt-2.5 truncate font-mono text-2xl font-semibold tracking-[-0.05em] tabular-nums text-foreground",
+          "mt-2.5 font-mono text-2xl font-semibold tracking-[-0.05em] tabular-nums text-foreground",
           tone === "warning" && "text-amber-600 dark:text-amber-300",
           tone === "danger" && "text-destructive",
         )}
@@ -264,7 +264,7 @@ function IconStat({
         {value}
       </div>
       {detail ? (
-        <div className="mt-1.5 truncate text-[10px] text-muted-foreground/60">{detail}</div>
+        <div className="mt-1.5 text-[10px] leading-snug text-muted-foreground/60">{detail}</div>
       ) : null}
     </div>
   );
@@ -993,7 +993,7 @@ export function ResourceTelemetryDiagnostics() {
           </div>
         }
       >
-        <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03),0_8px_30px_rgb(0_0_0/0.035)]">
+        <div className="@container/resource-telemetry overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03),0_8px_30px_rgb(0_0_0/0.035)]">
           <div className="flex flex-col gap-3 border-b border-border/60 bg-linear-to-r from-muted/45 via-muted/20 to-transparent px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -1009,7 +1009,7 @@ export function ResourceTelemetryDiagnostics() {
               Sampling every {snapshot ? formatSampleInterval(snapshot.sampleIntervalMs) : "..."}
             </div>
           </div>
-          <div className="grid grid-cols-2 divide-x divide-y divide-border/55 md:grid-cols-3">
+          <div className="grid grid-cols-2 divide-x divide-y divide-border/55 @[46rem]/resource-telemetry:grid-cols-3">
             <IconStat
               icon={<CpuIcon className="size-3.5" />}
               label="Current CPU"
@@ -1068,7 +1068,7 @@ export function ResourceTelemetryDiagnostics() {
             </div>
           ) : null}
           {snapshot ? (
-            <div className="grid border-t border-border/60 bg-muted/10 md:grid-cols-3">
+            <div className="grid border-t border-border/60 bg-muted/10 @[46rem]/resource-telemetry:grid-cols-3">
               <AggregateCard
                 label="Backend + agents"
                 accentClass="bg-emerald-500/80"

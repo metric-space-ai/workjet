@@ -415,12 +415,20 @@ export function buildTraitsTriggerDisplay(input: {
         continue;
       }
     }
-    const label =
+    const optionLabel =
       input.ultrathinkPromptControlled && descriptor.id === input.primarySelectDescriptorId
         ? "Ultrathink"
         : descriptor.type === "boolean"
           ? `${descriptor.label} ${descriptor.currentValue === true ? "On" : "Off"}`
           : getProviderOptionCurrentLabel(descriptor);
+    const label =
+      typeof optionLabel !== "string" || optionLabel.length === 0
+        ? optionLabel
+        : descriptor.id === "reasoningEffort" || descriptor.id === "effort"
+          ? `Effort ${optionLabel}`
+          : descriptor.id === "contextWindow"
+            ? `Context ${optionLabel}`
+            : optionLabel;
     if (typeof label === "string" && label.length > 0) {
       labels.push(label);
     }

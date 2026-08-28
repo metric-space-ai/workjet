@@ -27,6 +27,8 @@ import {
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
+import { resolveGatewayRoutedEnvironment } from "../ProviderGatewayRouting.ts";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   makeStaticProviderMaintenanceResolver,
@@ -48,6 +50,7 @@ const UPDATE = makeStaticProviderMaintenanceResolver(
 );
 
 export type GrokDriverEnv =
+  | ProviderGatewayService
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
@@ -82,7 +85,15 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
   },
   configSchema: GrokSettings,
   defaultConfig: (): GrokSettings => decodeGrokSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    routeViaGateway,
+    config,
+  }) =>
     Effect.gen(function* () {
       const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -106,8 +117,21 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         env: processEnv,
       });
 
+      // Captured eagerly so the resolver closure carries the gateway service
+      // rather than requiring it from the adapter's own R channel; the
+      // gateway STATUS itself is still read lazily, per session start.
+      const gateway = yield* ProviderGatewayService;
+      const resolveSessionEnvironment = () =>
+        resolveGatewayRoutedEnvironment({
+          driver: DRIVER_KIND,
+          instanceId,
+          routeViaGateway,
+          environment,
+        }).pipe(Effect.provideService(ProviderGatewayService, gateway));
+
       const adapter = yield* makeGrokAdapter(effectiveConfig, {
         environment: processEnv,
+        resolveSessionEnvironment,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         instanceId,
       });

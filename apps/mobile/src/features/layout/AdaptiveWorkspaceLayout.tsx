@@ -46,7 +46,9 @@ import {
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
 import { HomeListOptionsProvider } from "../home/home-list-options";
+import { useRegisterWorkjetProductSidebar } from "../mode/WorkjetProductChromeProvider";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
 
@@ -217,6 +219,7 @@ function AdaptiveWorkspaceLayoutContent(
     readonly projectGroupingMode: SidebarProjectGroupingMode;
   },
 ) {
+  const { selected: selectedBusinessOsInstance } = useBusinessOs();
   const projectGroupingMode = props.projectGroupingMode;
   const { width, height } = useWindowDimensions();
   const pathname = props.pathname;
@@ -349,6 +352,11 @@ function AdaptiveWorkspaceLayoutContent(
     }
     setPrimarySidebarPreferredVisible((current) => !current);
   }, [panes.primarySidebarSuppressedByAuxiliary, panes.primarySidebarVisible]);
+  useRegisterWorkjetProductSidebar("code", {
+    available: shouldRenderPrimarySidebar && layout.listPaneWidth !== null,
+    visible: panes.primarySidebarVisible,
+    toggle: togglePrimarySidebar,
+  });
   const revealPrimarySidebar = useCallback(() => {
     if (panes.primarySidebarSuppressedByAuxiliary) {
       setFileInspectorPreferredVisible(false);
@@ -440,7 +448,7 @@ function AdaptiveWorkspaceLayoutContent(
   const handleOpenEnvironmentSettings = useCallback(() => {
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
-      params: { screen: "SettingsEnvironments" },
+      params: { screen: "SettingsBusinessOs" },
     });
   }, [navigation]);
 
@@ -514,7 +522,10 @@ function AdaptiveWorkspaceLayoutContent(
   );
 
   return (
-    <HomeListOptionsProvider projectGroupingMode={projectGroupingMode}>
+    <HomeListOptionsProvider
+      projectGroupingMode={projectGroupingMode}
+      scopeKey={selectedBusinessOsInstance?.id ?? "coding-only"}
+    >
       <AdaptiveWorkspaceContext.Provider value={contextValue}>
         <View testID="adaptive-workspace-layout" className="flex-1 flex-row">
           {shouldRenderPrimarySidebar && layout.listPaneWidth !== null ? (

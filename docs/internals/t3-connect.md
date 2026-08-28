@@ -1,20 +1,17 @@
-# T3 Connect
+# Workjet Connect
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Workjet? See [docs/user](../user/).
 
-T3 Connect uses one Clerk application for web, desktop, and mobile authentication. The relay verifies
-two kinds of bearer credential: template JWTs generated from the `t3-relay` template with the shared
-`t3-code-relay` audience, and Clerk OAuth tokens issued to the CLI. `verifyRelayClientBearerToken` in
-`infra/relay/src/http/Api.ts` tries the template/session path first and falls back to OAuth
-verification (`acceptsToken: "oauth_token"`), so the CLI's OAuth credential works without a JWT
-template.
+Workjet Connect uses one Clerk application for web, desktop, and mobile authentication. The
+Cloudflare control plane verifies the supported bearer credentials and DPoP-bound device sessions.
+Business OS data stays on the CTOX Sync Engine over WebRTC.
 
 For the wider system diagram, see
 [t3-code-connect-auth-flow.html](./t3-code-connect-auth-flow.html).
 
 ## Application Keys
 
-T3 Connect is disabled in a fresh clone. To enable it for source builds against the production
+Workjet Connect is disabled in a fresh clone. To enable it for source builds against the production
 deployment, copy the repository-root example file:
 
 ```sh
@@ -57,19 +54,11 @@ registers a hidden fallback `connect` command that reports the missing configura
 silently vanishing from help. The bundled server still accepts runtime overrides for self-hosted or
 operator-managed deployments.
 
-For a hosted relay deployment, copy `infra/relay/.env.example` to `infra/relay/.env`. The relay
-deployment reads `RELAY_DOMAIN`, `RELAY_API_ZONE_NAME`, `RELAY_TUNNEL_ZONE_NAME`,
-`CLERK_PUBLISHABLE_KEY`, and `CLERK_JWT_AUDIENCE` through Effect `Config`. There are no checked-in
-deployment defaults.
-`vp run --filter t3code-relay deploy` invokes Alchemy from the relay directory, so Alchemy loads
-`infra/relay/.env`. After a successful deployment, the wrapper updates the repository-root `.env`
-with the deployed HTTPS relay URL. The relay still requires
-`CLERK_SECRET_KEY` as an Alchemy secret. Never put `CLERK_SECRET_KEY` in a client application
-environment or commit it to the repository.
+The hosted relay and signaling services are Cloudflare deployments. Pairing/session metadata uses
+Cloudflare D1 or Durable Objects. Business OS records never traverse or persist in this control
+plane; they synchronize through CTOX Sync Engine over WebRTC.
 
-The `prod` Alchemy stage owns the retained PlanetScale database. Non-production stages reference
-that database and provision isolated PlanetScale branches, so deploy `prod` before creating a
-personal developer stage.
+Never put `CLERK_SECRET_KEY` in a client application environment or commit it to the repository.
 
 ## Headless CLI OAuth Application
 
@@ -153,8 +142,8 @@ In **Clerk Dashboard > JWT templates**, create a template with:
 | Claims  | `{ "aud": "t3-code-relay" }` |
 
 Set `T3CODE_CLERK_JWT_TEMPLATE=t3-relay` in the repository-root `.env`, and set
-`CLERK_JWT_AUDIENCE=t3-code-relay` in `infra/relay/.env`. Define `CLERK_JWT_TEMPLATE` and
-`CLERK_JWT_AUDIENCE` in the production relay deployment environment as well. The stable `aud` value
+`CLERK_JWT_AUDIENCE=t3-code-relay` in the Cloudflare service configuration. Define
+`CLERK_JWT_TEMPLATE` and `CLERK_JWT_AUDIENCE` in the production deployment environment as well. The stable `aud` value
 is shared by production and non-production relay stages. The client-facing `T3CODE_RELAY_URL` still
 selects the concrete relay deployment, but changing that URL does not require a JWT template change.
 
@@ -229,7 +218,7 @@ binary from another:
 ```sh
 VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
 T3CODE_PORT=13773 \
-  "/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)"
+  "/Applications/Workjet (Alpha).app/Contents/MacOS/Workjet (Alpha)"
 ```
 
 After changing Associated Domains, bump the build version before rebuilding; macOS may otherwise
@@ -238,8 +227,8 @@ reuse stale Shared Web Credentials metadata for the same app/version pair.
 Verify the installed bundle before testing:
 
 ```sh
-codesign --verify --deep --strict "/Applications/T3 Code (Alpha).app"
-codesign -d --entitlements :- "/Applications/T3 Code (Alpha).app"
+codesign --verify --deep --strict "/Applications/Workjet (Alpha).app"
+codesign -d --entitlements :- "/Applications/Workjet (Alpha).app"
 ```
 
 The current mobile UI uses Clerk's native authentication view. If a future mobile browser OAuth
@@ -247,9 +236,9 @@ flow uses a custom redirect URI, add that exact URI to the same allowlist.
 
 ## Sign-in Surfaces
 
-Signed-in users manage T3 Connect under **Connections**. The settings sidebar also has dedicated
+Signed-in users manage Workjet Connect under **Connections**. The settings sidebar also has dedicated
 controls, rendered by `SettingsSidebarNav.tsx`: `T3ConnectSidebarSignIn` in the footer shows a
-**Sign in to T3 Connect** button while signed out, and `T3ConnectSidebarAvatar` shows a Clerk
+**Sign in to Workjet Connect** button while signed out, and `T3ConnectSidebarAvatar` shows a Clerk
 `UserButton` account control while signed in. Both are gated on cloud public configuration.
 Desktop renders the same web bundle, so it has them too. The waitlist enrollment flow from the
 private beta was removed when Connect went GA; sign-up is open unless a Clerk restriction below is

@@ -9,6 +9,7 @@ import {
   TurnId,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
+  DEFAULT_WORKJET_THREAD_CONFIG,
 } from "@t3tools/contracts";
 
 import {
@@ -132,6 +133,7 @@ function makeThread(
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
     runtimeMode: "full-access",
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     branch: null,
     worktreePath: null,
     latestTurn: null,

@@ -14,10 +14,19 @@ import {
   BuildCommandFailedError,
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
+  createStagePnpmLockfile,
   createBuildConfig,
+  CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
+  createDesktopExtraResources,
+  PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
-  DESKTOP_EXTRA_RESOURCES,
+  DESKTOP_LEGAL_EXTRA_RESOURCE,
+  DESKTOP_LEGAL_NOTICE_FILES,
+  DESKTOP_LEGAL_RESOURCE_DIRECTORY,
+  DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
+  MissingDesktopLegalNoticeError,
+  stageLegalNotices,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -30,6 +39,7 @@ import {
   resolveClerkPasskeyNativeArtifacts,
   resolveMacPasskeySigningConfiguration,
   resolveDesktopRuntimeDependencies,
+  resolveServerRuntimeDependencies,
   resolveFffNativeDependencies,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
@@ -44,6 +54,7 @@ import {
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
   STAGE_INSTALL_ARGS,
+  StageLockfileResolutionError,
   WINDOWS_ASAR_UNPACK,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
@@ -88,34 +99,133 @@ function iconResizeSpawnerLayer(
   );
 }
 
+const LOCKED_CLAUDE_SDK =
+  "0.3.170(@anthropic-ai/sdk@0.93.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)";
+const LOCKED_EFFECT =
+  "4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)";
+const FFF_DARWIN_ARM64 = "@ff-labs/fff-bin-darwin-arm64";
+
+function makeRootLockFixture(input?: {
+  readonly desktopEffectVersion?: string;
+  readonly extraFffResolution?: string;
+}) {
+  const desktopEffectVersion = input?.desktopEffectVersion ?? LOCKED_EFFECT;
+  const extraFffResolution = input?.extraFffResolution;
+  return {
+    lockfileVersion: "9.0",
+    settings: {
+      autoInstallPeers: true,
+      excludeLinksFromLockfile: false,
+    },
+    packageExtensionsChecksum: "root-workspace-package-extensions",
+    patchedDependencies: {
+      "effect@4.0.0-beta.103": "af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6",
+      "unused@1.0.0": "unused-patch-hash",
+    },
+    importers: {
+      "apps/server": {
+        dependencies: {
+          "@anthropic-ai/claude-agent-sdk": {
+            specifier: "^0.3.170",
+            version: LOCKED_CLAUDE_SDK,
+          },
+          effect: {
+            specifier: "4.0.0-beta.103",
+            version: LOCKED_EFFECT,
+          },
+        },
+      },
+      "apps/desktop": {
+        dependencies: {
+          effect: {
+            specifier: "4.0.0-beta.103",
+            version: desktopEffectVersion,
+          },
+          electron: {
+            specifier: "41.5.0",
+            version: "41.5.0",
+          },
+        },
+      },
+    },
+    packages: {
+      "@anthropic-ai/claude-agent-sdk@0.3.170": {},
+      "effect@4.0.0-beta.103": {},
+      "electron@41.5.0": {},
+      [`${FFF_DARWIN_ARM64}@0.9.4`]: {},
+      ...(extraFffResolution ? { [`${FFF_DARWIN_ARM64}@${extraFffResolution}`]: {} } : {}),
+    },
+    snapshots: {
+      [`@anthropic-ai/claude-agent-sdk@${LOCKED_CLAUDE_SDK}`]: {},
+      [`effect@${LOCKED_EFFECT}`]: {},
+      [`effect@${desktopEffectVersion}`]: {},
+      "electron@41.5.0": {},
+      [`${FFF_DARWIN_ARM64}@0.9.4`]: {},
+      ...(extraFffResolution ? { [`${FFF_DARWIN_ARM64}@${extraFffResolution}`]: {} } : {}),
+    },
+  };
+}
+
+const stageLockInput = {
+  dependencies: {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.170",
+    effect: "4.0.0-beta.103",
+    [FFF_DARWIN_ARM64]: "0.9.4",
+  },
+  devDependencies: {
+    electron: "41.5.0",
+  },
+  promotedDependencyNames: [FFF_DARWIN_ARM64],
+  sourceSpecifiers: {
+    "apps/server": {
+      "@anthropic-ai/claude-agent-sdk": "^0.3.170",
+      effect: "catalog:",
+    },
+    "apps/desktop": {
+      effect: "catalog:",
+      electron: "41.5.0",
+    },
+  },
+  patchedDependencies: {
+    "effect@4.0.0-beta.103": "patches/effect@4.0.0-beta.103.patch",
+  },
+} as const;
+
+function captureStageLockError(run: () => unknown): StageLockfileResolutionError {
+  try {
+    run();
+  } catch (error) {
+    assert.instanceOf(error, StageLockfileResolutionError);
+    return error as StageLockfileResolutionError;
+  }
+  return assert.fail("Expected stage lockfile generation to fail.");
+}
+
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
   });
 
-  it("switches desktop packaging product names to nightly for nightly builds", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (Alpha)");
-    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
+  it("uses the Workjet package name for every desktop release channel", () => {
+    assert.equal(resolveDesktopProductName("0.0.17"), "Workjet");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Workjet");
   });
 
-  it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
-    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), {
-      macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
-    });
-
-    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), {
-      macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
-    });
+  it("uses Workjet artwork for every packaged desktop platform", () => {
+    const expected = {
+      macIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+      macIconIcns: BRAND_ASSET_PATHS.workjetMacIconIcns,
+      linuxIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.workjetWindowsIconIco,
+    };
+    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), expected);
+    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), expected);
   });
 
-  it("switches the bundled splash and favicon branding for nightly versions", () => {
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
+  it("uses Workjet splash and favicon artwork for every desktop release channel", () => {
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "workjet");
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "workjet");
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
@@ -159,6 +269,62 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
+  // The packaged update feed carries the product identity: a CTOX build must
+  // resolve to the CTOX repository, never to an inherited Workjet feed. The
+  // slug is environment-derived by design, so the release pipeline MUST set
+  // T3CODE_DESKTOP_UPDATE_REPOSITORY to the CTOX `owner/repo` (or run in the
+  // CTOX repository, which supplies the same slug through the GitHub Actions
+  // GITHUB_REPOSITORY variable). With neither set there is deliberately no
+  // publish config at all, so an unconfigured local build ships without an
+  // update feed rather than silently pointing at somebody else's releases.
+  it.effect("points the desktop update feed at the configured CTOX repository", () =>
+    Effect.gen(function* () {
+      const withEnv = (env: Record<string, string>) =>
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
+
+      const ctoxConfig = yield* resolveGitHubPublishConfig("latest").pipe(
+        withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop" }),
+      );
+      assert.deepStrictEqual(ctoxConfig, {
+        provider: "github",
+        owner: "metric-space-ai",
+        repo: "ctox-desktop",
+        releaseType: "release",
+      });
+
+      // The explicit override wins over the ambient GitHub Actions slug, so a
+      // CTOX release built from another repository still publishes and
+      // updates against the CTOX feed.
+      const overriddenConfig = yield* resolveGitHubPublishConfig("nightly").pipe(
+        withEnv({
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop",
+          GITHUB_REPOSITORY: "pingdotgg/t3code",
+        }),
+      );
+      assert.deepStrictEqual(overriddenConfig, {
+        provider: "github",
+        owner: "metric-space-ai",
+        repo: "ctox-desktop",
+        releaseType: "prerelease",
+        channel: "nightly",
+      });
+
+      // No slug configured and malformed slugs both mean "no feed", not a
+      // fallback to some inherited repository.
+      assert.isUndefined(yield* resolveGitHubPublishConfig("latest").pipe(withEnv({})));
+      assert.isUndefined(
+        yield* resolveGitHubPublishConfig("latest").pipe(
+          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "   " }),
+        ),
+      );
+      assert.isUndefined(
+        yield* resolveGitHubPublishConfig("latest").pipe(
+          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop/extra" }),
+        ),
+      );
+    }),
+  );
+
   it("omits bundled workspace packages from staged desktop dependencies", () => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(
@@ -179,6 +345,28 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       {
         "@effect/platform-node": "4.0.0-beta.59",
         effect: "4.0.0-beta.59",
+      },
+    );
+  });
+
+  it("omits bundled workspace packages from staged server dependencies", () => {
+    assert.deepStrictEqual(
+      resolveServerRuntimeDependencies(
+        {
+          "@effect/platform-node": "catalog:",
+          "@metric-space-ai/workjet-capabilities": "workspace:*",
+          effect: "catalog:",
+          "node-pty": "^1.1.0",
+        },
+        {
+          "@effect/platform-node": "4.0.0-beta.103",
+          effect: "4.0.0-beta.103",
+        },
+      ),
+      {
+        "@effect/platform-node": "4.0.0-beta.103",
+        effect: "4.0.0-beta.103",
+        "node-pty": "^1.1.0",
       },
     );
   });
@@ -217,8 +405,137 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
   });
 
+  it("builds the synthetic root importer from exact package specs and locked resolutions", () => {
+    const lockfile = createStagePnpmLockfile(makeRootLockFixture(), stageLockInput);
+
+    assert.deepStrictEqual(lockfile.importers, {
+      ".": {
+        dependencies: {
+          "@anthropic-ai/claude-agent-sdk": {
+            specifier: "^0.3.170",
+            version: LOCKED_CLAUDE_SDK,
+          },
+          [FFF_DARWIN_ARM64]: {
+            specifier: "0.9.4",
+            version: "0.9.4",
+          },
+          effect: {
+            specifier: "4.0.0-beta.103",
+            version: LOCKED_EFFECT,
+          },
+        },
+        devDependencies: {
+          electron: {
+            specifier: "41.5.0",
+            version: "41.5.0",
+          },
+        },
+      },
+    });
+    assert.deepStrictEqual(lockfile.patchedDependencies, {
+      "effect@4.0.0-beta.103": "af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6",
+    });
+    assert.notProperty(lockfile, "packageExtensionsChecksum");
+  });
+
+  it("keeps ranged, peer-qualified, and patched importer resolutions unchanged", () => {
+    const lockfile = createStagePnpmLockfile(makeRootLockFixture(), stageLockInput);
+    const importer = (lockfile.importers as Record<string, unknown>)["."] as {
+      readonly dependencies: Record<
+        string,
+        { readonly specifier: string; readonly version: string }
+      >;
+    };
+
+    assert.equal(
+      importer.dependencies["@anthropic-ai/claude-agent-sdk"]?.version,
+      LOCKED_CLAUDE_SDK,
+    );
+    assert.equal(importer.dependencies.effect?.version, LOCKED_EFFECT);
+    assert.equal(importer.dependencies["@anthropic-ai/claude-agent-sdk"]?.specifier, "^0.3.170");
+  });
+
+  it("promotes native packages only from an existing root-lock package", () => {
+    const lockfile = createStagePnpmLockfile(makeRootLockFixture(), stageLockInput);
+    const importer = (lockfile.importers as Record<string, unknown>)["."] as {
+      readonly dependencies: Record<string, { readonly version: string }>;
+    };
+    assert.equal(importer.dependencies[FFF_DARWIN_ARM64]?.version, "0.9.4");
+
+    const error = captureStageLockError(() =>
+      createStagePnpmLockfile(makeRootLockFixture(), {
+        ...stageLockInput,
+        dependencies: {
+          ...stageLockInput.dependencies,
+          "@ff-labs/fff-bin-darwin-x64": "0.9.4",
+        },
+        promotedDependencyNames: [FFF_DARWIN_ARM64, "@ff-labs/fff-bin-darwin-x64"],
+      }),
+    );
+    assert.equal(error.reason, "missing");
+    assert.equal(error.source, "packages");
+    assert.equal(error.dependencyName, "@ff-labs/fff-bin-darwin-x64");
+  });
+
+  it("fails closed on missing, conflicting, and ambiguous lock resolution data", () => {
+    const missingError = captureStageLockError(() =>
+      createStagePnpmLockfile(makeRootLockFixture(), {
+        ...stageLockInput,
+        dependencies: {
+          ...stageLockInput.dependencies,
+          "missing-package": "^1.0.0",
+        },
+        sourceSpecifiers: {
+          ...stageLockInput.sourceSpecifiers,
+          "apps/server": {
+            ...stageLockInput.sourceSpecifiers["apps/server"],
+            "missing-package": "^1.0.0",
+          },
+        },
+      }),
+    );
+    assert.equal(missingError.reason, "missing");
+    assert.equal(missingError.source, "importers");
+
+    const conflictingEffect = "4.0.0-beta.103(peer@1.0.0)";
+    const conflictingError = captureStageLockError(() =>
+      createStagePnpmLockfile(
+        makeRootLockFixture({ desktopEffectVersion: conflictingEffect }),
+        stageLockInput,
+      ),
+    );
+    assert.equal(conflictingError.reason, "conflicting");
+    assert.deepStrictEqual(conflictingError.candidates, [LOCKED_EFFECT, conflictingEffect]);
+
+    const ambiguousResolution = "0.9.4(peer@1.0.0)";
+    const ambiguousError = captureStageLockError(() =>
+      createStagePnpmLockfile(
+        makeRootLockFixture({ extraFffResolution: ambiguousResolution }),
+        stageLockInput,
+      ),
+    );
+    assert.equal(ambiguousError.reason, "ambiguous");
+    assert.equal(ambiguousError.source, "packages");
+    assert.deepStrictEqual(ambiguousError.candidates, ["0.9.4", ambiguousResolution]);
+  });
+
+  it("generates deterministically without mutating the parsed root lock", () => {
+    const rootLockfile = makeRootLockFixture();
+    const originalRootLockfile = structuredClone(rootLockfile);
+
+    const first = createStagePnpmLockfile(rootLockfile, stageLockInput);
+    const second = createStagePnpmLockfile(rootLockfile, stageLockInput);
+
+    assert.deepStrictEqual(first, second);
+    assert.equal(JSON.stringify(first), JSON.stringify(second));
+    assert.deepStrictEqual(rootLockfile, originalRootLockfile);
+    assert.notStrictEqual(first, rootLockfile);
+    assert.strictEqual(first.packages, rootLockfile.packages);
+    assert.strictEqual(first.snapshots, rootLockfile.snapshots);
+  });
+
   it("installs optional native dependencies for the target desktop architecture", () => {
-    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
+    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod", "--frozen-lockfile"]);
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],
@@ -266,6 +583,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "node-pty": true,
           "browser-tabs-lock": false,
         },
+        catalog: {
+          effect: "4.0.0-beta.103",
+        },
         patchedDependencies: {
           "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
         },
@@ -283,6 +603,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           electron: true,
           "node-pty": true,
           "browser-tabs-lock": false,
+        },
+        catalog: {
+          effect: "4.0.0-beta.103",
         },
         patchedDependencies: {
           "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
@@ -330,6 +653,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
       const linux = yield* createBuildConfig(
         "linux",
@@ -339,6 +663,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
       const win = yield* createBuildConfig(
         "win",
@@ -348,6 +673,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
 
       assert.notProperty(mac, "asarUnpack");
@@ -356,11 +682,28 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
+        {
+          name: "Workjet",
+          schemes: [
+            "workjet",
+            "workjet-dev",
+            "workjet-preview",
+            "ctox-desktop",
+            "ctox-desktop-dev",
+            "t3code",
+            "t3code-dev",
+          ],
+        },
       ]);
       for (const config of [mac, linux, win]) {
+        assert.equal(config.productName, "Workjet");
+        assert.equal(config.artifactName, "Workjet-${version}-${arch}.${ext}");
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
         assert.deepStrictEqual(config.files, DESKTOP_FILE_EXCLUSIONS);
+        assert.deepStrictEqual(
+          config.extraResources,
+          createDesktopExtraResources("/verified/ctox-business-os-shell"),
+        );
       }
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
@@ -522,17 +865,37 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
-      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
-        entitlementsPath: "/tmp/entitlements.mac.plist",
-        provisioningProfilePath: "/tmp/t3code.provisionprofile",
-      });
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        true,
+        false,
+        undefined,
+        {
+          entitlementsPath: "/tmp/entitlements.mac.plist",
+          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+        },
+        "/verified/ctox-business-os-shell",
+      );
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.t3tools.t3code");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
-        { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
+        {
+          name: "Workjet",
+          schemes: [
+            "workjet",
+            "workjet-dev",
+            "workjet-preview",
+            "ctox-desktop",
+            "ctox-desktop-dev",
+            "t3code",
+            "t3code-dev",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
@@ -547,6 +910,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         undefined,
         undefined,
+        "/verified/ctox-business-os-shell",
       );
 
       const win = config.win as Record<string, unknown>;
@@ -556,13 +920,53 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it("stages the resource monitor as an external executable resource", () => {
-    assert.deepStrictEqual(DESKTOP_EXTRA_RESOURCES, [
+  it("ships the provider-gateway host only once a release has been staged", () => {
+    // There is no provider-gateway-host-v* release yet, so pointing
+    // electron-builder at a directory that does not exist would break every
+    // packaged build today for a binary nobody can ship. Presence of a staged
+    // path is the switch, and the wiring is inert until the tag is cut.
+    const withoutHost = createDesktopExtraResources("/verified/ctox-business-os-shell");
+    assert.isUndefined(
+      withoutHost.find((entry) => entry.to === PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY),
+      "no staged host means no extra-resource entry at all",
+    );
+
+    const withHost = createDesktopExtraResources(
+      "/verified/ctox-business-os-shell",
+      "/stage/provider-gateway-host",
+    );
+    assert.deepStrictEqual(
+      withHost.find((entry) => entry.to === PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY),
+      { from: "/stage/provider-gateway-host", to: "provider-gateway-host" },
+    );
+  });
+
+  it("ships the host where the resolver looks for it", () => {
+    // The packaging constant and the resolver's constant are declared in two
+    // packages that cannot import each other. A rename on one side alone would
+    // ship a host the app silently cannot find, so pin the string in both.
+    // The two constants live in packages that cannot import each other (the
+    // scripts tsconfig does not include apps/desktop), so the agreement is
+    // pinned as the same literal on both sides. The other half of this pair is
+    // "the packaged resource directory the build script ships to" in
+    // apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.test.ts.
+    assert.equal(PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY, "provider-gateway-host");
+  });
+
+  it("stages the resource monitor and verified shell as external resources", () => {
+    assert.deepStrictEqual(DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE, {
+      from: "apps/desktop/prod-resources/resource-monitor",
+      to: "resource-monitor",
+    });
+    assert.deepStrictEqual(createDesktopExtraResources("/verified/ctox-business-os-shell"), [
+      DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
       {
-        from: "apps/desktop/prod-resources/resource-monitor",
-        to: "resource-monitor",
+        from: "/verified/ctox-business-os-shell",
+        to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
       },
+      DESKTOP_LEGAL_EXTRA_RESOURCE,
     ]);
+    assert.equal(CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY, "ctox-business-os-shell");
     assert.deepStrictEqual(resolveResourceMonitorRustTargets("mac", "universal"), [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",
@@ -576,6 +980,46 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resourceMonitorExecutableName("mac"), "t3-resource-monitor");
     assert.equal(resourceMonitorExecutableName("win"), "t3-resource-monitor.exe");
   });
+  it.effect("ships the license notices as a packaged extra resource", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+
+      assert.deepStrictEqual(DESKTOP_LEGAL_EXTRA_RESOURCE, { from: "legal", to: "legal" });
+      assert.deepStrictEqual(
+        [...DESKTOP_LEGAL_NOTICE_FILES],
+        ["LICENSE", "LICENSE_POLICY.md", "NOTICE.md"],
+      );
+
+      const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+      const stageAppDir = yield* fs.makeTempDirectoryScoped();
+      yield* stageLegalNotices({ repoRoot, stageAppDir });
+      for (const noticeFile of DESKTOP_LEGAL_NOTICE_FILES) {
+        const staged = path.join(stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY, noticeFile);
+        assert.isTrue(yield* fs.exists(staged), `${noticeFile} was not staged`);
+        assert.equal(
+          yield* fs.readFileString(staged),
+          yield* fs.readFileString(path.join(repoRoot, noticeFile)),
+        );
+      }
+      assert.include(
+        yield* fs.readFileString(
+          path.join(stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY, "LICENSE"),
+        ),
+        "Copyright (c) 2026 T3 Tools Inc.",
+      );
+
+      // A tree without the notices must fail the build instead of shipping a
+      // binary that silently drops the upstream MIT notice.
+      const emptyRoot = yield* fs.makeTempDirectoryScoped();
+      const failure = yield* stageLegalNotices({
+        repoRoot: emptyRoot,
+        stageAppDir: yield* fs.makeTempDirectoryScoped(),
+      }).pipe(Effect.flip);
+      assert.instanceOf(failure, MissingDesktopLegalNoticeError);
+      assert.equal(failure.noticeFile, "LICENSE");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
   it("promotes target fff binaries to direct staged dependencies", () => {
     assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-darwin-arm64": "0.9.4",

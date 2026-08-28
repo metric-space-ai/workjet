@@ -18,23 +18,14 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
+import { type SshAuthOptions, SshPasswordPrompt, isSshAuthFailure } from "./auth.ts";
 import {
-  buildSshChildEnvironment,
-  type SshAuthOptions,
-  SshPasswordPrompt,
-  isSshAuthFailure,
-} from "./auth.ts";
-import {
-  baseSshArgs,
   buildSshHostSpecEffect,
-  collectProcessOutput,
   getLastNonEmptyOutputLine,
   remoteStateKey,
-  resolveSshCommand,
   resolveSshTarget,
   runSshCommand,
   targetConnectionKey,
@@ -48,6 +39,7 @@ import {
   SshPasswordPromptError,
   SshReadinessError,
 } from "./errors.ts";
+import { sshLocalForwardExitFailure, spawnSshLocalForwardProcess } from "./localForward.ts";
 
 export const DEFAULT_REMOTE_PORT = 3773;
 const REMOTE_PORT_SCAN_WINDOW = 200;
@@ -579,7 +571,7 @@ if [ -z "$REMOTE_PORT" ]; then
   printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
   printf 'managed\\n' >"$MANAGED_FILE"
   if ! wait_ready "@@T3_READY_TIMEOUT_MS@@"; then
-    printf 'Remote T3 server did not become ready on 127.0.0.1:%s.\\n' "$REMOTE_PORT" >&2
+    printf 'Remote Workjet server did not become ready on 127.0.0.1:%s.\\n' "$REMOTE_PORT" >&2
     tail -n 80 "$LOG_FILE" >&2 2>/dev/null || true
     kill "$REMOTE_PID" 2>/dev/null || true
     wait_for_pid_exit "$REMOTE_PID"
@@ -936,94 +928,18 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
   | NetService.NetService
   | Scope.Scope
 > {
-  const hostSpec = yield* buildSshHostSpecEffect(input.resolvedTarget);
-  const childEnvironment = yield* buildSshChildEnvironment({
-    ...(input.authOptions.authSecret === undefined
-      ? {}
-      : { authSecret: input.authOptions.authSecret }),
-    ...(input.authOptions.interactiveAuth === undefined
-      ? {}
-      : { interactiveAuth: input.authOptions.interactiveAuth }),
-  }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SshCommandError({
-          command: ["ssh"],
-          exitCode: null,
-          stderr: "",
-          message: "Failed to prepare SSH authentication helpers.",
-          cause,
-        }),
-    ),
-  );
-  const args = [
-    ...baseSshArgs(input.resolvedTarget, {
-      batchMode: input.authOptions.batchMode ?? "no",
-    }),
-    "-o",
-    "ExitOnForwardFailure=yes",
-    "-o",
-    "ControlMaster=no",
-    "-o",
-    "ControlPath=none",
-    "-o",
-    "ControlPersist=no",
-    "-o",
-    "ServerAliveInterval=15",
-    "-o",
-    "ServerAliveCountMax=3",
-    "-n",
-    "-N",
-    "-L",
-    `${input.localPort}:127.0.0.1:${input.remotePort}`,
-    hostSpec,
-  ];
-  const sshCommand = yield* resolveSshCommand;
-  const tunnelCommand = [sshCommand, ...args];
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  // The spawn, the argv, and the exit monitor are the generic local-forward
+  // primitive in ./localForward.ts. Only the T3 opinions stay here: an HTTP
+  // readiness gate, the remote server kind, and the remote log tail on failure.
   const scope = yield* Scope.Scope;
-  yield* Effect.logDebug("ssh.tunnel.spawn.start", {
-    ...sshTargetLogFields(input.resolvedTarget),
-    command: tunnelCommand,
+  const spawned = yield* spawnSshLocalForwardProcess({
+    target: input.resolvedTarget,
     localPort: input.localPort,
     remotePort: input.remotePort,
-    remoteServerKind: input.remoteServerKind,
-    httpBaseUrl: input.httpBaseUrl,
+    authOptions: { ...input.authOptions, batchMode: input.authOptions.batchMode ?? "no" },
   });
-  const child = yield* spawner
-    .spawn(
-      ChildProcess.make(sshCommand, args, {
-        env: childEnvironment,
-        extendEnv: true,
-        stdin: {
-          stream: Stream.empty,
-          endOnDone: true,
-        },
-      }),
-    )
-    .pipe(
-      Effect.mapError(
-        (cause) =>
-          new SshCommandError({
-            command: tunnelCommand,
-            exitCode: null,
-            stderr: "",
-            message:
-              cause instanceof Error
-                ? cause.message
-                : `Failed to spawn SSH tunnel for ${input.resolvedTarget.alias}.`,
-            cause,
-          }),
-      ),
-    );
-  yield* Effect.logDebug("ssh.tunnel.spawn.succeeded", {
-    ...sshTargetLogFields(input.resolvedTarget),
-    command: tunnelCommand,
-    pid: child.pid,
-    localPort: input.localPort,
-    remotePort: input.remotePort,
-    httpBaseUrl: input.httpBaseUrl,
-  });
+  const child = spawned.child;
+  const tunnelCommand = spawned.command;
   const tunnelEntry: SshTunnelEntry = {
     key: input.key,
     target: input.resolvedTarget,
@@ -1035,45 +951,12 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
     process: child,
     scope,
   };
-  const exitFailure = Effect.all(
-    [collectProcessOutput(child.stderr), child.exitCode.pipe(Effect.map(Number))],
-    { concurrency: "unbounded" },
-  ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SshCommandError({
-          command: tunnelCommand,
-          exitCode: null,
-          stderr: "",
-          message:
-            cause instanceof Error
-              ? cause.message
-              : `Failed to monitor SSH tunnel for ${input.resolvedTarget.alias}.`,
-          cause,
-        }),
-    ),
-    Effect.flatMap(([stderr, exitCode]) => {
-      const error = new SshCommandError({
-        command: tunnelCommand,
-        exitCode,
-        stderr,
-        message: normalizeSshErrorMessage(
-          stderr,
-          `SSH tunnel exited unexpectedly for ${input.resolvedTarget.alias} (exit ${exitCode}).`,
-        ),
-      });
-      return Effect.logWarning("ssh.tunnel.process.exited", {
-        ...sshTargetLogFields(input.resolvedTarget),
-        command: tunnelCommand,
-        pid: child.pid,
-        localPort: input.localPort,
-        remotePort: input.remotePort,
-        httpBaseUrl: input.httpBaseUrl,
-        exitCode,
-        stderr,
-      }).pipe(Effect.andThen(Effect.fail(error)));
-    }),
-  );
+  const exitFailure = sshLocalForwardExitFailure({
+    child,
+    command: tunnelCommand,
+    target: input.resolvedTarget,
+    fallbackMessage: `SSH tunnel exited unexpectedly for ${input.resolvedTarget.alias}.`,
+  });
   yield* Effect.raceFirst(
     waitForHttpReady({
       baseUrl: input.httpBaseUrl,

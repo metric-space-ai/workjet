@@ -57,6 +57,7 @@ import {
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -92,9 +93,15 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
   type ProviderAdapterError,
+  type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  clearProviderAuthObservation,
+  isAuthenticationFailureMessage,
+  recordProviderAuthFailure,
+} from "../ProviderAuthObservations.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -109,6 +116,19 @@ type ClaudeSdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
   return Exit.isSuccess(result) ? result.value : undefined;
+}
+
+function claudeSystemPrompt(
+  compiledManagedPrompt: string | undefined,
+): NonNullable<ClaudeQueryOptions["systemPrompt"]> {
+  const managedPrompt = compiledManagedPrompt?.trim();
+  return managedPrompt
+    ? {
+        type: "preset",
+        preset: "claude_code",
+        append: `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
+      }
+    : { type: "preset", preset: "claude_code" };
 }
 
 type PromptQueueItem =
@@ -262,6 +282,27 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
 export interface ClaudeAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  /**
+   * Lazily resolve the environment for one session start.
+   *
+   * Gateway-routed instances must consult the gateway's live status at the
+   * moment a session starts — the gateway starts, stops, and faults on its
+   * own schedule, so a value captured when the instance was built would go
+   * stale. When absent, the adapter-scoped environment is used, which is
+   * exactly the unrouted behavior.
+   *
+   * Only the child process env is recomputed; the resolved SDK executable
+   * path stays construction-time, because gateway routing changes where
+   * requests go, never which binary runs.
+   */
+  readonly resolveSessionEnvironment?: (input?: {
+    /**
+     * The model the composer selected. The gateway needs it to pick the
+     * upstream provider that serves it, so the resolver — not the driver —
+     * decides what the session's request header says.
+     */
+    readonly model?: string | undefined;
+  }) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError>;
   readonly createQuery?: (input: {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
@@ -354,7 +395,44 @@ function resultErrorsText(result: SDKResultMessage): string {
  * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
  * so they must never become the error banner.
  */
+/**
+ * A hard provider failure that arrives wearing the success shape.
+ *
+ * The CLI reports an API-level outage as `subtype: "success"` with
+ * `is_error: true`, `terminal_reason: "api_error"`, no `errors` array at all,
+ * and the human-readable text in `result`. An expired OAuth session is the
+ * common case:
+ *
+ *   { subtype: "success", is_error: true, terminal_reason: "api_error",
+ *     duration_api_ms: 0,
+ *     result: "Failed to authenticate: OAuth session expired and could not
+ *              be refreshed" }
+ *
+ * Reading `subtype` alone therefore books a provider that answers NOTHING as a
+ * completed turn and drops the reason on the floor. That is not hypothetical:
+ * it is how thirteen consecutive authentication failures were stored as
+ * `state: "completed"` while the UI kept reporting the provider as healthy.
+ *
+ * Deliberately narrow — only the success shape. Every other subtype already
+ * reaches `turnStatusFromResult`'s failure path with its `errors` intact, so
+ * widening this would change classifications that are already correct.
+ */
+function isSuccessShapedFailure(result: SDKResultMessage): boolean {
+  return result.subtype === "success" && result.is_error === true;
+}
+
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
+  if (isSuccessShapedFailure(result)) {
+    // `errors` is absent on this shape; the reason lives in `result`. Falling
+    // back to a fixed sentence keeps the banner non-empty, because a failure
+    // the operator cannot see is the defect being fixed here.
+    // Read defensively: the SDK union declares `result` only on the success
+    // member, so TypeScript cannot narrow it here. That mis-modelling is part
+    // of the same defect — upstream treats "success" as meaning no failure.
+    const raw = (result as { readonly result?: unknown }).result;
+    const text = typeof raw === "string" ? raw.trim() : "";
+    return text.length > 0 ? text : "The provider reported an API error.";
+  }
   if (result.subtype === "success" || !Array.isArray(result.errors)) {
     return undefined;
   }
@@ -1282,6 +1360,12 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 });
 
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
+  // Checked BEFORE the success shortcut: an api_error result carries
+  // subtype "success", so trusting the subtype first reports the turn as
+  // completed. See isSuccessShapedFailure.
+  if (isSuccessShapedFailure(result)) {
+    return isInterruptedResult(result) ? "interrupted" : "failed";
+  }
   if (result.subtype === "success") {
     return "completed";
   }
@@ -2944,6 +3028,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const status = turnStatusFromResult(message);
     const errorMessage = resultUserFacingError(message);
 
+    // A turn is the only thing that actually spends the credential, so record
+    // what it saw. Settings otherwise publishes "Authenticated" purely on the
+    // strength of a local handshake that succeeds with a dead token.
+    if (status === "completed") {
+      clearProviderAuthObservation(boundInstanceId);
+    } else if (
+      status === "failed" &&
+      errorMessage !== undefined &&
+      isAuthenticationFailureMessage(errorMessage)
+    ) {
+      recordProviderAuthFailure(boundInstanceId, errorMessage, yield* Clock.currentTimeMillis);
+    }
+
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
     }
@@ -4089,6 +4186,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
         ...(ultracode ? { ultracode: true } : {}),
       };
+      // Resolved per session start so gateway-routed instances observe the
+      // gateway's current status rather than a value frozen at construction.
+      // The resolver returns the per-instance merge only, so the Claude home
+      // isolation (CLAUDE_CONFIG_DIR) is re-applied on top of it exactly as
+      // it is for the construction-time environment.
+      const sessionEnvironment = options?.resolveSessionEnvironment
+        ? yield* makeClaudeEnvironment(
+            claudeSettings,
+            // The API model id is what actually travels on the wire, so it is
+            // the identity the gateway catalog has to be matched against.
+            yield* options.resolveSessionEnvironment({ model: apiModelId }),
+          ).pipe(Effect.provideService(Path.Path, path))
+        : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
@@ -4102,7 +4212,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
@@ -4120,7 +4230,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: sessionEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
@@ -4159,7 +4269,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.additional_directories": additionalDirectories,
         "claude.query.setting_sources": [...CLAUDE_SETTING_SOURCES],
         "claude.query.settings_json": encodeJsonStringForDiagnostics(settings) ?? "",
-        "claude.query.extra_args_json": encodeJsonStringForDiagnostics(extraArgs) ?? "",
+        // Flag NAMES only. `extraArgs` is whatever the operator typed into
+        // `launchArgs`, so its VALUES are provider request metadata of unknown
+        // sensitivity — an `--api-key` or a `--setting` payload would otherwise
+        // land verbatim in `server.trace.ndjson`. The names alone answer the
+        // diagnostic question ("which extra flags were in play?").
+        "claude.query.extra_arg_names": Object.keys(extraArgs).sort(),
         "claude.query.path_to_executable": claudeBinaryPath,
       });
 

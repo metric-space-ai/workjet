@@ -9,6 +9,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   TurnId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -48,6 +49,7 @@ function makeThread(
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     ...input,
   };
 }

@@ -7,6 +7,10 @@ import { Discovery } from "@t3tools/client-runtime/relay";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { useMemo } from "react";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  useBusinessOsCodeScope,
+} from "../businessOsCodeScope";
 
 import { environmentCatalog } from "../connection/catalog";
 import { environmentPresentations, useEnvironmentPresentation } from "./presentation";
@@ -51,6 +55,38 @@ export function useEnvironments() {
   return {
     isReady: catalog.isReady,
     networkStatus,
+    environments,
+    presentationById,
+  };
+}
+
+/**
+ * Code-facing environment inventory. The unfiltered `useEnvironments` stays
+ * available to the global Computers settings inventory; all Code navigation
+ * and actions must consume this projection instead.
+ */
+export function useBusinessOsScopedEnvironments() {
+  const all = useEnvironments();
+  const scope = useBusinessOsCodeScope();
+  const environments = useMemo(
+    () =>
+      all.environments.filter((environment) =>
+        businessOsCodeScopeContainsEnvironment(scope, environment.environmentId),
+      ),
+    [all.environments, scope],
+  );
+  const presentationById = useMemo(
+    () =>
+      new Map(
+        [...all.presentationById].filter(([environmentId]) =>
+          businessOsCodeScopeContainsEnvironment(scope, environmentId),
+        ),
+      ),
+    [all.presentationById, scope],
+  );
+  return {
+    ...all,
+    isReady: all.isReady && scope.phase === "ready",
     environments,
     presentationById,
   };

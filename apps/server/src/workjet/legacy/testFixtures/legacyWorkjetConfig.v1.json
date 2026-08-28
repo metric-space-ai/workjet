@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "selectedComputerID": "00000000-0000-0000-0000-000000000001",
+  "skillActivation": "Global",
+  "injectWorkerDeclarations": true,
+  "transparentWorkerPromptsMigrated": true,
+  "providerSlots": 3,
+  "probeTimeoutSeconds": 120,
+  "turnTimeoutSeconds": 5400,
+  "degradationAllowed": true,
+  "telemetryClaudeCodeEvents": true,
+  "telemetrySidecarEvents": false,
+  "telemetryRetentionDays": 14,
+  "skillRules": "You are the sole orchestrator. Own decomposition, routing, synthesis, integration, cleanup, and final verification. Worker reports are claims, never proof.",
+  "skillLoaderInstructions": "Read `~/.claude/workjet/AGENTS.md` and follow only the rules it contains.",
+  "progressBoardRules": "The board is a kanban with four columns. It is simultaneously the human dashboard and the recovery document.",
+  "adHocLearnings": "- Workers die with 'stream disconnected before completion' when the CLI login expires. Probe the harness before debugging the task.",
+  "technicalRules": "At most 3 parallel calls per provider. Probe timeout 120 seconds. Turn timeout 5400 seconds.",
+  "modelPrompts": {
+    "Sol": "Sol is the production completion engine. Give it a hard file whitelist and exact acceptance commands.",
+    "grok-4.6": "Grok is one independent discovery worker in a three-model panel. It never attempts the final production solution."
+  },
+  "cliProxy": {
+    "endpoint": "http://127.0.0.1:8317",
+    "inferenceCredentialReference": "cliproxy-local-gateway",
+    "managementCredentialReference": "cliproxy-local-management",
+    "usageStatisticsEnabled": false
+  },
+  "computers": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Local",
+      "transport": "Lokal",
+      "host": "",
+      "user": "",
+      "port": 22,
+      "sandboxEnabled": true,
+      "pinnedSidecarVersion": "0.80.2",
+      "telemetryEnabled": false,
+      "sidecarBundlePath": "",
+      "deploymentStatus": "Nicht eingerichtet",
+      "deploymentDetail": "Noch nicht geprüft.",
+      "knownHostsPath": "",
+      "identityFilePath": ""
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "gpu-tailnet",
+      "transport": "Tailscale",
+      "host": "gpu-tailnet.example-tailnet.ts.net",
+      "user": "builder",
+      "port": 22,
+      "sandboxEnabled": true,
+      "pinnedSidecarVersion": "0.80.2",
+      "telemetryEnabled": true,
+      "sidecarBundlePath": "",
+      "deploymentStatus": "Installiert",
+      "deploymentDetail": "Sidecar 0.80.2 installiert.",
+      "installedContentHash": "1f0c9c1b6cf24a1b8a5b2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b",
+      "installedSidecarVersion": "0.80.2",
+      "knownHostsPath": "",
+      "identityFilePath": "",
+      "tailscaleSSHEnabled": true,
+      "tailscaleExecutablePath": "/usr/local/bin/tailscale",
+      "bubblewrapExecutablePath": "/usr/bin/bwrap",
+      "lastSuccessfulPreflightAt": 808416489.338328,
+      "lastSuccessfulDeploymentAt": 808416512.114217
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "name": "build-box",
+      "transport": "SSH",
+      "host": "build-box.example.internal",
+      "user": "ci",
+      "port": 2222,
+      "sandboxEnabled": false,
+      "pinnedSidecarVersion": "0.80.2",
+      "telemetryEnabled": false,
+      "sidecarBundlePath": "/opt/workjet/sidecar.tar.gz",
+      "deploymentStatus": "Fehlgeschlagen",
+      "deploymentDetail": "Preflight abgebrochen.",
+      "remoteSetupIssue": "Der Host akzeptiert den hinterlegten Schlüssel nicht.",
+      "knownHostsPath": "/Users/example/Library/Application Support/Workjet/ssh/known_hosts",
+      "identityFilePath": "/Users/example/.ssh/id_ed25519"
+    }
+  ],
+  "providers": [
+    {
+      "id": "64ECBBC6-361B-459D-A675-E4358F7F3E5E",
+      "name": "Kimi 1",
+      "accountLabel": "Kimi · …ab1234",
+      "credentialReference": "cliproxy-local-gateway",
+      "kind": "CLIProxyAPI",
+      "endpoint": "http://127.0.0.1:8317",
+      "authentication": "Bearer-Token",
+      "modelProvider": "Kimi",
+      "externalCredentialID": "account-0f1e2d3c4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff",
+      "modelIDs": ["kimi-k3", "kimi-k3-256k"],
+      "status": "Nicht geprüft",
+      "statusDetail": "Im Gateway registriert.",
+      "loginArguments": [],
+      "routingPriority": 0,
+      "capacity": {
+        "unavailable": {
+          "reason": "Für diesen Zugang sind keine Nutzungsdaten verfügbar."
+        }
+      }
+    },
+    {
+      "id": "14F384A7-0D3F-45D1-9CF9-8962A3B28739",
+      "name": "Z.ai 1",
+      "credentialReference": "zai-direct-1",
+      "kind": "Direkte API",
+      "endpoint": "https://api.example-zai.test/api/paas/v4",
+      "authentication": "API-Key (x-api-key)",
+      "modelProvider": "Z.ai",
+      "modelIDs": ["glm-5.3"],
+      "status": "Verbunden",
+      "statusDetail": "Zuletzt erfolgreich geprüft.",
+      "loginArguments": [],
+      "routingPriority": 1,
+      "capacity": {
+        "observed": {
+          "signals": [
+            {
+              "evidence": "measured",
+              "kind": "quota",
+              "label": "Woche",
+              "limit": 100,
+              "limited": false,
+              "observedAt": 808416489.338328,
+              "scope": "Modelle",
+              "source": "Coding Plan",
+              "used": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "C6E95930-179B-4CDB-9A00-197E21906EF2",
+      "name": "xAI",
+      "accountLabel": "xAI · …cd5678",
+      "credentialReference": "cliproxy-local-gateway",
+      "kind": "CLIProxyAPI",
+      "endpoint": "http://127.0.0.1:8317",
+      "authentication": "Bearer-Token",
+      "modelProvider": "xAI",
+      "externalCredentialID": "account-aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+      "modelIDs": ["grok-4.6"],
+      "status": "Verbunden",
+      "statusDetail": "Im Gateway registriert.",
+      "loginExecutable": "/opt/homebrew/bin/cliproxy",
+      "loginArguments": ["login", "--provider", "xai"],
+      "routingPriority": 0
+    }
+  ],
+  "workers": [
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "name": "Sol · Completion",
+      "model": "gpt-5.6-sol",
+      "instructions": "Treat the consolidated brief as a contract. Implement only whitelisted files.",
+      "reasoningEffort": "high",
+      "computerID": "00000000-0000-0000-0000-000000000001",
+      "providerPool": "OpenAI",
+      "skillOverrides": { "greppy": true, "web-research": true },
+      "invocation": {
+        "executable": "/opt/homebrew/bin/claude",
+        "arguments": ["--bare", "-p", "<WORKJET_BRIEF>", "--allowedTools", "Read,Write,Edit"],
+        "capabilities": ["Bestehende Dateien präzise umsetzen"],
+        "options": { "fastMode": "false" }
+      },
+      "harness": "Claude Code",
+      "capacity": {
+        "unavailable": {
+          "reason": "Exakte Kapazität ist ohne kompatible Nutzungsdaten nicht verfügbar."
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000023",
+      "name": "Prototype C · GLM",
+      "model": "glm-5.3",
+      "instructions": "Produce a bounded disposable prototype. Do not attempt the final production solution.",
+      "reasoningEffort": "medium",
+      "computerID": "00000000-0000-0000-0000-000000000001",
+      "providerID": "14F384A7-0D3F-45D1-9CF9-8962A3B28739",
+      "skillOverrides": { "greppy": true },
+      "invocation": {
+        "executable": "/opt/homebrew/bin/claude",
+        "arguments": ["--bare", "-p", "<WORKJET_BRIEF>"],
+        "capabilities": [],
+        "options": { "fastMode": "false" }
+      },
+      "harness": "Claude Code"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000024",
+      "name": "Web Research · Terra",
+      "model": "gpt-5.6-terra",
+      "instructions": "Perform current online research only with the harness's native live web search.",
+      "computerID": "00000000-0000-0000-0000-000000000001",
+      "providerPool": "OpenAI",
+      "skillOverrides": { "greppy": false, "web-research": true },
+      "invocation": {
+        "executable": "/opt/homebrew/bin/codex",
+        "arguments": ["--search", "-s", "read-only", "exec", "<WORKJET_BRIEF>"],
+        "capabilities": ["Read-only runtime"],
+        "options": {}
+      },
+      "harness": "Codex CLI"
+    },
+    {
+      "id": "10736349-CAA1-4DA2-886F-61445E7BE682",
+      "name": "Standard Worker (remote)",
+      "model": "grok-4.6",
+      "instructions": "Offload long-running compute to the remote machine.",
+      "computerID": "00000000-0000-0000-0000-000000000002",
+      "providerID": "C6E95930-179B-4CDB-9A00-197E21906EF2",
+      "skillOverrides": { "greppy": true, "web-research": true },
+      "invocation": {
+        "executable": "/opt/homebrew/bin/claude",
+        "arguments": ["--bare", "-p", "<WORKJET_BRIEF>"],
+        "capabilities": [],
+        "options": { "fastMode": "false" }
+      },
+      "harness": "Claude Code"
+    }
+  ]
+}

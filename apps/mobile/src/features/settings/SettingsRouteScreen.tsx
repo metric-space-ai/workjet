@@ -20,7 +20,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
-import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
+import { supportsAgentAwarenessLiveActivities } from "../agent-awareness/capabilities";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
 import {
@@ -36,6 +36,7 @@ import { runtime } from "../../lib/runtime";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
@@ -101,8 +102,6 @@ export function SettingsRouteScreen() {
 
 function LocalSettingsRouteScreen() {
   const insets = useSafeAreaInsets();
-  const { savedConnectionsById } = useSavedRemoteConnections();
-  const environmentCount = Object.keys(savedConnectionsById).length;
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
@@ -115,14 +114,7 @@ function LocalSettingsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
-        <SettingsSection title="Configuration">
-          <SettingsRow
-            icon="desktopcomputer"
-            label="Environments"
-            value={`${environmentCount}`}
-            target="SettingsEnvironments"
-          />
-        </SettingsSection>
+        <WorkjetModeSettingsSection />
 
         <GeneralSettingsSection />
 
@@ -143,7 +135,7 @@ function LocalSettingsRouteScreen() {
 function ConfiguredSettingsRouteScreen() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const agentAwarenessPushAvailable = supportsAgentAwarenessPush();
+  const agentAwarenessPushAvailable = supportsAgentAwarenessLiveActivities();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
@@ -165,7 +157,7 @@ function ConfiguredSettingsRouteScreen() {
   }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress]);
 
   const refreshNotifications = useCallback(async () => {
-    if (process.env.EXPO_OS !== "ios") {
+    if (process.env.EXPO_OS !== "ios" && process.env.EXPO_OS !== "android") {
       setNotificationStatus("unsupported");
       return;
     }
@@ -227,17 +219,15 @@ function ConfiguredSettingsRouteScreen() {
     }
     if (result.value.type === "granted") {
       setNotificationStatus("enabled");
-      // Permission alone is not enough: the switch stays off until the relay
-      // registration succeeds, so tell the user the truth about which happened.
       if (getAgentAwarenessRegistrationStatus() === "registered") {
         Alert.alert(
           "Notifications enabled",
-          "Live Activity notifications are enabled for this device.",
+          "Device notifications and Workjet Connect updates are enabled.",
         );
       } else {
         Alert.alert(
-          "Couldn't finish enabling notifications",
-          "Notification access was granted, but this device could not be registered with T3 Connect. Notifications will start once registration succeeds.",
+          "Notifications enabled",
+          "Device notifications are enabled. Workjet Connect updates will also appear after this device is linked.",
         );
       }
       return;
@@ -246,7 +236,7 @@ function ConfiguredSettingsRouteScreen() {
       setNotificationStatus("unsupported");
       Alert.alert(
         "Notifications unavailable",
-        "Live Activity notifications are only available on iOS.",
+        "Device notifications are unavailable on this platform.",
       );
       return;
     }
@@ -267,8 +257,8 @@ function ConfiguredSettingsRouteScreen() {
 
   const promptSignIn = useCallback(() => {
     Alert.alert(
-      "Sign in to T3 Connect",
-      "Live Activity updates require T3 Connect so relay can deliver updates to this device.",
+      "Sign in to Workjet Connect",
+      "Live Activity updates require Workjet Connect so relay can deliver updates to this device.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -340,7 +330,7 @@ function ConfiguredSettingsRouteScreen() {
     } else {
       Alert.alert(
         "Couldn't finish enabling Live Activities",
-        "This device could not be registered with T3 Connect, so Live Activities won't appear yet. They'll start once registration succeeds.",
+        "This device could not be registered with Workjet Connect, so Live Activities won't appear yet. They'll start once registration succeeds.",
       );
     }
   }, [
@@ -362,7 +352,7 @@ function ConfiguredSettingsRouteScreen() {
 
       Alert.alert(
         "Disable notifications",
-        "Notification permission is controlled by iOS. Open Settings to disable notifications for T3 Code.",
+        "Notification permission is controlled by iOS. Open Settings to disable notifications for Workjet.",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -448,41 +438,29 @@ function ConfiguredSettingsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <WorkjetModeSettingsSection />
+
         <View className="gap-3">
           <SettingsSection title="Account">
             <SettingsRow
               icon="person.crop.circle"
-              label="T3 Account"
+              label="Workjet Account"
               value={accountLabel}
               onPress={openAccount}
             />
           </SettingsSection>
           <Text className="px-2 text-sm text-foreground-muted">
-            T3 Code works locally without signing in. Cloud features are optional.
+            Code funktioniert auch ohne Business OS. Verbundene Instanzen gelten gemeinsam für Code
+            und Business OS.
           </Text>
         </View>
 
         <SettingsSection title="Configuration">
-          <SettingsRow
-            icon="desktopcomputer"
-            label="Environments"
-            value={`${environmentCount}`}
-            target="SettingsEnvironments"
-          />
           <SettingsSwitchRow
             icon="bell.badge"
             label="Device Notifications"
-            disabled={
-              !agentAwarenessPushAvailable ||
-              notificationStatus === "checking" ||
-              notificationStatus === "unsupported"
-            }
-            // Only reads as on when this device is actually registered with the
-            // relay; otherwise notifications cannot be delivered regardless of
-            // the local iOS permission.
-            value={
-              agentAwarenessPushAvailable && notificationStatus === "enabled" && deviceRegistered
-            }
+            disabled={notificationStatus === "checking" || notificationStatus === "unsupported"}
+            value={notificationStatus === "enabled"}
             onValueChange={handleDeviceNotificationsChange}
           />
           <SettingsSwitchRow
@@ -518,6 +496,21 @@ function ConfiguredSettingsRouteScreen() {
         <AppSettingsSection />
       </ScrollView>
     </View>
+  );
+}
+
+function WorkjetModeSettingsSection() {
+  const { selected } = useBusinessOs();
+
+  return (
+    <SettingsSection title="Business OS">
+      <SettingsRow
+        icon="square.grid.2x2"
+        label="Business OS"
+        value={selected?.displayName ?? "Nicht eingerichtet"}
+        target="SettingsBusinessOs"
+      />
+    </SettingsSection>
   );
 }
 
@@ -608,10 +601,7 @@ function AppSettingsSection() {
     if (updateInFlight.current) return;
     updateInFlight.current = true;
     try {
-      await runAppUpdateCheck({
-        onFailure: (message) => Alert.alert("Update failed", message),
-        onStateChange: setUpdateState,
-      });
+      await runAppUpdateCheck();
     } finally {
       updateInFlight.current = false;
     }

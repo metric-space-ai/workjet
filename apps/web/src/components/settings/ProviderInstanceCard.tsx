@@ -46,8 +46,10 @@ import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
+  getProviderRuntimeSummary,
   getProviderSummary,
   getProviderVersionLabel,
+  providerCheckedAgeLabel,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -323,6 +325,14 @@ interface ProviderInstanceCardProps {
   readonly instance: ProviderInstanceConfig;
   readonly driverOption: DriverOption | undefined;
   readonly liveProvider: ServerProvider | undefined;
+  /**
+   * `true` on the Harnesses surface, where a card describes a CLI RUNTIME and
+   * must not show login state. Whether the LLM account behind the harness is
+   * signed in belongs on Settings → Models; mixing the two put "Authenticated
+   * as <email> · ChatGPT Pro 20x Subscription" onto a list that is supposed to
+   * answer "is this CLI installed".
+   */
+  readonly runtimeOnly?: boolean | undefined;
   readonly isExpanded: boolean;
   readonly onExpandedChange: (open: boolean) => void;
   readonly onUpdate: (nextInstance: ProviderInstanceConfig) => void;
@@ -380,6 +390,7 @@ export function ProviderInstanceCard({
   instance,
   driverOption,
   liveProvider,
+  runtimeOnly = false,
   isExpanded,
   onExpandedChange,
   onUpdate,
@@ -401,14 +412,17 @@ export function ProviderInstanceCard({
   const statusKey: ProviderStatusKey =
     (liveProvider?.status as ProviderStatusKey | undefined) ?? (enabled ? "warning" : "disabled");
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
-  const rawSummary = getProviderSummary(liveProvider);
-  const authEmail = liveProvider?.auth.email;
+  const rawSummary = runtimeOnly
+    ? getProviderRuntimeSummary(liveProvider)
+    : getProviderSummary(liveProvider);
+  const authEmail = runtimeOnly ? undefined : liveProvider?.auth.email;
   const hasAuthenticatedEmail =
-    liveProvider?.auth.status === "authenticated" && Boolean(authEmail?.trim());
+    !runtimeOnly && liveProvider?.auth.status === "authenticated" && Boolean(authEmail?.trim());
   const authenticatedDetail = hasAuthenticatedEmail
     ? (liveProvider?.auth.label ?? liveProvider?.auth.type ?? null)
     : null;
   const summary = rawSummary;
+  const checkedAgeLabel = providerCheckedAgeLabel(liveProvider?.checkedAt);
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
   const updateCommand = versionAdvisory?.updateCommand ?? null;
@@ -489,6 +503,19 @@ export function ProviderInstanceCard({
     const nextConfig = nextConfigBlobWithValue(instance.config, "customModels", [...next]);
     const { config: _omit, ...rest } = instance;
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
+  };
+
+  // Absent means "not routed", so turning the toggle off drops the key
+  // rather than persisting `false` — that keeps envelopes that never opted
+  // in byte-identical to what they were before this setting existed.
+  const routeViaGateway = instance.routeViaGateway ?? false;
+  const updateRouteViaGateway = (value: boolean) => {
+    const { routeViaGateway: _omit, ...rest } = instance;
+    onUpdate(
+      value
+        ? ({ ...rest, routeViaGateway: true } as ProviderInstanceConfig)
+        : (rest as ProviderInstanceConfig),
+    );
   };
 
   const updateEnvironment = (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => {
@@ -591,6 +618,14 @@ export function ProviderInstanceCard({
           <ProviderAuthEmail email={authEmail} separator prefix="Email" />
         </>
       )}
+      {/*
+        Every claim above is a cached probe result, so it carries the age of
+        the probe that produced it: a stale "Authenticated" must never read as
+        a live one.
+      */}
+      {liveProvider ? (
+        <span className="text-muted-foreground/60">{`· ${checkedAgeLabel}`}</span>
+      ) : null}
       {summary.detail ? <span>- {summary.detail}</span> : null}
     </p>
   );
@@ -754,6 +789,24 @@ export function ProviderInstanceCard({
                 onCommit={updateAccentColor}
                 commitDelayMs={120}
                 description="Used to distinguish this instance in picker rails and model lists."
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-xs font-medium text-foreground">
+                  Route via Workjet gateway
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Send this instance&rsquo;s sessions through the Workjet provider gateway instead
+                  of the harness&rsquo;s own account; sessions fail to start while the gateway is
+                  not running.
+                </span>
+              </div>
+              <Switch
+                checked={routeViaGateway}
+                onCheckedChange={(checked) => updateRouteViaGateway(Boolean(checked))}
+                aria-label={`Route ${displayName} via Workjet gateway`}
               />
             </div>
 

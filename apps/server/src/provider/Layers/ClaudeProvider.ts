@@ -76,7 +76,7 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
             { value: "low", label: "Low" },
             { value: "medium", label: "Medium" },
             { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
+            { value: "xhigh", label: "Extra high" },
             { value: "max", label: "Max" },
             { value: "ultracode", label: "Ultracode" },
             { value: "ultrathink", label: "Ultrathink" },
@@ -107,7 +107,7 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
             { value: "low", label: "Low" },
             { value: "medium", label: "Medium" },
             { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
+            { value: "xhigh", label: "Extra high" },
             { value: "max", label: "Max" },
             { value: "ultracode", label: "Ultracode" },
             { value: "ultrathink", label: "Ultrathink" },
@@ -143,7 +143,7 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
             { value: "low", label: "Low" },
             { value: "medium", label: "Medium" },
             { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
+            { value: "xhigh", label: "Extra high" },
             { value: "max", label: "Max" },
             { value: "ultracode", label: "Ultracode" },
             { value: "ultrathink", label: "Ultrathink" },
@@ -170,7 +170,7 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
             { value: "low", label: "Low" },
             { value: "medium", label: "Medium" },
             { value: "high", label: "High" },
-            { value: "xhigh", label: "Extra High", isDefault: true },
+            { value: "xhigh", label: "Extra high", isDefault: true },
             { value: "max", label: "Max" },
             { value: "ultrathink", label: "Ultrathink" },
           ],
@@ -252,7 +252,7 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
             { value: "low", label: "Low" },
             { value: "medium", label: "Medium" },
             { value: "high", label: "High", isDefault: true },
-            { value: "xhigh", label: "Extra High" },
+            { value: "xhigh", label: "Extra high" },
             { value: "max", label: "Max" },
             { value: "ultrathink", label: "Ultrathink" },
           ],
@@ -819,7 +819,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Claude is disabled in T3 Code settings.",
+        message: "Claude is disabled in Workjet settings.",
       },
     });
   }
@@ -932,6 +932,50 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  // ── Does the probe actually EVIDENCE an account? ──────────────────────────
+  // probeClaudeCapabilities deliberately never reaches the Anthropic API (see
+  // its comment: "This prevents any prompt from reaching the Anthropic API").
+  // It reads the CLI's LOCAL initialization handshake, and that handshake
+  // succeeds with a dead token — observed directly: `claude/system/init`
+  // arrived complete, with the full tool list, immediately before the turn
+  // failed with "OAuth session expired and could not be refreshed".
+  //
+  // So a non-undefined `capabilities` proves only that the CLI booted. What
+  // separates a live login from a dead one is whether the handshake carried
+  // any ACCOUNT evidence at all. With an expired session the account fields
+  // come back empty while `slashCommands` still parses — which is exactly how
+  // the settings page came to show a bare "Authenticated" with no email, for
+  // days, while every single turn failed on that same login.
+  //
+  // Reporting "unknown" here is not a downgrade of a working setup: it is an
+  // accurate statement of what this probe verified. Claiming "authenticated"
+  // without evidence is the defect.
+  const hasAccountEvidence =
+    capabilities.email !== undefined ||
+    capabilities.subscriptionType !== undefined ||
+    capabilities.tokenSource !== undefined ||
+    capabilities.apiProvider !== undefined;
+
+  if (!hasAccountEvidence) {
+    return buildServerProvider({
+      presentation: CLAUDE_PRESENTATION,
+      enabled: claudeSettings.enabled,
+      checkedAt,
+      models,
+      slashCommands: dedupedSlashCommands,
+      skills,
+      probe: {
+        installed: true,
+        version: parsedVersion,
+        status: "warning",
+        auth: { status: "unknown" },
+        message:
+          "Claude started but reported no account. The login may have expired — " +
+          "send a message to confirm, or sign in to the Claude CLI again.",
+      },
+    });
+  }
+
   const authMetadata =
     claudeAuthMetadata({
       subscriptionType: capabilities.subscriptionType,
@@ -982,7 +1026,7 @@ export const makePendingClaudeProvider = (
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Claude is disabled in T3 Code settings.",
+          message: "Claude is disabled in Workjet settings.",
         },
       });
     }

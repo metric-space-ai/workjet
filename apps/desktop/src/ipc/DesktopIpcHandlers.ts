@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
+import { takePendingDeepLinks } from "./methods/deepLinks.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
@@ -30,6 +31,12 @@ import {
   installUpdate,
   setUpdateChannel,
 } from "./methods/updates.ts";
+import { createSupportBundle } from "./methods/support.ts";
+import {
+  acceptUserDataMigration,
+  declineUserDataMigration,
+  getUserDataMigrationOffer,
+} from "./methods/userDataMigration.ts";
 import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
@@ -41,7 +48,9 @@ import {
   setTheme,
   showContextMenu,
 } from "./methods/window.ts";
+import * as CtoxIpc from "./methods/ctox.ts";
 import * as PreviewIpc from "./methods/preview.ts";
+import * as ProvisioningIpc from "./methods/provisioning.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
@@ -52,6 +61,14 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
+
+  yield* ipc.handle(getUserDataMigrationOffer);
+  yield* ipc.handle(acceptUserDataMigration);
+  yield* ipc.handle(declineUserDataMigration);
+
+  yield* ipc.handle(createSupportBundle);
+
+  yield* ipc.handle(takePendingDeepLinks);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
@@ -88,6 +105,12 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
+  for (const provisioningMethod of ProvisioningIpc.methods) {
+    yield* ipc.handle(provisioningMethod);
+  }
+  for (const ctoxMethod of CtoxIpc.methods) {
+    yield* ipc.handle(ctoxMethod);
+  }
   for (const previewMethod of PreviewIpc.methods) {
     yield* ipc.handle(previewMethod);
   }

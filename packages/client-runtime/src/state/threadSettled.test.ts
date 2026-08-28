@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -46,6 +47,7 @@ function makeShell(input: {
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
     runtimeMode: "full-access",
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     branch: null,
     worktreePath: null,
     latestTurn:

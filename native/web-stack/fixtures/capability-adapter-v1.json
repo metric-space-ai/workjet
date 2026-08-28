@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    { "name": "web_search", "capabilityId": "web-search", "contractVersion": "1.0.0" },
+    { "name": "web_read", "capabilityId": "web-search", "contractVersion": "1.0.0" },
+    { "name": "web_deep_research", "capabilityId": "web-search", "contractVersion": "1.0.0" },
+    {
+      "name": "web_browser_prepare",
+      "capabilityId": "web-stack-browser",
+      "contractVersion": "1.0.0"
+    },
+    {
+      "name": "web_browser_automate",
+      "capabilityId": "web-stack-browser",
+      "contractVersion": "1.0.0"
+    }
+  ],
+  "validInputs": [
+    { "tool": "web_search", "arguments": { "query": "finite web capability" } },
+    {
+      "tool": "web_read",
+      "arguments": {
+        "url": "https://example.test/evidence",
+        "query": "evidence",
+        "find": ["needle"],
+        "country": "DE"
+      }
+    },
+    {
+      "tool": "web_deep_research",
+      "arguments": {
+        "query": "bounded research",
+        "focus": "evidence",
+        "depth": "quick",
+        "maxSources": 3,
+        "excludeUrls": ["https://old.example.test"],
+        "includePapers": true,
+        "includeAnnasArchive": false
+      }
+    },
+    {
+      "tool": "web_browser_prepare",
+      "arguments": { "installReference": false, "installBrowser": false }
+    },
+    {
+      "tool": "web_browser_automate",
+      "arguments": {
+        "actions": [
+          { "action": "navigate", "url": "https://example.test" },
+          { "action": "observe" },
+          { "action": "click", "target": { "role": "button", "name": "Continue" } },
+          { "action": "fill", "target": { "label": "Email" }, "value": "agent@example.test" },
+          { "action": "press", "target": { "testId": "submit" }, "key": "Enter" }
+        ],
+        "timeoutMs": 30000
+      }
+    }
+  ],
+  "invalidInputs": [
+    {
+      "tool": "web_search",
+      "reason": "query-bound",
+      "arguments": { "query": "__OVER_2000_CHARS__" }
+    },
+    {
+      "tool": "web_read",
+      "reason": "null-optional",
+      "arguments": { "url": "https://example.test", "query": null }
+    },
+    {
+      "tool": "web_read",
+      "reason": "host-path-control",
+      "arguments": { "url": "https://example.test", "path": "/tmp/escape" }
+    },
+    {
+      "tool": "web_deep_research",
+      "reason": "session-control",
+      "arguments": { "query": "research", "sessionId": "foreign" }
+    },
+    {
+      "tool": "web_deep_research",
+      "reason": "provider-control",
+      "arguments": { "query": "research", "provider": "raw" }
+    },
+    {
+      "tool": "web_browser_prepare",
+      "reason": "profile-control",
+      "arguments": { "profileDir": "/tmp/profile" }
+    },
+    {
+      "tool": "web_browser_automate",
+      "reason": "raw-source",
+      "arguments": { "source": "return process.env" }
+    },
+    {
+      "tool": "web_browser_automate",
+      "reason": "unknown-action",
+      "arguments": { "actions": [{ "action": "evaluate", "source": "1+1" }] }
+    },
+    {
+      "tool": "web_browser_automate",
+      "reason": "ambiguous-target",
+      "arguments": {
+        "actions": [{ "action": "click", "target": { "selector": "#x", "text": "x" } }]
+      }
+    },
+    {
+      "tool": "web_browser_automate",
+      "reason": "nested-path-control",
+      "arguments": { "actions": [{ "action": "observe", "dir": "/tmp" }] }
+    },
+    {
+      "tool": "web_browser_automate",
+      "reason": "null-timeout",
+      "arguments": { "actions": [{ "action": "observe" }], "timeoutMs": null }
+    }
+  ],
+  "browserActions": ["navigate", "observe", "click", "fill", "press"],
+  "outputCanaries": {
+    "marker": "CAPABILITY_ADAPTER_CANARY_SECRET",
+    "forbiddenFields": [
+      "raw",
+      "debug",
+      "body",
+      "html",
+      "logs",
+      "source",
+      "path",
+      "profile",
+      "session",
+      "provider",
+      "secret"
+    ]
+  },
+  "hostBudgets": [2097152, 262144],
+  "stateSeparation": {
+    "hostOwned": ["root", "runtimeConfig", "maxResponseBytes"],
+    "argumentForbidden": [
+      "root",
+      "config",
+      "path",
+      "workspace",
+      "sessionId",
+      "provider",
+      "profileDir",
+      "credentials"
+    ],
+    "processEnvironmentReads": false,
+    "ctoxSqliteReadsForWorkjet": false
+  }
+}

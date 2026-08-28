@@ -25,6 +25,7 @@ import {
   ModelSelection,
   ProjectId,
   ThreadId,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -85,6 +86,7 @@ const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -173,6 +175,14 @@ const ProjectionThreadCheckpointContextThreadRowSchema = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
   workspaceRoot: Schema.String,
+  worktreePath: Schema.NullOr(Schema.String),
+});
+const ProjectionThreadWorktreeCleanupRowSchema = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  workspaceRoot: Schema.String,
+  workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
+  branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
 });
 const FullThreadDiffContextLookupInput = Schema.Struct({
@@ -416,6 +426,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -452,6 +463,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -490,6 +502,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -920,6 +933,29 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  // Intentionally free of `deleted_at`/`archived_at` predicates: worker
+  // worktree cleanup reacts to `thread.deleted`, so the row it needs is by
+  // definition no longer active.
+  const getThreadWorktreeCleanupRow = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadWorktreeCleanupRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          threads.thread_id AS "threadId",
+          threads.project_id AS "projectId",
+          projects.workspace_root AS "workspaceRoot",
+          threads.workjet_config_json AS "workjetConfig",
+          threads.branch,
+          threads.worktree_path AS "worktreePath"
+        FROM projection_threads AS threads
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        WHERE threads.thread_id = ${threadId}
+        LIMIT 1
+      `,
+  });
+
   const getActiveThreadRowById = SqlSchema.findOneOption({
     Request: ThreadIdLookupInput,
     Result: ProjectionThreadDbRowSchema,
@@ -932,6 +968,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
@@ -1565,6 +1602,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 modelSelection: row.modelSelection,
                 runtimeMode: row.runtimeMode,
                 interactionMode: row.interactionMode,
+                workjetConfig: row.workjetConfig,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
                 latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -1772,6 +1810,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
                   interactionMode: row.interactionMode,
+                  workjetConfig: row.workjetConfig,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -1908,6 +1947,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       modelSelection: row.modelSelection,
                       runtimeMode: row.runtimeMode,
                       interactionMode: row.interactionMode,
+                      workjetConfig: row.workjetConfig,
                       branch: row.branch,
                       worktreePath: row.worktreePath,
                       latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -2053,6 +2093,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
                   interactionMode: row.interactionMode,
+                  workjetConfig: row.workjetConfig,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
@@ -2263,6 +2304,27 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       });
     });
 
+  const getThreadWorktreeCleanupContext: ProjectionSnapshotQueryShape["getThreadWorktreeCleanupContext"] =
+    (threadId) =>
+      getThreadWorktreeCleanupRow({ threadId }).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.getThreadWorktreeCleanupContext:query",
+            "ProjectionSnapshotQuery.getThreadWorktreeCleanupContext:decodeRow",
+          ),
+        ),
+        Effect.map(
+          Option.map((row) => ({
+            threadId: row.threadId,
+            projectId: row.projectId,
+            workspaceRoot: row.workspaceRoot,
+            workjetRole: row.workjetConfig.role,
+            branch: row.branch,
+            worktreePath: row.worktreePath,
+          })),
+        ),
+      );
+
   const getFullThreadDiffContext: NonNullable<
     ProjectionSnapshotQueryShape["getFullThreadDiffContext"]
   > = (threadId, toTurnCount) =>
@@ -2332,6 +2394,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
         interactionMode: threadRow.value.interactionMode,
+        workjetConfig: threadRow.value.workjetConfig,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
@@ -2453,6 +2516,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
         interactionMode: threadRow.value.interactionMode,
+        workjetConfig: threadRow.value.workjetConfig,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
@@ -2676,6 +2740,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getProjectShellById,
     getFirstActiveThreadIdByProjectId,
     getThreadCheckpointContext,
+    getThreadWorktreeCleanupContext,
     getFullThreadDiffContext,
     getThreadShellById,
     getThreadDetailById,

@@ -13,12 +13,10 @@ import desktopPackageJson from "../apps/desktop/package.json" with { type: "json
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
-import {
-  BRAND_ASSET_PATHS,
-  resolveWebAssetBrandForChannel,
-  type WebAssetBrand,
-} from "./lib/brand-assets.ts";
+import { enforceCapabilityVersionLock } from "./check-capability-version-lock.ts";
+import { BRAND_ASSET_PATHS, type WebAssetBrand } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -67,6 +65,7 @@ const StageWorkspaceConfig = Schema.Struct({
   // Without allowBuilds the staged `vp install --prod` fails with
   // ERR_PNPM_IGNORED_BUILDS for packages that have lifecycle scripts.
   allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
@@ -77,6 +76,8 @@ const RepoRoot = Effect.service(Path.Path).pipe(
 );
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
+const decodePnpmLockfile = Schema.decodeEffect(fromYaml(Schema.Unknown));
+const encodePnpmLockfile = Schema.encodeEffect(fromYaml(Schema.Unknown));
 const decodeNodePtyManifest = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
 );
@@ -92,6 +93,7 @@ const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
 
 interface DesktopBuildIconAssets {
   readonly macIconPng: string;
+  readonly macIconIcns: string;
   readonly linuxIconPng: string;
   readonly windowsIconIco: string;
 }
@@ -277,6 +279,17 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
   }
 }
 
+export class CtoxBusinessOsShellPreparationError extends Schema.TaggedErrorClass<CtoxBusinessOsShellPreparationError>()(
+  "CtoxBusinessOsShellPreparationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Could not prepare the verified CTOX Business OS shell dependency.";
+  }
+}
+
 export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedErrorClass<ResourceMonitorBuildOutputMissingError>()(
   "ResourceMonitorBuildOutputMissingError",
   {
@@ -369,6 +382,48 @@ export class MissingServerProductionDependenciesError extends Schema.TaggedError
   }
 }
 
+const StageLockfileResolutionReason = Schema.Literals(["missing", "conflicting", "ambiguous"]);
+const StageLockfileResolutionSource = Schema.Literals(["importers", "packages", "patches"]);
+
+export class StageLockfileResolutionError extends Schema.TaggedErrorClass<StageLockfileResolutionError>()(
+  "StageLockfileResolutionError",
+  {
+    reason: StageLockfileResolutionReason,
+    source: StageLockfileResolutionSource,
+    dependencyName: Schema.String,
+    specifier: Schema.String,
+    candidates: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Stage lockfile has ${this.reason} repository resolution data for '${this.dependencyName}' (${this.specifier}) in ${this.source}.`;
+  }
+}
+
+export class StageLockfileReadError extends Schema.TaggedErrorClass<StageLockfileReadError>()(
+  "StageLockfileReadError",
+  {
+    lockfilePath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Could not read the repository lockfile at ${this.lockfilePath}.`;
+  }
+}
+
+export class StageLockfileSerializationError extends Schema.TaggedErrorClass<StageLockfileSerializationError>()(
+  "StageLockfileSerializationError",
+  {
+    lockfilePath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Could not serialize the staged lockfile at ${this.lockfilePath}.`;
+  }
+}
+
 const DesktopBuildInputArtifact = Schema.Literals([
   "desktop-dist",
   "desktop-resources",
@@ -439,6 +494,18 @@ export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<Missi
 ) {
   override get message(): string {
     return `Missing ${desktopBuildInputArtifactNames[this.artifact]} at ${this.artifactPath}. Run '${this.buildCommand}' first.`;
+  }
+}
+
+export class MissingDesktopLegalNoticeError extends Schema.TaggedErrorClass<MissingDesktopLegalNoticeError>()(
+  "MissingDesktopLegalNoticeError",
+  {
+    noticeFile: Schema.String,
+    noticePath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Missing required license notice ${this.noticeFile} at ${this.noticePath}. Every desktop artifact must ship the T3 MIT notice, the Workjet license policy, and the generated release NOTICE; run 'pnpm run notice:generate' if NOTICE.md is missing.`;
   }
 }
 
@@ -679,10 +746,10 @@ interface StagePackageJson {
   };
 }
 
-export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
+export const STAGE_INSTALL_ARGS = ["install", "--prod", "--frozen-lockfile"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
-  // T3 Code always passes the user's installed Claude executable to the SDK,
+  // Workjet always passes the user's installed Claude executable to the SDK,
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
@@ -702,12 +769,63 @@ export const WINDOWS_ASAR_UNPACK = [
   "apps/server/dist/**",
   ...CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
 ] as const;
-export const DESKTOP_EXTRA_RESOURCES = [
-  {
-    from: "apps/desktop/prod-resources/resource-monitor",
-    to: "resource-monitor",
-  },
-] as const;
+export const DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE = {
+  from: "apps/desktop/prod-resources/resource-monitor",
+  to: "resource-monitor",
+} as const;
+export const CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY = "ctox-business-os-shell";
+
+// The T3 MIT notice, the Workjet license policy, and the generated release
+// NOTICE must travel with every binary. They are staged into `legal/` and
+// shipped as a plain extra resource rather than inside the asar so the notices
+// remain readable in the installed application without unpacking anything.
+export const DESKTOP_LEGAL_RESOURCE_DIRECTORY = "legal";
+export const DESKTOP_LEGAL_NOTICE_FILES = ["LICENSE", "LICENSE_POLICY.md", "NOTICE.md"] as const;
+export const DESKTOP_LEGAL_EXTRA_RESOURCE = {
+  from: DESKTOP_LEGAL_RESOURCE_DIRECTORY,
+  to: DESKTOP_LEGAL_RESOURCE_DIRECTORY,
+} as const;
+
+/**
+ * Must match `PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY` in
+ * `apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts` — the
+ * resolver reads `resourcesPath/<this>` in a packaged build, so a rename on
+ * one side alone ships a host the app cannot find.
+ */
+export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
+
+/**
+ * The host is included ONLY when a staged directory is supplied.
+ *
+ * There is no `provider-gateway-host-v*` release yet
+ * (`apps/desktop/resources/provider-gateway/host-release.pin.json` reads
+ * `"status": "unreleased"`), so pointing electron-builder at a directory that
+ * does not exist would break every packaged build today for a binary nobody
+ * can ship yet. Passing the staged path — produced by
+ * `scripts/provider-gateway-host-artifacts.ts stage` — is what turns this on,
+ * so the wiring is in place the moment the tag is cut and inert until then.
+ */
+export function createDesktopExtraResources(
+  businessOsShellInstallPath: string,
+  providerGatewayHostStagePath?: string,
+) {
+  return [
+    DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
+    {
+      from: businessOsShellInstallPath,
+      to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
+    },
+    ...(providerGatewayHostStagePath === undefined
+      ? []
+      : [
+          {
+            from: providerGatewayHostStagePath,
+            to: PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
+          },
+        ]),
+    DESKTOP_LEGAL_EXTRA_RESOURCE,
+  ] as const;
+}
 
 export interface MacPasskeySigningConfiguration {
   readonly appId: string;
@@ -1017,10 +1135,11 @@ export function createStageWorkspaceConfig(input: {
   readonly platform: typeof BuildPlatform.Type;
   readonly arch: typeof BuildArch.Type;
   readonly allowBuilds?: Record<string, boolean>;
+  readonly catalog?: Record<string, string>;
   readonly patchedDependencies?: Record<string, string>;
   readonly overrides?: Record<string, string>;
 }): StageWorkspaceConfig {
-  const { platform, arch, allowBuilds, patchedDependencies, overrides } = input;
+  const { platform, arch, allowBuilds, catalog, patchedDependencies, overrides } = input;
   const hostOs = platform === "mac" ? "darwin" : platform === "win" ? "win32" : "linux";
   const hostCpu = arch === "universal" ? ["arm64", "x64"] : [arch];
   // Linux AppImages and Windows WSL backends both execute a Linux/glibc Node
@@ -1048,6 +1167,7 @@ export function createStageWorkspaceConfig(input: {
   return {
     supportedArchitectures,
     ...(allowBuilds && Object.keys(allowBuilds).length > 0 ? { allowBuilds } : {}),
+    ...(catalog && Object.keys(catalog).length > 0 ? { catalog } : {}),
     ...(patchedDependencies && Object.keys(patchedDependencies).length > 0
       ? { patchedDependencies }
       : {}),
@@ -1069,6 +1189,228 @@ export function createStagePatchedDependencies(
 function getPatchedDependencyPackageName(patchKey: string): string {
   const versionSeparator = patchKey.lastIndexOf("@");
   return versionSeparator > 0 ? patchKey.slice(0, versionSeparator) : patchKey;
+}
+
+interface StagePnpmLockfileInput {
+  readonly dependencies: Readonly<Record<string, string>>;
+  readonly devDependencies: Readonly<Record<string, string>>;
+  readonly promotedDependencyNames: ReadonlyArray<string>;
+  readonly sourceSpecifiers: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  readonly patchedDependencies: Readonly<Record<string, string>>;
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function asUnknownRecord(value: unknown): UnknownRecord | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : undefined;
+}
+
+function stageLockfileResolutionError(input: {
+  readonly reason: typeof StageLockfileResolutionReason.Type;
+  readonly source: typeof StageLockfileResolutionSource.Type;
+  readonly dependencyName: string;
+  readonly specifier: string;
+  readonly candidates?: ReadonlyArray<string>;
+}): StageLockfileResolutionError {
+  return new StageLockfileResolutionError({
+    ...input,
+    candidates: [...(input.candidates ?? [])],
+  });
+}
+
+function lockedResolutionBase(version: string): string {
+  const peerSuffixStart = version.indexOf("(");
+  return peerSuffixStart < 0 ? version : version.slice(0, peerSuffixStart);
+}
+
+function assertLockedGraphResolution(
+  packages: UnknownRecord,
+  snapshots: UnknownRecord,
+  dependencyName: string,
+  specifier: string,
+  version: string,
+): void {
+  const packageKey = `${dependencyName}@${lockedResolutionBase(version)}`;
+  const snapshotKey = `${dependencyName}@${version}`;
+  if (!Object.hasOwn(packages, packageKey) || !Object.hasOwn(snapshots, snapshotKey)) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "packages",
+      dependencyName,
+      specifier,
+      candidates: [version],
+    });
+  }
+}
+
+function resolveImporterLockedVersion(
+  importers: UnknownRecord,
+  packages: UnknownRecord,
+  snapshots: UnknownRecord,
+  dependencyName: string,
+  specifier: string,
+  sourceSpecifiers: StagePnpmLockfileInput["sourceSpecifiers"],
+): string {
+  const candidates: string[] = [];
+  const invalidSources: string[] = [];
+
+  for (const importerPath of Object.keys(sourceSpecifiers).sort()) {
+    const expectedSpecifier = sourceSpecifiers[importerPath]?.[dependencyName];
+    if (expectedSpecifier === undefined) continue;
+
+    const importer = asUnknownRecord(importers[importerPath]);
+    const dependencies = asUnknownRecord(importer?.dependencies);
+    const entry = asUnknownRecord(dependencies?.[dependencyName]);
+    const lockedSpecifier = entry?.specifier;
+    const lockedVersion = entry?.version;
+    if (
+      (lockedSpecifier !== expectedSpecifier && lockedSpecifier !== specifier) ||
+      typeof lockedVersion !== "string"
+    ) {
+      invalidSources.push(importerPath);
+      continue;
+    }
+    assertLockedGraphResolution(packages, snapshots, dependencyName, specifier, lockedVersion);
+    candidates.push(lockedVersion);
+  }
+
+  if (invalidSources.length > 0 || candidates.length === 0) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "importers",
+      dependencyName,
+      specifier,
+      candidates: invalidSources,
+    });
+  }
+
+  const uniqueCandidates = [...new Set(candidates)].sort();
+  if (uniqueCandidates.length > 1) {
+    throw stageLockfileResolutionError({
+      reason: "conflicting",
+      source: "importers",
+      dependencyName,
+      specifier,
+      candidates: uniqueCandidates,
+    });
+  }
+
+  return uniqueCandidates[0]!;
+}
+
+function resolvePromotedLockedVersion(
+  packages: UnknownRecord,
+  snapshots: UnknownRecord,
+  dependencyName: string,
+  specifier: string,
+): string {
+  const packagePrefix = `${dependencyName}@`;
+  const candidates = Object.keys(packages)
+    .filter((packageKey) => {
+      if (!packageKey.startsWith(packagePrefix)) return false;
+      const version = packageKey.slice(packagePrefix.length);
+      return lockedResolutionBase(version) === specifier;
+    })
+    .map((packageKey) => packageKey.slice(packagePrefix.length))
+    .sort();
+
+  if (candidates.length === 0) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "packages",
+      dependencyName,
+      specifier,
+    });
+  }
+  if (candidates.length > 1) {
+    throw stageLockfileResolutionError({
+      reason: "ambiguous",
+      source: "packages",
+      dependencyName,
+      specifier,
+      candidates,
+    });
+  }
+
+  const version = candidates[0]!;
+  assertLockedGraphResolution(packages, snapshots, dependencyName, specifier, version);
+  return version;
+}
+
+/**
+ * Re-home the tracked lockfile at the synthetic stage root without resolving any
+ * package again. The complete package/snapshot graph is retained; only the
+ * importer and staged patch hashes are derived for the generated package.json.
+ */
+export function createStagePnpmLockfile(
+  rootLockfile: unknown,
+  input: StagePnpmLockfileInput,
+): UnknownRecord {
+  const lockfile = asUnknownRecord(rootLockfile);
+  const importers = asUnknownRecord(lockfile?.importers);
+  const packages = asUnknownRecord(lockfile?.packages);
+  const snapshots = asUnknownRecord(lockfile?.snapshots);
+  if (!lockfile || !importers || !packages || !snapshots) {
+    throw stageLockfileResolutionError({
+      reason: "missing",
+      source: "importers",
+      dependencyName: "<lockfile>",
+      specifier: "pnpm-lock.yaml",
+    });
+  }
+
+  const promotedDependencyNames = new Set(input.promotedDependencyNames);
+  const createImporterGroup = (specifiers: Readonly<Record<string, string>>) =>
+    Object.fromEntries(
+      Object.keys(specifiers)
+        .sort()
+        .map((dependencyName) => {
+          const specifier = specifiers[dependencyName]!;
+          const version = promotedDependencyNames.has(dependencyName)
+            ? resolvePromotedLockedVersion(packages, snapshots, dependencyName, specifier)
+            : resolveImporterLockedVersion(
+                importers,
+                packages,
+                snapshots,
+                dependencyName,
+                specifier,
+                input.sourceSpecifiers,
+              );
+          return [dependencyName, { specifier, version }];
+        }),
+    );
+
+  const rootPatchedDependencies = asUnknownRecord(lockfile.patchedDependencies);
+  const stagePatchedDependencies = Object.fromEntries(
+    Object.keys(input.patchedDependencies)
+      .sort()
+      .map((patchKey) => {
+        const patchHash = rootPatchedDependencies?.[patchKey];
+        if (typeof patchHash !== "string") {
+          throw stageLockfileResolutionError({
+            reason: "missing",
+            source: "patches",
+            dependencyName: getPatchedDependencyPackageName(patchKey),
+            specifier: patchKey,
+          });
+        }
+        return [patchKey, patchHash];
+      }),
+  );
+
+  const { packageExtensionsChecksum: _packageExtensionsChecksum, ...stageLockfile } = lockfile;
+  return {
+    ...stageLockfile,
+    patchedDependencies: stagePatchedDependencies,
+    importers: {
+      ".": {
+        dependencies: createImporterGroup(input.dependencies),
+        devDependencies: createImporterGroup(input.devDependencies),
+      },
+    },
+  };
 }
 
 const AzureTrustedSigningOptionsConfig = Config.all({
@@ -1512,6 +1854,28 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
   },
 );
 
+/**
+ * Copy the repository license notices into the staged app so electron-builder
+ * ships them as `Resources/legal/**`. Fails closed: a binary that silently drops
+ * the T3 MIT notice or the generated NOTICE is not a releasable artifact.
+ */
+export const stageLegalNotices = Effect.fn("stageLegalNotices")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageAppDir: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const legalDir = path.join(input.stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY);
+  yield* fs.makeDirectory(legalDir, { recursive: true });
+  for (const noticeFile of DESKTOP_LEGAL_NOTICE_FILES) {
+    const noticePath = path.join(input.repoRoot, noticeFile);
+    if (!(yield* fs.exists(noticePath))) {
+      return yield* new MissingDesktopLegalNoticeError({ noticeFile, noticePath });
+    }
+    yield* fs.copyFile(noticePath, path.join(legalDir, noticeFile));
+  }
+});
+
 const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
@@ -1587,67 +1951,21 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
   }
 });
 
-function generateMacIconSet(
-  sourcePng: string,
-  targetIcns: string,
-  tmpRoot: string,
-  path: Path.Path,
-  verbose: boolean,
-) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const iconsetDir = path.join(tmpRoot, "icon.iconset");
-    yield* fs.makeDirectory(iconsetDir, { recursive: true });
-
-    const iconSizes = [16, 32, 128, 256, 512] as const;
-    for (const size of iconSizes) {
-      yield* runCommand(
-        ChildProcess.make(
-          {},
-        )`sips -z ${size} ${size} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}.png`)}`,
-        { label: `sips icon ${size}x${size}`, verbose },
-      );
-
-      const retinaSize = size * 2;
-      yield* runCommand(
-        ChildProcess.make(
-          {},
-        )`sips -z ${retinaSize} ${retinaSize} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}@2x.png`)}`,
-        { label: `sips icon ${size}x${size}@2x`, verbose },
-      );
-    }
-
-    yield* runCommand(ChildProcess.make({})`iconutil -c icns ${iconsetDir} -o ${targetIcns}`, {
-      label: "iconutil icns",
-      verbose,
-    });
-  });
-}
-
-function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: boolean) {
+function stageMacIcons(stageResourcesDir: string, sourcePng: string, sourceIcns: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    if (!(yield* fs.exists(sourcePng))) {
-      return yield* new DesktopIconSourceMissingError({
-        platform: "mac",
-        sourcePath: sourcePng,
-      });
+    for (const sourcePath of [sourcePng, sourceIcns]) {
+      if (!(yield* fs.exists(sourcePath))) {
+        return yield* new DesktopIconSourceMissingError({
+          platform: "mac",
+          sourcePath,
+        });
+      }
     }
 
-    const tmpRoot = yield* fs.makeTempDirectoryScoped({
-      prefix: "t3code-icon-build-",
-    });
-
-    const iconPngPath = path.join(stageResourcesDir, "icon.png");
-    const iconIcnsPath = path.join(stageResourcesDir, "icon.icns");
-
-    yield* runCommand(ChildProcess.make({})`sips -z 512 512 ${sourcePng} --out ${iconPngPath}`, {
-      label: "sips mac icon",
-      verbose,
-    });
-
-    yield* generateMacIconSet(sourcePng, iconIcnsPath, tmpRoot, path, verbose);
+    yield* fs.copyFile(sourcePng, path.join(stageResourcesDir, "icon.png"));
+    yield* fs.copyFile(sourceIcns, path.join(stageResourcesDir, "icon.icns"));
   });
 }
 
@@ -1782,6 +2100,23 @@ export function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
+export function resolveServerRuntimeDependencies(
+  dependencies: Record<string, string> | undefined,
+  catalog: Record<string, string>,
+): Record<string, string> {
+  if (!dependencies || Object.keys(dependencies).length === 0) {
+    return {};
+  }
+
+  const runtimeDependencies = Object.fromEntries(
+    Object.entries(dependencies).filter(
+      ([, dependencySpec]) => !dependencySpec.startsWith("workspace:"),
+    ),
+  );
+
+  return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/server");
+}
+
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
@@ -1812,23 +2147,16 @@ export function resolveDesktopUpdateChannel(version: string): "latest" | "nightl
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
 }
 
-export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
-  return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
+export function resolveDesktopWebAssetBrand(_version: string): WebAssetBrand {
+  return "workjet";
 }
 
-export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
-  if (resolveDesktopUpdateChannel(version) === "nightly") {
-    return {
-      macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
-    };
-  }
-
+export function resolveDesktopBuildIconAssets(_version: string): DesktopBuildIconAssets {
   return {
-    macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-    linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-    windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
+    macIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+    macIconIcns: BRAND_ASSET_PATHS.workjetMacIconIcns,
+    linuxIconPng: BRAND_ASSET_PATHS.workjetAppIconPng,
+    windowsIconIco: BRAND_ASSET_PATHS.workjetWindowsIconIco,
   };
 }
 
@@ -1849,10 +2177,21 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
-  return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+// Deep-link schemes the packaged app claims. Workjet is the only current
+// identity; CTOX Desktop and t3code stay claimed as inbound aliases. Kept in sync with
+// apps/desktop/src/electron/desktopSchemes.ts (DESKTOP_DEEP_LINK_SCHEMES).
+export const DESKTOP_PROTOCOL_SCHEMES = [
+  "workjet",
+  "workjet-dev",
+  "workjet-preview",
+  "ctox-desktop",
+  "ctox-desktop-dev",
+  "t3code",
+  "t3code-dev",
+] as const;
+
+export function resolveDesktopProductName(_version: string): string {
+  return desktopPackageJson.productName ?? "Workjet";
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -1868,11 +2207,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         readonly provisioningProfilePath: string;
       }
     | undefined,
+  businessOsShellInstallPath: string,
+  /** Staged host directory, or undefined when no release has been staged. */
+  providerGatewayHostStagePath?: string,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "Workjet-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [...DESKTOP_FILE_EXCLUSIONS],
     directories: {
@@ -1882,7 +2224,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // WINDOWS_ASAR_UNPACK); macOS and Linux stay packed — smart unpack
     // extracts native libraries, which fff-node finds in app.asar.unpacked.
     ...(platform === "win" ? { asarUnpack: [...WINDOWS_ASAR_UNPACK] } : {}),
-    extraResources: DESKTOP_EXTRA_RESOURCES,
+    extraResources: createDesktopExtraResources(
+      businessOsShellInstallPath,
+      providerGatewayHostStagePath,
+    ),
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
@@ -1904,8 +2249,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: "Workjet",
+          schemes: [...DESKTOP_PROTOCOL_SCHEMES],
         },
       ],
       ...(macPasskeySigning
@@ -1925,11 +2270,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // t3code:// OAuth callbacks to the app.
+      // workjet:// and inbound legacy callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: "Workjet",
+          schemes: [...DESKTOP_PROTOCOL_SCHEMES],
         },
       ],
       desktop: {
@@ -1966,7 +2311,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   verbose: boolean,
 ) {
   if (platform === "mac") {
-    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
+    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, iconAssets.macIconIcns);
     return;
   }
 
@@ -2058,10 +2403,30 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const fs = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcessPlatform;
   const workspaceConfig = yield* readWorkspaceConfig();
+  const rootLockfilePath = path.join(repoRoot, "pnpm-lock.yaml");
+  const rootLockfileSource = yield* fs
+    .readFileString(rootLockfilePath)
+    .pipe(
+      Effect.mapError(
+        (cause) => new StageLockfileReadError({ lockfilePath: rootLockfilePath, cause }),
+      ),
+    );
+  const rootLockfile = yield* decodePnpmLockfile(rootLockfileSource).pipe(
+    Effect.mapError(
+      (cause) => new StageLockfileReadError({ lockfilePath: rootLockfilePath, cause }),
+    ),
+  );
   const workspaceCatalog = workspaceConfig.catalog ?? {};
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
+  const businessOsShell = yield* Effect.tryPromise({
+    try: () => prepareCtoxBusinessOsShell({ repoRoot }),
+    catch: (cause) => new CtoxBusinessOsShellPreparationError({ cause }),
+  });
+  yield* Effect.log(
+    `[desktop-artifact] Verified CTOX Business OS shell (${businessOsShell.cache}): ${businessOsShell.installPath}`,
+  );
 
   const platformConfig = PLATFORM_CONFIG[options.platform];
   if (!platformConfig) {
@@ -2090,7 +2455,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   });
 
   const resolvedServerDependencies = yield* Effect.try({
-    try: () => resolveCatalogDependencies(serverDependencies, workspaceCatalog, "apps/server"),
+    try: () => resolveServerRuntimeDependencies(serverDependencies, workspaceCatalog),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "server-production",
@@ -2233,6 +2598,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
+  yield* stageLegalNotices({ repoRoot, stageAppDir });
+  // One capability, one version, both hosts. A desktop artifact whose Code and
+  // CTOX hosts resolve different manifests, JSON schemas, implementation
+  // revisions, or contract artifacts is not releasable, so this refuses before
+  // anything is packaged.
+  yield* enforceCapabilityVersionLock(repoRoot);
+  yield* Effect.log(
+    "[desktop-artifact] Code and CTOX resolve one canonical capability version lock.",
+  );
   yield* stageResourceMonitor({
     repoRoot,
     stageResourcesDir,
@@ -2246,6 +2620,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageResourcesDir,
     {
       macIconPng: path.join(repoRoot, iconAssets.macIconPng),
+      macIconIcns: path.join(repoRoot, iconAssets.macIconIcns),
       linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
     },
@@ -2283,9 +2658,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* fs.writeFileString(macEntitlementsPath, renderMacPasskeyEntitlements(macPasskeySigning));
   }
 
-  const stageDependencies = {
-    ...resolvedServerDependencies,
-    ...resolvedDesktopRuntimeDependencies,
+  const targetFffNativeDependencies = {
     ...resolveFffNativeDependencies(
       options.platform,
       options.arch,
@@ -2303,6 +2676,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         )
       : {}),
   };
+  const stageDependencies = {
+    ...resolvedServerDependencies,
+    ...resolvedDesktopRuntimeDependencies,
+    ...targetFffNativeDependencies,
+  };
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
     stageDependencies,
@@ -2314,8 +2692,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
-    author: "T3 Tools",
+    description: "Workjet desktop build",
+    author: "Metric Space AI",
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,
@@ -2330,6 +2708,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
             provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
           }
         : undefined,
+      businessOsShell.installPath,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -2343,6 +2722,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     platform: options.platform,
     arch: options.arch,
     allowBuilds: workspaceAllowBuilds,
+    catalog: workspaceCatalog,
     patchedDependencies: stagePatchedDependencies,
     overrides: resolvedOverrides,
   });
@@ -2351,6 +2731,31 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     path.join(stageAppDir, "pnpm-workspace.yaml"),
     stageWorkspaceConfigString,
   );
+
+  const stageLockfilePath = path.join(stageAppDir, "pnpm-lock.yaml");
+  const stageLockfile = yield* Effect.try({
+    try: () =>
+      createStagePnpmLockfile(rootLockfile, {
+        dependencies: stageDependencies,
+        devDependencies: { electron: electronVersion },
+        promotedDependencyNames: Object.keys(targetFffNativeDependencies),
+        sourceSpecifiers: {
+          "apps/server": serverPackageJson.dependencies,
+          "apps/desktop": desktopPackageJson.dependencies,
+        },
+        patchedDependencies: stagePatchedDependencies,
+      }),
+    catch: (cause) =>
+      Schema.is(StageLockfileResolutionError)(cause)
+        ? cause
+        : new StageLockfileSerializationError({ lockfilePath: stageLockfilePath, cause }),
+  });
+  const stageLockfileString = yield* encodePnpmLockfile(stageLockfile).pipe(
+    Effect.mapError(
+      (cause) => new StageLockfileSerializationError({ lockfilePath: stageLockfilePath, cause }),
+    ),
+  );
+  yield* fs.writeFileString(stageLockfilePath, stageLockfileString);
 
   if (Object.keys(stagePatchedDependencies).length > 0) {
     yield* fs.copy(path.join(repoRoot, "patches"), path.join(stageAppDir, "patches"));
@@ -2363,7 +2768,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       cwd: stageAppDir,
       shell: installCommand.shell,
     }),
-    { label: "vp install --prod", verbose: options.verbose },
+    { label: "vp install --prod --frozen-lockfile", verbose: options.verbose },
   );
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
 
@@ -2553,7 +2958,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for T3 Code."),
+  Command.withDescription("Build a Workjet desktop artifact."),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

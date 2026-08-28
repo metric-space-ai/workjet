@@ -131,7 +131,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
           ClientCapabilities.ClientPresentation,
           ClientCapabilities.ClientPresentation.of({
             metadata: {
-              label: "T3 Code Test",
+              label: "Workjet Test",
               deviceType: "mobile",
               os: "test",
             },
@@ -296,6 +296,46 @@ describe("RemoteEnvironmentAuthorization", () => {
         expect.objectContaining({
           accessToken: "fresh-access-token",
           dpopThumbprint: "thumbprint-1",
+        }),
+      );
+      expect(harness.fetch.calls).toHaveLength(3);
+    }),
+  );
+
+  it.effect("does not reuse a classic token for an instance-bound authorization context", () =>
+    Effect.gen(function* () {
+      const cached = new TokenStore.RemoteDpopAccessToken({
+        environmentId: ENVIRONMENT_ID,
+        label: DESCRIPTOR.label,
+        endpoint: ENDPOINT,
+        accessToken: "classic-access-token",
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+        dpopThumbprint: "thumbprint-1",
+      });
+      const harness = yield* makeHarness({
+        initialToken: cached,
+        responses: [
+          Response.json(DESCRIPTOR),
+          accessToken("instance-access-token"),
+          websocketTicket("instance-ticket"),
+        ],
+      });
+
+      const authorized = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        return yield* remote.authorizeDpop({
+          expectedEnvironmentId: ENVIRONMENT_ID,
+          authorizationContext: "business-os:biz_welsch",
+          obtainBootstrap: harness.obtainBootstrap,
+        });
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(authorized.socketUrl).toContain("wsTicket=instance-ticket");
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)).toEqual(
+        expect.objectContaining({
+          accessToken: "instance-access-token",
+          authorizationContext: "business-os:biz_welsch",
         }),
       );
       expect(harness.fetch.calls).toHaveLength(3);

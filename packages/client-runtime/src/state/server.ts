@@ -19,7 +19,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   createAtomCommandScheduler,
@@ -43,6 +43,76 @@ import {
 import { followStreamInEnvironment } from "./runtime.ts";
 
 export type ServerUpdateStage = "downloading" | "installing" | "resuming";
+
+export const GREPPY_RUNTIME_INSPECT_STALE_TIME_MS = 15_000;
+
+/**
+ * The gateway status and catalog are cheap local reads whose value changes
+ * whenever the operator starts, stops, or logs into the gateway, so keep the
+ * freshness window short enough that a settings visit re-reads the host.
+ */
+export const WORKJET_GATEWAY_STATUS_STALE_TIME_MS = 5_000;
+export const WORKJET_GATEWAY_CATALOG_STALE_TIME_MS = 5_000;
+/**
+ * Health is a live reading of the running host and the surface shows its age,
+ * so it may go stale sooner than the configuration-derived catalog.
+ */
+export const WORKJET_GATEWAY_HEALTH_STALE_TIME_MS = 5_000;
+/**
+ * Model discovery answers from the host's compiled-in catalog plus the stored
+ * account models; neither moves while the gateway runs, so this is cached for
+ * far longer than the live reads.
+ */
+export const WORKJET_GATEWAY_MODELS_STALE_TIME_MS = 60_000;
+
+/**
+ * The mesh roster changes only when this machine exchanges mail with a peer it
+ * has never heard from — a rare, durable event — so the composer may reuse a
+ * recently read list instead of asking on every popover open.
+ */
+export const WORKJET_MESH_ROSTER_STALE_TIME_MS = 30_000;
+
+/**
+ * The multi-computer overview moves whenever an envelope or a delegation state
+ * does, which is far more often than the pin table changes, so it gets a much
+ * shorter freshness window than the roster. It is still a window, not a live
+ * feed: the read reports LAST KNOWN contact, and nothing about it is a liveness
+ * signal that a faster poll could make truer.
+ */
+export const WORKJET_MESH_OVERVIEW_STALE_TIME_MS = 5_000;
+
+/**
+ * How long a received-handoff listing stays fresh.
+ *
+ * Shorter than the roster's: a handoff is work somebody is waiting on, so the
+ * inbox should notice an arrival within a few seconds — but it is still a poll,
+ * not a subscription, and saying so here keeps the surface from implying a
+ * liveness guarantee the mesh does not provide.
+ */
+export const WORKJET_HANDOFF_INBOX_STALE_TIME_MS = 10_000;
+
+/**
+ * How long a cross-mode link read stays fresh.
+ *
+ * A link is a durable, rarely changing fact — an object gets a Code thread once
+ * and keeps it — so the Code thread's backlink read may reuse a recently read
+ * answer instead of asking on every render. It is the same order as the roster
+ * for the same reason: both answer "what is related to what", not "what is
+ * happening now".
+ */
+export const WORKJET_CROSS_MODE_LINK_STALE_TIME_MS = 30_000;
+
+/**
+ * How long the legacy-import offer stays fresh.
+ *
+ * The longest window of the set, and deliberately so: the answer is a decision
+ * about a file that is never rewritten, and it changes at most ONCE in this
+ * environment's life — when the operator accepts or declines. The command that
+ * causes that change refreshes the read itself, so nothing here has to poll for
+ * it.
+ */
+export const WORKJET_LEGACY_IMPORT_STALE_TIME_MS = 300_000;
+export const WORKJET_SESSION_IMPORT_STALE_TIME_MS = 10_000;
 
 export type ServerUpdateState =
   | { readonly status: "idle" }
@@ -679,10 +749,408 @@ export function createServerEnvironmentAtoms<R, E>(
       Atom.withLabel(`environment-data:server:providers:${environmentId}`),
     ),
   );
+  const greppyRuntimeInspect = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:greppy:inspect",
+    tag: WS_METHODS.workjetGreppyInspect,
+    staleTimeMs: GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
+  });
+  const installGreppyRuntime = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:greppy:install",
+    tag: WS_METHODS.workjetGreppyInstall,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(greppyRuntimeInspect({ environmentId, input: {} }));
+      }),
+  });
+
+  const workjetGatewayStatus = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:status",
+    tag: WS_METHODS.workjetGatewayStatus,
+    staleTimeMs: WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
+  });
+  const workjetGatewayCatalog = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:catalog",
+    tag: WS_METHODS.workjetGatewayCatalog,
+    staleTimeMs: WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
+  });
+  const workjetGatewayHealth = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:health",
+    tag: WS_METHODS.workjetGatewayHealth,
+    staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
+  });
+  const workjetHarnessInspect = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:harness:inspect",
+    tag: WS_METHODS.workjetHarnessInspect,
+    staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
+  });
+  const workjetGatewayModels = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:models",
+    tag: WS_METHODS.workjetGatewayDiscoverModels,
+    staleTimeMs: WORKJET_GATEWAY_MODELS_STALE_TIME_MS,
+  });
+  const workjetDecisionHubConnections = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:decision-hub:connections",
+    tag: WS_METHODS.workjetDecisionHubListConnections,
+    staleTimeMs: 5_000,
+  });
+  const refreshDecisionHubConnections = (
+    { environmentId }: { readonly environmentId: EnvironmentId },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => {
+      registry.refresh(workjetDecisionHubConnections({ environmentId, input: {} }));
+    });
+  const probeWorkjetDecisionHubConnection = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:decision-hub:probe",
+    tag: WS_METHODS.workjetDecisionHubProbeConnection,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) => `${environmentId}:${input.connectionId}`,
+    },
+    onSuccess: refreshDecisionHubConnections,
+  });
+  const disconnectWorkjetDecisionHubConnection = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:decision-hub:disconnect",
+    tag: WS_METHODS.workjetDecisionHubDisconnectConnection,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) => `${environmentId}:${input.connectionId}`,
+    },
+    onSuccess: refreshDecisionHubConnections,
+  });
+  // Every lifecycle and login transition changes the runtime phase, the
+  // configured accounts, the health snapshot, and the model answer, so refresh
+  // the set instead of a single read.
+  const refreshWorkjetGateway = (
+    { environmentId }: { readonly environmentId: EnvironmentId },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => {
+      registry.refresh(workjetGatewayStatus({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayCatalog({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayHealth({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayModels({ environmentId, input: {} }));
+    });
+  const workjetGatewayConcurrency = {
+    mode: "singleFlight" as const,
+    key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
+  };
+  const startWorkjetGateway = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:start",
+    tag: WS_METHODS.workjetGatewayStart,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  const stopWorkjetGateway = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:stop",
+    tag: WS_METHODS.workjetGatewayStop,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  // The user completes the provider login in their own browser; the client only
+  // starts the session, polls its opaque handle, and cancels it.
+  const startWorkjetGatewayOauth = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:oauth-start",
+    tag: WS_METHODS.workjetGatewayOauthStart,
+    concurrency: workjetGatewayConcurrency,
+  });
+  const pollWorkjetGatewayOauth = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:oauth-poll",
+    tag: WS_METHODS.workjetGatewayOauthPoll,
+    concurrency: workjetGatewayConcurrency,
+  });
+  const cancelWorkjetGatewayOauth = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:oauth-cancel",
+    tag: WS_METHODS.workjetGatewayOauthCancel,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  // The one command whose payload carries a credential. It travels over the
+  // same authenticated socket as every other gateway command and is never
+  // retained by the client: the caller drops the input after dispatching.
+  const addWorkjetGatewayApiKeyAccount = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:add-api-key-account",
+    tag: WS_METHODS.workjetGatewayAddApiKeyAccount,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  // Removal rewrites the configuration and reloads the host.
+  const removeWorkjetGatewayAccount = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:remove-account",
+    tag: WS_METHODS.workjetGatewayRemoveAccount,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+  // Pool editing rewrites the configuration and reloads the host, so it shares
+  // the gateway's single-flight key with every other lifecycle command.
+  const updateWorkjetGatewayRouting = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:update-routing",
+    tag: WS_METHODS.workjetGatewayUpdateRouting,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+
+  // The one-shot legacy Swift configuration import.
+  //
+  // A read and a terminal write, both keyed per ENVIRONMENT because that is
+  // what the decision is about: the legacy document lives on the machine each
+  // server runs on, and the import lands in that server's own settings.
+  const workjetLegacyImport = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:legacy-import:inspect",
+    tag: WS_METHODS.workjetLegacyImportInspect,
+    staleTimeMs: WORKJET_LEGACY_IMPORT_STALE_TIME_MS,
+  });
+  // Answering the offer patches `settings.workjet` and records a TERMINAL
+  // marker, so it is single-flighted per environment — two concurrent answers
+  // are exactly the race the server refuses. On success only the OFFER is
+  // refreshed, because it is now a recorded decision; the patched settings
+  // arrive on their own through the server's config stream, exactly as they do
+  // for every other settings write.
+  const decideWorkjetLegacyImport = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:legacy-import:decide",
+    tag: WS_METHODS.workjetLegacyImportDecide,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(workjetLegacyImport({ environmentId, input: {} }));
+      }),
+  });
+
+  // Repeatable, read-only discovery of native harness transcript files. The
+  // write creates or updates an independent Workjet copy and never resumes the
+  // source application's provider session.
+  const workjetSessionImport = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:session-import:inspect",
+    tag: WS_METHODS.workjetSessionImportInspect,
+    staleTimeMs: WORKJET_SESSION_IMPORT_STALE_TIME_MS,
+  });
+  const importWorkjetSessions = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:session-import:import",
+    tag: WS_METHODS.workjetSessionImport,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+  });
+
+  // The recipient roster the composer picks from: a bounded, redacted read of
+  // the peers this machine has already exchanged mail with. It is a read, not a
+  // send, so it is a query atom family beside the gateway reads rather than one
+  // of the thread-scoped mailbox commands below.
+  const workjetMeshRoster = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:mesh:roster",
+    tag: WS_METHODS.workjetMeshRoster,
+    staleTimeMs: WORKJET_MESH_ROSTER_STALE_TIME_MS,
+  });
+
+  // The global multi-computer activity overview. Same shape of read as the
+  // roster — bounded, redacted, no key material — one step wider: last-known
+  // envelope contact and delegation counts per peer machine.
+  const workjetMeshOverview = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:mesh:overview",
+    tag: WS_METHODS.workjetMeshOverview,
+    staleTimeMs: WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
+  });
+
+  // Destroying a peer's trust pin is the ONE mesh-trust write. It is
+  // single-flighted per environment because a second concurrent revoke on the
+  // same machine can only be a double-submit, and both reads that render the
+  // pin are refreshed on success so the roster and the machines page cannot
+  // keep offering a peer whose pin no longer exists.
+  const revokeWorkjetMeshPeer = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mesh:revoke-peer",
+    tag: WS_METHODS.workjetMeshRevokePeer,
+    concurrency: {
+      mode: "singleFlight" as const,
+      key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
+    },
+    onSuccess: (
+      { environmentId }: { readonly environmentId: EnvironmentId },
+      registry: AtomRegistry.AtomRegistry,
+    ) =>
+      Effect.sync(() => {
+        registry.refresh(workjetMeshOverview({ environmentId, input: {} }));
+        registry.refresh(workjetMeshRoster({ environmentId, input: {} }));
+      }),
+  });
+
+  // Sending into another worker's mailbox is single-flighted per SOURCE THREAD,
+  // not per environment: two orchestrator threads on one server are two
+  // independent conversations, and a slow send from one must not swallow the
+  // other's. Nothing is refreshed on success — the durable trace arrives as a
+  // thread activity through the ordinary thread subscription, so an optimistic
+  // refresh here would only race it.
+  const workjetMailboxConcurrency = {
+    mode: "singleFlight" as const,
+    key: ({
+      environmentId,
+      input,
+    }: {
+      readonly environmentId: EnvironmentId;
+      readonly input: { readonly sourceThreadId: string };
+    }) => `${environmentId}:${input.sourceThreadId}`,
+  };
+  const sendWorkjetMailboxMessage = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:send-message",
+    tag: WS_METHODS.workjetMailboxSendMessage,
+    concurrency: workjetMailboxConcurrency,
+  });
+  const delegateWorkjetMailboxTask = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:delegate-task",
+    tag: WS_METHODS.workjetMailboxDelegateTask,
+    concurrency: workjetMailboxConcurrency,
+  });
+  // The thread-action operations (reply / request review / update delegation)
+  // are single-flighted per SOURCE THREAD exactly like send: they originate
+  // from the same orchestrator thread and the durable state/receipt returns
+  // through the ordinary thread subscription, so no optimistic refresh here.
+  const replyWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:reply",
+    tag: WS_METHODS.workjetMailboxReply,
+    concurrency: workjetMailboxConcurrency,
+  });
+  const requestReviewWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:request-review",
+    tag: WS_METHODS.workjetMailboxRequestReview,
+    concurrency: workjetMailboxConcurrency,
+  });
+  const updateDelegationWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:update-delegation",
+    tag: WS_METHODS.workjetMailboxUpdateDelegation,
+    concurrency: workjetMailboxConcurrency,
+  });
+  // Reassignment is the same class of thread-scoped write, so it shares the
+  // per-source-thread single flight: the durable re-render carries the new
+  // target back through the ordinary thread subscription.
+  const reassignDelegationWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:reassign-delegation",
+    tag: WS_METHODS.workjetMailboxReassignDelegation,
+    concurrency: workjetMailboxConcurrency,
+  });
+  // A handoff is sent FROM a thread, so it shares the per-source-thread single
+  // flight with every other thread-scoped write.
+  const sendHandoffWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:send-handoff",
+    tag: WS_METHODS.workjetMailboxSendHandoff,
+    concurrency: workjetMailboxConcurrency,
+  });
+  // The received-handoff inbox: a bounded, redacted READ, so it is a query atom
+  // family beside the roster rather than one of the writes above.
+  const workjetMailboxHandoffs = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:mailbox:handoffs",
+    tag: WS_METHODS.workjetMailboxListHandoffs,
+    staleTimeMs: WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
+  });
+  // Accepting is single-flighted per ENVIRONMENT, not per source thread: the
+  // input names no source thread — it continues work that arrived from another
+  // machine — and two concurrent accepts on one server are exactly the race the
+  // server refuses. Serialising them here means the operator sees one honest
+  // refusal instead of a second thread being created and deleted. On success the
+  // inbox is refreshed, because the row's acceptance link changed and the
+  // listing is polled, not pushed.
+  const acceptHandoffWorkjetMailbox = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:mailbox:accept-handoff",
+    tag: WS_METHODS.workjetMailboxAcceptHandoff,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: (
+      { environmentId }: { readonly environmentId: EnvironmentId },
+      registry: AtomRegistry.AtomRegistry,
+    ) =>
+      Effect.sync(() => {
+        registry.refresh(workjetMailboxHandoffs({ environmentId, input: {} }));
+      }),
+  });
+
+  // The cross-mode workflow bridge.
+  //
+  // The Code thread's BACKLINK read is keyed per thread, so a thread that
+  // carries no link keeps its own cached "no link" answer instead of sharing one
+  // with every other thread.
+  const workjetCrossModeThreadLink = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:crossmode:thread-link",
+    tag: WS_METHODS.workjetCrossModeGetThreadLink,
+    staleTimeMs: WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
+  });
+  const workjetCrossModeLinks = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:crossmode:links",
+    tag: WS_METHODS.workjetCrossModeListLinks,
+    staleTimeMs: WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
+  });
+  // `Delegate to Code` / `Open in Code` is single-flighted per ENVIRONMENT
+  // rather than per source thread: its input names a HOST thread, not a source,
+  // and the race that matters is two clicks on the same Business OS OBJECT — a
+  // race the server resolves by selecting rather than forking. Serialising per
+  // environment means the operator sees one answer instead of a thread being
+  // created and immediately deleted.
+  const openWorkjetCrossModeInCode = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:crossmode:open-in-code",
+    tag: WS_METHODS.workjetCrossModeOpenInCode,
+    concurrency: workjetGatewayConcurrency,
+  });
+  // A return is made FROM the link's own Code thread, so it shares the
+  // per-source-thread single flight the other thread-scoped writes use — keyed
+  // on `threadId`, which is what this input calls its source.
+  const submitWorkjetCrossMode = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:crossmode:submit",
+    tag: WS_METHODS.workjetCrossModeSubmit,
+    concurrency: {
+      mode: "singleFlight" as const,
+      key: ({
+        environmentId,
+        input,
+      }: {
+        readonly environmentId: EnvironmentId;
+        readonly input: { readonly threadId: string };
+      }) => `${environmentId}:${input.threadId}`,
+    },
+  });
 
   return {
     configValueAtom,
     updateStateAtom,
+    workjetCrossModeThreadLink,
+    workjetCrossModeLinks,
+    openWorkjetCrossModeInCode,
+    submitWorkjetCrossMode,
+    sendWorkjetMailboxMessage,
+    delegateWorkjetMailboxTask,
+    replyWorkjetMailbox,
+    requestReviewWorkjetMailbox,
+    updateDelegationWorkjetMailbox,
+    reassignDelegationWorkjetMailbox,
+    sendHandoffWorkjetMailbox,
+    acceptHandoffWorkjetMailbox,
+    workjetMailboxHandoffs,
+    workjetMeshRoster,
+    workjetMeshOverview,
+    revokeWorkjetMeshPeer,
+    workjetGatewayStatus,
+    workjetGatewayCatalog,
+    workjetGatewayHealth,
+    workjetGatewayModels,
+    workjetHarnessInspect,
+    workjetDecisionHubConnections,
+    probeWorkjetDecisionHubConnection,
+    disconnectWorkjetDecisionHubConnection,
+    startWorkjetGateway,
+    stopWorkjetGateway,
+    startWorkjetGatewayOauth,
+    pollWorkjetGatewayOauth,
+    cancelWorkjetGatewayOauth,
+    addWorkjetGatewayApiKeyAccount,
+    removeWorkjetGatewayAccount,
+    updateWorkjetGatewayRouting,
+    workjetLegacyImport,
+    decideWorkjetLegacyImport,
+    workjetSessionImport,
+    importWorkjetSessions,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -702,6 +1170,13 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.subscribeResourceTelemetry,
       idleTtlMs: 0,
     }),
+    // The bounded, redacted Workjet mailbox audit/observability event stream.
+    // A later slice renders it (toasts / an activity surface); this wires the
+    // consumable subscription.
+    workjetMailboxAuditEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:workjet-mailbox-audit",
+      tag: WS_METHODS.subscribeWorkjetMailboxAudit,
+    }),
     resourceTelemetryHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:resource-telemetry-history",
       tag: WS_METHODS.serverGetResourceTelemetryHistory,
@@ -714,6 +1189,8 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
+    greppyRuntimeInspect,
+    installGreppyRuntime,
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",

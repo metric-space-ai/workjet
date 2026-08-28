@@ -39,6 +39,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
+import { SupportBundleSection } from "./SupportBundleSection";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -965,7 +966,7 @@ export function DiagnosticsSettingsPanel() {
               type: "info",
               title: "Process already exited",
               description:
-                "The process is not a child of the T3 Server. It might already have exited.",
+                "The process is not a child of the Workjet server. It might already have exited.",
             });
             return;
           }
@@ -994,6 +995,8 @@ export function DiagnosticsSettingsPanel() {
 
   return (
     <SettingsPageContainer className="max-w-6xl gap-10">
+      <SupportBundleSection />
+
       <ResourceTelemetryDiagnostics />
 
       <SettingsSection
@@ -1078,7 +1081,7 @@ export function DiagnosticsSettingsPanel() {
           <StatBlock
             label="CPU Time"
             value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
-            tooltip="Approximate active CPU time for the T3 server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves."
+            tooltip="Approximate active CPU time for the Workjet server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves."
           />
           <StatBlock
             label="Samples"

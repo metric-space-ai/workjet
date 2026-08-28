@@ -7,6 +7,7 @@ import {
   buildWhenVariableOptions,
   commandLabel,
   keybindingConflictLabels,
+  keybindingPillParts,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
   shortcutToKeybindingInput,
@@ -15,6 +16,13 @@ import {
 } from "./KeybindingsSettings.logic";
 
 describe("KeybindingsSettings.logic", () => {
+  it("gives repeated empty shortcut segments stable unique render keys", () => {
+    expect(keybindingPillParts("mod++")).toEqual([
+      { key: "0:mod", value: "mod" },
+      { key: "1:", value: "" },
+      { key: "2:", value: "" },
+    ]);
+  });
   it("builds searchable rows with readable key and when values", () => {
     const rows = buildKeybindingRows(
       [
@@ -160,7 +168,7 @@ describe("KeybindingsSettings.logic", () => {
     expect(unknownWhenVariables(parsed.ok ? parsed.value : undefined)).toEqual(["terminalFoc"]);
   });
 
-  it("marks each default shortcut for multi-binding commands as default", () => {
+  it("marks the removed duplicate new-chat shortcut as custom", () => {
     const rows = buildKeybindingRows(
       [
         {
@@ -197,7 +205,8 @@ describe("KeybindingsSettings.logic", () => {
       "",
     );
 
-    expect(rows.map((row) => row.source)).toEqual(["Default", "Default"]);
+    expect(rows.map((row) => row.source)).toEqual(["Default", "Custom"]);
+    expect(rows.map((row) => row.defaultKey)).toEqual(["mod+n", "mod+n"]);
   });
 
   it("reports conflicting shortcuts that share an active when context", () => {

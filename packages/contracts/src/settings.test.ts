@@ -33,6 +33,23 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ClientSettings Workjet product mode", () => {
+  it("defaults historical settings to Code mode", () => {
+    expect(decodeClientSettings({}).workjetProductMode).toBe("code");
+    expect(decodeClientSettings({ timestampFormat: "24-hour" }).workjetProductMode).toBe("code");
+  });
+
+  it.each(["code", "ctox"] as const)("accepts and patches product mode: %s", (mode) => {
+    expect(decodeClientSettings({ workjetProductMode: mode }).workjetProductMode).toBe(mode);
+    expect(decodeClientSettingsPatch({ workjetProductMode: mode }).workjetProductMode).toBe(mode);
+  });
+
+  it.each(["guest", "CTOX", "", null, 1])("rejects an invalid product mode: %s", (mode) => {
+    expect(() => decodeClientSettings({ workjetProductMode: mode })).toThrow();
+    expect(() => decodeClientSettingsPatch({ workjetProductMode: mode })).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);
@@ -113,6 +130,80 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
+describe("ServerSettings Workjet catalog", () => {
+  it("hydrates legacy server settings with the empty Workjet configuration", () => {
+    expect(decodeServerSettings({}).workjet).toEqual({
+      schemaVersion: 4,
+      computers: [],
+      llmRoutes: [],
+      modelPrompts: [],
+      workerProfiles: [],
+      workerGraph: { positions: [], dependencies: [] },
+      managedSystemPrompt: "",
+      telemetry: {
+        claudeCodeEvents: true,
+        sidecarEvents: true,
+        retentionDays: 14,
+      },
+      execution: {
+        probeTimeoutSeconds: 120,
+        turnTimeoutSeconds: 5_400,
+        degradationAllowed: true,
+      },
+    });
+  });
+
+  it("migrates a persisted v1 Workjet catalog instead of discarding settings.json", () => {
+    // Regression guard: the server falls back to DEFAULT_SERVER_SETTINGS when the
+    // whole settings document fails to decode, so a stale v1 route must migrate
+    // rather than fail. See migration step 2 in workjet.ts.
+    const workjet = decodeServerSettings({
+      workjet: {
+        schemaVersion: 1,
+        llmRoutes: [
+          { id: "route-main", label: "Main account", providerInstanceId: "gateway_account_work" },
+        ],
+      },
+    }).workjet;
+
+    expect(workjet.schemaVersion).toBe(4);
+    expect(workjet.llmRoutes).toEqual([
+      { id: "route-main", label: "Main account", gatewayAccountId: "gateway_account_work" },
+    ]);
+  });
+
+  it("accepts a complete Workjet replacement in a settings patch", () => {
+    const workjet = decodeServerSettingsPatch({
+      workjet: {
+        schemaVersion: 2,
+        computers: [],
+        llmRoutes: [],
+        modelPrompts: [],
+        workerProfiles: [],
+        managedSystemPrompt: "Coordinate deliberately.",
+        telemetry: {
+          claudeCodeEvents: true,
+          sidecarEvents: false,
+          retentionDays: 30,
+        },
+        execution: {
+          probeTimeoutSeconds: 30,
+          turnTimeoutSeconds: 900,
+          degradationAllowed: false,
+        },
+      },
+    }).workjet;
+
+    expect(workjet?.managedSystemPrompt).toBe("Coordinate deliberately.");
+    expect(workjet?.telemetry).toEqual({
+      claudeCodeEvents: true,
+      sidecarEvents: false,
+      retentionDays: 30,
+    });
+    expect(workjet?.execution.degradationAllowed).toBe(false);
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
@@ -180,6 +271,25 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 describe("ServerSettings worktree defaults", () => {
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);
+  });
+
+  it("decodes legacy automatic worktree settings to the immutable default", () => {
+    const decoded = decodeServerSettings({});
+    expect(decoded.automaticWorktreeRoot).toBe("");
+    expect(decoded.previousAutomaticWorktreeRoots).toEqual([]);
+  });
+
+  it("trims configured and previous automatic worktree roots", () => {
+    const decoded = decodeServerSettings({
+      automaticWorktreeRoot: "  /srv/worktrees/current  ",
+      previousAutomaticWorktreeRoots: ["  /srv/worktrees/previous  "],
+    });
+    expect(decoded.automaticWorktreeRoot).toBe("/srv/worktrees/current");
+    expect(decoded.previousAutomaticWorktreeRoots).toEqual(["/srv/worktrees/previous"]);
+    expect(
+      decodeServerSettingsPatch({ automaticWorktreeRoot: "  /srv/worktrees/next  " })
+        .automaticWorktreeRoot,
+    ).toBe("/srv/worktrees/next");
   });
 
   it("accepts start-from-origin updates", () => {

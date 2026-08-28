@@ -14,7 +14,7 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useBusinessOsScopedEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { cn } from "~/lib/utils";
@@ -22,7 +22,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
 
   if (authGateState.status === "hosted-static" && environments.length === 0) {
     return <HostedStaticOnboardingState />;
@@ -167,13 +167,13 @@ function HostedStaticOnboardingState() {
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
                 {cloudEnabled
-                  ? "Sign in to T3 Connect to connect a linked environment through its managed tunnel, or add a reachable backend manually."
+                  ? "Sign in to Workjet Connect to connect a linked environment through its managed tunnel, or add a reachable backend manually."
                   : "Add a reachable backend manually to start working from this browser."}
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
-                <Button render={<Link to="/settings/connections" />} size="sm">
+                <Button render={<Link to="/settings/computers" />} size="sm">
                   <PlusIcon className="size-4" />
-                  {cloudEnabled ? "Open Connections" : "Add environment"}
+                  {cloudEnabled ? "Open Computers" : "Add computer"}
                 </Button>
               </div>
             </EmptyHeader>

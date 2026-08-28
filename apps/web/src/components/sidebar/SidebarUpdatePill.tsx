@@ -212,7 +212,20 @@ function SidebarUpdateControl() {
     void bridge
       .checkForUpdate()
       .then((result) => {
-        if (result.checked) return;
+        if (result.checked) {
+          // A manual check that finds nothing looked like a dead button
+          // (Befund F7) — say so. Found updates surface through the pill.
+          if (result.state.status === "up-to-date" || result.state.status === "idle") {
+            toastManager.add(
+              stackedThreadToast({
+                type: "success",
+                title: "You're up to date",
+                description: "No newer build is available.",
+              }),
+            );
+          }
+          return;
+        }
         toastManager.add(
           stackedThreadToast({
             type: "error",

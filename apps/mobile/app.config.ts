@@ -11,6 +11,17 @@ Object.assign(process.env, repoEnv);
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
+// Public production origins and identifiers are safe to bundle. Keeping the
+// canonical values here prevents a locally assembled production APK from
+// silently shipping with the Workjet pairing and Relay clients disabled.
+// Environment values still override these defaults for controlled rollouts.
+const PRODUCTION_PUBLIC_CONFIG = {
+  clerkPublishableKey: "pk_live_Y2xlcmsudDMuY29kZXMk",
+  clerkJwtTemplate: "t3-relay",
+  relayUrl: "https://relay.t3.codes",
+  managedControlUrl: "https://ctox.dev",
+} as const;
+
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
@@ -49,36 +60,45 @@ const PREVIEW_ASSETS = {
 } as const;
 
 const RELEASE_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  androidAdaptiveForeground: "./assets/android-icon-mark.png",
-  androidAdaptiveBackgroundColor: "#000000",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#FFFFFF",
+  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
+  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxIosIconPng),
+  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidAdaptiveForegroundPng),
+  // Matches the night-blue tile of the approved Workjet mark so the
+  // adaptive-icon mask blends seamlessly.
+  androidAdaptiveBackgroundColor: "#0F1925",
+  androidMonochromeIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidMonochromePng),
+  androidNotificationIcon: fromRepoRoot(BRAND_ASSET_PATHS.ctoxAndroidNotificationPng),
+  androidNotificationColor: "#5C7590",
 } as const;
 
+// Workjet is the one user-facing mobile identity. Legacy CTOX/T3 schemes stay
+// claimed during the soft migration and the com.t3tools.t3code identifiers
+// stay untouched — signing,
+// store listings, push entitlements, app groups, and the Clerk passkey
+// relying party all hang off them, so renaming those is a separate migration.
+// `ctox:` remains the backend/daemon namespace. New outbound links always use
+// the first Workjet scheme; the remaining entries are inbound compatibility.
 const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
-    scheme: "t3code-dev",
+    appName: "Workjet",
+    schemes: ["workjet-dev", "ctox-mobile-dev", "t3code-dev"],
     iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
     relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
-    scheme: "t3code-preview",
+    appName: "Workjet",
+    schemes: ["workjet-preview", "ctox-mobile-preview", "t3code-preview"],
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
     relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
-    scheme: "t3code",
+    appName: "Workjet",
+    schemes: ["workjet", "ctox-mobile", "ctox-business-os-mobile", "t3code"],
     iosBundleIdentifier: "com.t3tools.t3code",
     androidPackage: "com.t3tools.t3code",
     relyingParty: "clerk.t3.codes",
@@ -107,26 +127,6 @@ const dmSansFonts = {
   medium: "@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf",
   bold: "@expo-google-fonts/dm-sans/700Bold/DMSans_700Bold.ttf",
 } as const;
-
-const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
-  "expo-widgets",
-  {
-    bundleIdentifier: `${iosBundleIdentifier}.widgets`,
-    groupIdentifier: `group.${iosBundleIdentifier}`,
-    enablePushNotifications: true,
-    // Agent activity can update many times an hour; without the
-    // frequent-updates entitlement iOS throttles the update budget sooner.
-    frequentUpdates: true,
-    widgets: [
-      {
-        name: "AgentActivity",
-        displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
-        supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
-      },
-    ],
-  },
-];
 
 const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-sharing",
@@ -160,24 +160,16 @@ const config: ExpoConfig = {
   name: variant.appName,
   slug: "t3-code",
   platforms: ["ios", "android"],
-  scheme: variant.scheme,
+  scheme: [...variant.schemes],
   version: "1.0.4",
-  runtimeVersion: {
-    // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
-    // project — native deps, config plugins, AND patches/ — matches the update.
-    // With appVersion, every 0.1.0 build shares a runtime version, so a JS update
-    // could land on a binary missing the native changes it needs and crash.
-    policy: process.env.MOBILE_VERSION_POLICY ?? "fingerprint",
-  },
-  orientation: "portrait",
+  // Workjet is a first-class tablet app. Keep both orientations available so
+  // iPad and Android tablets work naturally in 3:4 portrait and 4:3 landscape.
+  orientation: "default",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: {
-    enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
-  },
+  // Release code only through signed App Store / Play binaries. In particular,
+  // the CTOX pairing and WebRTC boundary must never be replaced over OTA.
+  updates: { enabled: false },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -195,10 +187,10 @@ const config: ExpoConfig = {
     ],
     infoPlist: {
       NSAppTransportSecurity: {
-        NSAllowsArbitraryLoads: true,
+        NSAllowsArbitraryLoads: false,
       },
       NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+        "Allow Workjet to connect to CTOX backends on your local network or tailnet.",
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -292,7 +284,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: "Allow Workjet to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
@@ -316,22 +308,22 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         ios: {
-          deploymentTarget: "18.0",
+          deploymentTarget: "26.0",
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.
           extraPods: [
-            { name: "GoogleUtilities", modular_headers: true },
-            { name: "RecaptchaInterop", modular_headers: true },
+            { name: "GoogleUtilities", version: "8.1.3", modular_headers: true },
+            { name: "RecaptchaInterop", version: "101.0.0", modular_headers: true },
           ],
+        },
+        android: {
+          minSdkVersion: 24,
+          compileSdkVersion: 36,
+          targetSdkVersion: 36,
+          buildToolsVersion: "36.0.0",
         },
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
-    // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
-    // first, so registering earlier makes this plugin's mods run AFTER
-    // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
-    // would delete the asset catalog) and its xcodeproj mod creates the widget
-    // target (which must exist before the compile phase can be attached).
-    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
@@ -345,11 +337,22 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
-      url: repoEnv.T3CODE_RELAY_URL ?? null,
+      url:
+        repoEnv.T3CODE_RELAY_URL ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.relayUrl : null),
+    },
+    managedControl: {
+      url:
+        repoEnv.EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.managedControlUrl : null),
     },
     clerk: {
-      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
-      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
+      publishableKey:
+        repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.clerkPublishableKey : null),
+      jwtTemplate:
+        repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ??
+        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.clerkJwtTemplate : null),
     },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads
@@ -361,7 +364,7 @@ const config: ExpoConfig = {
     EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
     EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
     observability: {
-      tracesUrl: repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? "https://api.axiom.co/v1/traces",
+      tracesUrl: repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? null,
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },

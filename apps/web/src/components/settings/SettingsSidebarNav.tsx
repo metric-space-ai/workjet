@@ -8,15 +8,19 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
+  ActivityIcon,
   ArchiveIcon,
   ArrowLeftIcon,
-  BotIcon,
+  BriefcaseBusinessIcon,
   GitBranchIcon,
   KeyboardIcon,
-  Link2Icon,
+  MonitorIcon,
   PaletteIcon,
   SearchIcon,
+  SparklesIcon,
+  TerminalIcon,
   Settings2Icon,
+  WrenchIcon,
   XIcon,
 } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -45,12 +49,17 @@ import {
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
+  "/settings/business-os": BriefcaseBusinessIcon,
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/keybindings": KeyboardIcon,
-  "/settings/providers": BotIcon,
+  // Harnesses are CLI runtimes; models are the LLM accounts behind them.
+  "/settings/harnesses": TerminalIcon,
+  "/settings/models": SparklesIcon,
+  "/settings/computers": MonitorIcon,
+  "/settings/workjet": WrenchIcon,
   "/settings/source-control": GitBranchIcon,
-  "/settings/connections": Link2Icon,
+  "/settings/diagnostics": ActivityIcon,
   "/settings/archived": ArchiveIcon,
 };
 

@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
@@ -22,6 +23,7 @@ import {
   RuntimeMode,
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "./workjet.ts";
 
 const ProviderSessionStatus = Schema.Literals([
   "connecting",
@@ -61,8 +63,14 @@ export const ProviderSessionStartInput = Schema.Struct({
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
+  workjetConfig: WorkjetThreadConfig.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_THREAD_CONFIG)),
+  ),
 });
-export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
+type DecodedProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
+export type ProviderSessionStartInput = Omit<DecodedProviderSessionStartInput, "workjetConfig"> & {
+  readonly workjetConfig?: WorkjetThreadConfig;
+};
 
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,

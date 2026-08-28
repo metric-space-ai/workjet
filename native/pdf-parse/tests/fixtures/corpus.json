@@ -1,0 +1,11 @@
+{
+  "name": "workjet-synthetic-page-contracts",
+  "description": "Original Workjet synthetic page-text contracts for ordinary CI.",
+  "fixtures": [
+    "pages/workjet_single_column.json",
+    "pages/workjet_two_column.json",
+    "pages/workjet_form_labels.json",
+    "pages/workjet_rotation_unicode.json",
+    "pages/workjet_allowed_missing.json"
+  ]
+}

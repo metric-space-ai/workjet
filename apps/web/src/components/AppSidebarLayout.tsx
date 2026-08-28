@@ -14,7 +14,12 @@ import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalSt
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useClientSettingsHydrated,
+  useEnvironmentIdentificationMode,
+  useLegacySidebarEnabled,
+} from "../hooks/useSettings";
 import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
@@ -40,6 +45,10 @@ import {
   useSidebarVisibility,
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
+import { resolveWorkjetProductMode } from "../workjetProductMode";
+import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -95,6 +104,10 @@ function SidebarControl() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar]);
 
+  if (isElectron && isSidebarVisible) {
+    return null;
+  }
+
   return (
     <div
       className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 flex h-[var(--workspace-topbar-height)] items-center"
@@ -133,13 +146,40 @@ function ProjectProjectionRetention() {
   return null;
 }
 
-export function AppSidebarLayout({ children }: { children: ReactNode }) {
+function CtoxModeBoundary({ active, children }: { active: boolean; children: ReactNode }) {
+  return active ? <CtoxModeProvider>{children}</CtoxModeProvider> : children;
+}
+
+export type AppSidebarSurface = "business-os" | "code" | "settings";
+
+export function resolveAppSidebarSurface({
+  productMode,
+  isOnSettings,
+}: {
+  readonly productMode: "code" | "ctox";
+  readonly isOnSettings: boolean;
+}): AppSidebarSurface {
+  if (isOnSettings) return "settings";
+  return productMode === "ctox" ? "business-os" : "code";
+}
+
+function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
+  const productMode = resolveWorkjetProductMode({
+    configuredMode: configuredProductMode,
+    isElectron,
+  });
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  // Settings are one Workjet surface shared by both product modes. The mode
+  // switch changes the work surface, never the settings information
+  // architecture or the active Business OS instance scope.
+  const sidebarSurface = resolveAppSidebarSurface({ productMode, isOnSettings });
+  const isCtoxShell = sidebarSurface === "business-os";
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -206,37 +246,65 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate, pathname]);
 
   return (
-    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
-      <ProjectProjectionRetention />
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        data-app-sidebar=""
-        className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        resizable={{
-          maxWidth: sidebarMaximumWidth,
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-            nextWidth <= currentWidth ||
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-          onResize: setSidebarWidth,
-        }}
-      >
-        {isOnSettings ? (
-          <>
-            <SidebarChromeHeader isElectron={isElectron} />
-            <SettingsSidebarNav pathname={pathname} />
-          </>
-        ) : legacySidebarEnabled ? (
-          <LegacyThreadSidebar />
-        ) : (
-          <ThreadSidebar />
-        )}
-        <SidebarRail onDoubleClick={resetSidebarWidth} />
-      </Sidebar>
-      {children}
-      <SidebarControl />
+    <SidebarProvider
+      className="h-dvh! min-h-0!"
+      data-product-mode-shell={productMode}
+      defaultOpen
+      style={sidebarProviderStyle}
+    >
+      <BusinessOsCodeScopeSynchronizer />
+      <CtoxModeBoundary active={isCtoxShell}>
+        {!isCtoxShell ? <ProjectProjectionRetention /> : null}
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          data-app-sidebar=""
+          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
+          resizable={{
+            maxWidth: sidebarMaximumWidth,
+            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+              nextWidth <= currentWidth ||
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+            onResize: setSidebarWidth,
+          }}
+        >
+          <ActiveCtoxInstanceSelector productMode={productMode} />
+          {sidebarSurface === "business-os" ? (
+            <CtoxSidebarShell />
+          ) : sidebarSurface === "settings" ? (
+            <>
+              <SidebarChromeHeader isElectron={isElectron} />
+              <SettingsSidebarNav pathname={pathname} />
+            </>
+          ) : legacySidebarEnabled ? (
+            <LegacyThreadSidebar />
+          ) : (
+            <ThreadSidebar />
+          )}
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
+        {isCtoxShell ? <CtoxMainShell /> : children}
+        <SidebarControl />
+      </CtoxModeBoundary>
     </SidebarProvider>
   );
+}
+
+export function AppSidebarLayout({ children }: { children: ReactNode }) {
+  const settingsHydrated = useClientSettingsHydrated();
+  if (!settingsHydrated) {
+    return (
+      <div
+        className="flex h-dvh min-h-0 items-center justify-center bg-background text-sm text-muted-foreground"
+        data-product-mode-shell="loading"
+        aria-busy="true"
+        aria-label="Workjet wird geladen"
+      >
+        Workjet wird geladen…
+      </div>
+    );
+  }
+  return <HydratedAppSidebarLayout>{children}</HydratedAppSidebarLayout>;
 }

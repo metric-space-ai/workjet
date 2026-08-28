@@ -248,6 +248,19 @@ export function resolveAppModelSelectionForInstance(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
+  // A GATEWAY-ROUTED instance serves whatever model the Workjet gateway
+  // routes — the harness is only the engine. Clamping to the instance's
+  // native model list here was the last place harness choice silently
+  // overrode the model choice (picking the Claude Code harness snapped the
+  // model back to claude-fable-5): keep the requested model verbatim.
+  const requested = selectedModel?.trim();
+  if (
+    requested !== undefined &&
+    requested.length > 0 &&
+    settings.providerInstances?.[instanceId]?.routeViaGateway === true
+  ) {
+    return requested;
+  }
   const options = getAppModelOptionsForInstance(settings, entry);
   return (
     resolveSelectableModel(entry.driverKind, selectedModel, options) ??
@@ -314,17 +327,18 @@ export function resolveAppModelSelectionState(
   }
 
   const provider = resolveSelectableProvider(providers, null);
-  const keptSelectedProvider = false;
 
-  // When the provider changed due to fallback (e.g. selected provider was disabled),
-  // don't carry over the old provider's model — use the fallback provider's default.
-  const selectedModel = keptSelectedProvider ? selection.model : null;
-  const model = resolveAppModelSelection(provider, settings, providers, selectedModel);
+  // The provider changed due to fallback (the selected one was disabled or
+  // gone), so the old provider's model and options are deliberately NOT
+  // carried over — the fallback provider gets its own default. The
+  // `keptSelectedProvider` scaffolding that used to gate this was a constant
+  // `false`, i.e. unreachable ternaries (Befund K-B13).
+  const model = resolveAppModelSelection(provider, settings, providers, null);
   const { modelOptionsForDispatch } = getComposerProviderState({
     provider,
     model,
     models: getProviderModels(providers, provider),
-    modelOptions: keptSelectedProvider ? selection.options : undefined,
+    modelOptions: undefined,
   });
 
   return createModelSelection(defaultInstanceIdForDriver(provider), model, modelOptionsForDispatch);

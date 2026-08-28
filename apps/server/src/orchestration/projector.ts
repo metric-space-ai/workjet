@@ -22,6 +22,7 @@ import {
   ThreadMetaUpdatedPayload,
   ThreadProposedPlanUpsertedPayload,
   ThreadRuntimeModeSetPayload,
+  ThreadWorkjetConfigSetPayload,
   ThreadSettledPayload,
   ThreadPinnedPayload,
   ThreadPinReorderedPayload,
@@ -295,6 +296,7 @@ export function projectEvent(
             modelSelection: payload.modelSelection,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
+            workjetConfig: payload.workjetConfig,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
             latestTurn: null,
@@ -483,6 +485,22 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             interactionMode: payload.interactionMode,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.workjet-config-set":
+      return decodeForEvent(
+        ThreadWorkjetConfigSetPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            workjetConfig: payload.workjetConfig,
             updatedAt: payload.updatedAt,
           }),
         })),

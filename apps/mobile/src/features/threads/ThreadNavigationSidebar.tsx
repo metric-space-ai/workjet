@@ -38,6 +38,7 @@ import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import {
   hasCustomHomeListOptions,
   PROJECT_SORT_OPTIONS,
@@ -197,6 +198,11 @@ function ThreadNavigationSidebarPane(
   const threads = useThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const {
+    environmentBindings,
+    hasEnvironmentBindings,
+    selected: selectedBusinessOsInstance,
+  } = useBusinessOs();
   const [headerIsOverContent, setHeaderIsOverContent] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
   const searchBarRef = useRef<SearchBarCommands>(null);
@@ -222,27 +228,64 @@ function ThreadNavigationSidebarPane(
     preferencesResult.value.autoSettleOnMerge !== false;
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
-  const environments = useMemo(
-    () =>
-      Object.values(savedConnectionsById)
-        .map((connection) => ({
-          environmentId: connection.environmentId,
-          label: connection.environmentLabel,
-        }))
-        .sort((left, right) => left.label.localeCompare(right.label)),
-    [savedConnectionsById],
-  );
+  const environments = useMemo(() => {
+    const boundEnvironmentIds = new Set(
+      environmentBindings
+        .filter((binding) => binding.businessOsInstanceId === selectedBusinessOsInstance?.id)
+        .map((binding) => binding.environmentId),
+    );
+    return Object.values(savedConnectionsById)
+      .filter(
+        (connection) =>
+          !hasEnvironmentBindings || boundEnvironmentIds.has(connection.environmentId),
+      )
+      .map((connection) => ({
+        environmentId: connection.environmentId,
+        label: connection.environmentLabel,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [
+    environmentBindings,
+    hasEnvironmentBindings,
+    savedConnectionsById,
+    selectedBusinessOsInstance?.id,
+  ]);
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
   );
   const { options, setSelectedEnvironmentId, setProjectSortOrder, setThreadSortOrder } =
     useHomeListOptions(availableEnvironmentIds);
+  const instanceScopedProjects = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? projects.filter((project) => availableEnvironmentIds.has(project.environmentId))
+        : projects,
+    [availableEnvironmentIds, hasEnvironmentBindings, projects],
+  );
+  const instanceScopedThreads = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? threads.filter((thread) => availableEnvironmentIds.has(thread.environmentId))
+        : threads,
+    [availableEnvironmentIds, hasEnvironmentBindings, threads],
+  );
+  const instanceScopedPendingTasks = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? pendingTasks.filter((task) => availableEnvironmentIds.has(task.message.environmentId))
+        : pendingTasks,
+    [availableEnvironmentIds, hasEnvironmentBindings, pendingTasks],
+  );
   const searchEnvironmentIds = useMemo(
     () =>
       options.selectedEnvironmentId === null
         ? workspaceEnvironments
-            .filter((environment) => environment.connectionState === "connected")
+            .filter(
+              (environment) =>
+                environment.connectionState === "connected" &&
+                availableEnvironmentIds.has(environment.environmentId),
+            )
             .map((environment) => environment.environmentId)
         : workspaceEnvironments.some(
               (environment) =>
@@ -251,7 +294,7 @@ function ThreadNavigationSidebarPane(
             )
           ? [options.selectedEnvironmentId]
           : [],
-    [options.selectedEnvironmentId, workspaceEnvironments],
+    [availableEnvironmentIds, options.selectedEnvironmentId, workspaceEnvironments],
   );
   const threadSearch = useThreadSearch(searchEnvironmentIds, props.searchQuery);
   const threadSearchMatchByKey = useMemo(() => {
@@ -271,11 +314,11 @@ function ThreadNavigationSidebarPane(
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
-        projects,
+        projects: instanceScopedProjects,
         environmentId: options.selectedEnvironmentId,
         projectGroupingMode: options.projectGroupingMode,
       }),
-    [options.projectGroupingMode, options.selectedEnvironmentId, projects],
+    [instanceScopedProjects, options.projectGroupingMode, options.selectedEnvironmentId],
   );
   const projectFilterOptions = useMemo(
     () =>
@@ -329,31 +372,31 @@ function ThreadNavigationSidebarPane(
   const scopedProjects = useMemo(
     () =>
       selectedProjectRefs === null
-        ? projects
-        : projects.filter((project) =>
+        ? instanceScopedProjects
+        : instanceScopedProjects.filter((project) =>
             selectedProjectRefs.has(scopedProjectKey(project.environmentId, project.id)),
           ),
-    [projects, selectedProjectRefs],
+    [instanceScopedProjects, selectedProjectRefs],
   );
   const scopedThreads = useMemo(
     () =>
       selectedProjectRefs === null
-        ? threads
-        : threads.filter((thread) =>
+        ? instanceScopedThreads
+        : instanceScopedThreads.filter((thread) =>
             selectedProjectRefs.has(scopedProjectKey(thread.environmentId, thread.projectId)),
           ),
-    [selectedProjectRefs, threads],
+    [instanceScopedThreads, selectedProjectRefs],
   );
   const scopedPendingTasks = useMemo(
     () =>
       selectedProjectRefs === null
-        ? pendingTasks
-        : pendingTasks.filter((pendingTask) =>
+        ? instanceScopedPendingTasks
+        : instanceScopedPendingTasks.filter((pendingTask) =>
             selectedProjectRefs.has(
               scopedProjectKey(pendingTask.message.environmentId, pendingTask.creation.projectId),
             ),
           ),
-    [pendingTasks, selectedProjectRefs],
+    [instanceScopedPendingTasks, selectedProjectRefs],
   );
   const groups = useMemo(
     () =>
@@ -402,18 +445,18 @@ function ThreadNavigationSidebarPane(
   );
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
-    for (const project of projects) {
+    for (const project of instanceScopedProjects) {
       map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
     }
     return map;
-  }, [projects]);
+  }, [instanceScopedProjects]);
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
-    for (const project of projects) {
+    for (const project of instanceScopedProjects) {
       map.set(scopedProjectKey(project.environmentId, project.id), project);
     }
     return map;
-  }, [projects]);
+  }, [instanceScopedProjects]);
 
   // Thread List v2 (beta) support — same model as the compact Home list
   // (HomeScreen.tsx): flat creation-order card block + settled recency tail.
@@ -525,7 +568,7 @@ function ThreadNavigationSidebarPane(
   // all shells so search/scope filtering never disables a valid move.
   const arrangedPinnedKeys = useMemo(() => {
     const pinned = sortPinnedThreadsByOrderKey(
-      threads.filter(
+      instanceScopedThreads.filter(
         (thread) =>
           thread.pinnedAt != null &&
           thread.archivedAt === null &&
@@ -533,7 +576,7 @@ function ThreadNavigationSidebarPane(
       ),
     );
     return pinned.map((thread) => `${thread.environmentId}:${thread.id}`);
-  }, [pinReorderEnvironmentIds, threads]);
+  }, [instanceScopedThreads, pinReorderEnvironmentIds]);
   const threadListV2Layout = useMemo(() => {
     if (!threadListV2Enabled)
       return {
@@ -546,7 +589,7 @@ function ThreadNavigationSidebarPane(
         nextSnoozeWakeAt: null,
       };
     return buildThreadListV2Items({
-      threads: threads.filter((thread) => thread.archivedAt === null),
+      threads: instanceScopedThreads.filter((thread) => thread.archivedAt === null),
       environmentId: options.selectedEnvironmentId,
       projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
       searchQuery: props.searchQuery,
@@ -577,7 +620,7 @@ function ThreadNavigationSidebarPane(
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     threadListV2Enabled,
-    threads,
+    instanceScopedThreads,
     selectedProjectScope,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
@@ -602,7 +645,7 @@ function ThreadNavigationSidebarPane(
     // deletable while their environment is offline. Same environment scope
     // and search filter as the list.
     const v2SearchQuery = props.searchQuery.trim().toLocaleLowerCase();
-    const v2PendingTasks = pendingTasks.filter(
+    const v2PendingTasks = instanceScopedPendingTasks.filter(
       (pendingTask) =>
         (options.selectedEnvironmentId === null ||
           pendingTask.message.environmentId === options.selectedEnvironmentId) &&
@@ -636,7 +679,7 @@ function ThreadNavigationSidebarPane(
     listLayout.items,
     nowMinute,
     options.selectedEnvironmentId,
-    pendingTasks,
+    instanceScopedPendingTasks,
     props.searchQuery,
     selectedProjectRefs,
     settledShelfExpanded,
@@ -648,13 +691,15 @@ function ThreadNavigationSidebarPane(
     () => [
       {
         id: "environment",
-        title: "Environment",
+        title: "Machine",
         subactions: [
           {
             id: "environment:all",
-            title: "All environments",
-            subtitle: "Show threads from every environment",
-            state: options.selectedEnvironmentId === null ? "on" : "off",
+            title: hasEnvironmentBindings
+              ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
+              : "All machines",
+            subtitle: "Show threads from every machine in the active scope",
+            state: options.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
           },
           ...environments.map((environment) => ({
             id: `environment:${environment.environmentId}`,
@@ -713,7 +758,15 @@ function ThreadNavigationSidebarPane(
             },
           ] satisfies MenuAction[])),
     ],
-    [environments, options, projectFilterOptions, selectedProjectKey, threadListV2Enabled],
+    [
+      environments,
+      hasEnvironmentBindings,
+      options,
+      projectFilterOptions,
+      selectedBusinessOsInstance?.displayName,
+      selectedProjectKey,
+      threadListV2Enabled,
+    ],
   );
   const handleListMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -1160,6 +1213,12 @@ function ThreadNavigationSidebarPane(
   const filterMenu = useMemo(
     () =>
       buildHomeListFilterMenu({
+        allowAllEnvironments: true,
+        allEnvironmentsLabel: hasEnvironmentBindings
+          ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
+          : "All machines",
+        allEnvironmentsSubtitle: "Show threads from every machine in the active scope",
+        environmentMenuTitle: "Machine",
         environments,
         projects: projectFilterOptions,
         selectedEnvironmentId: options.selectedEnvironmentId,
@@ -1174,8 +1233,10 @@ function ThreadNavigationSidebarPane(
       }),
     [
       environments,
+      hasEnvironmentBindings,
       options,
       projectFilterOptions,
+      selectedBusinessOsInstance?.displayName,
       selectedProjectKey,
       setProjectSortOrder,
       setSelectedEnvironmentId,

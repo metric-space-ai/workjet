@@ -1,4 +1,4 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import { ProviderInteractionMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -13,11 +13,16 @@ import {
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
-  runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
+  /** Worker + Computer groups, so both choices exist below the breakpoint. */
+  workerMenuContent?: ReactNode;
   traitsMenuContent?: ReactNode;
+  /** Context usage stays reachable between Effort and System Prompt. */
+  contextWindowMenuContent?: ReactNode;
+  /** System Prompt stays reachable from the compact menu before Tools. */
+  systemPromptMenuContent?: ReactNode;
+  workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
-  onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
     <Menu>
@@ -34,9 +39,33 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         <EllipsisIcon aria-hidden="true" className="size-4" />
       </MenuTrigger>
       <MenuPopup align="start">
+        {props.workerMenuContent ? (
+          <>
+            {props.workerMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
+        {props.contextWindowMenuContent ? (
+          <>
+            {props.contextWindowMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
+        {props.systemPromptMenuContent ? (
+          <>
+            {props.systemPromptMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
+        {props.workjetMenuContent ? (
+          <>
+            {props.workjetMenuContent}
             <MenuDivider />
           </>
         ) : null}
@@ -50,25 +79,14 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                 props.onToggleInteractionMode();
               }}
             >
-              <MenuRadioItem value="default">Chat</MenuRadioItem>
+              <MenuRadioItem value="default">Build</MenuRadioItem>
               <MenuRadioItem value="plan">Plan</MenuRadioItem>
             </MenuRadioGroup>
             <MenuDivider />
           </>
         ) : null}
-        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
-        <MenuRadioGroup
-          value={props.runtimeMode}
-          onValueChange={(value) => {
-            if (!value || value === props.runtimeMode) return;
-            props.onRuntimeModeChange(value as RuntimeMode);
-          }}
-        >
-          <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
-          <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
-          <MenuRadioItem value="auto">Auto</MenuRadioItem>
-          <MenuRadioItem value="full-access">Full access</MenuRadioItem>
-        </MenuRadioGroup>
+        {/* No Access group: permission is ALWAYS full by the operator's
+            rule, and DEFAULT_RUNTIME_MODE is "full-access" already. */}
       </MenuPopup>
     </Menu>
   );

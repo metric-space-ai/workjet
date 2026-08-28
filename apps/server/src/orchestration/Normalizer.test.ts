@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   CommandId,
@@ -53,6 +54,7 @@ describe("canonicalizeClientCommandTimestamps", () => {
           },
           runtimeMode: "full-access",
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           branch: null,
           worktreePath: null,
           createdAt: clientCreatedAt,

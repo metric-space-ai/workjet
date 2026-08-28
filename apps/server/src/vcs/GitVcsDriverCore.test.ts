@@ -16,16 +16,40 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { GitCommandError, type ReviewDiffFileContentsInput } from "@t3tools/contracts";
 import { ServerConfig } from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as WorktreeStorage from "../worktree/WorktreeStorage.ts";
 import { makeGitVcsDriverCore, splitNullSeparatedGitStdoutPaths } from "./GitVcsDriverCore.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 
 const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-git-vcs-driver-test-",
 });
+const TestWorktreeStorageLayer = WorktreeStorage.layerTest();
+const CoreTestLayer = Layer.mergeAll(
+  ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)),
+  TestWorktreeStorageLayer,
+);
 const TestLayer = GitVcsDriver.layer.pipe(
+  Layer.provide(TestWorktreeStorageLayer),
   Layer.provide(ServerConfigLayer),
   Layer.provideMerge(NodeServices.layer),
 );
+
+function makeAutomaticWorktreeLayer(input: {
+  readonly workspaceRoot: string;
+  readonly baseDir: string;
+  readonly automaticWorktreeRoot: string;
+}) {
+  const settingsLayer = ServerSettings.layerTest({
+    automaticWorktreeRoot: input.automaticWorktreeRoot,
+  });
+  const configLayer = ServerConfig.layerTest(input.workspaceRoot, input.baseDir).pipe(
+    Layer.provideMerge(NodeServices.layer),
+  );
+  const dependencies = Layer.mergeAll(settingsLayer, configLayer);
+  const storageLayer = WorktreeStorage.layer.pipe(Layer.provide(dependencies));
+  return Layer.mergeAll(dependencies, storageLayer);
+}
 
 const makeNonRepositoryHandle = () =>
   ChildProcessSpawner.makeHandle({
@@ -62,7 +86,8 @@ const makeTmpDir = (
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem | Scope.Scope> =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    return yield* fileSystem.makeTempDirectoryScoped({ prefix });
+    // Canonicalize so comparisons survive macOS's /var -> /private/var symlink.
+    return yield* fileSystem.realPath(yield* fileSystem.makeTempDirectoryScoped({ prefix }));
   });
 
 const writeTextFile = (
@@ -147,6 +172,7 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
     Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
   );
   const layer = GitVcsDriver.layer.pipe(
+    Layer.provide(TestWorktreeStorageLayer),
     Layer.provide(ServerConfigLayer),
     Layer.provideMerge(nodeServicesLayer),
   );
@@ -321,7 +347,7 @@ it.effect("coalesces concurrent ref pages into one repository snapshot", () =>
         2,
       );
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
 );
 
 it.effect("retries an in-flight ref snapshot invalidated by a mutation", () =>
@@ -380,7 +406,7 @@ it.effect("retries an in-flight ref snapshot invalidated by a mutation", () =>
       assert.isTrue(refs.refs.some((ref) => ref.name === "feature/during-refresh"));
       assert.equal(yield* Ref.get(refScans), 2);
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
 );
 
 it.effect("invalidates a ref snapshot when a mutation fails after changing Git", () =>
@@ -412,7 +438,7 @@ it.effect("invalidates a ref snapshot when a mutation fails after changing Git",
       const refs = yield* driver.listRefs({ cwd });
       assert.isTrue(refs.refs.some((ref) => ref.name === "feature/partial-failure"));
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
 );
 
 it.effect("fails a ref snapshot when for-each-ref exits unsuccessfully", () =>
@@ -448,7 +474,7 @@ it.effect("fails a ref snapshot when for-each-ref exits unsuccessfully", () =>
       });
       assert.equal(yield* Ref.get(snapshotAttempts), 1);
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
 );
 
 it.effect("marks the current branch when worktree metadata is unavailable", () =>
@@ -483,7 +509,7 @@ it.effect("marks the current branch when worktree metadata is unavailable", () =
       assert.isTrue(refs.isRepo);
       assert.isTrue(refs.refs.find((ref) => ref.name === initialBranch)?.current);
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
 );
 
 it.effect("ignores worktree metadata for directories that no longer exist", () =>
@@ -519,7 +545,7 @@ it.effect("ignores worktree metadata for directories that no longer exist", () =
 
       assert.equal(refs.refs.find((ref) => ref.name === "stale-worktree")?.worktreePath, null);
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
 );
 
 it.effect("refreshes the current branch after an external checkout", () =>
@@ -632,7 +658,130 @@ it.effect("backs off failed upstream refreshes across linked worktrees", () =>
       yield* driver.statusDetailsRemote(cwd);
       assert.equal(yield* Ref.get(fetchAttempts), 3);
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(CoreTestLayer)),
+);
+
+it.effect("creates automatic worktrees under A then B on one live driver", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const container = yield* makeTmpDir("git-vcs-automatic-switch-");
+    const cwd = pathService.join(container, "repository");
+    const baseDir = pathService.join(container, "server");
+    const rootA = pathService.join(container, "root-a");
+    const rootB = pathService.join(container, "root-b");
+    yield* Effect.forEach([cwd, rootA, rootB], (directory) =>
+      fileSystem.makeDirectory(directory, { recursive: true }),
+    );
+
+    const result = yield* Effect.gen(function* () {
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const driver = yield* makeGitVcsDriverCore();
+      const { initialBranch } = yield* initRepoWithCommit(cwd).pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+      );
+      const atA = yield* driver.createWorktree({
+        cwd,
+        path: null,
+        refName: initialBranch,
+        newRefName: "feature/automatic-a",
+      });
+      yield* fileSystem.writeFileString(pathService.join(atA.worktree.path, "kept.txt"), "kept\n");
+
+      yield* settings.updateSettings({ automaticWorktreeRoot: rootB });
+      const atB = yield* driver.createWorktree({
+        cwd,
+        path: null,
+        refName: initialBranch,
+        newRefName: "feature/automatic-b",
+      });
+      const worktreeList = yield* driver.execute({
+        operation: "GitVcsDriver.test.dynamicAutomaticWorktrees",
+        cwd,
+        args: ["worktree", "list", "--porcelain"],
+      });
+      return { atA, atB, worktreeList: worktreeList.stdout };
+    }).pipe(
+      Effect.provide(
+        makeAutomaticWorktreeLayer({
+          workspaceRoot: cwd,
+          baseDir,
+          automaticWorktreeRoot: rootA,
+        }),
+      ),
+    );
+
+    assert.equal(pathService.relative(rootA, result.atA.worktree.path).startsWith(".."), false);
+    assert.equal(pathService.relative(rootB, result.atB.worktree.path).startsWith(".."), false);
+    assert.equal(
+      yield* fileSystem.readFileString(pathService.join(result.atA.worktree.path, "kept.txt")),
+      "kept\n",
+    );
+    assert.include(result.worktreeList, result.atA.worktree.path);
+    assert.include(result.worktreeList, result.atB.worktree.path);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "bypasses automatic storage for explicit paths without rewriting existing worktrees",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const pathService = yield* Path.Path;
+      const container = yield* makeTmpDir("git-vcs-explicit-path-");
+      const cwd = pathService.join(container, "repository");
+      const baseDir = pathService.join(container, "server");
+      const rootA = pathService.join(container, "root-a");
+      const rootB = pathService.join(container, "root-b");
+      const explicitPath = pathService.join(container, "explicit", "feature-worktree");
+      yield* Effect.forEach([cwd, rootA, rootB], (directory) =>
+        fileSystem.makeDirectory(directory, { recursive: true }),
+      );
+
+      const result = yield* Effect.gen(function* () {
+        const settings = yield* ServerSettings.ServerSettingsService;
+        const driver = yield* makeGitVcsDriverCore();
+        const { initialBranch } = yield* initRepoWithCommit(cwd).pipe(
+          Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+        );
+        const automatic = yield* driver.createWorktree({
+          cwd,
+          path: null,
+          refName: initialBranch,
+          newRefName: "feature/existing-a",
+        });
+        const marker = pathService.join(automatic.worktree.path, "identity.txt");
+        yield* fileSystem.writeFileString(marker, "original-a\n");
+
+        yield* settings.updateSettings({ automaticWorktreeRoot: rootB });
+        const explicit = yield* driver.createWorktree({
+          cwd,
+          path: explicitPath,
+          refName: initialBranch,
+          newRefName: "feature/explicit",
+        });
+        const worktreeList = yield* driver.execute({
+          operation: "GitVcsDriver.test.explicitAutomaticBypass",
+          cwd,
+          args: ["worktree", "list", "--porcelain"],
+        });
+        return { automatic, explicit, marker, worktreeList: worktreeList.stdout };
+      }).pipe(
+        Effect.provide(
+          makeAutomaticWorktreeLayer({
+            workspaceRoot: cwd,
+            baseDir,
+            automaticWorktreeRoot: rootA,
+          }),
+        ),
+      );
+
+      assert.equal(result.explicit.worktree.path, explicitPath);
+      assert.equal(yield* fileSystem.readFileString(result.marker), "original-a\n");
+      assert.deepStrictEqual(yield* fileSystem.readDirectory(rootB), []);
+      assert.include(result.worktreeList, result.automatic.worktree.path);
+      assert.include(result.worktreeList, explicitPath);
+    }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.layer(TestLayer)("GitVcsDriver core integration", (it) => {

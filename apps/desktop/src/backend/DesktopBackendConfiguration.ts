@@ -1,8 +1,10 @@
 import * as NodeOS from "node:os";
 
+import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
@@ -16,6 +18,7 @@ import serverPackageJson from "../../../server/package.json" with { type: "json"
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ProviderGatewayHostArtifact from "../providerGateway/ProviderGatewayHostArtifact.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
@@ -374,7 +377,58 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
   > {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+    const hostPlatform = yield* HostProcessPlatform;
+    const hostArchitecture = yield* HostProcessArchitecture;
     const backendExposure = yield* serverExposure.backendConfig;
+
+    // Point the server at the packaged provider-gateway host, when there is
+    // one to point at. The server's own default is a state-dir path
+    // (`ProviderGatewayNodeAdapter.ts:58`) that a packaged build never
+    // populates, so without this the resolver had no production caller at all
+    // and a shipped host would sit unused beside an app that cannot find it.
+    //
+    // Only the PRIMARY backend gets it. The WSL backend runs inside the
+    // distro, where a Windows-side executable path means nothing; forcing one
+    // there would be worse than leaving its own resolution alone.
+    //
+    // In development an unmet pin first resolves the repository's current
+    // release build, then falls back to `undefined` so the server can use its
+    // state-directory copy. The workspace preference keeps an old manually
+    // staged host from drifting behind the current readiness protocol.
+    const resolvedHost = yield* ProviderGatewayHostArtifact.resolveProviderGatewayHostExecutable({
+      environment,
+      host: { platform: hostPlatform, arch: hostArchitecture },
+      ...(process.env[ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV] !==
+      undefined
+        ? {
+            executableOverride:
+              process.env[ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV],
+          }
+        : {}),
+    }).pipe(
+      // A packaged build with an unsatisfiable pin is a real failure, but it
+      // must not take the whole backend down: log it and fall back to the
+      // server's own resolution, which reports the same problem where the user
+      // can see it.
+      Effect.catchCause((cause) =>
+        Effect.as(
+          Effect.logWarning("provider gateway host could not be resolved").pipe(
+            Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+          ),
+          {
+            executablePath: undefined as string | undefined,
+            source: "local-build" as const,
+          },
+        ),
+      ),
+    );
+    const providerGatewayHostEnv =
+      resolvedHost.executablePath === undefined
+        ? {}
+        : {
+            [ProviderGatewayHostArtifact.PROVIDER_GATEWAY_HOST_EXECUTABLE_ENV]:
+              resolvedHost.executablePath,
+          };
 
     const bootstrap = {
       mode: "desktop" as const,
@@ -402,6 +456,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        ...providerGatewayHostEnv,
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,

@@ -14,11 +14,7 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 
-const WEB_ASSET_BRANDS = [
-  "development",
-  "nightly",
-  "production",
-] as const satisfies ReadonlyArray<WebAssetBrand>;
+const WEB_ASSET_BRANDS = ["workjet"] as const satisfies ReadonlyArray<WebAssetBrand>;
 
 export const applyWebBrandAssets = Effect.fn("applyWebBrandAssets")(function* (
   brand: WebAssetBrand,
@@ -59,7 +55,7 @@ export const applyWebBrandAssetsCommand = Command.make(
     applyWebBrandAssets(
       Option.getOrElse(brand, () =>
         Option.match(channel, {
-          onNone: () => "production" as const,
+          onNone: () => "workjet" as const,
           onSome: resolveWebAssetBrandForChannel,
         }),
       ),

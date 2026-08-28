@@ -1,4 +1,3 @@
-import { type LiveActivity } from "expo-widgets";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as Effect from "effect/Effect";
@@ -31,9 +30,9 @@ import {
   loadPreferences,
   saveAgentAwarenessRegistrationRecord,
 } from "../../persistence/imperative";
-import AgentActivity, { type AgentActivityProps } from "../../widgets/AgentActivity";
+import AgentActivity, { type AgentActivityProps, type LiveActivity } from "./disabledLiveActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
-import { supportsAgentAwarenessPush } from "./capabilities";
+import { supportsAgentAwarenessLiveActivities, supportsAgentAwarenessPush } from "./capabilities";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
@@ -160,7 +159,11 @@ function readRelayConfig(): { readonly url: string } | null {
 }
 
 function canRegisterRemoteLiveActivities(): boolean {
-  return Platform.OS === "ios";
+  return Platform.OS === "ios" && supportsAgentAwarenessLiveActivities();
+}
+
+function canRegisterRemoteNotifications(): boolean {
+  return Platform.OS === "ios" && supportsAgentAwarenessPush();
 }
 
 export function shouldRegisterAgentAwarenessDeviceForProvider(
@@ -252,7 +255,7 @@ function iosMajorVersion(): number {
 
 function nativePushTokenRegistration(observedPushToken?: string) {
   return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities() || !supportsAgentAwarenessPush()) {
+    if (!canRegisterRemoteNotifications()) {
       return { notificationsEnabled: false, pushToken: null };
     }
     if (observedPushToken) {
@@ -502,7 +505,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
     }
     const nowIso = new Date(Date.now()).toISOString();
     const activity = AgentActivity.start({
-      title: "T3 Code",
+      title: "Workjet",
       subtitle: "Agent work in progress",
       activeCount: 1,
       updatedAt: nowIso,
@@ -694,7 +697,7 @@ function registerDevice(
   expectedGeneration = deviceRegistrationGeneration,
 ): Effect.Effect<void, unknown, ManagedRelay.ManagedRelayClient> {
   return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities()) {
+    if (!canRegisterRemoteNotifications()) {
       logRegistrationDebug("device registration skipped; platform does not support it");
       return;
     }
@@ -718,10 +721,10 @@ function registerDevice(
           }),
       }),
     ]);
-    const preferences = mergeAgentAwarenessRegistrationPreferences(
-      storedPreferences,
-      input.preferencesOverride,
-    );
+    const preferences = {
+      ...mergeAgentAwarenessRegistrationPreferences(storedPreferences, input.preferencesOverride),
+      liveActivitiesEnabled: false,
+    };
     const pushTokenRegistration = yield* nativePushTokenRegistration(input?.observedPushToken);
     logRegistrationDebug("device registration local state ready", {
       expectedGeneration,
@@ -754,7 +757,7 @@ function registerDeviceForCurrentUser(): Effect.Effect<
 }
 
 function ensurePushTokenListener(): void {
-  if (pushTokenSubscription || !canRegisterRemoteLiveActivities()) {
+  if (pushTokenSubscription || !canRegisterRemoteNotifications()) {
     return;
   }
 
@@ -806,18 +809,13 @@ function endLocalLiveActivities(context: string): void {
 }
 
 export function registerAgentAwarenessConnection(connection: SavedRemoteConnection): void {
-  if (!canRegisterRemoteLiveActivities()) {
+  if (!canRegisterRemoteNotifications()) {
     return;
   }
 
   environmentConnections.set(connection.environmentId, connection);
   ensurePushTokenListener();
-  ensureAppStateListener();
   enqueueDeviceRegistration({}, "device registration failed");
-  runRegistrationInBackground(
-    refreshActiveLiveActivityRemoteRegistration(),
-    "active live activity registration after environment connection failed",
-  );
 }
 
 function removeAgentAwarenessConnection(environmentId: EnvironmentId): void {

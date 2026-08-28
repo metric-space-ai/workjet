@@ -1,5 +1,9 @@
-import { RelayEnvironmentConnectScope } from "@t3tools/contracts/relay";
+import {
+  RelayEnvironmentConnectScope,
+  RelayEnvironmentStatusScope,
+} from "@t3tools/contracts/relay";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
+import * as BusinessOsManagedBackendControl from "../state/businessOsManagedBackendControl.ts";
 import {
   BearerConnectionCredential,
   BearerConnectionProfile,
@@ -30,7 +35,11 @@ import type {
   RelayConnectionTarget,
   SshConnectionTarget,
 } from "./model.ts";
-import { ConnectionBlockedError, type ConnectionAttemptError } from "./model.ts";
+import {
+  ConnectionBlockedError,
+  type ConnectionAttemptError,
+  ConnectionTransientError,
+} from "./model.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
 
 export class ConnectionResolver extends Context.Service<
@@ -143,12 +152,155 @@ const makeRelayBroker = Effect.fn("clientRuntime.connection.broker.makeRelay")(f
   const session = yield* ClientCapabilities.CloudSession;
   const identity = yield* ClientCapabilities.RelayDeviceIdentity;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+  const managedAuthorizationProvider = yield* Effect.serviceOption(
+    BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider,
+  );
+  const managedDeviceSessionClient = yield* Effect.serviceOption(
+    BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient,
+  );
+
+  const mapManagedSessionError = (
+    error: BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClientError,
+  ): ConnectionAttemptError => {
+    switch (error.code) {
+      case "invalid_endpoint":
+        return new ConnectionBlockedError({
+          reason: "configuration",
+          detail: "The Business OS device-session endpoint is invalid.",
+        });
+      case "authentication_failed":
+      case "session_expired":
+        return new ConnectionBlockedError({
+          reason: "authentication",
+          detail: "The Business OS device session must be renewed.",
+        });
+      case "permission_denied":
+        return new ConnectionBlockedError({
+          reason: "permission",
+          detail: "The Business OS device session does not authorize this computer.",
+        });
+      case "request_failed":
+        return new ConnectionTransientError({
+          reason: "relay-unavailable",
+          detail: "The Business OS device session could not authorize this computer.",
+        });
+    }
+  };
+
+  const managedServiceMissing = () =>
+    new ConnectionBlockedError({
+      reason: "authentication",
+      detail: "This Workjet installation is not paired with the selected Business OS instance.",
+    });
+
+  const relayOriginsMatch = (left: string, right: string): boolean => {
+    try {
+      return new URL(left).origin === new URL(right).origin;
+    } catch {
+      return false;
+    }
+  };
 
   return Effect.fnUntraced(
     function* (target: RelayConnectionTarget) {
+      const businessOsInstanceId = target.businessOsInstanceId;
+      const managedSession =
+        businessOsInstanceId === undefined
+          ? undefined
+          : yield* Effect.gen(function* () {
+              if (
+                Option.isNone(managedAuthorizationProvider) ||
+                Option.isNone(managedDeviceSessionClient)
+              ) {
+                return yield* managedServiceMissing();
+              }
+
+              const authorization = yield* managedAuthorizationProvider.value
+                .read({ businessOsInstanceId })
+                .pipe(Effect.mapError(mapManagedSessionError));
+              if (authorization.businessOsInstanceId !== businessOsInstanceId) {
+                return yield* new ConnectionBlockedError({
+                  reason: "permission",
+                  detail: "The device session belongs to a different Business OS instance.",
+                });
+              }
+              if (!relayOriginsMatch(authorization.relayIssuer, relay.relayUrl)) {
+                return yield* new ConnectionBlockedError({
+                  reason: "configuration",
+                  detail: "The device session was issued for a different Workjet relay.",
+                });
+              }
+              if (
+                !authorization.relayScopes.includes(RelayEnvironmentConnectScope) ||
+                !authorization.relayScopes.includes(RelayEnvironmentStatusScope)
+              ) {
+                return yield* new ConnectionBlockedError({
+                  reason: "permission",
+                  detail: "The device session does not grant the required computer access.",
+                });
+              }
+              const nowMillis = yield* Clock.currentTimeMillis;
+              const expiresAtMillis = Date.parse(authorization.expiresAt);
+              if (!Number.isFinite(expiresAtMillis) || expiresAtMillis <= nowMillis + 5_000) {
+                return yield* new ConnectionBlockedError({
+                  reason: "authentication",
+                  detail: "The Business OS device session has expired.",
+                });
+              }
+
+              const membership =
+                yield* BusinessOsManagedBackendControl.readManagedBusinessOsDeviceSessionMembership(
+                  { authorization },
+                ).pipe(
+                  Effect.provideService(
+                    BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient,
+                    managedDeviceSessionClient.value,
+                  ),
+                  Effect.mapError(mapManagedSessionError),
+                );
+              if (membership.businessOsInstanceId !== businessOsInstanceId) {
+                return yield* new ConnectionBlockedError({
+                  reason: "permission",
+                  detail: "The computer inventory belongs to a different Business OS instance.",
+                });
+              }
+              if (!membership.environmentIds.includes(target.environmentId)) {
+                return yield* new ConnectionBlockedError({
+                  reason: "permission",
+                  detail: "This computer is not assigned to the selected Business OS instance.",
+                });
+              }
+
+              return { authorization, client: managedDeviceSessionClient.value };
+            }).pipe(Effect.withSpan("relay.connection.managedSession.validate"));
+
       const authorized = yield* remote.authorizeDpop({
         expectedEnvironmentId: target.environmentId,
+        ...(businessOsInstanceId === undefined
+          ? {}
+          : { authorizationContext: `business-os:${businessOsInstanceId}` }),
         obtainBootstrap: Effect.gen(function* () {
+          if (managedSession !== undefined) {
+            const connected =
+              yield* BusinessOsManagedBackendControl.connectManagedWorkjetDeviceSessionEnvironment({
+                authorization: managedSession.authorization,
+                environmentId: target.environmentId,
+              }).pipe(
+                Effect.provideService(
+                  BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient,
+                  managedSession.client,
+                ),
+                Effect.mapError(mapManagedSessionError),
+              );
+            if (connected.environmentId !== target.environmentId) {
+              return yield* environmentMismatchError({
+                expected: target.environmentId,
+                actual: connected.environmentId,
+              });
+            }
+            return connected;
+          }
+
           const clerkToken = yield* session.clerkToken.pipe(
             Effect.withSpan("relay.connection.cloudSessionToken.resolve"),
           );

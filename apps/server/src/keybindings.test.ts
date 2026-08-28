@@ -187,6 +187,59 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
+  it.effect("removes the exact obsolete new-chat default when the canonical default exists", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        ...Keybindings.DEFAULT_KEYBINDINGS,
+        { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.deepEqual(
+        persisted.filter((entry) => entry.command === "chat.new"),
+        [{ key: "mod+n", command: "chat.new", when: "!terminalFocus" }],
+      );
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("preserves a lone obsolete new-chat shortcut as a user choice", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        ...Keybindings.DEFAULT_KEYBINDINGS.filter((entry) => entry.command !== "chat.new"),
+        { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.deepEqual(
+        persisted.filter((entry) => entry.command === "chat.new"),
+        [{ key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" }],
+      );
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("preserves near-matching user-authored new-chat rules", () =>
+    Effect.sync(() => {
+      const rules: readonly KeybindingRule[] = [
+        { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
+        { key: "mod+shift+o", command: "chat.new" },
+      ];
+
+      assert.strictEqual(Keybindings.removeObsoleteDuplicateChatNewDefault(rules), rules);
+    }),
+  );
+
   it.effect("ships configurable thread navigation defaults", () =>
     Effect.sync(() => {
       const defaultsByCommand = new Map(

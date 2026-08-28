@@ -1,16 +1,33 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeOS from "node:os";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
+import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as GreppyRuntime from "./toolkits/workjet/GreppyRuntime.ts";
+import * as WorkerDispatch from "../workjet/WorkerDispatch.ts";
+import * as WorkjetMailboxDelivery from "../workjet/mailbox/WorkjetMailboxDelivery.ts";
+import { WorkjetSnapshotStoreLive } from "../workjet/mailbox/WorkjetSnapshotStore.ts";
+import { GREPPY_MCP_TOOL_NAME } from "./toolkits/workjet/GreppyTool.ts";
+import {
+  WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
+  WEB_BROWSER_PREPARE_MCP_TOOL_NAME,
+  WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+  WEB_READ_MCP_TOOL_NAME,
+  WEB_SEARCH_MCP_TOOL_NAME,
+} from "./toolkits/workjet/WebStackTool.ts";
+import { WORKJET_DISPATCH_WORKER_TOOL_NAME } from "./toolkits/workjet/WorkerTool.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -34,6 +51,24 @@ const client = McpSchema.McpServerClient.of({
   },
   getClient: Effect.die("unused"),
 });
+const WorkerDispatchTestLayer = Layer.succeed(
+  WorkerDispatch.WorkerDispatch,
+  WorkerDispatch.WorkerDispatch.of({ dispatch: () => Effect.die("unused") }),
+);
+const WorkjetMailboxDeliveryTestLayer = Layer.succeed(
+  WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+  WorkjetMailboxDelivery.WorkjetMailboxDelivery.of({
+    sendMessage: () => Effect.die("unused"),
+    delegateTask: () => Effect.die("unused"),
+    reply: () => Effect.die("unused"),
+    requestReview: () => Effect.die("unused"),
+    updateDelegation: () => Effect.die("unused"),
+    sendHandoff: () => Effect.die("unused"),
+    listReceivedHandoffs: () => Effect.die("unused"),
+    getReceivedHandoff: () => Effect.die("unused"),
+    acceptHandoff: () => Effect.die("unused"),
+  }),
+);
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
@@ -147,6 +182,211 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
         ),
       });
       expect(reusedSessionResponse.status).toBe(404);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("filters tools/list by the authoritative bearer scope and preserves Preview tools", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const scopes = new Map<string, McpInvocationContext.McpInvocationScope>([
+        [
+          "hidden-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(),
+            cwd: "/workspace/project",
+          },
+        ],
+        [
+          "standard-role-token",
+          {
+            ...invocation,
+            workjetRole: "standard",
+          },
+        ],
+        [
+          "worker-role-token",
+          {
+            ...invocation,
+            workjetRole: "worker",
+          },
+        ],
+        [
+          "orchestrator-role-token",
+          {
+            ...invocation,
+            workjetRole: "orchestrator",
+          },
+        ],
+        [
+          "greppy-missing-cwd-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
+          },
+        ],
+        [
+          "greppy-only-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy"]),
+            cwd: "/workspace/project",
+          },
+        ],
+        [
+          "web-search-only-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["web-search"]),
+          },
+        ],
+        [
+          "browser-only-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["web-stack-browser"]),
+          },
+        ],
+        [
+          "all-token",
+          {
+            ...invocation,
+            activeWorkjetMcpCapabilityIds: new Set(["greppy", "web-search", "web-stack-browser"]),
+            cwd: "/workspace/project",
+          },
+        ],
+      ]);
+      const registry = McpSessionRegistry.McpSessionRegistry.of({
+        issue: () => Effect.die("unused"),
+        resolve: (token) => Effect.succeed(scopes.get(token)),
+        touch: () => Effect.void,
+        revokeProviderSession: () => Effect.void,
+        revokeThread: () => Effect.void,
+        revokeAll: Effect.void,
+      });
+      const routes = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
+        Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+        Layer.provide(GreppyRuntime.layer),
+        Layer.provide(WorkerDispatchTestLayer),
+        Layer.provide(WorkjetMailboxDeliveryTestLayer),
+        // `workjet_delegate_task` now produces its own prompt snapshot, so the
+        // MCP routes require the store exactly like `server.ts` provides it.
+        Layer.provide(WorkjetSnapshotStoreLive),
+        Layer.provide(
+          ServerConfig.layerTest(
+            process.cwd(),
+            path.join(NodeOS.tmpdir(), `workjet-mcp-http-server-test-${process.pid}`),
+          ).pipe(Layer.provide(NodeServices.layer)),
+        ),
+        Layer.provide(NodeServices.layer),
+      );
+      yield* HttpRouter.serve(routes, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+
+      const listTools = Effect.fn(function* (token: string) {
+        const initializeResponse = yield* httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+          },
+          body: HttpBody.text(
+            `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"experimental":{"greppy":true}},"clientInfo":{"name":"mcp-test","version":"1.0.0"}}}`,
+            "application/json",
+          ),
+        });
+        const sessionId = initializeResponse.headers["mcp-session-id"];
+        expect(initializeResponse.status).toBe(200);
+        expect(sessionId).not.toBeNull();
+        expect(sessionId).toBeDefined();
+
+        const initializedResponse = yield* httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+            "mcp-session-id": sessionId!,
+            "mcp-protocol-version": "2025-06-18",
+          },
+          body: HttpBody.text(
+            `{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+            "application/json",
+          ),
+        });
+        expect(initializedResponse.status).toBe(202);
+
+        const listResponse = yield* httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+            "mcp-session-id": sessionId!,
+            "mcp-protocol-version": "2025-06-18",
+          },
+          body: HttpBody.text(
+            `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+            "application/json",
+          ),
+        });
+        expect(listResponse.status).toBe(200);
+        const body = (yield* listResponse.json) as {
+          readonly result: { readonly tools: ReadonlyArray<{ readonly name: string }> };
+        };
+        return body.result.tools.map(({ name }) => name);
+      });
+
+      const hidden = yield* listTools("hidden-token");
+      const standardRole = yield* listTools("standard-role-token");
+      const workerRole = yield* listTools("worker-role-token");
+      const orchestratorRole = yield* listTools("orchestrator-role-token");
+      const greppyMissingCwd = yield* listTools("greppy-missing-cwd-token");
+      const greppyOnly = yield* listTools("greppy-only-token");
+      const webSearchOnly = yield* listTools("web-search-only-token");
+      const browserOnly = yield* listTools("browser-only-token");
+      const all = yield* listTools("all-token");
+
+      expect(standardRole).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+      expect(workerRole).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+      expect(hidden).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+      expect(orchestratorRole).toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
+
+      for (const browserTool of [
+        WEB_BROWSER_PREPARE_MCP_TOOL_NAME,
+        WEB_BROWSER_AUTOMATE_MCP_TOOL_NAME,
+      ]) {
+        expect(hidden).not.toContain(browserTool);
+        expect(greppyMissingCwd).not.toContain(browserTool);
+        expect(greppyOnly).not.toContain(browserTool);
+        expect(webSearchOnly).not.toContain(browserTool);
+        expect(browserOnly).toContain(browserTool);
+        expect(all).toContain(browserTool);
+      }
+      expect(hidden).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(greppyMissingCwd).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(greppyOnly).toContain(GREPPY_MCP_TOOL_NAME);
+      expect(webSearchOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(browserOnly).not.toContain(GREPPY_MCP_TOOL_NAME);
+      expect(all).toContain(GREPPY_MCP_TOOL_NAME);
+      for (const researchTool of [
+        WEB_SEARCH_MCP_TOOL_NAME,
+        WEB_READ_MCP_TOOL_NAME,
+        WEB_DEEP_RESEARCH_MCP_TOOL_NAME,
+      ]) {
+        expect(hidden).not.toContain(researchTool);
+        expect(greppyMissingCwd).not.toContain(researchTool);
+        expect(greppyOnly).not.toContain(researchTool);
+        expect(webSearchOnly).toContain(researchTool);
+        expect(browserOnly).not.toContain(researchTool);
+        expect(all).toContain(researchTool);
+      }
+      expect(hidden).toContain("preview_status");
+      expect(greppyOnly).toContain("preview_status");
+      expect(webSearchOnly).toContain("preview_status");
+      expect(browserOnly).toContain("preview_status");
+      expect(all).toContain("preview_status");
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

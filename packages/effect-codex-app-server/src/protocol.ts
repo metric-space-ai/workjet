@@ -20,6 +20,52 @@ export interface CodexAppServerProtocolLogEvent {
   readonly payload: unknown;
 }
 
+/**
+ * A label that is safe to log verbatim: a method name, never content. The peer
+ * chooses these strings, so they are allow-listed by shape AND by length.
+ */
+const STRUCTURAL_LABEL = /^[A-Za-z][A-Za-z0-9._:/-]{0,63}$/;
+
+const structuralLabel = (value: unknown): string | undefined =>
+  typeof value === "string" && STRUCTURAL_LABEL.test(value) ? value : undefined;
+
+/**
+ * What the FALLBACK protocol logger is allowed to say about a protocol event.
+ *
+ * `payload` is the whole thing on the wire: the raw stdio line, or the decoded
+ * JSON-RPC message including a turn's prompt params. The plan's invariant
+ * ("never log request bodies by default") is about exactly this default, so the
+ * fallback reduces the payload to its SHAPE — type, size, and allow-listed
+ * method — and can carry no content whatever the peer sends. A caller needing
+ * more supplies its own `logger` and owns its own redaction.
+ */
+export const summarizeCodexAppServerProtocolLogEvent = (
+  event: CodexAppServerProtocolLogEvent,
+): Record<string, unknown> => {
+  const payload = event.payload;
+  const shape: Record<string, unknown> =
+    typeof payload === "string"
+      ? { valueType: "string", length: payload.length }
+      : Array.isArray(payload)
+        ? { valueType: "array", itemCount: payload.length }
+        : payload === null
+          ? { valueType: "null" }
+          : typeof payload === "object"
+            ? { valueType: "object", fieldCount: Object.keys(payload).length }
+            : { valueType: typeof payload };
+  const record =
+    typeof payload === "object" && payload !== null
+      ? (payload as { readonly method?: unknown })
+      : undefined;
+  const method = structuralLabel(record?.method);
+  return {
+    direction: event.direction,
+    stage: event.stage,
+    ...shape,
+    ...(method !== undefined ? { method } : {}),
+  };
+};
+
 export interface CodexAppServerIncomingNotification {
   readonly method: string;
   readonly params?: unknown;
@@ -169,7 +215,9 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       }
       return (
         options.logger?.(event) ??
-        Effect.logDebug("Codex App Server protocol event").pipe(Effect.annotateLogs({ event }))
+        Effect.logDebug("Codex App Server protocol event").pipe(
+          Effect.annotateLogs(summarizeCodexAppServerProtocolLogEvent(event)),
+        )
       );
     };
 

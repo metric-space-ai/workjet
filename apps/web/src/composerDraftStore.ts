@@ -16,6 +16,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -56,6 +57,7 @@ import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewC
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
+const isWorkjetThreadConfig = Schema.is(WorkjetThreadConfig);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 const COMPOSER_DRAFT_STORAGE_VERSION = 8;
@@ -148,6 +150,15 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   activeProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
+  // Workjet worker chip on this draft (F1): the selection must survive a
+  // navigation away from the composer, because the worker's MODEL is written
+  // into the shared per-instance selection above — a bar that forgets its
+  // worker but keeps the worker's model reads as a corrupted Manual mode.
+  workjetWorkerId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  workjetManualReturn: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ provider: ProviderInstanceId, model: Schema.String })),
+  ),
+  workjetConfig: Schema.optionalKey(WorkjetThreadConfig),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -276,6 +287,12 @@ export interface ComposerThreadDraftState {
   activeProvider: ProviderInstanceId | null;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
+  /** Selected Workjet worker; null = Manual. See the persisted schema note. */
+  workjetWorkerId: string | null;
+  /** Manual model to restore when the worker chip returns to Manual. */
+  workjetManualReturn: { readonly provider: ProviderInstanceId; readonly model: string } | null;
+  /** Exact first-turn Workjet authority for a draft; null uses the contract default. */
+  workjetConfig: WorkjetThreadConfig | null;
 }
 
 /**
@@ -461,6 +478,20 @@ interface ComposerDraftStoreState {
       persistSticky?: boolean;
     },
   ) => void;
+  /**
+   * Persist the worker chip and, when entering worker mode, the Manual
+   * model to return to. `manualReturn` is kept verbatim on a null workerId
+   * so the caller can clear it after restoring.
+   */
+  setWorkjetWorkerSelection: (
+    threadRef: ComposerThreadTarget,
+    workerId: string | null,
+    manualReturn: { readonly provider: ProviderInstanceId; readonly model: string } | null,
+  ) => void;
+  setWorkjetConfig: (
+    threadRef: ComposerThreadTarget,
+    workjetConfig: WorkjetThreadConfig | null,
+  ) => void;
   setRuntimeMode: (
     threadRef: ComposerThreadTarget,
     runtimeMode: RuntimeMode | null | undefined,
@@ -635,6 +666,9 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   activeProvider: null,
   runtimeMode: null,
   interactionMode: null,
+  workjetWorkerId: null,
+  workjetManualReturn: null,
+  workjetConfig: null,
 });
 
 /**
@@ -657,6 +691,9 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     activeProvider: null,
     runtimeMode: null,
     interactionMode: null,
+    workjetWorkerId: null,
+    workjetManualReturn: null,
+    workjetConfig: null,
   };
 }
 
@@ -729,7 +766,9 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
-    draft.interactionMode === null
+    draft.interactionMode === null &&
+    draft.workjetWorkerId === null &&
+    draft.workjetConfig === null
   );
 }
 
@@ -1715,6 +1754,29 @@ function normalizePersistedDraftsByThreadId(
       draftCandidate.interactionMode === "plan" || draftCandidate.interactionMode === "default"
         ? draftCandidate.interactionMode
         : null;
+    const workjetWorkerId =
+      typeof draftCandidate.workjetWorkerId === "string" &&
+      draftCandidate.workjetWorkerId.length > 0
+        ? draftCandidate.workjetWorkerId
+        : null;
+    const manualReturnCandidate = draftCandidate.workjetManualReturn;
+    const manualReturnProvider =
+      manualReturnCandidate !== null && typeof manualReturnCandidate === "object"
+        ? normalizeProviderInstanceId(manualReturnCandidate.provider)
+        : null;
+    const workjetManualReturn =
+      manualReturnCandidate !== null &&
+      typeof manualReturnCandidate === "object" &&
+      manualReturnProvider !== null &&
+      typeof manualReturnCandidate.model === "string"
+        ? {
+            provider: manualReturnProvider,
+            model: manualReturnCandidate.model,
+          }
+        : null;
+    const workjetConfig = isWorkjetThreadConfig(draftCandidate.workjetConfig)
+      ? draftCandidate.workjetConfig
+      : null;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1775,7 +1837,10 @@ function normalizePersistedDraftsByThreadId(
       reviewComments.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
-      !interactionMode
+      !interactionMode &&
+      workjetWorkerId === null &&
+      workjetManualReturn === null &&
+      workjetConfig === null
     ) {
       continue;
     }
@@ -1805,6 +1870,11 @@ function normalizePersistedDraftsByThreadId(
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
+      ...(workjetWorkerId !== null ? { workjetWorkerId } : {}),
+      ...(workjetManualReturn !== null ? { workjetManualReturn } : {}),
+      ...(workjetConfig !== null
+        ? { workjetConfig: workjetConfig as DeepMutable<WorkjetThreadConfig> }
+        : {}),
     };
   }
 
@@ -1907,7 +1977,9 @@ function partializeComposerDraftStoreState(
       draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
-      draft.interactionMode === null
+      draft.interactionMode === null &&
+      draft.workjetWorkerId == null &&
+      draft.workjetConfig === null
     ) {
       continue;
     }
@@ -1966,6 +2038,13 @@ function partializeComposerDraftStoreState(
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
+      ...(draft.workjetWorkerId != null ? { workjetWorkerId: draft.workjetWorkerId } : {}),
+      ...(draft.workjetManualReturn
+        ? { workjetManualReturn: { ...draft.workjetManualReturn } }
+        : {}),
+      ...(draft.workjetConfig
+        ? { workjetConfig: draft.workjetConfig as DeepMutable<WorkjetThreadConfig> }
+        : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2212,6 +2291,9 @@ function toHydratedThreadDraft(
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
+    workjetWorkerId: persistedDraft.workjetWorkerId ?? null,
+    workjetManualReturn: persistedDraft.workjetManualReturn ?? null,
+    workjetConfig: persistedDraft.workjetConfig ?? null,
   };
 }
 
@@ -2803,6 +2885,39 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             } else {
               nextDraftsByThreadKey[threadKey] = nextDraft;
             }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setWorkjetWorkerSelection: (threadRef, workerId, manualReturn) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          set((state) => {
+            const base = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              workjetWorkerId: workerId,
+              workjetManualReturn: manualReturn,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setWorkjetConfig: (threadRef, workjetConfig) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) return;
+          set((state) => {
+            const base = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = { ...base, workjetConfig };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },

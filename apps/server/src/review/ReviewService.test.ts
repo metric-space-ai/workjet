@@ -8,12 +8,14 @@ import * as PlatformError from "effect/PlatformError";
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as WorktreeStorage from "../worktree/WorktreeStorage.ts";
 import * as ReviewService from "./ReviewService.ts";
 
 function makeLayer(input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
   readonly detectCalls?: Array<{ readonly cwd: string }>;
+  readonly trustedWorktreeRoots?: ReadonlyArray<string>;
 }) {
   return ReviewService.layer.pipe(
     Layer.provide(
@@ -28,6 +30,7 @@ function makeLayer(input: {
       }),
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+    Layer.provide(WorktreeStorage.layerTest({ trustedRoots: input.trustedWorktreeRoots ?? [] })),
     Layer.provide(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -105,6 +108,55 @@ describe("ReviewService", () => {
       assert.strictEqual(result.cwd, workspaceRoot);
       assert.deepStrictEqual(result.sources, []);
       assert.deepStrictEqual(detectCalls, [{ cwd: workspaceRoot }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("trusts automatic worktrees under the default, current, and prior storage roots", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      // Canonicalize so trusted-root comparisons survive macOS's /var -> /private/var symlink.
+      const workspaceRoot = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" }),
+      );
+      const container = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-storage-" }),
+      );
+      const baseDir = `${container}/server`;
+      const defaultRoot = `${baseDir}/worktrees`;
+      const currentRoot = `${container}/current`;
+      const priorRoot = `${container}/prior`;
+      const candidates = [
+        `${defaultRoot}/repository/default-worktree`,
+        `${currentRoot}/repository/current-worktree`,
+        `${priorRoot}/repository/prior-worktree`,
+      ];
+      yield* Effect.forEach(candidates, (directory) =>
+        fs.makeDirectory(directory, { recursive: true }),
+      );
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const results = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* Effect.forEach(candidates, (cwd) => review.getDiffPreview({ cwd }));
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            trustedWorktreeRoots: [defaultRoot, currentRoot, priorRoot],
+          }),
+        ),
+      );
+
+      assert.deepStrictEqual(
+        results.map((result) => result.cwd),
+        candidates,
+      );
+      assert.deepStrictEqual(
+        detectCalls,
+        candidates.map((cwd) => ({ cwd })),
+      );
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

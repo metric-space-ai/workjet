@@ -16,6 +16,12 @@
     "start:marketing": "vp run --filter @t3tools/marketing preview",
     "start:mock-update-server": "node scripts/mock-update-server.ts",
     "screenshots:mobile": "node scripts/mobile-showcase.ts",
+    "audit:ui": "node scripts/workjet-ui-audit.ts",
+    "audit:business-os-shell": "node scripts/workjet-business-os-shell-audit.ts",
+    "guard:content": "node scripts/audit-workjet-content.mjs",
+    "test:content": "node --test scripts/audit-workjet-content.test.mjs",
+    "guard:github-actions-pinned": "node scripts/assert-github-actions-pinned.mjs",
+    "guard:supply-chain": "node scripts/assert-supply-chain.mjs",
     "icons:export": "node scripts/export-brand-icons.ts",
     "icons:check": "node scripts/export-brand-icons.ts --check",
     "build": "vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build",
@@ -40,10 +46,17 @@
     "dist:desktop:win": "node scripts/build-desktop-artifact.ts --platform win --target nsis",
     "dist:desktop:win:arm64": "node scripts/build-desktop-artifact.ts --platform win --target nsis --arch arm64",
     "dist:desktop:win:x64": "node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64",
+    "notice:generate": "node scripts/generate-release-notice.ts",
+    "notice:check": "node scripts/generate-release-notice.ts --check",
+    "capabilities:lock:generate": "node scripts/check-capability-version-lock.ts",
+    "capabilities:lock:check": "node scripts/check-capability-version-lock.ts --check",
     "release:smoke": "node scripts/release-smoke.ts",
+    "release:verify-assets": "node scripts/verify-workjet-release-assets.mjs",
     "connect:announce-ga": "node scripts/announce-connect-ga.ts",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/*/dist-electron packages/*/dist .vite-plus apps/*/.vite-plus packages/*/.vite-plus",
-    "sync:repos": "node scripts/sync-reference-repos.ts"
+    "sync:repos": "node scripts/sync-reference-repos.ts",
+    "prepare:ctox-business-os-shell": "node scripts/prepare-ctox-business-os-shell.ts",
+    "smoke:desktop:ctox-packaged": "node scripts/ctox-packaged-smoke.ts"
   },
   "devDependencies": {
     "@babel/plugin-transform-react-jsx": "7.28.6",
@@ -54,7 +67,7 @@
     "vite-plus": "catalog:"
   },
   "engines": {
-    "node": "^24.13.1"
+    "node": "24.13.1"
   },
   "packageManager": "pnpm@11.10.0",
   "msw": {

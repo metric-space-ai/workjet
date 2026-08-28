@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   MessageId,
@@ -62,6 +63,7 @@ const readModel: OrchestrationReadModel = {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "full-access",
       branch: null,
       worktreePath: null,
@@ -87,6 +89,7 @@ const readModel: OrchestrationReadModel = {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "full-access",
       branch: null,
       worktreePath: null,
@@ -166,6 +169,7 @@ describe("commandInvariants", () => {
             model: "gpt-5-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
@@ -190,6 +194,7 @@ describe("commandInvariants", () => {
               model: "gpt-5-codex",
             },
             interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
             runtimeMode: "full-access",
             branch: null,
             worktreePath: null,

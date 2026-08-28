@@ -67,7 +67,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
-import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useBusinessOsScopedEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -126,7 +126,7 @@ import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog"
 import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
-import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
@@ -578,7 +578,7 @@ function OpenCommandPaletteDialog(props: {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
   });
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
@@ -588,19 +588,16 @@ function OpenCommandPaletteDialog(props: {
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
-  const providers = useAtomValue(primaryServerProvidersAtom);
   const providerEntryByEnvironmentAndInstanceId = useMemo(() => {
     const map = new Map<string, ProviderInstanceEntry>();
     for (const environment of environments) {
-      const environmentProviders =
-        environment.serverConfig?.providers ??
-        (environment.environmentId === primaryEnvironmentId ? providers : []);
+      const environmentProviders = environment.serverConfig?.providers ?? [];
       for (const entry of deriveProviderInstanceEntries(environmentProviders)) {
         map.set(`${environment.environmentId}:${entry.instanceId}`, entry);
       }
     }
     return map;
-  }, [environments, primaryEnvironmentId, providers]);
+  }, [environments]);
   const [viewStack, setViewStack] = useState<CommandPaletteView[]>([]);
   const currentView = viewStack.at(-1) ?? null;
   const environmentIds = useMemo(
@@ -668,14 +665,13 @@ function OpenCommandPaletteDialog(props: {
       buildSidebarProjectSnapshots({
         projects: clientSettings.sidebarProjectSortOrder === "manual" ? orderedProjects : projects,
         settings: projectGroupingSettings,
-        primaryEnvironmentId,
+        primaryEnvironmentId: null,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
       }),
     [
       clientSettings.sidebarProjectSortOrder,
       environmentLabelById,
       orderedProjects,
-      primaryEnvironmentId,
       projectGroupingSettings,
       projects,
     ],
@@ -1338,6 +1334,53 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
+    // An explicit Add Project intent must never inherit a previous palette
+    // surface (notably Go to file / project-content search). Start the
+    // project workflow from a clean command view every time.
+    browseNavigation.invalidate();
+    setAddProjectCloneFlow(null);
+    setAddProjectEnvironmentId(null);
+    setViewStack([]);
+    setHighlightedItemValue(null);
+    setQuery("");
+
+    if (addProjectEnvironmentOptions.length === 0) {
+      pushPaletteView({
+        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "project-scope-unavailable",
+            label: "Project location",
+            items: [
+              {
+                kind: "action",
+                value: "action:add-project:no-code-computer",
+                searchTerms: ["project", "computer", "business os", "assign"],
+                title: "No Code computer assigned",
+                description: "Assign a computer to the active Business OS before adding a project.",
+                icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+                disabled: true,
+                run: async () => {},
+              },
+              {
+                kind: "action",
+                value: "action:add-project:open-business-os-settings",
+                searchTerms: ["settings", "business os", "computer", "assign"],
+                title: "Open Business OS settings",
+                description:
+                  "Review the active instance. Project creation stays blocked until CTOX confirms a Code computer assignment.",
+                icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
+                run: async () => {
+                  setOpen(false);
+                  await navigate({ to: "/settings/business-os" });
+                },
+              },
+            ],
+          },
+        ],
+      });
+      return;
+    }
     if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
       pushPaletteView({
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
@@ -1362,8 +1405,11 @@ function OpenCommandPaletteDialog(props: {
   }, [
     addProjectEnvironmentGroups,
     addProjectEnvironmentOptions.length,
+    browseNavigation,
     defaultAddProjectEnvironmentId,
+    navigate,
     pushPaletteView,
+    setOpen,
     startAddProjectSourceSelection,
   ]);
 
@@ -1503,7 +1549,6 @@ function OpenCommandPaletteDialog(props: {
       "environment",
     ],
     title: "Add project",
-    disabled: defaultAddProjectEnvironmentId === null,
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {
@@ -1688,8 +1733,7 @@ function OpenCommandPaletteDialog(props: {
       const projectId = newProjectId();
       const targetEnvironmentProviders =
         environments.find((environment) => environment.environmentId === input.environmentId)
-          ?.serverConfig?.providers ??
-        (input.environmentId === primaryEnvironmentId ? providers : []);
+          ?.serverConfig?.providers ?? [];
       const createResult = await createProject({
         environmentId: input.environmentId,
         input: {
@@ -1740,7 +1784,6 @@ function OpenCommandPaletteDialog(props: {
       navigate,
       primaryEnvironmentId,
       projects,
-      providers,
       setOpen,
       clientSettings.sidebarThreadSortOrder,
       threads,

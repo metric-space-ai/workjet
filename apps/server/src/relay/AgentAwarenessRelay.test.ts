@@ -16,7 +16,7 @@ import type {
   RelayAgentActivityPublishProofPayload,
   RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
-import { CommandId, ProviderInstanceId } from "@t3tools/contracts";
+import { CommandId, DEFAULT_WORKJET_THREAD_CONFIG, ProviderInstanceId } from "@t3tools/contracts";
 import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import { RELAY_ACTIVITY_PUBLISH_TYP, verifyRelayJwt } from "@t3tools/shared/relayJwt";
 import { describe, expect, it } from "@effect/vitest";
@@ -299,6 +299,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
       modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
       runtimeMode: "full-access",
       interactionMode: "default",
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       branch: null,
       worktreePath: null,
       latestTurn: null,
@@ -320,7 +321,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         projects: [
           {
             id: projectId,
-            title: "T3 Code",
+            title: "Workjet",
           },
         ],
         threads: [
@@ -424,7 +425,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
 
         const project = {
           id: projectId,
-          title: "T3 Code",
+          title: "Workjet",
           workspaceRoot: "/workspace",
           repositoryIdentity: null,
           defaultModelSelection: null,
@@ -440,6 +441,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
           runtimeMode: "full-access",
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           branch: null,
           worktreePath: null,
           latestTurn: {
@@ -582,7 +584,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
 
         const project = {
           id: projectId,
-          title: "T3 Code",
+          title: "Workjet",
           workspaceRoot: "/workspace",
           repositoryIdentity: null,
           defaultModelSelection: null,
@@ -598,6 +600,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
           runtimeMode: "full-access",
           interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           branch: null,
           worktreePath: null,
           latestTurn: {

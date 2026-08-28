@@ -1,0 +1,485 @@
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import { createDecisionHubPlugin } from "../src/plugin.mjs";
+import { OS_EVENT } from "../src/nav.mjs";
+import { buildBitmaps, CONTENT_LINES } from "../src/layout.mjs";
+
+function fakeSdk() {
+  const calls = { create: 0, rebuild: 0, image: 0, lastPage: null };
+  return {
+    calls,
+    async createStartUpPageContainer(page) {
+      calls.create += 1;
+      calls.lastPage = page;
+      return 0;
+    },
+    async rebuildPageContainer(page) {
+      calls.rebuild += 1;
+      calls.lastPage = page;
+      return true;
+    },
+    async textContainerUpgrade() {
+      return true;
+    },
+    async updateImageRawData() {
+      calls.image += 1;
+      return "success";
+    },
+  };
+}
+
+function fakeSource(answers = []) {
+  return {
+    answers,
+    async load() {
+      return {
+        decisions: [
+          {
+            id: "d1",
+            vorgang_id: "v1",
+            typ: "triage",
+            titel: "REM",
+            status: "offen",
+            zeilen_json: ["kurz"],
+          },
+        ],
+        vorgaenge: [
+          {
+            id: "v1",
+            kunde_name: "REM",
+            quelle_json: { absender: "a@example.org", body_clean: "Eine Mail mit Inhalt." },
+            triage_json: {
+              antwort_vorschlag: "Antwort",
+              aufgabe: { agent: "Sol", beschreibung: "Arbeitspaket" },
+            },
+          },
+        ],
+      };
+    },
+    async answer(payload) {
+      answers.push(payload);
+    },
+  };
+}
+
+NodeTest("the page carries the reading box and one item per rubric", async () => {
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const page = sdk.calls.lastPage;
+  // Die Vorgangsliste ist ein Bild, kein Text: nur so laesst sich der
+  // aktive Eintrag invertieren.
+  // Lesekasten plus der winzige Eingabecontainer, der die Gesten annimmt.
+  NodeAssert.equal(page.textObject.length, 2, "reading box and the gesture catcher");
+  const box = page.textObject.find((c) => c.containerName === "box-body");
+  NodeAssert.equal(box.isEventCapture, 0, "the reading box must never capture input …");
+  const fang = page.textObject.find((c) => c.containerName === "input");
+  NodeAssert.equal(fang.isEventCapture, 1, "… the empty catcher does");
+  NodeAssert.equal(fang.content, "", "and it stays empty, so there is nothing to scroll");
+  NodeAssert.ok(
+    page.imageObject.some((c) => c.containerName === "liste"),
+    "the case list is a bitmap",
+  );
+  NodeAssert.ok(page.textObject.length <= 8, "the SDK allows at most 8 text containers");
+  // Die Aktionsleiste ist kein eigener Container mehr: sie sitzt im
+  // Listenbild, auf dem reservierten Platz des aktiven Vorgangs.
+  NodeAssert.equal(page.imageObject.length, 3, "case list, scroll indicator and rubric legend");
+  NodeAssert.ok(
+    page.imageObject.every((i) => i.width <= 288 && i.height <= 144),
+    "images stay inside the SDK limits",
+  );
+});
+
+NodeTest("the body never overflows its container", async () => {
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const body = sdk.calls.lastPage.textObject.find((c) => c.containerName === "box-body");
+  NodeAssert.ok(body.content.split("\n").length <= CONTENT_LINES + 2);
+  // Der Lesekasten darf KEINE Eingaben fangen: ein Eingabecontainer bekommt
+  // vom Betriebssystem Scrollverhalten samt Federn, auch bei kurzem Text.
+  NodeAssert.equal(body.isEventCapture, 0);
+});
+
+NodeTest("bitmaps are repainted when the position changes", async () => {
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const before = sdk.calls.image;
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  NodeAssert.ok(sdk.calls.image > before, "the rail must show the new position");
+});
+
+NodeTest("a press on an icon answers exactly once", async () => {
+  const sdk = fakeSdk();
+  const answers = [];
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource(answers) });
+  await plugin.start();
+  // bis hinter die letzte Rubrik scrollen, dann steht der Fokus auf dem
+  // ersten Icon (Annehmen).
+  for (let i = 0; i < 8; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  const state = plugin.state;
+  if (state.focusIcon >= 0) {
+    await plugin.handleEvent(OS_EVENT.CLICK);
+    NodeAssert.ok(answers.length <= 1, "never more than one answer per press");
+  }
+});
+
+NodeTest("a press in the overview expands instead of answering", async () => {
+  const sdk = fakeSdk();
+  const answers = [];
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource(answers) });
+  await plugin.start();
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  NodeAssert.equal(answers.length, 0);
+  NodeAssert.equal(plugin.state.level, "detail");
+});
+
+// Der Host lehnt eine Seite ab, deren containerTotalNum nicht zur Zahl der
+// Container passt — sichtbar als schwarzes Display. Der SDK-Validator kennt
+// diese Regel, also wird er hier befragt.
+NodeTest("the page passes the SDK's own validation", async () => {
+  const { validateEvenHubPageContainer } = await import("@evenrealities/even_hub_sdk");
+  const sdk = fakeSdk();
+  const plugin = createDecisionHubPlugin({ sdk, source: fakeSource() });
+  await plugin.start();
+  const page = sdk.calls.lastPage;
+  const total = (page.textObject?.length || 0) + (page.imageObject?.length || 0);
+  NodeAssert.equal(page.containerTotalNum, total, "containerTotalNum must count every container");
+  const result = validateEvenHubPageContainer(page);
+  NodeAssert.ok(result?.ok !== false, `SDK validation: ${JSON.stringify(result)}`);
+});
+
+// Die Firmware weist eine Seite als Ganzes zurueck, wenn ein einziger
+// Container ausserhalb der Grenzen liegt — und nennt dabei nicht welcher.
+// Der Simulator akzeptiert solche Seiten, das Geraet nicht. Deshalb hier.
+NodeTest("every page respects the firmware limits for containers", async () => {
+  const { createDecisionHubPlugin } = await import("../src/plugin.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { OS_EVENT } = await import("../src/nav.mjs");
+  const seiten = [];
+  const sdk = {
+    async createStartUpPageContainer(p) {
+      seiten.push(p);
+      return 0;
+    },
+    async rebuildPageContainer(p) {
+      seiten.push(p);
+      return true;
+    },
+    async textContainerUpgrade() {
+      return true;
+    },
+    async updateImageRawData() {
+      return "success";
+    },
+  };
+  const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
+  await plugin.start();
+  for (let i = 0; i < 20; i += 1) await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+
+  for (const seite of seiten) {
+    const text = seite.textObject || [];
+    const bild = seite.imageObject || [];
+    NodeAssert.ok(text.length <= 8, `at most 8 text containers, got ${text.length}`);
+    NodeAssert.ok(bild.length <= 4, `at most 4 image containers, got ${bild.length}`);
+    const gesamt = text.length + bild.length;
+    NodeAssert.ok(gesamt >= 1 && gesamt <= 12, `1..12 containers, got ${gesamt}`);
+    NodeAssert.equal(seite.containerTotalNum, gesamt, "the announced count must match reality");
+    for (const c of bild) {
+      NodeAssert.ok(
+        c.width >= 20 && c.width <= 288,
+        `image "${c.containerName}" is ${c.width} wide, allowed is 20..288`,
+      );
+      NodeAssert.ok(
+        c.height >= 20 && c.height <= 144,
+        `image "${c.containerName}" is ${c.height} high, allowed is 20..144`,
+      );
+    }
+    const ids = [...text, ...bild].map((c) => c.containerID);
+    NodeAssert.equal(new Set(ids).size, ids.length, "container ids must be unique across the page");
+  }
+});
+
+// Die Rubrik muss IM Rahmen stehen, nicht als Zeile darin: der Streifen
+// liegt ueber der oberen Rahmenkante und unterbricht sie genau dort.
+NodeTest("the rubric sits in the frame, not inside the box", async () => {
+  const { buildPage, CONTAINER, PANEL_CHARS, boxTitle } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
+    tabs: [{ titel: "REM", kanal: "mail" }],
+    tabIndex: 0,
+    icons: [{ id: "annehmen" }],
+    betreff: "REM",
+    typ: "TRIAGE",
+  };
+  const page = buildPage(nav);
+  const box = page.textObject.find((c) => c.containerName === "box-body");
+  const legende = page.imageObject.find((c) => c.containerName === "legend");
+
+  NodeAssert.ok(legende, "there must be a legend strip");
+  NodeAssert.ok(
+    !box.content.startsWith("MAIL"),
+    "the title must not be the first line of the box any more",
+  );
+  NodeAssert.ok(!box.content.includes("─"), "and no rule underneath it either");
+  NodeAssert.ok(
+    box.content.startsWith("REM Capital kommt"),
+    "the box starts straight into the summary",
+  );
+
+  const boxOben = page.textObject.find((c) => c.containerName === "box-body").yPosition;
+  NodeAssert.ok(legende.yPosition < boxOben, "the strip sits above the top edge …");
+  NodeAssert.ok(
+    legende.yPosition + legende.height > boxOben,
+    "… and reaches across it, so the frame is broken there",
+  );
+  NodeAssert.ok(legende.xPosition > box.xPosition, "indented, not starting in the corner");
+  NodeAssert.ok(legende.width >= 20 && legende.width <= 288, "and within the firmware limits");
+  NodeAssert.equal(boxTitle(nav).includes("MAIL"), true, "the strip carries the rubric name");
+});
+
+// Ein Neuaufbau der Seite ersetzt die Container und leert ihre Bilder.
+// Werden sie dann als "unveraendert" uebersprungen, fehlen Icons und Punkte.
+NodeTest("images are resent after a rebuild, or icons vanish", async () => {
+  const { createDecisionHubPlugin } = await import("../src/plugin.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { OS_EVENT } = await import("../src/nav.mjs");
+  // Ein Neuaufbau ersetzt die Container und leert ihre Bilder. Er passiert
+  // jetzt nur noch bei echter Strukturaenderung — Ausblenden ist eine.
+  let bilderSeitRebuild = 0;
+  const sdk = {
+    async createStartUpPageContainer() {
+      return 0;
+    },
+    async rebuildPageContainer() {
+      bilderSeitRebuild = 0;
+      return true;
+    },
+    async textContainerUpgrade() {
+      return true;
+    },
+    async updateImageRawData() {
+      bilderSeitRebuild += 1;
+      return 0;
+    },
+  };
+  const plugin = createDecisionHubPlugin({ sdk, source: createSource(), scrollSperreMs: 0 });
+  await plugin.start();
+  await plugin.handleEvent(OS_EVENT.SCROLL_TOP); // blendet aus -> leere Seite
+  NodeAssert.equal(plugin.visible, false);
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM); // kommt zurueck -> Neuaufbau
+  NodeAssert.equal(plugin.visible, true);
+  NodeAssert.ok(bilderSeitRebuild > 0, "after the page was rebuilt the images must be sent again");
+  plugin.stop?.();
+});
+
+NodeTest("a page turn actually reaches the display", async () => {
+  const { createDecisionHubPlugin } = await import("../src/plugin.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { OS_EVENT } = await import("../src/nav.mjs");
+  // textContainerUpgrade laesst das Geraet NICHT neu zeichnen: im Simulator
+  // stand die Seite beim Blaettern still, waehrend der Zustand weiterlief.
+  // Sichtbar wird eine Aenderung nur durch einen Neuaufbau.
+  const gezeichnet = [];
+  const sdk = {
+    async createStartUpPageContainer(p) {
+      gezeichnet.push(p);
+      return 0;
+    },
+    async rebuildPageContainer(p) {
+      gezeichnet.push(p);
+      return true;
+    },
+    async textContainerUpgrade() {
+      return true;
+    },
+    async updateImageRawData() {
+      return 0;
+    },
+  };
+  const plugin = createDecisionHubPlugin({
+    sdk,
+    source: createSource(),
+    scrollSperreMs: 0,
+    ruhezeitMs: 0,
+  });
+  await plugin.start();
+  await plugin.handleEvent(OS_EVENT.CLICK);
+  const vorher = gezeichnet.length;
+  await plugin.handleEvent(OS_EVENT.SCROLL_BOTTOM);
+  NodeAssert.ok(gezeichnet.length > vorher, "a page turn must reach the display");
+  const jetzt = gezeichnet[gezeichnet.length - 1].textObject.find(
+    (c) => c.containerName === "box-body",
+  );
+  const davor = gezeichnet[vorher - 1].textObject.find((c) => c.containerName === "box-body");
+  NodeAssert.notEqual(jetzt.content, davor.content, "and it must carry different content");
+  plugin.stop?.();
+});
+
+NodeTest("the page geometry stays constant across states", async () => {
+  const { buildPage, PANEL_CHARS } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const basis = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
+    tabs: [
+      { titel: "REM", kanal: "mail" },
+      { titel: "Thesen", kanal: "mail" },
+    ],
+    tabIndex: 0,
+    icons: [{ id: "a" }, { id: "b" }],
+    betreff: "REM",
+    typ: "TRIAGE",
+  };
+  const geo = (nav) =>
+    buildPage(nav)
+      .textObject.concat(buildPage(nav).imageObject)
+      .map((c) => `${c.containerID}:${c.xPosition},${c.yPosition},${c.width},${c.height}`)
+      .join("|");
+  const a = geo(basis);
+  NodeAssert.equal(
+    geo({ ...basis, sectionIndex: 1 }),
+    a,
+    "another rubric must not move containers",
+  );
+  NodeAssert.equal(geo({ ...basis, tabIndex: 1 }), a, "another case must not move them either");
+  NodeAssert.equal(geo({ ...basis, focusIcon: 2 }), a, "and neither must the action bar");
+});
+
+// Der Leseweg im Volltext ist etwas anderes als das Blaettern zwischen
+// Rubriken — das muss man sehen, nicht raten.
+NodeTest("the overview shows dots, the long version a bar", async () => {
+  const { buildBitmaps, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail", "antwort"], PANEL_CHARS),
+    tabs: [{ titel: "REM", kanal: "mail" }],
+    tabIndex: 0,
+    icons: [{ id: "a" }],
+    betreff: "REM",
+    typ: "TRIAGE",
+  };
+  const streifen = (n) => buildBitmaps(n).find((b) => b.containerID === 21).fingerprint;
+  const uebersicht = streifen(nav);
+  const detail = streifen({ ...nav, level: LEVEL.DETAIL, page: 0 });
+  NodeAssert.notEqual(uebersicht, detail, "both states must look different");
+  const detailSpaeter = streifen({ ...nav, level: LEVEL.DETAIL, page: 1 });
+  NodeAssert.notEqual(detail, detailSpaeter, "and the bar must move while reading");
+});
+
+// Erschienen die Aktionen dynamisch, spraenge die ganze Liste. Der Platz
+// unter jedem Vorgang gehoert ihm dauerhaft.
+NodeTest("the action slot is reserved, so nothing jumps when icons appear", async () => {
+  const { renderCaseList, ZEILE_FALL, ZEILE_NAME } = await import("../src/icons.mjs");
+  const faelle = [
+    { titel: "REM", kanal: "mail" },
+    { titel: "Thesen", kanal: "mail" },
+  ];
+  const aktionen = [{ wert: "annehmen" }, { wert: "ablehnen" }];
+  const zeilenVon = (bmp, y) => {
+    // Ist in dieser Bildzeile ueberhaupt etwas gezeichnet?
+    for (let x = 0; x < bmp.width; x += 1) if (bmp.px[y * bmp.width + x]) return true;
+    return false;
+  };
+  const ohne = renderCaseList({ width: 170, height: 144, cases: faelle, active: 0, actions: [] });
+  const mit = renderCaseList({
+    width: 170,
+    height: 144,
+    cases: faelle,
+    active: 0,
+    actions: aktionen,
+    focusAction: 0,
+  });
+  // Der zweite Vorgang muss in BEIDEN Faellen an derselben Stelle beginnen.
+  const zweiterOben = ZEILE_FALL;
+  NodeAssert.equal(
+    zeilenVon(ohne, zweiterOben + 8),
+    zeilenVon(mit, zweiterOben + 8),
+    "the second case must not move when the actions appear",
+  );
+  // Und der reservierte Platz wird beim aktiven Vorgang wirklich benutzt.
+  NodeAssert.equal(zeilenVon(mit, ZEILE_NAME + 8), true, "the actions use the reserved slot");
+  NodeAssert.equal(zeilenVon(ohne, ZEILE_NAME + 8), false, "which stays empty otherwise");
+});
+
+// Das SDK kennt keine Schriftgroesse — der einzige Hebel fuer Gewichtung
+// ist die Helligkeit (0..4).
+NodeTest("the summary is brighter than the full text", async () => {
+  const { buildPage, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail"], PANEL_CHARS),
+    tabs: ["REM"],
+    tabIndex: 0,
+    icons: [{ wert: "annehmen" }],
+    betreff: "REM",
+    typ: "TRIAGE",
+  };
+  const hell = (n) => buildPage(n).textObject.find((c) => c.containerName === "box-body").textColor;
+  const kurz = hell(nav);
+  const lang = hell({ ...nav, level: LEVEL.DETAIL });
+  NodeAssert.ok(kurz > lang, `summary ${kurz} must outweigh full text ${lang}`);
+  NodeAssert.ok(kurz <= 4 && lang >= 0, "and both stay in the allowed 0..4");
+});
+
+// Beim Aufklappen darf sich nur bewegen, was sich bewegen MUSS. Rechte
+// Kante und Rubrikname bleiben stehen, der Kasten waechst nach links.
+NodeTest("expanding keeps the right edge and the rubric label in place", async () => {
+  const { buildPage, PANEL_CHARS, LEVEL } = await import("../src/layout.mjs");
+  const { initialNav } = await import("../src/nav.mjs");
+  const { createSource } = await import("../src/source.mjs");
+  const { sectionsOf } = await import("../../kundenpipeline-module/core/sections.mjs");
+  const daten = await createSource().load();
+  const nav = {
+    ...initialNav(),
+    sections: sectionsOf(daten.decisions[0], daten.vorgaenge[0], ["mail"], PANEL_CHARS),
+    tabs: ["REM"],
+    tabIndex: 0,
+    icons: [{ wert: "annehmen" }],
+    betreff: "REM",
+    typ: "TRIAGE",
+  };
+  const kurz = buildPage(nav);
+  const lang = buildPage({ ...nav, level: LEVEL.DETAIL });
+  const box = (p) => p.textObject.find((c) => c.containerName === "box-body");
+  const legende = (p) => p.imageObject.find((c) => c.containerName === "legend");
+
+  NodeAssert.equal(
+    box(kurz).xPosition + box(kurz).width,
+    box(lang).xPosition + box(lang).width,
+    "the right edge must not move",
+  );
+  NodeAssert.ok(box(lang).xPosition < box(kurz).xPosition, "the box grows to the left");
+  NodeAssert.equal(legende(kurz).xPosition, legende(lang).xPosition, "the rubric label stays put");
+  // Der Leseweg wandert nach links, damit der rechte Rahmen frei bleibt.
+  const rail = (p) => p.imageObject.find((c) => c.containerName === "rail");
+  NodeAssert.ok(
+    rail(lang).xPosition < box(lang).xPosition,
+    "the reading bar sits left of the text",
+  );
+});
+
+NodeTest("the long version fills the wider column", async () => {
+  const { PANEL_CHARS, DETAIL_CHARS } = await import("../src/layout.mjs");
+  NodeAssert.ok(
+    DETAIL_CHARS > PANEL_CHARS + 10,
+    `the wide column must actually wrap wider: ${PANEL_CHARS} -> ${DETAIL_CHARS}`,
+  );
+});

@@ -13,9 +13,9 @@ const defaultInput = {
   platform: "darwin",
   processArch: "arm64",
   appVersion: "0.0.22",
-  appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
+  appPath: "/Applications/Workjet.app/Contents/Resources/app.asar",
   isPackaged: false,
-  resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
+  resourcesPath: "/Applications/Workjet.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
@@ -63,6 +63,16 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
+      assert.deepEqual(environment.branding, {
+        baseName: "Workjet",
+        stageLabel: "Dev",
+        displayName: "Workjet",
+      });
+      assert.equal(environment.displayName, "Workjet");
+      assert.equal(
+        environment.developmentDockIconPath,
+        "/repo/assets/workjet/workjet-app-icon.png",
+      );
       assert.equal(environment.rootDir, "/repo");
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
@@ -95,6 +105,56 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
+      assert.deepEqual(environment.branding, {
+        baseName: "Workjet",
+        stageLabel: "Latest",
+        displayName: "Workjet",
+      });
+    }),
+  );
+
+  it.effect("keeps the Workjet display name for nightly desktop versions", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment({
+        appVersion: "0.0.22-nightly.20260817.1",
+      });
+
+      assert.deepEqual(environment.branding, {
+        baseName: "Workjet",
+        stageLabel: "Nightly",
+        displayName: "Workjet",
+      });
+    }),
+  );
+
+  it.effect("uses the desktop app-data override before every platform default", () =>
+    Effect.gen(function* () {
+      const env = {
+        APPDATA: "C:\\Users\\alice\\AppData\\Roaming",
+        T3CODE_DESKTOP_APP_DATA_DIR: " /Volumes/tmp/workjet-app-data ",
+        XDG_CONFIG_HOME: "/home/alice/.config-custom",
+      };
+      const darwin = yield* makeEnvironment({ platform: "darwin" }, env);
+      const windows = yield* makeEnvironment({ platform: "win32" }, env);
+      const linux = yield* makeEnvironment({ platform: "linux" }, env);
+
+      assert.equal(darwin.appDataDirectory, "/Volumes/tmp/workjet-app-data");
+      assert.equal(windows.appDataDirectory, "/Volumes/tmp/workjet-app-data");
+      assert.equal(linux.appDataDirectory, "/Volumes/tmp/workjet-app-data");
+    }),
+  );
+
+  it.effect("keeps the macOS application-data default unchanged without the override", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { platform: "darwin" },
+        {
+          APPDATA: "/ignored/windows-app-data",
+          XDG_CONFIG_HOME: "/ignored/xdg-config",
+        },
+      );
+
+      assert.equal(environment.appDataDirectory, "/Users/alice/Library/Application Support");
     }),
   );
 

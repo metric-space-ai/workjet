@@ -2,7 +2,13 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -54,6 +60,7 @@ function makeThread(id: string, projectId: ProjectId): EnvironmentThreadShell {
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   };
 }
 

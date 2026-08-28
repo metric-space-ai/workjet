@@ -190,6 +190,88 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  GreppyRuntimeSnapshot,
+  WorkjetHarnessAvailabilitySnapshot,
+  WorkjetGatewayAddApiKeyAccountInput,
+  WorkjetGatewayAddApiKeyAccountResult,
+  WorkjetGatewayRemoveAccountInput,
+  WorkjetGatewayRemoveAccountResult,
+  WorkjetGatewayCatalog,
+  WorkjetGatewayHealth,
+  WorkjetGatewayModelDiscovery,
+  WorkjetGatewayOauthPollInput,
+  WorkjetGatewayOauthPollResult,
+  WorkjetGatewayOauthSession,
+  WorkjetGatewayOauthStartInput,
+  WorkjetGatewayOperationError,
+  WorkjetGatewayStatus,
+  WorkjetGatewayUpdateRoutingInput,
+  WorkjetGatewayUpdateRoutingResult,
+  WorkjetGreppyOperationError,
+  WorktreeStorageInspection,
+  WorktreeStorageInspectionInput,
+} from "./workjet.ts";
+import {
+  WorkjetLegacyImportDecideInput,
+  WorkjetLegacyImportDecisionResult,
+  WorkjetLegacyImportError,
+  WorkjetLegacyImportInspectInput,
+  WorkjetLegacyImportInspection,
+} from "./workjetLegacyImport.ts";
+import {
+  WorkjetSessionImportError,
+  WorkjetSessionImportInput,
+  WorkjetSessionImportInspectInput,
+  WorkjetSessionImportInspection,
+  WorkjetSessionImportResult,
+} from "./workjetSessionImport.ts";
+import {
+  WorkjetMailboxAcceptHandoffRpcInput,
+  WorkjetMailboxAcceptHandoffRpcResult,
+  WorkjetMailboxDelegateTaskRpcInput,
+  WorkjetMailboxDelegateTaskRpcResult,
+  WorkjetMailboxError,
+  WorkjetMailboxListHandoffsRpcInput,
+  WorkjetMailboxListHandoffsRpcResult,
+  WorkjetMailboxReplyRpcInput,
+  WorkjetMailboxReplyRpcResult,
+  WorkjetMailboxReassignDelegationRpcInput,
+  WorkjetMailboxReassignDelegationRpcResult,
+  WorkjetMailboxRequestReviewRpcInput,
+  WorkjetMailboxRequestReviewRpcResult,
+  WorkjetMailboxSendHandoffRpcInput,
+  WorkjetMailboxSendHandoffRpcResult,
+  WorkjetMailboxSendMessageRpcInput,
+  WorkjetMailboxSendMessageRpcResult,
+  WorkjetMailboxUpdateDelegationRpcInput,
+  WorkjetMailboxUpdateDelegationRpcResult,
+  WorkjetMeshOverview,
+  WorkjetMeshRevokePeerInput,
+  WorkjetMeshRevokePeerResult,
+  WorkjetMeshRoster,
+} from "./workjetMailbox.ts";
+import { WorkjetMailboxAuditEvent } from "./workjetMailboxAudit.ts";
+import {
+  WorkjetCrossModeError,
+  WorkjetCrossModeGetThreadLinkRpcInput,
+  WorkjetCrossModeGetThreadLinkRpcResult,
+  WorkjetCrossModeListLinksRpcInput,
+  WorkjetCrossModeListLinksRpcResult,
+  WorkjetCrossModeOpenInCodeRpcInput,
+  WorkjetCrossModeOpenInCodeRpcResult,
+  WorkjetCrossModeSubmitRpcInput,
+  WorkjetCrossModeSubmitRpcResult,
+} from "./workjetCrossMode.ts";
+import {
+  WorkjetDecisionHubConnectionError,
+  WorkjetDecisionHubConnectionResult,
+  WorkjetDecisionHubDisconnectInput,
+  WorkjetDecisionHubDisconnectResult,
+  WorkjetDecisionHubListResult,
+  WorkjetDecisionHubProbeInput,
+  WorkjetDecisionHubProvisionInput,
+} from "./workjetDecisionHub.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -272,6 +354,89 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
 
+  // Workjet server-wide capability management
+  workjetGreppyInspect: "workjet.greppy.inspect",
+  workjetGreppyInstall: "workjet.greppy.install",
+  workjetWorktreesInspect: "workjet.worktrees.inspect",
+  // Live harness availability, replacing the hand-toggled `available` flag on
+  // WorkjetHarnessConfiguration.
+  //
+  // INSPECT ONLY, deliberately. The plan also asks for install/update/remove,
+  // but there is no harness installer anywhere in the app: Greppy has one
+  // because it is a MANAGED, pinned binary this app downloads, while
+  // claude-code, codex-cli and the rest are third-party CLIs the operator
+  // installs themselves. Declaring three RPCs with nothing to call would ship
+  // a surface that always fails; building them means deciding that the app may
+  // run third-party installers on the operator's host, which is a security
+  // decision and not a missing handler.
+  workjetHarnessInspect: "workjet.harness.inspect",
+
+  // Environment-scoped Workjet provider gateway authority
+  workjetGatewayStatus: "workjet.providerGateway.status",
+  workjetGatewayCatalog: "workjet.providerGateway.catalog",
+  workjetGatewayStart: "workjet.providerGateway.start",
+  workjetGatewayStop: "workjet.providerGateway.stop",
+  workjetGatewayOauthStart: "workjet.providerGateway.oauthStart",
+  workjetGatewayOauthPoll: "workjet.providerGateway.oauthPoll",
+  workjetGatewayOauthCancel: "workjet.providerGateway.oauthCancel",
+  workjetGatewayAddApiKeyAccount: "workjet.providerGateway.addApiKeyAccount",
+  workjetGatewayRemoveAccount: "workjet.providerGateway.removeAccount",
+  workjetGatewayHealth: "workjet.providerGateway.health",
+  workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
+  workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
+
+  // ADDITIVE one-shot import of the legacy Swift Workjet configuration. The
+  // decision is per ENVIRONMENT — the legacy document lives on the machine the
+  // server runs on and lands in that server's own `settings.workjet` — so both
+  // methods answer for this server and take no environment in their payload.
+  workjetLegacyImportInspect: "workjet.legacyImport.inspect",
+  workjetLegacyImportDecide: "workjet.legacyImport.decide",
+
+  // Repeatable static copies of third-party harness transcripts. Importing
+  // never resumes or mutates the source provider session.
+  workjetSessionImportInspect: "workjet.sessionImport.inspect",
+  workjetSessionImport: "workjet.sessionImport.import",
+
+  // Thread-scoped Workjet mailbox sends (orchestrator threads only)
+  workjetMailboxSendMessage: "workjet.mailbox.sendMessage",
+  workjetMailboxDelegateTask: "workjet.mailbox.delegateTask",
+  workjetMailboxReply: "workjet.mailbox.reply",
+  workjetMailboxRequestReview: "workjet.mailbox.requestReview",
+  workjetMailboxUpdateDelegation: "workjet.mailbox.updateDelegation",
+  // ADDITIVE Wave-5 write: move a pending delegation to another LOCAL thread.
+  workjetMailboxReassignDelegation: "workjet.mailbox.reassignDelegation",
+
+  // ADDITIVE thread-handoff slice: hand a thread's bounded context snapshot to
+  // another machine, list what arrived here, and continue one in a NEW thread.
+  workjetMailboxSendHandoff: "workjet.mailbox.sendHandoff",
+  workjetMailboxListHandoffs: "workjet.mailbox.listHandoffs",
+  workjetMailboxAcceptHandoff: "workjet.mailbox.acceptHandoff",
+
+  // ADDITIVE cross-mode workflow bridge: link a Business OS object to a Code
+  // thread, read the backlink either way, and return results/reviews/follow-ups
+  // to the Business OS authority through the validated CTOX MCP command path.
+  workjetCrossModeOpenInCode: "workjet.crossMode.openInCode",
+  workjetCrossModeGetThreadLink: "workjet.crossMode.getThreadLink",
+  workjetCrossModeListLinks: "workjet.crossMode.listLinks",
+  workjetCrossModeSubmit: "workjet.crossMode.submit",
+
+  // Environment-scoped Decision Hub connection registry. Provisioning is a
+  // write-only desktop-main path: responses contain redacted summaries only.
+  workjetDecisionHubListConnections: "workjet.decisionHub.listConnections",
+  workjetDecisionHubProvisionConnection: "workjet.decisionHub.provisionConnection",
+  workjetDecisionHubProbeConnection: "workjet.decisionHub.probeConnection",
+  workjetDecisionHubDisconnectConnection: "workjet.decisionHub.disconnectConnection",
+
+  // ADDITIVE Wave-5 read: the recipient roster the composer picks from.
+  workjetMeshRoster: "workjet.mesh.roster",
+  // ADDITIVE read: the global multi-computer activity overview. Same redacted
+  // projection as the roster, plus last-known contact and delegation counts.
+  workjetMeshOverview: "workjet.mesh.overview",
+  // ADDITIVE operate action: destroy one peer's trust-on-first-use pin so a
+  // legitimately rotated peer can be re-pinned. The only recovery path out of a
+  // refused key rotation, and the only mesh-trust WRITE this server exposes.
+  workjetMeshRevokePeer: "workjet.mesh.revokePeer",
+
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
@@ -310,6 +475,7 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeWorkjetMailboxAudit: "subscribeWorkjetMailboxAudit",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -465,6 +631,408 @@ export const WsServerGetBackgroundPolicyRpc = Rpc.make(WS_METHODS.serverGetBackg
   payload: Schema.Struct({}),
   success: BackgroundPolicySnapshot,
   error: EnvironmentAuthorizationError,
+});
+
+const WorkjetGreppyRpcError = Schema.Union([
+  WorkjetGreppyOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetGreppyInspectRpc = Rpc.make(WS_METHODS.workjetGreppyInspect, {
+  payload: Schema.Struct({}),
+  success: GreppyRuntimeSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsWorkjetGreppyInstallRpc = Rpc.make(WS_METHODS.workjetGreppyInstall, {
+  payload: Schema.Struct({}),
+  success: GreppyRuntimeSnapshot,
+  error: WorkjetGreppyRpcError,
+});
+
+export const WsWorkjetHarnessInspectRpc = Rpc.make(WS_METHODS.workjetHarnessInspect, {
+  payload: Schema.Struct({}),
+  success: WorkjetHarnessAvailabilitySnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsWorkjetWorktreesInspectRpc = Rpc.make(WS_METHODS.workjetWorktreesInspect, {
+  payload: WorktreeStorageInspectionInput,
+  success: WorktreeStorageInspection,
+  error: EnvironmentAuthorizationError,
+});
+
+const WorkjetGatewayRpcError = Schema.Union([
+  WorkjetGatewayOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetGatewayStatusRpc = Rpc.make(WS_METHODS.workjetGatewayStatus, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsWorkjetGatewayCatalogRpc = Rpc.make(WS_METHODS.workjetGatewayCatalog, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayCatalog,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayStartRpc = Rpc.make(WS_METHODS.workjetGatewayStart, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayStatus,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayStopRpc = Rpc.make(WS_METHODS.workjetGatewayStop, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayStatus,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayOauthStartRpc = Rpc.make(WS_METHODS.workjetGatewayOauthStart, {
+  payload: WorkjetGatewayOauthStartInput,
+  success: WorkjetGatewayOauthSession,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayOauthPollRpc = Rpc.make(WS_METHODS.workjetGatewayOauthPoll, {
+  payload: WorkjetGatewayOauthPollInput,
+  success: WorkjetGatewayOauthPollResult,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayOauthCancelRpc = Rpc.make(WS_METHODS.workjetGatewayOauthCancel, {
+  payload: WorkjetGatewayOauthPollInput,
+  success: Schema.Struct({}),
+  error: WorkjetGatewayRpcError,
+});
+
+/**
+ * Adds an API-key gateway account. The payload carries the key exactly once,
+ * over the same authenticated WebSocket every other gateway operation uses;
+ * the success value is the account identity only. The key is never part of any
+ * response, log line, or configuration file.
+ */
+export const WsWorkjetGatewayAddApiKeyAccountRpc = Rpc.make(
+  WS_METHODS.workjetGatewayAddApiKeyAccount,
+  {
+    payload: WorkjetGatewayAddApiKeyAccountInput,
+    success: WorkjetGatewayAddApiKeyAccountResult,
+    error: WorkjetGatewayRpcError,
+  },
+);
+
+/** Removes one gateway account. The server deletes the account's secrets. */
+export const WsWorkjetGatewayRemoveAccountRpc = Rpc.make(WS_METHODS.workjetGatewayRemoveAccount, {
+  payload: WorkjetGatewayRemoveAccountInput,
+  success: WorkjetGatewayRemoveAccountResult,
+  error: WorkjetGatewayRpcError,
+});
+
+/**
+ * Health as the running gateway host reports it. Read-only, and deliberately
+ * carries availability flags for the dimensions the host does not publish.
+ */
+export const WsWorkjetGatewayHealthRpc = Rpc.make(WS_METHODS.workjetGatewayHealth, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayHealth,
+  error: WorkjetGatewayRpcError,
+});
+
+/** Models the host's own catalog serves, merged with the configured account models. */
+export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGatewayDiscoverModels, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayModelDiscovery,
+  error: WorkjetGatewayRpcError,
+});
+
+/** Edits the host-wide selection strategy and per-account pool membership. */
+export const WsWorkjetGatewayUpdateRoutingRpc = Rpc.make(WS_METHODS.workjetGatewayUpdateRouting, {
+  payload: WorkjetGatewayUpdateRoutingInput,
+  success: WorkjetGatewayUpdateRoutingResult,
+  error: WorkjetGatewayRpcError,
+});
+
+/**
+ * The one-shot legacy Swift Workjet configuration import.
+ *
+ * `inspect` is a pure READ: it resolves the decision, previews the offer with NO
+ * bindings (the honest floor), and lists every pending record and every drop.
+ * `decide` is the only write, and it is terminal: accept applies exactly one
+ * settings patch and records a marker, decline records the refusal, and both are
+ * refused a second time. A binding naming an environment, gateway account, or
+ * legacy record the server cannot verify is refused with
+ * {@link WorkjetLegacyImportError} — nothing partial is ever stored.
+ */
+const WorkjetLegacyImportRpcError = Schema.Union([
+  WorkjetLegacyImportError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetLegacyImportInspectRpc = Rpc.make(WS_METHODS.workjetLegacyImportInspect, {
+  payload: WorkjetLegacyImportInspectInput,
+  success: WorkjetLegacyImportInspection,
+  error: WorkjetLegacyImportRpcError,
+});
+
+export const WsWorkjetLegacyImportDecideRpc = Rpc.make(WS_METHODS.workjetLegacyImportDecide, {
+  payload: WorkjetLegacyImportDecideInput,
+  success: WorkjetLegacyImportDecisionResult,
+  error: WorkjetLegacyImportRpcError,
+});
+
+const WorkjetSessionImportRpcError = Schema.Union([
+  WorkjetSessionImportError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkjetSessionImportInspectRpc = Rpc.make(WS_METHODS.workjetSessionImportInspect, {
+  payload: WorkjetSessionImportInspectInput,
+  success: WorkjetSessionImportInspection,
+  error: WorkjetSessionImportRpcError,
+});
+
+export const WsWorkjetSessionImportRpc = Rpc.make(WS_METHODS.workjetSessionImport, {
+  payload: WorkjetSessionImportInput,
+  success: WorkjetSessionImportResult,
+  error: WorkjetSessionImportRpcError,
+});
+
+/**
+ * The client-facing half of the durable Workjet mailbox. Same delivery service,
+ * same bounded schemas, and the same orchestrator-only authorization decision
+ * the MCP tools make — the caller simply arrives over the WebSocket instead of
+ * through a per-session MCP credential, so the payload names the SOURCE thread
+ * and the server proves that thread's role before writing anything durable.
+ */
+const WorkjetMailboxRpcError = Schema.Union([WorkjetMailboxError, EnvironmentAuthorizationError]);
+
+export const WsWorkjetMailboxSendMessageRpc = Rpc.make(WS_METHODS.workjetMailboxSendMessage, {
+  payload: WorkjetMailboxSendMessageRpcInput,
+  success: WorkjetMailboxSendMessageRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxDelegateTaskRpc = Rpc.make(WS_METHODS.workjetMailboxDelegateTask, {
+  payload: WorkjetMailboxDelegateTaskRpcInput,
+  success: WorkjetMailboxDelegateTaskRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxReplyRpc = Rpc.make(WS_METHODS.workjetMailboxReply, {
+  payload: WorkjetMailboxReplyRpcInput,
+  success: WorkjetMailboxReplyRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxRequestReviewRpc = Rpc.make(WS_METHODS.workjetMailboxRequestReview, {
+  payload: WorkjetMailboxRequestReviewRpcInput,
+  success: WorkjetMailboxRequestReviewRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+export const WsWorkjetMailboxUpdateDelegationRpc = Rpc.make(
+  WS_METHODS.workjetMailboxUpdateDelegation,
+  {
+    payload: WorkjetMailboxUpdateDelegationRpcInput,
+    success: WorkjetMailboxUpdateDelegationRpcResult,
+    error: WorkjetMailboxRpcError,
+  },
+);
+
+/**
+ * ADDITIVE Wave-5 write. Reassign a still-pending delegation to a different
+ * LOCAL target thread. It mirrors the update RPC exactly — same bounded error
+ * union, same `orchestration:operate` scope, same orchestrator-source
+ * validation — and adds no new failure vocabulary: a cross-environment target
+ * is `unknown-target`, anything not `delivered`/`needs-input` is
+ * `invalid-state-transition`.
+ */
+export const WsWorkjetMailboxReassignDelegationRpc = Rpc.make(
+  WS_METHODS.workjetMailboxReassignDelegation,
+  {
+    payload: WorkjetMailboxReassignDelegationRpcInput,
+    success: WorkjetMailboxReassignDelegationRpcResult,
+    error: WorkjetMailboxRpcError,
+  },
+);
+
+/**
+ * ADDITIVE (thread-handoff slice). Hand this thread's work to another machine.
+ *
+ * The context snapshot is composed and stored SERVER-side and its digest is
+ * derived from the bytes the server wrote, exactly as the delegation prompt is:
+ * no caller-supplied digest is ever trusted. `orchestration:operate`, with the
+ * same orchestrator-source validation as every other thread-scoped send.
+ */
+export const WsWorkjetMailboxSendHandoffRpc = Rpc.make(WS_METHODS.workjetMailboxSendHandoff, {
+  payload: WorkjetMailboxSendHandoffRpcInput,
+  success: WorkjetMailboxSendHandoffRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * ADDITIVE (thread-handoff slice). The bounded inbox of handoffs THIS machine
+ * received, so a surface can offer "Continue here". Ids, addresses, timestamps,
+ * bounded note and branch metadata — never the snapshot text.
+ */
+export const WsWorkjetMailboxListHandoffsRpc = Rpc.make(WS_METHODS.workjetMailboxListHandoffs, {
+  payload: WorkjetMailboxListHandoffsRpcInput,
+  success: WorkjetMailboxListHandoffsRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * ADDITIVE (thread-handoff slice). Continue a received handoff in a NEW local
+ * thread seeded with the stored snapshot. A handoff is accepted AT MOST ONCE: a
+ * second accept is `invalid-state-transition`, never a second thread.
+ */
+export const WsWorkjetMailboxAcceptHandoffRpc = Rpc.make(WS_METHODS.workjetMailboxAcceptHandoff, {
+  payload: WorkjetMailboxAcceptHandoffRpcInput,
+  success: WorkjetMailboxAcceptHandoffRpcResult,
+  error: WorkjetMailboxRpcError,
+});
+
+const WorkjetCrossModeRpcError = Schema.Union([
+  WorkjetCrossModeError,
+  EnvironmentAuthorizationError,
+]);
+
+/**
+ * ADDITIVE (cross-mode workflow bridge). `Delegate to Code` / `Open in Code`:
+ * create OR select the Code thread that implements a Business OS object.
+ *
+ * The payload carries no `environmentId`: the Code authority is this server and
+ * is filled in server-side, and the CTOX authority the payload DOES name is
+ * re-verified against the instance this server can independently observe. A
+ * renderer-invented authority is refused with `unverified-authority`, never
+ * honoured. `orchestration:operate` — it can create a thread and start a turn.
+ */
+export const WsWorkjetCrossModeOpenInCodeRpc = Rpc.make(WS_METHODS.workjetCrossModeOpenInCode, {
+  payload: WorkjetCrossModeOpenInCodeRpcInput,
+  success: WorkjetCrossModeOpenInCodeRpcResult,
+  error: WorkjetCrossModeRpcError,
+});
+
+/**
+ * ADDITIVE (cross-mode workflow bridge). The Code-side backlink read: does this
+ * thread carry a cross-mode link, and to which Business OS object. Typed
+ * references and the bounded redacted title/subtitle only — never a record.
+ */
+export const WsWorkjetCrossModeGetThreadLinkRpc = Rpc.make(
+  WS_METHODS.workjetCrossModeGetThreadLink,
+  {
+    payload: WorkjetCrossModeGetThreadLinkRpcInput,
+    success: WorkjetCrossModeGetThreadLinkRpcResult,
+    error: WorkjetCrossModeRpcError,
+  },
+);
+
+/** ADDITIVE (cross-mode workflow bridge). Bounded listing of this server's links. */
+export const WsWorkjetCrossModeListLinksRpc = Rpc.make(WS_METHODS.workjetCrossModeListLinks, {
+  payload: WorkjetCrossModeListLinksRpcInput,
+  success: WorkjetCrossModeListLinksRpcResult,
+  error: WorkjetCrossModeRpcError,
+});
+
+/**
+ * ADDITIVE (cross-mode workflow bridge). `Return to Business OS`: submit a
+ * result with evidence, request a review, or ask for a follow-up on the linked
+ * Business OS object.
+ *
+ * The link id is the only authority reference on the wire — the instance,
+ * module, and object are read from the stored link — and the command leaves
+ * this server only through the validated CTOX MCP command path.
+ */
+export const WsWorkjetCrossModeSubmitRpc = Rpc.make(WS_METHODS.workjetCrossModeSubmit, {
+  payload: WorkjetCrossModeSubmitRpcInput,
+  success: WorkjetCrossModeSubmitRpcResult,
+  error: WorkjetCrossModeRpcError,
+});
+
+export const WsWorkjetDecisionHubListConnectionsRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubListConnections,
+  {
+    payload: Schema.Struct({}),
+    success: WorkjetDecisionHubListResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsWorkjetDecisionHubProvisionConnectionRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubProvisionConnection,
+  {
+    payload: WorkjetDecisionHubProvisionInput,
+    success: WorkjetDecisionHubConnectionResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsWorkjetDecisionHubProbeConnectionRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubProbeConnection,
+  {
+    payload: WorkjetDecisionHubProbeInput,
+    success: WorkjetDecisionHubConnectionResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsWorkjetDecisionHubDisconnectConnectionRpc = Rpc.make(
+  WS_METHODS.workjetDecisionHubDisconnectConnection,
+  {
+    payload: WorkjetDecisionHubDisconnectInput,
+    success: WorkjetDecisionHubDisconnectResult,
+    error: Schema.Union([WorkjetDecisionHubConnectionError, EnvironmentAuthorizationError]),
+  },
+);
+
+/**
+ * ADDITIVE Wave-5 read. The bounded, redacted list of mesh peers this machine
+ * has exchanged envelopes with, plus its own address, so the composer can offer
+ * cross-machine recipients instead of demanding a hand-typed environment id.
+ * Ids and timestamps only — never pinned key material.
+ */
+export const WsWorkjetMeshRosterRpc = Rpc.make(WS_METHODS.workjetMeshRoster, {
+  payload: Schema.Struct({}),
+  success: WorkjetMeshRoster,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * The global multi-computer activity overview: every peer machine this one has
+ * exchanged envelopes with, as this machine LAST KNEW it — identity, trust
+ * level, first contact, last inbound/outbound envelope timestamps, and
+ * delegation counts by lifecycle state. Ids, timestamps, and counts only.
+ *
+ * There is deliberately no liveness field; see `WorkjetMeshOverview` for why
+ * no honest one exists.
+ */
+export const WsWorkjetMeshOverviewRpc = Rpc.make(WS_METHODS.workjetMeshOverview, {
+  payload: Schema.Struct({}),
+  success: WorkjetMeshOverview,
+  error: WorkjetMailboxRpcError,
+});
+
+/**
+ * Destroy one peer's pinned mesh keys, so the next envelope that verifies from
+ * that address establishes a FRESH pin.
+ *
+ * This is the operator recovery path out of a key rotation, which
+ * trust-on-first-use otherwise refuses forever. It is the only mesh-trust write
+ * in the RPC surface and it destroys a security binding, so it carries the
+ * `orchestration:operate` scope, never the roster's read scope — see
+ * {@link WorkjetMeshRevokePeerInput} for the full argument that revocation is
+ * not itself an attack.
+ *
+ * The payload is an ADDRESS, never key material, and the result is a bounded
+ * outcome literal: nothing about the destroyed keys crosses the wire.
+ */
+export const WsWorkjetMeshRevokePeerRpc = Rpc.make(WS_METHODS.workjetMeshRevokePeer, {
+  payload: WorkjetMeshRevokePeerInput,
+  success: WorkjetMeshRevokePeerResult,
+  error: WorkjetMailboxRpcError,
 });
 
 const PullRequestRpcError = Schema.Union([
@@ -973,6 +1541,19 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+/**
+ * The bounded, redacted Workjet mailbox audit/observability event stream. Each
+ * emitted value is a {@link WorkjetMailboxAuditEvent} carrying only ids,
+ * addresses, states, dispositions, reason codes, counters, and timestamps —
+ * never prompt text, payloads, secrets, or artifact contents.
+ */
+export const WsSubscribeWorkjetMailboxAuditRpc = Rpc.make(WS_METHODS.subscribeWorkjetMailboxAudit, {
+  payload: Schema.Struct({}),
+  success: WorkjetMailboxAuditEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -995,6 +1576,46 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsWorkjetGreppyInspectRpc,
+  WsWorkjetHarnessInspectRpc,
+  WsWorkjetGreppyInstallRpc,
+  WsWorkjetWorktreesInspectRpc,
+  WsWorkjetGatewayStatusRpc,
+  WsWorkjetGatewayCatalogRpc,
+  WsWorkjetGatewayStartRpc,
+  WsWorkjetGatewayStopRpc,
+  WsWorkjetGatewayOauthStartRpc,
+  WsWorkjetGatewayOauthPollRpc,
+  WsWorkjetGatewayOauthCancelRpc,
+  WsWorkjetGatewayAddApiKeyAccountRpc,
+  WsWorkjetGatewayRemoveAccountRpc,
+  WsWorkjetGatewayHealthRpc,
+  WsWorkjetGatewayDiscoverModelsRpc,
+  WsWorkjetGatewayUpdateRoutingRpc,
+  WsWorkjetLegacyImportInspectRpc,
+  WsWorkjetLegacyImportDecideRpc,
+  WsWorkjetSessionImportInspectRpc,
+  WsWorkjetSessionImportRpc,
+  WsWorkjetMailboxSendMessageRpc,
+  WsWorkjetMailboxDelegateTaskRpc,
+  WsWorkjetMailboxReplyRpc,
+  WsWorkjetMailboxRequestReviewRpc,
+  WsWorkjetMailboxUpdateDelegationRpc,
+  WsWorkjetMailboxReassignDelegationRpc,
+  WsWorkjetMailboxSendHandoffRpc,
+  WsWorkjetMailboxListHandoffsRpc,
+  WsWorkjetMailboxAcceptHandoffRpc,
+  WsWorkjetCrossModeOpenInCodeRpc,
+  WsWorkjetCrossModeGetThreadLinkRpc,
+  WsWorkjetCrossModeListLinksRpc,
+  WsWorkjetCrossModeSubmitRpc,
+  WsWorkjetDecisionHubListConnectionsRpc,
+  WsWorkjetDecisionHubProvisionConnectionRpc,
+  WsWorkjetDecisionHubProbeConnectionRpc,
+  WsWorkjetDecisionHubDisconnectConnectionRpc,
+  WsWorkjetMeshRosterRpc,
+  WsWorkjetMeshOverviewRpc,
+  WsWorkjetMeshRevokePeerRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,
@@ -1064,6 +1685,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeWorkjetMailboxAuditRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,
   WsOrchestrationGetTurnDiffRpc,

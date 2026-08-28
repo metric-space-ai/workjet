@@ -220,7 +220,7 @@ const NODE_PTY_PREBUILD_MISSING_EXIT_CODE = 4;
 
 export const formatNodePtyProbeFailureReason = (exitCode: number): string | null =>
   exitCode === NODE_PTY_PREBUILD_MISSING_EXIT_CODE
-    ? "WSL support is missing from this T3 Code build: the packaged Linux node-pty binary was not included. Rebuild the Windows artifact with `--wsl-prebuild <path-to-linux-pty.node>` or install a build that includes WSL support."
+    ? "WSL support is missing from this CTOX build: the packaged Linux node-pty component was not included. Rebuild the Windows artifact with `--wsl-prebuild <path-to-linux-pty.node>` or install a build that includes WSL support."
     : null;
 
 const NODE_PTY_PROBE_SCRIPT = (
@@ -475,7 +475,7 @@ const ensureNodePtyImpl = (
       return {
         ok: false,
         reason:
-          'WSL server dependencies could not be loaded (for example "node-pty"). The native packages the server needs are not unpacked where the WSL distro\'s Node can read them — this is a packaging problem with this build. Please report it.',
+          'WSL server dependencies could not be loaded (for example "node-pty"). The packages the server needs are not unpacked where the WSL distro\'s Node can read them — this is a packaging problem with this build. Please report it.',
         fatal: true,
       } as const;
     }
@@ -546,7 +546,7 @@ const ensureNodePtyImpl = (
         ok: false,
         reason:
           nodeOnlyReason ??
-          "The bundled WSL backend binary (node-pty) could not be loaded in this distro. This usually means an unsupported CPU architecture or incompatible system libraries (glibc). Use a glibc-based x64/arm64 WSL distro such as Ubuntu; if you already are, please report this with your distro and the output of `uname -m`.",
+          "The bundled WSL backend component (node-pty) could not be loaded in this distro. This usually means an unsupported CPU architecture or incompatible system libraries (glibc). Use a glibc-based x64/arm64 WSL distro such as Ubuntu; if you already are, please report this with your distro and the output of `uname -m`.",
         fatal: true,
       } as const;
     }

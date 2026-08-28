@@ -17,6 +17,8 @@ export class RemoteDpopAccessToken extends Schema.Class<RemoteDpopAccessToken>(
   accessToken: Schema.String,
   expiresAtEpochMs: Schema.Number,
   dpopThumbprint: Schema.String,
+  /** Separates classic cloud authorization from an instance-bound device session. */
+  authorizationContext: Schema.optionalKey(Schema.String),
 }) {}
 
 export class RemoteDpopAccessTokenStore extends Context.Service<

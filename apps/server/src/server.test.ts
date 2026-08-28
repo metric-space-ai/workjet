@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -113,6 +114,8 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import { WorkjetGatewayOperationError } from "@t3tools/contracts";
+import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -178,6 +181,32 @@ import {
   transferBudgetViolations,
 } from "../integration/TransferBudgetReport.integration.ts";
 
+it("streams Workjet config changes to subscribed thread details", () => {
+  const threadId = ThreadId.make("thread-workjet-config");
+  const event = {
+    sequence: 1,
+    eventId: EventId.make("event-workjet-config"),
+    aggregateKind: "thread",
+    aggregateId: threadId,
+    occurredAt: "2026-08-14T00:00:00.000Z",
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    type: "thread.workjet-config-set",
+    payload: {
+      threadId,
+      workjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        enabledCapabilityIds: ["greppy"],
+      },
+      updatedAt: "2026-08-14T00:00:00.000Z",
+    },
+  } satisfies Extract<OrchestrationEvent, { type: "thread.workjet-config-set" }>;
+
+  assert.isTrue(isThreadDetailEvent(event));
+});
+
 const defaultProjectId = ProjectId.make("project-default");
 const defaultThreadId = ThreadId.make("thread-default");
 const defaultDesktopBootstrapToken = "test-desktop-bootstrap-token";
@@ -222,6 +251,7 @@ const makeDefaultOrchestrationReadModel = () => {
         modelSelection: defaultModelSelection,
         interactionMode: "default" as const,
         runtimeMode: "full-access" as const,
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         createdAt: now,
@@ -252,6 +282,7 @@ const makeDefaultOrchestrationThreadShell = (
     modelSelection: defaultModelSelection,
     runtimeMode: "full-access",
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     branch: null,
     worktreePath: null,
     latestTurn: null,
@@ -280,6 +311,51 @@ const makeAuthTestLayer = () =>
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(ServerSecretStore.layer),
   );
+
+const stoppedProviderGatewayStatus = {
+  schemaVersion: 1,
+  phase: "stopped",
+  pid: null,
+  providerEndpoint: null,
+  managementEndpoint: null,
+  failureReason: null,
+  configuredAccountCount: 0,
+  configuredModelCount: 0,
+} as const;
+const stoppedProviderGatewayCatalog = {
+  schemaVersion: 1,
+  accounts: [],
+  pools: [],
+  routes: [],
+  models: [],
+  routingStrategy: "round-robin",
+  providerPools: [],
+} as const;
+const providerGatewayTestLayer = Layer.succeed(
+  ProviderGateway.ProviderGatewayService,
+  ProviderGateway.ProviderGatewayService.of({
+    status: () => Effect.succeed(stoppedProviderGatewayStatus),
+    catalog: () => Effect.succeed(stoppedProviderGatewayCatalog),
+    start: () => Effect.succeed(stoppedProviderGatewayStatus),
+    stop: () => Effect.succeed(stoppedProviderGatewayStatus),
+    // The login and API-key surfaces are not exercised by these boot tests;
+    // they refuse with the gateway's own bounded reason so a test that starts
+    // reaching for them fails loudly instead of silently succeeding.
+    oauthStart: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    oauthPoll: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    oauthCancel: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    addApiKeyAccount: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    removeAccount: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    health: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    discoverModels: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    updateRouting: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+  }),
+);
 
 const makeBrowserOtlpPayload = (spanName: string) =>
   Effect.gen(function* () {
@@ -825,6 +901,10 @@ const buildAppUnderTest = (options?: {
     );
 
     const appLayer = servedRoutesLayer.pipe(
+      // The MCP routes now carry the durable Workjet mailbox, whose store reads
+      // the ambient `SqlClient`. The router seam therefore gets its own
+      // in-memory database, exactly like the auth test layer above.
+      Layer.provide(SqlitePersistenceMemory),
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
       Layer.provide(
@@ -939,13 +1019,14 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mock(CloudCliTokenManager.CloudCliTokenManager)({
-          get: Effect.die(new Error("Unexpected T3 Connect CLI authorization request.")),
+          get: Effect.die(new Error("Unexpected Workjet Connect CLI authorization request.")),
           getExisting: Effect.succeed(Option.none()),
           hasCredential: Effect.succeed(false),
           clear: Effect.void,
           ...options?.layers?.cloudCliTokenManager,
         }),
       ),
+      Layer.provide(providerGatewayTestLayer),
       Layer.provideMerge(makeAuthTestLayer()),
       Layer.provideMerge(ServerSecretStore.layer),
       Layer.provide(workspaceAndProjectServicesLayer),
@@ -1656,7 +1737,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
         scope: "orchestration:read orchestration:operate terminal:operate review:write",
         clientMetadata: {
-          label: "T3 Code Mobile",
+          label: "Workjet Mobile",
           deviceType: "mobile",
           os: "iOS",
         },
@@ -1683,7 +1764,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.status, 200);
       assert.equal(clientsResponse.status, 200);
       assert.deepInclude(mobileClient?.client, {
-        label: "T3 Code Mobile",
+        label: "Workjet Mobile",
         deviceType: "mobile",
         os: "iOS",
         ipAddress: "127.0.0.1",
@@ -2637,7 +2718,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("serves the documented T3 Connect mint credential endpoint", () =>
+  it.effect("serves the documented Workjet Connect mint credential endpoint", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
@@ -2696,7 +2777,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("serves signed T3 Connect environment health checks", () =>
+  it.effect("serves signed Workjet Connect environment health checks", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
@@ -5840,6 +5921,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             modelSelection: defaultModelSelection,
             interactionMode: "default" as const,
             runtimeMode: "full-access" as const,
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
             branch: null,
             worktreePath: null,
             createdAt: now,
@@ -7391,6 +7473,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         });
 
         const createdAt = "2026-01-01T00:00:00.000Z";
+        const bootstrapWorkjetConfig = {
+          schemaVersion: 1,
+          role: "orchestrator",
+          parent: null,
+          managedInstructions: "Coordinate this thread through Workjet.",
+          enabledCapabilityIds: ["greppy"],
+        } as const;
         const wsUrl = yield* getWsServerUrl("/ws");
         const response = yield* Effect.scoped(
           withWsRpcClient(wsUrl, (client) =>
@@ -7414,6 +7503,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   modelSelection: defaultModelSelection,
                   runtimeMode: "full-access",
                   interactionMode: "default",
+                  workjetConfig: bootstrapWorkjetConfig,
                   branch: "main",
                   worktreePath: null,
                   createdAt,
@@ -7442,6 +7532,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             "thread.turn.start",
           ],
         );
+        const createThreadCommand = dispatchedCommands[0];
+        assertTrue(createThreadCommand?.type === "thread.create");
+        if (createThreadCommand?.type === "thread.create") {
+          assert.deepEqual(createThreadCommand.workjetConfig, bootstrapWorkjetConfig);
+        }
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           refName: fetchedOriginCommit,
@@ -7560,6 +7655,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   modelSelection: defaultModelSelection,
                   runtimeMode: "full-access",
                   interactionMode: "default",
+                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                   branch: "main",
                   worktreePath: null,
                   createdAt,
@@ -7663,6 +7759,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 modelSelection: defaultModelSelection,
                 runtimeMode: "full-access",
                 interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                 branch: "main",
                 worktreePath: null,
                 createdAt,
@@ -7784,6 +7881,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 modelSelection: defaultModelSelection,
                 runtimeMode: "full-access",
                 interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                 branch: "main",
                 worktreePath: null,
                 createdAt,
@@ -7868,6 +7966,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 modelSelection: defaultModelSelection,
                 runtimeMode: "full-access",
                 interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
                 branch: "main",
                 worktreePath: null,
                 createdAt,

@@ -27,6 +27,22 @@ afterEach(() => {
 });
 
 describe("theme failure handling", () => {
+  it("does not touch computed styles before the document body exists", async () => {
+    const getComputedStyle = vi.fn(() => {
+      throw new Error("getComputedStyle must not receive a missing body");
+    });
+    vi.stubGlobal("getComputedStyle", getComputedStyle);
+    vi.stubGlobal("document", {
+      body: null,
+      documentElement: { dataset: {}, style: {} },
+      querySelector: () => null,
+    });
+
+    const { syncBrowserChromeTheme } = await import("./useTheme");
+    expect(() => syncBrowserChromeTheme()).not.toThrow();
+    expect(getComputedStyle).not.toHaveBeenCalled();
+  });
+
   it("preserves exact storage causes and operation context", async () => {
     const readCause = new Error("storage read blocked");
     const writeCause = new Error("storage quota exceeded");
@@ -70,7 +86,7 @@ describe("theme failure handling", () => {
     }
   });
 
-  it("reads the persisted T3 Chat theme preference", async () => {
+  it("reads the persisted Workjet Chat theme preference", async () => {
     vi.stubGlobal("window", {
       localStorage: createStorage({
         getItem: () => "t3-chat",
@@ -80,6 +96,21 @@ describe("theme failure handling", () => {
     const { readThemePreference } = await import("./useTheme");
 
     expect(readThemePreference()).toBe("t3-chat");
+  });
+
+  it("uses dark for a fresh desktop profile while preserving explicit preferences", async () => {
+    const storage = createStorage();
+    vi.stubGlobal("window", {
+      desktopBridge: {},
+      localStorage: storage,
+      matchMedia: () => ({ matches: false }),
+    });
+
+    const { readThemePreference } = await import("./useTheme");
+    expect(readThemePreference()).toBe("dark");
+
+    storage.setItem("t3code:theme", "light");
+    expect(readThemePreference()).toBe("light");
   });
 
   it("falls back during initial theme application and logs only safe attributes", async () => {

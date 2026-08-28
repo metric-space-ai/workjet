@@ -1,7 +1,7 @@
-# T3 Code Mobile
+# Workjet Mobile
 
 > [!WARNING]
-> T3 Code Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
+> Workjet Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
 
 ## Quickstart
 
@@ -10,13 +10,15 @@
 
 This app has three variants:
 
-- `development`: Expo dev client, installable side-by-side as `T3 Code Dev`
-- `preview`: persistent internal preview build, installable side-by-side as `T3 Code Preview`
-- `production`: store/release build as `T3 Code`
+- `development`: Expo dev client named `Workjet` with the `workjet-dev://` scheme
+- `preview`: persistent internal build named `Workjet` with the `workjet-preview://` scheme
+- `production`: store/release build named `Workjet` with the `workjet://` scheme
+
+Existing bundle/package identifiers and local storage identities remain unchanged for update continuity. Legacy `ctox-mobile*://`, `ctox-business-os-mobile://pair`, and `t3code*://` inputs remain registered during the documented migration window; generated links use Workjet schemes only.
 
 Run commands from `apps/mobile`.
 
-T3 Connect is optional and disabled in a fresh clone. Public configuration belongs in the
+Workjet Connect is optional and disabled in a fresh clone. Public configuration belongs in the
 repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
 [`../../.env.example`](../../.env.example).
 
@@ -89,11 +91,20 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 
 ## EAS Builds
 
-CI uses Expo fingerprinting with the `preview:dev` profile to reuse an existing compatible build when possible, or start a new internal EAS build when native runtime inputs change. Production and default local builds continue to use the `appVersion` runtime policy.
+Preview and production code ship exclusively in signed EAS binaries. The
+label-gated PR workflow creates internal iOS and Android preview builds;
+production CI submits new binaries to TestFlight and Play Internal. Expo
+updates are disabled, so no matching-fingerprint OTA path can replace code in
+an installed build. Production CI additionally binds each finished EAS build
+to the exact Git commit before accepting it as release evidence.
 
-For preview or production EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
-`T3CODE_CLERK_JWT_TEMPLATE`, and `T3CODE_RELAY_URL`
-as EAS environment variables. Expo config maps the canonical values into the mobile build.
+For preview EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
+`T3CODE_CLERK_JWT_TEMPLATE`, `T3CODE_RELAY_URL`, and
+`EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL` as EAS environment variables. Expo config maps the
+canonical values into the mobile build. Production builds contain the public Workjet production
+origins and Clerk identifiers as safe defaults so a local release APK cannot silently disable
+managed device pairing; EAS values may override them for a controlled migration. No server-side
+credential belongs in Expo config.
 
 Create a PR preview dev-client build manually:
 

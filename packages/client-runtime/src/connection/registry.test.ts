@@ -1,4 +1,5 @@
 import {
+  BusinessOsInstanceId,
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
   type OrchestrationShellSnapshot,
@@ -808,6 +809,108 @@ describe("EnvironmentRegistry", () => {
           (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.target,
         ).toEqual(TARGET);
         expect((yield* Ref.get(harness.storedTargets)).has(TARGET.environmentId)).toBe(false);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect(
+    "reconciles instance-scoped relay membership without persisting or downgrading its scope",
+    () =>
+      Effect.gen(function* () {
+        const classicTarget = new RelayConnectionTarget({
+          environmentId: TARGET.environmentId,
+          label: "Classic cloud environment",
+        });
+        const managedTarget = new RelayConnectionTarget({
+          environmentId: TARGET.environmentId,
+          label: "WELSCH computer",
+          businessOsInstanceId: BusinessOsInstanceId.make("biz_welsch"),
+        });
+        const harness = yield* makeHarness([classicTarget]);
+
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          yield* registry.reconcilePlatform([
+            new RelayConnectionRegistration({ target: managedTarget }),
+          ]);
+
+          expect(
+            (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.target,
+          ).toEqual(managedTarget);
+          expect((yield* Ref.get(harness.storedTargets)).has(TARGET.environmentId)).toBe(false);
+
+          yield* registry.reconcilePlatform([]);
+          expect((yield* SubscriptionRef.get(registry.entries)).has(TARGET.environmentId)).toBe(
+            false,
+          );
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
+  it.effect("rejects attempts to persist an instance-scoped relay registration", () =>
+    Effect.gen(function* () {
+      const managedTarget = new RelayConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: "WELSCH computer",
+        businessOsInstanceId: BusinessOsInstanceId.make("biz_welsch"),
+      });
+      const harness = yield* makeHarness([]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const error = yield* registry
+          .register(new RelayConnectionRegistration({ target: managedTarget }))
+          .pipe(Effect.flip);
+
+        expect(error).toMatchObject({
+          _tag: "ConnectionPersistenceError",
+          operation: "register-connection",
+        });
+        expect((yield* Ref.get(harness.storedTargets)).has(TARGET.environmentId)).toBe(false);
+        expect((yield* SubscriptionRef.get(registry.entries)).has(TARGET.environmentId)).toBe(
+          false,
+        );
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("fails closed when a shadowed persisted registration cannot be removed", () =>
+    Effect.gen(function* () {
+      const classicTarget = new RelayConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: "Classic cloud environment",
+      });
+      const managedTarget = new RelayConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: "WELSCH computer",
+        businessOsInstanceId: BusinessOsInstanceId.make("biz_welsch"),
+      });
+      const harness = yield* makeHarness([classicTarget], [], [], {
+        beforeRegistrationRemove: () =>
+          Effect.fail(
+            new Persistence.ConnectionPersistenceError({
+              operation: "remove-connection",
+              message: "Storage is unavailable.",
+            }),
+          ),
+      });
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const error = yield* registry
+          .reconcilePlatform([new RelayConnectionRegistration({ target: managedTarget })])
+          .pipe(Effect.flip);
+
+        expect(error).toMatchObject({
+          _tag: "ConnectionPersistenceError",
+          operation: "remove-connection",
+        });
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.target,
+        ).toEqual(classicTarget);
+        expect((yield* Ref.get(harness.storedTargets)).get(TARGET.environmentId)).toEqual(
+          classicTarget,
+        );
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

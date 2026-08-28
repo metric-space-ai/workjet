@@ -3,20 +3,18 @@ import { isPublicFaviconHost } from "~/browser/browserTargetResolver";
 /**
  * Favicon helpers for the preview tab strip.
  *
- * Uses Google's s2 favicon endpoint (same approach as ami's tab strip).
- * Callers should always render a `<Globe />` fallback when the returned URL
- * fails to load via an `onError` handler.
+ * Loads directly from the target origin. This avoids disclosing browsing
+ * destinations to a third-party favicon service. Callers render a local
+ * fallback when the origin does not expose `/favicon.ico`.
  */
-const FAVICON_PROVIDER = "https://www.google.com/s2/favicons";
-
-export function faviconUrlForOrigin(rawUrl: string | null | undefined, size = 32): string | null {
+export function faviconUrlForOrigin(rawUrl: string | null | undefined): string | null {
   if (!rawUrl) return null;
   try {
     const url = new URL(rawUrl);
     if (!url.host) return null;
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     if (!isPublicFaviconHost(url.hostname)) return null;
-    return `${FAVICON_PROVIDER}?domain=${encodeURIComponent(url.host)}&sz=${size}`;
+    return new URL("/favicon.ico", url.origin).href;
   } catch {
     return null;
   }

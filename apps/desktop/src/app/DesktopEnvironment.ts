@@ -70,7 +70,11 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
     readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
+    /**
+     * Older user-data directory names, newest first. Never used as the live
+     * profile — only as migration sources (see DesktopUserDataMigration).
+     */
+    readonly legacyUserDataDirNames: readonly string[];
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -79,7 +83,7 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
+const APP_BASE_NAME = "Workjet";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -89,7 +93,7 @@ function resolveDesktopAppStageLabel(input: {
     return "Dev";
   }
 
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
+  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Latest";
 }
 
 function resolveDesktopAppBranding(input: {
@@ -100,7 +104,7 @@ function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: APP_BASE_NAME,
   };
 }
 
@@ -142,14 +146,15 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
-  const appDataDirectory =
+  const appDataDirectory = Option.getOrElse(config.desktopAppDataDirectoryOverride, () =>
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
           path.join(homeDirectory, "AppData", "Roaming"),
         )
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
-        : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
+        : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config")),
+  );
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
@@ -168,8 +173,13 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  // Keep the existing CTOX Desktop profile name as storage identity while the
+  // visible product becomes Workjet. Renaming this directory would silently
+  // fork sessions, settings, and renderer storage for existing installations.
+  const userDataDirName = isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App";
+  const legacyUserDataDirNames: readonly string[] = isDevelopment
+    ? ["t3code-dev", "T3 Code (Dev)"]
+    : ["t3code", "T3 Code (Alpha)"];
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -220,7 +230,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,
-    legacyUserDataDirName,
+    legacyUserDataDirNames,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,
@@ -258,7 +268,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       path.join(resourcesPath, "resources", fileName),
       path.join(resourcesPath, fileName),
     ],
-    developmentDockIconPath: path.join(rootDir, "assets", "dev", "blueprint-macos-1024.png"),
+    developmentDockIconPath: path.join(rootDir, "assets", "workjet", "workjet-app-icon.png"),
   });
 });
 

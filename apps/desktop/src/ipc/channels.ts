@@ -12,7 +12,17 @@ export const UPDATE_SET_CHANNEL_CHANNEL = "desktop:update-set-channel";
 export const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 export const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 export const UPDATE_CHECK_CHANNEL = "desktop:update-check";
+export const PROVISIONING_INSPECT_HOST_KEY_CHANNEL = "desktop:provisioning-inspect-host-key";
+export const PROVISIONING_PREFLIGHT_CHANNEL = "desktop:provisioning-preflight";
+export const PROVISIONING_START_CHANNEL = "desktop:provisioning-start";
+export const PROVISIONING_GET_CHANNEL = "desktop:provisioning-get";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
+export const CREATE_SUPPORT_BUNDLE_CHANNEL = "desktop:create-support-bundle";
+export const GET_USER_DATA_MIGRATION_OFFER_CHANNEL = "desktop:get-user-data-migration-offer";
+export const ACCEPT_USER_DATA_MIGRATION_CHANNEL = "desktop:accept-user-data-migration";
+export const DECLINE_USER_DATA_MIGRATION_CHANNEL = "desktop:decline-user-data-migration";
+export const TAKE_PENDING_DEEP_LINKS_CHANNEL = "desktop:take-pending-deep-links";
+export const DEEP_LINK_PENDING_CHANNEL = "desktop:deep-link-pending";
 export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-environment-bootstraps";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";
@@ -78,3 +88,40 @@ export const PREVIEW_RECORDING_SAVE_CHANNEL = "desktop:preview-recording-save";
 export const PREVIEW_RECORDING_FRAME_CHANNEL = "desktop:preview-recording-frame";
 export const PREVIEW_STATE_CHANGE_CHANNEL = "desktop:preview-state-change";
 export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
+// ── Workjet / CTOX channels ────────────────────────────────────────────────
+// Everything below this line is fork-owned. Upstream additions belong ABOVE
+// it, so the two streams append to different regions and stop colliding on
+// the last line of the file (docs/workjet-plan.md §14). Keep this block last.
+export const CTOX_REFRESH_CHANNEL = "desktop:ctox-refresh";
+export const CTOX_LOGIN_CHANNEL = "desktop:ctox-login";
+export const CTOX_LOGOUT_CHANNEL = "desktop:ctox-logout";
+export const CTOX_PROVISION_DECISION_HUB_CHANNEL = "desktop:ctox-provision-decision-hub";
+export const CTOX_DISCONNECT_DECISION_HUB_CHANNEL = "desktop:ctox-disconnect-decision-hub";
+export const CTOX_IMPORT_INVITE_CHANNEL = "desktop:ctox-import-invite";
+export const CTOX_IMPORT_MANUAL_PAIRING_CHANNEL = "desktop:ctox-import-manual-pairing";
+export const CTOX_REMOVE_PAIRED_INSTANCE_CHANNEL = "desktop:ctox-remove-paired-instance";
+export const CTOX_RESOLVE_INSTANCE_AUTHORITY_CHANNEL = "desktop:ctox-resolve-instance-authority";
+export const CTOX_ADD_SSH_MANAGED_INSTANCE_CHANNEL = "desktop:ctox-add-ssh-managed-instance";
+export const CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL = "desktop:ctox-remove-ssh-managed-instance";
+export const CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL = "desktop:ctox-enter-business-os-mode";
+export const CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL = "desktop:ctox-exit-business-os-mode";
+export const CTOX_ACTIVATE_CHANNEL = "desktop:ctox-activate";
+export const CTOX_SUSPEND_CHANNEL = "desktop:ctox-suspend";
+export const CTOX_DEACTIVATE_CHANNEL = "desktop:ctox-deactivate";
+export const CTOX_SET_GUEST_BOUNDS_CHANNEL = "desktop:ctox-set-guest-bounds";
+export const CTOX_LIST_APPS_CHANNEL = "desktop:ctox-list-apps";
+export const CTOX_WORKJET_DEVICE_CONTROL_CHANNEL = "desktop:ctox-workjet-device-control";
+export const CTOX_OPEN_APP_CHANNEL = "desktop:ctox-open-app";
+export const CTOX_OPEN_SETTINGS_CHANNEL = "desktop:ctox-open-settings";
+export const CTOX_SET_APP_DOCKED_CHANNEL = "desktop:ctox-set-app-docked";
+export const CTOX_SET_HOST_THEME_CHANNEL = "desktop:ctox-set-host-theme";
+export const CTOX_SHELL_FLEET_INVENTORY_CHANNEL = "desktop:ctox-shell-fleet-inventory";
+export const CTOX_SHELL_FLEET_ACTION_CHANNEL = "desktop:ctox-shell-fleet-action";
+export const CTOX_SHELL_FLEET_PAUSE_CHANNEL = "desktop:ctox-shell-fleet-pause";
+export const CTOX_SHELL_FLEET_RESUME_CHANNEL = "desktop:ctox-shell-fleet-resume";
+export const CTOX_SHELL_FLEET_ROLLOUT_START_CHANNEL = "desktop:ctox-shell-fleet-rollout-start";
+export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_CHANNEL = "desktop:ctox-shell-fleet-rollout-status";
+export const CTOX_SHELL_FLEET_ROLLOUT_RESUME_CHANNEL = "desktop:ctox-shell-fleet-rollout-resume";
+export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT = "desktop:ctox-shell-fleet-rollout-event";
+/** Main → renderer push: per-instance guest lifecycle ("none"|"loading"|"warm"). */
+export const CTOX_GUEST_STATE_CHANNEL = "desktop:ctox-guest-state";

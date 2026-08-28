@@ -75,6 +75,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 import { resolvePendingTaskInteractionMode } from "./legacy-plan-mode";
 import { useLegacyPlanModeState } from "./use-legacy-plan-mode-enabled";
 import {
@@ -191,21 +192,44 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const projects = useProjects();
   const threads = useThreadShells();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const {
+    hasEnvironmentBindings,
+    selectedEnvironmentIds: activeBusinessOsEnvironmentIds,
+    selectEnvironment: selectBusinessOsEnvironment,
+  } = useBusinessOs();
+  const activeBusinessOsEnvironmentIdSet = useMemo(
+    () => new Set(activeBusinessOsEnvironmentIds),
+    [activeBusinessOsEnvironmentIds],
+  );
+  const scopedProjects = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? projects.filter((project) => activeBusinessOsEnvironmentIdSet.has(project.environmentId))
+        : projects,
+    [activeBusinessOsEnvironmentIdSet, hasEnvironmentBindings, projects],
+  );
+  const scopedThreads = useMemo(
+    () =>
+      hasEnvironmentBindings
+        ? threads.filter((thread) => activeBusinessOsEnvironmentIdSet.has(thread.environmentId))
+        : threads,
+    [activeBusinessOsEnvironmentIdSet, hasEnvironmentBindings, threads],
+  );
   const groupingSettings = useMobileProjectGroupingSettings();
   const { enabled: planModeEnabled, loaded: planModePreferenceLoaded } = useLegacyPlanModeState();
   const projectScopes = useMemo(
     () =>
       sortHomeProjectScopes({
         scopes: buildHomeProjectScopes({
-          projects,
+          projects: scopedProjects,
           environmentId: null,
           projectGroupingMode: groupingSettings.sidebarProjectGroupingMode,
         }),
-        threads,
+        threads: scopedThreads,
         pendingTasks: [],
         projectSortOrder: "updated_at",
       }),
-    [groupingSettings.sidebarProjectGroupingMode, projects, threads],
+    [groupingSettings.sidebarProjectGroupingMode, scopedProjects, scopedThreads],
   );
 
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
@@ -213,9 +237,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   );
   const selectedEnvironmentId =
     selectedEnvironmentIdOverride !== null &&
-    projects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
+    scopedProjects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
       ? selectedEnvironmentIdOverride
-      : (projects[0]?.environmentId ?? null);
+      : (scopedProjects[0]?.environmentId ?? null);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [branchQuery, setBranchQuery] = useState("");
@@ -247,10 +271,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const projectsForEnvironment = useMemo(
     () =>
       pipe(
-        projects,
+        scopedProjects,
         Arr.filter((project) => project.environmentId === selectedEnvironmentId),
       ),
-    [projects, selectedEnvironmentId],
+    [scopedProjects, selectedEnvironmentId],
   );
 
   // Stand-in for the edited task's project while its shell is not loaded
@@ -319,7 +343,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         (selectedProjectTitle !== null && project.title === selectedProjectTitle)
       );
     };
-    for (const project of projects) {
+    for (const project of scopedProjects) {
       if (!hostsSelectedRepository(project)) {
         continue;
       }
@@ -338,7 +362,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
     return result;
   }, [
-    projects,
+    scopedProjects,
     savedConnectionsById,
     selectedRepositoryKey,
     selectedWorkspaceBasename,
@@ -577,9 +601,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         void copyComposerDraftContentIfEmpty(selectedProjectDraftKey, nextDraftKey);
       }
       setSelectedEnvironmentId(project.environmentId);
+      if (hasEnvironmentBindings) void selectBusinessOsEnvironment(project.environmentId);
       setSelectedProjectKey(nextProjectKey);
     },
-    [selectedProjectDraftKey],
+    [hasEnvironmentBindings, selectBusinessOsEnvironment, selectedProjectDraftKey],
   );
 
   const selectEnvironment = useCallback(
@@ -608,9 +633,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           ? projectsOnTarget.find((project) => project.title === selectedProject.title)
           : undefined);
       setSelectedEnvironmentId(environmentId);
+      if (hasEnvironmentBindings) void selectBusinessOsEnvironment(environmentId);
       setSelectedProjectKey(match ? scopedProjectKey(match.environmentId, match.id) : null);
     },
-    [projects, selectedProject],
+    [hasEnvironmentBindings, projects, selectBusinessOsEnvironment, selectedProject],
   );
 
   const setWorkspaceMode = useCallback(

@@ -55,6 +55,7 @@ export class ElectronApp extends Context.Service<
     readonly setAboutPanelOptions: (
       options: Electron.AboutPanelOptionsOptions,
     ) => Effect.Effect<void>;
+    readonly showAboutPanel: Effect.Effect<void>;
     readonly setAppUserModelId: (id: string) => Effect.Effect<void>;
     readonly getAppMetrics: Effect.Effect<ReadonlyArray<Electron.ProcessMetric>>;
     readonly isDefaultProtocolClient: (protocol: string) => Effect.Effect<boolean>;
@@ -149,6 +150,9 @@ export const make = ElectronApp.of({
     Effect.sync(() => {
       Electron.app.setAboutPanelOptions(options);
     }),
+  showAboutPanel: Effect.sync(() => {
+    Electron.app.showAboutPanel();
+  }),
   setAppUserModelId: (id) =>
     Effect.sync(() => {
       Electron.app.setAppUserModelId(id);

@@ -136,7 +136,7 @@ export function makeRelayClientTracingLayer(
     url: config.tracesUrl,
     headers: {
       Authorization: `Bearer ${config.tracesToken}`,
-      "X-Axiom-Dataset": config.tracesDataset,
+      "X-Workjet-Trace-Dataset": config.tracesDataset,
     },
     resource: {
       serviceName: resource.serviceName,

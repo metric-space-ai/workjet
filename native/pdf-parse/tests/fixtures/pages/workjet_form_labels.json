@@ -1,0 +1,14 @@
+{
+  "id": "workjet-form-labels",
+  "pdf": "synthetic-pdfs/workjet-form-labels.pdf",
+  "page": 1,
+  "description": "Workjet synthetic form and annotation-like label contract.",
+  "expected_lines": ["Workjet Fixture Form", "Label: Avery Fixture", "Selection: Riley Sample"],
+  "required_patterns": ["Annotation: Fixture Systems approved", "fixture-desk@workjet.example"],
+  "ordered_phrases": ["Label:", "Selection:", "Annotation:", "Contact:"],
+  "same_line_groups": [["Annotation:", "Fixture Systems approved"]],
+  "separate_line_groups": [["Label: Avery Fixture", "Selection: Riley Sample"]],
+  "forbidden_patterns": ["Downloaded Document Boilerplate", "External Confidential Footer"],
+  "allowed_missing_lines": 0,
+  "synthetic_text": "Workjet Fixture Form\nLabel: Avery Fixture\nSelection: Riley Sample\nAnnotation: Fixture Systems approved\nContact: fixture-desk@workjet.example\nFooter: Synthetic Reference 0001"
+}

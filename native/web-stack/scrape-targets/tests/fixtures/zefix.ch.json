@@ -1,0 +1,26 @@
+{
+  "input": { "source_id": "zefix.ch", "company": "Example Industrie AG", "country": "CH" },
+  "expected": { "firma_name": "Example Industrie AG", "firma_ort": "Zürich" },
+  "search": {
+    "provider": "zefix",
+    "results": [
+      {
+        "title": "Example Industrie AG",
+        "url": "https://www.zefix.admin.ch/ZefixREST/api/v1/firm/1000000.json",
+        "summary": "Example Industrie AG, Zürich, EXISTIEREND"
+      }
+    ]
+  },
+  "read": {
+    "ok": true,
+    "url": "https://www.zefix.admin.ch/ZefixREST/api/v1/firm/1000000.json",
+    "title": "Example Industrie AG | Zefix",
+    "page_text_excerpt": "Example Industrie AG 8000 Zürich",
+    "extracted_fields": {
+      "fields": [
+        { "field": "firma_name", "value": "Example Industrie AG", "confidence": "high" },
+        { "field": "firma_ort", "value": "Zürich", "confidence": "high" }
+      ]
+    }
+  }
+}

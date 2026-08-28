@@ -12,15 +12,20 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PairRouteImport } from './routes/pair'
+import { Route as MachinesRouteImport } from './routes/machines'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
+import { Route as SettingsWorkjetRouteImport } from './routes/settings.workjet'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
-import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
+import { Route as SettingsHarnessesRouteImport } from './routes/settings.harnesses'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
+import { Route as SettingsComputersRouteImport } from './routes/settings.computers'
+import { Route as SettingsBusinessOsRouteImport } from './routes/settings.business-os'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
@@ -44,6 +49,11 @@ const PairRoute = PairRouteImport.update({
   path: '/pair',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MachinesRoute = MachinesRouteImport.update({
+  id: '/machines',
+  path: '/machines',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectRoute = ConnectRouteImport.update({
   id: '/connect',
   path: '/connect',
@@ -58,19 +68,29 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ChatRoute,
 } as any)
+const SettingsWorkjetRoute = SettingsWorkjetRouteImport.update({
+  id: '/workjet',
+  path: '/workjet',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   id: '/source-control',
   path: '/source-control',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
-  id: '/providers',
-  path: '/providers',
+const SettingsModelsRoute = SettingsModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   id: '/keybindings',
   path: '/keybindings',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsHarnessesRoute = SettingsHarnessesRouteImport.update({
+  id: '/harnesses',
+  path: '/harnesses',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
@@ -86,6 +106,16 @@ const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
 const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
   id: '/connections',
   path: '/connections',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsComputersRoute = SettingsComputersRouteImport.update({
+  id: '/computers',
+  path: '/computers',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsBusinessOsRoute = SettingsBusinessOsRouteImport.update({
+  id: '/business-os',
+  path: '/business-os',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
@@ -128,6 +158,7 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
+  '/machines': typeof MachinesRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -136,17 +167,22 @@ export interface FileRoutesByFullPath {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/business-os': typeof SettingsBusinessOsRoute
+  '/settings/computers': typeof SettingsComputersRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
-  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/workjet': typeof SettingsWorkjetRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
+  '/machines': typeof MachinesRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -155,12 +191,16 @@ export interface FileRoutesByTo {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/business-os': typeof SettingsBusinessOsRoute
+  '/settings/computers': typeof SettingsComputersRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
-  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/workjet': typeof SettingsWorkjetRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -169,6 +209,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
+  '/machines': typeof MachinesRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -177,12 +218,16 @@ export interface FileRoutesById {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/business-os': typeof SettingsBusinessOsRoute
+  '/settings/computers': typeof SettingsComputersRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
-  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/workjet': typeof SettingsWorkjetRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -192,6 +237,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/connect'
+    | '/machines'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -200,17 +246,22 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/business-os'
+    | '/settings/computers'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
+    | '/settings/harnesses'
     | '/settings/keybindings'
-    | '/settings/providers'
+    | '/settings/models'
     | '/settings/source-control'
+    | '/settings/workjet'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
+    | '/machines'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -219,12 +270,16 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/business-os'
+    | '/settings/computers'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
+    | '/settings/harnesses'
     | '/settings/keybindings'
-    | '/settings/providers'
+    | '/settings/models'
     | '/settings/source-control'
+    | '/settings/workjet'
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -232,6 +287,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_chat'
     | '/connect'
+    | '/machines'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -240,12 +296,16 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/business-os'
+    | '/settings/computers'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
+    | '/settings/harnesses'
     | '/settings/keybindings'
-    | '/settings/providers'
+    | '/settings/models'
     | '/settings/source-control'
+    | '/settings/workjet'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
@@ -254,6 +314,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
+  MachinesRoute: typeof MachinesRoute
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
@@ -284,6 +345,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PairRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/machines': {
+      id: '/machines'
+      path: '/machines'
+      fullPath: '/machines'
+      preLoaderRoute: typeof MachinesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/connect': {
       id: '/connect'
       path: '/connect'
@@ -305,6 +373,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/settings/workjet': {
+      id: '/settings/workjet'
+      path: '/workjet'
+      fullPath: '/settings/workjet'
+      preLoaderRoute: typeof SettingsWorkjetRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/source-control': {
       id: '/settings/source-control'
       path: '/source-control'
@@ -312,11 +387,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSourceControlRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/providers': {
-      id: '/settings/providers'
-      path: '/providers'
-      fullPath: '/settings/providers'
-      preLoaderRoute: typeof SettingsProvidersRouteImport
+    '/settings/models': {
+      id: '/settings/models'
+      path: '/models'
+      fullPath: '/settings/models'
+      preLoaderRoute: typeof SettingsModelsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/keybindings': {
@@ -324,6 +399,13 @@ declare module '@tanstack/react-router' {
       path: '/keybindings'
       fullPath: '/settings/keybindings'
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/harnesses': {
+      id: '/settings/harnesses'
+      path: '/harnesses'
+      fullPath: '/settings/harnesses'
+      preLoaderRoute: typeof SettingsHarnessesRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/general': {
@@ -345,6 +427,20 @@ declare module '@tanstack/react-router' {
       path: '/connections'
       fullPath: '/settings/connections'
       preLoaderRoute: typeof SettingsConnectionsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/computers': {
+      id: '/settings/computers'
+      path: '/computers'
+      fullPath: '/settings/computers'
+      preLoaderRoute: typeof SettingsComputersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/business-os': {
+      id: '/settings/business-os'
+      path: '/business-os'
+      fullPath: '/settings/business-os'
+      preLoaderRoute: typeof SettingsBusinessOsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/archived': {
@@ -418,23 +514,31 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
+  SettingsBusinessOsRoute: typeof SettingsBusinessOsRoute
+  SettingsComputersRoute: typeof SettingsComputersRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsHarnessesRoute: typeof SettingsHarnessesRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
-  SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
+  SettingsWorkjetRoute: typeof SettingsWorkjetRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
+  SettingsBusinessOsRoute: SettingsBusinessOsRoute,
+  SettingsComputersRoute: SettingsComputersRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsHarnessesRoute: SettingsHarnessesRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
-  SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsModelsRoute: SettingsModelsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
+  SettingsWorkjetRoute: SettingsWorkjetRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
@@ -444,6 +548,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
+  MachinesRoute: MachinesRoute,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,

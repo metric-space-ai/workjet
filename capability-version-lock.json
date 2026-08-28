@@ -1,0 +1,140 @@
+{
+  "schema": "workjet.capability-version-lock.v1",
+  "generator": "scripts/check-capability-version-lock.ts",
+  "ctoxHostArtifact": {
+    "schema": "ctox.business-os-shell.v1",
+    "version": "0.1.10",
+    "sourceCommit": "486f50105662ee90431dcef7430fd7a2ff28d29f",
+    "archiveSha256": "bddf8e506b8573b0e8ed875e4a9e8493a7fdf36e5fefe68d91abd8d115df9a63",
+    "embeddedManifestSha256": "fac703c50df82664e78e73c8ee5925d6c1974a5be788927da384613f7e913730",
+    "manifestSha256": "6a676e1746217b2206228e57184d770f0b5ce0bf87ac6bc54ffc5287b3434a48"
+  },
+  "capabilities": [
+    {
+      "capabilityId": "greppy",
+      "version": "1.0.0",
+      "adapters": {
+        "code": ["t3-mcp", "t3-prompt"],
+        "ctox": ["ctox-business-os-mcp", "ctox-business-command"]
+      },
+      "dimensions": {
+        "manifest": {
+          "enforcement": "unenforceable",
+          "code": "{\"capabilityId\":\"greppy\",\"contractVersion\":\"1.0.0\",\"toolNames\":[]}",
+          "ctox": null,
+          "codeSource": "packages/workjet-capabilities/src/manifests.ts",
+          "ctoxSource": null,
+          "reason": "The CTOX host runs its own Greppy runtime. This repository pins Greppy for the Code host only (GREPPY_RUNTIME_PIN); no CTOX-side manifest, schema, revision, or artifact hash for Greppy exists here, so there is no second value to compare."
+        },
+        "schemas": {
+          "enforcement": "unenforceable",
+          "code": "67e2c01b4dfb20d094d3039b19652d247a0472f072105f787475d08da9bf5853",
+          "ctox": null,
+          "codeSource": "packages/workjet-capabilities/src/manifests.ts",
+          "ctoxSource": null,
+          "reason": "The CTOX host runs its own Greppy runtime. This repository pins Greppy for the Code host only (GREPPY_RUNTIME_PIN); no CTOX-side manifest, schema, revision, or artifact hash for Greppy exists here, so there is no second value to compare."
+        },
+        "implementationRevision": {
+          "enforcement": "unenforceable",
+          "code": "greppy@0.3.1+de078b47d1df5df7c086e4591162517328f979ec",
+          "ctox": null,
+          "codeSource": "packages/workjet-capabilities/src/greppyRuntime.ts",
+          "ctoxSource": null,
+          "reason": "The CTOX host runs its own Greppy runtime. This repository pins Greppy for the Code host only (GREPPY_RUNTIME_PIN); no CTOX-side manifest, schema, revision, or artifact hash for Greppy exists here, so there is no second value to compare."
+        },
+        "artifactHash": {
+          "enforcement": "unenforceable",
+          "code": "20e54f1339f1ec138665e0bc0371d4557a96ce166ce4620ecc3f0ad4266f01cf",
+          "ctox": null,
+          "codeSource": "packages/workjet-capabilities/src/greppyRuntime.ts",
+          "ctoxSource": null,
+          "reason": "The CTOX host runs its own Greppy runtime. This repository pins Greppy for the Code host only (GREPPY_RUNTIME_PIN); no CTOX-side manifest, schema, revision, or artifact hash for Greppy exists here, so there is no second value to compare."
+        }
+      }
+    },
+    {
+      "capabilityId": "web-search",
+      "version": "1.0.0",
+      "adapters": {
+        "code": ["t3-mcp", "t3-prompt"],
+        "ctox": ["ctox-business-os-mcp", "ctox-business-command"]
+      },
+      "dimensions": {
+        "manifest": {
+          "enforcement": "cross-host",
+          "code": "{\"capabilityId\":\"web-search\",\"contractVersion\":\"1.0.0\",\"toolNames\":[\"web_deep_research\",\"web_read\",\"web_search\"]}",
+          "ctox": "{\"capabilityId\":\"web-search\",\"contractVersion\":\"1.0.0\",\"toolNames\":[\"web_deep_research\",\"web_read\",\"web_search\"]}",
+          "codeSource": "packages/workjet-capabilities/src/manifests.ts",
+          "ctoxSource": "native/web-stack/fixtures/capability-adapter-v1.json",
+          "reason": "The Code host resolves identity and contract version from the TypeScript catalog; the CTOX host resolves them from the shared adapter fixture embedded in the ctox-web-stack crate."
+        },
+        "schemas": {
+          "enforcement": "cross-host",
+          "code": "b2c5870fe1a8094c2b0fc43016d7daac020aea2c32205dfe237ec47728baf111",
+          "ctox": "b2c5870fe1a8094c2b0fc43016d7daac020aea2c32205dfe237ec47728baf111",
+          "codeSource": "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts",
+          "ctoxSource": "native/web-stack/schema/web-stack-tools.v1.json",
+          "reason": "The Code host resolves JSON Schemas from the generated TypeScript contract; the CTOX host resolves them from the JSON document the crate embeds with include_str!."
+        },
+        "implementationRevision": {
+          "enforcement": "cross-host",
+          "code": "SEARCH_SURFACE_VERSION=workjet-web-stack-json-v1 RESEARCH_SURFACE_VERSION=workjet-web-stack-research-json-v1",
+          "ctox": "SEARCH_SURFACE_VERSION=workjet-web-stack-json-v1 RESEARCH_SURFACE_VERSION=workjet-web-stack-research-json-v1",
+          "codeSource": "apps/server/src/mcp/toolkits/workjet",
+          "ctoxSource": "native/web-stack/src/bin/workjet-web-stack.rs",
+          "reason": "The Code adapter refuses any binary whose --surface-version answer differs from its compiled-in expectation; the shared crate both hosts execute declares those strings. Divergence means Code and CTOX are running different implementations of the same capability."
+        },
+        "artifactHash": {
+          "enforcement": "cross-host",
+          "code": "6dfb6d5426553702219e452f48113c89a7b97326333009003aa732ed6f7d7a32",
+          "ctox": "99465451d84794d3e021893732537234deebe871fd84b9a1754404b1fd724ebe",
+          "codeSource": "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts",
+          "ctoxSource": "native/web-stack/schema/web-stack-tools.v1.json",
+          "reason": "Both hosts carry a byte-level copy of the capability contract artifact. The lock digests each copy independently, so a hand-edit to either one fails release assembly."
+        }
+      }
+    },
+    {
+      "capabilityId": "web-stack-browser",
+      "version": "1.0.0",
+      "adapters": {
+        "code": ["t3-mcp", "t3-prompt"],
+        "ctox": ["ctox-business-os-mcp", "ctox-business-command"]
+      },
+      "dimensions": {
+        "manifest": {
+          "enforcement": "cross-host",
+          "code": "{\"capabilityId\":\"web-stack-browser\",\"contractVersion\":\"1.0.0\",\"toolNames\":[\"web_browser_automate\",\"web_browser_prepare\"]}",
+          "ctox": "{\"capabilityId\":\"web-stack-browser\",\"contractVersion\":\"1.0.0\",\"toolNames\":[\"web_browser_automate\",\"web_browser_prepare\"]}",
+          "codeSource": "packages/workjet-capabilities/src/manifests.ts",
+          "ctoxSource": "native/web-stack/fixtures/capability-adapter-v1.json",
+          "reason": "The Code host resolves identity and contract version from the TypeScript catalog; the CTOX host resolves them from the shared adapter fixture embedded in the ctox-web-stack crate."
+        },
+        "schemas": {
+          "enforcement": "cross-host",
+          "code": "dfbc78a4aec6b249b894cf95609ef39a1dfeab6d3b272d8e7a60422467971339",
+          "ctox": "dfbc78a4aec6b249b894cf95609ef39a1dfeab6d3b272d8e7a60422467971339",
+          "codeSource": "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts",
+          "ctoxSource": "native/web-stack/schema/web-stack-tools.v1.json",
+          "reason": "The Code host resolves JSON Schemas from the generated TypeScript contract; the CTOX host resolves them from the JSON document the crate embeds with include_str!."
+        },
+        "implementationRevision": {
+          "enforcement": "cross-host",
+          "code": "BROWSER_SURFACE_VERSION=workjet-web-stack-browser-json-v1",
+          "ctox": "BROWSER_SURFACE_VERSION=workjet-web-stack-browser-json-v1",
+          "codeSource": "apps/server/src/mcp/toolkits/workjet",
+          "ctoxSource": "native/web-stack/src/bin/workjet-web-stack.rs",
+          "reason": "The Code adapter refuses any binary whose --surface-version answer differs from its compiled-in expectation; the shared crate both hosts execute declares those strings. Divergence means Code and CTOX are running different implementations of the same capability."
+        },
+        "artifactHash": {
+          "enforcement": "cross-host",
+          "code": "6dfb6d5426553702219e452f48113c89a7b97326333009003aa732ed6f7d7a32",
+          "ctox": "99465451d84794d3e021893732537234deebe871fd84b9a1754404b1fd724ebe",
+          "codeSource": "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts",
+          "ctoxSource": "native/web-stack/schema/web-stack-tools.v1.json",
+          "reason": "Both hosts carry a byte-level copy of the capability contract artifact. The lock digests each copy independently, so a hand-edit to either one fails release assembly."
+        }
+      }
+    }
+  ]
+}

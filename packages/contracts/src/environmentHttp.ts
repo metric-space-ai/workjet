@@ -9,6 +9,24 @@ import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondab
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import {
+  CtoxMobileInviteCreateInput,
+  CtoxMobileInviteCreateResult,
+  CtoxMobileInviteRevokeInput,
+  CtoxMobileInviteRevokeResult,
+  WorkjetDeviceInviteCreateInput,
+  WorkjetDeviceInviteCreateResult,
+  WorkjetDeviceBindingListInput,
+  WorkjetDeviceBindingListResult,
+  WorkjetDeviceInviteRedeemInput,
+  WorkjetDeviceInviteRevokeInput,
+  WorkjetDeviceInviteRevokeResult,
+  WorkjetDeviceInviteV1,
+} from "./ctox.ts";
+import {
+  CtoxMobileShellPackResolveInput,
+  CtoxMobileShellPackResolveResult,
+} from "./mobileShell.ts";
+import {
   AuthAccessTokenResult,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
@@ -62,6 +80,7 @@ export const EnvironmentRequestInvalidReason = Schema.Literals([
   "invalid_scope",
   "scope_not_granted",
   "invalid_command",
+  "invalid_device_connection_url",
 ]);
 export type EnvironmentRequestInvalidReason = typeof EnvironmentRequestInvalidReason.Type;
 
@@ -90,6 +109,12 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_snapshot_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
+  "mobile_invite_issuance_failed",
+  "mobile_invite_revoke_failed",
+  "mobile_shell_pack_resolve_failed",
+  "device_invite_issuance_failed",
+  "device_invite_redemption_failed",
+  "device_invite_revoke_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -292,6 +317,38 @@ export class EnvironmentCloudEndpointUnavailableError extends Schema.TaggedError
     return HttpServerResponse.schemaJson(EnvironmentCloudEndpointUnavailableError)(this, {
       status: 503,
     });
+  }
+}
+
+export class WorkjetDeviceInviteRedeemRejectedError extends Schema.TaggedErrorClass<WorkjetDeviceInviteRedeemRejectedError>()(
+  "WorkjetDeviceInviteRedeemRejectedError",
+  { code: Schema.Literal("device_invite_unavailable") },
+  { httpApiStatus: 404 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(WorkjetDeviceInviteRedeemRejectedError)(this, {
+      status: 404,
+    });
+  }
+
+  override get message(): string {
+    return "This Workjet device invitation is unavailable.";
+  }
+}
+
+export class WorkjetDeviceInviteRedeemRateLimitedError extends Schema.TaggedErrorClass<WorkjetDeviceInviteRedeemRateLimitedError>()(
+  "WorkjetDeviceInviteRedeemRateLimitedError",
+  { code: Schema.Literal("device_invite_rate_limited") },
+  { httpApiStatus: 429 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(WorkjetDeviceInviteRedeemRateLimitedError)(this, {
+      status: 429,
+    });
+  }
+
+  override get message(): string {
+    return "Too many Workjet device invitation attempts.";
   }
 }
 const EnvironmentSessionCreationErrors = [
@@ -530,6 +587,71 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
+export class EnvironmentBusinessOsHttpApi extends HttpApiGroup.make("businessOs")
+  .add(
+    HttpApiEndpoint.post("listDeviceBindings", "/api/workjet/device-bindings/list", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetDeviceBindingListInput,
+      success: WorkjetDeviceBindingListResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("createDeviceInvite", "/api/workjet/device-invites", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetDeviceInviteCreateInput,
+      success: WorkjetDeviceInviteCreateResult,
+      error: EnvironmentPairingCredentialErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeDeviceInvite", "/api/workjet/device-invites/revoke", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetDeviceInviteRevokeInput,
+      success: WorkjetDeviceInviteRevokeResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("redeemDeviceInvite", "/api/workjet/device-invites/redeem", {
+      payload: WorkjetDeviceInviteRedeemInput,
+      success: WorkjetDeviceInviteV1,
+      error: [
+        WorkjetDeviceInviteRedeemRejectedError,
+        WorkjetDeviceInviteRedeemRateLimitedError,
+        EnvironmentInternalError,
+      ],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createMobileInvite", "/api/ctox/business-os/mobile-invites", {
+      headers: OptionalBearerHeaders,
+      payload: CtoxMobileInviteCreateInput,
+      success: CtoxMobileInviteCreateResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeMobileInvite", "/api/ctox/business-os/mobile-invites/revoke", {
+      headers: OptionalBearerHeaders,
+      payload: CtoxMobileInviteRevokeInput,
+      success: CtoxMobileInviteRevokeResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "resolveMobileShellPack",
+      "/api/ctox/business-os/mobile-shell-packs/resolve",
+      {
+        headers: OptionalBearerHeaders,
+        payload: CtoxMobileShellPackResolveInput,
+        success: CtoxMobileShellPackResolveResult,
+        error: EnvironmentScopedOperationErrors,
+      },
+    ).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 /** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */
 export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
   HttpApiEndpoint.post("diff", "/api/pull-requests/diff", {
@@ -610,6 +732,7 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
+  .add(EnvironmentBusinessOsHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentConnectHttpApi) {}

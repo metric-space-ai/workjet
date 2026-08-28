@@ -10,11 +10,12 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
-import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
-import { resolveServerBackedAppDisplayName } from "../branding.logic";
+import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
+import { DeepLinkConfirmationDialog } from "../components/desktop/DeepLinkConfirmationDialog";
+import { UserDataMigrationDialog } from "../components/desktop/UserDataMigrationDialog";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -136,6 +137,8 @@ function RootRouteView() {
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />
+        <UserDataMigrationDialog />
+        <DeepLinkConfirmationDialog />
         <ConfirmDialogHost />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
@@ -193,18 +196,9 @@ function FontAppearanceSync() {
 }
 
 function DocumentTitleSync() {
-  const primaryServerVersion =
-    useAtomValue(primaryServerConfigAtom)?.environment.serverVersion ?? null;
-  const title = resolveServerBackedAppDisplayName({
-    baseName: APP_BASE_NAME,
-    fallbackDisplayName: APP_DISPLAY_NAME,
-    fallbackStageLabel: APP_STAGE_LABEL,
-    primaryServerVersion,
-  });
-
   useEffect(() => {
-    document.title = title;
-  }, [title]);
+    document.title = APP_DISPLAY_NAME;
+  }, []);
 
   return null;
 }

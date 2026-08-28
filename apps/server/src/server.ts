@@ -45,6 +45,21 @@ import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/Provide
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
+import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
+import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
+import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
+import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
+import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
+import * as DecisionHubReconciler from "./workjet/decisionHub/DecisionHubReconciler.ts";
+import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
+import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
+import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
+import { WorkjetMailboxStoreLive } from "./workjet/mailbox/WorkjetMailboxStore.ts";
+import * as WorkjetMailboxTransport from "./workjet/mailbox/WorkjetMailboxTransport.ts";
+import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
+import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore.ts";
+import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -76,6 +91,7 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
@@ -84,6 +100,10 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as CtoxMobileInviteService from "./ctox/CtoxMobileInviteService.ts";
+import * as CtoxMobileShellPackService from "./ctox/CtoxMobileShellPackService.ts";
+import * as WorkjetDeviceInviteReferenceService from "./ctox/WorkjetDeviceInviteReferenceService.ts";
+import { businessOsHttpApiLayer } from "./ctox/http.ts";
 import {
   connectHttpApiLayer,
   pendingServiceUpdateExists,
@@ -140,6 +160,8 @@ const PtyAdapterLive = Layer.unwrap(
 );
 
 const ServerSettingsLayerLive = ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer));
+const WorktreeStorageLayerLive = WorktreeStorage.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+const GitVcsDriverLayerLive = GitVcsDriver.layer.pipe(Layer.provide(WorktreeStorageLayerLive));
 
 const NativeTelemetryLayerLive = NativeTelemetryClient.layer.pipe(
   Layer.provide(ResourceMonitorBinary.layer),
@@ -241,13 +263,32 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
-  Layer.provideMerge(ThreadDeletionReactorLive),
+  Layer.provideMerge(
+    // Worker worktree release is a thread-deletion reaction, so its service is
+    // provided directly to the reactor that consumes `thread.deleted`.
+    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
+  ),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
   Layer.provide(ProviderSessionRuntime.layer),
+);
+
+const DecisionHubMcpClientLive = DecisionHubMcpClient.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+);
+const DecisionHubConnectionRegistryLive = DecisionHubConnectionRegistry.layer.pipe(
+  Layer.provide(DecisionHubMcpClientLive),
+);
+const DecisionHubEscalationServiceLive = DecisionHubEscalationService.layer.pipe(
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(DecisionHubMcpClientLive),
+);
+const DecisionHubReconcilerLive = DecisionHubReconciler.layer.pipe(
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(DecisionHubMcpClientLive),
 );
 
 // `ProviderAdapterRegistryLive` is now a facade that resolves kind → adapter
@@ -258,6 +299,7 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // `ProviderService` and the per-instance drivers read the same logger pair.
 const ProviderLayerLive = ProviderServiceLive.pipe(
   Layer.provide(ProviderAdapterRegistryLive),
+  Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 
@@ -271,20 +313,20 @@ const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.lay
   Layer.provide(
     Layer.mergeAll(AzureDevOpsCli.layer, BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer),
   ),
-  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(GitVcsDriverLayerLive),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
 );
 
 const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunner.layer),
-  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(GitVcsDriverLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(TextGeneration.layer),
 );
 
 const GitLayerLive = Layer.empty.pipe(
   Layer.provideMerge(GitManagerLayerLive),
-  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(GitVcsDriverLayerLive),
 );
 
 const GitWorkflowLayerLive = GitWorkflowService.layer.pipe(
@@ -293,13 +335,14 @@ const GitWorkflowLayerLive = GitWorkflowService.layer.pipe(
 );
 
 const SourceControlRepositoryServiceLayerLive = SourceControlRepositoryService.layer.pipe(
-  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(GitVcsDriverLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
 );
 
 const ReviewLayerLive = ReviewService.layer.pipe(
-  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(GitVcsDriverLayerLive),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
+  Layer.provide(WorktreeStorageLayerLive),
 );
 
 const VcsLayerLive = Layer.empty.pipe(
@@ -365,9 +408,9 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
-  // Core Services
+const RuntimeCoreFoundationLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
+  Layer.provideMerge(WorktreeStorageLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
@@ -377,6 +420,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(ProviderRegistryLive),
+);
+
+const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
@@ -400,6 +446,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(ServerEnvironment.layer),
   Layer.provideMerge(AuthLayerLive),
+  // Gateway accounts are loaded from their dedicated secret-reference-only
+  // environment config, never from harness-driver provider instances.
+  Layer.provideMerge(ProviderGateway.layer),
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     Layer.mergeAll(
@@ -439,10 +488,39 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
   Layer.provide(VcsProcess.layer),
 );
 
+/**
+ * The delegation reconciler, as ONE layer reference.
+ *
+ * It is both a background loop and the owner of the delegation REASSIGNMENT
+ * write, so the WebSocket route layer needs the very same service instance the
+ * loop runs on. Effect memoizes a layer by REFERENCE within one build, so this
+ * constant — not a second `WorkjetDelegationExecutor.layer.pipe(…)` expression —
+ * is what both consumers below are given, and exactly one executor (and one
+ * reconciler fiber) exists in the server.
+ */
+const WorkjetDelegationExecutorLive = WorkjetDelegationExecutor.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      WorkjetMailboxStoreLive,
+      WorkjetSnapshotStoreLive,
+      // The executor signs the `result` envelope it returns to a
+      // cross-environment source with this environment's key.
+      WorkjetMeshIdentity.layer,
+    ),
+  ),
+);
+
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
+      Layer.provide(
+        businessOsHttpApiLayer.pipe(
+          Layer.provide(CtoxMobileInviteService.layer()),
+          Layer.provide(CtoxMobileShellPackService.layer()),
+          Layer.provide(WorkjetDeviceInviteReferenceService.layer()),
+        ),
+      ),
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),
@@ -452,10 +530,79 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
-    websocketRpcRouteLayer,
+    // The WebSocket RPC surface now sends through the SAME durable mailbox the
+    // MCP tools use — one delivery service, two entrypoints — so it needs the
+    // same three services the MCP server below is given.
+    websocketRpcRouteLayer.pipe(
+      Layer.provide(DecisionHubConnectionRegistryLive),
+      Layer.provide(
+        WorkjetMailboxDelivery.layer.pipe(
+          Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
+        ),
+      ),
+      Layer.provide(WorkjetSnapshotStoreLive),
+      // The handler substitutes this server's own mesh workspace id whenever a
+      // client omits the target one, which it cannot know.
+      Layer.provide(WorkjetMeshIdentity.layer),
+      // `workjet_mailbox.reassign_delegation` calls the reconciler's own
+      // reassignment port rather than reimplementing its guard.
+      Layer.provide(WorkjetDelegationExecutorLive),
+    ),
   ),
-  McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  McpHttpServer.layer.pipe(
+    Layer.provide(DecisionHubEscalationServiceLive),
+    Layer.provide(McpSessionRegistry.layer),
+    Layer.provide(WorkerDispatch.layer),
+    // The durable Workjet mailbox is provided exactly where worker dispatch is:
+    // the store resolves the ambient `SqlClient` from `PersistenceLayerLive`,
+    // and the delivery service resolves the orchestration engine and projection
+    // query from the same runtime the MCP routes already run inside.
+    Layer.provide(
+      WorkjetMailboxDelivery.layer.pipe(
+        Layer.provide(Layer.mergeAll(WorkjetMailboxStoreLive, WorkjetMeshIdentity.layer)),
+      ),
+    ),
+    // `workjet_delegate_task` stores its prompt here, so the delegation's
+    // digest describes bytes the server itself wrote. One server-wide,
+    // content-addressed root under `ServerConfig.stateDir`.
+    Layer.provide(WorkjetSnapshotStoreLive),
+  ),
+  // The cross-machine half of the same mailbox: a jittered poll loop that
+  // exchanges opaque envelopes with the LOCAL CTOX daemon's loopback surface.
+  // It sits beside the delivery service rather than inside the MCP server
+  // because it is a background exchange, not a request-scoped dependency, and
+  // it idles harmlessly when no daemon is running.
+  WorkjetMailboxTransport.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        WorkjetMailboxStoreLive,
+        // Cross-machine delegations attach their prompt snapshot bytes on the
+        // way out and store received bytes here on the way in, so the executor
+        // finds the prompt locally instead of skipping on `missingSnapshot`.
+        WorkjetSnapshotStoreLive,
+        WorkjetMeshIdentity.layer,
+      ),
+    ),
+    Layer.provide(ProcessRunner.layer),
+  ),
+  // The step that makes a DELIVERED delegation actually run: a bounded
+  // reconciler loop that starts a normal `thread.turn.start` on the target
+  // thread, applies backpressure while that thread has an active turn, and
+  // resumes whatever a previous process left behind. It sits beside the
+  // transport for the same reason — it is a background loop, not a
+  // request-scoped dependency.
+  WorkjetDelegationExecutorLive,
+  DecisionHubReconcilerLive,
 ).pipe(
+  // One shared, server-lifetime redacted mailbox audit emitter. It is provided
+  // ONCE here so the delivery, transport, and executor services and the
+  // WebSocket subscription handler all publish to and read from the SAME
+  // bounded pub-sub instance (Effect memoizes a layer by reference across the
+  // whole build), rather than one disconnected emitter per subtree.
+  Layer.provide(WorkjetMailboxAuditEmitter.layer),
+  // WebSocket management and MCP search resolve this one server-lifetime
+  // runtime, preserving one shared store and one set of single-flight maps.
+  Layer.provide(GreppyRuntime.layer),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
@@ -629,9 +776,11 @@ export const makeServerLayer = Layer.unwrap(
                   Schedule.upTo({ duration: "10 minutes" }),
                 ),
               }),
-              Effect.tap(() => Effect.logInfo("T3 Connect desired link reconciled on startup")),
+              Effect.tap(() =>
+                Effect.logInfo("Workjet Connect desired link reconciled on startup"),
+              ),
               Effect.catch((cause) =>
-                Effect.logWarning("Failed to reconcile T3 Connect desired link on startup", {
+                Effect.logWarning("Failed to reconcile Workjet Connect desired link on startup", {
                   cause,
                 }),
               ),

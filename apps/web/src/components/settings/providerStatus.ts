@@ -1,5 +1,7 @@
 import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/contracts";
 
+import { getRelativeTimeState } from "../../timestampFormat";
+
 /**
  * Visual treatment for each server-reported provider status. Centralized so
  * the default-driver card and per-instance cards share the same language.
@@ -39,7 +41,7 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ?? "This provider is installed but disabled for new sessions in Workjet.",
     };
   }
   if (!provider.installed) {
@@ -78,6 +80,44 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     headline: "Available",
     detail: provider.message ?? "Installed and ready, but authentication could not be verified.",
   };
+}
+
+/**
+ * Runtime-only status for the Harnesses surface.
+ *
+ * A harness is a CLI runtime: the questions it answers are "is it installed",
+ * "which version", "is it enabled". Whether an LLM account behind it is signed
+ * in is a different question with its own page.
+ *
+ * This is deliberately built from closed runtime facts and NEVER from
+ * `provider.message`. The server's message is where the auth prose lives —
+ * "Authenticated as …", "authentication could not be verified", "5 upstream
+ * providers connected through OpenCode" — so passing it through is exactly how
+ * login state leaked onto the harness list in the first place.
+ */
+export function getProviderRuntimeSummary(provider: ServerProvider | undefined) {
+  if (!provider) {
+    return { headline: "Checking runtime", detail: null };
+  }
+  if (!provider.enabled) {
+    return { headline: "Disabled", detail: "Not offered for new sessions." };
+  }
+  if (!provider.installed) {
+    return { headline: "Not installed", detail: "CLI not detected on PATH." };
+  }
+  return { headline: "Installed", detail: null };
+}
+
+/**
+ * Age of the health check that produced a provider's claim. Rendered next to
+ * the claim itself because "Authenticated" without a timestamp is read as a
+ * live fact, and a cached one outlives an expired CLI login.
+ */
+export function providerCheckedAgeLabel(checkedAt: string | null | undefined): string {
+  const state = getRelativeTimeState(checkedAt ?? null);
+  if (state.status === "missing") return "never checked";
+  if (state.status === "invalid") return "check time unknown";
+  return state.suffix ? `checked ${state.value} ${state.suffix}` : `checked ${state.value}`;
 }
 
 /**

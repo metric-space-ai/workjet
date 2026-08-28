@@ -278,6 +278,7 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
   readonly href: string;
 }) {
   const [failed, setFailed] = useState(() => failedMarkdownFaviconHosts.has(props.host));
+  const faviconUrl = directOriginFaviconUrl(props.href);
 
   return (
     <NativeText
@@ -290,10 +291,10 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
         textDecorationLine: "none",
       }}
     >
-      {!failed ? (
+      {!failed && faviconUrl ? (
         <Image
           source={{
-            uri: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(props.host)}&sz=32`,
+            uri: faviconUrl,
           }}
           style={[markdownLinkStyles.inlineIcon, markdownLinkStyles.favicon]}
           onError={() => {
@@ -308,6 +309,16 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
     </NativeText>
   );
 });
+
+function directOriginFaviconUrl(href: string): string | null {
+  try {
+    const url = new URL(href);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return new URL("/favicon.ico", url.origin).href;
+  } catch {
+    return null;
+  }
+}
 
 function MarkdownCodeBlock(props: {
   readonly backgroundColor: string;

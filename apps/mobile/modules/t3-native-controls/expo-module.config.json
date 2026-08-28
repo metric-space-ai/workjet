@@ -1,9 +1,18 @@
 {
   "platforms": ["apple", "android"],
   "apple": {
-    "modules": ["T3NativeControlsModule", "T3KeyboardCommandsModule"]
+    "modules": [
+      "T3NativeControlsModule",
+      "T3KeyboardCommandsModule",
+      "T3BusinessOsModule",
+      "T3BusinessOsLauncherModule"
+    ]
   },
   "android": {
-    "modules": ["expo.modules.t3nativecontrols.T3NativeControlsModule"]
+    "modules": [
+      "expo.modules.t3nativecontrols.T3NativeControlsModule",
+      "expo.modules.t3nativecontrols.T3BusinessOsModule",
+      "expo.modules.t3nativecontrols.T3BusinessOsLauncherModule"
+    ]
   }
 }

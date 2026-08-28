@@ -1,5 +1,15 @@
-import { EnvironmentId, type DesktopSshEnvironmentTarget } from "@t3tools/contracts";
-import { RelayEnvironmentConnectScope } from "@t3tools/contracts/relay";
+import {
+  BusinessOsInstanceId,
+  EnvironmentId,
+  type DesktopSshEnvironmentTarget,
+  type WorkjetDeviceSessionAccessToken,
+  type WorkjetDeviceSessionRefreshGrant,
+  type WorkjetManagedIssuerOrigin,
+} from "@t3tools/contracts";
+import {
+  RelayEnvironmentConnectScope,
+  RelayEnvironmentStatusScope,
+} from "@t3tools/contracts/relay";
 import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -9,6 +19,7 @@ import * as Ref from "effect/Ref";
 import * as Tracer from "effect/Tracer";
 
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import * as BusinessOsManagedBackendControl from "../state/businessOsManagedBackendControl.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
@@ -22,6 +33,7 @@ import {
 } from "./catalog.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
+  ConnectionBlockedError,
   BearerConnectionTarget,
   ConnectionTransientError,
   PrimaryConnectionTarget,
@@ -32,6 +44,7 @@ import {
 import * as ConnectionProfileStore from "./profileStore.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
+const BUSINESS_OS_INSTANCE_ID = BusinessOsInstanceId.make("biz_welsch");
 const ENDPOINT = {
   httpBaseUrl: "https://environment.example.test",
   wsBaseUrl: "wss://environment.example.test",
@@ -81,6 +94,7 @@ function relayClient(
     unlinkEnvironment: () => unsupported("unlinkEnvironment"),
     getEnvironmentStatus: () => unsupported("getEnvironmentStatus"),
     connectEnvironment,
+    issueWorkjetControlIdentityAssertion: () => unsupported("issueWorkjetControlIdentityAssertion"),
     registerDevice: () => unsupported("registerDevice"),
     unregisterDevice: () => unsupported("unregisterDevice"),
     registerLiveActivity: () => unsupported("registerLiveActivity"),
@@ -97,6 +111,9 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
   readonly primaryBearerToken?: string;
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
+  readonly cloudSessionToken?: Effect.Effect<string>;
+  readonly managedAuthorizationProvider?: BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider["Service"];
+  readonly managedDeviceSessionClient?: BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient["Service"];
 }) => {
   const profiles = new Map(
     (options?.profiles ?? []).map((profile) => [profile.connectionId, profile]),
@@ -166,7 +183,9 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(ConnectionCredentialStore.ConnectionCredentialStore, credentialStore),
     Layer.succeed(
       ClientCapabilities.CloudSession,
-      ClientCapabilities.CloudSession.of({ clerkToken: Effect.succeed("clerk-session") }),
+      ClientCapabilities.CloudSession.of({
+        clerkToken: options?.cloudSessionToken ?? Effect.succeed("clerk-session"),
+      }),
     ),
     Layer.succeed(
       ClientCapabilities.PrimaryEnvironmentAuth,
@@ -195,10 +214,51 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
             })),
       ),
     ),
+    options?.managedAuthorizationProvider === undefined
+      ? Layer.empty
+      : Layer.succeed(
+          BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider,
+          options.managedAuthorizationProvider,
+        ),
+    options?.managedDeviceSessionClient === undefined
+      ? Layer.empty
+      : Layer.succeed(
+          BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient,
+          options.managedDeviceSessionClient,
+        ),
   );
 
   return Effect.succeed(ConnectionResolver.layer.pipe(Layer.provide(dependencies)));
 });
+
+const MANAGED_AUTHORIZATION = {
+  sessionIssuer: "https://managed.example.test" as WorkjetManagedIssuerOrigin,
+  relayIssuer: "https://relay.example.test" as WorkjetManagedIssuerOrigin,
+  relayScopes: [RelayEnvironmentConnectScope, RelayEnvironmentStatusScope],
+  tokenType: "DPoP" as const,
+  accessToken: "s".repeat(43) as WorkjetDeviceSessionAccessToken,
+  refreshGrant: "g".repeat(43) as WorkjetDeviceSessionRefreshGrant,
+  expiresAt: "2099-08-27T04:00:00Z",
+  refreshExpiresAt: "2099-09-27T04:00:00Z",
+  businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+  deviceId: "desktop-michael",
+} satisfies BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorization;
+
+function managedDeviceSessionClient(options?: {
+  readonly connectEnvironment?: BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient["Service"]["connectEnvironment"];
+  readonly readDeviceSessionMembership?: BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient["Service"]["readDeviceSessionMembership"];
+}) {
+  return BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClient.of({
+    issueControlIdentityAssertion: () => unsupported("issueControlIdentityAssertion"),
+    connectEnvironment:
+      options?.connectEnvironment ?? (() => unsupported("managed connectEnvironment")),
+    redeemDeviceInvite: () => unsupported("redeemDeviceInvite"),
+    exchangeDeviceSessionBootstrap: () => unsupported("exchangeDeviceSessionBootstrap"),
+    renewDeviceSession: () => unsupported("renewDeviceSession"),
+    readDeviceSessionMembership:
+      options?.readDeviceSessionMembership ?? (() => unsupported("readDeviceSessionMembership")),
+  });
+}
 
 describe("ConnectionResolver", () => {
   it.effect("prepares a primary environment without remote capabilities", () =>
@@ -358,6 +418,262 @@ describe("ConnectionResolver", () => {
         },
       ]);
       expect(yield* Ref.get(bootstrapCredentials)).toEqual(["relay-bootstrap"]);
+    }),
+  );
+
+  it.effect(
+    "uses the exact Business OS device session and authoritative membership for a scoped relay target",
+    () =>
+      Effect.gen(function* () {
+        const providerInputs = yield* Ref.make<ReadonlyArray<string>>([]);
+        const membershipInputs = yield* Ref.make<ReadonlyArray<string>>([]);
+        const connectInputs = yield* Ref.make<
+          ReadonlyArray<BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionEnvironmentConnectRequest>
+        >([]);
+        const bootstrapCredentials = yield* Ref.make<ReadonlyArray<string>>([]);
+        const target = new RelayConnectionTarget({
+          environmentId: ENVIRONMENT_ID,
+          label: "WELSCH computer",
+          businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+        });
+        const brokerLayer = yield* makeDependencies({
+          cloudSessionToken: Effect.die("Scoped relay target must never read Clerk."),
+          managedAuthorizationProvider:
+            BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider.of({
+              read: (input) =>
+                Ref.update(providerInputs, (values) => [
+                  ...values,
+                  input.businessOsInstanceId,
+                ]).pipe(Effect.as(MANAGED_AUTHORIZATION)),
+            }),
+          managedDeviceSessionClient: managedDeviceSessionClient({
+            readDeviceSessionMembership: (request) =>
+              Ref.update(membershipInputs, (values) => [
+                ...values,
+                request.payload.businessOsInstanceId,
+              ]).pipe(
+                Effect.as({
+                  businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+                  membershipVersion: 7,
+                  environmentIds: [ENVIRONMENT_ID],
+                }),
+              ),
+            connectEnvironment: (request) =>
+              Ref.update(connectInputs, (values) => [...values, request]).pipe(
+                Effect.as({
+                  environmentId: request.environmentId,
+                  endpoint: ENDPOINT,
+                  credential: "managed-relay-bootstrap",
+                  expiresAt: "2099-08-27T04:00:00Z",
+                }),
+              ),
+          }),
+          authorizeDpop: (input) =>
+            input.obtainBootstrap.pipe(
+              Effect.tap((bootstrap) =>
+                Ref.update(bootstrapCredentials, (values) => [...values, bootstrap.credential]),
+              ),
+              Effect.as({
+                environmentId: input.expectedEnvironmentId,
+                label: "WELSCH computer",
+                httpBaseUrl: ENDPOINT.httpBaseUrl,
+                socketUrl: "wss://environment.example.test/ws?wsTicket=managed-dpop",
+                httpAuthorization: {
+                  _tag: "Dpop" as const,
+                  accessToken: "environment-dpop-token",
+                },
+              }),
+            ),
+        });
+        const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
+          Effect.provide(brokerLayer),
+        );
+
+        expect((yield* broker.prepare(catalogEntry(target))).socketUrl).toContain(
+          "wsTicket=managed-dpop",
+        );
+        expect(yield* Ref.get(providerInputs)).toEqual([BUSINESS_OS_INSTANCE_ID]);
+        expect(yield* Ref.get(membershipInputs)).toEqual([BUSINESS_OS_INSTANCE_ID]);
+        expect(yield* Ref.get(connectInputs)).toEqual([
+          {
+            relayIssuer: MANAGED_AUTHORIZATION.relayIssuer,
+            accessToken: MANAGED_AUTHORIZATION.accessToken,
+            environmentId: ENVIRONMENT_ID,
+            deviceId: MANAGED_AUTHORIZATION.deviceId,
+            businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+          },
+        ]);
+        expect(yield* Ref.get(bootstrapCredentials)).toEqual(["managed-relay-bootstrap"]);
+      }),
+  );
+
+  it.effect("revalidates instance membership before reusing a scoped environment token", () =>
+    Effect.gen(function* () {
+      const providerCalls = yield* Ref.make(0);
+      const membershipCalls = yield* Ref.make(0);
+      const target = new RelayConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "WELSCH computer",
+        businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+      });
+      const brokerLayer = yield* makeDependencies({
+        cloudSessionToken: Effect.die("Scoped relay target must never read Clerk."),
+        managedAuthorizationProvider:
+          BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider.of({
+            read: () =>
+              Ref.update(providerCalls, (count) => count + 1).pipe(
+                Effect.as(MANAGED_AUTHORIZATION),
+              ),
+          }),
+        managedDeviceSessionClient: managedDeviceSessionClient({
+          readDeviceSessionMembership: () =>
+            Ref.update(membershipCalls, (count) => count + 1).pipe(
+              Effect.as({
+                businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+                membershipVersion: 9,
+                environmentIds: [ENVIRONMENT_ID],
+              }),
+            ),
+          connectEnvironment: () =>
+            Effect.die("A valid scoped cache entry must not mint a fresh Relay bootstrap."),
+        }),
+        authorizeDpop: () =>
+          Effect.succeed({
+            environmentId: ENVIRONMENT_ID,
+            label: "WELSCH computer",
+            httpBaseUrl: ENDPOINT.httpBaseUrl,
+            socketUrl: "wss://environment.example.test/ws?wsTicket=cached-managed-dpop",
+            httpAuthorization: {
+              _tag: "Dpop" as const,
+              accessToken: "cached-managed-environment-token",
+            },
+          }),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+
+      expect((yield* broker.prepare(catalogEntry(target))).socketUrl).toContain(
+        "cached-managed-dpop",
+      );
+      expect(yield* Ref.get(providerCalls)).toBe(1);
+      expect(yield* Ref.get(membershipCalls)).toBe(1);
+    }),
+  );
+
+  it.effect("does not fall back to Clerk when a scoped relay target has no device session", () =>
+    Effect.gen(function* () {
+      const target = new RelayConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "WELSCH computer",
+        businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+      });
+      const brokerLayer = yield* makeDependencies({
+        cloudSessionToken: Effect.die("Scoped relay target must never read Clerk."),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toBeInstanceOf(ConnectionBlockedError);
+      expect(error).toMatchObject({ reason: "authentication" });
+    }),
+  );
+
+  it.effect("rejects a stale Business OS device session", () =>
+    Effect.gen(function* () {
+      const target = new RelayConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "WELSCH computer",
+        businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+      });
+      const staleAuthorization = {
+        ...MANAGED_AUTHORIZATION,
+        expiresAt: "1969-12-31T23:59:00Z",
+      };
+      const brokerLayer = yield* makeDependencies({
+        cloudSessionToken: Effect.die("Scoped relay target must never read Clerk."),
+        managedAuthorizationProvider:
+          BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider.of({
+            read: () => Effect.succeed(staleAuthorization),
+          }),
+        managedDeviceSessionClient: managedDeviceSessionClient(),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toBeInstanceOf(ConnectionBlockedError);
+      expect(error).toMatchObject({ reason: "authentication" });
+    }),
+  );
+
+  it.effect("blocks a scoped relay target that is absent from current instance membership", () =>
+    Effect.gen(function* () {
+      const connectCalls = yield* Ref.make(0);
+      const target = new RelayConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "WELSCH computer",
+        businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+      });
+      const brokerLayer = yield* makeDependencies({
+        cloudSessionToken: Effect.die("Scoped relay target must never read Clerk."),
+        managedAuthorizationProvider:
+          BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider.of({
+            read: () => Effect.succeed(MANAGED_AUTHORIZATION),
+          }),
+        managedDeviceSessionClient: managedDeviceSessionClient({
+          readDeviceSessionMembership: () =>
+            Effect.succeed({
+              businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+              membershipVersion: 8,
+              environmentIds: [EnvironmentId.make("environment-gpu3")],
+            }),
+          connectEnvironment: () =>
+            Ref.update(connectCalls, (count) => count + 1).pipe(
+              Effect.andThen(Effect.die("Membership rejection must happen before connect.")),
+            ),
+        }),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toBeInstanceOf(ConnectionBlockedError);
+      expect(error).toMatchObject({ reason: "permission" });
+      expect(yield* Ref.get(connectCalls)).toBe(0);
+    }),
+  );
+
+  it.effect("never retries a rejected instance-scoped direct connection through Clerk", () =>
+    Effect.gen(function* () {
+      const target = new RelayConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "WELSCH computer",
+        businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+      });
+      const brokerLayer = yield* makeDependencies({
+        cloudSessionToken: Effect.die("Scoped relay target must never read Clerk."),
+        managedAuthorizationProvider:
+          BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionAuthorizationProvider.of({
+            read: () => Effect.succeed(MANAGED_AUTHORIZATION),
+          }),
+        managedDeviceSessionClient: managedDeviceSessionClient({
+          readDeviceSessionMembership: () =>
+            Effect.succeed({
+              businessOsInstanceId: BUSINESS_OS_INSTANCE_ID,
+              membershipVersion: 9,
+              environmentIds: [ENVIRONMENT_ID],
+            }),
+          connectEnvironment: () =>
+            Effect.fail(
+              new BusinessOsManagedBackendControl.WorkjetManagedDeviceSessionClientError({
+                operation: "connect",
+                code: "request_failed",
+              }),
+            ),
+        }),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toBeInstanceOf(ConnectionTransientError);
+      expect(error).toMatchObject({ reason: "relay-unavailable" });
     }),
   );
 

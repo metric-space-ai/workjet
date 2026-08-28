@@ -35,7 +35,7 @@ describe("thread sidebar width", () => {
     expect(resolveInitialThreadSidebarWidth(900, 700)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
   });
 
-  it("shows the desktop wordmark across the sidebar's full legal width range", () => {
+  it("keeps desktop branding and product controls inside the sidebar's legal width range", () => {
     const sidebarStyles = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
     const desktopHeaderStyles = sidebarStyles.slice(
       sidebarStyles.indexOf("@media (min-width: 48rem)"),
@@ -49,7 +49,10 @@ describe("thread sidebar width", () => {
     expect(desktopHeaderStyles).toMatch(
       /@media \(min-width: 48rem\) \{\s*\.sidebar-brand \{\s*display: flex;/,
     );
-    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
+    expect(desktopHeaderStyles).not.toContain(".product-mode-switch {");
+    expect(desktopHeaderStyles).not.toContain('[data-sidebar-state="expanded"]:has(');
+    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(15.5 * 16);
+    expect(THREAD_SIDEBAR_MIN_WIDTH + THREAD_MAIN_CONTENT_MIN_WIDTH).toBe(840);
     expect(Number(stageLabelThreshold) * 16).toBeGreaterThan(THREAD_SIDEBAR_MIN_WIDTH);
   });
 });

@@ -6,6 +6,8 @@ import { remoteHttpClientLayer } from "@t3tools/client-runtime/rpc";
 
 import { cryptoLayer } from "../features/cloud/dpop";
 import { managedRelayClientLayer } from "../features/cloud/managedRelayLayer";
+import { workjetManagedDeviceSessionLayer } from "../features/pairing/workjet-managed-device-session-layer";
+import { workjetManagedBackendControlClientLayer } from "../features/pairing/workjet-managed-backend-control-layer";
 import { resolveCloudPublicConfig } from "../features/cloud/publicConfig";
 import { tracingLayer } from "../features/observability/tracing";
 import * as Persistence from "../persistence/layer";
@@ -15,6 +17,7 @@ function configuredRelayUrl(): string {
 }
 
 const httpClientLayer = remoteHttpClientLayer(fetch);
+const relayLayer = managedRelayClientLayer(configuredRelayUrl());
 
 type RuntimeLayerSource =
   | ReturnType<typeof managedRelayClientLayer>
@@ -22,16 +25,17 @@ type RuntimeLayerSource =
   | typeof cryptoLayer
   | typeof httpClientLayer
   | typeof Persistence.layer
+  | typeof workjetManagedDeviceSessionLayer
+  | typeof workjetManagedBackendControlClientLayer
   | typeof tracingLayer;
 
-const runtimeLayer = Layer.merge(
-  managedRelayClientLayer(configuredRelayUrl()),
-  Socket.layerWebSocketConstructorGlobal,
-).pipe(
+const runtimeLayer = Layer.merge(relayLayer, Socket.layerWebSocketConstructorGlobal).pipe(
   Layer.provideMerge(cryptoLayer),
   Layer.provideMerge(httpClientLayer),
   Layer.provideMerge(tracingLayer.pipe(Layer.provide(httpClientLayer))),
   Layer.provideMerge(Persistence.layer),
+  Layer.provideMerge(workjetManagedDeviceSessionLayer.pipe(Layer.provide(cryptoLayer))),
+  Layer.provideMerge(workjetManagedBackendControlClientLayer.pipe(Layer.provide(cryptoLayer))),
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<

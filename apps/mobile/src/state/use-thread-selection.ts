@@ -1,11 +1,12 @@
 import { useRoute, type RouteProp } from "@react-navigation/native";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   EnvironmentId,
   type OrchestrationThread,
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
+  DEFAULT_WORKJET_THREAD_CONFIG,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
@@ -16,6 +17,8 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnection,
 } from "./use-remote-environment-registry";
+import { useBusinessOs } from "../features/business-os/BusinessOsProvider";
+import { isThreadEnvironmentInActiveBusinessOsScope } from "./business-os-thread-scope";
 type ThreadSelectionRouteParams = {
   readonly environmentId?: string | string[];
   readonly threadId?: string | string[];
@@ -67,10 +70,17 @@ function threadDetailToShell(
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   };
 }
 
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
+  const {
+    environmentBindings,
+    hasEnvironmentBindings,
+    selectedEnvironmentIds: activeBusinessOsEnvironmentIds,
+    selectEnvironment,
+  } = useBusinessOs();
   const routeParams = params ?? {};
   const routeThreadRef = useMemo<ScopedThreadRef | null>(() => {
     const environmentId = firstRouteParam(routeParams.environmentId);
@@ -88,7 +98,30 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
   if (routeThreadRef !== null) {
     lastRouteThreadRef.current = routeThreadRef;
   }
-  const selectedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
+  const rememberedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
+  useEffect(() => {
+    const environmentId = routeThreadRef?.environmentId;
+    if (
+      !environmentId ||
+      activeBusinessOsEnvironmentIds.includes(environmentId) ||
+      !environmentBindings.some((binding) => binding.environmentId === environmentId)
+    ) {
+      return;
+    }
+    void selectEnvironment(environmentId);
+  }, [
+    activeBusinessOsEnvironmentIds,
+    environmentBindings,
+    routeThreadRef?.environmentId,
+    selectEnvironment,
+  ]);
+  const selectedThreadRef = isThreadEnvironmentInActiveBusinessOsScope({
+    environmentId: rememberedThreadRef?.environmentId ?? null,
+    activeEnvironmentIds: activeBusinessOsEnvironmentIds,
+    hasEnvironmentBindings,
+  })
+    ? rememberedThreadRef
+    : null;
   const selectedThreadShell = useThreadShell(selectedThreadRef);
   const selectedThreadDetailState = useEnvironmentThread(
     selectedThreadRef?.environmentId ?? null,

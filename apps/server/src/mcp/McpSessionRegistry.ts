@@ -8,12 +8,15 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import type { ThreadCapabilityContext } from "../workjet/ThreadCapabilityContext.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly threadCapabilityContext: ThreadCapabilityContext;
+  readonly cwd?: string;
 }
 
 export interface McpIssuedCredential {
@@ -123,12 +126,22 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
+      const activeWorkjetMcpCapabilityIds = Object.freeze([
+        ...request.threadCapabilityContext.mcpCapabilityIds,
+      ]);
+      const cwd = request.cwd?.trim();
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities: new Set(["preview"]),
+        activeWorkjetMcpCapabilityIds: new Set(activeWorkjetMcpCapabilityIds),
+        workjetRole: request.threadCapabilityContext.workjetRole,
+        ...(request.threadCapabilityContext.decisionHubConnectionId !== undefined
+          ? { decisionHubConnectionId: request.threadCapabilityContext.decisionHubConnectionId }
+          : {}),
+        ...(cwd ? { cwd } : {}),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -137,14 +150,17 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         return { records: next };
       });
       return {
-        config: {
+        config: Object.freeze({
           environmentId,
           threadId: scope.threadId,
           providerSessionId,
           providerInstanceId: scope.providerInstanceId,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
-        },
+          ...(cwd ? { cwd } : {}),
+          activeWorkjetMcpCapabilityIds,
+          compiledManagedPrompt: request.threadCapabilityContext.compiledManagedPrompt,
+        }),
       };
     },
   );
@@ -247,4 +263,20 @@ export const revokeAllActiveMcpCredentials = (): Effect.Effect<void> =>
 /** Exposed for tests. */
 export const __testing = {
   make: makeWithOptions,
+  withActive: <A, E, R>(
+    registry: McpSessionRegistryShape,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const previous = activeMcpSessionRegistry;
+        activeMcpSessionRegistry = registry;
+        return previous;
+      }),
+      () => effect,
+      (previous) =>
+        Effect.sync(() => {
+          activeMcpSessionRegistry = previous;
+        }),
+    ),
 };

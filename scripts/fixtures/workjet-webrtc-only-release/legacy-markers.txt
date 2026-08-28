@@ -1,0 +1,5 @@
+signaling_room_password: "shared"
+pairing_version: "w1"
+http_bridge_available: true
+data_plane: "http-proxy"
+/api/business-os/records/customer-1

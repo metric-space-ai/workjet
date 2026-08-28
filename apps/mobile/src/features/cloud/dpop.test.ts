@@ -10,6 +10,7 @@ import { verifyDpopProof } from "@t3tools/shared/dpop";
 
 import {
   createDpopProof,
+  createDpopProofWithSigner,
   generateDpopProofKeyPair,
   loadOrCreateDpopProofKeyPair,
   cryptoLayer,
@@ -159,6 +160,44 @@ describe("mobile DPoP", () => {
           expectedThumbprint: proofKey.thumbprint,
           expectedAccessToken: "clerk-token",
           nowEpochSeconds: proofIat(proof.proof),
+        }),
+      ).toMatchObject({ ok: true });
+    }).pipe(Effect.provide(cryptoLayer)),
+  );
+
+  it.effect("accepts a non-exporting native-style signer", () =>
+    Effect.gen(function* () {
+      const proofKey = yield* generateDpopProofKeyPair();
+      const privateKey = NodeCrypto.createPrivateKey({
+        key: proofKey.privateJwk,
+        format: "jwk",
+      });
+      const result = yield* createDpopProofWithSigner({
+        method: "POST",
+        url: "https://relay.example.test/v1/environments/env-1/connect",
+        accessToken: "device-session-token",
+        signer: {
+          publicJwk: proofKey.publicJwk,
+          thumbprint: proofKey.thumbprint,
+          sign: (message) =>
+            Effect.sync(() =>
+              NodeCrypto.sign("sha256", Buffer.from(message), {
+                key: privateKey,
+                dsaEncoding: "ieee-p1363",
+              }).toString("base64url"),
+            ),
+        },
+      });
+
+      expect(result.thumbprint).toBe(proofKey.thumbprint);
+      expect(
+        verifyDpopProof({
+          proof: result.proof,
+          method: "POST",
+          url: "https://relay.example.test/v1/environments/env-1/connect",
+          expectedThumbprint: proofKey.thumbprint,
+          expectedAccessToken: "device-session-token",
+          nowEpochSeconds: proofIat(result.proof),
         }),
       ).toMatchObject({ ok: true });
     }).pipe(Effect.provide(cryptoLayer)),

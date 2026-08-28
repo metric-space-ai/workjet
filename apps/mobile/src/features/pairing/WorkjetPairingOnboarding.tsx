@@ -1,0 +1,177 @@
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCallback, useState } from "react";
+import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+
+import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/AppSymbol";
+import { useThemeColor } from "../../lib/useThemeColor";
+import { pairingScannerSize } from "./pairing-scanner-layout";
+
+type ScannerState = "closed" | "starting" | "ready" | "detected" | "error";
+
+export function WorkjetPairingOnboarding(props: {
+  readonly onContinueWithoutPairing: () => void;
+  readonly onPairingPayload: (payload: string) => Promise<boolean>;
+}) {
+  const foreground = useThemeColor("--color-foreground");
+  const { height, width } = useWindowDimensions();
+  const scannerSize = pairingScannerSize({ height, width });
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scannerState, setScannerState] = useState<ScannerState>("closed");
+  const [scannerLocked, setScannerLocked] = useState(false);
+  const [pairing, setPairing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const openScanner = useCallback(async () => {
+    setError(null);
+    if (cameraPermission?.granted) {
+      setScannerState("starting");
+      setScannerVisible(true);
+      return;
+    }
+    const permission = await requestCameraPermission();
+    if (permission.granted) {
+      setScannerState("starting");
+      setScannerVisible(true);
+    } else {
+      setScannerState("error");
+      setError("Kamerazugriff ist erforderlich, um den Workjet-QR-Code zu scannen.");
+    }
+  }, [cameraPermission?.granted, requestCameraPermission]);
+
+  const scan = useCallback(
+    ({ data }: { readonly data: string }) => {
+      if (scannerLocked || pairing) return;
+      setScannerLocked(true);
+      setScannerState("detected");
+      setPairing(true);
+      setError(null);
+      void props
+        .onPairingPayload(data)
+        .then((completed) => {
+          if (!completed) setScannerState("ready");
+        })
+        .catch((cause) => {
+          setScannerState("ready");
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Der QR-Code konnte nicht als Workjet-Pairing gelesen werden.",
+          );
+        })
+        .finally(() => {
+          setPairing(false);
+          setTimeout(() => setScannerLocked(false), 600);
+        });
+    },
+    [pairing, props.onPairingPayload, scannerLocked],
+  );
+
+  return (
+    <ScrollView
+      className="flex-1 bg-screen"
+      contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingVertical: 24 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View className="w-full max-w-[760px] flex-1 self-center">
+        <View className="flex-row items-center gap-3">
+          <View className="size-12 items-center justify-center rounded-[15px] bg-subtle-strong">
+            <SymbolView
+              name="qrcode.viewfinder"
+              size={25}
+              tintColor={foreground}
+              type="monochrome"
+            />
+          </View>
+          <View className="min-w-0 flex-1">
+            <Text className="text-2xl font-t3-bold">Workjet verbinden</Text>
+            <Text className="mt-1 text-sm text-foreground-muted">
+              Ein Pairing für Code und Business OS
+            </Text>
+          </View>
+        </View>
+
+        <View className="mt-8 rounded-[24px] bg-card p-5">
+          <Text className="text-lg font-t3-bold">QR-Code in Workjet öffnen</Text>
+          <Text className="mt-3 text-base leading-normal text-foreground-muted">
+            Öffne auf einem bereits verbundenen Gerät Einstellungen → Business OS. Wähle die
+            gewünschte Instanz und dann „Gerät hinzufügen“. Scanne den kurzlebigen QR-Code hier. Ein
+            QR-Code verbindet genau diese Business OS mit Code und Business OS – ohne Server- oder
+            Passworteingabe.
+          </Text>
+        </View>
+
+        {scannerVisible ? (
+          <View className="mt-5 items-center gap-3">
+            {cameraPermission?.granted ? (
+              <View
+                className="overflow-hidden rounded-[26px] border border-border bg-black"
+                style={{ height: scannerSize, width: scannerSize }}
+              >
+                <CameraView
+                  autofocus="on"
+                  barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                  facing="back"
+                  onBarcodeScanned={scannerLocked ? undefined : scan}
+                  onCameraReady={() => setScannerState("ready")}
+                  onMountError={({ message }) => {
+                    setScannerState("error");
+                    setError(`Die Kamera konnte nicht gestartet werden: ${message}`);
+                  }}
+                  style={{ height: scannerSize, width: scannerSize }}
+                />
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-[15%] rounded-[24px] border-2 border-white/90"
+                />
+              </View>
+            ) : null}
+            <Text className="text-center text-sm font-t3-medium text-foreground-muted">
+              {scannerState === "starting"
+                ? "Kamera wird gestartet…"
+                : scannerState === "detected"
+                  ? "QR-Code erkannt. Pairing wird geprüft…"
+                  : scannerState === "error"
+                    ? "Scanner nicht verfügbar"
+                    : "Kurzen Workjet-QR-Code vollständig innerhalb des Rahmens positionieren"}
+            </Text>
+          </View>
+        ) : (
+          <View className="flex-1" />
+        )}
+
+        {error ? (
+          <View className="mt-4 rounded-[16px] bg-red-500/10 px-4 py-3">
+            <Text className="text-sm leading-normal text-red-500">{error}</Text>
+          </View>
+        ) : null}
+
+        <View className="mt-5 gap-3 pb-2">
+          <Pressable
+            accessibilityLabel={scannerVisible ? "QR-Code erneut scannen" : "QR-Code scannen"}
+            accessibilityRole="button"
+            className="min-h-[52px] items-center justify-center rounded-[16px] bg-primary px-5 active:opacity-80"
+            disabled={pairing}
+            onPress={() => void openScanner()}
+          >
+            <Text className="text-base font-t3-bold text-primary-foreground">
+              {pairing ? "Workjet wird verbunden…" : "QR-Code scannen"}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Pairing später durchführen und Code lokal verwenden"
+            accessibilityRole="button"
+            className="min-h-12 items-center justify-center rounded-[16px] px-5 active:bg-subtle-strong"
+            disabled={pairing}
+            onPress={props.onContinueWithoutPairing}
+          >
+            <Text className="text-sm font-t3-medium text-foreground-muted">
+              Später – Code lokal verwenden
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}

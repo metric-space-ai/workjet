@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 import {
   CommandId,
   defaultInstanceIdForDriver,
@@ -78,6 +79,7 @@ export const seedTransferBudgetHistory = Effect.fn("TransferBudget.seedHistory")
     modelSelection,
     runtimeMode: "approval-required",
     interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     branch: "main",
     worktreePath: harness.workspaceDir,
     createdAt: turnTimestamp(0),

@@ -1,6 +1,11 @@
 node_modules
 .bun
 .turbo
+/.dev
+/.dep
+/.deps
+/.cache
+/.vite-plus
 .DS_Store
 *.log
 *.tsbuildinfo
@@ -18,6 +23,7 @@ release-mock/
 .idea/
 apps/web/.playwright
 apps/web/playwright-report
+/.playwright-cli/
 apps/web/src/components/__screenshots__
 .vitest-*
 __screenshots__/
@@ -31,8 +37,14 @@ dist-electron/
 apps/mobile/.showcase/
 artifacts/app-store/screenshots/
 native/**/target/
+/apps/desktop/prod-resources/resource-monitor/
+/output/playwright/
 node_modules/
 .alchemy/
 *.log
 .env*
 !.env.example
+
+# CTOX runtime state accidentally created by running ctox from this checkout.
+# Contains ctox-secrets.key — must never be committed.
+/runtime/

@@ -55,7 +55,7 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { useProjects } from "~/state/entities";
-import { useEnvironments } from "~/state/environments";
+import { useBusinessOsScopedEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -558,7 +558,7 @@ export function PullRequestDetailPanel({
   const titleDraft = titleScope?.pullRequestKey === pullRequestKey ? titleScope.text : null;
   const [titleSaving, setTitleSaving] = useState(false);
   const newThread = useNewThreadHandler();
-  const { environments } = useEnvironments();
+  const { environments } = useBusinessOsScopedEnvironments();
   const projects = useProjects();
   // Beside a thread there is nothing to pick: the hand-offs land in that thread's composer, and
   // the thread is already on one server's copy of the branch.

@@ -179,21 +179,65 @@ describe("buildTurnStartParams", () => {
     });
   });
 
-  it("reports the same fallback model and effort in settings and instructions", () => {
-    const params = Effect.runSync(
-      buildTurnStartParams({
+  it("appends managed instructions once in default and plan collaboration modes", () => {
+    const managedPrompt = "  Follow the managed workflow.  ";
+    const expectedBlock =
+      "<workjet_managed_instructions>\nFollow the managed workflow.\n</workjet_managed_instructions>";
+
+    for (const interactionMode of ["default", "plan"] as const) {
+      const params = Effect.runSync(
+        buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: "Work",
+          model: "gpt-5.3-codex",
+          effort: "medium",
+          interactionMode,
+          compiledManagedPrompt: managedPrompt,
+        }),
+      );
+      const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+
+      NodeAssert.equal(instructions.split(expectedBlock).length - 1, 1);
+      NodeAssert.ok(instructions.endsWith(expectedBlock));
+    }
+  });
+
+  it.effect("preserves legacy collaboration instructions for empty managed prompts", () =>
+    Effect.gen(function* () {
+      const legacy = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Work",
+        interactionMode: "default",
+      });
+      const empty = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Work",
+        interactionMode: "default",
+        compiledManagedPrompt: " \n\t ",
+      });
+
+      NodeAssert.deepStrictEqual(empty, legacy);
+    }),
+  );
+
+  it.effect("reports the same fallback model and effort in settings and instructions", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "full-access",
         prompt: "Go",
         interactionMode: "default",
-      }),
-    );
+      });
 
-    const settings = params.collaborationMode?.settings;
-    NodeAssert.equal(settings?.model, DEFAULT_MODEL);
-    NodeAssert.equal(settings?.reasoning_effort, "medium");
-    NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
-  });
+      const settings = params.collaborationMode?.settings;
+      NodeAssert.equal(settings?.model, DEFAULT_MODEL);
+      NodeAssert.equal(settings?.reasoning_effort, "medium");
+      NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
+    }),
+  );
 
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
     Effect.gen(function* () {
@@ -220,30 +264,30 @@ describe("buildTurnStartParams", () => {
     }),
   );
 
-  it("omits collaboration mode when interaction mode is absent", () => {
-    const params = Effect.runSync(
-      buildTurnStartParams({
+  it.effect("omits collaboration mode when interaction mode is absent", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "approval-required",
         prompt: "Review",
-      }),
-    );
+      });
 
-    NodeAssert.deepStrictEqual(params, {
-      threadId: "provider-thread-1",
-      approvalPolicy: "untrusted",
-      approvalsReviewer: "user",
-      sandboxPolicy: {
-        type: "readOnly",
-      },
-      input: [
-        {
-          type: "text",
-          text: "Review",
+      NodeAssert.deepStrictEqual(params, {
+        threadId: "provider-thread-1",
+        approvalPolicy: "untrusted",
+        approvalsReviewer: "user",
+        sandboxPolicy: {
+          type: "readOnly",
         },
-      ],
-    });
-  });
+        input: [
+          {
+            type: "text",
+            text: "Review",
+          },
+        ],
+      });
+    }),
+  );
 });
 
 describe("buildCodexDeveloperInstructions", () => {
@@ -254,7 +298,7 @@ describe("buildCodexDeveloperInstructions", () => {
     });
 
     NodeAssert.ok(instructions.startsWith(CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS));
-    NodeAssert.match(instructions, /T3 Code/);
+    NodeAssert.match(instructions, /Workjet/);
     NodeAssert.match(instructions, /Codex harness/);
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
   });

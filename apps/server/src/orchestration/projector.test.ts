@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EventId,
   ProjectId,
   ProviderDriverKind,
@@ -83,6 +84,7 @@ describe("orchestration projector", () => {
         },
         runtimeMode: "full-access",
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         latestTurn: null,

@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
-import { T3Wordmark } from "../../components/T3Wordmark";
+import { CtoxMark } from "../../components/CtoxMark";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../../lib/mobileBranding";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -36,6 +36,8 @@ import {
 export type HomeHeaderEnvironment = HomeListFilterMenuEnvironment;
 
 export function HomeHeader(props: {
+  readonly allowAllEnvironments?: boolean;
+  readonly allEnvironmentsLabel?: string;
   readonly environments: ReadonlyArray<HomeHeaderEnvironment>;
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly searchQuery: string;
@@ -81,13 +83,17 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     () => [
       {
         id: "environment",
-        title: "Environment",
+        title: "Machine",
         subactions: [
-          {
-            id: "environment:all",
-            title: "All environments",
-            state: checkedMenuState(props.selectedEnvironmentId === null),
-          },
+          ...(props.allowAllEnvironments === false
+            ? []
+            : [
+                {
+                  id: "environment:all",
+                  title: props.allEnvironmentsLabel ?? "All machines",
+                  state: checkedMenuState(props.selectedEnvironmentId === null),
+                },
+              ]),
           ...props.environments.map((environment) => ({
             id: `environment:${environment.environmentId}`,
             title: environment.label,
@@ -140,6 +146,8 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     ],
     [
       props.environments,
+      props.allowAllEnvironments,
+      props.allEnvironmentsLabel,
       props.projectSortOrder,
       props.projects,
       props.selectedEnvironmentId,
@@ -217,16 +225,18 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               onPress={props.onOpenEnvironments}
               brand={
                 <View className="flex-row items-center gap-2">
-                  {/* Mirrors the desktop SidebarBrand: T3 mark + muted "Code". */}
-                  <T3Wordmark color={iconColor} height={15} />
+                  {/* Workjet mark + muted "Code" identifies the current mode. */}
+                  <CtoxMark size={16} />
                   <RNText className="-ml-0.5 text-[21px] font-t3-medium tracking-[-0.5px] text-foreground-muted">
                     Code
                   </RNText>
-                  <View className="rounded-full bg-subtle px-2 py-0.75">
-                    <RNText className="text-[11px] font-t3-bold tracking-[1.1px] text-foreground-muted uppercase">
-                      {stageLabel}
-                    </RNText>
-                  </View>
+                  {stageLabel ? (
+                    <View className="rounded-full bg-subtle px-2 py-0.75">
+                      <RNText className="text-[11px] font-t3-bold tracking-[1.1px] text-foreground-muted uppercase">
+                        {stageLabel}
+                      </RNText>
+                    </View>
+                  ) : null}
                 </View>
               }
             />
@@ -391,15 +401,19 @@ function IosHomeHeader(props: HomeHeaderProps) {
             title="Thread list options"
             separateBackground
           >
-            <NativeHeaderToolbar.Menu title="Environment">
-              <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.selectedEnvironmentId === null}
-                onPress={() => props.onEnvironmentChange(null)}
-                subtitle="Show threads from every environment"
-              >
-                <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
+            <NativeHeaderToolbar.Menu title="Machine">
+              <NativeHeaderToolbar.Label>Machine</NativeHeaderToolbar.Label>
+              {props.allowAllEnvironments === false ? null : (
+                <NativeHeaderToolbar.MenuAction
+                  isOn={props.selectedEnvironmentId === null}
+                  onPress={() => props.onEnvironmentChange(null)}
+                  subtitle="Show threads from every machine in the active scope"
+                >
+                  <NativeHeaderToolbar.Label>
+                    {props.allEnvironmentsLabel ?? "All machines"}
+                  </NativeHeaderToolbar.Label>
+                </NativeHeaderToolbar.MenuAction>
+              )}
               {props.environments.map((environment) => (
                 <NativeHeaderToolbar.MenuAction
                   key={environment.environmentId}

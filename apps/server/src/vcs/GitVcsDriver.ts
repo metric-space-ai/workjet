@@ -138,6 +138,18 @@ export interface GitRenameBranchResult {
   branch: string;
 }
 
+export interface GitDeleteBranchInput {
+  cwd: string;
+  /** Local branch name, e.g. `workjet/worker/<threadId>`. */
+  refName: string;
+  /**
+   * Delete the branch even when it is not merged into its upstream. Worker
+   * branches are throwaway isolation refs, so their removal must not depend on
+   * merge state.
+   */
+  force?: boolean;
+}
+
 export interface GitFetchPullRequestBranchInput {
   cwd: string;
   prNumber: number;
@@ -308,6 +320,7 @@ export class GitVcsDriver extends Context.Service<
     readonly renameBranch: (
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;
+    readonly deleteBranch: (input: GitDeleteBranchInput) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;
@@ -710,9 +723,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const commitEnv: NodeJS.ProcessEnv = {
         ...process.env,
         GIT_INDEX_FILE: tempIndexPath,
-        GIT_AUTHOR_NAME: "T3 Code",
+        GIT_AUTHOR_NAME: "Workjet",
         GIT_AUTHOR_EMAIL: "t3code@users.noreply.github.com",
-        GIT_COMMITTER_NAME: "T3 Code",
+        GIT_COMMITTER_NAME: "Workjet",
         GIT_COMMITTER_EMAIL: "t3code@users.noreply.github.com",
       };
 

@@ -476,7 +476,10 @@ function ThreadRouteContent(
   useRegisterWorkspaceInspector(activeInspectorRenderer);
 
   const handleOpenConnectionEditor = useCallback(() => {
-    void navigation.navigate("Connections");
+    void navigation.navigate("SettingsSheet", {
+      screen: "SettingsContent",
+      params: { screen: "SettingsBusinessOs" },
+    });
   }, [navigation]);
   const handleStopThread = useCallback(() => {
     if (

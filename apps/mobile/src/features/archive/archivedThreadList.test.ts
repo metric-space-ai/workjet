@@ -1,6 +1,12 @@
 import type { ArchivedSnapshotEntry } from "@t3tools/client-runtime/state/threads";
 import type { OrchestrationProjectShell, OrchestrationThreadShell } from "@t3tools/contracts";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildArchivedThreadGroups } from "./archivedThreadList";
@@ -40,6 +46,7 @@ function makeThread(
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     ...input,
     settledOverride: input.settledOverride ?? null,
     settledAt: input.settledAt ?? null,

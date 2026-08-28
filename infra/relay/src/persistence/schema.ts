@@ -189,3 +189,83 @@ export const relayDpopProofs = pgTable(
     index("idx_relay_dpop_proofs_expires_at").on(table.expiresAt),
   ],
 );
+
+export const relayWorkjetBusinessOsInstances = pgTable(
+  "relay_workjet_business_os_instances",
+  {
+    businessOsInstanceId: varchar("business_os_instance_id", { length: 512 }).primaryKey(),
+    relayUserId: varchar("relay_user_id", { length: 191 }).notNull(),
+    membershipVersion: integer("membership_version").notNull().default(0),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+    updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    index("idx_relay_workjet_business_os_instances_user").on(
+      table.relayUserId,
+      table.businessOsInstanceId,
+    ),
+  ],
+);
+
+export const relayWorkjetBusinessOsEnvironments = pgTable(
+  "relay_workjet_business_os_environments",
+  {
+    businessOsInstanceId: varchar("business_os_instance_id", { length: 512 }).notNull(),
+    environmentId: varchar("environment_id", { length: 191 }).notNull(),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.businessOsInstanceId, table.environmentId] }),
+    index("idx_relay_workjet_business_os_environments_environment").on(
+      table.environmentId,
+      table.businessOsInstanceId,
+    ),
+  ],
+);
+
+export const relayWorkjetDeviceSessionGrants = pgTable(
+  "relay_workjet_device_session_grants",
+  {
+    grantId: varchar("grant_id", { length: 128 }).primaryKey(),
+    devicePairingId: varchar("device_pairing_id", { length: 1024 }).notNull(),
+    businessOsInstanceId: varchar("business_os_instance_id", { length: 512 }).notNull(),
+    relayUserId: varchar("relay_user_id", { length: 191 }).notNull(),
+    deviceId: varchar("device_id", { length: 512 }).notNull(),
+    proofKeyThumbprint: varchar("proof_key_thumbprint", { length: 128 }).notNull(),
+    bootstrapCredentialHash: varchar("bootstrap_credential_hash", { length: 64 }).notNull(),
+    bootstrapExpiresAt: varchar("bootstrap_expires_at", { length: 64 }).notNull(),
+    bootstrapConsumedAt: varchar("bootstrap_consumed_at", { length: 64 }),
+    refreshGrantHash: varchar("refresh_grant_hash", { length: 64 }),
+    refreshExpiresAt: varchar("refresh_expires_at", { length: 64 }),
+    accessGeneration: integer("access_generation").notNull().default(0),
+    revokedAt: varchar("revoked_at", { length: 64 }),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+    updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_relay_workjet_device_session_grants_pairing").on(table.devicePairingId),
+    uniqueIndex("idx_relay_workjet_device_session_grants_bootstrap").on(
+      table.bootstrapCredentialHash,
+    ),
+    uniqueIndex("idx_relay_workjet_device_session_grants_refresh").on(table.refreshGrantHash),
+    index("idx_relay_workjet_device_session_grants_instance").on(
+      table.businessOsInstanceId,
+      table.revokedAt,
+    ),
+  ],
+);
+
+export const relayWorkjetControlIdentityAssertions = pgTable(
+  "relay_workjet_control_identity_assertions",
+  {
+    jti: varchar("jti", { length: 128 }).primaryKey(),
+    relayUserId: varchar("relay_user_id", { length: 191 }).notNull(),
+    workjetInstallationId: varchar("workjet_installation_id", { length: 256 }).notNull(),
+    businessOsInstanceId: varchar("business_os_instance_id", { length: 512 }).notNull(),
+    proofKeyThumbprint: varchar("proof_key_thumbprint", { length: 128 }).notNull(),
+    expiresAt: varchar("expires_at", { length: 64 }).notNull(),
+    consumedAt: varchar("consumed_at", { length: 64 }),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+  },
+  (table) => [index("idx_relay_workjet_control_identity_assertions_expiry").on(table.expiresAt)],
+);

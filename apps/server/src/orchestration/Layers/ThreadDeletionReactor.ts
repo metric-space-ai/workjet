@@ -7,6 +7,7 @@ import * as Stream from "effect/Stream";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
+import { WorkerWorktreeCleanup } from "../../workjet/WorkerWorktreeCleanup.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ThreadDeletionReactor,
@@ -41,6 +42,7 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
   const terminalManager = yield* TerminalManager.TerminalManager;
+  const workerWorktreeCleanup = yield* WorkerWorktreeCleanup;
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
@@ -56,12 +58,37 @@ const make = Effect.gen(function* () {
       threadId,
     });
 
+  /**
+   * Durable end of a dispatched worker's life: `thread.deleted` is the only
+   * boundary that survives a restart, so the isolated worker checkout and its
+   * throwaway `workjet/worker/<threadId>` branch are released here. Failure is
+   * logged, never fatal — the thread stays deleted either way.
+   */
+  const removeWorkerWorktree = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
+    logCleanupCauseUnlessInterrupted({
+      effect: workerWorktreeCleanup.cleanupDeletedThread(threadId).pipe(
+        Effect.tap((outcome) =>
+          outcome.status === "cleaned"
+            ? Effect.logDebug("thread deletion cleanup removed worker worktree", {
+                threadId,
+                worktreePath: outcome.worktreePath,
+                deletedRefName: outcome.deletedRefName,
+              })
+            : Effect.void,
+        ),
+        Effect.asVoid,
+      ),
+      message: "thread deletion cleanup skipped worker worktree removal",
+      threadId,
+    });
+
   const processThreadDeleted = Effect.fn("processThreadDeleted")(function* (
     event: ThreadDeletedEvent,
   ) {
     const { threadId } = event.payload;
     yield* stopProviderSession(threadId);
     yield* closeThreadTerminals(threadId);
+    yield* removeWorkerWorktree(threadId);
   });
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>

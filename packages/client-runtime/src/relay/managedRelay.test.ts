@@ -1,5 +1,8 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import { RelayEnvironmentStatusScope } from "@t3tools/contracts/relay";
+import { BusinessOsInstanceId, EnvironmentId, WorkjetInstallationId } from "@t3tools/contracts";
+import {
+  RelayEnvironmentConnectScope,
+  RelayEnvironmentStatusScope,
+} from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -39,6 +42,64 @@ function clerkToken(subject: string, nonce: string): string {
 }
 
 describe("ManagedRelayClient", () => {
+  it.effect("issues the Relay control assertion through the authenticated DPoP path", () => {
+    const requests: Array<{
+      readonly url: string;
+      readonly authorization: string | null;
+      readonly dpop: string | null;
+      readonly body: unknown;
+    }> = [];
+    const assertion = `${"a".repeat(24)}.${"b".repeat(24)}.${"c".repeat(24)}`;
+    const fetchFn = (async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v1/client/dpop-token")) {
+        return Response.json({
+          access_token: "relay-control-token",
+          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          token_type: "DPoP",
+          expires_in: 1_800,
+          scope: `${RelayEnvironmentConnectScope} ${RelayEnvironmentStatusScope}`,
+        });
+      }
+      const headers = new Headers(init?.headers);
+      const body =
+        init?.body instanceof Uint8Array ? new TextDecoder().decode(init.body) : String(init?.body);
+      requests.push({
+        url,
+        authorization: headers.get("authorization"),
+        dpop: headers.get("dpop"),
+        body: JSON.parse(body),
+      });
+      return Response.json({
+        assertion,
+        expiresAt: "2026-08-27T04:00:00Z",
+      });
+    }) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      const payload = {
+        audience: "ctox.dev" as const,
+        workjetInstallationId: WorkjetInstallationId.make("desktop-michael"),
+        businessOsInstanceId: BusinessOsInstanceId.make("biz_welsch"),
+      };
+      const result = yield* relayClient.issueWorkjetControlIdentityAssertion({
+        clerkToken: clerkToken("user-1", "session-1"),
+        payload,
+      });
+
+      expect(result).toEqual({ assertion, expiresAt: "2026-08-27T04:00:00Z" });
+      expect(requests).toEqual([
+        {
+          url: "https://relay.example.test/api/workjet/device-session/control-assertion",
+          authorization: "DPoP relay-control-token",
+          dpop: "proof:https://relay.example.test/api/workjet/device-session/control-assertion",
+          body: payload,
+        },
+      ]);
+    }).pipe(Effect.provide(managedRelayTestLayer(fetchFn)));
+  });
+
   it.effect("owns tracing at service and implementation boundaries", () => {
     const spanNames: Array<string> = [];
     const tracer = Tracer.make({

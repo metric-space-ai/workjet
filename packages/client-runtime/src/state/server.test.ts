@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  ThreadId,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
@@ -14,9 +15,11 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { Atom } from "effect/unstable/reactivity";
 import { RpcClientError } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -25,12 +28,23 @@ import {
   PrimaryConnectionTarget,
   type PreparedConnection,
 } from "../connection/model.ts";
+import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
+import type { EnvironmentCacheStore } from "../platform/persistence.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import {
   applyServerConfigProjection,
+  createServerEnvironmentAtoms,
+  GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
+  WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
+  WORKJET_GATEWAY_STATUS_STALE_TIME_MS,
+  WORKJET_MESH_OVERVIEW_STALE_TIME_MS,
+  WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
+  WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
+  WORKJET_MESH_ROSTER_STALE_TIME_MS,
+  WORKJET_LEGACY_IMPORT_STALE_TIME_MS,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   matchesServerUpdateReadyEvent,
@@ -75,6 +89,280 @@ function session(client: WsRpcProtocolClient): RpcSession {
     closed: Effect.never,
   };
 }
+
+describe("Greppy runtime client wiring", () => {
+  it("uses a nonzero SWR freshness window", () => {
+    expect(GREPPY_RUNTIME_INSPECT_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("Workjet provider gateway client wiring", () => {
+  const gatewayAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("uses nonzero SWR freshness windows for both gateway reads", () => {
+    expect(WORKJET_GATEWAY_STATUS_STALE_TIME_MS).toBeGreaterThan(0);
+    expect(WORKJET_GATEWAY_CATALOG_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+
+  it("exposes the gateway reads and every lifecycle and login command", () => {
+    const server = gatewayAtoms();
+
+    expect(server.startWorkjetGateway.label).toBe("environment-data:workjet:gateway:start");
+    expect(server.stopWorkjetGateway.label).toBe("environment-data:workjet:gateway:stop");
+    expect(server.startWorkjetGatewayOauth.label).toBe(
+      "environment-data:workjet:gateway:oauth-start",
+    );
+    expect(server.pollWorkjetGatewayOauth.label).toBe(
+      "environment-data:workjet:gateway:oauth-poll",
+    );
+    expect(server.cancelWorkjetGatewayOauth.label).toBe(
+      "environment-data:workjet:gateway:oauth-cancel",
+    );
+  });
+
+  it("keys the gateway status and catalog reads per environment", () => {
+    const server = gatewayAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetGatewayStatus({ environmentId: first, input: {} })).toBe(
+      server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetGatewayStatus({ environmentId: second, input: {} })).not.toBe(
+      server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
+    // The catalog is a separate read, so it must never collapse onto the status atom.
+    expect(server.workjetGatewayCatalog({ environmentId: first, input: {} })).not.toBe(
+      server.workjetGatewayStatus({ environmentId: first, input: {} }),
+    );
+  });
+});
+
+describe("Workjet legacy import client wiring", () => {
+  const legacyImportAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("keys the offer read per environment: the decision is per machine", () => {
+    const server = legacyImportAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetLegacyImport({ environmentId: first, input: {} })).toBe(
+      server.workjetLegacyImport({ environmentId: first, input: {} }),
+    );
+    // Two servers are two machines with two legacy documents and two markers.
+    expect(server.workjetLegacyImport({ environmentId: second, input: {} })).not.toBe(
+      server.workjetLegacyImport({ environmentId: first, input: {} }),
+    );
+  });
+
+  it("keeps answering the offer a distinct, labelled command", () => {
+    const server = legacyImportAtoms();
+    expect(server.decideWorkjetLegacyImport.label).toBe(
+      "environment-data:workjet:legacy-import:decide",
+    );
+    expect(server.decideWorkjetLegacyImport).not.toBe(server.updateSettings);
+  });
+
+  it("caches the offer far longer than any live read, because it changes once", () => {
+    expect(WORKJET_LEGACY_IMPORT_STALE_TIME_MS).toBeGreaterThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+    expect(WORKJET_LEGACY_IMPORT_STALE_TIME_MS).toBeGreaterThan(
+      WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
+    );
+  });
+});
+
+describe("Workjet mailbox client wiring", () => {
+  const mailboxAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("exposes both mailbox sends as labelled commands", () => {
+    const server = mailboxAtoms();
+
+    expect(server.sendWorkjetMailboxMessage.label).toBe(
+      "environment-data:workjet:mailbox:send-message",
+    );
+    expect(server.delegateWorkjetMailboxTask.label).toBe(
+      "environment-data:workjet:mailbox:delegate-task",
+    );
+  });
+
+  it("exposes the four thread-action commands as labelled commands", () => {
+    const server = mailboxAtoms();
+
+    expect(server.replyWorkjetMailbox.label).toBe("environment-data:workjet:mailbox:reply");
+    expect(server.requestReviewWorkjetMailbox.label).toBe(
+      "environment-data:workjet:mailbox:request-review",
+    );
+    expect(server.updateDelegationWorkjetMailbox.label).toBe(
+      "environment-data:workjet:mailbox:update-delegation",
+    );
+    expect(server.reassignDelegationWorkjetMailbox.label).toBe(
+      "environment-data:workjet:mailbox:reassign-delegation",
+    );
+  });
+
+  it("keeps every mailbox command distinct instead of collapsing onto one", () => {
+    const server = mailboxAtoms();
+
+    const commands = [
+      server.sendWorkjetMailboxMessage,
+      server.delegateWorkjetMailboxTask,
+      server.replyWorkjetMailbox,
+      server.requestReviewWorkjetMailbox,
+      server.updateDelegationWorkjetMailbox,
+      server.reassignDelegationWorkjetMailbox,
+    ];
+    expect(new Set(commands).size).toBe(commands.length);
+  });
+});
+
+describe("Workjet mesh roster client wiring", () => {
+  const rosterAtoms = () =>
+    createServerEnvironmentAtoms(
+      Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry | EnvironmentCacheStore,
+        never
+      >,
+      { initialConfigValueAtom: () => Atom.make(null) },
+    );
+
+  it("reuses a recently read roster instead of asking on every composer open", () => {
+    expect(WORKJET_MESH_ROSTER_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+
+  it("keys the roster read per environment", () => {
+    const server = rosterAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetMeshRoster({ environmentId: first, input: {} })).toBe(
+      server.workjetMeshRoster({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetMeshRoster({ environmentId: second, input: {} })).not.toBe(
+      server.workjetMeshRoster({ environmentId: first, input: {} }),
+    );
+  });
+
+  it("keeps the roster a read, never collapsing onto a mailbox send command", () => {
+    const server = rosterAtoms();
+    expect(server.workjetMeshRoster({ environmentId: TARGET.environmentId, input: {} })).not.toBe(
+      server.sendWorkjetMailboxMessage,
+    );
+  });
+
+  it("keys the multi-computer overview per environment, like the roster", () => {
+    const server = rosterAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetMeshOverview({ environmentId: first, input: {} })).toBe(
+      server.workjetMeshOverview({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetMeshOverview({ environmentId: second, input: {} })).not.toBe(
+      server.workjetMeshOverview({ environmentId: first, input: {} }),
+    );
+  });
+
+  it("keeps the overview a distinct read from the roster", () => {
+    // Two different reads of the same mesh: collapsing them would make the
+    // composer's picker refetch the far heavier dashboard query.
+    const server = rosterAtoms();
+    const environmentId = TARGET.environmentId;
+    expect(server.workjetMeshOverview({ environmentId, input: {} })).not.toBe(
+      server.workjetMeshRoster({ environmentId, input: {} }),
+    );
+  });
+
+  it("refreshes the overview far sooner than the roster", () => {
+    // Envelope and delegation state move constantly; the pin table almost never
+    // does. A shorter window is honest freshness, not a liveness signal.
+    expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeGreaterThan(0);
+    expect(WORKJET_MESH_OVERVIEW_STALE_TIME_MS).toBeLessThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+  });
+
+  it("keys the cross-mode backlink read per thread and keeps the two writes distinct", () => {
+    const server = rosterAtoms();
+    const environmentId = EnvironmentId.make("environment-1");
+    // A thread that carries no link must keep its own cached "no link" answer
+    // rather than sharing one with every other thread.
+    expect(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-1") },
+      }),
+    ).toBe(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-1") },
+      }),
+    );
+    expect(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-2") },
+      }),
+    ).not.toBe(
+      server.workjetCrossModeThreadLink({
+        environmentId,
+        input: { threadId: ThreadId.make("thread-1") },
+      }),
+    );
+    expect(server.openWorkjetCrossModeInCode).not.toBe(server.submitWorkjetCrossMode);
+  });
+
+  it("keeps a cross-mode link fresher for longer than the handoff inbox", () => {
+    // A link is a durable relation, not an arrival; it does not need the inbox's
+    // poll rate.
+    expect(WORKJET_CROSS_MODE_LINK_STALE_TIME_MS).toBeGreaterThan(
+      WORKJET_HANDOFF_INBOX_STALE_TIME_MS,
+    );
+  });
+
+  it("polls the received-handoff inbox more eagerly than the recipient roster", () => {
+    // A handoff is work somebody is waiting on; a roster entry is not. Both are
+    // still polls, and neither claims a liveness signal the mesh cannot give.
+    expect(WORKJET_HANDOFF_INBOX_STALE_TIME_MS).toBeGreaterThan(0);
+    expect(WORKJET_HANDOFF_INBOX_STALE_TIME_MS).toBeLessThan(WORKJET_MESH_ROSTER_STALE_TIME_MS);
+  });
+
+  it("keys the received-handoff inbox per environment and keeps it a read", () => {
+    const server = rosterAtoms();
+    const first = EnvironmentId.make("environment-1");
+    const second = EnvironmentId.make("environment-2");
+
+    expect(server.workjetMailboxHandoffs({ environmentId: first, input: {} })).toBe(
+      server.workjetMailboxHandoffs({ environmentId: first, input: {} }),
+    );
+    expect(server.workjetMailboxHandoffs({ environmentId: second, input: {} })).not.toBe(
+      server.workjetMailboxHandoffs({ environmentId: first, input: {} }),
+    );
+    // Listing what arrived is not permission to send or to continue one.
+    expect(server.workjetMailboxHandoffs({ environmentId: first, input: {} })).not.toBe(
+      server.sendHandoffWorkjetMailbox,
+    );
+    expect(server.sendHandoffWorkjetMailbox).not.toBe(server.acceptHandoffWorkjetMailbox);
+  });
+});
 
 describe("update restart reconnect nudges", () => {
   it.effect("retries once per backoff entry instead of only the first", () =>

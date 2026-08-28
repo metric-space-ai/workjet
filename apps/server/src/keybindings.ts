@@ -108,6 +108,37 @@ function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): bool
   );
 }
 
+const CANONICAL_CHAT_NEW_DEFAULT = {
+  key: "mod+n",
+  command: "chat.new",
+  when: "!terminalFocus",
+} as const satisfies KeybindingRule;
+
+const OBSOLETE_DUPLICATE_CHAT_NEW_DEFAULT = {
+  key: "mod+shift+o",
+  command: "chat.new",
+  when: "!terminalFocus",
+} as const satisfies KeybindingRule;
+
+/**
+ * Removes the former duplicate only when the persisted config still carries
+ * both exact defaults. A lone Shift+O binding is treated as a deliberate user
+ * choice, and near-matches retain their user-authored meaning.
+ */
+export function removeObsoleteDuplicateChatNewDefault(
+  rules: readonly KeybindingRule[],
+): readonly KeybindingRule[] {
+  const hasCanonicalDefault = rules.some((rule) =>
+    isSameKeybindingRule(rule, CANONICAL_CHAT_NEW_DEFAULT),
+  );
+  const hasObsoleteDefault = rules.some((rule) =>
+    isSameKeybindingRule(rule, OBSOLETE_DUPLICATE_CHAT_NEW_DEFAULT),
+  );
+  if (!hasCanonicalDefault || !hasObsoleteDefault) return rules;
+
+  return rules.filter((rule) => !isSameKeybindingRule(rule, OBSOLETE_DUPLICATE_CHAT_NEW_DEFAULT));
+}
+
 function keybindingShortcutContext(rule: KeybindingRule): string | null {
   const parsed = parseKeybindingShortcut(rule.key);
   if (!parsed) return null;
@@ -492,7 +523,8 @@ const make = Effect.gen(function* () {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
-      const customConfig = runtimeConfig.keybindings;
+      const customConfig = removeObsoleteDuplicateChatNewDefault(runtimeConfig.keybindings);
+      const removedObsoleteChatNewDefault = customConfig !== runtimeConfig.keybindings;
       const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
@@ -529,17 +561,12 @@ const make = Effect.gen(function* () {
           reason: "shortcut context already used by existing rule",
         });
       }
-      if (missingDefaults.length === 0) {
-        yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
-        return;
-      }
-
       const matchingDefaults = Array.filterMap(DEFAULT_KEYBINDINGS, (defaultRule) =>
         customConfig.some((entry) => isSameKeybindingRule(entry, defaultRule))
           ? Result.succeed(defaultRule.command)
           : Result.failVoid,
       );
-      if (matchingDefaults.length > 0) {
+      if (missingDefaults.length > 0 && matchingDefaults.length > 0) {
         yield* Effect.logWarning("default keybinding rule already defined in user config", {
           path: keybindingsConfigPath,
           commands: matchingDefaults,
@@ -558,9 +585,17 @@ const make = Effect.gen(function* () {
           commands: skippedDefaults.map((rule) => rule.command),
         });
       }
-      if (defaultsToAppend.length === 0) {
+      if (defaultsToAppend.length === 0 && !removedObsoleteChatNewDefault) {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
+      }
+
+      if (removedObsoleteChatNewDefault) {
+        yield* Effect.logInfo("removed obsolete duplicate Chat: New default keybinding", {
+          path: keybindingsConfigPath,
+          removedKey: OBSOLETE_DUPLICATE_CHAT_NEW_DEFAULT.key,
+          canonicalKey: CANONICAL_CHAT_NEW_DEFAULT.key,
+        });
       }
 
       yield* writeConfigAtomically([...customConfig, ...defaultsToAppend]);

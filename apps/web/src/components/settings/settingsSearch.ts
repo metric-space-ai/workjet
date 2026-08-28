@@ -1,10 +1,14 @@
 export type SettingsPath =
+  | "/settings/business-os"
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
-  | "/settings/providers"
+  | "/settings/harnesses"
+  | "/settings/models"
+  | "/settings/computers"
+  | "/settings/workjet"
   | "/settings/source-control"
-  | "/settings/connections"
+  | "/settings/diagnostics"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -19,12 +23,18 @@ export interface SettingsSearchItem {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
+  "/settings/business-os": "Business OS",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
-  "/settings/providers": "Providers",
+  "/settings/harnesses": "Harnesses",
+  "/settings/models": "Models",
+  "/settings/computers": "Computers",
+  // Worker composition sits beside the pages it references (Models,
+  // Computers, Harnesses); Source Control follows the workflow pages.
+  "/settings/workjet": "Worker",
   "/settings/source-control": "Source Control",
-  "/settings/connections": "Connections",
+  "/settings/diagnostics": "Diagnostics",
   "/settings/archived": "Archive",
 };
 
@@ -180,9 +190,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/keybindings",
   },
   {
-    id: "providers",
-    title: "Providers",
-    to: "/settings/providers",
+    id: "harnesses",
+    title: "Harnesses",
+    to: "/settings/harnesses",
   },
   {
     id: "source-control",
@@ -190,9 +200,75 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
   },
   {
+    id: "workjet-workers",
+    // Singular on purpose: it must title-match the page entry so the search
+    // dedupe collapses both into one result (Befund K-A12).
+    title: "Worker",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-computers",
+    title: "Computers",
+    // Computers is a top-level settings page of its own.
+    to: "/settings/computers",
+  },
+  {
+    id: "workjet-provider-accounts",
+    title: "LLM providers",
+    // LLM accounts live on the Models page. Harnesses are CLI runtimes and
+    // have their own page — the two were merged once and became impossible to
+    // find, because "Providers" read as one thing and held two.
+    to: "/settings/models",
+  },
+  {
+    id: "workjet-provider-pools",
+    title: "Gateway pools",
+    // Directly under the account list, on the same Models page.
+    to: "/settings/models",
+  },
+  {
+    id: "workjet-llm-routes",
+    title: "LLM routes",
+    // Routes live on the Models page, beside the accounts they reference.
+    to: "/settings/models",
+  },
+  {
+    id: "workjet-organigram",
+    title: "Organigram",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-prompt",
+    title: "Prompt",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-telemetry",
+    title: "Telemetry",
+    to: "/settings/workjet",
+  },
+  {
+    id: "workjet-execution",
+    title: "Execution",
+    to: "/settings/workjet",
+  },
+  {
+    id: "automatic-worktree-storage",
+    title: "Automatic worktree storage",
+    to: "/settings/workjet",
+    targetId: "workjet-execution",
+  },
+  {
+    id: "greppy-runtime",
+    title: "Greppy Runtime",
+    to: "/settings/workjet",
+  },
+  {
     id: "remote-environments",
     title: "Remote environments",
-    to: "/settings/connections",
+    // Paired and removed on the Computers page, beside the computers that
+    // reference them. There is no second visible Connections category.
+    to: "/settings/computers",
   },
   {
     id: "archive",
@@ -229,6 +305,15 @@ function normalizeSearchText(value: string): string {
     .trim();
 }
 
+/**
+ * The settings pages themselves as synthetic search items, so typing a
+ * sidebar label ("Computers", "Diagnostics") finds the page even when no
+ * individual setting carries that title.
+ */
+const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
+  Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
+).map(([path, label]) => ({ id: path, title: label, to: path }));
+
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
@@ -236,5 +321,17 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  return items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  const matches = items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  // Page results lead, minus pages an equally titled item already represents
+  // (e.g. the "Computers" catalog entry that lands on /settings/computers).
+  const pageMatches = SETTINGS_PAGE_SEARCH_ITEMS.filter(
+    (page) =>
+      normalizeSearchText(page.title).includes(normalizedQuery) &&
+      !matches.some(
+        (item) =>
+          item.to === page.to &&
+          normalizeSearchText(item.title) === normalizeSearchText(page.title),
+      ),
+  );
+  return [...pageMatches, ...matches];
 }

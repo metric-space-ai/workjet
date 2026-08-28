@@ -86,6 +86,12 @@ export interface DpopProofKeyPair {
   readonly thumbprint: string;
 }
 
+export interface DpopProofSigner {
+  readonly publicJwk: DpopPublicJwk;
+  readonly thumbprint: string;
+  readonly sign: (message: string) => Effect.Effect<string, CloudDpopError, Crypto.Crypto>;
+}
+
 const DPOP_PROOF_KEY_STORAGE_KEY = "t3code.cloud.dpop-proof-key";
 
 function base64UrlToBytes(value: string): Uint8Array {
@@ -243,22 +249,17 @@ function normalizeHtu(url: string): Effect.Effect<string, CloudDpopError> {
     : Effect.fail(new CloudDpopError({ message: "DPoP URL is invalid." }));
 }
 
-export function createDpopProof(input: {
+export function createDpopProofWithSigner(input: {
   readonly method: string;
   readonly url: string;
   readonly accessToken?: string;
-  readonly proofKey?: DpopProofKeyPair;
+  readonly signer: DpopProofSigner;
 }): Effect.Effect<
   { readonly proof: string; readonly thumbprint: string },
   CloudDpopError,
   Crypto.Crypto
 > {
   return Effect.gen(function* () {
-    const keyPair = input.proofKey ?? (yield* generateDpopProofKeyPair());
-    const privateKey = yield* Effect.try({
-      try: () => base64UrlToBytes(keyPair.privateJwk.d),
-      catch: cloudDpopError("Could not import DPoP private key."),
-    });
     const nowMs = yield* Clock.currentTimeMillis;
     const jti = yield* Crypto.Crypto.pipe(
       Effect.flatMap((crypto) => crypto.randomUUIDv4),
@@ -268,7 +269,7 @@ export function createDpopProof(input: {
     const header = yield* encodeDpopJwtHeaderJson({
       typ: "dpop+jwt",
       alg: "ES256",
-      jwk: keyPair.publicJwk,
+      jwk: input.signer.publicJwk,
     }).pipe(
       Effect.map(Encoding.encodeBase64Url),
       Effect.mapError(cloudDpopError("Could not encode DPoP proof header.")),
@@ -286,17 +287,51 @@ export function createDpopProof(input: {
       Effect.map(Encoding.encodeBase64Url),
       Effect.mapError(cloudDpopError("Could not encode DPoP proof payload.")),
     );
-    const signatureInputHash = yield* sha256Digest(
-      new TextEncoder().encode(`${header}.${payload}`),
-      "Could not hash DPoP signing input.",
-    );
-    const signature = yield* Effect.try({
-      try: () => p256.sign(signatureInputHash, privateKey, { prehash: false }).toCompactRawBytes(),
-      catch: cloudDpopError("Could not sign DPoP proof."),
-    });
+    const signature = yield* input.signer.sign(`${header}.${payload}`);
     return {
-      proof: `${header}.${payload}.${Encoding.encodeBase64Url(signature)}`,
-      thumbprint: keyPair.thumbprint,
+      proof: `${header}.${payload}.${signature}`,
+      thumbprint: input.signer.thumbprint,
     };
+  });
+}
+
+export function createDpopProof(input: {
+  readonly method: string;
+  readonly url: string;
+  readonly accessToken?: string;
+  readonly proofKey?: DpopProofKeyPair;
+}): Effect.Effect<
+  { readonly proof: string; readonly thumbprint: string },
+  CloudDpopError,
+  Crypto.Crypto
+> {
+  return Effect.gen(function* () {
+    const keyPair = input.proofKey ?? (yield* generateDpopProofKeyPair());
+    const privateKey = yield* Effect.try({
+      try: () => base64UrlToBytes(keyPair.privateJwk.d),
+      catch: cloudDpopError("Could not import DPoP private key."),
+    });
+    return yield* createDpopProofWithSigner({
+      method: input.method,
+      url: input.url,
+      ...(input.accessToken ? { accessToken: input.accessToken } : {}),
+      signer: {
+        publicJwk: keyPair.publicJwk,
+        thumbprint: keyPair.thumbprint,
+        sign: (message) =>
+          Effect.gen(function* () {
+            const signatureInputHash = yield* sha256Digest(
+              new TextEncoder().encode(message),
+              "Could not hash DPoP signing input.",
+            );
+            const signature = yield* Effect.try({
+              try: () =>
+                p256.sign(signatureInputHash, privateKey, { prehash: false }).toCompactRawBytes(),
+              catch: cloudDpopError("Could not sign DPoP proof."),
+            });
+            return Encoding.encodeBase64Url(signature);
+          }),
+      },
+    });
   });
 }

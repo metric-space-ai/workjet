@@ -55,6 +55,29 @@ export function createReactHookHarness() {
       nextIndex();
       return factory();
     },
+    /**
+     * Runs the effect synchronously during the render call — there is no
+     * commit phase when a component is invoked as a plain function. Deps are
+     * compared with `Object.is` so a re-render only re-runs a changed effect,
+     * which is what mount-once behaviour needs to be observable. Cleanups are
+     * invoked before a re-run; there is no unmount, so a cleanup-only effect
+     * never fires here.
+     */
+    useEffect(effect: () => void | (() => void), deps?: ReadonlyArray<unknown>): void {
+      const index = nextIndex();
+      const slot = slots[index] as
+        | { deps: ReadonlyArray<unknown> | undefined; cleanup: (() => void) | void }
+        | undefined;
+      const unchanged =
+        slot !== undefined &&
+        deps !== undefined &&
+        slot.deps !== undefined &&
+        slot.deps.length === deps.length &&
+        slot.deps.every((value, depIndex) => Object.is(value, deps[depIndex]));
+      if (unchanged) return;
+      if (slot && typeof slot.cleanup === "function") slot.cleanup();
+      slots[index] = { deps, cleanup: effect() };
+    },
     useMemoCache(size: number): unknown[] {
       const index = nextIndex();
       if (!slots[index]) {

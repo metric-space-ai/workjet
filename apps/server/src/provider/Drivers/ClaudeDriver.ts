@@ -42,7 +42,10 @@ import {
   type ProviderInstance,
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
+import { getProviderAuthObservation, reconcileAuthClaim } from "../ProviderAuthObservations.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { resolveGatewayRoutedEnvironment } from "../ProviderGatewayRouting.ts";
+import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makePackageManagedProviderMaintenanceResolver,
@@ -82,6 +85,7 @@ const UPDATE = makePackageManagedProviderMaintenanceResolver({
 });
 
 export type ClaudeDriverEnv =
+  | ProviderGatewayService
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
@@ -101,6 +105,15 @@ const withInstanceIdentity =
   }) =>
   (snapshot: ServerProviderDraft): ServerProvider => ({
     ...snapshot,
+    // The probe that produced `snapshot.auth` never reached the API — it reads
+    // a LOCAL handshake that succeeds with a dead token. A real turn is the
+    // only thing that spends the credential, so its verdict overrides, but
+    // only when it is newer than this probe.
+    auth: reconcileAuthClaim({
+      claim: snapshot.auth,
+      observation: getProviderAuthObservation(input.instanceId),
+      probedAtMs: Date.parse(snapshot.checkedAt),
+    }),
     instanceId: input.instanceId,
     driver: DRIVER_KIND,
     ...(input.displayName ? { displayName: input.displayName } : {}),
@@ -116,7 +129,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
   },
   configSchema: ClaudeSettings,
   defaultConfig: (): ClaudeSettings => decodeClaudeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    routeViaGateway,
+    config,
+  }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -143,9 +164,25 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         continuationGroupKey,
       });
 
+      // Captured eagerly so the resolver closure carries the gateway service
+      // rather than requiring it from the adapter's own R channel; the
+      // gateway STATUS itself is still read lazily, per session start.
+      const gateway = yield* ProviderGatewayService;
+      const resolveSessionEnvironment = (session?: { readonly model?: string | undefined }) =>
+        resolveGatewayRoutedEnvironment({
+          driver: DRIVER_KIND,
+          instanceId,
+          routeViaGateway,
+          environment,
+          // The composer's model decides which gateway upstream serves the
+          // session, so it has to reach the resolver per session start.
+          ...(session?.model === undefined ? {} : { model: session.model }),
+        }).pipe(Effect.provideService(ProviderGatewayService, gateway));
+
       const adapterOptions = {
         instanceId,
         environment: processEnv,
+        resolveSessionEnvironment,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);

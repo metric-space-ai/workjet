@@ -13,6 +13,7 @@ import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
+import * as DesktopDeepLinkRouter from "./DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
@@ -24,6 +25,7 @@ import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopCrashReporting from "../support/DesktopCrashReporting.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
@@ -128,7 +130,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
-      "T3 Code failed to start",
+      "Workjet failed to start",
       `Stage: ${stage}\n${message}${detail}`,
     );
   }
@@ -221,10 +223,12 @@ const bootstrap = Effect.gen(function* () {
 const startup = Effect.gen(function* () {
   const appIdentity = yield* DesktopAppIdentity.DesktopAppIdentity;
   const applicationMenu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+  const crashReporting = yield* DesktopCrashReporting.DesktopCrashReporting;
   const electronApp = yield* ElectronApp.ElectronApp;
   const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
   const linuxUrlHandler = yield* DesktopLinuxUrlHandler.DesktopLinuxUrlHandler;
   const clerk = yield* DesktopClerk.DesktopClerk;
+  const deepLinkRouter = yield* DesktopDeepLinkRouter.DesktopDeepLinkRouter;
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const preReadyElectronOptions = yield* DesktopPreReadyPlatform.DesktopPreReadyElectronOptions;
@@ -257,6 +261,15 @@ const startup = Effect.gen(function* () {
   yield* electronApp.setPath("userData", userDataPath);
   yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
   yield* desktopSettings.load;
+  // Pre-ready on purpose: a crash between here and the first window is
+  // exactly the one a user cannot describe, and Electron only captures it if
+  // the reporter is already running. Nothing is uploaded — see
+  // DesktopCrashReporting for why that is a permanent property, not a
+  // default. This sits AFTER settings.load because the update channel is one
+  // of the six annotations, and both already run before `whenReady`; it adds
+  // no macrotask boundary that Clerk's pre-ready scheme registration
+  // (below) does not already tolerate.
+  yield* crashReporting.configure;
 
   if (linuxElectronOptions !== null) {
     yield* logStartupInfo("linux password store configured", {
@@ -271,6 +284,10 @@ const startup = Effect.gen(function* () {
   yield* appIdentity.configure;
   yield* lifecycle.register;
   yield* clerk.configure;
+  // Pre-ready, with no await between here and whenReady below: macOS can emit
+  // `open-url` for a cold-start deep link before `ready`. See the
+  // DesktopDeepLinkRouter module doc.
+  yield* deepLinkRouter.register;
 
   yield* electronApp.whenReady.pipe(
     Effect.withSpan("desktop.electron.whenReady"),

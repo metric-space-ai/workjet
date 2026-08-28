@@ -91,6 +91,41 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
   );
 }
 
+function renderEmptyLauncher() {
+  return renderToStaticMarkup(
+    <RightPanelTabs
+      mode="inline"
+      surfaces={[]}
+      activeSurfaceId={null}
+      pendingSurfaceIds={new Set()}
+      previewSessions={{}}
+      desktopByTabId={{}}
+      terminalLabelsById={new Map()}
+      onActivate={() => undefined}
+      onCloseSurface={() => undefined}
+      onCloseOtherSurfaces={() => undefined}
+      onCloseSurfacesToRight={() => undefined}
+      onCloseAllSurfaces={() => undefined}
+      onCopyFilePath={() => undefined}
+      onAddBrowser={() => undefined}
+      onAddTerminal={() => undefined}
+      onAddPullRequest={() => undefined}
+      onAddDiff={() => undefined}
+      onAddFiles={() => undefined}
+      onAddAgents={() => undefined}
+      liveAgentCount={2}
+      browserAvailable
+      terminalAvailable
+      diffAvailable
+      filesAvailable
+      pullRequestAvailable
+      agentsAvailable
+    >
+      <div>content</div>
+    </RightPanelTabs>,
+  );
+}
+
 describe("RightPanelTabs preview favicon", () => {
   it("prefers a live capture and never asks Google about a private hostname", () => {
     const captured = renderTabs(favicon("data:image/png;base64,AAAA", "http://24x.xf.local/"));
@@ -111,5 +146,19 @@ describe("RightPanelTabs preview favicon", () => {
   it("hides a capture while the server session still describes another origin", () => {
     const html = renderTabs(favicon("data:image/png;base64,AAAA", "https://example.com/"));
     expect(html).not.toContain("data:image/png;base64,AAAA");
+  });
+});
+
+describe("RightPanelTabs surface launcher", () => {
+  it("keeps terminal and workers out of the generic right-panel launcher", () => {
+    const html = renderEmptyLauncher();
+
+    expect(html).toContain("Browser");
+    expect(html).toContain("Files");
+    expect(html).toContain("Diff");
+    expect(html).toContain("Pull request");
+    expect(html).not.toContain("Terminal");
+    expect(html).not.toContain("Agents");
+    expect(html).not.toContain("Follow subagents and workflows");
   });
 });

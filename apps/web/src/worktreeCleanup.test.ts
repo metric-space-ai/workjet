@@ -1,4 +1,10 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./types";
@@ -18,6 +24,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     },
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     checkpoints: [],

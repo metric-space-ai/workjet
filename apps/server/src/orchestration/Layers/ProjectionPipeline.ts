@@ -609,6 +609,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             modelSelection: event.payload.modelSelection,
             runtimeMode: event.payload.runtimeMode,
             interactionMode: event.payload.interactionMode,
+            workjetConfig: event.payload.workjetConfig,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
             latestTurnId: null,
@@ -829,6 +830,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             interactionMode: event.payload.interactionMode,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.workjet-config-set": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            workjetConfig: event.payload.workjetConfig,
             updatedAt: event.payload.updatedAt,
           });
           return;

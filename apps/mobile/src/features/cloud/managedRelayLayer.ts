@@ -4,22 +4,23 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { createDpopProof, loadOrCreateDpopProofKeyPair } from "./dpop";
+import { createDpopProofWithSigner } from "./dpop";
 import { managedRelayAccessTokenStore } from "./managedRelayTokenStore";
+import { loadNativeWorkjetDpopSigner } from "./nativeWorkjetDpopSigner";
 
 const relayDpopSignerLayer = Layer.effect(
   ManagedRelay.ManagedRelayDpopSigner,
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
-    const loadProofKey = yield* Effect.cached(
-      loadOrCreateDpopProofKeyPair().pipe(Effect.provideService(Crypto.Crypto, crypto)),
-    );
+    const loadProofSigner = yield* Effect.cached(loadNativeWorkjetDpopSigner());
     return ManagedRelay.ManagedRelayDpopSigner.of({
-      thumbprint: loadProofKey.pipe(
-        Effect.map((proofKey) => proofKey.thumbprint),
+      thumbprint: loadProofSigner.pipe(
+        Effect.map((signer) => signer.thumbprint),
         Effect.mapError(
           (error) =>
             new ManagedRelay.ManagedRelayDpopKeyLoadError({
+              // The shared error vocabulary predates the native non-exportable
+              // key. Keep the compatible storage class without exposing it.
               keyStore: "expo-secure-store",
               cause: error,
             }),
@@ -27,7 +28,7 @@ const relayDpopSignerLayer = Layer.effect(
         Effect.withSpan("mobile.managedRelayDpopSigner.loadThumbprint"),
       ),
       createProof: Effect.fn("mobile.managedRelayDpopSigner.createProof")(function* (input) {
-        const proofKey = yield* loadProofKey.pipe(
+        const signer = yield* loadProofSigner.pipe(
           Effect.mapError(
             (error) =>
               new ManagedRelay.ManagedRelayDpopProofCreationError({
@@ -37,7 +38,7 @@ const relayDpopSignerLayer = Layer.effect(
               }),
           ),
         );
-        return yield* createDpopProof({ ...input, proofKey }).pipe(
+        return yield* createDpopProofWithSigner({ ...input, signer }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.map((proof) => proof.proof),
           Effect.mapError(

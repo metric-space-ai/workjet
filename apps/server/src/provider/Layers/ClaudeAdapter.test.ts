@@ -14,6 +14,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -34,6 +35,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
@@ -272,6 +274,19 @@ async function readFirstPromptMessage(
 const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 
+function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): void {
+  McpProviderSession.setMcpProviderSession({
+    environmentId: EnvironmentId.make("claude-managed-prompt-test"),
+    threadId,
+    providerSessionId: "claude-managed-prompt-session",
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    endpoint: "http://127.0.0.1/mcp",
+    authorizationHeader: "Bearer test-token",
+    activeWorkjetMcpCapabilityIds: [],
+    compiledManagedPrompt,
+  });
+}
+
 describe("ClaudeAdapterLive", () => {
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
@@ -356,6 +371,56 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);
     }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("appends managed instructions through the Claude Code preset", () => {
+    const threadId = ThreadId.make("claude-managed-prompt");
+    const harness = makeHarness();
+    setManagedPrompt(threadId, "  Follow the managed Claude workflow.  ");
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+        append:
+          "<workjet_managed_instructions>\nFollow the managed Claude workflow.\n</workjet_managed_instructions>",
+      });
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("preserves the Claude Code preset shape for empty managed instructions", () => {
+    const threadId = ThreadId.make("claude-empty-managed-prompt");
+    const harness = makeHarness();
+    setManagedPrompt(threadId, " \n\t ");
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+      });
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );
@@ -1512,6 +1577,79 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(turnCompleted.payload.state, "interrupted");
         assert.equal(turnCompleted.payload.errorMessage, "Error: Request was aborted.");
         assert.equal(turnCompleted.payload.stopReason, "tool_use");
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("reports an api_error result as failed even though its subtype is success", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      // Byte-for-byte the shape observed in
+      // ~/.t3/userdata/logs/provider/events.*.log when the CLI's OAuth session
+      // has expired: subtype "success", is_error true, terminal_reason
+      // "api_error", NO `errors` array, reason in `result`, and the request
+      // never reached the API (duration_api_ms 0).
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        terminal_reason: "api_error",
+        duration_api_ms: 0,
+        num_turns: 1,
+        stop_reason: "stop_sequence",
+        result: "Failed to authenticate: OAuth session expired and could not be refreshed",
+        session_id: "sdk-session-api-error",
+        uuid: "result-api-error",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+
+      // The operator must be told. Before the fix no error event was emitted
+      // at all, because resultUserFacingError returned undefined for anything
+      // wearing subtype "success".
+      const runtimeError = runtimeEvents.find((event) => event.type === "runtime.error");
+      assert.isDefined(runtimeError, "an api_error result must surface as runtime.error");
+      if (runtimeError?.type === "runtime.error") {
+        assert.equal(
+          runtimeError.payload.message,
+          "Failed to authenticate: OAuth session expired and could not be refreshed",
+        );
+      }
+
+      const turnCompleted = runtimeEvents[runtimeEvents.length - 1];
+      assert.equal(turnCompleted?.type, "turn.completed");
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(String(turnCompleted.turnId), String(turn.turnId));
+        // Booking this as "completed" is the defect: it stored thirteen
+        // consecutive authentication outages as successful turns, which is
+        // why a 100%-failing provider stayed invisible behind a green UI.
+        assert.equal(turnCompleted.payload.state, "failed");
+        assert.equal(
+          turnCompleted.payload.errorMessage,
+          "Failed to authenticate: OAuth session expired and could not be refreshed",
+        );
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),

@@ -56,6 +56,7 @@ import {
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
 import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
+import { useBusinessOs } from "../business-os/BusinessOsProvider";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -301,26 +302,39 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
   const serverConfigByEnvironmentId = useServerConfigs();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const { connectedEnvironments } = useRemoteConnectionStatus();
+  const { hasEnvironmentBindings, selectedEnvironmentIds } = useBusinessOs();
 
   return useMemo<ReadonlyArray<EnvironmentOption>>(() => {
     const runtimeByEnvironmentId = new Map(
       connectedEnvironments.map((environment) => [environment.environmentId, environment] as const),
     );
-    const options = Object.values(savedConnectionsById).map((connection) => {
-      const config = serverConfigByEnvironmentId.get(connection.environmentId);
-      const runtime = runtimeByEnvironmentId.get(connection.environmentId);
-      return {
-        environmentId: connection.environmentId,
-        label: connection.environmentLabel,
-        platform: platformFromOs(config?.environment.platform.os ?? null),
-        baseDirectory: config?.settings.addProjectBaseDirectory ?? null,
-        connectionState: runtime?.connectionState ?? "available",
-        connectionError: runtime?.connectionError ?? null,
-        connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
-      };
-    });
+    const selectedInstanceEnvironmentIds = new Set(selectedEnvironmentIds);
+    const options = Object.values(savedConnectionsById)
+      .filter(
+        (connection) =>
+          !hasEnvironmentBindings || selectedInstanceEnvironmentIds.has(connection.environmentId),
+      )
+      .map((connection) => {
+        const config = serverConfigByEnvironmentId.get(connection.environmentId);
+        const runtime = runtimeByEnvironmentId.get(connection.environmentId);
+        return {
+          environmentId: connection.environmentId,
+          label: connection.environmentLabel,
+          platform: platformFromOs(config?.environment.platform.os ?? null),
+          baseDirectory: config?.settings.addProjectBaseDirectory ?? null,
+          connectionState: runtime?.connectionState ?? "available",
+          connectionError: runtime?.connectionError ?? null,
+          connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
+        };
+      });
     return Arr.sort(options, environmentOptionOrder);
-  }, [connectedEnvironments, savedConnectionsById, serverConfigByEnvironmentId]);
+  }, [
+    connectedEnvironments,
+    hasEnvironmentBindings,
+    savedConnectionsById,
+    selectedEnvironmentIds,
+    serverConfigByEnvironmentId,
+  ]);
 }
 
 function useSelectedEnvironment(): {

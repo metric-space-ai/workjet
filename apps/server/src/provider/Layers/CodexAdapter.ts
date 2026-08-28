@@ -50,6 +50,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
   type ProviderAdapterError,
+  type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -76,6 +77,23 @@ const PROVIDER = ProviderDriverKind.make("codex");
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  /**
+   * Lazily resolve the environment for one session start.
+   *
+   * Gateway-routed instances must consult the gateway's live status at the
+   * moment a session starts — the gateway starts, stops, and faults on its
+   * own schedule, so a value captured when the instance was built would go
+   * stale. When absent, the static `environment` above is used, which is
+   * exactly the unrouted behavior.
+   */
+  readonly resolveSessionEnvironment?: (input?: {
+    /**
+     * The model the composer selected. The gateway needs it to pick the
+     * upstream provider that serves it, so the resolver — not the driver —
+     * decides what the session's request header says.
+     */
+    readonly model?: string | undefined;
+  }) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError>;
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -1663,13 +1681,22 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        // Resolved per session start so gateway-routed instances observe the
+        // gateway's current status rather than a value frozen at construction.
+        const selectedModel =
+          input.modelSelection?.instanceId === boundInstanceId
+            ? input.modelSelection.model
+            : undefined;
+        const sessionEnvironment = options?.resolveSessionEnvironment
+          ? yield* options.resolveSessionEnvironment({ model: selectedModel })
+          : options?.environment;
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
-          ...(options?.environment ? { environment: options.environment } : {}),
+          launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
+          ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
@@ -1681,8 +1708,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(serviceTier ? { serviceTier } : {}),
           ...(mcpSession
             ? {
+                compiledManagedPrompt: mcpSession.compiledManagedPrompt,
                 environment: {
-                  ...(options?.environment ?? process.env),
+                  ...(sessionEnvironment ?? process.env),
                   T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
                 appServerArgs: [

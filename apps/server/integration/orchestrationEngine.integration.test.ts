@@ -1,3 +1,4 @@
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -147,6 +148,7 @@ const seedProjectAndThread = (harness: OrchestrationIntegrationHarness) =>
         model: defaultModel,
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: harness.workspaceDir,
@@ -297,6 +299,7 @@ it.live.skipIf(!process.env.CODEX_BINARY_PATH)(
             model: "gpt-5.3-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
           runtimeMode: "full-access",
           branch: null,
           worktreePath: harness.workspaceDir,

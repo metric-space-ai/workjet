@@ -35,6 +35,7 @@ import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from ".
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
+import { stoppedProviderGatewayTestLayer } from "../testUtils/providerGatewayTestLayer.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./ProviderInstanceRegistryHydration.ts";
 import {
@@ -137,17 +138,35 @@ type TestClaudeCapabilities = {
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
 
+/**
+ * A probe that carries ACCOUNT EVIDENCE, which is what a signed-in CLI
+ * actually returns. The default used to leave every account field undefined —
+ * the shape an EXPIRED login produces — so tests about readiness and version
+ * gating were unknowingly asserting against a dead session. Pass explicit
+ * `undefined`s to get that shape back; `claudeCapabilitiesWithoutAccount`
+ * below does exactly that.
+ */
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
   return () =>
     Effect.succeed({
-      email: undefined,
-      subscriptionType: undefined,
-      tokenSource: undefined,
+      email: "person@example.com",
+      subscriptionType: "Pro",
+      tokenSource: "oauth",
       apiProvider: undefined,
       slashCommands: [],
       ...overrides,
     });
 }
+
+/** The shape an expired login produces: the CLI boots, the account is empty. */
+const claudeCapabilitiesWithoutAccount = () =>
+  Effect.succeed({
+    email: undefined,
+    subscriptionType: undefined,
+    tokenSource: undefined,
+    apiProvider: undefined,
+    slashCommands: [],
+  });
 
 const noClaudeCapabilities = () =>
   Effect.sync(() => undefined as TestClaudeCapabilities | undefined);
@@ -1486,6 +1505,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               ),
             ),
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+            Layer.provideMerge(stoppedProviderGatewayTestLayer),
             Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
             // NO spawner mock — `ChildProcessSpawner` is supplied by the
             // outer `NodeServices.layer` on `it.layer(...)` and will
@@ -1579,6 +1599,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               ),
             ),
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+            Layer.provideMerge(stoppedProviderGatewayTestLayer),
             Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
               ChildProcessSpawner.make((command) => {
                 spawnedCommands.push((command as { readonly command: string }).command);
@@ -1701,6 +1722,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               ),
             ),
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+            Layer.provideMerge(stoppedProviderGatewayTestLayer),
             Layer.provideMerge(NodeServices.layer),
             Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
           );
@@ -1763,6 +1785,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 ),
               ),
               Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+              Layer.provideMerge(stoppedProviderGatewayTestLayer),
               Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
               Layer.provideMerge(
                 mockCommandSpawnerLayer((command, args) => {
@@ -1813,7 +1836,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               assert.strictEqual(cursorProvider?.status, "disabled");
               assert.strictEqual(
                 cursorProvider?.message,
-                "Cursor is disabled in T3 Code settings.",
+                "Cursor is disabled in Workjet settings.",
               );
               assert.strictEqual(cursorSpawned, false);
             }).pipe(Effect.provide(runtimeServices));
@@ -1828,7 +1851,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           assert.strictEqual(status.enabled, false);
           assert.strictEqual(status.status, "disabled");
           assert.strictEqual(status.installed, false);
-          assert.strictEqual(status.message, "Codex is disabled in T3 Code settings.");
+          assert.strictEqual(status.message, "Codex is disabled in Workjet settings.");
         }),
       );
     });
@@ -1836,6 +1859,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      // Measured 2026-08-23: the CLI booted, `claude/system/init` arrived
+      // complete with the full tool list, and the very next turn failed with
+      // "OAuth session expired and could not be refreshed". The probe never
+      // reaches the API, so a boot alone must not be published as a login.
+      it.effect("refuses to call Claude authenticated when the probe carries no account", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilitiesWithoutAccount,
+          );
+          assert.strictEqual(status.installed, true);
+          assert.strictEqual(status.status, "warning");
+          assert.strictEqual(status.auth.status, "unknown");
+          assert.include(status.message ?? "", "reported no account");
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              return { stdout: "", stderr: "", code: 0 };
+            }),
+          ),
+        ),
+      );
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
@@ -1868,7 +1916,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           // reports only `apiProvider` with no subscription or token.
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
-            claudeCapabilities({ apiProvider: "bedrock" }),
+            // Bedrock carries no subscription: the label must come from apiProvider.
+            claudeCapabilities({ apiProvider: "bedrock", subscriptionType: undefined }),
           );
           assert.strictEqual(status.status, "ready");
           assert.strictEqual(status.installed, true);
@@ -2022,7 +2071,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               effortDescriptor?.type === "select"
                 ? effortDescriptor.options.find((option) => option.isDefault)
                 : undefined,
-              { id: "xhigh", label: "Extra High", isDefault: true },
+              { id: "xhigh", label: "Extra high", isDefault: true },
             );
           }).pipe(
             Effect.provide(

@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "T3 Code (Dev)" instead of "electron"
+// This file mostly exists so dev mode has the product name and artwork instead of "electron".
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -15,18 +15,26 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+export function resolveLauncherDisplayName(development) {
+  return "Workjet";
+}
+
+export const APP_DISPLAY_NAME = resolveLauncherDisplayName(isDevelopment);
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
   : "com.t3tools.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
-const LAUNCHER_VERSION = 14;
+// Workjet schemes are canonical; CTOX Desktop and t3code remain inbound-only
+// compatibility aliases. Mirrors apps/desktop/src/electron/desktopSchemes.ts.
+const APP_PROTOCOL_SCHEMES = isDevelopment
+  ? ["workjet-dev", "ctox-desktop-dev", "t3code-dev"]
+  : ["workjet", "workjet-preview", "ctox-desktop", "t3code"];
+const LAUNCHER_VERSION = 16;
 const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
-const developmentMacIconPngPath = NodePath.join(
+export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
   repoRoot,
   "assets",
-  "dev",
-  "blueprint-macos-1024.png",
+  "workjet",
+  "workjet-app-icon.png",
 );
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
@@ -169,11 +177,11 @@ function ensureDevelopmentIconIcns(runtimeDir) {
   const generatedIconPath = NodePath.join(runtimeDir, "icon-dev.icns");
   NodeFS.mkdirSync(runtimeDir, { recursive: true });
 
-  if (!NodeFS.existsSync(developmentMacIconPngPath)) {
+  if (!NodeFS.existsSync(DEVELOPMENT_MAC_ICON_PATH)) {
     return defaultIconPath;
   }
 
-  const sourceMtimeMs = NodeFS.statSync(developmentMacIconPngPath).mtimeMs;
+  const sourceMtimeMs = NodeFS.statSync(DEVELOPMENT_MAC_ICON_PATH).mtimeMs;
   if (
     NodeFS.existsSync(generatedIconPath) &&
     NodeFS.statSync(generatedIconPath).mtimeMs >= sourceMtimeMs
@@ -191,7 +199,7 @@ function ensureDevelopmentIconIcns(runtimeDir) {
         "-z",
         String(size),
         String(size),
-        developmentMacIconPngPath,
+        DEVELOPMENT_MAC_ICON_PATH,
         "--out",
         NodePath.join(iconsetDir, `icon_${size}x${size}.png`),
       ]);
@@ -201,7 +209,7 @@ function ensureDevelopmentIconIcns(runtimeDir) {
         "-z",
         String(retinaSize),
         String(retinaSize),
-        developmentMacIconPngPath,
+        DEVELOPMENT_MAC_ICON_PATH,
         "--out",
         NodePath.join(iconsetDir, `icon_${size}x${size}@2x.png`),
       ]);
@@ -346,7 +354,7 @@ function buildMacLauncher(electronBinaryPath) {
   if (isDevelopment) {
     // Keep Electron's native executable inside the branded bundle. Launching the
     // node_modules copy makes macOS associate the process (and Dock label) with
-    // Electron.app even though this bundle's Info.plist has the T3 Code name.
+    // Electron.app even though this bundle's Info.plist has the CTOX product name.
     // Its conventional executable name also keeps Electron's default-app runtime
     // in development mode instead of making app.isPackaged report true.
     writeDevelopmentLauncherScript(launcherBinaryPath, runtimeElectronBinaryPath);

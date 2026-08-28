@@ -1,0 +1,1273 @@
+// @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded activity payloads.
+import { assert, it } from "@effect/vitest";
+import {
+  EnvironmentId,
+  ProviderInstanceId,
+  ThreadId,
+  WorkjetContentDigest,
+  WorkjetEnvelopeId,
+  WorkjetGitBranchName,
+  WorkjetHandoffId,
+  WorkjetMeshWorkspaceId,
+  WorkjetRepositoryPath,
+  WorkjetSealedPayloadRef,
+  WorkjetDelegationId,
+  type OrchestrationCommand,
+  type OrchestrationThread,
+  type WorkjetDelegationState,
+  type WorkjetMessageBody,
+  type WorkjetThreadHandoff,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+
+import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
+import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import {
+  makeWorkjetMailboxDeliveryWithSources,
+  WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND,
+  WORKJET_DELEGATION_SENT_ACTIVITY_KIND,
+  WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+  WORKJET_HANDOFF_SENT_ACTIVITY_KIND,
+  WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+  WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+  type WorkjetMailboxDelegateInput,
+  type WorkjetMailboxDeliveryShape,
+  type WorkjetMailboxDeliverySources,
+  type WorkjetMailboxSendHandoffInput,
+  type WorkjetMailboxSendMessageInput,
+} from "./WorkjetMailboxDelivery.ts";
+import {
+  WorkjetMailboxStore,
+  WorkjetMailboxStoreLive,
+  type WorkjetMailboxStoreShape,
+} from "./WorkjetMailboxStore.ts";
+import type { WorkjetMailboxAuditEventInput } from "./WorkjetMailboxAuditEmitter.ts";
+import {
+  canonicalRoutingEnvelopeBytes,
+  makeWorkjetMeshIdentity,
+  WorkjetMeshIdentity,
+} from "./WorkjetMeshIdentity.ts";
+
+const WORKSPACE = WorkjetMeshWorkspaceId.make("workjet-mesh-room-1");
+const LOCAL_ENVIRONMENT = EnvironmentId.make("environment-local");
+const REMOTE_ENVIRONMENT = EnvironmentId.make("environment-remote");
+const SOURCE_THREAD = ThreadId.make("thread-source");
+const TARGET_THREAD = ThreadId.make("thread-target");
+
+const NOW = "2026-08-19T12:00:00.000Z";
+const SECRET_TEXT = "MESSAGE_BODY_CANARY_MUST_NOT_LEAK";
+const SECRET_PAYLOAD_REF = WorkjetSealedPayloadRef.make("c2VhbGVkLXBheWxvYWQtY2FuYXJ5");
+
+const invocation: McpInvocationScope = {
+  environmentId: LOCAL_ENVIRONMENT,
+  threadId: SOURCE_THREAD,
+  providerSessionId: "provider-session-mailbox",
+  providerInstanceId: ProviderInstanceId.make("codex-main"),
+  capabilities: new Set(["preview"]),
+  workjetRole: "orchestrator",
+  issuedAt: 1,
+};
+
+const targetThread = {
+  id: TARGET_THREAD,
+  deletedAt: null,
+} as unknown as OrchestrationThread;
+
+const deletedTargetThread = {
+  id: TARGET_THREAD,
+  deletedAt: NOW,
+} as unknown as OrchestrationThread;
+
+const nthId = (index: number) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+
+const inlineBody = { _tag: "inline", text: SECRET_TEXT } as const satisfies WorkjetMessageBody;
+const sealedBody = {
+  _tag: "sealed",
+  payloadRef: SECRET_PAYLOAD_REF,
+  byteLength: 2_048,
+} as const satisfies WorkjetMessageBody;
+
+const messageInput = (
+  overrides?: Partial<WorkjetMailboxSendMessageInput>,
+): WorkjetMailboxSendMessageInput => ({
+  targetWorkspaceId: WORKSPACE,
+  targetEnvironmentId: LOCAL_ENVIRONMENT,
+  targetThreadId: TARGET_THREAD,
+  body: inlineBody,
+  ...overrides,
+});
+
+const delegateInput = (
+  overrides?: Partial<WorkjetMailboxDelegateInput>,
+): WorkjetMailboxDelegateInput => ({
+  targetWorkspaceId: WORKSPACE,
+  targetEnvironmentId: LOCAL_ENVIRONMENT,
+  targetThreadId: TARGET_THREAD,
+  prompt: {
+    schemaVersion: 1,
+    snapshotRef: WorkjetSealedPayloadRef.make("cHJvbXB0LXNuYXBzaG90LXJlZi0wMDE"),
+    digest: WorkjetContentDigest.make("a".repeat(63) + "b"),
+    byteLength: 4_096,
+  },
+  scope: {
+    schemaVersion: 1,
+    files: [
+      WorkjetRepositoryPath.make("apps/server/src/workjet/mailbox/WorkjetMailboxDelivery.ts"),
+    ],
+    nonGoals: "No transport, no relay, no UI.",
+  },
+  completion: { schemaVersion: 1, acceptance: "Focused delivery tests pass." },
+  budget: { maxDepth: 4, maxReviewRounds: 2, ttlSeconds: 7_200 },
+  ...overrides,
+});
+
+/**
+ * A REAL mesh identity (real Ed25519 keys, real signatures) over an in-memory
+ * secret store, with the generated workspace id pinned to the fixture so the
+ * address assertions stay readable. Signing and verification are never faked:
+ * the delivery path must produce envelopes that actually verify.
+ */
+const makeTestIdentity = () => {
+  const entries = new Map<string, Uint8Array>();
+  const secrets = ServerSecretStore.ServerSecretStore.of({
+    get: (name) => {
+      const value = entries.get(name);
+      return Effect.succeed(value === undefined ? Option.none() : Option.some(value));
+    },
+    set: (name, value) => Effect.sync(() => void entries.set(name, value)),
+    create: (name, value) => Effect.sync(() => void entries.set(name, value)),
+    getOrCreateRandom: () => Effect.die("unused"),
+    remove: (name) => Effect.sync(() => void entries.delete(name)),
+  });
+  return makeWorkjetMeshIdentity().pipe(
+    Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+    Effect.map((identity) => WorkjetMeshIdentity.of({ ...identity, workspaceId: WORKSPACE })),
+  );
+};
+
+/**
+ * Every test builds its own in-memory database plus a recording engine, so the
+ * durable rows and the thread-visible activities can be asserted exactly.
+ */
+const makeHarness = (input?: {
+  readonly target?: OrchestrationThread | undefined;
+  readonly failCommands?: boolean;
+  readonly failAudit?: boolean;
+  readonly identity?: Effect.Effect<WorkjetMeshIdentity["Service"]>;
+}) => {
+  const commands: Array<OrchestrationCommand> = [];
+  const events: Array<WorkjetMailboxAuditEventInput> = [];
+  let idIndex = 0;
+  const sources: WorkjetMailboxDeliverySources = {
+    randomUUID: Effect.sync(() => nthId(idIndex++)),
+    nowIso: Effect.succeed(NOW),
+    audit: {
+      emit: (event) => {
+        events.push(event);
+        // A throwing emitter must never fail the underlying delivery.
+        return input?.failAudit ? Effect.die("audit emitter exploded") : Effect.void;
+      },
+    },
+  };
+  const engine = {
+    dispatch: (command: OrchestrationCommand) => {
+      commands.push(command);
+      return input?.failCommands
+        ? Effect.fail({ _tag: "DownstreamTestError", message: "downstream secret" } as const)
+        : Effect.succeed({ sequence: commands.length });
+    },
+  } as unknown as OrchestrationEngineService["Service"];
+  const query = {
+    getThreadDetailById: () =>
+      Effect.succeed(
+        input && "target" in input
+          ? input.target === undefined
+            ? Option.none()
+            : Option.some(input.target)
+          : Option.some(targetThread),
+      ),
+  } as unknown as ProjectionSnapshotQuery["Service"];
+
+  const service = (input?.identity ?? makeTestIdentity()).pipe(
+    Effect.flatMap((identity) =>
+      makeWorkjetMailboxDeliveryWithSources(sources).pipe(
+        Effect.provideService(WorkjetMeshIdentity, identity),
+      ),
+    ),
+    Effect.provideService(OrchestrationEngineService, engine),
+    Effect.provideService(ProjectionSnapshotQuery, query),
+  );
+  return { commands, events, service };
+};
+
+const testLayer = Layer.mergeAll(
+  WorkjetMailboxStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+  SqlitePersistenceMemory,
+);
+
+const activityKinds = (commands: ReadonlyArray<OrchestrationCommand>) =>
+  commands.flatMap((command) =>
+    command.type === "thread.activity.append" ? [command.activity.kind] : [],
+  );
+
+const activityFor = (commands: ReadonlyArray<OrchestrationCommand>, kind: string) =>
+  commands.find(
+    (command) => command.type === "thread.activity.append" && command.activity.kind === kind,
+  );
+
+// ===============================
+// Messages
+// ===============================
+
+it.effect("delivers a same-environment message through the full outbox/inbox fast path", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+
+    assert.equal(outcome._tag, "acknowledged");
+    if (outcome._tag !== "acknowledged") return;
+    assert.equal(outcome.receipt.schemaVersion, 1);
+    assert.equal(outcome.receipt.disposition, "accepted-new");
+    assert.equal(outcome.receipt.acknowledgedAt, NOW);
+    assert.deepEqual(outcome.receipt.acknowledgedBy, {
+      schemaVersion: 1,
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      threadId: TARGET_THREAD,
+    });
+
+    // The local fast path obeys the same durable contract as remote delivery:
+    // the outbox row is delivered and the inbox row exists exactly once.
+    const outbound = yield* store.getOutbound(outcome.envelopeId);
+    assert.isTrue(Option.isSome(outbound));
+    assert.equal(Option.getOrThrow(outbound).state, "delivered");
+    assert.equal(Option.getOrThrow(outbound).deliveredAtMillis, Date.parse(NOW));
+
+    const inbound = yield* store.getInbound(outcome.envelopeId);
+    assert.isTrue(Option.isSome(inbound));
+    assert.equal(Option.getOrThrow(inbound).payload._tag, "message");
+
+    assert.deepEqual(activityKinds(commands), [
+      WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+      WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+    ]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("signs every stored envelope with the environment key and verifies it on receipt", () =>
+  Effect.gen(function* () {
+    const identity = yield* makeTestIdentity();
+    const { service } = makeHarness({ identity: Effect.succeed(identity) });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const local = yield* delivery.sendMessage(invocation, messageInput());
+    const remote = yield* delivery.sendMessage(
+      invocation,
+      messageInput({ targetEnvironmentId: REMOTE_ENVIRONMENT, body: sealedBody }),
+    );
+
+    for (const envelopeId of [local.envelopeId, remote.envelopeId]) {
+      const outbound = Option.getOrThrow(yield* store.getOutbound(envelopeId));
+      // The sentinel is gone: a real detached signature is stored, and it
+      // verifies against the source environment's public key.
+      assert.match(outbound.envelope.signature, /^[A-Za-z0-9_-]{86}$/);
+      assert.isTrue(yield* identity.verifyRoutingEnvelope(outbound.envelope));
+      assert.isTrue(
+        yield* identity.verify(
+          canonicalRoutingEnvelopeBytes(outbound.envelope),
+          outbound.envelope.signature,
+          identity.publicKey,
+        ),
+      );
+      assert.equal(outbound.envelope.sourceWorkspaceId, WORKSPACE);
+    }
+
+    // The envelope that actually landed in the inbox is the verified one.
+    const inbound = Option.getOrThrow(yield* store.getInbound(local.envelopeId));
+    assert.isTrue(yield* identity.verifyRoutingEnvelope(inbound.envelope));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses an inbound envelope whose signature does not verify", () =>
+  Effect.gen(function* () {
+    const real = yield* makeTestIdentity();
+    // A signer that emits a well-formed but wrong signature stands in for a
+    // forged or corrupted envelope arriving at the inbox.
+    const forging = WorkjetMeshIdentity.of({
+      ...real,
+      sign: () => Effect.succeed("A".repeat(86)),
+      signRoutingEnvelope: (envelope) => Effect.succeed({ ...envelope, signature: "A".repeat(86) }),
+    });
+    const { commands, service } = makeHarness({ identity: Effect.succeed(forging) });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const error = yield* delivery.sendMessage(invocation, messageInput()).pipe(Effect.flip);
+
+    assert.equal(error.reason, "invalid-signature");
+    // The outbound row exists, but nothing was accepted or delivered.
+    assert.equal((yield* store.listOutboundByState("pending", 10)).length, 1);
+    assert.equal((yield* store.listOutboundByState("delivered", 10)).length, 0);
+    assert.deepEqual(activityKinds(commands), [WORKJET_MESSAGE_SENT_ACTIVITY_KIND]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("appends bounded redacted activities to both the source and the target thread", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+
+    const sent = activityFor(commands, WORKJET_MESSAGE_SENT_ACTIVITY_KIND);
+    const received = activityFor(commands, WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND);
+    assert.isDefined(sent);
+    assert.isDefined(received);
+    if (sent?.type !== "thread.activity.append" || received?.type !== "thread.activity.append") {
+      return;
+    }
+
+    assert.equal(sent.threadId, SOURCE_THREAD);
+    assert.equal(received.threadId, TARGET_THREAD);
+    assert.equal(sent.activity.tone, "info");
+    assert.deepEqual(sent.activity.payload, {
+      schemaVersion: 1,
+      envelopeId: outcome.envelopeId,
+      direction: "outbound",
+      source: {
+        workspaceId: WORKSPACE,
+        environmentId: LOCAL_ENVIRONMENT,
+        threadId: SOURCE_THREAD,
+      },
+      target: {
+        workspaceId: WORKSPACE,
+        environmentId: LOCAL_ENVIRONMENT,
+        threadId: TARGET_THREAD,
+      },
+      bodyKind: "inline",
+      createdAt: NOW,
+      expiresAt: "2026-08-19T13:00:00.000Z",
+    });
+    assert.deepEqual(received.activity.payload, {
+      ...(sent.activity.payload as Record<string, unknown>),
+      direction: "inbound",
+      disposition: "accepted-new",
+    });
+
+    // The plan forbids prompt/body material in anything durable and readable.
+    const serialized = JSON.stringify(commands);
+    assert.isFalse(serialized.includes(SECRET_TEXT));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("treats a replayed envelope as a duplicate without a second inbound activity", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const first = yield* delivery.sendMessage(invocation, messageInput());
+    assert.equal(first._tag, "acknowledged");
+
+    // The next envelope id is fresh, so a genuine replay is simulated by
+    // re-recording the SAME envelope through the store's idempotent inbox.
+    const outbound = Option.getOrThrow(yield* store.getOutbound(first.envelopeId));
+    const replay = yield* store.recordInboundEnvelope(outbound.envelope, outbound.payload, NOW);
+    assert.equal(replay._tag, "duplicate-ignored");
+
+    // A second, distinct send still produces exactly one inbound activity each.
+    const second = yield* delivery.sendMessage(invocation, messageInput());
+    assert.notEqual(second.envelopeId, first.envelopeId);
+    assert.deepEqual(activityKinds(commands), [
+      WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+      WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+      WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+      WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+    ]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("queues a cross-environment message as pending outbound without an inbox row", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendMessage(
+      invocation,
+      messageInput({ targetEnvironmentId: REMOTE_ENVIRONMENT, body: sealedBody }),
+    );
+
+    assert.equal(outcome._tag, "queued");
+    const outbound = Option.getOrThrow(yield* store.getOutbound(outcome.envelopeId));
+    assert.equal(outbound.state, "pending");
+    assert.equal(outbound.envelope.targetEnvironmentId, REMOTE_ENVIRONMENT);
+    assert.isTrue(Option.isNone(yield* store.getInbound(outcome.envelopeId)));
+
+    const pending = yield* store.listPendingOutbound(NOW, 10);
+    assert.equal(pending.length, 1);
+
+    // Only the source thread can see it; the target thread lives elsewhere.
+    assert.deepEqual(activityKinds(commands), [WORKJET_MESSAGE_SENT_ACTIVITY_KIND]);
+    assert.isFalse(JSON.stringify(commands).includes(SECRET_PAYLOAD_REF));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses an inline body for a target in another environment", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const error = yield* delivery
+      .sendMessage(invocation, messageInput({ targetEnvironmentId: REMOTE_ENVIRONMENT }))
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "malformed-envelope");
+    assert.deepEqual(activityKinds(commands), []);
+    assert.equal((yield* store.listOutboundByState("pending", 10)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rejects an unknown or deleted same-environment target before writing anything", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+
+    const missing = makeHarness({ target: undefined });
+    const unknownTarget = yield* (yield* missing.service)
+      .sendMessage(invocation, messageInput())
+      .pipe(Effect.flip);
+    assert.equal(unknownTarget.reason, "unknown-target");
+
+    const deleted = makeHarness({ target: deletedTargetThread });
+    const deletedTarget = yield* (yield* deleted.service)
+      .sendMessage(invocation, messageInput())
+      .pipe(Effect.flip);
+    assert.equal(deletedTarget.reason, "target-thread-deleted");
+
+    assert.equal((yield* store.listOutboundByState("pending", 10)).length, 0);
+    assert.deepEqual(activityKinds([...missing.commands, ...deleted.commands]), []);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps delivery authoritative when the thread activity append fails", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness({ failCommands: true });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+
+    assert.equal(outcome._tag, "acknowledged");
+    assert.equal(
+      Option.getOrThrow(yield* store.getOutbound(outcome.envelopeId)).state,
+      "delivered",
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Delegations
+// ===============================
+
+it.effect("progresses a same-environment delegation from queued to delivered", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.delegateTask(invocation, delegateInput());
+
+    assert.equal(outcome.delivery._tag, "acknowledged");
+    assert.equal(outcome.state, "delivered");
+    assert.deepEqual(outcome.delegation.owner, {
+      schemaVersion: 1,
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      threadId: TARGET_THREAD,
+    });
+
+    const record = Option.getOrThrow(yield* store.getDelegation(outcome.delegation.delegationId));
+    assert.equal(record.state, "delivered");
+    assert.isFalse(record.terminal);
+    assert.equal(record.delegation.stateChangedAt, NOW);
+    assert.equal(record.delegation.depth, 0);
+    assert.equal(record.delegation.budget.expiresAt, "2026-08-19T14:00:00.000Z");
+
+    assert.deepEqual(activityKinds(commands), [
+      WORKJET_DELEGATION_SENT_ACTIVITY_KIND,
+      WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND,
+    ]);
+    const received = activityFor(commands, WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND);
+    if (received?.type !== "thread.activity.append") return;
+    assert.equal(received.threadId, TARGET_THREAD);
+    assert.deepEqual(received.activity.payload, {
+      schemaVersion: 1,
+      envelopeId: outcome.delivery.envelopeId,
+      direction: "inbound",
+      source: {
+        workspaceId: WORKSPACE,
+        environmentId: LOCAL_ENVIRONMENT,
+        threadId: SOURCE_THREAD,
+      },
+      target: {
+        workspaceId: WORKSPACE,
+        environmentId: LOCAL_ENVIRONMENT,
+        threadId: TARGET_THREAD,
+      },
+      disposition: "accepted-new",
+      delegationId: outcome.delegation.delegationId,
+      delegationState: "delivered",
+      createdAt: NOW,
+      expiresAt: "2026-08-19T13:00:00.000Z",
+    });
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps a cross-environment delegation queued and pending", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.delegateTask(
+      invocation,
+      delegateInput({ targetEnvironmentId: REMOTE_ENVIRONMENT }),
+    );
+
+    assert.equal(outcome.delivery._tag, "queued");
+    assert.equal(outcome.state, "queued");
+    const record = Option.getOrThrow(yield* store.getDelegation(outcome.delegation.delegationId));
+    assert.equal(record.state, "queued");
+    assert.equal(
+      Option.getOrThrow(yield* store.getOutbound(outcome.delivery.envelopeId)).state,
+      "pending",
+    );
+    assert.deepEqual(activityKinds(commands), [WORKJET_DELEGATION_SENT_ACTIVITY_KIND]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses a delegation deeper than its own depth budget", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const error = yield* delivery
+      .delegateTask(
+        invocation,
+        delegateInput({ depth: 5, budget: { maxDepth: 4, maxReviewRounds: 0, ttlSeconds: 3_600 } }),
+      )
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "depth-exceeded");
+    assert.equal((yield* store.listDelegationsByState("queued", 10)).length, 0);
+    assert.deepEqual(activityKinds(commands), []);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("stores an independent delegation row per send", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const first = yield* delivery.delegateTask(invocation, delegateInput());
+    const second = yield* delivery.delegateTask(invocation, delegateInput());
+
+    assert.notEqual(first.delegation.delegationId, second.delegation.delegationId);
+    assert.equal((yield* store.listDelegationsByState("delivered", 10)).length, 2);
+    assert.equal((yield* store.listDelegationsByState("queued", 10)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Reply, review request, delegation updates, and loop gates
+// ===============================
+
+/**
+ * Creates a same-environment delegation and advances it through the enforced
+ * transition table to the requested state, so each review/update test starts
+ * from a real, legally reached lifecycle position.
+ */
+const DELEGATION_ID_MISSING = WorkjetDelegationId.make("wjd-00000000-0000-4000-8000-999999999999");
+
+const seedDelegation = (
+  delivery: WorkjetMailboxDeliveryShape,
+  store: WorkjetMailboxStoreShape,
+  path: ReadonlyArray<readonly [WorkjetDelegationState, WorkjetDelegationState]>,
+  overrides?: Partial<WorkjetMailboxDelegateInput>,
+) =>
+  Effect.gen(function* () {
+    const created = yield* delivery.delegateTask(invocation, delegateInput(overrides));
+    const id = created.delegation.delegationId;
+    for (const [from, to] of path) {
+      yield* store.transitionDelegationState(id, from, to, NOW);
+    }
+    return id;
+  });
+
+const RUNNING_PATH = [
+  ["delivered", "accepted"],
+  ["accepted", "running"],
+] as const;
+
+it.effect("replies on a delegation thread, linking the delegation and its envelope", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, []);
+    const delegationEnvelope = (yield* store.getDelegation(id)).pipe(Option.getOrThrow).delegation
+      .envelopeId;
+
+    const outcome = yield* delivery.reply(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      body: inlineBody,
+    });
+
+    assert.equal(outcome._tag, "acknowledged");
+    if (outcome._tag !== "acknowledged") return;
+
+    // The wire message references the delegation's envelope; the delegation id
+    // travels only on the redacted activity, never on the message body.
+    const stored = (yield* store.getOutbound(outcome.envelopeId)).pipe(Option.getOrThrow);
+    assert.equal(stored.payload._tag, "message");
+    if (stored.payload._tag === "message") {
+      assert.equal(stored.payload.message.inReplyTo, delegationEnvelope);
+    }
+
+    const sent = activityFor(commands, WORKJET_MESSAGE_SENT_ACTIVITY_KIND);
+    assert.isDefined(sent);
+    if (sent && sent.type === "thread.activity.append") {
+      const payload = sent.activity.payload as { readonly delegationId?: string };
+      assert.equal(payload.delegationId, id);
+    }
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect(
+  "requests review: transitions running→review-requested, writes a reviews edge, signals",
+  () =>
+    Effect.gen(function* () {
+      const { service } = makeHarness();
+      const delivery = yield* service;
+      const store = yield* WorkjetMailboxStore;
+      const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+      const outcome = yield* delivery.requestReview(invocation, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: id,
+        round: 1,
+        body: inlineBody,
+      });
+
+      assert.equal(outcome.state, "review-requested");
+      assert.equal(outcome.edgeKind, "reviews");
+      assert.equal(outcome.delivery._tag, "acknowledged");
+
+      const record = (yield* store.getDelegation(id)).pipe(Option.getOrThrow);
+      assert.equal(record.state, "review-requested");
+
+      const edges = yield* store.listDelegationEdges(id, 32);
+      assert.deepEqual(
+        edges.map((edge) => edge.kind),
+        ["reviews"],
+      );
+    }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("cancels a delegation with no graph edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "cancel" },
+    });
+    assert.equal(outcome.state, "cancelled");
+    assert.isUndefined(outcome.edgeKind);
+    assert.equal((yield* store.listDelegationEdges(id, 32)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("submits an approve verdict: review-requested→completed with a reviews edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, [
+      ...RUNNING_PATH,
+      ["running", "review-requested"],
+    ]);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "review", decision: "approve", round: 1, reasons: ["looks correct"] },
+    });
+    assert.equal(outcome.state, "completed");
+    assert.equal(outcome.edgeKind, "reviews");
+    assert.deepEqual(
+      (yield* store.listDelegationEdges(id, 32)).map((edge) => edge.kind),
+      ["reviews"],
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("records a revise: changes-requested→running with a depth+1 revises edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, [
+      ...RUNNING_PATH,
+      ["running", "review-requested"],
+      ["review-requested", "changes-requested"],
+    ]);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "revise" },
+    });
+    assert.equal(outcome.state, "running");
+    assert.equal(outcome.edgeKind, "revises");
+    const edges = yield* store.listDelegationEdges(id, 32);
+    assert.equal(edges[0]?.kind, "revises");
+    assert.equal(edges[0]?.depth, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("records a follow-up: running→needs-input with a depth+1 follows-up edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+    const outcome = yield* delivery.updateDelegation(invocation, {
+      delegationId: id,
+      update: { _tag: "follow-up" },
+    });
+    assert.equal(outcome.state, "needs-input");
+    assert.equal(outcome.edgeKind, "follows-up");
+    const edges = yield* store.listDelegationEdges(id, 32);
+    assert.equal(edges[0]?.kind, "follows-up");
+    assert.equal(edges[0]?.depth, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("REFUSES a review round beyond maxReviewRounds without moving state (loop gate)", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    // maxReviewRounds: 1 admits round 1 only; round 2 is the ceiling.
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH, {
+      budget: { maxDepth: 4, maxReviewRounds: 1, ttlSeconds: 7_200 },
+    });
+
+    // Round 1 is inside the budget and moves the delegation to review.
+    yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      round: 1,
+      body: inlineBody,
+    });
+    // Simulate the rework cycle back to running for a second review attempt.
+    yield* store.transitionDelegationState(id, "review-requested", "changes-requested", NOW);
+    yield* store.transitionDelegationState(id, "changes-requested", "running", NOW);
+
+    // Round 2 exceeds the ceiling: the review cycle cannot recur without bound.
+    const refused = yield* delivery
+      .requestReview(invocation, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: id,
+        round: 2,
+        body: inlineBody,
+      })
+      .pipe(Effect.flip);
+    assert.equal(refused.reason, "review-rounds-exceeded");
+
+    // The refusal is BEFORE any durable effect: state stays running, only the
+    // single round-1 reviews edge exists.
+    assert.equal((yield* store.getDelegation(id)).pipe(Option.getOrThrow).state, "running");
+    assert.equal((yield* store.listDelegationEdges(id, 32)).length, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("REFUSES a revise beyond maxDepth (depth gate) with no transition and no edge", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    // depth already at the maxDepth ceiling: any deeper edge is refused.
+    const id = yield* seedDelegation(delivery, store, [], {
+      budget: { maxDepth: 1, maxReviewRounds: 2, ttlSeconds: 7_200 },
+      depth: 1,
+    });
+
+    const refused = yield* delivery
+      .updateDelegation(invocation, { delegationId: id, update: { _tag: "revise" } })
+      .pipe(Effect.flip);
+    assert.equal(refused.reason, "depth-exceeded");
+    assert.equal((yield* store.listDelegationEdges(id, 32)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("fails an unknown delegation update with the bounded unknown-target reason", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const missing = yield* delivery
+      .updateDelegation(invocation, {
+        delegationId: DELEGATION_ID_MISSING,
+        update: { _tag: "cancel" },
+      })
+      .pipe(Effect.flip);
+    assert.equal(missing.reason, "unknown-target");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Redacted audit events
+// ===============================
+
+const auditTags = (events: ReadonlyArray<WorkjetMailboxAuditEventInput>) =>
+  events.map((event) => event._tag);
+
+it.effect("emits enqueued + delivered audit events for a same-environment message", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness();
+    const delivery = yield* service;
+
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+
+    assert.deepEqual(auditTags(events), ["envelope-enqueued", "envelope-delivered"]);
+    const enqueued = events[0];
+    const delivered = events[1];
+    if (enqueued?._tag !== "envelope-enqueued" || delivered?._tag !== "envelope-delivered") {
+      return assert.fail("expected enqueued then delivered");
+    }
+    assert.equal(enqueued.envelopeId, outcome.envelopeId);
+    assert.deepEqual(enqueued.source, {
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      threadId: SOURCE_THREAD,
+    });
+    assert.deepEqual(enqueued.target, {
+      workspaceId: WORKSPACE,
+      environmentId: LOCAL_ENVIRONMENT,
+      threadId: TARGET_THREAD,
+    });
+    assert.equal(delivered.disposition, "accepted-new");
+    assert.equal(delivered.occurredAt, NOW);
+
+    // Redaction canary: no message body text travels on any audit event.
+    assert.isFalse(JSON.stringify(events).includes(SECRET_TEXT));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("emits only enqueued (no delivered) for a queued cross-environment message", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness();
+    const delivery = yield* service;
+
+    yield* delivery.sendMessage(
+      invocation,
+      messageInput({ targetEnvironmentId: REMOTE_ENVIRONMENT, body: sealedBody }),
+    );
+
+    assert.deepEqual(auditTags(events), ["envelope-enqueued"]);
+    assert.isFalse(JSON.stringify(events).includes(SECRET_TEXT));
+    assert.isFalse(JSON.stringify(events).includes(SECRET_PAYLOAD_REF));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("emits envelope-rejected with a bounded reason when the signature does not verify", () =>
+  Effect.gen(function* () {
+    const real = yield* makeTestIdentity();
+    const forging = WorkjetMeshIdentity.of({
+      ...real,
+      sign: () => Effect.succeed("A".repeat(86)),
+      signRoutingEnvelope: (envelope) => Effect.succeed({ ...envelope, signature: "A".repeat(86) }),
+    });
+    const { events, service } = makeHarness({ identity: Effect.succeed(forging) });
+    const delivery = yield* service;
+
+    yield* delivery.sendMessage(invocation, messageInput()).pipe(Effect.flip);
+
+    assert.deepEqual(auditTags(events), ["envelope-enqueued", "envelope-rejected"]);
+    const rejected = events[1];
+    if (rejected?._tag !== "envelope-rejected") return assert.fail("expected rejected");
+    assert.equal(rejected.reasonCode, "invalid-signature");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("emits enqueued audit event carrying the delegation id for a delegation", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness();
+    const delivery = yield* service;
+
+    const outcome = yield* delivery.delegateTask(invocation, delegateInput());
+
+    const enqueued = events.find((event) => event._tag === "envelope-enqueued");
+    assert.isDefined(enqueued);
+    if (enqueued?._tag !== "envelope-enqueued") return;
+    assert.equal(enqueued.delegationId, outcome.delegation.delegationId);
+    assert.isFalse(JSON.stringify(events).includes(SECRET_TEXT));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps delivery authoritative when the audit emitter throws (best-effort)", () =>
+  Effect.gen(function* () {
+    const { events, service } = makeHarness({ failAudit: true });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    // A throwing emitter must not fail the send: the outcome and the durable
+    // rows are exactly what they are without any emitter.
+    const outcome = yield* delivery.sendMessage(invocation, messageInput());
+    assert.equal(outcome._tag, "acknowledged");
+    const outbound = yield* store.getOutbound(outcome.envelopeId);
+    assert.equal(Option.getOrThrow(outbound).state, "delivered");
+    // The events were still handed to the (exploding) sink.
+    assert.isTrue(events.length >= 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+// ===============================
+// Typed thread handoff
+// ===============================
+
+const HANDOFF_SNAPSHOT = {
+  schemaVersion: 1,
+  snapshotRef: WorkjetSealedPayloadRef.make("aGFuZG9mZi1zbmFwc2hvdC1yZWYtMDAx"),
+  digest: WorkjetContentDigest.make("c".repeat(64)),
+  byteLength: 2_048,
+} as const;
+
+const handoffInput = (overrides?: Partial<WorkjetMailboxSendHandoffInput>) =>
+  ({
+    targetWorkspaceId: WORKSPACE,
+    targetEnvironmentId: LOCAL_ENVIRONMENT,
+    contextSnapshot: HANDOFF_SNAPSHOT,
+    branch: {
+      schemaVersion: 1,
+      branch: WorkjetGitBranchName.make("agent/th-thread-handoff"),
+      remoteConfigured: true,
+    },
+    artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+    note: "Continue the transport slice here.",
+    ...overrides,
+  }) satisfies WorkjetMailboxSendHandoffInput;
+
+/** The LOCAL thread an accept borrows project and runtime settings from. */
+const hostThread = {
+  id: TARGET_THREAD,
+  deletedAt: null,
+  projectId: "project-local",
+  modelSelection: { provider: "anthropic", model: "claude-opus-5" },
+  runtimeMode: "local",
+  interactionMode: "agent",
+} as unknown as OrchestrationThread;
+
+const SNAPSHOT_TEXT = "# Workjet thread handoff\nSource thread: thread-remote-source";
+
+const arrivedHandoff = (overrides?: {
+  readonly sourceEnvironmentId?: EnvironmentId;
+}): WorkjetThreadHandoff => ({
+  schemaVersion: 1,
+  envelopeId: WorkjetEnvelopeId.make("wjm-handoff-000000000001"),
+  handoffId: WorkjetHandoffId.make("wjh-0123456789abcdef"),
+  sourceThread: {
+    schemaVersion: 1,
+    workspaceId: WORKSPACE,
+    environmentId: overrides?.sourceEnvironmentId ?? REMOTE_ENVIRONMENT,
+    threadId: ThreadId.make("thread-remote-source"),
+  },
+  target: { schemaVersion: 1, workspaceId: WORKSPACE, environmentId: LOCAL_ENVIRONMENT },
+  createdAt: NOW,
+  expiresAt: "2026-08-20T12:00:00.000Z",
+  contextSnapshot: HANDOFF_SNAPSHOT,
+  artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+});
+
+it.effect("delivers a same-environment handoff and records it in the receiving inbox", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendHandoff(invocation, handoffInput());
+
+    assert.equal(outcome.delivery._tag, "acknowledged");
+    if (outcome.delivery._tag !== "acknowledged") return;
+    assert.equal(outcome.delivery.disposition, "accepted-new");
+
+    // The same durable path as every other envelope: outbox delivered, inbox
+    // recorded once, with the handoff payload.
+    const outbound = yield* store.getOutbound(outcome.delivery.envelopeId);
+    assert.equal(Option.getOrThrow(outbound).state, "delivered");
+    const inbound = yield* store.getInbound(outcome.delivery.envelopeId);
+    assert.equal(Option.getOrThrow(inbound).payload._tag, "handoff");
+
+    // Plus the handoff's own row, which is what makes "Continue here" offerable.
+    const received = yield* store.getReceivedHandoff(outcome.handoffId);
+    assert.isTrue(Option.isSome(received));
+    if (Option.isSome(received)) {
+      assert.equal(received.value.handoff.sourceThread.threadId, SOURCE_THREAD);
+      assert.isNull(received.value.acceptedThreadId);
+    }
+
+    // Exactly one activity, on the SOURCE thread. A handoff has no target
+    // thread, so there is nothing to append a "received" activity to.
+    assert.deepEqual(activityKinds(commands), [WORKJET_HANDOFF_SENT_ACTIVITY_KIND]);
+    const sent = activityFor(commands, WORKJET_HANDOFF_SENT_ACTIVITY_KIND);
+    assert.isDefined(sent);
+    if (sent?.type !== "thread.activity.append") return;
+    assert.equal(sent.threadId, SOURCE_THREAD);
+    const payload = JSON.stringify(sent.activity.payload);
+    // Redaction: the size travels, the note and the snapshot text do not.
+    assert.include(payload, String(HANDOFF_SNAPSHOT.byteLength));
+    assert.notInclude(payload, "Continue the transport slice here.");
+    assert.notInclude(payload, HANDOFF_SNAPSHOT.snapshotRef as string);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("queues a cross-environment handoff and records nothing in the local inbox", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+
+    const outcome = yield* delivery.sendHandoff(
+      invocation,
+      handoffInput({ targetEnvironmentId: REMOTE_ENVIRONMENT }),
+    );
+
+    assert.equal(outcome.delivery._tag, "queued");
+    const outbound = yield* store.getOutbound(outcome.delivery.envelopeId);
+    assert.equal(Option.getOrThrow(outbound).state, "pending");
+    assert.isTrue(Option.isNone(yield* store.getInbound(outcome.delivery.envelopeId)));
+    // The receiving row belongs to the RECEIVING machine, not this one.
+    assert.lengthOf(yield* store.listReceivedHandoffs(10), 0);
+    assert.deepEqual(activityKinds(commands), [WORKJET_HANDOFF_SENT_ACTIVITY_KIND]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("continues a handoff in exactly one new thread seeded with the snapshot", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    const outcome = yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    // Exactly one thread, and it is a standalone thread with no worktree.
+    const creates = commands.filter((command) => command.type === "thread.create");
+    assert.lengthOf(creates, 1);
+    const created = creates[0];
+    if (created?.type !== "thread.create") return;
+    assert.equal(created.threadId, outcome.threadId);
+    assert.equal(created.projectId, "project-local");
+    assert.equal(created.workjetConfig.role, "standard");
+    assert.isNull(created.branch);
+    assert.isNull(created.worktreePath);
+
+    // The snapshot IS the first user message.
+    const turns = commands.filter((command) => command.type === "thread.turn.start");
+    assert.lengthOf(turns, 1);
+    const turn = turns[0];
+    if (turn?.type !== "thread.turn.start") return;
+    assert.equal(turn.threadId, outcome.threadId);
+    assert.equal(turn.message.role, "user");
+    assert.equal(turn.message.text, SNAPSHOT_TEXT);
+
+    // Nothing was rolled back.
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.delete"),
+      0,
+    );
+
+    // The durable backlink, in the store and on the new thread's own stream.
+    const stored = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.equal(Option.getOrThrow(stored).acceptedThreadId, outcome.threadId);
+    const backlink = activityFor(commands, WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND);
+    if (backlink?.type !== "thread.activity.append") return;
+    assert.equal(backlink.threadId, outcome.threadId);
+    assert.include(JSON.stringify(backlink.activity.payload), "thread-remote-source");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("tells a SAME-environment source thread that its handoff was continued", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff({ sourceEnvironmentId: LOCAL_ENVIRONMENT });
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    const accepted = commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+    );
+    // One on the new thread, one back on the source thread.
+    assert.lengthOf(accepted, 2);
+    const threads = accepted.flatMap((command) =>
+      command.type === "thread.activity.append" ? [command.threadId as string] : [],
+    );
+    assert.include(threads, "thread-remote-source");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("never appends an acceptance activity onto a thread another machine owns", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    // A cross-machine source: this server does not own `thread-remote-source`,
+    // and writing to that id here would land on the wrong thread.
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    const accepted = commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_HANDOFF_ACCEPTED_ACTIVITY_KIND,
+    );
+    assert.lengthOf(accepted, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses a second continuation without creating a second thread", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    const first = yield* delivery.acceptHandoff({
+      handoffId: handoff.handoffId,
+      hostThreadId: TARGET_THREAD,
+      snapshotText: SNAPSHOT_TEXT,
+    });
+
+    const second = yield* delivery
+      .acceptHandoff({
+        handoffId: handoff.handoffId,
+        hostThreadId: TARGET_THREAD,
+        snapshotText: SNAPSHOT_TEXT,
+      })
+      .pipe(Effect.result);
+    assert.equal(second._tag, "Failure");
+    if (second._tag === "Failure") {
+      assert.equal(second.failure.reason, "invalid-state-transition");
+    }
+
+    // The already-accepted check short-circuits BEFORE any thread is created,
+    // so the ordinary repeat costs nothing and leaves nothing to clean up. The
+    // store's `WHERE accepted_thread_id IS NULL` guard is the authority for the
+    // genuinely concurrent case (see the store's own claim test); this asserts
+    // the observable invariant either way: exactly ONE thread per handoff.
+    const stored = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.equal(Option.getOrThrow(stored).acceptedThreadId, first.threadId);
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.create"),
+      1,
+    );
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.delete"),
+      0,
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to continue a handoff this machine never received", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: hostThread });
+    const delivery = yield* service;
+
+    const error = yield* delivery
+      .acceptHandoff({
+        handoffId: WorkjetHandoffId.make("wjh-ffffffffffffffff"),
+        hostThreadId: TARGET_THREAD,
+        snapshotText: SNAPSHOT_TEXT,
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "unknown-target");
+    // Refused before any thread exists.
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.create"),
+      0,
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses to continue into a deleted or unknown host thread", () =>
+  Effect.gen(function* () {
+    const { commands, service } = makeHarness({ target: deletedTargetThread });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const handoff = arrivedHandoff();
+    yield* store.upsertReceivedHandoff(handoff, NOW);
+
+    const error = yield* delivery
+      .acceptHandoff({
+        handoffId: handoff.handoffId,
+        hostThreadId: TARGET_THREAD,
+        snapshotText: SNAPSHOT_TEXT,
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "target-thread-deleted");
+    assert.lengthOf(
+      commands.filter((command) => command.type === "thread.create"),
+      0,
+    );
+    // The handoff stays continuable somewhere else.
+    const stored = yield* store.getReceivedHandoff(handoff.handoffId);
+    assert.isNull(Option.getOrThrow(stored).acceptedThreadId);
+  }).pipe(Effect.provide(testLayer)),
+);

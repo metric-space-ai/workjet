@@ -1,10 +1,10 @@
 # Scripts
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Workjet? See [docs/user](../user/).
 
 ## First checkout
 
-T3 Code uses [Vite+](https://viteplus.dev/guide/). Install the global `vp` command, install
+Workjet uses [Vite+](https://viteplus.dev/guide/). Install the global `vp` command, install
 dependencies, then start the dev stack:
 
 ```bash
@@ -77,7 +77,7 @@ authenticated.
 ### Desktop `.dmg` packaging notes
 
 - Default build is unsigned/not notarized for local sharing.
-- The DMG build uses `assets/prod/black-macos-1024.png` as the production app icon source.
+- Every desktop release channel uses `assets/workjet/workjet-app-icon.icns` as the macOS app icon source.
 - Desktop production windows load the bundled UI from the `t3code://app/` root URL (not a
   `127.0.0.1` document URL, and not an explicit `index.html` path).
 - Desktop packaging includes `apps/server/dist` (the `t3` backend) and starts it on loopback with an

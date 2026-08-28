@@ -22,7 +22,6 @@ const workspaceFiles = [
   "apps/mobile/modules/t3-review-diff/package.json",
   "apps/mobile/modules/t3-terminal/package.json",
   "apps/marketing/package.json",
-  "infra/relay/package.json",
   "oxlint-plugin-t3code/package.json",
   "packages/client-runtime/package.json",
   "packages/contracts/package.json",
@@ -31,6 +30,9 @@ const workspaceFiles = [
   "packages/tailscale/package.json",
   "packages/effect-acp/package.json",
   "packages/effect-codex-app-server/package.json",
+  // The Workjet fork added this workspace package and apps/server depends on
+  // it, so a lockfile-only install fails without it.
+  "packages/workjet-capabilities/package.json",
   "scripts/package.json",
 ] as const;
 
@@ -46,6 +48,16 @@ function copyWorkspaceManifestFixture(targetRoot: string): void {
   if (NodeFS.existsSync(patchesDirectory)) {
     NodeFS.cpSync(patchesDirectory, NodePath.resolve(targetRoot, "patches"), { recursive: true });
   }
+
+  // This fixture deliberately resolves a brand-new lockfile to prove that the
+  // release-only version rewrite still produces a valid workspace. A fresh
+  // resolution can move transitive dependencies away from an exactly pinned
+  // patch target, so pnpm must tolerate unused patches in this disposable
+  // fixture. The real checkout remains strict and assert-supply-chain.mjs
+  // independently proves that the reviewed image-size patch is applied.
+  const workspacePath = NodePath.resolve(targetRoot, "pnpm-workspace.yaml");
+  const workspace = NodeFS.readFileSync(workspacePath, "utf8");
+  NodeFS.writeFileSync(workspacePath, `${workspace.trimEnd()}\n\nallowUnusedPatches: true\n`);
 }
 
 function writeMacManifestFixtures(targetRoot: string): { arm64Path: string; x64Path: string } {
@@ -59,13 +71,13 @@ function writeMacManifestFixtures(targetRoot: string): { arm64Path: string; x64P
     arm64Path,
     `version: 9.9.9-smoke.0
 files:
-  - url: T3-Code-9.9.9-smoke.0-arm64.zip
+  - url: Workjet-9.9.9-smoke.0-arm64.zip
     sha512: arm64zip
     size: 125621344
-  - url: T3-Code-9.9.9-smoke.0-arm64.dmg
+  - url: Workjet-9.9.9-smoke.0-arm64.dmg
     sha512: arm64dmg
     size: 131754935
-path: T3-Code-9.9.9-smoke.0-arm64.zip
+path: Workjet-9.9.9-smoke.0-arm64.zip
 sha512: arm64zip
 releaseDate: '2026-03-08T10:32:14.587Z'
 `,
@@ -75,13 +87,13 @@ releaseDate: '2026-03-08T10:32:14.587Z'
     x64Path,
     `version: 9.9.9-smoke.0
 files:
-  - url: T3-Code-9.9.9-smoke.0-x64.zip
+  - url: Workjet-9.9.9-smoke.0-x64.zip
     sha512: x64zip
     size: 132000112
-  - url: T3-Code-9.9.9-smoke.0-x64.dmg
+  - url: Workjet-9.9.9-smoke.0-x64.dmg
     sha512: x64dmg
     size: 138148807
-path: T3-Code-9.9.9-smoke.0-x64.zip
+path: Workjet-9.9.9-smoke.0-x64.zip
 sha512: x64zip
 releaseDate: '2026-03-08T10:36:07.540Z'
 `,
@@ -104,13 +116,13 @@ function writeWindowsManifestFixtures(
     arm64Path,
     `version: 9.9.9-smoke.0
 files:
-  - url: T3-Code-9.9.9-smoke.0-arm64.exe
+  - url: Workjet-9.9.9-smoke.0-arm64.exe
     sha512: arm64exe
     size: 126621344
-  - url: T3-Code-9.9.9-smoke.0-arm64.exe.blockmap
+  - url: Workjet-9.9.9-smoke.0-arm64.exe.blockmap
     sha512: arm64blockmap
     size: 152344
-path: T3-Code-9.9.9-smoke.0-arm64.exe
+path: Workjet-9.9.9-smoke.0-arm64.exe
 sha512: arm64exe
 releaseDate: '2026-03-08T10:32:14.587Z'
 `,
@@ -120,13 +132,13 @@ releaseDate: '2026-03-08T10:32:14.587Z'
     x64Path,
     `version: 9.9.9-smoke.0
 files:
-  - url: T3-Code-9.9.9-smoke.0-x64.exe
+  - url: Workjet-9.9.9-smoke.0-x64.exe
     sha512: x64exe
     size: 132000112
-  - url: T3-Code-9.9.9-smoke.0-x64.exe.blockmap
+  - url: Workjet-9.9.9-smoke.0-x64.exe.blockmap
     sha512: x64blockmap
     size: 160112
-path: T3-Code-9.9.9-smoke.0-x64.exe
+path: Workjet-9.9.9-smoke.0-x64.exe
 sha512: x64exe
 releaseDate: '2026-03-08T10:36:07.540Z'
 `,
@@ -188,6 +200,19 @@ function assertMissing(path: string, message: string): void {
 const tempRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-release-smoke-"));
 
 try {
+  // The tracked-file secret gate runs FIRST and against the real checkout, not
+  // the temp fixture root: a committed credential is the one release problem
+  // that cannot be fixed after the fact, because the artifact is the Git
+  // history. See scripts/check-tracked-secrets.ts.
+  NodeChildProcess.execFileSync(
+    process.execPath,
+    [NodePath.resolve(repoRoot, "scripts/check-tracked-secrets.ts"), "--repo-root", repoRoot],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    },
+  );
+
   copyWorkspaceManifestFixture(tempRoot);
 
   NodeChildProcess.execFileSync(
@@ -253,7 +278,7 @@ try {
   );
   assertContains(
     nightlyReleaseMetadata,
-    "name=T3 Code Nightly 9.9.10-nightly.20260413.321 (abcdef123456)",
+    "name=Workjet Nightly 9.9.10-nightly.20260413.321 (abcdef123456)",
     "Expected nightly metadata to include the short commit SHA in the release name.",
   );
 
@@ -276,12 +301,12 @@ try {
   const mergedManifest = NodeFS.readFileSync(arm64Path, "utf8");
   assertContains(
     mergedManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.zip",
+    "Workjet-9.9.9-smoke.0-arm64.zip",
     "Merged manifest is missing the arm64 asset.",
   );
   assertContains(
     mergedManifest,
-    "T3-Code-9.9.9-smoke.0-x64.zip",
+    "Workjet-9.9.9-smoke.0-x64.zip",
     "Merged manifest is missing the x64 asset.",
   );
 
@@ -341,12 +366,12 @@ try {
   const mergedWindowsManifest = NodeFS.readFileSync(mergedWindowsManifestPath, "utf8");
   assertContains(
     mergedWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.exe",
+    "Workjet-9.9.9-smoke.0-arm64.exe",
     "Merged Windows manifest is missing the arm64 asset.",
   );
   assertContains(
     mergedWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-x64.exe",
+    "Workjet-9.9.9-smoke.0-x64.exe",
     "Merged Windows manifest is missing the x64 asset.",
   );
   const mergedNightlyWindowsManifest = NodeFS.readFileSync(
@@ -355,12 +380,12 @@ try {
   );
   assertContains(
     mergedNightlyWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.exe",
+    "Workjet-9.9.9-smoke.0-arm64.exe",
     "Merged nightly Windows manifest is missing the arm64 asset.",
   );
   assertContains(
     mergedNightlyWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-x64.exe",
+    "Workjet-9.9.9-smoke.0-x64.exe",
     "Merged nightly Windows manifest is missing the x64 asset.",
   );
   const mergedPreviewWindowsManifest = NodeFS.readFileSync(
@@ -369,12 +394,12 @@ try {
   );
   assertContains(
     mergedPreviewWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.exe",
+    "Workjet-9.9.9-smoke.0-arm64.exe",
     "Merged preview Windows manifest is missing the arm64 asset.",
   );
   assertContains(
     mergedPreviewWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-x64.exe",
+    "Workjet-9.9.9-smoke.0-x64.exe",
     "Merged preview Windows manifest is missing the x64 asset.",
   );
   assertMissing(

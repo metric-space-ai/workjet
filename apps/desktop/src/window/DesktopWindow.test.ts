@@ -74,7 +74,14 @@ function makeFakeBrowserWindow() {
     replaceMisspelling: vi.fn(),
     send: vi.fn(),
     setWindowOpenHandler: vi.fn(),
+    getZoomLevel: vi.fn(() => 0),
+    setZoomLevel: vi.fn(),
+    isDestroyed: vi.fn(() => false),
   };
+
+  // A CTOX guest is a WebContentsView on the window's content view, and
+  // nothing else in the app adds one. `guestViews` lets a test mount one.
+  const guestViews: Array<{ readonly webContents: unknown }> = [];
 
   const window = {
     close: vi.fn(),
@@ -101,10 +108,23 @@ function makeFakeBrowserWindow() {
     setTitleBarOverlay: vi.fn(),
     show: vi.fn(),
     webContents,
+    contentView: { children: guestViews },
+  };
+
+  const mountGuest = () => {
+    const guestWebContents = {
+      getZoomLevel: vi.fn(() => 0),
+      setZoomLevel: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+    };
+    guestViews.push({ webContents: guestWebContents });
+    return guestWebContents;
   };
 
   return {
     window: window as unknown as Electron.BrowserWindow,
+    webContents,
+    mountGuest,
     getBounds: window.getBounds,
     getNormalBounds: window.getNormalBounds,
     isDestroyed: window.isDestroyed,
@@ -1001,6 +1021,54 @@ describe("DesktopWindow", () => {
       }),
     );
   });
+
+  it.effect("zooms the host renderer when no CTOX guest is mounted", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        yield* desktopWindow.zoomMain("in");
+
+        assert.deepEqual(fakeWindow.webContents.setZoomLevel.mock.calls, [[0.5]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("zooms the CTOX guest, not the host, while a guest is mounted", () =>
+    Effect.gen(function* () {
+      // Zooming the host while the guest covers it moved nothing the user
+      // could see, so the accelerator looked broken in Business OS mode.
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const guest = fakeWindow.mountGuest();
+        yield* desktopWindow.zoomMain("in");
+        yield* desktopWindow.zoomMain("reset");
+
+        assert.deepEqual(
+          guest.setZoomLevel.mock.calls,
+          [[0.5], [0]],
+          "the guest receives both the step and the reset",
+        );
+        assert.lengthOf(
+          fakeWindow.webContents.setZoomLevel.mock.calls,
+          0,
+          "the host must not be zoomed behind the guest",
+        );
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 
   it.effect("opens safe off-origin renderer navigations in the system browser", () =>
     Effect.gen(function* () {

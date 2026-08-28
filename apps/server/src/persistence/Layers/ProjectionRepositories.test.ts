@@ -1,8 +1,15 @@
-import { ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  WorkjetThreadConfig,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
@@ -10,6 +17,10 @@ import { ProjectionProjectRepositoryLive } from "./ProjectionProjects.ts";
 import { ProjectionThreadRepositoryLive } from "./ProjectionThreads.ts";
 import { ProjectionProjectRepository } from "../Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "../Services/ProjectionThreads.ts";
+
+const decodeStoredWorkjetConfig = Schema.decodeUnknownSync(
+  Schema.fromJsonString(WorkjetThreadConfig),
+);
 
 const projectionRepositoriesLayer = it.layer(
   Layer.mergeAll(
@@ -86,6 +97,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         },
         runtimeMode: "full-access",
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         latestTurnId: null,
@@ -106,8 +118,11 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
 
       const rows = yield* sql<{
         readonly modelSelection: string | null;
+        readonly workjetConfig: string;
       }>`
-        SELECT model_selection_json AS "modelSelection"
+        SELECT
+          model_selection_json AS "modelSelection",
+          workjet_config_json AS "workjetConfig"
         FROM projection_threads
         WHERE thread_id = 'thread-null-options'
       `;
@@ -124,6 +139,10 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
           model: "claude-opus-4-6",
         }),
       );
+      assert.deepStrictEqual(
+        decodeStoredWorkjetConfig(row.workjetConfig),
+        DEFAULT_WORKJET_THREAD_CONFIG,
+      );
 
       const persisted = yield* threads.getById({
         threadId: ThreadId.make("thread-null-options"),
@@ -132,6 +151,10 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         instanceId: ProviderInstanceId.make("claudeAgent"),
         model: "claude-opus-4-6",
       });
+      assert.deepStrictEqual(
+        Option.getOrNull(persisted)?.workjetConfig,
+        DEFAULT_WORKJET_THREAD_CONFIG,
+      );
     }),
   );
 
@@ -149,6 +172,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         },
         runtimeMode: "full-access",
         interactionMode: "default",
+        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
         branch: null,
         worktreePath: null,
         latestTurnId: null,

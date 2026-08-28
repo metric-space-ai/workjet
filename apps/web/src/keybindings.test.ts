@@ -137,7 +137,11 @@ const DEFAULT_BINDINGS = compile([
     command: "modelPicker.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
-  { shortcut: modShortcut("o", { shiftKey: true }), command: "chat.new" },
+  {
+    shortcut: modShortcut("n"),
+    command: "chat.new",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
   { shortcut: modShortcut("n", { shiftKey: true }), command: "chat.newLocal" },
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
   { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
@@ -331,7 +335,7 @@ describe("shortcutLabelForCommand", () => {
       shortcutLabelForCommand(DEFAULT_BINDINGS, "sidebar.toggle", "MacIntel"),
       "⌘B",
     );
-    assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "chat.new", "MacIntel"), "⇧⌘O");
+    assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "chat.new", "MacIntel"), "⌘N");
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "diff.toggle", "Linux"), "Ctrl+D");
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "rightPanel.toggle", "MacIntel"),
@@ -482,13 +486,21 @@ describe("model picker navigation helpers", () => {
 describe("chat/editor shortcuts", () => {
   it("matches chat.new shortcut", () => {
     assert.isTrue(
-      isChatNewShortcut(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+      isChatNewShortcut(event({ key: "n", metaKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
+        context: { terminalFocus: false },
       }),
     );
     assert.isTrue(
-      isChatNewShortcut(event({ key: "o", ctrlKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+      isChatNewShortcut(event({ key: "n", ctrlKey: true }), DEFAULT_BINDINGS, {
         platform: "Linux",
+        context: { terminalFocus: false },
+      }),
+    );
+    assert.isFalse(
+      isChatNewShortcut(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
       }),
     );
   });

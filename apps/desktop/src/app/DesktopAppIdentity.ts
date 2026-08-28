@@ -7,6 +7,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronProtocol from "../electron/desktopSchemes.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -18,22 +19,17 @@ const AppPackageMetadata = Schema.Struct({
 });
 const decodeAppPackageMetadata = Schema.decodeEffect(Schema.fromJsonString(AppPackageMetadata));
 
-export class DesktopUserDataPathResolutionError extends Schema.TaggedErrorClass<DesktopUserDataPathResolutionError>()(
-  "DesktopUserDataPathResolutionError",
-  {
-    legacyPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to inspect legacy desktop user-data path at "${this.legacyPath}".`;
-  }
-}
-
 export class DesktopAppIdentity extends Context.Service<
   DesktopAppIdentity,
   {
-    readonly resolveUserDataPath: Effect.Effect<string, DesktopUserDataPathResolutionError>;
+    readonly resolveUserDataPath: Effect.Effect<string>;
+    /**
+     * This build's commit hash, normalized to twelve lowercase hex
+     * characters, or `None` in an unpackaged build that has none embedded.
+     * Same value the About panel shows; exposed so crash metadata and the
+     * support bundle name the exact build without re-deriving it.
+     */
+    readonly commitHash: Effect.Effect<Option.Option<string>>;
     readonly configure: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/app/DesktopAppIdentity") {}
@@ -45,25 +41,14 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
     : Option.none();
 };
 
+/**
+ * The live Chromium profile directory. Its historical on-disk name is retained
+ * only as a storage compatibility key. A previous profile is never adopted in
+ * place; importing is an explicit user-confirmed copy (see DesktopUserDataMigration).
+ */
 export const resolveUserDataPath = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const legacyPath = environment.path.join(
-    environment.appDataDirectory,
-    environment.legacyUserDataDirName,
-  );
-  const legacyPathExists = yield* fileSystem.exists(legacyPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopUserDataPathResolutionError({
-          legacyPath,
-          cause,
-        }),
-    ),
-  );
-  return legacyPathExists
-    ? legacyPath
-    : environment.path.join(environment.appDataDirectory, environment.userDataDirName);
+  return environment.path.join(environment.appDataDirectory, environment.userDataDirName);
 }).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
 
 export const make = Effect.gen(function* () {
@@ -112,9 +97,7 @@ export const make = Effect.gen(function* () {
   });
 
   const userDataPath = resolveUserDataPath.pipe(
-    Effect.provide(
-      yield* Effect.context<DesktopEnvironment.DesktopEnvironment | FileSystem.FileSystem>(),
-    ),
+    Effect.provide(yield* Effect.context<DesktopEnvironment.DesktopEnvironment>()),
   );
 
   const configure = Effect.gen(function* () {
@@ -128,6 +111,18 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "win32") {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
+    }
+
+    // Claim every deep-link scheme this build answers to. macOS and Linux also
+    // get this from the packaged Info.plist / .desktop entry, but Windows has
+    // no packaging-level protocol registration, and a repeat claim is a no-op
+    // everywhere. Development builds are left alone: the dev launcher owns the
+    // OS-level association (see apps/desktop/scripts/electron-launcher.mjs) and
+    // a checkout must never steal the scheme from the installed app.
+    if (environment.isPackaged) {
+      for (const scheme of ElectronProtocol.getDesktopDeepLinkSchemes(environment.isDevelopment)) {
+        yield* electronApp.setAsDefaultProtocolClient(scheme);
+      }
     }
 
     if (environment.platform === "linux") {
@@ -145,6 +140,7 @@ export const make = Effect.gen(function* () {
 
   return DesktopAppIdentity.of({
     resolveUserDataPath: userDataPath,
+    commitHash: resolveAboutCommitHash,
     configure,
   });
 });

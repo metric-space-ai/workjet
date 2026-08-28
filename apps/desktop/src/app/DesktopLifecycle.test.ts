@@ -20,7 +20,7 @@ describe("DesktopLifecycle", () => {
 
       const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
         metadata: Effect.die("unexpected metadata read"),
-        name: Effect.succeed("T3 Code"),
+        name: Effect.succeed("Workjet"),
         whenReady: Effect.void,
         quit: Effect.void,
         exit: () => Effect.void,
@@ -28,6 +28,7 @@ describe("DesktopLifecycle", () => {
         setPath: () => Effect.void,
         setName: () => Effect.void,
         setAboutPanelOptions: () => Effect.void,
+        showAboutPanel: Effect.void,
         setAppUserModelId: () => Effect.void,
         getAppMetrics: Effect.succeed([]),
         isDefaultProtocolClient: () => Effect.succeed(false),

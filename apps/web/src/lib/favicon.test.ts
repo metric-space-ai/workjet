@@ -35,8 +35,9 @@ describe("faviconUrlForOrigin", () => {
     ]) {
       expect(faviconUrlForOrigin(url)).toBeNull();
     }
-    expect(faviconUrlForOrigin("https://example.com/path", 32)).toBe(
-      "https://www.google.com/s2/favicons?domain=example.com&sz=32",
+    expect(faviconUrlForOrigin("https://example.com/path")).toBe("https://example.com/favicon.ico");
+    expect(faviconUrlForOrigin("http://example.com:8080/path")).toBe(
+      "http://example.com:8080/favicon.ico",
     );
   });
 });

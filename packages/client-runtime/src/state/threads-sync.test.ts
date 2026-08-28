@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   EventId,
   ORCHESTRATION_WS_METHODS,
@@ -63,6 +64,7 @@ const BASE_THREAD: OrchestrationThread = {
   },
   runtimeMode: "full-access",
   interactionMode: "default",
+  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
   branch: "main",
   worktreePath: null,
   latestTurn: null,

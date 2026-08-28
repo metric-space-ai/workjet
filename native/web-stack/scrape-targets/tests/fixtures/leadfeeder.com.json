@@ -1,0 +1,37 @@
+{
+  "input": {
+    "source_id": "leadfeeder.com",
+    "company": "Example Manufacturing AG",
+    "country": "DE",
+    "task_id": "fixture-leadfeeder",
+    "credential_ref": "ctox-secret://credentials/LEADFEEDER_BROWSER_LOGIN"
+  },
+  "expected": {
+    "firma_name": "Example Manufacturing AG",
+    "firma_domain": "example-manufacturing.test"
+  },
+  "browser_allowed_domains": ["leadfeeder.com", "app.leadfeeder.com", "api.leadfeeder.com"],
+  "login_url": "https://app.leadfeeder.com/f/sign/in",
+  "capture": {
+    "ok": true,
+    "company": "Example Manufacturing AG",
+    "source_status": "succeeded",
+    "records": [
+      {
+        "field": "firma_name",
+        "value": "Example Manufacturing AG",
+        "confidence": "high",
+        "source_url": "https://app.leadfeeder.com/leads/example-manufacturing",
+        "note": "authenticated provider lead"
+      },
+      {
+        "field": "firma_domain",
+        "value": "example-manufacturing.test",
+        "confidence": "high",
+        "source_url": "https://api.leadfeeder.com/v1/companies/example-manufacturing",
+        "note": "authenticated provider company domain"
+      }
+    ]
+  },
+  "search": { "results": [] }
+}

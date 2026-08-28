@@ -187,12 +187,69 @@ export class ProviderSessionDirectoryPersistenceError extends Schema.TaggedError
   }
 }
 
+/**
+ * ProviderGatewayRoutingError - An instance opted into Workjet gateway
+ * routing, but the session could not be routed.
+ *
+ * Raised at session start instead of silently falling back to the harness
+ * CLI's own provider credentials: an operator who enabled `routeViaGateway`
+ * expects every turn to be accounted for by the gateway, so an unroutable
+ * session must fail loudly rather than quietly bill a direct provider
+ * account.
+ *
+ * `reason` is a small closed set so callers can branch without parsing
+ * prose:
+ *   - `gateway-not-ready`   the gateway process is not in phase `ready`
+ *   - `endpoint-unavailable` the gateway reports ready but exposes no
+ *                            provider endpoint
+ *   - `driver-unsupported`  no verified base-URL mechanism exists for this
+ *                            harness driver
+ *   - `instance-unroutable` the driver is routable, but THIS instance's
+ *                            configuration defeats the route — e.g. an
+ *                            OpenCode instance pointed at an externally
+ *                            managed server, whose environment Workjet never
+ *                            gets to set
+ *   - `catalog-unavailable` the gateway is ready but its account/model
+ *                            catalog could not be read, so the selected
+ *                            model cannot be resolved to a provider
+ *   - `model-unrouted`      no enabled gateway account, pool, or route
+ *                            serves the model the composer selected
+ *   - `model-ambiguous`     several gateway providers serve the model and no
+ *                            route decides between them
+ *   - `route-ambiguous`     equally specific gateway routes claim the model
+ *                            for different pools
+ */
+export class ProviderGatewayRoutingError extends Schema.TaggedErrorClass<ProviderGatewayRoutingError>()(
+  "ProviderGatewayRoutingError",
+  {
+    provider: Schema.String,
+    instanceId: Schema.String,
+    reason: Schema.Literals([
+      "gateway-not-ready",
+      "endpoint-unavailable",
+      "driver-unsupported",
+      "instance-unroutable",
+      "catalog-unavailable",
+      "model-unrouted",
+      "model-ambiguous",
+      "route-ambiguous",
+    ]),
+    detail: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Provider instance '${this.instanceId}' (${this.provider}) is routed through the Workjet gateway but the session could not start (${this.reason}): ${this.detail}`;
+  }
+}
+
 export type ProviderAdapterError =
   | ProviderAdapterValidationError
   | ProviderAdapterSessionNotFoundError
   | ProviderAdapterSessionClosedError
   | ProviderAdapterRequestError
-  | ProviderAdapterProcessError;
+  | ProviderAdapterProcessError
+  | ProviderGatewayRoutingError;
 
 export type ProviderServiceError =
   | ProviderValidationError

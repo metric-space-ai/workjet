@@ -51,6 +51,7 @@ import {
   isModelSelectionProviderEnabled,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { inspectWorktreeRootCandidate } from "./worktree/WorktreeRootValidation.ts";
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
@@ -109,7 +110,11 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances };
+  return {
+    ...settings,
+    providerInstances,
+    previousAutomaticWorktreeRoots: [],
+  };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -251,7 +256,8 @@ function stripDefaultServerSettings(current: unknown, defaults: unknown): unknow
 }
 
 const make = Effect.gen(function* () {
-  const { settingsPath } = yield* ServerConfig.ServerConfig;
+  const config = yield* ServerConfig.ServerConfig;
+  const { settingsPath } = config;
   const fs = yield* FileSystem.FileSystem;
   const pathService = yield* Path.Path;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -568,6 +574,33 @@ const make = Effect.gen(function* () {
     yield* Deferred.succeed(startedDeferred, undefined).pipe(Effect.orDie);
   });
 
+  const validateAutomaticWorktreeRootPatch = (patch: ServerSettingsPatch) => {
+    if (patch.automaticWorktreeRoot === undefined) {
+      return Effect.succeed(patch);
+    }
+    const automaticWorktreeRoot = patch.automaticWorktreeRoot;
+    return inspectWorktreeRootCandidate(automaticWorktreeRoot).pipe(
+      Effect.provideService(ServerConfig.ServerConfig, config),
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, pathService),
+      Effect.flatMap((inspection) =>
+        inspection.status === "valid"
+          ? Effect.succeed({
+              ...patch,
+              automaticWorktreeRoot:
+                automaticWorktreeRoot.length === 0 ? "" : inspection.canonicalRoot,
+            })
+          : Effect.fail(
+              new ServerSettingsError({
+                settingsPath,
+                operation: "validate-worktree-root",
+                cause: new Error(inspection.message),
+              }),
+            ),
+      ),
+    );
+  };
+
   return {
     start,
     ready: Deferred.await(startedDeferred),
@@ -578,10 +611,11 @@ const make = Effect.gen(function* () {
     updateSettings: (patch) =>
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
+          const validatedPatch = yield* validateAutomaticWorktreeRootPatch(patch);
           const current = yield* getSettingsFromCache;
           const nextPersisted = yield* persistProviderEnvironmentSecrets(
             current,
-            applyServerSettingsPatch(current, patch),
+            applyServerSettingsPatch(current, validatedPatch),
           );
           const next = yield* normalizeServerSettings(nextPersisted);
           yield* writeSettingsAtomically(next);

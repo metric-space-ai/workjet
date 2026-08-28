@@ -1,9 +1,14 @@
 import {
+  type CtoxAppModuleId,
+  type CtoxManagedInstanceId,
   type EnvironmentId,
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
+  type ThreadId,
   type TurnId,
+  type WorkjetBusinessOsObjectId,
+  type WorkjetBusinessOsObjectKind,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -14,6 +19,12 @@ import {
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
+const NOOP_OPEN_THREAD = () => {};
+/** Stable empty default so the row context is not rebuilt on every render. */
+const EMPTY_WORKJET_REASSIGN_THREADS: ReadonlyArray<{
+  readonly threadId: string;
+  readonly title: string;
+}> = [];
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -113,6 +124,20 @@ import {
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
+import {
+  EMPTY_CROSS_MODE_ACTION_STATE,
+  WorkjetCrossModeLinkCard,
+  type WorkjetCrossModeAction,
+  type WorkjetCrossModeActionState,
+  type WorkjetCrossModeCardModel,
+} from "./WorkjetCrossModeLinkCard";
+import {
+  EMPTY_DELEGATION_ACTION_STATE,
+  WorkjetMailboxActivityCard,
+  type WorkjetDelegationAction,
+  type WorkjetDelegationActionState,
+  type WorkjetMailboxCardModel,
+} from "./WorkjetMailboxActivityCard";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
@@ -144,6 +169,48 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  onOpenThread: (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => void;
+  /**
+   * Dispatch a Workjet delegation lifecycle action (reply / request review /
+   * cancel / review verdict) resolved from a mailbox card. Absent when the host
+   * does not wire mailbox actions, in which case the cards stay display-only.
+   */
+  onWorkjetDelegationAction:
+    | ((
+        action: WorkjetDelegationAction,
+        model: WorkjetMailboxCardModel,
+      ) => void | Promise<string | null>)
+    | null;
+  /**
+   * Local threads a delegation may be reassigned to — the SAME list the
+   * send-to-worker panel offers. Empty when the host wires none, which is what
+   * keeps "Reassign…" off the card.
+   */
+  workjetReassignThreads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+  /**
+   * Dispatch a cross-mode return (result / review request / follow-up) resolved
+   * from a link card. Absent when the host does not wire the bridge, in which
+   * case the link cards stay display-only.
+   */
+  onWorkjetCrossModeAction:
+    | ((
+        action: WorkjetCrossModeAction,
+        model: WorkjetCrossModeCardModel,
+      ) => void | Promise<string | null>)
+    | null;
+  /**
+   * Navigate to the Business OS counterpart of a link. Absent when the host
+   * wires no navigator, in which case the card names the counterpart in text
+   * rather than offering a button that goes nowhere.
+   */
+  onOpenBusinessOsObject:
+    | ((target: {
+        readonly instanceId: CtoxManagedInstanceId;
+        readonly moduleId: CtoxAppModuleId;
+        readonly objectKind: WorkjetBusinessOsObjectKind;
+        readonly objectId: WorkjetBusinessOsObjectId;
+      }) => void)
+    | null;
 }
 
 interface TimelineRowActivityState {
@@ -204,6 +271,39 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  /**
+   * Navigate to another thread in THIS environment. Used by the Workjet
+   * mailbox cards, whose peer address is a real thread the reader can open.
+   */
+  onOpenThread?: (peer: { environmentId: EnvironmentId; threadId: ThreadId }) => void;
+  /**
+   * Dispatch a Workjet mailbox delegation action from a timeline card. Optional:
+   * when omitted the mailbox cards render without lifecycle actions.
+   */
+  onWorkjetDelegationAction?: (
+    action: WorkjetDelegationAction,
+    model: WorkjetMailboxCardModel,
+  ) => void | Promise<string | null>;
+  /**
+   * The local recipient threads the send-to-worker panel offers, threaded down
+   * so a mailbox card can offer "Reassign…" against the same list. Optional, so
+   * hosts that do not wire it keep display-only cards.
+   */
+  workjetReassignThreads?: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+  /**
+   * Dispatch a cross-mode return from a timeline link card. Optional: when
+   * omitted the link cards render without the reverse-direction actions.
+   */
+  onWorkjetCrossModeAction?: (
+    action: WorkjetCrossModeAction,
+    model: WorkjetCrossModeCardModel,
+  ) => void | Promise<string | null>;
+  onOpenBusinessOsObject?: (target: {
+    readonly instanceId: CtoxManagedInstanceId;
+    readonly moduleId: CtoxAppModuleId;
+    readonly objectKind: WorkjetBusinessOsObjectKind;
+    readonly objectId: WorkjetBusinessOsObjectId;
+  }) => void;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -254,6 +354,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  onOpenThread,
+  onWorkjetDelegationAction,
+  onWorkjetCrossModeAction,
+  onOpenBusinessOsObject,
+  workjetReassignThreads = EMPTY_WORKJET_REASSIGN_THREADS,
   listRef,
   timelineEntries,
   latestTurn,
@@ -517,6 +622,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenThread: onOpenThread ?? NOOP_OPEN_THREAD,
+      onWorkjetDelegationAction: onWorkjetDelegationAction ?? null,
+      workjetReassignThreads,
+      onWorkjetCrossModeAction: onWorkjetCrossModeAction ?? null,
+      onOpenBusinessOsObject: onOpenBusinessOsObject ?? null,
     }),
     [
       timestampFormat,
@@ -533,6 +643,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenThread,
+      onWorkjetDelegationAction,
+      workjetReassignThreads,
+      onWorkjetCrossModeAction,
+      onOpenBusinessOsObject,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2205,12 +2320,106 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
   );
 });
 
+const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
+  model: NonNullable<TimelineWorkEntry["workjetMailbox"]>;
+}) {
+  const { onOpenThread, onWorkjetDelegationAction, workjetReassignThreads } = use(TimelineRowCtx);
+  // The inline-action draft is owned here so the card stays a pure, controlled
+  // presentational component. The durable state/receipt re-renders the card
+  // through the ordinary thread subscription, so nothing optimistic lives here.
+  const [actionState, setActionState] = useState<WorkjetDelegationActionState>(
+    EMPTY_DELEGATION_ACTION_STATE,
+  );
+  const model = props.model;
+  const dispatch = useCallback(
+    (action: WorkjetDelegationAction) => {
+      const dispatched = onWorkjetDelegationAction?.(action, model);
+      setActionState(EMPTY_DELEGATION_ACTION_STATE);
+      // A refusal is the ONE thing the durable re-render cannot deliver: the
+      // card looks unchanged because nothing changed. The dispatcher answers
+      // with a bounded reason (or `null` on success) and it is shown in place.
+      if (!(dispatched instanceof Promise)) return;
+      void dispatched.then((error) => {
+        if (error === null) return;
+        setActionState((current) => ({ ...current, error }));
+      });
+    },
+    [onWorkjetDelegationAction, model],
+  );
+  // Actions are offered only when the host wired a dispatcher AND the card is a
+  // delegation card. A cross-machine peer is named but never linked: this
+  // client has no route to another machine's thread.
+  const actionProps =
+    onWorkjetDelegationAction !== null && model.kind === "task" && model.delegationId !== null
+      ? {
+          actionState,
+          onActionStateChange: setActionState,
+          onDelegationAction: dispatch,
+          reassignThreads: workjetReassignThreads,
+        }
+      : {};
+  return (
+    <WorkjetMailboxActivityCard
+      model={model}
+      {...(model.peerIsLocal ? { onOpenPeerThread: onOpenThread } : {})}
+      {...actionProps}
+    />
+  );
+});
+
+const WorkjetCrossModeRow = memo(function WorkjetCrossModeRow(props: {
+  model: NonNullable<TimelineWorkEntry["workjetCrossMode"]>;
+}) {
+  const { onWorkjetCrossModeAction, onOpenBusinessOsObject } = use(TimelineRowCtx);
+  // The draft is owned here for the same reason the mailbox row owns its own:
+  // the card stays a pure, controlled presentational component, and the durable
+  // `workjet.crossmode.returned` activity re-renders the timeline through the
+  // ordinary thread subscription, so nothing optimistic lives here.
+  const [actionState, setActionState] = useState<WorkjetCrossModeActionState>(
+    EMPTY_CROSS_MODE_ACTION_STATE,
+  );
+  const model = props.model;
+  const dispatch = useCallback(
+    (action: WorkjetCrossModeAction) => {
+      const dispatched = onWorkjetCrossModeAction?.(action, model);
+      setActionState(EMPTY_CROSS_MODE_ACTION_STATE);
+      // A refusal is the ONE thing the durable re-render cannot deliver — the
+      // command never left this machine, so nothing changed to re-render.
+      if (!(dispatched instanceof Promise)) return;
+      void dispatched.then((error) => {
+        if (error === null) return;
+        setActionState((current) => ({ ...current, error }));
+      });
+    },
+    [onWorkjetCrossModeAction, model],
+  );
+  const actionProps =
+    onWorkjetCrossModeAction !== null && model.kind === "link"
+      ? {
+          actionState,
+          onActionStateChange: setActionState,
+          onCrossModeAction: dispatch,
+        }
+      : {};
+  // Only offer the counterpart button when a navigator is wired; otherwise the
+  // card names the object in text rather than promising a jump it cannot make.
+  const navigationProps = onOpenBusinessOsObject !== null ? { onOpenBusinessOsObject } : {};
+  return <WorkjetCrossModeLinkCard model={model} {...actionProps} {...navigationProps} />;
+});
+
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
-  // Before any hooks: spawn CTA rows render their own component.
+  // Before any hooks: spawn CTA rows, Workjet mailbox rows, and cross-mode link
+  // rows render their own component.
+  if (workEntry.workjetMailbox) {
+    return <WorkjetMailboxRow model={workEntry.workjetMailbox} />;
+  }
+  if (workEntry.workjetCrossMode) {
+    return <WorkjetCrossModeRow model={workEntry.workjetCrossMode} />;
+  }
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }

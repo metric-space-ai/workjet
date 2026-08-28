@@ -18,6 +18,12 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
   getEnvironmentId: Effect.succeed(environmentId),
   getDescriptor: Effect.die("unused"),
 });
+const emptyThreadCapabilityContext = {
+  workjetRole: "standard",
+  mcpCapabilityIds: [],
+  promptCapabilityIds: [],
+  compiledManagedPrompt: "",
+} as const;
 
 const makeRegistry = (now: () => number, httpServer = fakeHttpServer) =>
   McpSessionRegistry.__testing
@@ -39,19 +45,61 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     const issued = yield* registry.issue({
       threadId,
       providerInstanceId: ProviderInstanceId.make("codex"),
+      threadCapabilityContext: emptyThreadCapabilityContext,
     });
     expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+    expect(issued.config.activeWorkjetMcpCapabilityIds).toEqual([]);
+    expect(issued.config.compiledManagedPrompt).toBe("");
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities.has("preview")).toBe(true);
+    expect(resolved?.activeWorkjetMcpCapabilityIds).toEqual(new Set());
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
   }),
+);
+
+it.effect(
+  "keeps preview authorization separate from active Workjet capabilities and prompt text",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(() => 1_000);
+      const mcpCapabilityIds = ["web-search", "greppy"] as Array<"web-search" | "greppy">;
+      const compiledManagedPrompt = "## Managed Instructions\n\nApply the configured workflow.";
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make("thread-workjet"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        threadCapabilityContext: {
+          workjetRole: "orchestrator",
+          mcpCapabilityIds,
+          promptCapabilityIds: ["greppy"],
+          compiledManagedPrompt,
+        },
+      });
+      mcpCapabilityIds.push("greppy");
+
+      expect(issued.config.activeWorkjetMcpCapabilityIds).toEqual(["web-search", "greppy"]);
+      expect(issued.config.compiledManagedPrompt).toBe(compiledManagedPrompt);
+      expect(Object.isFrozen(issued.config.activeWorkjetMcpCapabilityIds)).toBe(true);
+      expect(issued.config.endpoint).not.toContain(compiledManagedPrompt);
+      expect(issued.config.authorizationHeader).not.toContain(compiledManagedPrompt);
+      expect(issued.config.endpoint).not.toContain("orchestrator");
+      expect(issued.config.authorizationHeader).not.toContain("orchestrator");
+
+      const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+      const resolved = yield* registry.resolve(token);
+      expect(resolved?.capabilities.has("preview")).toBe(true);
+      expect(resolved?.workjetRole).toBe("orchestrator");
+      expect(resolved?.activeWorkjetMcpCapabilityIds).toEqual(new Set(["web-search", "greppy"]));
+      expect(resolved?.capabilities.has("web-search" as never)).toBe(false);
+      expect(resolved && "compiledManagedPrompt" in resolved).toBe(false);
+    }),
 );
 
 it.effect("builds MCP endpoints from the bound server host", () =>
@@ -68,6 +116,7 @@ it.effect("builds MCP endpoints from the bound server host", () =>
       const issued = yield* registry.issue({
         threadId: ThreadId.make(`thread-${hostname}`),
         providerInstanceId: ProviderInstanceId.make("codex"),
+        threadCapabilityContext: emptyThreadCapabilityContext,
       });
       expect(issued.config.endpoint).toBe(expectedEndpoint);
     }
@@ -81,6 +130,7 @@ it.effect("expires credentials once their session stops showing signs of life", 
     const issued = yield* registry.issue({
       threadId: ThreadId.make("thread-2"),
       providerInstanceId: ProviderInstanceId.make("claude"),
+      threadCapabilityContext: emptyThreadCapabilityContext,
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     timestamp += 101;
@@ -96,6 +146,7 @@ it.effect("keeps a credential alive across turns that never touch an MCP tool", 
     const issued = yield* registry.issue({
       threadId,
       providerInstanceId: ProviderInstanceId.make("claude"),
+      threadCapabilityContext: emptyThreadCapabilityContext,
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
@@ -117,6 +168,7 @@ it.effect("does not keep credentials of other threads alive", () =>
     const issued = yield* registry.issue({
       threadId: ThreadId.make("thread-4"),
       providerInstanceId: ProviderInstanceId.make("codex"),
+      threadCapabilityContext: emptyThreadCapabilityContext,
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
@@ -125,5 +177,41 @@ it.effect("does not keep credentials of other threads alive", () =>
     timestamp += 2;
 
     expect(yield* registry.resolve(token)).toBeUndefined();
+  }),
+);
+
+it.effect("carries only an explicitly supplied provider-session cwd into the bearer scope", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-cwd"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadCapabilityContext: {
+        workjetRole: "orchestrator",
+        mcpCapabilityIds: ["greppy"],
+        promptCapabilityIds: ["greppy"],
+        compiledManagedPrompt: "",
+      },
+      cwd: "  /workspace/effective-project  ",
+    });
+
+    expect(issued.config.cwd).toBe("/workspace/effective-project");
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect(resolved?.cwd).toBe("/workspace/effective-project");
+
+    const withoutCwd = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-cwd"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadCapabilityContext: {
+        workjetRole: "orchestrator",
+        mcpCapabilityIds: ["greppy"],
+        promptCapabilityIds: ["greppy"],
+        compiledManagedPrompt: "",
+      },
+    });
+    expect(withoutCwd.config).not.toHaveProperty("cwd");
+    const withoutCwdToken = withoutCwd.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect(yield* registry.resolve(withoutCwdToken)).not.toHaveProperty("cwd");
   }),
 );

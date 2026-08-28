@@ -13,7 +13,9 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopSupportBundle from "../support/DesktopSupportBundle.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 const environmentInput = {
@@ -28,34 +30,82 @@ const environmentInput = {
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
-const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
-  metadata: Effect.die("unexpected metadata read"),
-  name: Effect.succeed("T3 Code"),
-  whenReady: Effect.void,
-  quit: Effect.void,
-  exit: () => Effect.void,
-  relaunch: () => Effect.void,
-  setPath: () => Effect.void,
-  setName: () => Effect.void,
-  setAboutPanelOptions: () => Effect.void,
-  setAppUserModelId: () => Effect.void,
-  getAppMetrics: Effect.succeed([]),
-  isDefaultProtocolClient: () => Effect.succeed(false),
-  setAsDefaultProtocolClient: () => Effect.succeed(true),
-  setDesktopName: () => Effect.void,
-  setDockIcon: () => Effect.void,
-  appendCommandLineSwitch: () => Effect.void,
-  onBeforeQuitForUpdate: () => Effect.void,
-  removeCommandLineSwitch: () => Effect.void,
-  on: () => Effect.void,
-} satisfies ElectronApp.ElectronApp["Service"]);
+const APP_NAME = "Workjet";
 
-const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
-  pickFolder: () => Effect.succeed(Option.none()),
-  pickFiles: () => Effect.succeed([]),
-  showMessageBox: () => Effect.succeed({ response: 0, checkboxChecked: false }),
-  showErrorBox: () => Effect.void,
-} satisfies ElectronDialog.ElectronDialog["Service"]);
+const makeElectronAppLayer = (aboutPanelShown: Deferred.Deferred<true>) =>
+  Layer.succeed(ElectronApp.ElectronApp, {
+    metadata: Effect.die("unexpected metadata read"),
+    name: Effect.succeed(APP_NAME),
+    whenReady: Effect.void,
+    quit: Effect.void,
+    exit: () => Effect.void,
+    relaunch: () => Effect.void,
+    setPath: () => Effect.void,
+    setName: () => Effect.void,
+    setAboutPanelOptions: () => Effect.void,
+    showAboutPanel: Deferred.succeed(aboutPanelShown, true as const).pipe(Effect.asVoid),
+    setAppUserModelId: () => Effect.void,
+    getAppMetrics: Effect.succeed([]),
+    isDefaultProtocolClient: () => Effect.succeed(false),
+    setAsDefaultProtocolClient: () => Effect.succeed(true),
+    setDesktopName: () => Effect.void,
+    setDockIcon: () => Effect.void,
+    appendCommandLineSwitch: () => Effect.void,
+    onBeforeQuitForUpdate: () => Effect.void,
+    removeCommandLineSwitch: () => Effect.void,
+    on: () => Effect.void,
+  } satisfies ElectronApp.ElectronApp["Service"]);
+
+/**
+ * Records what the Help > Create Support Bundle... item actually did: which
+ * dialog the user saw, and what landed on the clipboard.
+ */
+interface SupportProbe {
+  readonly bundlePath: string;
+  readonly dialogShown: Deferred.Deferred<Electron.MessageBoxOptions>;
+  readonly pathCopied: Deferred.Deferred<string>;
+  /** 0 selects "Copy Path". */
+  readonly messageBoxResponse: number;
+}
+
+const makeElectronDialogLayer = (probe?: SupportProbe) =>
+  Layer.succeed(ElectronDialog.ElectronDialog, {
+    pickFolder: () => Effect.succeed(Option.none()),
+    pickFiles: () => Effect.succeed([]),
+    showMessageBox: (options) =>
+      (probe === undefined
+        ? Effect.void
+        : Deferred.succeed(probe.dialogShown, options).pipe(Effect.asVoid)
+      ).pipe(
+        Effect.as({
+          response: probe?.messageBoxResponse ?? 0,
+          checkboxChecked: false,
+        }),
+      ),
+    showErrorBox: () => Effect.void,
+  } satisfies ElectronDialog.ElectronDialog["Service"]);
+
+const makeElectronShellLayer = (probe?: SupportProbe) =>
+  Layer.succeed(ElectronShell.ElectronShell, {
+    openExternal: () => Effect.succeed(false),
+    copyText: (text) =>
+      probe === undefined
+        ? Effect.void
+        : Deferred.succeed(probe.pathCopied, text).pipe(Effect.asVoid),
+  } satisfies ElectronShell.ElectronShell["Service"]);
+
+const makeSupportBundleLayer = (probe?: SupportProbe) =>
+  Layer.succeed(DesktopSupportBundle.DesktopSupportBundle, {
+    build: Effect.die("unexpected build"),
+    create: Effect.succeed({
+      filePath: probe?.bundlePath ?? "/state/support-bundles/bundle.json",
+      byteLength: 4096,
+      fieldCount: 60,
+      redactedFieldCount: 3,
+      omittedFieldCount: 2,
+      generatedAtIso: "2026-08-20T10:00:00.000Z",
+    }),
+  } satisfies DesktopSupportBundle.DesktopSupportBundle["Service"]);
 
 const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   getState: Effect.die("unexpected getState"),
@@ -98,6 +148,8 @@ const makeElectronMenuLayer = (
 const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
+  aboutPanelShown: Deferred.Deferred<true>,
+  probe?: SupportProbe,
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -108,8 +160,10 @@ const configureMenu = (
         Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
         Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
         Layer.provideMerge(desktopUpdatesLayer),
-        Layer.provideMerge(electronDialogLayer),
-        Layer.provideMerge(electronAppLayer),
+        Layer.provideMerge(makeElectronDialogLayer(probe)),
+        Layer.provideMerge(makeElectronShellLayer(probe)),
+        Layer.provideMerge(makeSupportBundleLayer(probe)),
+        Layer.provideMerge(makeElectronAppLayer(aboutPanelShown)),
         Layer.provideMerge(
           DesktopEnvironment.layer(environmentInput).pipe(
             Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
@@ -125,8 +179,9 @@ describe("DesktopApplicationMenu", () => {
       const selectedAction = yield* Deferred.make<string>();
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
 
-      yield* configureMenu(selectedAction, applicationMenuTemplate);
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
 
       const template = yield* Deferred.await(applicationMenuTemplate);
       const fileMenu = template.find((item) => item.label === "File");
@@ -154,8 +209,9 @@ describe("DesktopApplicationMenu", () => {
       const selectedAction = yield* Deferred.make<string>();
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
 
-      yield* configureMenu(selectedAction, applicationMenuTemplate);
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
 
       const template = yield* Deferred.await(applicationMenuTemplate);
       const viewMenu = template.find((item) => item.label === "View");
@@ -177,6 +233,78 @@ describe("DesktopApplicationMenu", () => {
 
       zoomIn.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "zoom-in");
+    }),
+  );
+
+  // macOS shows About through the { role: "about" } app-menu item, which only
+  // exists in the darwin branch. Windows and Linux have no app menu, so
+  // without this Help entry the packaged build has no way to reach the native
+  // About panel that carries the CTOX name, version, and commit hash.
+  it.effect("offers About in the Help menu on non-darwin platforms", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      assert.isUndefined(template.find((item) => item.label === APP_NAME));
+
+      const helpMenu = template.find((item) => item.role === "help");
+      assert.isDefined(helpMenu);
+      if (!Array.isArray(helpMenu.submenu)) {
+        throw new Error("Expected Help menu submenu to be an array.");
+      }
+
+      const aboutItem = helpMenu.submenu.find((item) => item.label === `About ${APP_NAME}`);
+      assert.isDefined(aboutItem);
+      if (typeof aboutItem.click !== "function") {
+        throw new Error("Expected About menu item to have a click handler.");
+      }
+
+      aboutItem.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.isTrue(yield* Deferred.await(aboutPanelShown));
+    }),
+  );
+
+  // Reachability. A support bundle nobody can produce is not a feature, and a
+  // bundle whose path is not shown cannot be inspected before it is shared.
+  it.effect("creates a support bundle from Help and reports its exact path", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
+      const probe: SupportProbe = {
+        bundlePath: "/state/support-bundles/ctox-support-bundle-20260820T100000000Z.json",
+        dialogShown: yield* Deferred.make<Electron.MessageBoxOptions>(),
+        pathCopied: yield* Deferred.make<string>(),
+        messageBoxResponse: 0,
+      };
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown, probe);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const helpMenu = template.find((item) => item.role === "help");
+      assert.isDefined(helpMenu);
+      if (!Array.isArray(helpMenu.submenu)) {
+        throw new Error("Expected Help menu submenu to be an array.");
+      }
+
+      const bundleItem = helpMenu.submenu.find((item) => item.label === "Create Support Bundle...");
+      assert.isDefined(bundleItem);
+      if (typeof bundleItem.click !== "function") {
+        throw new Error("Expected the support bundle menu item to have a click handler.");
+      }
+
+      bundleItem.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+
+      const dialog = yield* Deferred.await(probe.dialogShown);
+      assert.include(dialog.detail ?? "", probe.bundlePath);
+      assert.include(dialog.message ?? "", "Nothing was uploaded");
+      assert.strictEqual(yield* Deferred.await(probe.pathCopied), probe.bundlePath);
     }),
   );
 });

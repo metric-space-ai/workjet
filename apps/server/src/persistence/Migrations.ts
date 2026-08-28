@@ -53,6 +53,23 @@ import Migration0037 from "./Migrations/037_ProjectionTurnsKeysetIndex.ts";
 import Migration0038 from "./Migrations/038_ProjectionThreadsPinOrderKey.ts";
 import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
 import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
+import Migration0041 from "./Migrations/041_ProjectionThreadsWorkjetConfig.ts";
+import Migration0042 from "./Migrations/042_WorkjetMailbox.ts";
+import Migration0043 from "./Migrations/043_WorkjetMailboxPeerKeys.ts";
+import Migration0044 from "./Migrations/044_WorkjetMailboxPeerEncryptionKeys.ts";
+import Migration0045 from "./Migrations/045_WorkjetDelegationEdges.ts";
+import Migration0047 from "./Migrations/047_WorkjetDelegationResult.ts";
+import Migration0048 from "./Migrations/048_WorkjetDelegationUsage.ts";
+import Migration0049 from "./Migrations/049_WorkjetDelegationResultRedelivery.ts";
+import Migration0050 from "./Migrations/050_WorkjetMailboxPeerKeyBinding.ts";
+import Migration0051 from "./Migrations/051_WorkjetThreadHandoffs.ts";
+import Migration0052 from "./Migrations/052_WorkjetCrossModeLinks.ts";
+import Migration0053 from "./Migrations/053_WorkjetMailboxPeerRevocations.ts";
+import Migration0054 from "./Migrations/054_WorkjetDelegationStateEvents.ts";
+import Migration0055 from "./Migrations/055_WorkjetDecisionHub.ts";
+import Migration0056 from "./Migrations/056_WorkjetSessionImports.ts";
+import Migration0057 from "./Migrations/057_WorkjetBusinessOsComputerOwnership.ts";
+import Migration0058 from "./Migrations/058_WorkjetDevicePairing.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -105,6 +122,24 @@ export const migrationEntries = [
   [38, "ProjectionThreadsPinOrderKey", Migration0038],
   [39, "ProjectionProjectsDefaultThreadEnvMode", Migration0039],
   [40, "ProjectionProjectFaviconPath", Migration0040],
+  [41, "ProjectionThreadsWorkjetConfig", Migration0041],
+  [42, "WorkjetMailbox", Migration0042],
+  [43, "WorkjetMailboxPeerKeys", Migration0043],
+  [44, "WorkjetMailboxPeerEncryptionKeys", Migration0044],
+  [45, "WorkjetDelegationEdges", Migration0045],
+  // 46 remains reserved; 47 owns the delegation-result column.
+  [47, "WorkjetDelegationResult", Migration0047],
+  [48, "WorkjetDelegationUsage", Migration0048],
+  [49, "WorkjetDelegationResultRedelivery", Migration0049],
+  [50, "WorkjetMailboxPeerKeyBinding", Migration0050],
+  [51, "WorkjetThreadHandoffs", Migration0051],
+  [52, "WorkjetCrossModeLinks", Migration0052],
+  [53, "WorkjetMailboxPeerRevocations", Migration0053],
+  [54, "WorkjetDelegationStateEvents", Migration0054],
+  [55, "WorkjetDecisionHub", Migration0055],
+  [56, "WorkjetSessionImports", Migration0056],
+  [57, "WorkjetBusinessOsComputerOwnership", Migration0057],
+  [58, "WorkjetDevicePairing", Migration0058],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

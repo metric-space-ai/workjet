@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Decision Hub</title>
+    <link rel="stylesheet" href="/src/phone.css" />
+  </head>
+  <body>
+    <!-- Die Brille bekommt SDK-Container, nicht dieses DOM. Auf dem Handy wird
+         die CTOX-Verbindung eingerichtet und geregelt, was die Brille zeigt. -->
+    <header class="dh-bar">
+      <span class="dh-dot" data-dh-dot></span>
+      <span class="dh-bar-text" data-dh-status>startet …</span>
+    </header>
+    <main class="dh-main" data-dh-view></main>
+    <script type="module" src="/src/main.mjs"></script>
+  </body>
+</html>

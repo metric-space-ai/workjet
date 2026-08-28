@@ -9,6 +9,7 @@ import * as Ref from "effect/Ref";
 import * as Electron from "electron";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
+import * as DesktopDeepLink from "../app/DesktopDeepLink.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
@@ -62,6 +63,34 @@ export type DesktopWindowError =
   | PreviewManager.PreviewManagerError;
 
 export type MainWindowZoomDirection = "in" | "out" | "reset";
+
+/**
+ * The web contents of a mounted CTOX guest, or `null` when the host renderer
+ * is what the user is looking at.
+ *
+ * VERIFIED against the neighbouring zoom comment, which warns about "an
+ * embedded preview WebContentsView": the browser PREVIEW is a `<webview>`
+ * element inside the renderer DOM, not a child of the window's content view
+ * (`PreviewAutomationHosts.tsx` queries `webview[data-preview-tab]`). It
+ * therefore cannot be picked up here, which is why targeting a content-view
+ * child does not reintroduce the "app UI appears stuck" problem that comment
+ * describes.
+ *
+ * The guest is a `WebContentsView` that `CtoxGuestManager` adds to the
+ * window's content view (`CtoxGuestManager.ts:485`), and it is the ONLY thing
+ * in this app that adds a child view — `CtoxGuestManager.test.ts` pins that,
+ * so this detection cannot silently start matching something else. Reading the
+ * window rather than depending on `CtoxGuestManager` keeps the window module
+ * free of the whole CTOX service graph, which every window test would
+ * otherwise have to provide.
+ */
+function activeGuestWebContents(window: Electron.BrowserWindow): Electron.WebContents | null {
+  for (const child of window.contentView.children) {
+    const candidate = (child as { readonly webContents?: Electron.WebContents }).webContents;
+    if (candidate !== undefined && !candidate.isDestroyed()) return candidate;
+  }
+  return null;
+}
 
 export class DesktopWindow extends Context.Service<
   DesktopWindow,
@@ -524,6 +553,24 @@ export const make = Effect.gen(function* () {
       }
 
       event.preventDefault();
+
+      // A ctox-desktop:// deep link is ours but is not the origin the renderer
+      // is served from — normalize it onto the renderer origin and stay in the
+      // app instead of handing it to the OS browser.
+      //
+      // This is a RENDERER-initiated navigation: the user just clicked a link
+      // inside the app, so the redirect only re-expresses their own click on
+      // the serving origin and needs no further confirmation. An
+      // OS-initiated deep link is the other case entirely — any web page or
+      // document on the machine can trigger one — and it never lands here: it
+      // goes through DesktopDeepLinkRouter, which queues it for an explicit
+      // confirmation dialog in the renderer.
+      const deepLinkRedirect = DesktopDeepLink.resolveDesktopDeepLinkRedirect(url);
+      if (Option.isSome(deepLinkRedirect)) {
+        void window.webContents.loadURL(deepLinkRedirect.value).catch(() => undefined);
+        return;
+      }
+
       if (Option.isSome(ElectronShell.parseSafeExternalUrl(url))) {
         void runPromise(electronShell.openExternal(url));
       }
@@ -850,7 +897,12 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(window) || window.value.isDestroyed()) {
         return;
       }
-      const webContents = window.value.webContents;
+      // Zoom the CTOX guest when one is mounted, otherwise the host renderer.
+      // Zooming the host while a guest covers it moved nothing the user could
+      // see, so the accelerator looked broken in Business OS mode.
+      const guest = activeGuestWebContents(window.value);
+      const webContents = guest ?? window.value.webContents;
+      yield* Effect.annotateCurrentSpan({ target: guest === null ? "host" : "ctox-guest" });
       // Same step size as the Electron zoomIn/zoomOut menu roles.
       webContents.setZoomLevel(
         direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),

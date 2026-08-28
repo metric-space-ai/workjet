@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   CloudPublicConfigMissingError,
   hasCloudPublicConfig,
+  resolveCloudPublicConfig,
   resolveRelayClerkTokenOptions,
 } from "./publicConfig.ts";
 
@@ -41,5 +42,15 @@ describe("hasCloudPublicConfig", () => {
     expect(() => resolveRelayClerkTokenOptions()).toThrowError(
       new CloudPublicConfigMissingError({ key: "T3CODE_CLERK_JWT_TEMPLATE" }),
     );
+  });
+});
+
+describe("managed control origin", () => {
+  it("uses only an HTTPS origin without credentials, query or fragment", () => {
+    vi.stubEnv("VITE_WORKJET_MANAGED_CONTROL_URL", "https://ctox.dev/control?token=secret");
+    expect(resolveCloudPublicConfig().managedControlUrl).toBeNull();
+
+    vi.stubEnv("VITE_WORKJET_MANAGED_CONTROL_URL", "https://ctox.dev/");
+    expect(resolveCloudPublicConfig().managedControlUrl).toBe("https://ctox.dev");
   });
 });

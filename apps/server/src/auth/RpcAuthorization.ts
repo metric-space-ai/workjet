@@ -50,6 +50,86 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.serverReportHostPowerState]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetBackgroundPolicy]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGreppyInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGreppyInstall]: AuthOrchestrationOperateScope,
+  // A pure read of what the host already has; the mutating counterparts are
+  // deliberately not declared (see the note beside the method name).
+  [WS_METHODS.workjetHarnessInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetWorktreesInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayStatus]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayCatalog]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayStart]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayStop]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayOauthStart]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayOauthPoll]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayOauthCancel]: AuthOrchestrationOperateScope,
+  // Writing a provider credential is an operate action, exactly like starting
+  // an OAuth login; a read-only session can never add an account.
+  [WS_METHODS.workjetGatewayAddApiKeyAccount]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayRemoveAccount]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayHealth]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,
+  // Looking at the one-shot legacy import offer is a read; answering it writes
+  // this environment's `settings.workjet` and a terminal marker, so the decision
+  // carries the same operate scope every other settings write does.
+  [WS_METHODS.workjetLegacyImportInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetLegacyImportDecide]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetSessionImportInspect]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetSessionImport]: AuthOrchestrationOperateScope,
+  // Sending into another worker's mailbox is a write; the second, narrower
+  // check (the SOURCE thread must be an orchestrator thread) lives in the
+  // handler, exactly as it does for the equivalent MCP tools.
+  [WS_METHODS.workjetMailboxSendMessage]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxDelegateTask]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxReply]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxRequestReview]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxUpdateDelegation]: AuthOrchestrationOperateScope,
+  // Reassignment moves a pending delegation to a different LOCAL thread, so it
+  // is the same class of write as an update and carries the same two checks.
+  [WS_METHODS.workjetMailboxReassignDelegation]: AuthOrchestrationOperateScope,
+  // A handoff SENDS this thread's bounded context to another machine, and an
+  // accept CREATES a thread here and starts a turn on it. Both are writes and
+  // carry the same two checks as every other thread-scoped mailbox send. The
+  // inbox listing is a redacted read — ids, addresses, and bounded metadata,
+  // never the snapshot text — so it takes the read scope like the roster.
+  [WS_METHODS.workjetMailboxSendHandoff]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxAcceptHandoff]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetMailboxListHandoffs]: AuthOrchestrationReadScope,
+  // The cross-mode workflow bridge. `openInCode` can CREATE a thread and start
+  // a turn on it, and `submit` sends a command across an authority boundary;
+  // both are writes and carry the same two checks as every other thread-scoped
+  // Workjet write — the transport scope here, and the caller-named thread plus
+  // the SERVER-verified CTOX authority inside the handler. The two reads return
+  // typed references and the bounded redacted title/subtitle only — never a
+  // Business OS record — so they take the read scope like the roster.
+  [WS_METHODS.workjetCrossModeOpenInCode]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetCrossModeSubmit]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetCrossModeGetThreadLink]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetCrossModeListLinks]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetDecisionHubListConnections]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetDecisionHubProvisionConnection]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetDecisionHubProbeConnection]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetDecisionHubDisconnectConnection]: AuthOrchestrationOperateScope,
+  // The recipient roster is a redacted READ of peers this machine already
+  // exchanged mail with: the same orchestration-read scope the audit stream and
+  // the gateway status use. It writes nothing and carries no key material.
+  [WS_METHODS.workjetMeshRoster]: AuthOrchestrationReadScope,
+  // The multi-computer overview is the same redacted read one step wider: the
+  // roster fields plus last-known contact timestamps and delegation counts
+  // this server already holds. Still a pure read, still no key material, so it
+  // carries the roster's scope and never an operate scope.
+  [WS_METHODS.workjetMeshOverview]: AuthOrchestrationReadScope,
+  // Revoking a peer DESTROYS a pinned mesh identity: the trust-on-first-use
+  // binding that every later envelope from that address is judged against. It
+  // is the only mesh-trust write in this table, and it is unambiguously an
+  // operate action — a read-only session must never be able to clear the pin
+  // an impersonator would then race to replace. This scope is also the reason
+  // revocation is not itself the attack: no envelope, daemon route, MCP tool,
+  // or worker thread can reach this RPC, and a caller who already holds
+  // `orchestration:operate` can start turns on local threads outright, so
+  // revocation grants it no authority it did not already have.
+  [WS_METHODS.workjetMeshRevokePeer]: AuthOrchestrationOperateScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,
@@ -85,6 +165,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
+  // A read-only, redacted audit stream: the same orchestration-read scope the
+  // other observability subscriptions require.
+  [WS_METHODS.subscribeWorkjetMailboxAudit]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsRefreshStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsPull]: AuthOrchestrationOperateScope,
   [WS_METHODS.gitRunStackedAction]: AuthOrchestrationOperateScope,

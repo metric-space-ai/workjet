@@ -22,6 +22,15 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import * as GreppySearch from "./toolkits/workjet/GreppySearch.ts";
+import { WorkjetToolkitRegistrationLive } from "./toolkits/workjet/GreppyTool.ts";
+import { MailboxToolkitRegistrationLive } from "./toolkits/workjet/MailboxTool.ts";
+import * as WebStackBrowser from "./toolkits/workjet/WebStackBrowser.ts";
+import * as WebStackResearch from "./toolkits/workjet/WebStackResearch.ts";
+import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
+import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
+import { WorkerToolkitRegistrationLive } from "./toolkits/workjet/WorkerTool.ts";
+import { DecisionHubToolkitRegistrationLive } from "./toolkits/workjet/DecisionHubTool.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -216,11 +225,26 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
+  WorkerToolkitRegistrationLive,
+  DecisionHubToolkitRegistrationLive,
+  MailboxToolkitRegistrationLive,
+  WorkjetToolkitRegistrationLive.pipe(Layer.provide(GreppySearch.layer)),
+  WebStackToolkitRegistrationLive.pipe(
+    Layer.provideMerge(WebStackSearch.layer),
+    Layer.provideMerge(WebStackResearch.layer),
+    Layer.provide(WebStackBrowser.layer),
+  ),
+);
+
 const McpTransportLive = McpServer.layerHttp({
-  name: "T3 Code",
+  name: "Workjet",
   version: packageJson.version,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  ProductionWorkjetToolkitRegistrationLive,
+).pipe(Layer.provideMerge(McpTransportLive));

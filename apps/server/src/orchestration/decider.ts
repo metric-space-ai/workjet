@@ -375,6 +375,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
+          workjetConfig: command.workjetConfig,
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -911,6 +912,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.workjet-config.set": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.workjet-config-set",
+        payload: {
+          threadId: command.threadId,
+          workjetConfig: command.workjetConfig,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
     case "thread.turn.start": {
       const targetThread = yield* requireThread({
         readModel,
@@ -1022,6 +1046,49 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       return [...lifecycleResetEvents, userMessageEvent, turnStartRequestedEvent];
+    }
+
+    case "thread.history.import": {
+      const targetThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const existingMessageIds = new Set(targetThread.messages.map((message) => message.id));
+      const commandMessageIds = new Set<string>();
+      for (const message of command.messages) {
+        if (existingMessageIds.has(message.messageId) || commandMessageIds.has(message.messageId)) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Imported message '${message.messageId}' already exists.`,
+          });
+        }
+        commandMessageIds.add(message.messageId);
+      }
+      return yield* Effect.forEach(command.messages, (message) =>
+        Effect.gen(function* () {
+          return {
+            ...(yield* withEventBase({
+              aggregateKind: "thread",
+              aggregateId: command.threadId,
+              occurredAt: message.createdAt,
+              commandId: command.commandId,
+            })),
+            type: "thread.message-sent" as const,
+            payload: {
+              threadId: command.threadId,
+              messageId: message.messageId,
+              role: message.role,
+              text: message.text,
+              attachments: [],
+              turnId: null,
+              streaming: false,
+              createdAt: message.createdAt,
+              updatedAt: message.createdAt,
+            },
+          };
+        }),
+      );
     }
 
     case "thread.turn.interrupt": {

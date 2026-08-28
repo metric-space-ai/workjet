@@ -5,7 +5,7 @@ import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -15,7 +15,7 @@ import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
-import { primaryServerProvidersAtom } from "../../state/server";
+import { serverEnvironment } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -40,10 +40,14 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
     },
   };
 
-export function SourceControlWritingSettingsSection() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const serverProviders = useAtomValue(primaryServerProvidersAtom);
+export function SourceControlWritingSettingsSection({
+  environmentId,
+}: {
+  readonly environmentId: import("@t3tools/contracts").EnvironmentId;
+}) {
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const serverProviders = useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? [];
   const customInstructionsRef = useRef<HTMLTextAreaElement>(null);
   const style = settings.sourceControlWritingStyle;
   const defaults = DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle;

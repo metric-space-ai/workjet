@@ -37,6 +37,7 @@ import {
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   OrchestrationLatestTurn,
   ProjectId,
@@ -211,7 +212,7 @@ describe("resolveSidebarStageBadgeLabel", () => {
     expect(
       resolveSidebarStageBadgeLabel({
         primaryServerVersion: "0.0.28-nightly.20260616.12",
-        fallbackStageLabel: "Alpha",
+        fallbackStageLabel: "Latest",
       }),
     ).toBe("Nightly");
   });
@@ -220,9 +221,9 @@ describe("resolveSidebarStageBadgeLabel", () => {
     expect(
       resolveSidebarStageBadgeLabel({
         primaryServerVersion: "0.0.27",
-        fallbackStageLabel: "Alpha",
+        fallbackStageLabel: "Latest",
       }),
-    ).toBe("Alpha");
+    ).toBe("Latest");
   });
 
   it("returns the fallback label when the primary server version is missing", () => {
@@ -238,9 +239,9 @@ describe("resolveSidebarStageBadgeLabel", () => {
     expect(
       resolveSidebarStageBadgeLabel({
         primaryServerVersion: "0.0.28-nightly.20260616",
-        fallbackStageLabel: "Alpha",
+        fallbackStageLabel: "Latest",
       }),
-    ).toBe("Alpha");
+    ).toBe("Latest");
   });
 });
 
@@ -1305,6 +1306,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     },
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     proposedPlans: [],

@@ -37,6 +37,7 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useCallback: reactHookHarness.useCallback,
+    useEffect: reactHookHarness.useEffect,
     useMemo: reactHookHarness.useMemo,
     useRef: reactHookHarness.useRef,
     useState: reactHookHarness.useState,
@@ -52,12 +53,24 @@ vi.mock("@effect/atom-react", () => ({
   useAtomValue: () => atoms.providers,
 }));
 
+vi.mock("../../state/query", () => ({
+  // The panel's Pi Code row reads the Workjet harness probe; these tests
+  // exercise provider routing, so the probe stays unresolved.
+  useEnvironmentQuery: () => ({
+    data: null,
+    error: null,
+    isPending: false,
+    refresh: () => undefined,
+  }),
+}));
+
 vi.mock("../../state/server", () => ({
   EMPTY_SERVER_PROVIDERS: [],
   serverEnvironment: {
     providersValueAtom: () => atoms.providersAtom,
     refreshProviders: atoms.refreshProviders,
     updateProvider: atoms.updateProvider,
+    workjetHarnessInspect: () => null,
   },
 }));
 
@@ -85,7 +98,12 @@ vi.mock("../../state/session", () => ({
   useEnvironmentSessionState: () => ({ data: null, hasError: false, isPending: true }),
 }));
 
-import { EnvironmentProviderSettings } from "./ProviderSettingsPanel";
+import {
+  EnvironmentProviderSettings,
+  PROVIDER_AUTO_REFRESH_COOLDOWN_MS,
+  providerAutoRefreshTracker,
+  shouldAutoRefreshProviders,
+} from "./ProviderSettingsPanel";
 
 const environmentId = EnvironmentId.make("remote-device");
 const codexId = ProviderInstanceId.make("codex");
@@ -135,6 +153,7 @@ async function flushPromises(): Promise<void> {
 describe("EnvironmentProviderSettings routing", () => {
   beforeEach(() => {
     hooks.reset();
+    providerAutoRefreshTracker.clear();
     atoms.providers = null;
     settingsState.value = DEFAULT_UNIFIED_SETTINGS;
     settingsState.readEnvironmentIds = [];
@@ -142,6 +161,39 @@ describe("EnvironmentProviderSettings routing", () => {
     settingsState.updateSettings.mockReset();
     commands.refresh.mockReset().mockResolvedValue({ _tag: "Success" });
     commands.updateProvider.mockReset().mockResolvedValue({ _tag: "Success" });
+  });
+
+  it("re-probes provider health when the page opens, then honours the cooldown", async () => {
+    atoms.providers = [provider()];
+    renderPanel();
+    await flushPromises();
+
+    // A cached "Authenticated" must never be the only thing the page shows, so
+    // opening it dispatches a fresh health check.
+    expect(commands.refresh).toHaveBeenCalledTimes(1);
+    expect(commands.refresh).toHaveBeenCalledWith({ environmentId, input: {} });
+
+    // Navigating back within the cooldown must not hammer the harness CLIs.
+    hooks.reset();
+    renderPanel();
+    await flushPromises();
+    expect(commands.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spend a read-only session's probe budget on a page view", async () => {
+    atoms.providers = [provider()];
+    renderPanel({ readOnly: true });
+    await flushPromises();
+
+    expect(commands.refresh).not.toHaveBeenCalled();
+  });
+
+  it("gates the automatic probe on the cooldown window", () => {
+    expect(shouldAutoRefreshProviders(undefined, 1_000)).toBe(true);
+    expect(shouldAutoRefreshProviders(1_000, 1_000 + PROVIDER_AUTO_REFRESH_COOLDOWN_MS)).toBe(true);
+    expect(shouldAutoRefreshProviders(1_000, 1_000 + PROVIDER_AUTO_REFRESH_COOLDOWN_MS - 1)).toBe(
+      false,
+    );
   });
 
   it("coalesces a nullable provider snapshot before rendering array-backed UI", () => {

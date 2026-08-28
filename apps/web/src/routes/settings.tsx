@@ -59,6 +59,14 @@ function SettingsContentLayout() {
           activeElement.blur();
         }
 
+        // An open inline editor means unsaved work — Escape must not tear
+        // down the whole settings view over it (Befund F14). Leaving a text
+        // field is one Escape; closing the editor stays its Cancel button's
+        // job; only a form-free view closes on Escape.
+        if (document.querySelector("[data-settings-inline-editor]") !== null) {
+          return;
+        }
+
         navigateBackWithinApp();
       }
     };
@@ -130,7 +138,7 @@ export const Route = createFileRoute("/settings")({
     }
 
     if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/general", replace: true });
+      throw redirect({ to: "/settings/business-os", replace: true });
     }
   },
   component: SettingsRouteLayout,

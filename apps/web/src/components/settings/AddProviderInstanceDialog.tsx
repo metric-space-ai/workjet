@@ -14,7 +14,7 @@ import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hook
 import { cn } from "../../lib/utils";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Button } from "../ui/button";
-import { ACPRegistryIcon, Gemini, GithubCopilotIcon, PiAgentIcon, type Icon } from "../Icons";
+import { ACPRegistryIcon, Gemini, GithubCopilotIcon, type Icon } from "../Icons";
 import {
   Dialog,
   DialogDescription,
@@ -80,7 +80,7 @@ interface ComingSoonDriverOption {
 const COMING_SOON_DRIVER_OPTIONS: readonly ComingSoonDriverOption[] = [
   {
     value: ProviderDriverKind.make("githubCopilot"),
-    label: "Github Copilot",
+    label: "GitHub Copilot",
     icon: GithubCopilotIcon,
   },
   {
@@ -93,11 +93,9 @@ const COMING_SOON_DRIVER_OPTIONS: readonly ComingSoonDriverOption[] = [
     label: "ACP Registry",
     icon: ACPRegistryIcon,
   },
-  {
-    value: ProviderDriverKind.make("piAgent"),
-    label: "Pi Agent",
-    icon: PiAgentIcon,
-  },
+  // Pi is NOT coming soon: Pi Code is already listed as a usable runtime on
+  // the Harnesses page. Advertising it here again — under a second name with
+  // a second icon — split one product into two brands (Befund K-B7).
 ];
 
 /**

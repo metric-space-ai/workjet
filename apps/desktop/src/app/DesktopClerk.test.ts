@@ -24,18 +24,20 @@ vi.mock("@clerk/electron/storage", () => ({
 
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopUserDataMigration from "./DesktopUserDataMigration.ts";
 
 const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: "/tmp/t3-state",
     isDevelopment,
     appDataDirectory: "/tmp/app-data",
-    userDataDirName: isDevelopment ? "t3code-dev" : "t3code",
-    legacyUserDataDirName: isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)",
+    userDataDirName: isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App",
+    legacyUserDataDirNames: isDevelopment ? ["t3code-dev"] : ["t3code"],
     path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
@@ -51,6 +53,15 @@ const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
       Layer.mergeAll(
         Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
         Layer.succeed(ElectronApp.ElectronApp, electronApp),
+        Layer.succeed(
+          DesktopUserDataMigration.DesktopUserDataMigration,
+          DesktopUserDataMigration.DesktopUserDataMigration.of({
+            decision: { _tag: "fresh" },
+            offer: Option.none(),
+            accept: Effect.void,
+            decline: Effect.void,
+          }),
+        ),
         FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
       ),
     ),
@@ -99,7 +110,10 @@ describe("DesktopClerk", () => {
       // The bridge acquires Electron's single-instance lock at creation, and
       // the lock both lives in and creates the userData directory — so the
       // real path must be set before the bridge exists.
-      assert.deepEqual(events, ["setPath:userData:/tmp/app-data/t3code-dev", "createClerkBridge"]);
+      assert.deepEqual(events, [
+        "setPath:userData:/tmp/app-data/CTOX Desktop App (Dev)",
+        "createClerkBridge",
+      ]);
       storageMock.mockClear();
       createClerkBridgeMock.mockClear();
     });

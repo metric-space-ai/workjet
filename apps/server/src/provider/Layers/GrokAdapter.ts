@@ -16,6 +16,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -40,6 +41,7 @@ import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
+  type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
@@ -81,6 +83,19 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
 
 export interface GrokAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
+  /**
+   * Resolve the environment for a session that is about to start.
+   *
+   * Gateway-routed instances must consult the gateway's live status at the
+   * moment a session starts — the gateway starts, stops, and faults on its
+   * own schedule, so a value captured when the instance was built would go
+   * stale. When absent, the static `environment` above is used, which is
+   * exactly the unrouted behavior.
+   */
+  readonly resolveSessionEnvironment?: () => Effect.Effect<
+    NodeJS.ProcessEnv,
+    ProviderGatewayRoutingError
+  >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
@@ -117,6 +132,10 @@ interface GrokSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   currentModelId: string | undefined;
+  readonly managedPrompt: string | undefined;
+  readonly managedPromptFingerprint: string | undefined;
+  appliedManagedPromptFingerprint: string | undefined;
+  managedPromptInjectionInFlight: boolean;
   stopped: boolean;
 }
 
@@ -172,11 +191,70 @@ const resolveSessionCallbackTurnId = (
   return ctx ? resolveCallbackTurnId(ctx) : undefined;
 };
 
-function parseGrokResume(raw: unknown): { sessionId: string } | undefined {
+interface GrokResumeCursor {
+  readonly schemaVersion: typeof GROK_RESUME_VERSION;
+  readonly sessionId: string;
+  readonly managedPromptFingerprint?: string;
+}
+
+const MANAGED_PROMPT_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+
+function parseGrokResume(raw: unknown): Omit<GrokResumeCursor, "schemaVersion"> | undefined {
   if (!isRecord(raw)) return undefined;
   if (raw.schemaVersion !== GROK_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
-  return { sessionId: raw.sessionId.trim() };
+  const managedPromptFingerprint =
+    typeof raw.managedPromptFingerprint === "string" &&
+    MANAGED_PROMPT_FINGERPRINT_PATTERN.test(raw.managedPromptFingerprint)
+      ? raw.managedPromptFingerprint
+      : undefined;
+  return {
+    sessionId: raw.sessionId.trim(),
+    ...(managedPromptFingerprint ? { managedPromptFingerprint } : {}),
+  };
+}
+
+function makeGrokResumeCursor(
+  sessionId: string,
+  managedPromptFingerprint?: string,
+): GrokResumeCursor {
+  return {
+    schemaVersion: GROK_RESUME_VERSION,
+    sessionId,
+    ...(managedPromptFingerprint ? { managedPromptFingerprint } : {}),
+  };
+}
+
+function delimitManagedPrompt(compiledManagedPrompt: string | undefined): string | undefined {
+  const managedPrompt = compiledManagedPrompt?.trim();
+  return managedPrompt
+    ? `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
+    : undefined;
+}
+
+function applyManagedPromptFingerprint(
+  ctx: GrokSessionContext,
+  managedPromptFingerprint: string | undefined,
+): void {
+  if (managedPromptFingerprint === undefined) return;
+  ctx.appliedManagedPromptFingerprint = managedPromptFingerprint;
+  ctx.managedPromptInjectionInFlight = false;
+  ctx.session = {
+    ...ctx.session,
+    resumeCursor: makeGrokResumeCursor(ctx.acpSessionId, managedPromptFingerprint),
+  };
+}
+
+function releaseManagedPromptInjection(
+  ctx: GrokSessionContext,
+  managedPromptFingerprint: string | undefined,
+): void {
+  if (
+    managedPromptFingerprint !== undefined &&
+    ctx.appliedManagedPromptFingerprint !== managedPromptFingerprint
+  ) {
+    ctx.managedPromptInjectionInFlight = false;
+  }
 }
 
 function selectPermissionOptionId(
@@ -562,7 +640,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
           );
 
-          const resumeSessionId = parseGrokResume(input.resumeCursor)?.sessionId;
+          const resumeCursor = parseGrokResume(input.resumeCursor);
+          const resumeSessionId = resumeCursor?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
@@ -570,9 +649,29 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           });
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
+          const managedPromptFingerprint = managedPrompt
+            ? yield* crypto.digest("SHA-256", new TextEncoder().encode(managedPrompt)).pipe(
+                Effect.map(Encoding.encodeHex),
+                Effect.mapError(
+                  (cause) =>
+                    new ProviderAdapterProcessError({
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      detail: "Failed to fingerprint Grok managed instructions.",
+                      cause,
+                    }),
+                ),
+              )
+            : undefined;
+          // Resolved per session start so gateway-routed instances observe the
+          // gateway's current status rather than a value frozen at construction.
+          const sessionEnvironment = options?.resolveSessionEnvironment
+            ? yield* options.resolveSessionEnvironment()
+            : options?.environment;
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
-            ...(options?.environment ? { environment: options.environment } : {}),
+            ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
             childProcessSpawner,
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -755,10 +854,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             cwd,
             ...(boundModelId ? { model: resolveGrokAcpBaseModelId(boundModelId) } : {}),
             threadId: input.threadId,
-            resumeCursor: {
-              schemaVersion: GROK_RESUME_VERSION,
-              sessionId: started.sessionId,
-            },
+            resumeCursor: makeGrokResumeCursor(
+              started.sessionId,
+              resumeCursor?.managedPromptFingerprint,
+            ),
             createdAt: now,
             updatedAt: now,
           };
@@ -778,6 +877,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             interruptedTurnIds: new Set(),
             promptsInFlight: 0,
             currentModelId: boundModelId,
+            managedPrompt,
+            managedPromptFingerprint,
+            appliedManagedPromptFingerprint: resumeCursor?.managedPromptFingerprint,
+            managedPromptInjectionInFlight: false,
             stopped: false,
           };
 
@@ -984,12 +1087,12 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     } satisfies EffectAcpSchema.ContentBlock;
                   }),
               );
-              const promptParts: Array<EffectAcpSchema.ContentBlock> = [
+              const turnPromptParts: Array<EffectAcpSchema.ContentBlock> = [
                 ...(text ? [{ type: "text" as const, text }] : []),
                 ...imagePromptParts,
               ];
 
-              if (promptParts.length === 0) {
+              if (turnPromptParts.length === 0) {
                 return yield* new ProviderAdapterValidationError({
                   provider: PROVIDER,
                   operation: "sendTurn",
@@ -1042,7 +1145,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 acp: ctx.acp,
                 acpSessionId: ctx.acpSessionId,
                 displayModel,
-                promptParts,
+                turnPromptParts,
                 turnId,
               };
             }).pipe(
@@ -1068,29 +1171,94 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         );
 
         const promptFailureMessageRef = yield* Ref.make<string | undefined>(undefined);
+        const managedPromptFingerprintRef = yield* Ref.make<string | undefined>(undefined);
 
         return yield* Effect.gen(function* () {
-          const result = yield* prepared.acp
-            .prompt({
-              prompt: prepared.promptParts,
-            })
-            .pipe(
-              Effect.tap((promptResult) =>
-                Effect.all([
-                  Ref.set(promptRpcSucceeded, true),
-                  Ref.set(promptResultRef, promptResult),
-                ]),
-              ),
-              Effect.tapError((error) =>
-                Ref.set(
-                  promptFailureMessageRef,
-                  mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error).message,
-                ).pipe(Effect.andThen(prepared.acp.drainEvents)),
-              ),
-              Effect.mapError((error) =>
-                mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+          const result = yield* Effect.gen(function* () {
+            const injection = yield* withThreadLock(
+              input.threadId,
+              Effect.gen(function* () {
+                const ctx = yield* requireSession(input.threadId);
+                if (ctx.acpSessionId !== prepared.acpSessionId) {
+                  return yield* new ProviderAdapterRequestError({
+                    provider: PROVIDER,
+                    method: "session/prompt",
+                    detail: "Grok session changed before the prompt started.",
+                  });
+                }
+                const managedPromptFingerprint =
+                  ctx.managedPrompt !== undefined &&
+                  ctx.managedPromptFingerprint !== undefined &&
+                  ctx.appliedManagedPromptFingerprint !== ctx.managedPromptFingerprint &&
+                  !ctx.managedPromptInjectionInFlight
+                    ? ctx.managedPromptFingerprint
+                    : undefined;
+                if (managedPromptFingerprint !== undefined) {
+                  ctx.managedPromptInjectionInFlight = true;
+                }
+                return {
+                  managedPrompt:
+                    managedPromptFingerprint !== undefined ? ctx.managedPrompt : undefined,
+                  managedPromptFingerprint,
+                };
+              }),
+            );
+            yield* Ref.set(managedPromptFingerprintRef, injection.managedPromptFingerprint);
+            const promptParts: Array<EffectAcpSchema.ContentBlock> = [
+              ...(injection.managedPrompt !== undefined
+                ? [{ type: "text" as const, text: injection.managedPrompt }]
+                : []),
+              ...prepared.turnPromptParts,
+            ];
+            return yield* Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                const result = yield* restore(
+                  prepared.acp
+                    .prompt({ prompt: promptParts })
+                    .pipe(
+                      Effect.mapError((error) =>
+                        mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+                      ),
+                    ),
+                );
+                yield* withThreadLock(
+                  input.threadId,
+                  Effect.sync(() => {
+                    const ctx = sessions.get(input.threadId);
+                    if (ctx?.acpSessionId === prepared.acpSessionId) {
+                      applyManagedPromptFingerprint(ctx, injection.managedPromptFingerprint);
+                    }
+                  }),
+                );
+                return result;
+              }),
+            ).pipe(
+              Effect.onError(() =>
+                withThreadLock(
+                  input.threadId,
+                  Effect.sync(() => {
+                    const ctx = sessions.get(input.threadId);
+                    if (ctx?.acpSessionId === prepared.acpSessionId) {
+                      releaseManagedPromptInjection(ctx, injection.managedPromptFingerprint);
+                    }
+                  }),
+                ).pipe(Effect.catch(() => Effect.void)),
               ),
             );
+          }).pipe(
+            Effect.tap((promptResult) =>
+              Effect.all([
+                Ref.set(promptRpcSucceeded, true),
+                Ref.set(promptResultRef, promptResult),
+              ]),
+            ),
+            Effect.tapError((error) =>
+              Ref.set(promptFailureMessageRef, error.message).pipe(
+                Effect.andThen(prepared.acp.drainEvents),
+              ),
+            ),
+          );
+          const managedPromptFingerprint = yield* Ref.get(managedPromptFingerprintRef);
 
           return yield* withThreadLock(
             input.threadId,
@@ -1113,6 +1281,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   detail: "Grok session changed before the turn completed.",
                 });
               }
+              applyManagedPromptFingerprint(ctx, managedPromptFingerprint);
               // Keep prompt settlement atomic with respect to Stop and steering.
               // interruptTurn marks its target before waiting for this lock, so
               // cancellation can still win while queued ACP events are drained.
@@ -1142,7 +1311,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 };
               }
 
-              appendPromptResultToTurn(ctx, prepared.turnId, prepared.promptParts, result);
+              appendPromptResultToTurn(ctx, prepared.turnId, prepared.turnPromptParts, result);
               ctx.session = {
                 ...ctx.session,
                 status: "running",
@@ -1212,6 +1381,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
               if (yield* Ref.get(promptRpcSucceeded)) {
                 const promptResult = yield* Ref.get(promptResultRef);
+                const managedPromptFingerprint = yield* Ref.get(managedPromptFingerprintRef);
                 if (promptResult === undefined) {
                   return;
                 }
@@ -1231,6 +1401,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                       );
                       return;
                     }
+                    applyManagedPromptFingerprint(ctx, managedPromptFingerprint);
                     if (ctx.interruptedTurnIds.has(prepared.turnId)) {
                       return;
                     }
@@ -1244,7 +1415,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     appendPromptResultToTurn(
                       ctx,
                       prepared.turnId,
-                      prepared.promptParts,
+                      prepared.turnPromptParts,
                       promptResult,
                     );
                     yield* settlePromptInFlight(
@@ -1261,10 +1432,22 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               }
 
               const errorMessage = yield* Ref.get(promptFailureMessageRef);
+              const managedPromptFingerprint = yield* Ref.get(managedPromptFingerprintRef);
               yield* withThreadLock(
                 input.threadId,
-                settlePromptInFlight(input.threadId, prepared.turnId, prepared.acpSessionId, {
-                  errorMessage: errorMessage ?? "Grok prompt request failed.",
+                Effect.gen(function* () {
+                  const ctx = sessions.get(input.threadId);
+                  if (ctx?.acpSessionId === prepared.acpSessionId) {
+                    releaseManagedPromptInjection(ctx, managedPromptFingerprint);
+                  }
+                  yield* settlePromptInFlight(
+                    input.threadId,
+                    prepared.turnId,
+                    prepared.acpSessionId,
+                    {
+                      errorMessage: errorMessage ?? "Grok prompt request failed.",
+                    },
+                  );
                 }),
               );
             }).pipe(Effect.catch(() => Effect.void)),

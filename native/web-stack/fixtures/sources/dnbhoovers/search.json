@@ -1,0 +1,24 @@
+{
+  "_fixture": "original synthetic Workjet data; displayedDuns values are fake format fixtures",
+  "candidatesMatchedQuantity": 2,
+  "candidatesReturnedQuantity": 2,
+  "searchCandidates": [
+    {
+      "displayedDuns": "000000001",
+      "organization": {
+        "primaryName": "Workjet Fixture Systems GmbH",
+        "primaryAddress": {
+          "addressLocality": { "name": "Beispielstadt" },
+          "addressCountry": { "isoAlpha2Code": "DE" }
+        },
+        "primaryIndustryCode": { "usSicV4Description": "Synthetic software fixtures" }
+      }
+    },
+    {
+      "organization": {
+        "duns": "000000002",
+        "primaryName": "Workjet Example Holdings AG"
+      }
+    }
+  ]
+}

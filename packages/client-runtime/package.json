@@ -43,6 +43,18 @@
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"
     },
+    "./state/business-os-mobile-invite": {
+      "types": "./src/state/businessOsMobileInvite.ts",
+      "default": "./src/state/businessOsMobileInvite.ts"
+    },
+    "./state/business-os-computer-membership": {
+      "types": "./src/state/businessOsComputerMembership.ts",
+      "default": "./src/state/businessOsComputerMembership.ts"
+    },
+    "./state/business-os-managed-backend-control": {
+      "types": "./src/state/businessOsManagedBackendControl.ts",
+      "default": "./src/state/businessOsManagedBackendControl.ts"
+    },
     "./state/assets": {
       "types": "./src/state/assets.ts",
       "default": "./src/state/assets.ts"
@@ -90,6 +102,10 @@
     "./state/project-grouping": {
       "types": "./src/state/projectGrouping.ts",
       "default": "./src/state/projectGrouping.ts"
+    },
+    "./state/worker-overview": {
+      "types": "./src/state/workerOverview.ts",
+      "default": "./src/state/workerOverview.ts"
     },
     "./state/relay": {
       "types": "./src/state/relayDiscovery.ts",

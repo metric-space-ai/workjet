@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { Thread } from "../types";
 import {
   buildBrowseGroups,
@@ -120,6 +126,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
     runtimeMode: "full-access",
     interactionMode: "default",
+    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     session: null,
     messages: [],
     proposedPlans: [],
@@ -244,7 +251,7 @@ describe("buildThreadActionItems", () => {
   it("keeps message excerpts searchable without replacing thread metadata", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search" })],
-      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
+      projectTitleById: new Map([[PROJECT_ID, "Workjet"]]),
       sortOrder: "updated_at",
       icon: null,
       getContentMatch: () => ({
@@ -261,13 +268,13 @@ describe("buildThreadActionItems", () => {
       snippet: "The relay reconnect is now bounded.",
       query: "reconnect",
     });
-    expect(item?.description).toBe("T3 Code · #feat/search");
+    expect(item?.description).toBe("Workjet · #feat/search");
   });
 
   it("prefers renderDescription when provided", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search", worktreePath: "/tmp/wt" })],
-      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
+      projectTitleById: new Map([[PROJECT_ID, "Workjet"]]),
       sortOrder: "updated_at",
       icon: null,
       renderDescription: (thread, { projectTitle }) =>
@@ -275,7 +282,7 @@ describe("buildThreadActionItems", () => {
       runThread: async (_thread) => undefined,
     });
 
-    expect(item?.description).toBe("T3 Code:feat/search:wt");
+    expect(item?.description).toBe("Workjet:feat/search:wt");
   });
 
   it("filters archived threads out of thread search items", () => {

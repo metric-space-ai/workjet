@@ -468,7 +468,7 @@ describe("child views on a host window", () => {
 
 describe("CtoxGuestManager", () => {
   it.effect(
-    "rejects activation outside Business OS mode and destroys the guest on mode exit",
+    "rejects activation outside Business OS mode and keeps the selected guest warm on mode exit",
     () => {
       const harness = makeGuestHarness();
       const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
@@ -487,7 +487,7 @@ describe("CtoxGuestManager", () => {
           instanceId: descriptor.id,
         });
         yield* manager.exitBusinessOsMode;
-        expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+        expect(harness.views[0]?.close).not.toHaveBeenCalled();
         expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
 
         assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
@@ -1167,11 +1167,13 @@ describe("CtoxGuestManager", () => {
       yield* manager.deactivate;
       expect(harness.closeForwards).toHaveBeenCalledTimes(1);
 
-      // Re-activating opens fresh forwards, and leaving Business OS mode closes
-      // them again: no activation may outlive its guest.
+      // Re-activating opens fresh forwards. A mode switch keeps the guest and
+      // its peer warm so Code can use the same CTOX instance.
       yield* manager.activate(sshDescriptor.id, bounds);
       expect(harness.closeForwards).toHaveBeenCalledTimes(1);
       yield* manager.exitBusinessOsMode;
+      expect(harness.closeForwards).toHaveBeenCalledTimes(1);
+      yield* manager.deactivate;
       expect(harness.closeForwards).toHaveBeenCalledTimes(2);
     }).pipe(Effect.provide(harness.layer));
   });
@@ -1467,6 +1469,51 @@ describe("CtoxGuestManager", () => {
         code: "not_active",
       });
       expect(harness.views[0]?.executeJavaScript).toHaveBeenCalledTimes(callCount ?? 0);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("uses the selected warm guest for device control without a network fallback", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "not_active" },
+      );
+
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.exitBusinessOsMode;
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: unknown) => {
+        const source = String(expression);
+        if (!source.includes("workjetBusinessOsDeviceControl")) return undefined;
+        expect(source).toContain('"action":"binding.list"');
+        expect(source).not.toContain("fetch(");
+        return {
+          status: "completed",
+          result: { schema: "ctox.workjet-device-bindings.v1", bindings: [] },
+        };
+      });
+
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        {
+          _tag: "completed",
+          response: { schema: "ctox.workjet-device-bindings.v1", bindings: [] },
+        },
+      );
+      assert.deepEqual(
+        yield* manager.requestDeviceControl("managed:other", { action: "binding.list" }),
+        { _tag: "failed", code: "not_active" },
+      );
+
+      harness.views[0]?.executeJavaScript.mockResolvedValueOnce({ status: "unsupported" });
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "unsupported" },
+      );
     }).pipe(Effect.provide(harness.layer));
   });
 

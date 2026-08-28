@@ -7,12 +7,13 @@ import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
 /**
- * Source trees that may ship in a non-mobile Workjet product. Deliberately
- * exclude mobile and infra/relay: mobile has its own migration, while the old
- * relay implementation must never become a build input again.
+ * Source trees that may ship in Workjet. Infra/relay stays excluded because it
+ * is not a product data plane; every desktop, web, server and mobile surface
+ * is checked against the same RxDB/WebRTC-only release contract.
  */
 export const ACTIVE_PRODUCT_ROOTS = Object.freeze([
   "apps/desktop/src",
+  "apps/mobile/src",
   "apps/web/src",
   "apps/server/src",
   "packages/shared/src",
@@ -26,57 +27,34 @@ export interface ForbiddenReference {
   readonly description: string;
 }
 
-/** Marker families forbidden in active source and non-mobile release bytes. */
+/** Marker families forbidden in active source and release bytes. */
 export const FORBIDDEN_REFERENCES: ReadonlyArray<ForbiddenReference> = Object.freeze([
   {
-    id: "managed-relay",
-    pattern: /ManagedRelay/giu,
-    description: "ManagedRelay runtime or contract",
+    id: "shared-signaling-secret",
+    pattern: /\bsignaling_(?:room_password|shared_secret)\s*:/giu,
+    description: "shared signaling credential in an active payload or contract",
   },
   {
-    id: "t3-relay-origin",
-    pattern: /\brelay\.t3\.codes\b/giu,
-    description: "legacy T3 relay origin",
+    id: "legacy-pairing-w1",
+    pattern: /\b(?:pairing_version|wire_format|version)\s*[:=]\s*["']w1["']/giu,
+    description: "legacy w1 pairing format",
   },
   {
-    id: "planetscale",
-    pattern: /PlanetScale/giu,
-    description: "PlanetScale product dependency or configuration",
+    id: "http-data-bridge-enabled",
+    pattern: /\bhttp_bridge_available\s*:\s*true\b/giu,
+    description: "enabled HTTP data bridge",
   },
   {
-    id: "axiom",
-    pattern: /Axiom|@axiomhq\//giu,
-    description: "Axiom product dependency or configuration",
+    id: "http-data-transport",
+    pattern:
+      /\b(?:data_plane|dataPlane|transport)\s*[:=]\s*["'](?:http|http-bridge|http-proxy)["']/giu,
+    description: "HTTP selected as a business data transport",
   },
   {
-    id: "backend-control-http",
-    pattern: /\/api\/workjet\/backend-control\b/giu,
-    description: "legacy Workjet backend-control HTTP endpoint",
-  },
-  {
-    id: "device-session-http",
-    pattern: /\/api\/workjet\/device-session\b/giu,
-    description: "legacy Workjet device-session HTTP endpoint",
-  },
-  {
-    id: "control-identity-assertion",
-    pattern: /\bissueControlIdentityAssertion\b/gu,
-    description: "legacy web-session identity assertion",
-  },
-  {
-    id: "environment-http",
-    pattern: /EnvironmentHttp|connectEnvironment/giu,
-    description: "legacy environment HTTP/connect runtime",
-  },
-  {
-    id: "clerk-web-session",
-    pattern: /Clerk/giu,
-    description: "Clerk remote web-session runtime or configuration",
-  },
-  {
-    id: "dpop-web-session",
-    pattern: /DPoP|WebSession|web[-_ ]session|WorkjetManagedDeviceSession/giu,
-    description: "DPoP or managed web-session runtime",
+    id: "business-data-http-route",
+    pattern:
+      /\/api\/business-os\/(?:collections|records|files|chunks|commands|replication)(?:\/|\b)/giu,
+    description: "Business OS record, file, command or replication HTTP route",
   },
 ]);
 
@@ -94,28 +72,13 @@ export const LEGACY_REFERENCE_ALLOWLIST: ReadonlyArray<AllowlistEntry> = Object.
   {
     path: "scripts/fixtures/workjet-webrtc-only-release/legacy-markers.txt",
     markerIds: [
-      "managed-relay",
-      "t3-relay-origin",
-      "planetscale",
-      "axiom",
-      "backend-control-http",
-      "device-session-http",
-      "control-identity-assertion",
-      "environment-http",
-      "clerk-web-session",
-      "dpop-web-session",
+      "shared-signaling-secret",
+      "legacy-pairing-w1",
+      "http-data-bridge-enabled",
+      "http-data-transport",
+      "business-data-http-route",
     ],
     reason: "Literal canaries used only by the release guard's focused fixture test.",
-  },
-  {
-    path: "docs/internals/t3-connect.md",
-    markerIds: ["managed-relay", "t3-relay-origin", "environment-http", "clerk-web-session"],
-    reason: "Historical architecture document retained as migration context, never a build input.",
-  },
-  {
-    path: "docs/internals/environment-auth.md",
-    markerIds: ["environment-http", "clerk-web-session", "dpop-web-session"],
-    reason: "Historical authentication design retained as migration context, never a build input.",
   },
 ]);
 
@@ -181,6 +144,7 @@ export function scanLegacyReleaseText(
 // Packaged node_modules are deliberately scanned: a forbidden dependency in
 // an unpacked Electron artifact is just as release-active as a bundled import.
 const SKIPPED_DIRECTORY_NAMES = new Set([".git"]);
+const SOURCE_TEST_FILE_PATTERN = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/u;
 
 async function listFiles(root: string): Promise<ReadonlyArray<string>> {
   const rootStat = await NodeFSP.stat(root);
@@ -247,10 +211,13 @@ export async function checkWorkjetWebRtcOnlyRelease(options: {
   const findings: Array<LegacyReleaseFinding> = [];
   let filesScanned = 0;
   for (const absolutePath of [...absoluteFiles].sort()) {
+    const relativePath = normalizePath(NodePath.relative(repoRoot, absolutePath));
+    if (isWithinActiveProductRoot(relativePath) && SOURCE_TEST_FILE_PATTERN.test(relativePath)) {
+      continue;
+    }
     const source = await readTextFile(absolutePath);
     if (source === null) continue;
     filesScanned += 1;
-    const relativePath = normalizePath(NodePath.relative(repoRoot, absolutePath));
     findings.push(...scanLegacyReleaseText(relativePath, source));
   }
 

@@ -17,6 +17,8 @@ import {
   CtoxPairedInstanceMutationFailureCode,
   CtoxPairedInstanceRemoveInput,
   CtoxPairingInviteImportInput,
+  WorkjetDeviceWebRtcRequestV1,
+  WorkjetDeviceWebRtcResponseV1,
 } from "./ctox.ts";
 
 const decodeInstance = Schema.decodeUnknownSync(CtoxManagedInstance);
@@ -286,5 +288,98 @@ describe("CTOX renderer contracts", () => {
         token: "secret",
       }),
     ).toEqual({ _tag: "ready", instanceId: validInstance.id });
+  });
+
+  it("accepts only the exact CTOX WebRTC device-control actions", () => {
+    const decode = Schema.decodeUnknownSync(WorkjetDeviceWebRtcRequestV1, {
+      onExcessProperty: "error",
+    });
+    expect(
+      decode({ action: "invite.create", ttlSeconds: 300, displayName: "Galaxy Fold" }),
+    ).toEqual({ action: "invite.create", ttlSeconds: 300, displayName: "Galaxy Fold" });
+    expect(decode({ action: "binding.list" })).toEqual({ action: "binding.list" });
+    expect(() => decode({ action: "invite.create", ttlSeconds: 59 })).toThrow();
+    expect(() => decode({ action: "binding.list", environmentId: "primary" })).toThrow();
+    expect(() => decode({ action: "connect", url: "https://relay.t3.codes" })).toThrow();
+  });
+
+  it("decodes the transient invite and binding responses without transport fallbacks", () => {
+    const decode = Schema.decodeUnknownSync(WorkjetDeviceWebRtcResponseV1, {
+      onExcessProperty: "error",
+    });
+    const invite = {
+      type: "ctox-business-os-invite",
+      version: 1,
+      display_name: "Welsch",
+      instance_id: "welsch",
+      sync_room: "ctox-business-os:welsch",
+      native_peer_id: "native-welsch",
+      signaling_urls: ["wss://signal.example.test"],
+      signaling_auth_version: "ctox-role-bound-v1",
+      signaling_browser_token: "browser-role-token",
+      signaling_browser_token_hash: "a".repeat(64),
+      signaling_native_token_hash: "b".repeat(64),
+      transport: "webrtc",
+      expires_at: "2026-08-27T14:00:00Z",
+      data_plane: "rxdb-webrtc",
+      http_bridge_available: false,
+      session: {
+        authenticated: true,
+        source: "mobile_invite",
+        capability_token: "transient-capability",
+        capability_expires_at_ms: 1_788_000_000_000,
+        user: {
+          id: "device-bootstrap",
+          display_name: "Workjet device",
+          role: "user",
+          is_admin: false,
+        },
+      },
+    } as const;
+    expect(
+      decode({
+        businessOsInstanceId: "welsch",
+        deviceId: null,
+        proofKeyThumbprint: null,
+        grantId: "grant-1",
+        inviteId: "invite-1",
+        invite,
+        expiresAt: invite.expires_at,
+      }),
+    ).toMatchObject({ inviteId: "invite-1", invite });
+    expect(decode({ schema: "ctox.workjet-device-bindings.v1", bindings: [] })).toEqual({
+      schema: "ctox.workjet-device-bindings.v1",
+      bindings: [],
+    });
+    expect(decode({ revoked: true })).toEqual({ revoked: true });
+    expect(() => decode({ revoked: true, accessToken: "forbidden" })).toThrow();
+    expect(() =>
+      decode({
+        businessOsInstanceId: "welsch",
+        deviceId: null,
+        proofKeyThumbprint: null,
+        grantId: "grant-1",
+        inviteId: "invite-1",
+        invite: {
+          ...invite,
+          signaling_native_token_hash: invite.signaling_browser_token_hash,
+        },
+        expiresAt: invite.expires_at,
+      }),
+    ).toThrow(/role-distinct/u);
+    expect(() =>
+      decode({
+        businessOsInstanceId: "welsch",
+        deviceId: null,
+        proofKeyThumbprint: null,
+        grantId: "grant-1",
+        inviteId: "invite-1",
+        invite: {
+          ...invite,
+          signaling_room_password: "legacy-shared-secret",
+        },
+        expiresAt: invite.expires_at,
+      }),
+    ).toThrow();
   });
 });

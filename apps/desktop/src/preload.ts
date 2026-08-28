@@ -257,12 +257,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_SET_GUEST_BOUNDS_CHANNEL, { bounds }),
     listApps: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_LIST_APPS_CHANNEL, { instanceId }),
+    requestDeviceControl: (instanceId, request) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_DEVICE_CONTROL_CHANNEL, {
+        instanceId,
+        request,
+      }),
     openApp: (instanceId, moduleId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_OPEN_APP_CHANNEL, { instanceId, moduleId, bounds }),
     openSettings: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_OPEN_SETTINGS_CHANNEL, { instanceId }),
-    requestDeviceControl: (instanceId, request) =>
-      ipcRenderer.invoke(IpcChannels.CTOX_DEVICE_CONTROL_CHANNEL, { instanceId, request }),
     setAppDocked: (instanceId, moduleId, docked) =>
       ipcRenderer.invoke(IpcChannels.CTOX_SET_APP_DOCKED_CHANNEL, {
         instanceId,

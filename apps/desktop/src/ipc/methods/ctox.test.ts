@@ -20,6 +20,7 @@ import {
   login,
   openApp,
   openSettings,
+  requestDeviceControl,
   refresh,
   resolveInstanceAuthority,
   removePairedInstance,
@@ -112,6 +113,7 @@ function removalCleanupLayer(
     openGuestApp: () => Effect.die("unused"),
     openGuestSettings: () => Effect.die("unused"),
     setHostTheme: () => Effect.succeed({ _tag: "completed" }),
+    requestDeviceControl: () => Effect.die("unused"),
   });
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.die("unused"),
@@ -214,6 +216,7 @@ describe("CTOX IPC methods", () => {
       openGuestApp: () => Effect.die("unused"),
       openGuestSettings: () => Effect.die("unused"),
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
+      requestDeviceControl: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -556,6 +559,7 @@ describe("CTOX app rail IPC methods", () => {
       openGuestApp: () => Effect.die("unused"),
       openGuestSettings: () => Effect.die("unused"),
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
+      requestDeviceControl: () => Effect.die("unused"),
       ...overrides,
     });
   }
@@ -572,6 +576,38 @@ describe("CTOX app rail IPC methods", () => {
       }),
     );
   }
+
+  it.effect("validates and delegates device control only to the selected CTOX guest", () => {
+    const request = vi.fn(() =>
+      Effect.succeed({
+        _tag: "completed" as const,
+        response: { schema: "ctox.workjet-device-bindings.v1" as const, bindings: [] },
+      }),
+    );
+    const guests = guestsWithApps({ requestDeviceControl: request });
+    return Effect.gen(function* () {
+      assert.deepEqual(
+        yield* requestDeviceControl.handler({
+          instanceId: "managed:welsch",
+          request: { action: "binding.list" },
+        }),
+        {
+          _tag: "completed",
+          response: { schema: "ctox.workjet-device-bindings.v1", bindings: [] },
+        },
+      );
+      expect(request).toHaveBeenCalledWith("managed:welsch", { action: "binding.list" });
+
+      assert.deepEqual(
+        yield* requestDeviceControl.handler({
+          instanceId: "managed:welsch",
+          request: { action: "binding.list", environmentId: "forbidden" },
+        }),
+        { _tag: "failed", code: "invalid_input" },
+      );
+      expect(request).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests)));
+  });
 
   it.effect("merges docked and open apps from a live guest and refreshes the cache", () => {
     const recordLiveApps = vi.fn(() => Effect.void);

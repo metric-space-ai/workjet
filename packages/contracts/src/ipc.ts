@@ -109,6 +109,7 @@ import type {
   CtoxManagedGuestResult,
   CtoxManagedLoginResult,
   CtoxManualPairingImportInput,
+  CtoxWorkjetDeviceControlResult,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveResult,
   CtoxSshManagedInstanceAddInput,
@@ -120,8 +121,7 @@ import type {
   CtoxShellFleetPauseInput,
   CtoxShellFleetRolloutResult,
   CtoxShellFleetRolloutStatus,
-  CtoxWorkjetDeviceControlRequest,
-  CtoxWorkjetDeviceControlResult,
+  WorkjetDeviceWebRtcRequestV1,
 } from "./ctox.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -140,11 +140,6 @@ import type {
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
 } from "./computerProvisioning.ts";
-import type {
-  WorkjetRelayControlIdentityAssertionIssueInput,
-  WorkjetRelayControlIdentityAssertionIssueResult,
-} from "./workjetManagedBackendControl.ts";
-
 export interface ContextMenuItem<T extends string = string> {
   id: T;
   label: string;
@@ -1226,14 +1221,11 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxPairedInstanceImportResult>;
   removePairedInstance: (instanceId: string) => Promise<CtoxPairedInstanceRemoveResult>;
   resolveInstanceAuthority?: (instanceId: string) => Promise<CtoxInstanceAuthorityResolveResult>;
-  /**
-   * Platform-owned, fail-closed identity port for the Cloudflare `service`
-   * control plane. Renderer code never receives account credentials or the
-   * DPoP private key; absence means managed device actions remain unavailable.
-   */
-  issueControlIdentityAssertion?: (
-    input: WorkjetRelayControlIdentityAssertionIssueInput,
-  ) => Promise<WorkjetRelayControlIdentityAssertionIssueResult>;
+  /** Device management through the selected warm CTOX RxDB/WebRTC guest only. */
+  requestDeviceControl?: (
+    instanceId: string,
+    request: WorkjetDeviceWebRtcRequestV1,
+  ) => Promise<CtoxWorkjetDeviceControlResult>;
   /** Configure one SSH-managed CTOX instance; carries no credential. */
   addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,
@@ -1256,11 +1248,6 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxAppActionResult>;
   /** Open the active CTOX instance's own Business OS settings drawer. */
   openSettings?: (instanceId: string) => Promise<CtoxAppActionResult>;
-  /** Execute the bounded device-control method inside the active WebRTC guest. */
-  requestDeviceControl?: (
-    instanceId: string,
-    request: CtoxWorkjetDeviceControlRequest,
-  ) => Promise<CtoxWorkjetDeviceControlResult>;
   /** Pin or unpin an app on the instance's rail (taskbar model). */
   setAppDocked: (
     instanceId: string,

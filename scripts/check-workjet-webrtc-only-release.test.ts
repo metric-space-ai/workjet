@@ -47,34 +47,29 @@ NodeTest.test("accepts a CTOX RxDB/WebRTC-only product path", () => {
   NodeAssert.deepEqual(scanLegacyReleaseText("apps/desktop/src/ctox/deviceControl.ts", source), []);
 });
 
-NodeTest.test("allows only exact fixtures and historical docs, never active product source", () => {
+NodeTest.test("allows only the exact fixture, never active product source", () => {
   NodeAssert.equal(
     isAllowlistedLegacyReference(
       "scripts/fixtures/workjet-webrtc-only-release/legacy-markers.txt",
-      "managed-relay",
+      "shared-signaling-secret",
     ),
     true,
   );
   NodeAssert.equal(
-    isAllowlistedLegacyReference("docs/internals/t3-connect.md", "t3-relay-origin"),
-    true,
-  );
-  NodeAssert.equal(
-    isAllowlistedLegacyReference("docs/internals/t3-connect.md", "device-session-http"),
+    isAllowlistedLegacyReference("apps/web/src/t3-connect.md", "shared-signaling-secret"),
     false,
   );
   NodeAssert.equal(
-    isAllowlistedLegacyReference("apps/web/src/t3-connect.md", "t3-relay-origin"),
-    false,
-  );
-  NodeAssert.equal(
-    scanLegacyReleaseText("apps/web/src/legacy.ts", "createManagedRelayClient").length,
+    scanLegacyReleaseText(
+      "apps/web/src/legacy.ts",
+      'const invite = { signaling_room_password: "shared" };',
+    ).length,
     1,
   );
 });
 
 NodeTest.test(
-  "scans active non-mobile roots and supplied build artifacts while ignoring mobile",
+  "scans mobile and supplied build artifacts while allowing legitimate authentication",
   async () => {
     const repoRoot = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-webrtc-only-"));
     const webRoot = NodePath.join(repoRoot, "apps/web/src");
@@ -91,12 +86,18 @@ NodeTest.test(
         NodePath.join(webRoot, "clean.ts"),
         'export const protocol = "ctox.workjet.device.v1";',
       ),
-      NodeFSP.writeFile(NodePath.join(mobileRoot, "legacy.ts"), "ManagedRelayClient"),
+      NodeFSP.writeFile(
+        NodePath.join(mobileRoot, "legacy.ts"),
+        'export const invite = { signaling_room_password: "shared" };',
+      ),
       NodeFSP.writeFile(
         NodePath.join(artifactRoot, "app.js"),
-        'fetch("/api/workjet/device-session")',
+        'fetch("/api/business-os/files/file-1")',
       ),
-      NodeFSP.writeFile(NodePath.join(packagedDependencyRoot, "index.js"), "useClerk()"),
+      NodeFSP.writeFile(
+        NodePath.join(packagedDependencyRoot, "index.js"),
+        'useClerk(); createDpopProof(); const data_plane = "http";',
+      ),
     ]);
 
     const result = await checkWorkjetWebRtcOnlyRelease({
@@ -104,16 +105,17 @@ NodeTest.test(
       artifactPaths: ["release/web"],
     });
 
-    NodeAssert.equal(result.filesScanned, 3);
+    NodeAssert.equal(result.filesScanned, 4);
     NodeAssert.deepEqual(
       result.findings.map(({ path: findingPath, markerId }) => [findingPath, markerId]),
       [
-        ["release/web/app.js", "device-session-http"],
-        ["release/web/node_modules/legacy-runtime/index.js", "clerk-web-session"],
+        ["apps/mobile/src/legacy.ts", "shared-signaling-secret"],
+        ["release/web/app.js", "business-data-http-route"],
+        ["release/web/node_modules/legacy-runtime/index.js", "http-data-transport"],
       ],
     );
     NodeAssert.ok(ACTIVE_PRODUCT_ROOTS.includes("apps/web/src"));
-    NodeAssert.ok(!ACTIVE_PRODUCT_ROOTS.some((root) => root.startsWith("apps/mobile")));
+    NodeAssert.ok(ACTIVE_PRODUCT_ROOTS.includes("apps/mobile/src"));
   },
 );
 

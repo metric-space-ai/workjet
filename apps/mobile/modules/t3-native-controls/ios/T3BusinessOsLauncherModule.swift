@@ -194,11 +194,14 @@ private struct WorkjetNativeLauncher: View {
 
   private var header: some View {
     HStack(alignment: .center, spacing: 12) {
-      Button(action: { model.onReturnToCode?() }) {
-        Image(systemName: "chevron.left.forwardslash.chevron.right")
-          .font(.system(size: 18, weight: .semibold))
-          .frame(width: 44, height: 44)
-      }
+      Button(
+        action: { model.onReturnToCode?() },
+        label: {
+          Image(systemName: "chevron.left.forwardslash.chevron.right")
+            .font(.system(size: 18, weight: .semibold))
+            .frame(width: 44, height: 44)
+        }
+      )
       .accessibilityLabel("In Code wechseln")
       VStack(alignment: .leading, spacing: 1) {
         Text(model.instanceName).font(.headline).lineLimit(1)
@@ -211,14 +214,16 @@ private struct WorkjetNativeLauncher: View {
         Button("Fertig") { model.editing = false }
           .buttonStyle(.glassProminent)
       } else {
-        Button(action: { model.onOpenSearch?() }) {
-          Image(systemName: "magnifyingglass").frame(width: 44, height: 44)
-        }
+        Button(
+          action: { model.onOpenSearch?() },
+          label: { Image(systemName: "magnifyingglass").frame(width: 44, height: 44) }
+        )
         .accessibilityLabel("Apps durchsuchen")
         if model.showsSettingsAction {
-          Button(action: { model.onOpenSettings?() }) {
-            Image(systemName: "gearshape").frame(width: 44, height: 44)
-          }
+          Button(
+            action: { model.onOpenSettings?() },
+            label: { Image(systemName: "gearshape").frame(width: 44, height: 44) }
+          )
           .accessibilityLabel("Workjet Einstellungen")
         }
       }
@@ -255,13 +260,19 @@ private struct WorkjetNativeLauncher: View {
     if item.kind == "folder" {
       WorkjetFolderCell(item: item, apps: model.appsById)
     } else if let appId = item.appId, let app = model.appsById[appId] {
-      WorkjetAppCell(app: app, badge: model.badges[app.id], editing: model.editing) {
-        guard app.id != "desktop" else { return }
-        model.onOpenApp?(app.id)
-      } onEdit: {
-        model.editing = true
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-      }
+      WorkjetAppCell(
+        app: app,
+        badge: model.badges[app.id],
+        editing: model.editing,
+        onOpen: {
+          guard app.id != "desktop" else { return }
+          model.onOpenApp?(app.id)
+        },
+        onEdit: {
+          model.editing = true
+          UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+      )
       .onDrag {
         model.dragged = (pageIndex, itemIndex)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -291,19 +302,25 @@ private struct WorkjetNativeLauncher: View {
     HStack(spacing: 12) {
       ForEach(model.dock, id: \.self) { appId in
         if let app = model.appsById[appId] {
-          WorkjetAppCell(app: app, badge: model.badges[app.id], editing: false, compact: true) {
-            model.onOpenApp?(app.id)
-          } onEdit: {
-            model.editing = true
-          }
+          WorkjetAppCell(
+            app: app,
+            badge: model.badges[app.id],
+            editing: false,
+            compact: true,
+            onOpen: { model.onOpenApp?(app.id) },
+            onEdit: { model.editing = true }
+          )
         }
       }
       Divider().frame(height: 42)
-      Button(action: { model.onOpenRecents?() }) {
-        Image(systemName: "rectangle.stack")
-          .font(.system(size: 22, weight: .semibold))
-          .frame(width: 52, height: 52)
-      }
+      Button(
+        action: { model.onOpenRecents?() },
+        label: {
+          Image(systemName: "rectangle.stack")
+            .font(.system(size: 22, weight: .semibold))
+            .frame(width: 52, height: 52)
+        }
+      )
       .accessibilityLabel("Workjet Recents")
     }
     .padding(.horizontal, 12)
@@ -420,22 +437,22 @@ private struct WorkjetIconDropDelegate: DropDelegate {
 }
 
 private func workjetSystemSymbol(_ id: String) -> String {
-  switch id {
-  case "ctox": return "gearshape.2.fill"
-  case "tickets": return "checkmark.seal.fill"
-  case "threads": return "point.3.connected.trianglepath.dotted"
-  case "knowledge": return "books.vertical.fill"
-  case "browser": return "location.north.circle.fill"
-  case "credentials": return "key.fill"
-  case "mail": return "envelope.fill"
-  case "app-store": return "shippingbox.fill"
-  case "importer": return "square.and.arrow.down.fill"
-  case "reports": return "ladybug.fill"
-  case "coding-agents": return "chevron.left.forwardslash.chevron.right"
-  case "documents": return "doc.on.doc.fill"
-  case "buchhaltung": return "checkmark.rectangle.stack.fill"
-  default: return "square.grid.2x2.fill"
-  }
+  let symbols = [
+    "ctox": "gearshape.2.fill",
+    "tickets": "checkmark.seal.fill",
+    "threads": "point.3.connected.trianglepath.dotted",
+    "knowledge": "books.vertical.fill",
+    "browser": "location.north.circle.fill",
+    "credentials": "key.fill",
+    "mail": "envelope.fill",
+    "app-store": "shippingbox.fill",
+    "importer": "square.and.arrow.down.fill",
+    "reports": "ladybug.fill",
+    "coding-agents": "chevron.left.forwardslash.chevron.right",
+    "documents": "doc.on.doc.fill",
+    "buchhaltung": "checkmark.rectangle.stack.fill",
+  ]
+  return symbols[id] ?? "square.grid.2x2.fill"
 }
 
 private extension Color {

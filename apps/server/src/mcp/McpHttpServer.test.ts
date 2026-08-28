@@ -1,4 +1,6 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -275,7 +277,7 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
         Layer.provide(
           ServerConfig.layerTest(
             process.cwd(),
-            "/Volumes/tmp/workjet/tmp/mcp-http-server-test",
+            NodePath.join(NodeOS.tmpdir(), `workjet-mcp-http-server-test-${process.pid}`),
           ).pipe(Layer.provide(NodeServices.layer)),
         ),
         Layer.provide(NodeServices.layer),

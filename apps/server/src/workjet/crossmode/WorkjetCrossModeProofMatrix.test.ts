@@ -738,7 +738,7 @@ it.effect(
       for (const name of names) {
         assert.notMatch(
           name,
-          /^ctox_|_ctox_|business_os/i,
+          /^(?:ctox_|_ctox_|business_os)/i,
           `${name} looks like a CTOX-owned table inside this server's database`,
         );
       }

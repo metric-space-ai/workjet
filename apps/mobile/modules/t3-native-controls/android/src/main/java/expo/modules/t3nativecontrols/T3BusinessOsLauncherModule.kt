@@ -1,3 +1,5 @@
+@file:Suppress("FunctionNaming", "ktlint:standard:function-naming")
+
 package expo.modules.t3nativecontrols
 
 import android.content.Context
@@ -87,7 +89,7 @@ private data class LauncherApp(
   val iconAssetId: String,
   val iconFamilyVersion: Int,
   val iconRequired: Boolean,
-  val desktopOnly: Boolean,
+  val desktopOnly: Boolean
 )
 
 private data class LauncherItem(
@@ -95,7 +97,7 @@ private data class LauncherItem(
   val id: String,
   val appId: String?,
   val title: String?,
-  val appIds: List<String>,
+  val appIds: List<String>
 )
 
 private class LauncherState {
@@ -108,7 +110,10 @@ private class LauncherState {
   var showsSettingsAction by mutableStateOf(true)
 }
 
-class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoView(
+  context,
+  appContext
+) {
   private val onOpenApp by EventDispatcher()
   private val onOpenSearch by EventDispatcher()
   private val onOpenRecents by EventDispatcher()
@@ -127,7 +132,9 @@ class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoV
         onOpenSettings = { onOpenSettings(emptyMap<String, Any>()) },
         onReturnToCode = { onReturnToCode(emptyMap<String, Any>()) },
         onLayoutChange = { page, source, target ->
-          onLayoutChange(mapOf("pageIndex" to page, "sourceIndex" to source, "targetIndex" to target))
+          onLayoutChange(
+            mapOf("pageIndex" to page, "sourceIndex" to source, "targetIndex" to target)
+          )
         },
       )
     }
@@ -137,6 +144,8 @@ class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoV
     addView(composeView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
   }
 
+  // Fail closed on the first malformed entry so a partially trusted catalog is never rendered.
+  @Suppress("ComplexCondition", "CyclomaticComplexMethod", "ReturnCount")
   fun setCatalogJson(raw: String) {
     if (raw.toByteArray().size > 262_144) return
     try {
@@ -158,7 +167,9 @@ class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoV
             !iconAssetId.matches(Regex("[a-z0-9][a-z0-9._-]{0,127}")) ||
             app.optInt("iconFamilyVersion") != 1 || !app.has("iconRequired") ||
             title.isBlank() || title.length > 80
-          ) return
+          ) {
+            return
+          }
           add(
             LauncherApp(
               id = id,
@@ -178,6 +189,8 @@ class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoV
     }
   }
 
+  // Keep all validation and state publication in one transaction-like boundary.
+  @Suppress("CyclomaticComplexMethod", "ReturnCount")
   fun setLayoutJson(raw: String) {
     if (raw.toByteArray().size > 262_144) return
     try {
@@ -186,32 +199,40 @@ class T3BusinessOsLauncherView(context: Context, appContext: AppContext) : ExpoV
       val pages = buildList {
         for (pageIndex in 0 until rawPages.length()) {
           val rawPage = rawPages.optJSONArray(pageIndex) ?: continue
-          add(buildList {
-            for (itemIndex in 0 until rawPage.length()) {
-              val item = rawPage.optJSONObject(itemIndex) ?: continue
-              val appIds = item.optJSONArray("appIds")
-              add(
-                LauncherItem(
-                  kind = item.optString("kind"),
-                  id = item.optString("id"),
-                  appId = item.optString("appId").takeIf { it.isNotBlank() && it != "desktop" },
-                  title = item.optString("title").takeIf(String::isNotBlank)?.take(48),
-                  appIds = buildList {
-                    if (appIds != null) for (index in 0 until appIds.length()) {
-                      appIds.optString(index).takeIf { it.isNotBlank() && it != "desktop" }?.let(::add)
-                    }
-                  },
-                ),
-              )
+          add(
+            buildList {
+              for (itemIndex in 0 until rawPage.length()) {
+                val item = rawPage.optJSONObject(itemIndex) ?: continue
+                val appIds = item.optJSONArray("appIds")
+                add(
+                  LauncherItem(
+                    kind = item.optString("kind"),
+                    id = item.optString("id"),
+                    appId = item.optString("appId").takeIf { it.isNotBlank() && it != "desktop" },
+                    title = item.optString("title").takeIf(String::isNotBlank)?.take(48),
+                    appIds = buildList {
+                      if (appIds != null) {
+                        for (index in 0 until appIds.length()) {
+                          appIds.optString(index).takeIf {
+                            it.isNotBlank() && it != "desktop"
+                          }?.let(::add)
+                        }
+                      }
+                    },
+                  ),
+                )
+              }
             }
-          })
+          )
         }
       }
       state.pages = pages.ifEmpty { listOf(emptyList()) }
       val rawDock = value.optJSONArray("dock")
       state.dock = buildList {
-        if (rawDock != null) for (index in 0 until rawDock.length()) {
-          rawDock.optString(index).takeIf { it.isNotBlank() && it != "desktop" }?.let(::add)
+        if (rawDock != null) {
+          for (index in 0 until rawDock.length()) {
+            rawDock.optString(index).takeIf { it.isNotBlank() && it != "desktop" }?.let(::add)
+          }
         }
       }
     } catch (_: Exception) {
@@ -244,12 +265,29 @@ class T3BusinessOsLauncherModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("T3BusinessOsLauncher")
     View(T3BusinessOsLauncherView::class) {
-      Prop("catalogJson") { view: T3BusinessOsLauncherView, value: String -> view.setCatalogJson(value) }
-      Prop("layoutJson") { view: T3BusinessOsLauncherView, value: String -> view.setLayoutJson(value) }
-      Prop("badgesJson") { view: T3BusinessOsLauncherView, value: String -> view.setBadgesJson(value) }
-      Prop("instanceName") { view: T3BusinessOsLauncherView, value: String -> view.setInstanceName(value) }
-      Prop("showsSettingsAction") { view: T3BusinessOsLauncherView, value: Boolean -> view.setShowsSettingsAction(value) }
-      Events("onOpenApp", "onOpenSearch", "onOpenRecents", "onOpenSettings", "onReturnToCode", "onLayoutChange")
+      Prop("catalogJson") { view: T3BusinessOsLauncherView, value: String ->
+        view.setCatalogJson(value)
+      }
+      Prop("layoutJson") { view: T3BusinessOsLauncherView, value: String ->
+        view.setLayoutJson(value)
+      }
+      Prop("badgesJson") { view: T3BusinessOsLauncherView, value: String ->
+        view.setBadgesJson(value)
+      }
+      Prop("instanceName") { view: T3BusinessOsLauncherView, value: String ->
+        view.setInstanceName(value)
+      }
+      Prop("showsSettingsAction") { view: T3BusinessOsLauncherView, value: Boolean ->
+        view.setShowsSettingsAction(value)
+      }
+      Events(
+        "onOpenApp",
+        "onOpenSearch",
+        "onOpenRecents",
+        "onOpenSettings",
+        "onReturnToCode",
+        "onLayoutChange"
+      )
     }
     Function("isSupported") { true }
   }
@@ -257,6 +295,7 @@ class T3BusinessOsLauncherModule : Module() {
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("CyclomaticComplexMethod", "LongMethod", "LongParameterList")
 private fun WorkjetOneUiLauncher(
   state: LauncherState,
   onOpenApp: (String) -> Unit,
@@ -264,11 +303,13 @@ private fun WorkjetOneUiLauncher(
   onOpenRecents: () -> Unit,
   onOpenSettings: () -> Unit,
   onReturnToCode: () -> Unit,
-  onLayoutChange: (Int, Int, Int) -> Unit,
+  onLayoutChange: (Int, Int, Int) -> Unit
 ) {
   val context = LocalContext.current
   val dark = (context.resources.configuration.uiMode and 0x30) == 0x20
-  MaterialTheme(colorScheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)) {
+  MaterialTheme(
+    colorScheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+  ) {
     BoxWithConstraints(
       modifier = Modifier
         .fillMaxSize()
@@ -294,8 +335,14 @@ private fun WorkjetOneUiLauncher(
           .fillMaxSize()
           .pointerInput(Unit) {
             detectVerticalDragGestures(
-              onVerticalDrag = { change, amount -> change.consume(); upwardDrag += amount },
-              onDragEnd = { if (upwardDrag < -90f) onOpenSearch(); upwardDrag = 0f },
+              onVerticalDrag = { change, amount ->
+                change.consume()
+                upwardDrag += amount
+              },
+              onDragEnd = {
+                if (upwardDrag < -90f) onOpenSearch()
+                upwardDrag = 0f
+              },
               onDragCancel = { upwardDrag = 0f },
             )
           },
@@ -324,7 +371,9 @@ private fun WorkjetOneUiLauncher(
                     itemIndex = itemIndex,
                     onOpen = { if (!app.desktopOnly) onOpenApp(app.id) },
                     onEdit = { state.editing = true },
-                    onMove = { target -> onLayoutChange(pageIndex, itemIndex, target.coerceIn(page.indices)) },
+                    onMove = { target ->
+                      onLayoutChange(pageIndex, itemIndex, target.coerceIn(page.indices))
+                    },
                   )
                 }
               }
@@ -341,7 +390,15 @@ private fun WorkjetOneUiLauncher(
               Modifier
                 .size(width = if (active) 16.dp else 6.dp, height = 6.dp)
                 .clip(CircleShape)
-                .background(if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)),
+                .background(
+                  if (active) {
+                    MaterialTheme.colorScheme.onSurface
+                  } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                      alpha = 0.35f
+                    )
+                  }
+                ),
             )
           }
         }
@@ -356,27 +413,47 @@ private fun OneUiExtendedHeader(
   state: LauncherState,
   onReturnToCode: () -> Unit,
   onOpenSearch: () -> Unit,
-  onOpenSettings: () -> Unit,
+  onOpenSettings: () -> Unit
 ) {
   Column(Modifier.fillMaxWidth().height(132.dp).padding(horizontal = 18.dp, vertical = 10.dp)) {
     Spacer(Modifier.weight(1f))
     Row(verticalAlignment = Alignment.CenterVertically) {
       IconButton(onClick = onReturnToCode, modifier = Modifier.size(48.dp)) {
-        Icon(painterResource(android.R.drawable.ic_media_previous), contentDescription = "In Code wechseln")
+        Icon(
+          painterResource(android.R.drawable.ic_media_previous),
+          contentDescription = "In Code wechseln"
+        )
       }
       Column(Modifier.weight(1f)) {
-        Text(state.instanceName, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(if (state.editing) "Apps bewegen oder zusammenlegen" else "Business OS", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+          state.instanceName,
+          fontSize = 28.sp,
+          fontWeight = FontWeight.SemiBold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+        Text(
+          if (state.editing) "Apps bewegen oder zusammenlegen" else "Business OS",
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
       }
       if (state.editing) {
-        Button(onClick = { state.editing = false }, contentPadding = ButtonDefaults.ContentPadding) { Text("Fertig") }
+        Button(onClick = {
+          state.editing = false
+        }, contentPadding = ButtonDefaults.ContentPadding) { Text("Fertig") }
       } else {
         IconButton(onClick = onOpenSearch, modifier = Modifier.size(48.dp)) {
-          Icon(painterResource(android.R.drawable.ic_menu_search), contentDescription = "Apps durchsuchen")
+          Icon(
+            painterResource(android.R.drawable.ic_menu_search),
+            contentDescription = "Apps durchsuchen"
+          )
         }
         if (state.showsSettingsAction) {
           IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-            Icon(painterResource(android.R.drawable.ic_menu_preferences), contentDescription = "Workjet Einstellungen")
+            Icon(
+              painterResource(android.R.drawable.ic_menu_preferences),
+              contentDescription = "Workjet Einstellungen"
+            )
           }
         }
       }
@@ -386,6 +463,7 @@ private fun OneUiExtendedHeader(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
+@Suppress("LongParameterList")
 private fun OneUiAppCell(
   app: LauncherApp,
   badge: Int?,
@@ -395,7 +473,7 @@ private fun OneUiAppCell(
   compact: Boolean = false,
   onOpen: () -> Unit,
   onEdit: () -> Unit,
-  onMove: (Int) -> Unit = {},
+  onMove: (Int) -> Unit = {}
 ) {
   val haptic = LocalHapticFeedback.current
   val density = LocalDensity.current
@@ -417,7 +495,10 @@ private fun OneUiAppCell(
         if (!editing) return@pointerInput
         detectDragGesturesAfterLongPress(
           onDragStart = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
-          onDrag = { change, amount -> change.consume(); drag += amount },
+          onDrag = { change, amount ->
+            change.consume()
+            drag += amount
+          },
           onDragEnd = {
             val cell = with(density) { 92.dp.toPx() }
             val row = with(density) { 112.dp.toPx() }
@@ -466,7 +547,11 @@ private fun OneUiAppCell(
 @Composable
 private fun OneUiFolderCell(item: LauncherItem, apps: Map<String, LauncherApp>) {
   Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.size(60.dp)) {
+    Surface(
+      shape = RoundedCornerShape(18.dp),
+      color = MaterialTheme.colorScheme.surfaceContainerHigh,
+      modifier = Modifier.size(60.dp)
+    ) {
       LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         userScrollEnabled = false,
@@ -475,16 +560,32 @@ private fun OneUiFolderCell(item: LauncherItem, apps: Map<String, LauncherApp>) 
         modifier = Modifier.padding(9.dp),
       ) {
         items(item.appIds.take(4).size) { index ->
-          Box(Modifier.size(17.dp).clip(RoundedCornerShape(5.dp)).background(apps[item.appIds[index]]?.accent ?: Color.Gray))
+          Box(
+            Modifier.size(
+              17.dp
+            ).clip(
+              RoundedCornerShape(5.dp)
+            ).background(apps[item.appIds[index]]?.accent ?: Color.Gray)
+          )
         }
       }
     }
-    Text(item.title ?: "Ordner", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
+    Text(
+      item.title ?: "Ordner",
+      fontSize = 12.sp,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      modifier = Modifier.padding(top = 7.dp)
+    )
   }
 }
 
 @Composable
-private fun OneUiDock(state: LauncherState, onOpenApp: (String) -> Unit, onOpenRecents: () -> Unit) {
+private fun OneUiDock(
+  state: LauncherState,
+  onOpenApp: (String) -> Unit,
+  onOpenRecents: () -> Unit
+) {
   val apps = state.apps.associateBy { it.id }
   Surface(
     shape = RoundedCornerShape(30.dp),
@@ -493,15 +594,26 @@ private fun OneUiDock(state: LauncherState, onOpenApp: (String) -> Unit, onOpenR
     shadowElevation = 4.dp,
     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
   ) {
-    Row(horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Row(
+      horizontalArrangement = Arrangement.SpaceEvenly,
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
       state.dock.forEach { appId ->
         apps[appId]?.let { app ->
-          OneUiAppCell(app, state.badges[appId], false, 1, 0, compact = true, onOpen = { onOpenApp(appId) }, onEdit = {})
+          OneUiAppCell(app, state.badges[appId], false, 1, 0, compact = true, onOpen = {
+            onOpenApp(appId)
+          }, onEdit = {})
         }
       }
-      Spacer(Modifier.width(1.dp).height(42.dp).background(MaterialTheme.colorScheme.outlineVariant))
+      Spacer(
+        Modifier.width(1.dp).height(42.dp).background(MaterialTheme.colorScheme.outlineVariant)
+      )
       IconButton(onClick = onOpenRecents, modifier = Modifier.size(52.dp)) {
-        Icon(painterResource(android.R.drawable.ic_menu_recent_history), contentDescription = "Workjet Recents")
+        Icon(
+          painterResource(android.R.drawable.ic_menu_recent_history),
+          contentDescription = "Workjet Recents"
+        )
       }
     }
   }

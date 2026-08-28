@@ -87,7 +87,11 @@ private object WorkjetDeviceProofKey {
   }
 
   fun thumbprint(jwk: JSONObject = publicJwk()): String {
-    val canonical = "{\"crv\":\"${jwk.getString("crv")}\",\"kty\":\"${jwk.getString("kty")}\",\"x\":\"${jwk.getString("x")}\",\"y\":\"${jwk.getString("y")}\"}"
+    val canonical = "{\"crv\":\"${jwk.getString(
+      "crv"
+    )}\",\"kty\":\"${jwk.getString(
+      "kty"
+    )}\",\"x\":\"${jwk.getString("x")}\",\"y\":\"${jwk.getString("y")}\"}"
     return base64Url(MessageDigest.getInstance("SHA-256").digest(canonical.encodeToByteArray()))
   }
 
@@ -123,7 +127,11 @@ private object WorkjetDeviceProofKey {
       require(length > 0 && index + length <= der.size)
       var value = der.copyOfRange(index, index + length)
       index += length
-      while (value.size > 32 && value.first() == 0.toByte()) value = value.copyOfRange(1, value.size)
+      while (value.size > 32 &&
+        value.first() == 0.toByte()
+      ) {
+        value = value.copyOfRange(1, value.size)
+      }
       require(value.size <= 32)
       return ByteArray(32 - value.size) + value
     }
@@ -150,10 +158,13 @@ private fun businessOsMime(path: String) = when (path.substringAfterLast('.', ""
 private class WorkjetBusinessOsAssetHandler(
   shellRoot: File,
   private val sessionJson: String,
-  private val configJson: String,
+  private val configJson: String
 ) : WebViewAssetLoader.PathHandler {
   private val root = shellRoot.canonicalFile
 
+  // These scripts are intentionally compact and byte-stable because they are injected into the
+  // packaged shell. Reflowing them would add executable whitespace and obscure fixture diffs.
+  @Suppress("MaxLineLength", "ktlint:standard:max-line-length")
   private fun inject(raw: ByteArray): ByteArray {
     val html = raw.decodeToString()
     val match = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE).find(html)
@@ -206,22 +217,43 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
   private var loadedKey = ""
   private var commandJson = ""
 
-  fun setStorageIdentity(value: String) { storageIdentity = value; loadIfReady() }
-  fun setShellRootUri(value: String) { shellRootUri = value; loadIfReady() }
-  fun setSessionJson(value: String) { sessionJson = value; loadIfReady() }
-  fun setConfigJson(value: String) { configJson = value; loadIfReady() }
-  fun setLaunchKey(value: String) { launchKey = value; loadIfReady() }
+  fun setStorageIdentity(value: String) {
+    storageIdentity = value
+    loadIfReady()
+  }
+  fun setShellRootUri(value: String) {
+    shellRootUri = value
+    loadIfReady()
+  }
+  fun setSessionJson(value: String) {
+    sessionJson = value
+    loadIfReady()
+  }
+  fun setConfigJson(value: String) {
+    configJson = value
+    loadIfReady()
+  }
+  fun setLaunchKey(value: String) {
+    launchKey = value
+    loadIfReady()
+  }
   fun setCommandJson(value: String) {
     if (!isValidHostCommand(value)) return
     commandJson = value
     deliverCommandIfReady()
   }
 
+  // Profile selection, bridge installation, and navigation are one fail-closed launch boundary.
+  @Suppress("ComplexCondition", "CyclomaticComplexMethod", "LongMethod", "ReturnCount")
   private fun loadIfReady() {
     if (storageIdentity.isEmpty() || shellRootUri.isEmpty() || sessionJson.isEmpty() ||
-      configJson.isEmpty() || launchKey.isEmpty() || launchKey == loadedKey) return
+      configJson.isEmpty() || launchKey.isEmpty() || launchKey == loadedKey
+    ) {
+      return
+    }
     if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) ||
-      !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+      !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+    ) {
       onError(mapOf("code" to "multi-profile-unsupported"))
       loadedKey = launchKey
       return
@@ -258,7 +290,11 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
       BUSINESS_OS_NOTIFICATION_INTERFACE,
       setOf(BUSINESS_OS_ORIGIN),
     ) { _, message, sourceOrigin, isMainFrame, _ ->
-      if (!isMainFrame || sourceOrigin.toString() != BUSINESS_OS_ORIGIN) return@addWebMessageListener
+      if (!isMainFrame ||
+        sourceOrigin.toString() != BUSINESS_OS_ORIGIN
+      ) {
+        return@addWebMessageListener
+      }
       val raw = message.data ?: return@addWebMessageListener
       val notification = decodeSystemNotification(raw)
       if (notification != null) {
@@ -272,7 +308,11 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
       BUSINESS_OS_DEVICE_PROOF_INTERFACE,
       setOf(BUSINESS_OS_ORIGIN),
     ) { _, message, sourceOrigin, isMainFrame, replyProxy ->
-      if (!isMainFrame || sourceOrigin.toString() != BUSINESS_OS_ORIGIN) return@addWebMessageListener
+      if (!isMainFrame ||
+        sourceOrigin.toString() != BUSINESS_OS_ORIGIN
+      ) {
+        return@addWebMessageListener
+      }
       val raw = message.data ?: return@addWebMessageListener
       val response = try {
         val request = JSONObject(raw)
@@ -282,27 +322,42 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
         require(nonce.matches(Regex("[A-Za-z0-9_-]{43}")))
         JSONObject().put("id", id).put("proof", WorkjetDeviceProofKey.proof(nonce))
       } catch (_: Exception) {
-        val id = try { JSONObject(raw).optString("id").take(32) } catch (_: Exception) { "" }
+        val id = try {
+          JSONObject(raw).optString("id").take(32)
+        } catch (_: Exception) {
+          ""
+        }
         JSONObject().put("id", id).put("error", "device_proof_unavailable")
       }
       replyProxy.postMessage(response.toString())
     }
     next.webChromeClient = object : WebChromeClient() {
       override fun onPermissionRequest(request: PermissionRequest) = request.deny()
-      override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback) {
+      override fun onGeolocationPermissionsShowPrompt(
+        origin: String?,
+        callback: GeolocationPermissions.Callback
+      ) {
         callback.invoke(origin, false, false)
       }
     }
     next.webViewClient = object : WebViewClient() {
-      override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+      override fun shouldInterceptRequest(
+        view: WebView,
+        request: WebResourceRequest
+      ): WebResourceResponse? =
         loader.shouldInterceptRequest(request.url)
 
       override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val uri = request.url
         if (uri.scheme == "https" && uri.host == "appassets.androidplatform.net" &&
-          uri.path?.startsWith("/business-os/") == true) return false
+          uri.path?.startsWith("/business-os/") == true
+        ) {
+          return false
+        }
         if (uri.scheme == "https" && request.isForMainFrame && request.hasGesture()) {
-          context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+          context.startActivity(
+            Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          )
         }
         return true
       }
@@ -311,7 +366,10 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
         deliverCommandIfReady()
       }
     }
-    addView(next, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    addView(
+      next,
+      LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    )
     webView = next
     next.loadUrl("https://appassets.androidplatform.net/business-os/index.html")
   }
@@ -337,7 +395,9 @@ class T3BusinessOsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("T3BusinessOsSurface")
     View(T3BusinessOsView::class) {
-      Prop("storageIdentity") { view: T3BusinessOsView, value: String -> view.setStorageIdentity(value) }
+      Prop("storageIdentity") { view: T3BusinessOsView, value: String ->
+        view.setStorageIdentity(value)
+      }
       Prop("shellRootUri") { view: T3BusinessOsView, value: String -> view.setShellRootUri(value) }
       Prop("sessionJson") { view: T3BusinessOsView, value: String -> view.setSessionJson(value) }
       Prop("configJson") { view: T3BusinessOsView, value: String -> view.setConfigJson(value) }
@@ -394,6 +454,7 @@ private fun boundedNotificationToken(raw: String?, maxLength: Int): String? {
   return value.takeIf { it.length in 1..maxLength && it.matches(Regex("[A-Za-z0-9._:-]+")) }
 }
 
+@Suppress("ReturnCount")
 private fun decodeSystemNotification(raw: String): Map<String, Any>? {
   if (raw.toByteArray().size > 1_024) return null
   return try {
@@ -402,7 +463,13 @@ private fun decodeSystemNotification(raw: String): Map<String, Any>? {
     val title = boundedNotificationText(payload.optString("title"), 160) ?: return null
     val body = boundedNotificationText(payload.optString("body"), 240) ?: return null
     val requestedUrgency = payload.optString("urgency")
-    val urgency = if (requestedUrgency in setOf("normal", "high", "critical")) requestedUrgency else "normal"
+    val urgency = if (requestedUrgency in
+      setOf("normal", "high", "critical")
+    ) {
+      requestedUrgency
+    } else {
+      "normal"
+    }
     val event = mutableMapOf<String, Any>(
       "kind" to "decision_hub",
       "title" to title,
@@ -434,7 +501,9 @@ private fun JSONObject.hasOnlyKeys(allowed: Set<String>): Boolean {
 private fun isValidHostCommand(raw: String): Boolean {
   val value = jsonObject(raw) ?: return false
   return when (value.optString("type")) {
-    "host.configure" -> value.hasOnlyKeys(setOf("protocol", "type", "platform", "windowClass", "colorScheme", "reducedMotion", "locale"))
+    "host.configure" -> value.hasOnlyKeys(
+      setOf("protocol", "type", "platform", "windowClass", "colorScheme", "reducedMotion", "locale")
+    )
     "catalog.request", "navigation.back" -> value.hasOnlyKeys(setOf("protocol", "type"))
     "app.open", "app.close", "app.suspend", "app.resume" ->
       value.hasOnlyKeys(setOf("protocol", "type", "appId")) &&
@@ -450,7 +519,9 @@ private fun isValidShellMessage(raw: String): Boolean {
   return when (value.optString("type")) {
     "shell.ready" -> value.hasOnlyKeys(setOf("protocol", "type", "revision"))
     "catalog.replace" -> value.hasOnlyKeys(setOf("protocol", "type", "catalog"))
-    "app.state" -> value.hasOnlyKeys(setOf("protocol", "type", "appId", "title", "canGoBack", "state", "actions"))
+    "app.state" -> value.hasOnlyKeys(
+      setOf("protocol", "type", "appId", "title", "canGoBack", "state", "actions")
+    )
     "badge.update" -> value.hasOnlyKeys(setOf("protocol", "type", "appId", "count", "attention"))
     "shell.error" -> value.hasOnlyKeys(setOf("protocol", "type", "code", "retryable"))
     else -> false

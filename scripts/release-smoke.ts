@@ -48,6 +48,16 @@ function copyWorkspaceManifestFixture(targetRoot: string): void {
   if (NodeFS.existsSync(patchesDirectory)) {
     NodeFS.cpSync(patchesDirectory, NodePath.resolve(targetRoot, "patches"), { recursive: true });
   }
+
+  // This fixture deliberately resolves a brand-new lockfile to prove that the
+  // release-only version rewrite still produces a valid workspace. A fresh
+  // resolution can move transitive dependencies away from an exactly pinned
+  // patch target, so pnpm must tolerate unused patches in this disposable
+  // fixture. The real checkout remains strict and assert-supply-chain.mjs
+  // independently proves that the reviewed image-size patch is applied.
+  const workspacePath = NodePath.resolve(targetRoot, "pnpm-workspace.yaml");
+  const workspace = NodeFS.readFileSync(workspacePath, "utf8");
+  NodeFS.writeFileSync(workspacePath, `${workspace.trimEnd()}\n\nallowUnusedPatches: true\n`);
 }
 
 function writeMacManifestFixtures(targetRoot: string): { arm64Path: string; x64Path: string } {

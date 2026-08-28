@@ -6,19 +6,21 @@ import WebKit
 
 private enum BusinessOsMimeTypes {
   static func value(for ext: String) -> String {
-    switch ext.lowercased() {
-    case "html": return "text/html; charset=utf-8"
-    case "css": return "text/css; charset=utf-8"
-    case "js", "mjs": return "text/javascript; charset=utf-8"
-    case "json": return "application/json; charset=utf-8"
-    case "svg": return "image/svg+xml"
-    case "png": return "image/png"
-    case "jpg", "jpeg": return "image/jpeg"
-    case "wasm": return "application/wasm"
-    case "woff": return "font/woff"
-    case "woff2": return "font/woff2"
-    default: return "application/octet-stream"
-    }
+    let values = [
+      "html": "text/html; charset=utf-8",
+      "css": "text/css; charset=utf-8",
+      "js": "text/javascript; charset=utf-8",
+      "mjs": "text/javascript; charset=utf-8",
+      "json": "application/json; charset=utf-8",
+      "svg": "image/svg+xml",
+      "png": "image/png",
+      "jpg": "image/jpeg",
+      "jpeg": "image/jpeg",
+      "wasm": "application/wasm",
+      "woff": "font/woff",
+      "woff2": "font/woff2",
+    ]
+    return values[ext.lowercased()] ?? "application/octet-stream"
   }
 }
 
@@ -43,7 +45,8 @@ private enum WorkjetDeviceProofKey {
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     if status == errSecSuccess, let item {
       guard CFGetTypeID(item) == SecKeyGetTypeID() else { throw CocoaError(.coderInvalidValue) }
-      return item as! SecKey
+      guard let key = item as? SecKey else { throw CocoaError(.coderInvalidValue) }
+      return key
     }
     guard status == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
     let attributes: [String: Any] = [
@@ -195,7 +198,7 @@ private final class WorkjetBusinessOsSchemeHandler: NSObject, WKURLSchemeHandler
       let index = relative.isEmpty || relative == "index.html"
       let data = index ? try inject(raw) : raw
       guard !stopped.contains(identifier) else { return }
-      let response = HTTPURLResponse(
+      guard let response = HTTPURLResponse(
         url: url,
         statusCode: 200,
         httpVersion: "HTTP/1.1",
@@ -205,7 +208,7 @@ private final class WorkjetBusinessOsSchemeHandler: NSObject, WKURLSchemeHandler
           "X-Content-Type-Options": "nosniff",
           "Referrer-Policy": "no-referrer",
         ]
-      )!
+      ) else { throw CocoaError(.coderInvalidValue) }
       urlSchemeTask.didReceive(response)
       urlSchemeTask.didReceive(data)
       urlSchemeTask.didFinish()
@@ -417,7 +420,7 @@ public final class T3BusinessOsView: ExpoView, WKNavigationDelegate, WKUIDelegat
     }
   }
 
-  public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+  public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
     deliverCommandIfReady()
   }
 

@@ -37,8 +37,8 @@ describe("decideUserDataMigration", () => {
       decideUserDataMigration({
         marker: Option.none(),
         legacyCandidates: [
-          { path: "/support/t3code", exists: false },
-          { path: "/support/T3 Code (Alpha)", exists: false },
+          { path: "/support/CTOX Desktop App", exists: false },
+          { path: "/support/CTOX Desktop App (Dev)", exists: false },
         ],
       }),
       { _tag: "fresh" },
@@ -50,22 +50,22 @@ describe("decideUserDataMigration", () => {
       decideUserDataMigration({
         marker: Option.none(),
         legacyCandidates: [
-          { path: "/support/t3code", exists: true },
-          { path: "/support/T3 Code (Alpha)", exists: true },
+          { path: "/support/CTOX Desktop App", exists: true },
+          { path: "/support/CTOX Desktop App (Dev)", exists: true },
         ],
       }),
-      { _tag: "migrate-offer", legacyPath: "/support/t3code" },
+      { _tag: "migrate-offer", legacyPath: "/support/CTOX Desktop App" },
     );
 
     assert.deepEqual(
       decideUserDataMigration({
         marker: Option.none(),
         legacyCandidates: [
-          { path: "/support/t3code", exists: false },
-          { path: "/support/T3 Code (Alpha)", exists: true },
+          { path: "/support/CTOX Desktop App", exists: false },
+          { path: "/support/CTOX Desktop App (Dev)", exists: true },
         ],
       }),
-      { _tag: "migrate-offer", legacyPath: "/support/T3 Code (Alpha)" },
+      { _tag: "migrate-offer", legacyPath: "/support/CTOX Desktop App (Dev)" },
     );
   });
 
@@ -75,7 +75,7 @@ describe("decideUserDataMigration", () => {
       assert.deepEqual(
         decideUserDataMigration({
           marker: Option.some(marker({ outcome })),
-          legacyCandidates: [{ path: "/support/t3code", exists: true }],
+          legacyCandidates: [{ path: "/support/CTOX Desktop App", exists: true }],
         }),
         { _tag: "already-migrated", outcome },
       );
@@ -85,18 +85,22 @@ describe("decideUserDataMigration", () => {
   it("runs the copy once for an accepted offer", () => {
     assert.deepEqual(
       decideUserDataMigration({
-        marker: Option.some(marker({ outcome: "accepted-pending", legacyPath: "/support/t3code" })),
-        legacyCandidates: [{ path: "/support/t3code", exists: true }],
+        marker: Option.some(
+          marker({ outcome: "accepted-pending", legacyPath: "/support/CTOX Desktop App" }),
+        ),
+        legacyCandidates: [{ path: "/support/CTOX Desktop App", exists: true }],
       }),
-      { _tag: "copy-pending", legacyPath: "/support/t3code" },
+      { _tag: "copy-pending", legacyPath: "/support/CTOX Desktop App" },
     );
   });
 
   it("degrades an accepted offer whose source disappeared", () => {
     assert.deepEqual(
       decideUserDataMigration({
-        marker: Option.some(marker({ outcome: "accepted-pending", legacyPath: "/support/t3code" })),
-        legacyCandidates: [{ path: "/support/t3code", exists: false }],
+        marker: Option.some(
+          marker({ outcome: "accepted-pending", legacyPath: "/support/CTOX Desktop App" }),
+        ),
+        legacyCandidates: [{ path: "/support/CTOX Desktop App", exists: false }],
       }),
       { _tag: "already-migrated", outcome: "migrated" },
     );
@@ -157,8 +161,8 @@ const makeFakeFileSystemLayer = (tree: FakeTree, recorded: { copied: string[]; m
   });
 
 describe("copyAllowlistedUserData", () => {
-  const legacyPath = "/support/t3code";
-  const targetPath = "/support/CTOX Desktop App";
+  const legacyPath = "/support/CTOX Desktop App";
+  const targetPath = "/support/Workjet";
 
   const tree: FakeTree = {
     directories: new Set([
@@ -218,8 +222,8 @@ interface FakeDisk {
 const makeMigrationLayer = (disk: FakeDisk, recorded: { copied: string[] }) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     appDataDirectory: "/support",
-    userDataDirName: "CTOX Desktop App",
-    legacyUserDataDirNames: ["t3code", "T3 Code (Alpha)"],
+    userDataDirName: "Workjet",
+    legacyUserDataDirNames: ["CTOX Desktop App"],
     path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
@@ -262,11 +266,11 @@ const makeMigrationLayer = (disk: FakeDisk, recorded: { copied: string[] }) => {
   );
 };
 
-const markerPath = `/support/CTOX Desktop App/${USER_DATA_MIGRATION_MARKER_FILE}`;
+const markerPath = `/support/Workjet/${USER_DATA_MIGRATION_MARKER_FILE}`;
 
 describe("DesktopUserDataMigration marker idempotency", () => {
   it.effect("offers once, then records the decision and never offers again", () => {
-    const disk: FakeDisk = { existing: new Set(["/support/t3code"]), files: new Map() };
+    const disk: FakeDisk = { existing: new Set(["/support/CTOX Desktop App"]), files: new Map() };
     const recorded = { copied: [] as string[] };
 
     return Effect.gen(function* () {
@@ -275,7 +279,7 @@ describe("DesktopUserDataMigration marker idempotency", () => {
           const migration = yield* DesktopUserDataMigrationService;
           assert.deepEqual(migration.decision, {
             _tag: "migrate-offer",
-            legacyPath: "/support/t3code",
+            legacyPath: "/support/CTOX Desktop App",
           });
           assert.isTrue(Option.isSome(migration.offer));
           yield* migration.decline;
@@ -304,10 +308,10 @@ describe("DesktopUserDataMigration marker idempotency", () => {
 
   it.effect("runs an accepted copy exactly once across launches", () => {
     const disk: FakeDisk = {
-      existing: new Set(["/support/t3code"]),
+      existing: new Set(["/support/CTOX Desktop App"]),
       files: new Map([
-        ["/support/t3code/Preferences", "{}"],
-        ["/support/t3code/Cookies", "cookie-jar"],
+        ["/support/CTOX Desktop App/Preferences", "{}"],
+        ["/support/CTOX Desktop App/Cookies", "cookie-jar"],
       ]),
     };
     const recorded = { copied: [] as string[] };

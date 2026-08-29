@@ -268,7 +268,7 @@ Checklist:
 
 1. Apple Developer account access:
    - Team has rights to create Developer ID certificates.
-2. Create an explicit App ID for `com.t3tools.t3code` and enable Associated Domains.
+2. Create an explicit App ID for `dev.workjet.desktop` and enable Associated Domains.
 3. Create a `Developer ID Application` certificate and a compatible provisioning profile for that
    App ID with Associated Domains enabled.
 4. Export the certificate + private key as `.p12` from Keychain.
@@ -284,6 +284,13 @@ Checklist:
 10. Complete the Clerk Native API and AASA setup in [Workjet Connect Clerk Setup](../internals/t3-connect.md#desktop-passkeys).
 11. Re-run a tag release and confirm macOS artifacts are signed/notarized and contain the expected
     `com.apple.developer.associated-domains` entitlement.
+
+The first Electron release with this identity is an offline replacement install, not an in-place
+update of the obsolete native `dev.workjet.menubar` app. Quit the installed app, replace
+`/Applications/Workjet.app` with the signed Electron artifact, and launch it once. The first launch
+may copy the allowlisted profile state from `CTOX Desktop App` into the canonical `Workjet` profile;
+the source profile is never opened as a runtime fallback. Subsequent updater releases must keep
+`dev.workjet.desktop` and the `workjet://` scheme.
 
 Notes:
 
@@ -335,7 +342,7 @@ Checklist:
 
 - macOS build unsigned when expected signed:
   - Check all Apple secrets plus `APPLE_TEAM_ID` are populated and non-empty.
-  - Confirm the provisioning profile belongs to `APPLE_TEAM_ID.com.t3tools.t3code` and includes
+  - Confirm the provisioning profile belongs to `APPLE_TEAM_ID.dev.workjet.desktop` and includes
     Associated Domains.
 - Windows build unsigned when expected signed:
   - Check all Azure ATS and auth secrets are populated and non-empty.

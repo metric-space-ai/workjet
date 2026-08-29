@@ -107,7 +107,7 @@ describe("DesktopDeepLinkRouter", () => {
       const router = yield* makeRouter(harness);
       yield* router.register;
 
-      yield* openUrl(harness, "ctox-desktop://app/threads/abc?tab=diff#top");
+      yield* openUrl(harness, "workjet://app/threads/abc?tab=diff#top");
 
       // Pre-ready there is no window, so the signal is a no-op — the link
       // survives in the queue and the renderer picks it up when it mounts.
@@ -115,8 +115,8 @@ describe("DesktopDeepLinkRouter", () => {
       assert.deepEqual(delivered, [
         {
           linkId: "deep-link-1",
-          scheme: "ctox-desktop",
-          canonicalUrl: "t3code://app/threads/abc?tab=diff#top",
+          scheme: "workjet",
+          canonicalUrl: "workjet://app/threads/abc?tab=diff#top",
           path: "/threads/abc",
           search: "?tab=diff",
           hash: "#top",
@@ -134,10 +134,10 @@ describe("DesktopDeepLinkRouter", () => {
       const router = yield* makeRouter(harness);
       yield* router.register;
 
-      yield* openUrl(harness, "ctox-desktop://app/settings");
+      yield* openUrl(harness, "workjet://app/settings");
 
       assert.deepEqual(harness.sent, [DEEP_LINK_PENDING_CHANNEL]);
-      assert.deepEqual(harness.preventedDefaults, ["ctox-desktop://app/settings"]);
+      assert.deepEqual(harness.preventedDefaults, ["workjet://app/settings"]);
       assert.equal((yield* router.takePending).length, 1);
     }),
   );
@@ -165,13 +165,13 @@ describe("DesktopDeepLinkRouter", () => {
 
       // Exactly the shape @clerk/electron builds: renderer scheme, host `app`,
       // path `/`, OAuth parameters in the query.
-      yield* openUrl(harness, "t3code://app/?code=oauth-code&state=xyz");
+      yield* openUrl(harness, "workjet://app/?code=oauth-code&state=xyz");
 
       assert.deepEqual(yield* router.takePending, []);
       assert.deepEqual(harness.preventedDefaults, []);
 
       // The same scheme WITH a path is a product deep link and is claimed.
-      yield* openUrl(harness, "t3code://app/threads/abc");
+      yield* openUrl(harness, "workjet://app/threads/abc");
       assert.equal((yield* router.takePending).length, 1);
     }),
   );
@@ -183,16 +183,16 @@ describe("DesktopDeepLinkRouter", () => {
       yield* router.register;
 
       yield* secondInstance(harness, [
-        "C:\\Program Files\\CTOX Desktop App\\CTOX.exe",
+        "C:\\Program Files\\Workjet\\Workjet.exe",
         "--allow-file-access-from-files",
-        "ctox-desktop://app/threads/from-argv",
+        "workjet://app/threads/from-argv",
         "https://example.test/ignored",
       ]);
 
       const delivered = yield* router.takePending;
       assert.deepEqual(
         delivered.map((link) => link.canonicalUrl),
-        ["t3code://app/threads/from-argv"],
+        ["workjet://app/threads/from-argv"],
       );
     }),
   );
@@ -203,7 +203,7 @@ describe("DesktopDeepLinkRouter", () => {
       const router = yield* makeRouter(harness);
 
       for (let index = 0; index < DesktopDeepLinkRouter.MAX_PENDING_DEEP_LINKS + 3; index += 1) {
-        yield* router.offer(`ctox-desktop://app/threads/${index}`, "open-url");
+        yield* router.offer(`workjet://app/threads/${index}`, "open-url");
       }
 
       const delivered = yield* router.takePending;
@@ -216,13 +216,26 @@ describe("DesktopDeepLinkRouter", () => {
     }),
   );
 
-  itScoped("drops a malformed link instead of queueing it", () =>
+  itScoped("drops malformed and retired links instead of queueing them", () =>
     Effect.gen(function* () {
       const harness = makeHarness();
       const router = yield* makeRouter(harness);
 
-      yield* router.offer("ctox-desktop://evil.example/steal", "open-url");
-      yield* router.offer("ctox-desktop:notaurl", "argv");
+      yield* router.offer("workjet://evil.example/steal", "open-url");
+      yield* router.offer("workjet:notaurl", "argv");
+      yield* router.offer("ctox-desktop://app/threads/retired", "open-url");
+      yield* router.offer("t3code://app/threads/retired", "argv");
+
+      assert.deepEqual(yield* router.takePending, []);
+    }),
+  );
+
+  itScoped("rejects a development link in the production runtime", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const router = yield* makeRouter(harness, false);
+
+      yield* router.offer("workjet-dev://app/threads/wrong-build", "argv");
 
       assert.deepEqual(yield* router.takePending, []);
     }),
@@ -233,15 +246,18 @@ describe("DesktopDeepLinkRouter", () => {
       const harness = makeHarness();
       const router = yield* makeRouter(harness, true);
 
-      yield* router.offer("t3code-dev://app/?code=oauth", "open-url");
+      yield* router.offer("workjet-dev://app/?code=oauth", "open-url");
       assert.deepEqual(yield* router.takePending, []);
 
-      yield* router.offer("ctox-desktop-dev://app/threads/x", "open-url");
+      yield* router.offer("workjet-dev://app/threads/x", "open-url");
       const delivered = yield* router.takePending;
       assert.deepEqual(
         delivered.map((link) => link.canonicalUrl),
-        ["t3code-dev://app/threads/x"],
+        ["workjet-dev://app/threads/x"],
       );
+
+      yield* router.offer("workjet://app/threads/wrong-build", "argv");
+      assert.deepEqual(yield* router.takePending, []);
     }),
   );
 });
@@ -251,14 +267,14 @@ describe("extractDeepLinksFromArgv", () => {
     assert.deepEqual(
       [
         ...DesktopDeepLinkRouter.extractDeepLinksFromArgv([
-          "/usr/bin/ctox",
-          "t3code://app/a",
+          "/usr/bin/workjet",
+          "workjet://app/a",
           "ctox://instance/pairing",
           "ctox-desktop://app/b?x=1",
           "--flag",
         ]),
       ],
-      ["t3code://app/a", "ctox-desktop://app/b?x=1"],
+      ["workjet://app/a"],
     );
   });
 });
@@ -266,18 +282,12 @@ describe("extractDeepLinksFromArgv", () => {
 describe("redactDeepLinkUrl", () => {
   it("keeps scheme and host and nothing else", () => {
     assert.equal(
-      DesktopDeepLinkRouter.redactDeepLinkUrl("ctox-desktop://app/invite?token=secret#frag"),
-      "ctox-desktop://app",
+      DesktopDeepLinkRouter.redactDeepLinkUrl("workjet://app/invite?token=secret#frag"),
+      "workjet://app",
     );
-    assert.equal(
-      DesktopDeepLinkRouter.redactDeepLinkUrl("ctox-desktop:secret"),
-      "ctox-desktop:<redacted>",
-    );
+    assert.equal(DesktopDeepLinkRouter.redactDeepLinkUrl("workjet:secret"), "workjet:<redacted>");
     assert.equal(DesktopDeepLinkRouter.redactDeepLinkUrl("not a url"), "<unparseable>");
-    assert.equal(
-      DesktopDeepLinkRouter.redactDeepLinkUrl("ctox-desktop://"),
-      "ctox-desktop://<redacted>",
-    );
+    assert.equal(DesktopDeepLinkRouter.redactDeepLinkUrl("workjet://"), "workjet://<redacted>");
   });
 });
 

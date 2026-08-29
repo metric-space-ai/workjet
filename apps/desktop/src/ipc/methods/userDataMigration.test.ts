@@ -102,8 +102,8 @@ describe("user-data migration IPC contract", () => {
   it.effect("returns a decodable offer when one is pending", () => {
     const recorded = emptyRecording();
     const offer = Option.some({
-      legacyPath: "/support/t3code",
-      targetPath: "/support/CTOX Desktop App",
+      legacyPath: "/support/CTOX Desktop App",
+      targetPath: "/support/Workjet",
     });
 
     return getUserDataMigrationOffer.handler(undefined).pipe(
@@ -111,8 +111,8 @@ describe("user-data migration IPC contract", () => {
       Effect.tap((decoded) =>
         Effect.sync(() => {
           assert.isNotNull(decoded);
-          assert.equal(decoded?.legacyPath, "/support/t3code");
-          assert.equal(decoded?.targetPath, "/support/CTOX Desktop App");
+          assert.equal(decoded?.legacyPath, "/support/CTOX Desktop App");
+          assert.equal(decoded?.targetPath, "/support/Workjet");
           assert.deepEqual(
             [...(decoded?.entries ?? [])],
             [...DesktopUserDataMigration.USER_DATA_MIGRATION_ALLOWLIST],
@@ -146,7 +146,7 @@ describe("user-data migration IPC contract", () => {
       Effect.provide(
         makeLayer(
           recorded,
-          Option.some({ legacyPath: "/support/t3code", targetPath: "/support/CTOX" }),
+          Option.some({ legacyPath: "/support/CTOX Desktop App", targetPath: "/support/CTOX" }),
         ),
       ),
     );
@@ -165,7 +165,7 @@ describe("user-data migration IPC contract", () => {
       Effect.provide(
         makeLayer(
           recorded,
-          Option.some({ legacyPath: "/support/t3code", targetPath: "/support/CTOX" }),
+          Option.some({ legacyPath: "/support/CTOX Desktop App", targetPath: "/support/CTOX" }),
         ),
       ),
     );

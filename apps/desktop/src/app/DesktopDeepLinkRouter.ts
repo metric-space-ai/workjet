@@ -14,8 +14,8 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
 /**
- * The OS entry point for `ctox-desktop://` (and the legacy `t3code://`) deep
- * links — the only place an OS-delivered link enters the app.
+ * The OS entry point for `workjet://` deep links — the only place an
+ * OS-delivered link enters the app.
  *
  * A link that arrives here is NEVER acted on. It is parsed, queued, and
  * offered to the renderer, which asks the user before navigating. The
@@ -48,7 +48,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
  * ---------------------------------
  * `@clerk/electron` installs its own `open-url` and `second-instance`
  * listeners for the OAuth callback, whose URL it builds as
- * `${renderer.scheme}://${renderer.host}/` — i.e. `t3code://app/` — and
+ * `${renderer.scheme}://${renderer.host}/` — i.e. `workjet://app/` — and
  * matches on protocol + host + pathname only, with the OAuth parameters in the
  * query string. This parser accepts that URL too, so without a filter every
  * sign-in would raise an "open this link?" dialog. Two rules keep the two
@@ -63,7 +63,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
  *      router never removes Clerk's listener and never calls
  *      `preventDefault()` on an event it does not own.
  *
- * Product deep links always carry a path (`ctox-desktop://app/threads/x`), so
+ * Product deep links always carry a path (`workjet://app/threads/x`), so
  * rule 2 costs nothing: a bare `://app/` link has no target to navigate to.
  */
 
@@ -98,7 +98,7 @@ export function redactDeepLinkUrl(rawUrl: string): string {
 }
 
 /**
- * True for the `t3code://app/` shape Clerk's OAuth transport owns. See the
+ * True for the `workjet://app/` shape Clerk's OAuth transport owns. See the
  * module doc: the renderer scheme with an empty path is a sign-in callback,
  * never a product deep link.
  */
@@ -164,6 +164,13 @@ export const make = Effect.gen(function* () {
       }
 
       const link = parsed.value;
+      if (link.scheme !== rendererScheme) {
+        yield* logWarning("dropped a deep link for another Workjet build variant", {
+          source,
+          scheme: link.scheme,
+        });
+        return;
+      }
       if (isClerkOAuthCallbackLink(link, rendererScheme)) {
         // Left to the Clerk bridge's own listener. Not an error, and not
         // logged per-arrival: every sign-in produces one.
@@ -213,12 +220,16 @@ export const make = Effect.gen(function* () {
       const parsed = DesktopDeepLink.parseDesktopDeepLink(url);
       // Claim only links this app owns and that are not Clerk's callback, so
       // Clerk still sees its own event untouched.
-      if (Option.isSome(parsed) && !isClerkOAuthCallbackLink(parsed.value, rendererScheme)) {
+      if (
+        Option.isSome(parsed) &&
+        parsed.value.scheme === rendererScheme &&
+        !isClerkOAuthCallbackLink(parsed.value, rendererScheme)
+      ) {
         event?.preventDefault?.();
         void runPromise(offer(url, "open-url"));
         return;
       }
-      if (Option.isNone(parsed) && DesktopDeepLink.isDesktopDeepLinkScheme(schemeOf(url))) {
+      if (Option.isNone(parsed) && schemeOf(url) === rendererScheme) {
         // Ours by scheme but malformed: record the drop, still without
         // touching the event.
         void runPromise(offer(url, "open-url"));

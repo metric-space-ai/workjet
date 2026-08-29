@@ -20,7 +20,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // our own handler entry pointing at the current AppImage and claim the
 // scheme default via xdg-mime, exactly what the file manager's "set as
 // default" checkbox would record in mimeapps.list.
-export const URL_HANDLER_DESKTOP_ENTRY_NAME = "t3code-url-handler.desktop";
+export const URL_HANDLER_DESKTOP_ENTRY_NAME = "workjet-url-handler.desktop";
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
@@ -97,8 +97,6 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-  // Both the CTOX-branded scheme and the legacy t3code scheme resolve to this
-  // one handler entry, so an old t3code:// link keeps opening the app.
   const schemes = ElectronProtocol.getDesktopDeepLinkSchemes(environment.isDevelopment);
   const scheme = schemes[0] ?? ElectronProtocol.getDesktopScheme(environment.isDevelopment);
   const desktopEntryPath = environment.path.join(

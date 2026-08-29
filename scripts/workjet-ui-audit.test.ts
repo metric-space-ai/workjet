@@ -115,7 +115,7 @@ describe("Workjet UI audit configuration", () => {
         {
           id: "app",
           type: "page",
-          url: "t3code-dev://app/#/",
+          url: "workjet-dev://app/#/",
           webSocketDebuggerUrl: "ws://127.0.0.1:9300/app",
         },
       ]).id,

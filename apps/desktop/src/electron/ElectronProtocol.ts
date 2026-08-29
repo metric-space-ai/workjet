@@ -8,17 +8,18 @@ import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
-import { DESKTOP_DEEP_LINK_SCHEMES, DESKTOP_HOST } from "./desktopSchemes.ts";
+import {
+  DESKTOP_DEEP_LINK_SCHEMES,
+  DESKTOP_HOST,
+  getDesktopDeepLinkSchemes,
+} from "./desktopSchemes.ts";
 
 export {
-  CTOX_DESKTOP_DEVELOPMENT_SCHEME,
-  CTOX_DESKTOP_PRODUCTION_SCHEME,
   DESKTOP_DEEP_LINK_SCHEMES,
   DESKTOP_DEVELOPMENT_SCHEME,
   DESKTOP_HOST,
   DESKTOP_PRODUCTION_SCHEME,
   WORKJET_DEVELOPMENT_SCHEME,
-  WORKJET_PREVIEW_SCHEME,
   WORKJET_PRODUCTION_SCHEME,
   getDesktopDeepLinkSchemes,
   getDesktopOrigin,
@@ -111,9 +112,11 @@ function withContentSecurityPolicy(response: Response, policy: string): Response
 /**
  * Must run synchronously during process bootstrap, before Electron emits `ready`.
  */
-export function registerDesktopSchemePrivilegesSync(): void {
+export function registerDesktopSchemePrivilegesSync(
+  isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL),
+): void {
   Electron.protocol.registerSchemesAsPrivileged(
-    DESKTOP_DEEP_LINK_SCHEMES.map((scheme) => ({
+    getDesktopDeepLinkSchemes(isDevelopment).map((scheme) => ({
       scheme,
       privileges: {
         standard: true,

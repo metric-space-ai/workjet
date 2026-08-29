@@ -6,6 +6,24 @@ import * as NodeProcess from "node:process";
 
 export const WORKJET_INSTALL_MANIFEST_SCHEMA = "workjet.desktop-install-manifest.v1";
 
+export const WORKJET_DESKTOP_INSTALL_IDENTITY = Object.freeze({
+  appId: "dev.workjet.desktop",
+  deepLinkSchemes: ["workjet"],
+  macosInstallPath: "/Applications/Workjet.app",
+  updateCompatibleAppIds: ["dev.workjet.desktop"],
+  replacesByInstallPath: {
+    appId: "dev.workjet.menubar",
+    updateCompatible: false,
+    mustBeStoppedBeforeInstall: true,
+  },
+  profileMigration: {
+    mode: "offline-copy-on-first-launch",
+    sourceUserDataDirName: "CTOX Desktop App",
+    targetUserDataDirName: "Workjet",
+    sourceIsRuntimeFallback: false,
+  },
+});
+
 const TARGETS = [
   ["macos", "arm64", ".dmg"],
   ["macos", "x64", ".dmg"],
@@ -78,6 +96,7 @@ export async function generateWorkjetInstallManifest({
     channel: tag.includes("nightly") ? "nightly" : "stable",
     repository,
     productName: "Workjet",
+    identity: WORKJET_DESKTOP_INSTALL_IDENTITY,
     artifacts,
   };
   await NodeFSP.writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

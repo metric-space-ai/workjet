@@ -7,6 +7,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { ensureElectronRuntime } from "./ensure-electron-runtime.mjs";
+import productIdentity from "../product-identity.json" with { type: "json" };
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -16,19 +17,19 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
 export function resolveLauncherDisplayName(development) {
-  return "Workjet";
+  return productIdentity.productName;
 }
 
 export const APP_DISPLAY_NAME = resolveLauncherDisplayName(isDevelopment);
 export const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
-// Workjet schemes are canonical; CTOX Desktop and t3code remain inbound-only
-// compatibility aliases. Mirrors apps/desktop/src/electron/desktopSchemes.ts.
+  ? `${productIdentity.developmentAppIdPrefix}.${devBundleIdSuffix || "local"}`
+  : productIdentity.productionAppId;
+// Mirrors apps/desktop/src/electron/desktopSchemes.ts. Each build claims only
+// its own Workjet scheme; retired aliases are deliberately not registered.
 const APP_PROTOCOL_SCHEMES = isDevelopment
-  ? ["workjet-dev", "ctox-desktop-dev", "t3code-dev"]
-  : ["workjet", "workjet-preview", "ctox-desktop", "t3code"];
-const LAUNCHER_VERSION = 16;
+  ? [productIdentity.developmentScheme]
+  : [productIdentity.productionScheme];
+const LAUNCHER_VERSION = 17;
 const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
 export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
   repoRoot,

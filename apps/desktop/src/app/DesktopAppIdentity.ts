@@ -42,9 +42,9 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
 };
 
 /**
- * The live Chromium profile directory. Its historical on-disk name is retained
- * only as a storage compatibility key. A previous profile is never adopted in
- * place; importing is an explicit user-confirmed copy (see DesktopUserDataMigration).
+ * The live Chromium profile directory always uses the canonical Workjet
+ * identity. A previous Workjet Electron profile is never adopted in place;
+ * importing is an explicit one-time offline copy (see DesktopUserDataMigration).
  */
 export const resolveUserDataPath = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -113,7 +113,7 @@ export const make = Effect.gen(function* () {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
     }
 
-    // Claim every deep-link scheme this build answers to. macOS and Linux also
+    // Claim the one deep-link scheme this build answers to. macOS and Linux also
     // get this from the packaged Info.plist / .desktop entry, but Windows has
     // no packaging-level protocol registration, and a repeat claim is a no-op
     // everywhere. Development builds are left alone: the dev launcher owns the

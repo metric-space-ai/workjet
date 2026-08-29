@@ -15,6 +15,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
+import productIdentity from "../../product-identity.json" with { type: "json" };
 
 export interface MakeDesktopEnvironmentInput {
   readonly dirname: string;
@@ -83,7 +84,7 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "Workjet";
+const APP_BASE_NAME = productIdentity.productName;
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -173,13 +174,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  // Keep the existing CTOX Desktop profile name as storage identity while the
-  // visible product becomes Workjet. Renaming this directory would silently
-  // fork sessions, settings, and renderer storage for existing installations.
-  const userDataDirName = isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App";
+  // The canonical Electron profile follows the canonical product identity.
+  // The previous Workjet Electron profile is available only to the explicit
+  // one-time offline copy in DesktopUserDataMigration; it is never opened as
+  // a live fallback profile.
+  const userDataDirName = isDevelopment
+    ? productIdentity.developmentUserDataDirName
+    : productIdentity.productionUserDataDirName;
   const legacyUserDataDirNames: readonly string[] = isDevelopment
-    ? ["t3code-dev", "T3 Code (Dev)"]
-    : ["t3code", "T3 Code (Alpha)"];
+    ? ["CTOX Desktop App (Dev)"]
+    : ["CTOX Desktop App"];
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -222,11 +226,18 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpExportIntervalMs: config.otlpExportIntervalMs,
     branding,
     displayName,
-    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
-    ),
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    appUserModelId: isDevelopment
+      ? Option.getOrElse(
+          config.appUserModelIdOverride,
+          () => productIdentity.developmentAppIdPrefix,
+        )
+      : productIdentity.productionAppId,
+    linuxDesktopEntryName: isDevelopment
+      ? `workjet-dev.desktop`
+      : productIdentity.linuxDesktopEntryName,
+    linuxWmClass: isDevelopment
+      ? `${productIdentity.linuxWmClass}-dev`
+      : productIdentity.linuxWmClass,
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,

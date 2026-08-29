@@ -151,17 +151,17 @@ NodeTest.test("the allowlist is path-scoped and carries a reason for every excep
   );
 });
 
-NodeTest.test("legacy links and bundle identity are scoped metadata contexts", () => {
+NodeTest.test("retired links and bundle identity are not allowlisted", () => {
   NodeAssert.equal(
     isAllowlistedContext("apps/desktop/src/electron/desktopSchemes.ts", "ctox-desktop-dev"),
-    true,
+    false,
   );
   NodeAssert.equal(
     isAllowlistedContext(
       "apps/desktop/.electron-runtime/metadata.json",
       "appBundleId=com.t3tools.t3code.dev.workjet",
     ),
-    true,
+    false,
   );
   NodeAssert.equal(
     isAllowlistedContext("apps/web/src/components/Example.tsx", "ctox-desktop-dev"),

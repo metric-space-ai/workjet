@@ -50,9 +50,8 @@ const FORBIDDEN_VISIBLE_IDENTITIES = [
 
 const LEGACY_STORAGE_IDENTITY_FILE = "apps/desktop/src/app/DesktopEnvironment.ts";
 const ALLOWED_LEGACY_STORAGE_LINES = new Set([
-  'const userDataDirName = isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App";',
-  '? ["t3code-dev", "T3 Code (Dev)"]',
-  ': ["t3code", "T3 Code (Alpha)"];',
+  '? ["CTOX Desktop App (Dev)"]',
+  ': ["CTOX Desktop App"];',
 ]);
 
 function isTestOrFixture(relativePath: string): boolean {

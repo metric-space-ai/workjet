@@ -4,10 +4,6 @@ import {
   CtoxInstanceAuthorityResolveInput,
   CtoxInstanceAuthorityResolveResult,
   CtoxDiscoveryResult,
-  CtoxDecisionHubDisconnectInput,
-  CtoxDecisionHubDisconnectResult,
-  CtoxDecisionHubProvisionInput,
-  CtoxDecisionHubProvisionResult,
   CtoxGuestBoundsInput,
   CtoxInstanceAppsInput,
   CtoxInstanceAppsResult,
@@ -45,7 +41,6 @@ import * as Schema from "effect/Schema";
 
 import * as CtoxAppRail from "../../ctox/CtoxAppRail.ts";
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
-import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
@@ -129,18 +124,14 @@ export const login: DesktopIpc.DesktopIpcMethod<
 
 export const logout: DesktopIpc.DesktopIpcMethod<
   never,
-  | CtoxDevAuth.CtoxDevAuth
-  | CtoxGuestManager.CtoxGuestManager
-  | CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
+  CtoxDevAuth.CtoxDevAuth | CtoxGuestManager.CtoxGuestManager
 > = {
   channel: IpcChannels.CTOX_LOGOUT_CHANNEL,
   handler: () =>
     Effect.gen(function* () {
       const auth = yield* CtoxDevAuth.CtoxDevAuth;
       const guests = yield* CtoxGuestManager.CtoxGuestManager;
-      const decisionHub = yield* CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
       yield* guests.deactivate;
-      yield* decisionHub.revokeAll;
       const completed = yield* auth.logout.pipe(
         Effect.as(true),
         Effect.orElseSucceed(() => false),
@@ -148,54 +139,6 @@ export const logout: DesktopIpc.DesktopIpcMethod<
       return yield* encodeSafe(
         CtoxManagedActionResult,
         completed ? { _tag: "completed" } : { _tag: "failed", code: "authentication_failed" },
-      );
-    }),
-};
-
-export const provisionDecisionHub: DesktopIpc.DesktopIpcMethod<
-  never,
-  CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
-> = {
-  channel: IpcChannels.CTOX_PROVISION_DECISION_HUB_CHANNEL,
-  handler: (raw) =>
-    Effect.gen(function* () {
-      const input = yield* Schema.decodeUnknownEffect(CtoxDecisionHubProvisionInput)(raw, {
-        onExcessProperty: "error",
-      }).pipe(Effect.option);
-      if (input._tag === "None") {
-        return yield* encodeSafe(CtoxDecisionHubProvisionResult, {
-          _tag: "failed",
-          code: "invalid_input",
-        });
-      }
-      const provisioner = yield* CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
-      return yield* encodeSafe(
-        CtoxDecisionHubProvisionResult,
-        yield* provisioner.provision(input.value),
-      );
-    }),
-};
-
-export const disconnectDecisionHub: DesktopIpc.DesktopIpcMethod<
-  never,
-  CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
-> = {
-  channel: IpcChannels.CTOX_DISCONNECT_DECISION_HUB_CHANNEL,
-  handler: (raw) =>
-    Effect.gen(function* () {
-      const input = yield* Schema.decodeUnknownEffect(CtoxDecisionHubDisconnectInput)(raw, {
-        onExcessProperty: "error",
-      }).pipe(Effect.option);
-      if (input._tag === "None") {
-        return yield* encodeSafe(CtoxDecisionHubDisconnectResult, {
-          _tag: "failed",
-          code: "invalid_input",
-        });
-      }
-      const provisioner = yield* CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
-      return yield* encodeSafe(
-        CtoxDecisionHubDisconnectResult,
-        yield* provisioner.disconnect(input.value),
       );
     }),
 };
@@ -842,7 +785,6 @@ export const shellFleetRolloutResume: DesktopIpc.DesktopIpcMethod<
 type CtoxIpcServices =
   | CtoxAppRail.CtoxAppRail
   | CtoxDevAuth.CtoxDevAuth
-  | CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
   | CtoxElectronSessions.CtoxElectronSessions
   | CtoxGuestManager.CtoxGuestManager
   | CtoxInstanceRegistry.CtoxInstanceRegistry
@@ -853,8 +795,6 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   refresh,
   login,
   logout,
-  provisionDecisionHub,
-  disconnectDecisionHub,
   importInvite,
   importManualPairing,
   removePairedInstance,

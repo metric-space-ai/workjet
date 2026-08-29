@@ -1,5 +1,4 @@
 import {
-  EnvironmentHttpApi,
   ProductEnvironmentHttpApi,
   EnvironmentHttpCommonError,
   type EnvironmentAuthInvalidError,
@@ -9,6 +8,7 @@ import {
   type EnvironmentResourceNotFoundError,
   type EnvironmentScopeRequiredError,
 } from "@t3tools/contracts";
+import { EnvironmentHttpApi } from "@t3tools/contracts/environment-http-legacy";
 import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";

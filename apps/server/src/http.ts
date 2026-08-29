@@ -1,9 +1,5 @@
 import Mime from "@effect/platform-node/Mime";
-import {
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-  ProductEnvironmentHttpApi,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import * as Data from "effect/Data";
@@ -38,6 +34,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import { ServerEnvironmentHttpApi } from "./serverHttpApi.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -119,7 +116,7 @@ const authenticateRawRouteWithScope = (
   });
 
 export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
-  ProductEnvironmentHttpApi,
+  ServerEnvironmentHttpApi,
   "metadata",
   Effect.fnUntraced(function* (handlers) {
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;

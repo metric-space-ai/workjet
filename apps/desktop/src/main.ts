@@ -11,8 +11,6 @@ import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Socket from "effect/unstable/socket/Socket";
-import { RpcSessionFactoryLive } from "@t3tools/client-runtime/rpc";
 
 import * as Electron from "electron";
 
@@ -26,7 +24,6 @@ import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as CtoxAppRail from "./ctox/CtoxAppRail.ts";
 import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
-import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
@@ -47,13 +44,11 @@ import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
-import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
 import * as DesktopDeepLinkRouter from "./app/DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
 import * as DesktopAssets from "./app/DesktopAssets.ts";
 import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
-import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
 import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./app/DesktopLifecycle.ts";
@@ -62,7 +57,6 @@ import * as DesktopShutdown from "./app/DesktopShutdown.ts";
 import * as DesktopObservability from "./app/DesktopObservability.ts";
 import * as DesktopServerExposure from "./backend/DesktopServerExposure.ts";
 import * as DesktopClientSettings from "./settings/DesktopClientSettings.ts";
-import * as DesktopSavedEnvironments from "./settings/DesktopSavedEnvironments.ts";
 import * as DesktopAppSettings from "./settings/DesktopAppSettings.ts";
 import * as DesktopPreReadyPlatform from "./app/DesktopPreReadyPlatform.ts";
 import * as DesktopCrashReporting from "./support/DesktopCrashReporting.ts";
@@ -151,7 +145,6 @@ const desktopFoundationLayer = Layer.mergeAll(
   DesktopShutdown.layer,
   DesktopAppSettings.layer,
   DesktopClientSettings.layer,
-  DesktopConnectionCatalogStore.layer.pipe(Layer.provideMerge(DesktopSavedEnvironments.layer)),
   DesktopAssets.layer,
   DesktopObservability.layer,
 ).pipe(Layer.provideMerge(desktopEnvironmentLayer));
@@ -195,14 +188,6 @@ const desktopWslBackendLayer = DesktopWslBackend.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
-const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
-  Layer.provideMerge(desktopBackendLayer),
-);
-
-const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
-  Layer.provide(Socket.layerWebSocketConstructorGlobal),
-);
-
 // The local-daemon launch service resolves its target through the one
 // registry instance, so the registry is provided to (and re-exported by) the
 // merged control layer rather than merged beside it.
@@ -240,12 +225,6 @@ const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(deskto
 const desktopCtoxFleetLayer = CtoxShellFleet.layer().pipe(
   Layer.provideMerge(desktopCtoxControlLayer),
 );
-const desktopDecisionHubLayer = CtoxDecisionHubProvisioner.layer.pipe(
-  Layer.provideMerge(desktopRpcSessionLayer),
-  Layer.provideMerge(desktopBackendLayer),
-  Layer.provideMerge(desktopCtoxControlLayer),
-);
-
 // The support bundle reads the migration decision and the crash-reporter
 // state, so it hangs off the same graph the application menu resolves from;
 // the menu item and the renderer IPC method share this one instance.
@@ -268,10 +247,8 @@ const desktopApplicationLayer = Layer.mergeAll(
   // service, and the IPC handler resolves the same instance from the
   // re-exported context.
   Layer.provideMerge(desktopSupportLayer),
-  Layer.provideMerge(desktopDecisionHubLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
-  Layer.provideMerge(desktopLocalEnvironmentAuthLayer),
 );
 
 // The migration layer runs any pending legacy user-data import before the

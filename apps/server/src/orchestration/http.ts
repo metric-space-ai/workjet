@@ -1,8 +1,4 @@
-import {
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-  ProductEnvironmentHttpApi,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -18,9 +14,10 @@ import {
 } from "../auth/http.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { ServerEnvironmentHttpApi } from "../serverHttpApi.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
-  ProductEnvironmentHttpApi,
+  ServerEnvironmentHttpApi,
   "orchestration",
   Effect.fnUntraced(function* (handlers) {
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;

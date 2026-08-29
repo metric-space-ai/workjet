@@ -19,11 +19,15 @@ import {
   WorkjetDeviceInviteRedeemRejectedError,
 } from "./environmentHttp.ts";
 import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
-import {
-  RelayDpopAccessTokenScope,
+
+// Wire-compatible legacy literals kept local so this compatibility envelope
+// cannot pull the retired relay/environment transport into product bundles.
+const RelayEnvironmentConnectScope = "environment:connect" as const;
+const RelayEnvironmentStatusScope = "environment:status" as const;
+const RelayDpopAccessTokenScope = Schema.Literals([
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
-} from "./relay.ts";
+]);
 
 const OpaqueBase64Url = Schema.String.check(
   Schema.isMinLength(43),

@@ -1,7 +1,6 @@
 import {
   CommandId,
   AuthAdministrativeScopes,
-  ProductEnvironmentHttpApi,
   EnvironmentHttpCommonError,
   type OrchestrationReadModel,
   ProjectId,
@@ -23,6 +22,7 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/ht
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { ServerEnvironmentHttpApi } from "../serverHttpApi.ts";
 
 import * as ServerConfig from "../config.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
@@ -224,7 +224,7 @@ const withProjectCliLiveServerTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>
   effect.pipe(Effect.timeout(PROJECT_CLI_LIVE_SERVER_TIMEOUT));
 
 const makeLiveServerClient = (origin: string) =>
-  HttpApiClient.make(ProductEnvironmentHttpApi, {
+  HttpApiClient.make(ServerEnvironmentHttpApi, {
     baseUrl: origin,
   });
 

@@ -19,7 +19,6 @@ import {
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -32,7 +31,6 @@ import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
-import { verifyRequestDpopProof } from "./dpop.ts";
 import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
 
 export const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
@@ -498,7 +496,6 @@ type BootstrapExchangeResult = {
 };
 
 const AUTHORIZATION_PREFIX = "Bearer ";
-const DPOP_AUTHORIZATION_PREFIX = "DPoP ";
 const WEBSOCKET_TICKET_QUERY_PARAM = "wsTicket";
 
 const bySessionPriority = (left: AuthClientSession, right: AuthClientSession) => {
@@ -545,21 +542,10 @@ function parseBearerToken(request: HttpServerRequest.HttpServerRequest): string 
   return token.length > 0 ? token : null;
 }
 
-function parseDpopToken(request: HttpServerRequest.HttpServerRequest): string | null {
-  const header = request.headers["authorization"];
-  if (typeof header !== "string" || !header.startsWith(DPOP_AUTHORIZATION_PREFIX)) {
-    return null;
-  }
-  const token = header.slice(DPOP_AUTHORIZATION_PREFIX.length).trim();
-  return token.length > 0 ? token : null;
-}
-
 export const make = Effect.gen(function* () {
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;
-  const secretStore = yield* ServerSecretStore.ServerSecretStore;
-  const crypto = yield* Crypto.Crypto;
   const descriptor = yield* policy.getDescriptor();
 
   const authenticateToken = (
@@ -594,40 +580,20 @@ export const make = Effect.gen(function* () {
   ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
     const cookieToken = request.cookies[sessions.cookieName];
     const bearerToken = parseBearerToken(request);
-    const dpopToken = parseDpopToken(request);
-    const credential = cookieToken ?? bearerToken ?? dpopToken;
+    const credential = cookieToken ?? bearerToken;
     if (!credential) {
       return Effect.fail(new ServerAuthMissingCredentialError({}));
     }
     return authenticateToken(credential).pipe(
-      Effect.flatMap((session) => {
-        if (session.proofKeyThumbprint) {
-          if (!dpopToken || dpopToken !== credential) {
-            return Effect.fail(
+      Effect.flatMap((session) =>
+        session.proofKeyThumbprint
+          ? Effect.fail(
               new ServerAuthInvalidCredentialError({
-                diagnostic: "DPoP-bound access token requires DPoP authorization.",
+                diagnostic: "Proof-bound access tokens are no longer accepted.",
               }),
-            );
-          }
-          return verifyRequestDpopProof({
-            request,
-            expectedThumbprint: session.proofKeyThumbprint,
-            expectedAccessToken: dpopToken,
-          }).pipe(
-            Effect.provideService(ServerSecretStore.ServerSecretStore, secretStore),
-            Effect.provideService(Crypto.Crypto, crypto),
-            Effect.as(session),
-          );
-        }
-        if (dpopToken) {
-          return Effect.fail(
-            new ServerAuthInvalidCredentialError({
-              diagnostic: "DPoP authorization requires a proof-bound access token.",
-            }),
-          );
-        }
-        return Effect.succeed(session);
-      }),
+            )
+          : Effect.succeed(session),
+      ),
     );
   };
 

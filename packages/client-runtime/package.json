@@ -2,6 +2,7 @@
   "name": "@t3tools/client-runtime",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     "./connection": {
       "types": "./src/connection/index.ts",

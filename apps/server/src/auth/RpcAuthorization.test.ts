@@ -16,11 +16,6 @@ describe("RPC authorization scopes", () => {
     );
   });
 
-  it("does not expose legacy relay-client controls", () => {
-    expect(ServerWsRpcGroup.requests.has(WS_METHODS.cloudGetRelayClientStatus)).toBe(false);
-    expect(ServerWsRpcGroup.requests.has(WS_METHODS.cloudInstallRelayClient)).toBe(false);
-  });
-
   it("authorizes background policy reporting and observation deliberately", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverReportClientActivity)).toBe(
       AuthOrchestrationReadScope,

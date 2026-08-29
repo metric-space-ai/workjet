@@ -463,10 +463,13 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 
 ### 12.1 Abgeschlossen und nachgewiesen
 
-- [x] Shell 0.1.11 ist mit Manifest-/Archivhashes gepinnt
-      (`39b02fd3`).
+- [x] Shell 0.1.11 ist auf dem aktuellen Workjet-`main` mit
+      Manifest-/Archivhashes gepinnt (`80b47dc367865ad9ca2f4cb3d49640db971f6ab8`);
+      der zugehörige Capability-Lock ist auf
+      `d2207814483006ff70024c213feaf40a9a36f523` aktualisiert.
 - [x] Ein zentraler `ActiveWorkjetScope` hält Modus, aktive Instanz und eine
-      monotone Auswahlrevision (`aa6ca230`).
+      monotone Auswahlrevision auf dem aktuellen Workjet-`main`
+      (`d31457d846ebd0ded1dd00604699b1f7aeabe58a`).
 - [x] Desktop-Auswahl committet synchron; ein installierter Mobile-Host-Port
       darf die Auswahl erst nach korreliertem persistiertem Ack übernehmen.
 - [x] Stale und gleich-revisionierte widersprüchliche Mobile-Acks werden
@@ -474,24 +477,53 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 - [x] Projekt-List/Create erreicht ausschließlich den bereits existierenden
       warmen Guest der explizit ausgewählten Instanz. Eine beliebige Instanz-ID
       erzeugt keinen Guest und fällt mit `not_active` geschlossen aus.
-- [x] Contracts-, Web- und Desktop-Typechecks sind auf `aa6ca230` grün.
+- [x] Contracts-, Web- und Desktop-Typechecks sind für den identischen
+      Active-Scope-/Projekt-Port grün; der Port ist auf
+      `d31457d846ebd0ded1dd00604699b1f7aeabe58a` gelandet.
 - [x] 154 fokussierte Contract-/Scope-/Projekt-/Shell-/Desktop-IPC-Tests sind
-      auf `aa6ca230` grün.
-- [x] Web-Produktionsbuild auf `aa6ca230`: 4.764 Module erfolgreich gebaut.
+      für diesen Port grün.
+- [x] Der Web-Produktionsbuild dieses Ports baute 4.764 Module erfolgreich.
 - [x] Sichtbare Debug-Story `Business OS → Code → Business OS → Code` auf
       Welsch bestand 4/4 Schritte ohne Runner-Fund. Evidenz:
       `runtime/workjet-ui-testing/e4312d899983862b3cad4aea45b9d19d27dedc8f/2026-08-29T08-02-34-037Z-e0f166`.
-- [x] CTOX-native Computerzuordnung ist isoliert implementiert und getestet:
-      `62df22c4b1c0c6515a6eda55510faecc1cf365d1` (RxDB-JS 109/109,
-      Computer 5/5, Projekt 7/7, Schema-/Command-Gates grün).
-- [x] CTOX Business-OS-Shell-Layout/Fensterverhalten ist isoliert korrigiert:
-      `169c69e9029c992602e72eb9033bf7251aed166c` (Shared JS 263/263,
-      Coding Agents 19/19, reale 860×720-/640×720-Geometrie grün).
+- [x] CTOX-native Computerzuordnung ist auf aktuellem CTOX-`main` isoliert
+      re-portiert; der kanonische Browser-/RxDB-Vertragstest ist mit 108
+      bestandenen, 0 fehlgeschlagenen und 2 ohne Wire-Testbinary übersprungenen
+      Tests grün. Native Rust-Abnahme läuft noch und ist daher kein
+      Integrations- oder Releasebeweis.
+- [x] CTOX Business-OS-Shell-Layout/Fensterverhalten ist auf aktuellem
+      CTOX-`main` strukturell korrigiert. Nach unabhängigem Kimi-K3-Review
+      wurden die alten zweizeiligen Compact-Regeln und das Ausblenden der
+      App-Navigation physisch entfernt (`c2f6fb140b13741131c1e46692cd9ce73696df64`).
+      Shared Business OS 265/265, Coding Agents 19/19, Header-/Release-Verträge
+      8/8 und reale Playwright-Matrix 15/15 bei 360/480/640/860/1323 px für
+      Default/CTOX/macOS sind grün.
+- [x] Die installierte `/Applications/Workjet.app` wurde revisionsunabhängig
+      identifiziert: native Swift-Menüleisten-App 0.1.0, Bundle-ID
+      `dev.workjet.menubar`, ad-hoc signiert; sie ist nicht der aktuelle
+      Electron-Desktop und nicht updatekompatibel.
+- [x] Das Workjet-Repository besitzt zum Prüfzeitpunkt weder GitHub-Release
+      noch Tag. Die Electron-Updateengine ist implementiert, hat damit aber
+      keinen produktiven Releasefeed.
+- [x] Das CTOX-Flotteninventar ist read-only erhoben. Keine aktive Instanz
+      erfüllt den vollständigen Zielvertrag; Welsch ist am nächsten, dort
+      fehlt noch `workjet_computers`. Für GPU4, Ninja und mehrere Fleet-Gäste
+      fehlt ein sicherer administrativer Deploypfad.
 
 ### 12.2 Noch offen – blockiert weiterhin den Release
 
 - [ ] Die beiden isolierten CTOX-Commits sind konfliktgeprüft in einen
       revisionsgebundenen CTOX-Head integriert, gepusht und auf Welsch deployt.
+- [ ] Der aktuelle Desktop-Build und Releasevertrag verwenden ausschließlich
+      die kanonische Workjet-Identität `dev.workjet.desktop` und den
+      produktiven Deep Link `workjet://`; `com.t3tools.t3code`,
+      `dev.workjet.menubar`, `t3code://` und `ctox-desktop://` sind aus dem
+      produktiven Desktopgraph entfernt.
+- [ ] Ein signierter und notarisierter Electron-DMG-/ZIP-Release veröffentlicht
+      verifizierte Updater-Metadaten und
+      `workjet.desktop-install-manifest.v1`; Update `N → N+1` ist real
+      durchgeklickt. Die alte Swift-App wird einmalig ersetzt und niemals als
+      paralleles Produkt oder Runtime-Fallback weitergeführt.
 - [ ] US-03 `Projekt anlegen → sichtbar → Reload → App-Neustart` ist gegen
       genau diesen CTOX-Head vollständig grün.
 - [ ] Ein Computer lässt sich in der gemeinsamen Settings-IA sichtbar einer

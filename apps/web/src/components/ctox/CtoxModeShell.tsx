@@ -30,6 +30,8 @@ import {
 
 import {
   ChevronRight,
+  CircleAlertIcon,
+  CircleCheckIcon,
   EllipsisIcon,
   Plus,
   RefreshCw,
@@ -960,6 +962,53 @@ export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {
     case "blocked":
       return `${active} · Update blockiert`;
   }
+}
+
+export function shouldRenderCtoxShellUpdateStatus(
+  instance: CtoxManagedInstance,
+  mobileHost: boolean,
+): boolean {
+  return !(mobileHost && instance.shellUpdate === undefined);
+}
+
+function isWorkjetMobileHostDocument(): boolean {
+  return (
+    typeof document !== "undefined" && document.documentElement.dataset.workjetMobileHost === "true"
+  );
+}
+
+function CtoxShellUpdateButton({
+  instance,
+  onOpenSettings,
+}: {
+  readonly instance: CtoxManagedInstance;
+  readonly onOpenSettings: () => void;
+}) {
+  const status = instance.shellUpdate;
+  const current = status?.phase === "current" && status.health === "healthy";
+  const label = ctoxShellUpdateLabel(instance);
+  return (
+    <button
+      type="button"
+      className={cn(
+        "no-drag inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs",
+        current
+          ? "text-muted-foreground hover:bg-muted/60"
+          : "bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300",
+      )}
+      aria-label={`Shell: ${label}. Update-Einstellungen öffnen`}
+      title={`${label} · Update-Einstellungen öffnen`}
+      data-ctox-shell-update-status={status?.phase ?? "unknown"}
+      onClick={onOpenSettings}
+    >
+      {current ? (
+        <CircleCheckIcon className="size-3.5 shrink-0" aria-hidden />
+      ) : (
+        <CircleAlertIcon className="size-3.5 shrink-0" aria-hidden />
+      )}
+      <span className="max-w-48 truncate">{label}</span>
+    </button>
+  );
 }
 
 /**
@@ -2453,6 +2502,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 
 export function CtoxMainShell() {
   const { discovery, selectedId, connection } = useCtoxMode();
+  const navigate = useNavigate();
   const selected =
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find(
@@ -2502,6 +2552,13 @@ export function CtoxMainShell() {
             {selected === undefined ? emptyState.title : "Business OS"}
           </p>
         </div>
+        {selected !== undefined &&
+        shouldRenderCtoxShellUpdateStatus(selected, isWorkjetMobileHostDocument()) ? (
+          <CtoxShellUpdateButton
+            instance={selected}
+            onOpenSettings={() => void navigate({ to: "/settings/business-os" })}
+          />
+        ) : null}
         {selected !== undefined ? (
           <span className="no-drag inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
             <span

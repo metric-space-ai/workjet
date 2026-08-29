@@ -463,6 +463,13 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 
 ### 12.1 Abgeschlossen und nachgewiesen
 
+- [x] `workjet-ui-testing` ist als Testwerkzeug selbst abgenommen: 12/12
+      Runner-/Vertrags-/Redaction-/Watchdog-/Restart-/Review-Gate-Tests sind
+      grün. Die absichtlich defekte Electron-Fixture erkannte 7/7 Fehler am
+      korrekten letzten Schritt: toter Klick, unsichtbares Overlay,
+      nicht schließbarer Dialog, horizontaler Overflow, Instanzleck,
+      verlorener Reloadzustand und Console Exception. Dies ist ausschließlich
+      der Infrastrukturbeweis und noch keine bestandene Produktstory.
 - [x] Shell 0.1.11 ist auf dem aktuellen Workjet-`main` mit
       Manifest-/Archivhashes gepinnt (`80b47dc367865ad9ca2f4cb3d49640db971f6ab8`);
       der zugehörige Capability-Lock ist auf

@@ -493,11 +493,13 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 - [x] Sichtbare Debug-Story `Business OS → Code → Business OS → Code` auf
       Welsch bestand 4/4 Schritte ohne Runner-Fund. Evidenz:
       `runtime/workjet-ui-testing/e4312d899983862b3cad4aea45b9d19d27dedc8f/2026-08-29T08-02-34-037Z-e0f166`.
-- [x] CTOX-native Computerzuordnung ist auf aktuellem CTOX-`main` isoliert
-      re-portiert; der kanonische Browser-/RxDB-Vertragstest ist mit 108
-      bestandenen, 0 fehlgeschlagenen und 2 ohne Wire-Testbinary übersprungenen
-      Tests grün. Native Rust-Abnahme läuft noch und ist daher kein
-      Integrations- oder Releasebeweis.
+- [x] CTOX-native Computerzuordnung und die Shell-Korrekturen sind auf
+      `5b33bb6b204a82545dcf9e5ae32d3776a92d8fd9` linear integriert und als
+      `0a9037f98abb2af514ee75226d884c4236674456` remote erreichbar. Auf exakt
+      diesem Head sind der kanonische Browser-/RxDB-Vertragstest 110/110, die
+      native RxDB-Suite 395/395 und die autoritativen Computerzuordnungs-Tests
+      5/5 grün; beide `cargo fmt --check`-Läufe und `git diff --check` sind
+      ebenfalls grün. Dies ist noch kein Deploy- oder Produktstorybeweis.
 - [x] CTOX Business-OS-Shell-Layout/Fensterverhalten ist auf aktuellem
       CTOX-`main` strukturell korrigiert. Nach unabhängigem Kimi-K3-Review
       wurden die alten zweizeiligen Compact-Regeln und das Ausblenden der
@@ -519,8 +521,12 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 
 ### 12.2 Noch offen – blockiert weiterhin den Release
 
-- [ ] Die beiden isolierten CTOX-Commits sind konfliktgeprüft in einen
-      revisionsgebundenen CTOX-Head integriert, gepusht und auf Welsch deployt.
+- [x] Die CTOX-Shell- und Computerzuordnungsänderungen sind konfliktgeprüft in
+      den revisionsgebundenen Head
+      `0a9037f98abb2af514ee75226d884c4236674456` integriert und auf
+      `origin/codex/workjet-linear-integration-20260829` gepusht.
+- [ ] Genau dieser CTOX-Head ist kontrolliert auf Welsch deployt und über den
+      realen RxDB-/WebRTC-Pfad verifiziert.
 - [x] Der aktuelle Desktop-Build und Releasevertrag verwenden ausschließlich
       die kanonische Workjet-Identität `dev.workjet.desktop` und den
       produktiven Deep Link `workjet://`; `com.t3tools.t3code`,

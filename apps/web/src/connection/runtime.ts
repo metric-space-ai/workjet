@@ -1,8 +1,13 @@
-import { Connection } from "@t3tools/client-runtime/connection";
-import { shellSnapshotLoaderLayer } from "@t3tools/client-runtime/state/shell";
-import { threadSnapshotLoaderLayer } from "@t3tools/client-runtime/state/threads";
-import { pullRequestDiffLoaderLayer } from "@t3tools/client-runtime/state/pull-requests";
+import { productLayer } from "@t3tools/client-runtime/connection/product";
+import {
+  PullRequestDiffLoadError,
+  PullRequestDiffLoader,
+  ShellSnapshotLoader,
+  ThreadSnapshotLoader,
+} from "@t3tools/client-runtime/state/product-loaders";
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { Atom } from "effect/unstable/reactivity";
 
 import { runtimeContextLayer } from "../lib/runtime";
@@ -17,20 +22,37 @@ const providedConnectionPlatformLayer = connectionPlatformLayer.pipe(
 );
 
 const snapshotLoaderLayer = Layer.mergeAll(
-  threadSnapshotLoaderLayer,
-  shellSnapshotLoaderLayer,
-  pullRequestDiffLoaderLayer,
+  Layer.succeed(
+    ThreadSnapshotLoader,
+    ThreadSnapshotLoader.of({ load: () => Effect.succeed(Option.none()) }),
+  ),
+  Layer.succeed(
+    ShellSnapshotLoader,
+    ShellSnapshotLoader.of({ load: () => Effect.succeed(Option.none()) }),
+  ),
+  Layer.succeed(
+    PullRequestDiffLoader,
+    PullRequestDiffLoader.of({
+      load: () =>
+        Effect.fail(
+          new PullRequestDiffLoadError({
+            message:
+              "Pull-request diff loading is unavailable until the Workjet WebSocket RPC is implemented.",
+          }),
+        ),
+    }),
+  ),
 );
 
 type ConnectionLayerSource =
-  | typeof Connection.productLayer
+  | typeof productLayer
   | typeof snapshotLoaderLayer
   | typeof runtimeContextLayer
   | typeof connectionPlatformLayer
   | typeof backgroundActivityObserverLayer
   | typeof backgroundActivityReporterLayer;
 
-const providedClientConnectionLayer = Layer.merge(Connection.productLayer, snapshotLoaderLayer).pipe(
+const providedClientConnectionLayer = Layer.merge(productLayer, snapshotLoaderLayer).pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       runtimeContextLayer,

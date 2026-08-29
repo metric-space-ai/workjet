@@ -3,34 +3,18 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
-import * as ConnectionResolver from "./resolver.ts";
 import * as ConnectionDriver from "./driver.ts";
 import * as EnvironmentRegistry from "./registry.ts";
-import * as ConnectionOnboarding from "./onboarding.ts";
+import * as ProductResolver from "./productResolver.ts";
 import * as PlatformConnectionSource from "../platform/source.ts";
-import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
-import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
 
-const resolverLayer = ConnectionResolver.layer.pipe(
-  Layer.provide(RemoteEnvironmentAuthorization.layer),
-);
-
 const driverLayer = ConnectionDriver.layer.pipe(
-  Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layer)),
+  Layer.provide(Layer.mergeAll(ProductResolver.layer, RpcSession.layer)),
 );
-
 const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
 
-const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-
-const connectionServicesLayer = Layer.mergeAll(
-  registryLayer,
-  RelayEnvironmentDiscovery.layer,
-  onboardingLayer,
-);
-
-const connectionStartupLayer = Layer.effectDiscard(
+const startupLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
@@ -43,7 +27,7 @@ const connectionStartupLayer = Layer.effectDiscard(
     }
     yield* registry.start;
     yield* registrations.pipe(Stream.runForEach(registry.reconcilePlatform), Effect.forkScoped);
-  }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
+  }).pipe(Effect.withSpan("clientRuntime.connection.product.start")),
 );
 
-export const layer = connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer));
+export const productLayer = startupLayer.pipe(Layer.provideMerge(registryLayer));

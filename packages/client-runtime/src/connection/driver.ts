@@ -9,7 +9,7 @@ import type {
   ConnectionAttemptStage,
   PreparedConnection,
 } from "./model.ts";
-import * as ConnectionResolver from "./resolver.ts";
+import * as ConnectionResolver from "./resolverService.ts";
 import * as RpcSession from "../rpc/session.ts";
 
 export type ConnectionDriverProgress =

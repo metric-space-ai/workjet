@@ -45,8 +45,6 @@ import {
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
-  RelayClientInstallFailedError,
-  type RelayClientInstallProgressEvent,
   type ServerSelfUpdateError,
   type ServerSelfUpdateProgressEvent,
   type FilesystemBrowseFailure,
@@ -66,7 +64,6 @@ import {
   WORKJET_MESH_OVERVIEW_MAX_PEERS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
-  WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { validateCapabilityActivation } from "@metric-space-ai/workjet-capabilities";
@@ -154,7 +151,7 @@ import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
-import * as RelayClient from "@t3tools/shared/relayClient";
+import { ServerWsRpcGroup } from "./serverRpcGroup.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -392,7 +389,7 @@ const makeWsRpcLayer = (
   legacyWorkjetImport: LegacyWorkjetImport.LegacyWorkjetImport["Service"],
   workjetSessionImport: WorkjetSessionImport.WorkjetSessionImport["Service"],
 ) =>
-  WsRpcGroup.toLayer(
+  ServerWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
@@ -478,7 +475,6 @@ const makeWsRpcLayer = (
         }
         return use(decisionHubConnections.value);
       };
-      const relayClient = yield* RelayClient.RelayClient;
       // The client-facing half of the durable Workjet mailbox. It reuses the
       // delivery service and snapshot store the MCP tools use; only the caller
       // identity differs, so the handlers below add no second implementation.
@@ -1251,7 +1247,7 @@ const makeWsRpcLayer = (
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
-      return WsRpcGroup.of({
+      return ServerWsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -2173,39 +2169,6 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "workjet-mailbox" },
           ),
-        [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
-          observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
-            "rpc.aggregate": "cloud",
-          }),
-        [WS_METHODS.cloudInstallRelayClient]: (_input) =>
-          observeRpcStream(
-            WS_METHODS.cloudInstallRelayClient,
-            Stream.callback<RelayClientInstallProgressEvent, RelayClientInstallFailedError>(
-              (queue) =>
-                relayClient
-                  .installWithProgress((event) => Queue.offer(queue, event).pipe(Effect.asVoid))
-                  .pipe(
-                    Effect.flatMap((status) =>
-                      Queue.offer(queue, {
-                        type: "complete",
-                        status,
-                      }),
-                    ),
-                    Effect.catchTag("RelayClientInstallError", (error) =>
-                      Queue.fail(
-                        queue,
-                        new RelayClientInstallFailedError({
-                          reason: error.reason,
-                          message: error.message,
-                        }),
-                      ),
-                    ),
-                    Effect.andThen(Queue.end(queue)),
-                    Effect.forkScoped,
-                  ),
-            ),
-            { "rpc.aggregate": "cloud" },
-          ),
         [WS_METHODS.pullRequestsList]: (input) =>
           observeRpcEffect(WS_METHODS.pullRequestsList, pullRequests.list(input), {
             "rpc.aggregate": "pull-requests",
@@ -2912,7 +2875,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             failEnvironmentInternal("internal_error", error),
           ),
         );
-        const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
+        const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(ServerWsRpcGroup, {
           disableTracing: true,
         }).pipe(
           Effect.provide(

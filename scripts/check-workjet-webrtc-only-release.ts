@@ -22,17 +22,19 @@ export const ACTIVE_PRODUCT_ROOTS = Object.freeze([
 /** Temporary, exact Mobile compatibility ownership and migration blockers. */
 export const MOBILE_ONLY_LEGACY_REMOTE_PATHS = Object.freeze([
   "apps/mobile",
+  "packages/client-runtime/src/authorization/remote.ts",
   "packages/client-runtime/src/authorization/service.ts",
   "packages/client-runtime/src/connection/errors.ts",
   "packages/client-runtime/src/connection/layer.ts",
+  "packages/client-runtime/src/connection/onboarding.ts",
   "packages/client-runtime/src/connection/resolver.ts",
   "packages/client-runtime/src/connection/supervisor.ts",
+  "packages/client-runtime/src/environment/descriptor.ts",
   "packages/client-runtime/src/relay",
+  "packages/client-runtime/src/rpc/http.ts",
   "packages/client-runtime/src/state/businessOsManagedBackendControl.ts",
   "packages/client-runtime/src/state/businessOsMobileInvite.ts",
   "packages/client-runtime/src/state/environmentHttpAuth.ts",
-  "packages/client-runtime/src/state/pullRequestDiffHttp.ts",
-  "packages/client-runtime/src/state/session.ts",
   "packages/client-runtime/src/state/shellSnapshotHttp.ts",
   "packages/client-runtime/src/state/threadSnapshotHttp.ts",
   "packages/contracts/src/environmentHttp.ts",
@@ -98,7 +100,8 @@ export const FORBIDDEN_REFERENCES: ReadonlyArray<ForbiddenReference> = Object.fr
   },
   {
     id: "legacy-connect-http",
-    pattern: /(?:\bEnvironmentConnectHttpApi\b|\/api\/connect(?:\/|\b)|\/api\/workjet\/device-session(?:\/|\b))/gu,
+    pattern:
+      /(?:\bEnvironmentConnectHttpApi\b|\/api\/connect(?:\/|\b)|\/api\/workjet\/device-session(?:\/|\b))/gu,
     description: "legacy managed-connect HTTP control route",
   },
   {

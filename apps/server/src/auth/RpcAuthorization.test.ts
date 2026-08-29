@@ -1,19 +1,24 @@
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
-  AuthRelayReadScope,
-  AuthRelayWriteScope,
   ORCHESTRATION_WS_METHODS,
   WS_METHODS,
-  WsRpcGroup,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
+import { ServerWsRpcGroup } from "../serverRpcGroup.ts";
 import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
   it("declares exactly one scope for every RPC in the server group", () => {
-    expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
+    expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(
+      new Set(ServerWsRpcGroup.requests.keys()),
+    );
+  });
+
+  it("does not expose legacy relay-client controls", () => {
+    expect(ServerWsRpcGroup.requests.has(WS_METHODS.cloudGetRelayClientStatus)).toBe(false);
+    expect(ServerWsRpcGroup.requests.has(WS_METHODS.cloudInstallRelayClient)).toBe(false);
   });
 
   it("authorizes background policy reporting and observation deliberately", () => {
@@ -151,13 +156,6 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetMailboxAcceptHandoff)).toBe(
       AuthOrchestrationOperateScope,
     );
-  });
-
-  it("allows relay status reads without granting relay installation access", () => {
-    expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
-      AuthRelayReadScope,
-    );
-    expect(requiredScopeForRpcMethod(WS_METHODS.cloudInstallRelayClient)).toBe(AuthRelayWriteScope);
   });
 
   it("reads the reviewer menu under the same scope as the pull request it belongs to", () => {

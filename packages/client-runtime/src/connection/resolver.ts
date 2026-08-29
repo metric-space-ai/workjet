@@ -4,7 +4,6 @@ import {
 } from "@t3tools/contracts/relay";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as Clock from "effect/Clock";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -41,15 +40,9 @@ import {
   ConnectionTransientError,
 } from "./model.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
+import { ConnectionResolver } from "./resolverService.ts";
 
-export class ConnectionResolver extends Context.Service<
-  ConnectionResolver,
-  {
-    readonly prepare: (
-      entry: ConnectionCatalogEntry,
-    ) => Effect.Effect<PreparedConnection, ConnectionAttemptError>;
-  }
->()("@t3tools/client-runtime/connection/resolver/ConnectionResolver") {}
+export { ConnectionResolver } from "./resolverService.ts";
 
 const isBearerProfile = Schema.is(BearerConnectionProfile);
 const isSshProfile = Schema.is(SshConnectionProfile);

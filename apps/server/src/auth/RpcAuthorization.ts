@@ -2,22 +2,20 @@ import {
   AuthAccessReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
-  AuthRelayReadScope,
-  AuthRelayWriteScope,
   AuthReviewWriteScope,
   AuthTerminalOperateScope,
   ORCHESTRATION_WS_METHODS,
   type AuthEnvironmentScope,
   WS_METHODS,
-  WsRpcGroup,
 } from "@t3tools/contracts";
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import { ServerWsRpcGroup } from "../serverRpcGroup.ts";
 
-type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
+type WsRpcMethod = RpcGroup.Rpcs<typeof ServerWsRpcGroup>["_tag"];
 
 /**
  * Keep authorization coverage coupled to the RPC group itself. Adding an RPC to
- * `WsRpcGroup` without choosing a scope is a type error instead of a production
+ * `ServerWsRpcGroup` without choosing a scope is a type error instead of a production
  * runtime failure.
  */
 export const RPC_REQUIRED_SCOPES = {
@@ -130,8 +128,6 @@ export const RPC_REQUIRED_SCOPES = {
   // `orchestration:operate` can start turns on local threads outright, so
   // revocation grants it no authority it did not already have.
   [WS_METHODS.workjetMeshRevokePeer]: AuthOrchestrationOperateScope,
-  [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
-  [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsListStats]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDetail]: AuthOrchestrationReadScope,

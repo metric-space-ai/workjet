@@ -1,4 +1,3 @@
-import { ProductEnvironmentHttpApi } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -96,10 +95,6 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import * as CtoxMobileInviteService from "./ctox/CtoxMobileInviteService.ts";
-import * as CtoxMobileShellPackService from "./ctox/CtoxMobileShellPackService.ts";
-import * as WorkjetDeviceInviteReferenceService from "./ctox/WorkjetDeviceInviteReferenceService.ts";
-import { businessOsHttpApiLayer } from "./ctox/http.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -121,6 +116,7 @@ import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
 import * as NetService from "@t3tools/shared/Net";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import { ServerActivation } from "./serverActivation.ts";
+import { ServerEnvironmentHttpApi } from "./serverHttpApi.ts";
 
 // Effect's default preemptive shutdown waits 20s before finalizing request scopes.
 // T3's primary transport is long-lived WebSocket RPC, whose Effect scope finalizer
@@ -472,15 +468,8 @@ const WorkjetDelegationExecutorLive = WorkjetDelegationExecutor.layer.pipe(
 
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
-    HttpApiBuilder.layer(ProductEnvironmentHttpApi).pipe(
+    HttpApiBuilder.layer(ServerEnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
-      Layer.provide(
-        businessOsHttpApiLayer.pipe(
-          Layer.provide(CtoxMobileInviteService.layer()),
-          Layer.provide(CtoxMobileShellPackService.layer()),
-          Layer.provide(WorkjetDeviceInviteReferenceService.layer()),
-        ),
-      ),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),

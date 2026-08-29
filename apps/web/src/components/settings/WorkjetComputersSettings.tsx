@@ -13,7 +13,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import { RemoteEnvironmentsSection } from "./ConnectionsSettings";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
@@ -300,7 +299,6 @@ export function WorkjetComputersSettings() {
         onChange={(workjet) => updateSettings({ workjet })}
       />
       <ComputerProvisioningSection />
-      <RemoteEnvironmentsSection />
     </SettingsPageContainer>
   );
 }

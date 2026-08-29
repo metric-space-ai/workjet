@@ -35,7 +35,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
-import { usePrimarySessionState } from "../../environments/primary";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
@@ -47,7 +46,6 @@ import {
 import { PiCodeIcon } from "../Icons";
 import { useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
-import { useEnvironmentSessionState } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { getRelativeTimeState } from "../../timestampFormat";
 import {
@@ -101,8 +99,6 @@ import {
   classifyProviderEnvironmentAccess,
   type ProviderEnvironmentAccess,
   type ProviderOperateAccess,
-  resolvePrimaryOperateAccess,
-  resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
 
@@ -391,44 +387,7 @@ function SelectedEnvironmentProviderSettings({
   readonly environment: EnvironmentPresentation;
 }) {
   const isPrimary = environment.entry.target._tag === "PrimaryConnectionTarget";
-  if (isPrimary) {
-    // The desktop app owns its primary server outright; a browser session
-    // checks the scopes its cookie session was granted.
-    if (isElectron) {
-      return <AccessGatedProviderSettings environment={environment} operateAccess="granted" />;
-    }
-    return <PrimarySessionGatedProviderSettings environment={environment} />;
-  }
-  return <RemoteSessionGatedProviderSettings environment={environment} />;
-}
-
-function PrimarySessionGatedProviderSettings({
-  environment,
-}: {
-  readonly environment: EnvironmentPresentation;
-}) {
-  const primarySessionState = usePrimarySessionState();
-  const operateAccess = resolvePrimaryOperateAccess({
-    isPrimary: true,
-    hasDesktopBridge: false,
-    session: primarySessionState.data,
-    isPending: primarySessionState.isPending,
-    hasError: primarySessionState.error !== null,
-  });
-  return <AccessGatedProviderSettings environment={environment} operateAccess={operateAccess} />;
-}
-
-function RemoteSessionGatedProviderSettings({
-  environment,
-}: {
-  readonly environment: EnvironmentPresentation;
-}) {
-  const sessionState = useEnvironmentSessionState(environment.environmentId);
-  const operateAccess = resolveRemoteOperateAccess({
-    session: sessionState.data,
-    isPending: sessionState.isPending,
-    hasError: sessionState.hasError,
-  });
+  const operateAccess = isPrimary && isElectron ? "granted" : "denied";
   return <AccessGatedProviderSettings environment={environment} operateAccess={operateAccess} />;
 }
 

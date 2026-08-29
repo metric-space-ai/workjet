@@ -1,6 +1,5 @@
 import type { OrchestrationShellSnapshot } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -11,6 +10,7 @@ import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import { executeEnvironmentHttpRequest, makeProductEnvironmentHttpApiClient } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
+import { ShellSnapshotLoader } from "./productLoaders.ts";
 
 // Bounded so a pathologically slow endpoint cannot block the (cheaper) socket
 // fallback for long. The cached shell renders while this runs.
@@ -53,15 +53,6 @@ export const fetchEnvironmentShellSnapshot = Effect.fn(
  * Decouples the shell state machine from the underlying HTTP + DPoP details and
  * keeps them out of test contexts.
  */
-export class ShellSnapshotLoader extends Context.Service<
-  ShellSnapshotLoader,
-  {
-    readonly load: (
-      prepared: PreparedConnection,
-    ) => Effect.Effect<Option.Option<OrchestrationShellSnapshot>>;
-  }
->()("@t3tools/client-runtime/state/shellSnapshotHttp/ShellSnapshotLoader") {}
-
 export const shellSnapshotLoaderLayer: Layer.Layer<
   ShellSnapshotLoader,
   never,

@@ -37,9 +37,7 @@ import {
 } from "../logicalProject";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
-import { configureClientTracing } from "../observability/clientTracing";
-import { resolveInitialServerAuthGateState } from "../environments/primary";
-import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
+import { isHostedStaticApp } from "../hostedPairing";
 import { shellEnvironment } from "../state/shell";
 import { useAtomValue } from "@effect/atom-react";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -56,15 +54,7 @@ import {
 } from "../components/KeybindingsUpdateToast.logic";
 
 export const Route = createRootRoute({
-  beforeLoad: async ({ location }) => {
-    if (location.pathname === "/pair" && hasHostedPairingRequest(new URL(window.location.href))) {
-      return {
-        authGateState: {
-          status: "hosted-pairing",
-        } as const,
-      };
-    }
-
+  beforeLoad: async () => {
     if (isHostedStaticApp(new URL(window.location.href))) {
       return {
         authGateState: {
@@ -73,9 +63,10 @@ export const Route = createRootRoute({
       };
     }
 
-    const authGateState = await resolveInitialServerAuthGateState();
     return {
-      authGateState,
+      authGateState: {
+        status: "authenticated",
+      } as const,
     };
   },
   component: RootRouteView,
@@ -131,7 +122,6 @@ function RootRouteView() {
         <DocumentTitleSync />
         <GlassAppearanceSync />
         <FontAppearanceSync />
-        {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         <SshPasswordPromptDialog />
         <UserDataMigrationDialog />
         <DeepLinkConfirmationDialog />
@@ -296,14 +286,6 @@ function errorDetails(error: unknown): string {
   } catch {
     return "No additional error details are available.";
   }
-}
-
-function AuthenticatedTracingBootstrap() {
-  useEffect(() => {
-    void configureClientTracing();
-  }, []);
-
-  return null;
 }
 
 function EventRouter() {

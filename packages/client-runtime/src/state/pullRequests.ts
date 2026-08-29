@@ -11,14 +11,14 @@ import {
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentQueryAtomFamily,
 } from "./runtime.ts";
-import { PullRequestDiffLoader } from "./pullRequestDiffHttp.ts";
+import { PullRequestDiffLoader } from "./productLoaders.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 
-export { PullRequestDiffLoader, pullRequestDiffLoaderLayer } from "./pullRequestDiffHttp.ts";
+export { PullRequestDiffLoader } from "./productLoaders.ts";
 
-export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
-  "EnvironmentHttpConnectionNotReadyError",
+export class PullRequestDiffConnectionNotReadyError extends Data.TaggedError(
+  "PullRequestDiffConnectionNotReadyError",
 )<{ readonly message: string }> {}
 
 /**
@@ -70,8 +70,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           const loader = yield* PullRequestDiffLoader;
           const prepared = yield* SubscriptionRef.get(supervisor.prepared);
           if (Option.isNone(prepared)) {
-            return yield* new EnvironmentHttpConnectionNotReadyError({
-              message: "The environment HTTP connection is not ready.",
+            return yield* new PullRequestDiffConnectionNotReadyError({
+              message: "The environment connection is not ready.",
             });
           }
           return yield* loader.load(prepared.value, input);

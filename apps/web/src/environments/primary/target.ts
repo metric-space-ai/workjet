@@ -141,46 +141,6 @@ export function isLoopbackHostname(hostname: string): boolean {
   return LOOPBACK_HOSTNAMES.has(normalizeHostname(hostname));
 }
 
-function resolveHttpRequestBaseUrl(primaryTarget: PrimaryEnvironmentTarget): string {
-  const httpBaseUrl = primaryTarget.target.httpBaseUrl;
-  const configuredDevServerUrl = import.meta.env.VITE_DEV_SERVER_URL?.trim();
-  if (!configuredDevServerUrl) {
-    return httpBaseUrl;
-  }
-
-  const currentUrl = parseTargetUrl({
-    rawValue: window.location.href,
-    source: "window-origin",
-    urlKind: "window-location-url",
-  });
-  const targetUrl = parseTargetUrl({
-    rawValue: httpBaseUrl,
-    source: primaryTarget.source,
-    urlKind: "http-base-url",
-  });
-  const devServerUrl = parseTargetUrl({
-    rawValue: configuredDevServerUrl,
-    baseUrl: currentUrl.origin,
-    source: "configured",
-    urlKind: "development-server-url",
-  });
-
-  const isCurrentOriginDevServer =
-    (currentUrl.protocol === "http:" || currentUrl.protocol === "https:") &&
-    currentUrl.origin === devServerUrl.origin;
-
-  if (
-    !isCurrentOriginDevServer ||
-    currentUrl.origin === targetUrl.origin ||
-    !isLoopbackHostname(currentUrl.hostname) ||
-    !isLoopbackHostname(targetUrl.hostname)
-  ) {
-    return httpBaseUrl;
-  }
-
-  return currentUrl.origin;
-}
-
 function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
   const configuredHttpBaseUrl = import.meta.env.VITE_HTTP_URL?.trim() || undefined;
   const configuredWsBaseUrl = import.meta.env.VITE_WS_URL?.trim() || undefined;
@@ -265,24 +225,6 @@ function resolveDesktopPrimaryTarget(): PrimaryEnvironmentTarget | null {
       ),
     },
   };
-}
-
-export function resolvePrimaryEnvironmentHttpUrl(
-  pathname: string,
-  searchParams?: Record<string, string>,
-): string {
-  const primaryTarget = readPrimaryEnvironmentTarget();
-
-  const url = parseTargetUrl({
-    rawValue: resolveHttpRequestBaseUrl(primaryTarget),
-    source: primaryTarget.source,
-    urlKind: "http-base-url",
-  });
-  url.pathname = pathname;
-  if (searchParams) {
-    url.search = new URLSearchParams(searchParams).toString();
-  }
-  return url.toString();
 }
 
 export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget {

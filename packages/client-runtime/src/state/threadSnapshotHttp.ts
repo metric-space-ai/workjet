@@ -1,6 +1,5 @@
 import type { OrchestrationThreadDetailSnapshot, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -15,6 +14,9 @@ import {
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
+import { ThreadSnapshotLoader, type ThreadSnapshotWindow } from "./productLoaders.ts";
+
+export type { ThreadSnapshotWindow } from "./productLoaders.ts";
 
 // Bounded so a pathologically slow endpoint cannot block the (cheaper) socket
 // fallback for long. The cached thread renders while this runs, so the wait only
@@ -31,11 +33,6 @@ const DEFAULT_THREAD_SNAPSHOT_TIMEOUT_MS = 6_000;
  * that advertise `threadSnapshotPagination`; older servers reject unknown
  * query parameters.
  */
-export interface ThreadSnapshotWindow {
-  readonly turnLimit: number;
-  readonly beforeCursor?: string;
-}
-
 export const fetchEnvironmentThreadSnapshot = Effect.fn(
   "clientRuntime.state.fetchEnvironmentThreadSnapshot",
 )(function* (input: {
@@ -83,17 +80,6 @@ export type FetchEnvironmentThreadSnapshotError = RemoteEnvironmentRequestError;
  * Decouples the thread state machine from the underlying HTTP + DPoP details and
  * keeps them out of test contexts.
  */
-export class ThreadSnapshotLoader extends Context.Service<
-  ThreadSnapshotLoader,
-  {
-    readonly load: (
-      prepared: PreparedConnection,
-      threadId: ThreadId,
-      window?: ThreadSnapshotWindow,
-    ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
-  }
->()("@t3tools/client-runtime/state/threadSnapshotHttp/ThreadSnapshotLoader") {}
-
 export const threadSnapshotLoaderLayer: Layer.Layer<
   ThreadSnapshotLoader,
   never,

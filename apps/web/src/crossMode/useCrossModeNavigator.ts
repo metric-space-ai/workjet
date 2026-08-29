@@ -8,7 +8,7 @@
  * bridge, the TanStack router, and the Business OS handoff slot.
  *
  * Keeping the two apart is not ceremony. The invariant that matters — the
- * native guest is destroyed before Code paints — is only checkable if the
+ * native guest view is detached before Code paints while its peer stays warm — is only checkable if the
  * sequence is observable, and it is only observable if the sequence is not
  * tangled up in React effects.
  */
@@ -24,13 +24,13 @@ import {
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { readActiveEnvironmentId, setActiveEnvironmentId } from "../state/entities";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
+import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import {
   clearCrossModeBusinessOsRequest,
   peekCrossModeBusinessOsRequest,
   requestCrossModeBusinessOsApp,
   requestCrossModeBusinessOsInstance,
 } from "./crossModeBusinessOsHandoff";
-import { crossModeSelectionMemory } from "./crossModeSelectionMemory";
 import {
   navigateToCrossModeTarget,
   type CrossModeNavigationOutcome,
@@ -77,8 +77,8 @@ export function useCrossModeNavigator(): (target: unknown) => Promise<CrossModeN
         releaseBusinessOsSurface: async () => {
           const bridge = typeof window === "undefined" ? undefined : window.desktopBridge?.ctox;
           // No bridge means no guest was ever attached, so there is nothing to
-          // destroy and the switch is safe. A bridge that throws is treated as
-          // an unconfirmed teardown: we do not know the view is gone.
+          // detach and the switch is safe. A bridge that throws is treated as
+          // an unconfirmed detachment: we do not know the view is gone.
           if (bridge === undefined) return true;
           try {
             const result = await bridge.exitBusinessOsMode();
@@ -103,13 +103,10 @@ export function useCrossModeNavigator(): (target: unknown) => Promise<CrossModeN
             >;
             return readCodeSelectionFromRouteParams(params, readActiveEnvironmentId());
           }
-          // Business OS has no route to read: its selection lives in
-          // `CtoxModeProvider`, which is unmounted by the time anyone asks.
-          // The provider therefore writes each selection into the shared
-          // memory as it makes it, and this read hands that same value back so
-          // the journal records the step honestly. Re-remembering it is a
-          // no-op, which is the point — the value is already correct.
-          return crossModeSelectionMemory.read("business-os");
+          const selectedInstanceId = readActiveWorkjetScope().selectedInstanceId;
+          return selectedInstanceId === null
+            ? null
+            : { mode: "business-os", ctoxInstanceId: selectedInstanceId };
         },
         selectSidebarEntry: (resolved) => {
           if (resolved.mode === "business-os") {

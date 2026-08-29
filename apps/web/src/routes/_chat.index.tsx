@@ -19,6 +19,8 @@ import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
+import { useActiveWorkjetScope } from "../activeWorkjetScope";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -38,6 +40,8 @@ function ChatIndexRouteView() {
  */
 function IndexDraftLanding() {
   const projects = useProjects();
+  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
+  const workjetProjectRegistry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
@@ -65,7 +69,17 @@ function IndexDraftLanding() {
     });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
-  if (!bootstrapped) {
+  const selectedWorkjetProject =
+    workjetProjectRegistry.projects.find(
+      (project) => project.id === workjetProjectRegistry.selectedProjectId,
+    ) ??
+    workjetProjectRegistry.projects[0] ??
+    null;
+
+  if (selectedWorkjetProject !== null) {
+    return <WorkjetProjectReady projectTitle={selectedWorkjetProject.title} />;
+  }
+  if (!bootstrapped && workjetProjectRegistry.phase !== "ready") {
     return null;
   }
   if (mostRecentProject !== null) {
@@ -81,6 +95,22 @@ function IndexDraftLanding() {
     ) : null;
   }
   return <NoProjectsHero />;
+}
+
+function WorkjetProjectReady({ projectTitle }: { readonly projectTitle: string }) {
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+      <Empty className="flex-1" data-workjet-project-state="ready">
+        <EmptyHeader className="max-w-md">
+          <EmptyTitle className="text-foreground text-xl">{projectTitle}</EmptyTitle>
+          <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
+            Project synced with this CTOX instance. Choose a computer when you are ready to run a
+            worker; the project itself is not tied to one computer.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </SidebarInset>
+  );
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
@@ -120,7 +150,7 @@ function NoProjectsHero() {
                 Add a project to start your first thread.
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
-                <Button size="sm" onClick={openAddProject}>
+                <Button size="sm" data-workjet-action="project.add.hero" onClick={openAddProject}>
                   <PlusIcon className="size-4" />
                   Add project
                 </Button>

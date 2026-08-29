@@ -43,7 +43,11 @@ import {
   takeCrossModeBusinessOsRequest,
   type CrossModeBusinessOsRequest,
 } from "../../crossMode/crossModeBusinessOsHandoff";
-import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
+import {
+  requestActiveWorkjetSelection,
+  subscribeActiveWorkjetHostContext,
+  useActiveWorkjetScope,
+} from "../../activeWorkjetScope";
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
@@ -174,6 +178,8 @@ interface CtoxModeContextValue {
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => void;
+  /** Re-check async mutations against the live selected instance ref. */
+  readonly isSelected: (instanceId: string) => boolean;
   readonly setConnection: (state: CtoxConnectionState) => void;
   /** Open a Business OS app: activates the instance guest if needed. */
   readonly openApp: (instance: CtoxManagedInstance, moduleId: string) => void;
@@ -446,7 +452,7 @@ export function applyCtoxGuestStateEvent(
   return next;
 }
 
-function useCtoxMode(): CtoxModeContextValue {
+export function useCtoxMode(): CtoxModeContextValue {
   const value = useContext(CtoxModeContext);
   if (value === null) throw new Error("CTOX mode shell must be rendered inside CtoxModeProvider.");
   return value;
@@ -454,22 +460,32 @@ function useCtoxMode(): CtoxModeContextValue {
 
 export function CtoxModeProvider({
   children,
+  businessOsVisible = true,
   initialDiscovery = "loading",
   bridge = typeof window === "undefined" ? undefined : window.desktopBridge?.ctox,
 }: {
   readonly children: ReactNode;
+  /**
+   * Whether the native Business OS surface is currently painted. The provider
+   * deliberately remains mounted while Code or Settings are visible so the
+   * selected instance, discovery snapshot and pooled WebRTC guest survive a
+   * mode change.
+   */
+  readonly businessOsVisible?: boolean;
   readonly initialDiscovery?: "loading" | CtoxDiscoveryResult;
   readonly bridge?: DesktopCtoxBridge;
 }) {
   const [discovery, setDiscovery] = useState<"loading" | CtoxDiscoveryResult>(initialDiscovery);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { selectedInstanceId: selectedId } = useActiveWorkjetScope();
   const [activationKey, setActivationKey] = useState(0);
   const [connection, setConnection] = useState<CtoxConnectionState>("idle");
   const [modeReady, setModeReady] = useState(bridge === undefined);
   const [guestStates, setGuestStates] = useState(EMPTY_GUEST_STATES);
   const mountedRef = useRef(true);
-  const selectedIdRef = useRef<string | null>(null);
+  const selectedIdRef = useRef<string | null>(selectedId);
+  selectedIdRef.current = selectedId;
+  const modeTransitionRef = useRef(0);
 
   // The desktop main process owns the guest pool; the sidebar dots follow its
   // per-instance lifecycle events (instance id + state token, nothing else).
@@ -488,10 +504,11 @@ export function CtoxModeProvider({
 
   const clearSelection = useCallback(
     (nextConnection: CtoxConnectionState) => {
-      selectedIdRef.current = null;
-      setSelectedId(null);
-      setConnection(nextConnection);
-      releaseCtoxGuest(bridge);
+      void requestActiveWorkjetSelection(null).then((accepted) => {
+        if (!accepted || !mountedRef.current) return;
+        setConnection(nextConnection);
+        releaseCtoxGuest(bridge);
+      });
     },
     [bridge],
   );
@@ -525,6 +542,8 @@ export function CtoxModeProvider({
         if (mountedRef.current) setRefreshing(false);
       });
   }, [applyDiscovery, bridge]);
+
+  useEffect(() => subscribeActiveWorkjetHostContext(refresh), [refresh]);
 
   const login = useCallback(() => {
     if (bridge === undefined) return;
@@ -618,15 +637,13 @@ export function CtoxModeProvider({
     // Re-selecting the already-connected instance must not tear the guest
     // down; the row click then only surfaces the instance and its apps.
     if (selectedIdRef.current === instance.id) return;
-    selectedIdRef.current = instance.id;
-    setSelectedId(instance.id);
-    setActivationKey((current) => current + 1);
-    setConnection("connecting");
-    // Keep the cross-mode memory current so leaving for Code and coming back
-    // lands on this instance again. An instance id only — the guest's data
-    // never leaves the guest.
-    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: instance.id });
+    void requestActiveWorkjetSelection(instance.id).then((accepted) => {
+      if (!accepted || !mountedRef.current) return;
+      setActivationKey((current) => current + 1);
+      setConnection("connecting");
+    });
   }, []);
+  const isSelected = useCallback((instanceId: string) => selectedIdRef.current === instanceId, []);
 
   const [appRailVersion, setAppRailVersion] = useState(0);
   const guestBoundsRef = useRef<CtoxGuestBounds | null>(null);
@@ -692,12 +709,10 @@ export function CtoxModeProvider({
     dispatchOpenApp(pending.instanceId, pending.moduleId);
   }, [connection, dispatchOpenApp]);
 
-  // A cross-mode link that arrives while Code mode is showing cannot be acted
-  // on immediately: this provider does not exist yet. The link navigator
-  // therefore files the request in `crossModeBusinessOsHandoff` AFTER it has
-  // released the Code surface and switched the mode, and this effect is the
-  // only thing that honours it — which is what keeps "the guest is never
-  // created while Code is still up" true rather than merely likely.
+  // A cross-mode link may arrive before discovery contains its instance. The
+  // link navigator files the bounded request only after switching product
+  // mode; this always-mounted provider honours it once the instance becomes
+  // activatable without creating a second selection authority.
   //
   // The request is one-shot and is taken only once its instance is present and
   // activatable, so a link naming an instance that is still loading waits for
@@ -793,24 +808,47 @@ export function CtoxModeProvider({
 
   useLayoutEffect(() => {
     mountedRef.current = true;
-    setModeReady(bridge === undefined);
-    if (bridge !== undefined) {
-      void bridge
-        .enterBusinessOsMode()
-        .then((result) => {
-          if (mountedRef.current && result._tag === "completed") setModeReady(true);
-        })
-        .catch(() => undefined);
-    }
     refresh();
     return () => {
       mountedRef.current = false;
       setModeReady(false);
-      // Request native detachment during the mode-switch commit, before the
-      // Code shell can be painted underneath a stale WebContentsView.
+      modeTransitionRef.current += 1;
+      // A real Workjet-shell teardown detaches the native view. Normal
+      // Code/Settings mode changes are handled by the visibility effect below
+      // and intentionally keep the guest in Desktop Main's warm pool.
       releaseCtoxMode(bridge);
     };
   }, [bridge, refresh]);
+
+  useLayoutEffect(() => {
+    const transition = modeTransitionRef.current + 1;
+    modeTransitionRef.current = transition;
+    if (bridge === undefined) {
+      setModeReady(businessOsVisible);
+      return;
+    }
+    if (!businessOsVisible) {
+      setModeReady(false);
+      void bridge.exitBusinessOsMode().catch(() => undefined);
+      return;
+    }
+    setModeReady(false);
+    void bridge
+      .enterBusinessOsMode()
+      .then((result) => {
+        if (
+          mountedRef.current &&
+          modeTransitionRef.current === transition &&
+          result._tag === "completed"
+        ) {
+          setModeReady(true);
+          // Re-entering must reattach the already-warm guest. The previous
+          // activation key was consumed before Desktop Main detached its view.
+          setActivationKey((current) => current + 1);
+        }
+      })
+      .catch(() => undefined);
+  }, [bridge, businessOsVisible]);
 
   const [workspaceNames, setWorkspaceNames] = useState<ReadonlyMap<string, string>>(new Map());
   const reportWorkspaceName = useCallback((instanceId: string, name: string) => {
@@ -841,6 +879,7 @@ export function CtoxModeProvider({
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
+      isSelected,
       setConnection,
       openApp,
       setAppDocked,
@@ -859,6 +898,7 @@ export function CtoxModeProvider({
       guestStates,
       importInvite,
       importManualPairing,
+      isSelected,
       login,
       logout,
       modeReady,
@@ -2444,33 +2484,48 @@ export function CtoxMainShell() {
 
   return (
     <SidebarInset
-      className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground"
+      className="flex h-dvh min-h-0 flex-col overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
+      <header
+        data-ctox-main-chrome=""
+        className={cn(
+          "workspace-topbar drag-region flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
+          COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+        )}
+      >
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">
+            {selected?.displayName ?? "Business OS"}
+          </p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {selected === undefined ? emptyState.title : "Business OS"}
+          </p>
+        </div>
+        {selected !== undefined ? (
+          <span className="no-drag inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                connection === "ready" ? "bg-emerald-500" : "bg-muted-foreground/45",
+              )}
+              aria-hidden
+            />
+            {connection === "ready" ? "Verbunden" : "Wird verbunden…"}
+          </span>
+        ) : null}
+      </header>
       {selected === undefined ? (
-        <>
-          <header
-            data-ctox-main-chrome=""
-            className={cn(
-              "workspace-topbar drag-region flex items-center border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
-            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground/60">
-              Workjet
-            </span>
-          </header>
-          <Empty className="flex-1">
-            <div className="w-full max-w-lg px-8 py-12">
-              <EmptyHeader className="max-w-none">
-                <EmptyTitle className="text-xl text-foreground">{emptyState.title}</EmptyTitle>
-                <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                  {emptyState.description}
-                </EmptyDescription>
-              </EmptyHeader>
-            </div>
-          </Empty>
-        </>
+        <Empty className="flex-1">
+          <div className="w-full max-w-lg px-8 py-12">
+            <EmptyHeader className="max-w-none">
+              <EmptyTitle className="text-xl text-foreground">{emptyState.title}</EmptyTitle>
+              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
+                {emptyState.description}
+              </EmptyDescription>
+            </EmptyHeader>
+          </div>
+        </Empty>
       ) : (
         <CtoxGuestHost instance={selected} />
       )}

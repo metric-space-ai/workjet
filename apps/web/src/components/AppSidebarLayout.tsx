@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useLayoutEffect,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -49,6 +50,8 @@ import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxMo
 import { resolveWorkjetProductMode } from "../workjetProductMode";
 import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
 import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
+import { WorkjetProjectRegistrySynchronizer } from "../workjetProjectRegistry";
+import { synchronizeActiveWorkjetMode } from "../activeWorkjetScope";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
@@ -146,10 +149,6 @@ function ProjectProjectionRetention() {
   return null;
 }
 
-function CtoxModeBoundary({ active, children }: { active: boolean; children: ReactNode }) {
-  return active ? <CtoxModeProvider>{children}</CtoxModeProvider> : children;
-}
-
 export type AppSidebarSurface = "business-os" | "code" | "settings";
 
 export function resolveAppSidebarSurface({
@@ -180,6 +179,9 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
   // architecture or the active Business OS instance scope.
   const sidebarSurface = resolveAppSidebarSurface({ productMode, isOnSettings });
   const isCtoxShell = sidebarSurface === "business-os";
+  useLayoutEffect(() => {
+    synchronizeActiveWorkjetMode(productMode);
+  }, [productMode]);
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -253,7 +255,8 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       style={sidebarProviderStyle}
     >
       <BusinessOsCodeScopeSynchronizer />
-      <CtoxModeBoundary active={isCtoxShell}>
+      <WorkjetProjectRegistrySynchronizer />
+      <CtoxModeProvider businessOsVisible={isCtoxShell}>
         {!isCtoxShell ? <ProjectProjectionRetention /> : null}
         <Sidebar
           side="left"
@@ -270,7 +273,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
             onResize: setSidebarWidth,
           }}
         >
-          <ActiveCtoxInstanceSelector productMode={productMode} />
+          <ActiveCtoxInstanceSelector />
           {sidebarSurface === "business-os" ? (
             <CtoxSidebarShell />
           ) : sidebarSurface === "settings" ? (
@@ -287,7 +290,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
         </Sidebar>
         {isCtoxShell ? <CtoxMainShell /> : children}
         <SidebarControl />
-      </CtoxModeBoundary>
+      </CtoxModeProvider>
     </SidebarProvider>
   );
 }

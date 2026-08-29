@@ -7,9 +7,14 @@ import type {
   CtoxManagedGuestResult,
   CtoxManagedInstance,
   CtoxWorkjetDeviceControlResult,
+  CtoxWorkjetProjectControlRequest,
+  CtoxWorkjetProjectControlResult,
   WorkjetDeviceWebRtcRequestV1,
 } from "@t3tools/contracts";
-import { WorkjetDeviceWebRtcResponseV1 } from "@t3tools/contracts";
+import {
+  CtoxWorkjetProjectControlResponse,
+  WorkjetDeviceWebRtcResponseV1,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -181,6 +186,11 @@ export class CtoxGuestManager extends Context.Service<
       instanceId: string,
       request: WorkjetDeviceWebRtcRequestV1,
     ) => Effect.Effect<CtoxWorkjetDeviceControlResult>;
+    /** Project control through the exact selected CTOX RxDB/WebRTC guest. */
+    readonly requestProjectControl: (
+      instanceId: string,
+      request: CtoxWorkjetProjectControlRequest,
+    ) => Effect.Effect<CtoxWorkjetProjectControlResult>;
   }
 >()("@t3tools/desktop/ctox/CtoxGuestManager") {}
 
@@ -209,6 +219,7 @@ export type CtoxGuestAppsObservation =
   | { readonly _tag: "failed"; readonly code: "not_active" | "guest_failed" };
 
 const MAX_DEVICE_CONTROL_RESPONSE_BYTES = 512 * 1024;
+const MAX_PROJECT_CONTROL_RESPONSE_BYTES = 256 * 1024;
 
 // Fixed, renderer-independent expression: reads only bounded module identity
 // data from the guest's own app state. Never interpolates untrusted input.
@@ -294,6 +305,15 @@ const GUEST_OPEN_SETTINGS_EXPRESSION = `(async () => {
 function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1): string {
   return `(async () => {
   const control = globalThis.workjetBusinessOsDeviceControl;
+  if (typeof control !== "function") return { status: "unsupported" };
+  const result = await control(${JSON.stringify(request)});
+  return { status: "completed", result };
+})()`;
+}
+
+function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRequest): string {
+  return `(async () => {
+  const control = globalThis.workjetProjectControl;
   if (typeof control !== "function") return { status: "unsupported" };
   const result = await control(${JSON.stringify(request)});
   return { status: "completed", result };
@@ -1374,6 +1394,55 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const requestProjectControl = (
+      instanceId: string,
+      request: CtoxWorkjetProjectControlRequest,
+    ): Effect.Effect<CtoxWorkjetProjectControlResult> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxWorkjetProjectControlResult, GuestState],
+          never
+        > {
+          const guest = state.pool.get(instanceId);
+          if (guest === undefined || guest.view.webContents.isDestroyed()) {
+            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
+          }
+
+          const raw = yield* Effect.tryPromise({
+            try: () =>
+              guest.view.webContents.executeJavaScript(
+                buildGuestProjectControlExpression(request),
+                true,
+              ),
+            catch: () => undefined,
+          }).pipe(Effect.orElseSucceed(() => undefined));
+          if (
+            typeof raw !== "object" ||
+            raw === null ||
+            (raw as { readonly status?: unknown }).status !== "completed"
+          ) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
+          }
+          const response = (raw as { readonly result?: unknown }).result;
+          const encodedLength = yield* Effect.try({
+            try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
+            catch: () => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1,
+          }).pipe(Effect.orElseSucceed(() => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1));
+          if (encodedLength > MAX_PROJECT_CONTROL_RESPONSE_BYTES) {
+            return [{ _tag: "failed", code: "response_too_large" } as const, state] as const;
+          }
+          const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetProjectControlResponse)(
+            response,
+            { onExcessProperty: "error" },
+          ).pipe(Effect.option);
+          if (Option.isNone(decoded)) {
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
+          }
+          return [{ _tag: "completed", response: decoded.value } as const, state] as const;
+        }),
+      );
+
     return CtoxGuestManager.of({
       enterBusinessOsMode,
       exitBusinessOsMode,
@@ -1387,6 +1456,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       openGuestSettings,
       setHostTheme,
       requestDeviceControl,
+      requestProjectControl,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 

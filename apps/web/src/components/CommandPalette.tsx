@@ -87,7 +87,7 @@ import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
-import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
+import { cn, isMacPlatform, isWindowsPlatform, newCommandId, newProjectId } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import {
@@ -147,6 +147,12 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
+import { runWorkjetProjectCreation, workjetLogicalProjectId } from "../workjetProjectCreation";
+import {
+  readWorkjetProjectRegistry,
+  recordWorkjetProjectProjection,
+} from "../workjetProjectRegistry";
+import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -558,6 +564,7 @@ function OpenCommandPaletteDialog(props: {
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
 }) {
+  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const navigate = useNavigate();
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState("");
@@ -632,6 +639,7 @@ function OpenCommandPaletteDialog(props: {
     null,
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
+  const projectCreationPendingRef = useRef(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
@@ -749,21 +757,6 @@ function OpenCommandPaletteDialog(props: {
   }, [environments]);
   const defaultAddProjectEnvironmentId =
     addProjectEnvironmentOptions.find((option) => option.isConnected)?.environmentId ?? null;
-  const wslAddProjectEnvironmentOption = useMemo(
-    () =>
-      addProjectEnvironmentOptions.find((option) => {
-        if (!option.isConnected) {
-          return false;
-        }
-        const environment = environments.find(
-          (candidate) => candidate.environmentId === option.environmentId,
-        );
-        return environment
-          ? desktopLocalBackendId(environment.entry.target)?.startsWith("wsl:") === true
-          : false;
-      }) ?? null,
-    [addProjectEnvironmentOptions, environments],
-  );
   const browseEnvironmentId = addProjectEnvironmentId ?? defaultAddProjectEnvironmentId;
   const browseEnvironment =
     environments.find((environment) => environment.environmentId === browseEnvironmentId) ?? null;
@@ -1333,6 +1326,105 @@ function OpenCommandPaletteDialog(props: {
     [addProjectEnvironmentItems],
   );
 
+  const createLogicalProjectFromFolder = useCallback(async (): Promise<void> => {
+    if (projectCreationPendingRef.current) return;
+    const api = readLocalApi();
+    if (!api) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to add project",
+          description: "The folder picker is not available in this Workjet host.",
+        }),
+      );
+      return;
+    }
+    projectCreationPendingRef.current = true;
+    try {
+      setIsPickingProjectFolder(true);
+      let pickedPath: string | null;
+      try {
+        pickedPath = await api.dialogs.pickFolder();
+      } catch {
+        pickedPath = null;
+      } finally {
+        setIsPickingProjectFolder(false);
+      }
+      if (!pickedPath) return;
+
+      const presentationInstanceId = activeCtoxInstanceId;
+      if (presentationInstanceId === null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to add project",
+            description: "Select a connected CTOX instance, then try again.",
+          }),
+        );
+        return;
+      }
+
+      const projectId = await workjetLogicalProjectId(presentationInstanceId, pickedPath);
+      const outcome = await runWorkjetProjectCreation({
+        presentationInstanceId,
+        request: {
+          action: "project.create",
+          commandId: newCommandId(),
+          projectId,
+          title: inferProjectTitleFromPath(pickedPath),
+          createdAt: new Date().toISOString(),
+        },
+      });
+      if (outcome._tag === "failed") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to add project",
+            description:
+              outcome.code === "not_active"
+                ? "The selected CTOX instance is no longer connected."
+                : "CTOX did not confirm the project. The dialog remains open so you can retry.",
+          }),
+        );
+        return;
+      }
+      if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Project belongs to another instance",
+            description: "The active instance changed while the project was being created.",
+          }),
+        );
+        return;
+      }
+      const recorded = recordWorkjetProjectProjection(presentationInstanceId, outcome.project, {
+        select: true,
+      });
+      const visible = readWorkjetProjectRegistry(presentationInstanceId).projects.some(
+        (project) => project.id === outcome.project.id,
+      );
+      if (!recorded || !visible) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Project confirmation incomplete",
+            description: "CTOX created the project, but it is not visible in this instance yet.",
+          }),
+        );
+        return;
+      }
+      toastManager.add({
+        type: "success",
+        title: "Project added",
+        description: `${outcome.project.title} is now available in this CTOX instance.`,
+      });
+      setOpen(false);
+    } finally {
+      projectCreationPendingRef.current = false;
+    }
+  }, [activeCtoxInstanceId, setOpen]);
+
   const openAddProjectFlow = useCallback(() => {
     // An explicit Add Project intent must never inherit a previous palette
     // surface (notably Go to file / project-content search). Start the
@@ -1344,74 +1436,29 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
     setQuery("");
 
-    if (addProjectEnvironmentOptions.length === 0) {
-      pushPaletteView({
-        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-        groups: [
-          {
-            value: "project-scope-unavailable",
-            label: "Project location",
-            items: [
-              {
-                kind: "action",
-                value: "action:add-project:no-code-computer",
-                searchTerms: ["project", "computer", "business os", "assign"],
-                title: "No Code computer assigned",
-                description: "Assign a computer to the active Business OS before adding a project.",
-                icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-                disabled: true,
-                run: async () => {},
-              },
-              {
-                kind: "action",
-                value: "action:add-project:open-business-os-settings",
-                searchTerms: ["settings", "business os", "computer", "assign"],
-                title: "Open Business OS settings",
-                description:
-                  "Review the active instance. Project creation stays blocked until CTOX confirms a Code computer assignment.",
-                icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
-                run: async () => {
-                  setOpen(false);
-                  await navigate({ to: "/settings/business-os" });
-                },
-              },
-            ],
-          },
-        ],
-      });
-      return;
-    }
-    if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
-      pushPaletteView({
-        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-        groups: addProjectEnvironmentGroups,
-      });
-      return;
-    }
-
-    const environmentId = defaultAddProjectEnvironmentId;
-    if (!environmentId) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Unable to browse projects",
-          description: "No environment is available.",
-        }),
-      );
-      return;
-    }
-
-    void startAddProjectSourceSelection(environmentId);
-  }, [
-    addProjectEnvironmentGroups,
-    addProjectEnvironmentOptions.length,
-    browseNavigation,
-    defaultAddProjectEnvironmentId,
-    navigate,
-    pushPaletteView,
-    setOpen,
-    startAddProjectSourceSelection,
-  ]);
+    pushPaletteView({
+      addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: "ctox-project-location",
+          label: "Project location",
+          items: [
+            {
+              kind: "action",
+              value: "action:add-project:choose-folder",
+              searchTerms: ["project", "folder", "directory", "local"],
+              title: "Choose folder…",
+              description:
+                "Create the project in the active CTOX instance. A computer can be chosen or changed later.",
+              icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+              keepOpen: true,
+              run: createLogicalProjectFromFolder,
+            },
+          ],
+        },
+      ],
+    });
+  }, [browseNavigation, createLogicalProjectFromFolder, pushPaletteView]);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "add-project") {
@@ -1555,21 +1602,6 @@ function OpenCommandPaletteDialog(props: {
       openAddProjectFlow();
     },
   });
-
-  if (wslAddProjectEnvironmentOption) {
-    actionItems.push({
-      kind: "action",
-      value: "action:add-project:wsl-folder",
-      searchTerms: ["add project", "open", "wsl", "linux", "folder", "directory"],
-      title: "Open WSL folder",
-      description: wslAddProjectEnvironmentOption.label,
-      icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-      keepOpen: true,
-      run: async () => {
-        await startAddProjectBrowse(wslAddProjectEnvironmentOption.environmentId);
-      },
-    });
-  }
 
   actionItems.push({
     kind: "action",

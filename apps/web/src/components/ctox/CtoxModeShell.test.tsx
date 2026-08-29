@@ -758,9 +758,13 @@ describe("CTOX bridge actions", () => {
 });
 
 describe("CtoxMainShell", () => {
-  it("does not stack Workjet chrome above a ready Business OS shell", () => {
+  it("keeps exactly one Workjet header above the active Business OS guest", () => {
     expect(ctoxModeShellSource).not.toContain("const chromeHidden");
     expect(ctoxModeShellSource).toContain('data-ctox-main-chrome=""');
+    expect(ctoxModeShellSource.indexOf('data-ctox-main-chrome=""')).toBe(
+      ctoxModeShellSource.lastIndexOf('data-ctox-main-chrome=""'),
+    );
+    expect(ctoxModeShellSource).toContain("<CtoxGuestHost instance={selected} />");
     expect(ctoxModeShellSource).not.toContain("CtoxShellUpdateButton");
     expect(ctoxModeShellSource).toContain("selected === undefined ? (");
     expect(ctoxModeShellSource).not.toContain("BusinessOsSettingsDialog");

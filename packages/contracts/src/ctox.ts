@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as Schema from "effect/Schema";
 
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { EnvironmentId } from "./baseSchemas.ts";
+import {
+  CommandId,
+  EnvironmentId,
+  IsoDateTime,
+  ProjectId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { WorkjetConnectionId, WorkjetConnectionSummary } from "./workjet.ts";
 import { BusinessOsShellUpdateStatus } from "./businessOsShell.ts";
 import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
@@ -473,6 +478,82 @@ export const CtoxWorkjetDeviceControlResult = Schema.Union([
   }),
 ]);
 export type CtoxWorkjetDeviceControlResult = typeof CtoxWorkjetDeviceControlResult.Type;
+
+const CtoxProjectText = (maximum: number) =>
+  TrimmedNonEmptyString.check(Schema.isMaxLength(maximum), NoAsciiControlCharacters);
+
+/**
+ * Project control travels only through the selected CTOX guest's existing
+ * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
+ */
+export const CtoxWorkjetProjectControlRequest = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("project.list") }),
+  Schema.Struct({
+    action: Schema.Literal("project.create"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    title: CtoxProjectText(256),
+    workingCopy: Schema.optionalKey(
+      Schema.Struct({
+        computerId: CtoxProjectText(256),
+        path: CtoxProjectText(4_096),
+      }),
+    ),
+    createdAt: IsoDateTime,
+  }),
+]);
+export type CtoxWorkjetProjectControlRequest = typeof CtoxWorkjetProjectControlRequest.Type;
+
+export const CtoxWorkjetProjectControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: CtoxWorkjetProjectControlRequest,
+});
+export type CtoxWorkjetProjectControlInput = typeof CtoxWorkjetProjectControlInput.Type;
+
+export const CtoxWorkjetWorkingCopyProjection = Schema.Struct({
+  id: CtoxProjectText(160),
+  computerId: CtoxProjectText(256),
+  path: CtoxProjectText(4_096),
+  status: Schema.Literals(["active", "detached"]),
+});
+export type CtoxWorkjetWorkingCopyProjection = typeof CtoxWorkjetWorkingCopyProjection.Type;
+
+export const CtoxWorkjetProjectProjection = Schema.Struct({
+  id: ProjectId,
+  title: CtoxProjectText(256),
+  createdAt: Schema.optionalKey(IsoDateTime),
+  workingCopies: Schema.Array(CtoxWorkjetWorkingCopyProjection).check(Schema.isMaxLength(500)),
+});
+export type CtoxWorkjetProjectProjection = typeof CtoxWorkjetProjectProjection.Type;
+
+const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
+  Schema.isMaxLength(10_000),
+  Schema.makeFilter((projects) => {
+    const ids = new Set<string>();
+    for (const project of projects) {
+      if (ids.has(project.id)) return "Project ids must be unique.";
+      ids.add(project.id);
+    }
+    return true;
+  }),
+);
+
+export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("project.list"), projects: CtoxWorkjetProjectList }),
+  Schema.Struct({
+    action: Schema.Literal("project.create"),
+    project: CtoxWorkjetProjectProjection,
+  }),
+]);
+export type CtoxWorkjetProjectControlResponse = typeof CtoxWorkjetProjectControlResponse.Type;
+
+export const CtoxWorkjetProjectControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+  }),
+]);
+export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlResult.Type;
 
 /**
  * One user-visible Workjet device pairing. The environment bootstrap grants

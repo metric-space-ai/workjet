@@ -2,12 +2,11 @@
 /**
  * The handoff slot between the link navigator and the Business OS shell.
  *
- * Code mode can be addressed immediately — the router exists whether or not
- * Code is showing. Business OS mode cannot: `CtoxModeProvider` is mounted only
- * while Business OS mode is active, so at the moment the navigator flips the
- * product mode there is nobody to tell "select this instance". The request has
- * to wait one commit for the provider to mount, discover its instances, and
- * pick it up.
+ * Code mode can be addressed immediately because its router is always
+ * available. Business OS selection is asynchronous: a cross-mode target may
+ * arrive before discovery contains the instance. This bounded one-shot
+ * request lets the always-mounted provider adopt it only after discovery
+ * confirms it.
  *
  * That waiting slot is here, deliberately outside React and deliberately
  * one-shot: `take` clears it, so a request can be honoured exactly once and a

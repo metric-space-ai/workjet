@@ -176,6 +176,8 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { selectWorkjetProject, useWorkjetProjectRegistry } from "../workjetProjectRegistry";
+import { useActiveWorkjetScope } from "../activeWorkjetScope";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -1594,6 +1596,9 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 
 export default function Sidebar() {
   const projects = useProjects();
+  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
+  const workjetProjectRegistry = useWorkjetProjectRegistry(activeCtoxInstanceId);
+  const workjetProjects = workjetProjectRegistry.projects;
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
@@ -3434,6 +3439,36 @@ export default function Sidebar() {
         }
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
+          {!isSearchingThreads && workjetProjects.length > 0 ? (
+            <ul aria-label="Projects" className="mb-2 flex flex-col gap-px">
+              {workjetProjects.map((project) => (
+                <li key={project.id} className="list-none">
+                  <button
+                    type="button"
+                    aria-current={
+                      workjetProjectRegistry.selectedProjectId === project.id ? "page" : undefined
+                    }
+                    data-workjet-action={`project.select:${project.id}`}
+                    onClick={() => {
+                      if (workjetProjectRegistry.presentationInstanceId !== null) {
+                        selectWorkjetProject(
+                          workjetProjectRegistry.presentationInstanceId,
+                          project.id,
+                        );
+                      }
+                    }}
+                    className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover aria-[current=page]:bg-sidebar-row-hover"
+                  >
+                    <FolderIcon
+                      aria-hidden
+                      className="size-4 shrink-0 text-sidebar-muted-foreground"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -3759,11 +3794,12 @@ export default function Sidebar() {
             settledThreads.length ===
             0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
+              {projects.length === 0 && workjetProjects.length === 0 ? (
                 <>
                   <span>No projects yet</span>
                   <button
                     type="button"
+                    data-workjet-action="project.add.sidebar"
                     onClick={openAddProjectCommandPalette}
                     className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
@@ -3771,6 +3807,8 @@ export default function Sidebar() {
                     Add project
                   </button>
                 </>
+              ) : workjetProjects.length > 0 && projects.length === 0 ? (
+                "No threads yet. Choose a computer when you are ready to run one."
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`
               ) : (

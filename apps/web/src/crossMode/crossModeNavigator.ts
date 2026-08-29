@@ -8,8 +8,9 @@
  * ── Why the ordering is the whole point ─────────────────────────────────────
  * Business OS mode is not a React subtree. Its main surface is an Electron
  * `WebContentsView` owned by the main process (`CtoxGuestManager`), attached
- * OVER the renderer's window. React unmounting `CtoxMainShell` does not remove
- * it; only `exitBusinessOsMode` (which calls `destroyGuest`) does. So a naive
+ * OVER the renderer's window. Hiding `CtoxMainShell` does not detach it by
+ * itself; `exitBusinessOsMode` does so while retaining the exact guest in the
+ * warm pool. So a naive
  * "flip the setting and let React sort it out" paints the Code shell
  * UNDERNEATH a still-attached native view — both surfaces mounted, one of them
  * invisible to React and covering the other.
@@ -19,7 +20,7 @@
  * what `crossModeNavigator.test.ts` asserts against:
  *
  *   business-os → code:  remember → release-business-os-surface (AWAITED,
- *                        the guest is destroyed) → switch-product-mode →
+ *                        the guest view is detached) → switch-product-mode →
  *                        select-sidebar-entry → open-main-surface
  *   code → business-os:  remember → release-code-surface (the thread view is
  *                        given up) → switch-product-mode → select-sidebar-entry
@@ -71,7 +72,7 @@ import {
 export const CROSS_MODE_NAVIGATION_STEPS = [
   /** The outgoing mode's current selection is written to the memory. */
   "remember-source-selection",
-  /** The CTOX guest `WebContentsView` is destroyed. Awaited. */
+  /** The CTOX guest `WebContentsView` is detached but retained warm. Awaited. */
   "release-business-os-surface",
   /** The Code thread view is given up before the guest may be created. */
   "release-code-surface",
@@ -120,8 +121,8 @@ export interface CrossModeNavigatorDependencies {
    */
   readonly canHostBusinessOs: () => boolean;
   /**
-   * Destroy the CTOX guest `WebContentsView`. Resolves `true` only once the
-   * main process confirms the guest is gone; `false` blocks the switch.
+   * Detach the CTOX guest `WebContentsView` without destroying its renderer or
+   * peer. Resolves `true` only once Main confirms it no longer covers Workjet.
    */
   readonly releaseBusinessOsSurface: () => Promise<boolean>;
   /**
@@ -142,7 +143,7 @@ export interface CrossModeNavigatorDependencies {
 
 /**
  * Switch to the target's mode if needed, select its sidebar entry, and open
- * its main surface — tearing the other mode's heavy surface down FIRST.
+ * its main surface — detaching the other mode's painted surface FIRST.
  *
  * Accepts an unknown value so a target arriving over IPC or from a
  * notification is decoded (and stripped of excess keys) on the way in.

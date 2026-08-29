@@ -521,11 +521,16 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 
 - [ ] Die beiden isolierten CTOX-Commits sind konfliktgeprüft in einen
       revisionsgebundenen CTOX-Head integriert, gepusht und auf Welsch deployt.
-- [ ] Der aktuelle Desktop-Build und Releasevertrag verwenden ausschließlich
+- [x] Der aktuelle Desktop-Build und Releasevertrag verwenden ausschließlich
       die kanonische Workjet-Identität `dev.workjet.desktop` und den
       produktiven Deep Link `workjet://`; `com.t3tools.t3code`,
       `dev.workjet.menubar`, `t3code://` und `ctox-desktop://` sind aus dem
-      produktiven Desktopgraph entfernt.
+      produktiven Desktopgraph entfernt (`f568c47d6f377b3158975d09b525ea9650a96093`).
+      Ein statischer Guard verhindert die Rückkehr; 191 Desktop-, 150
+      Server-/Web-, 45 Artefakt-, 6 Provisioner- und 9 Manifest-/Content-Tests,
+      Typecheck sowie Web-/Server-Produktionsbuild sind grün. Der Branch ist
+      remote erreichbar. Apple-Signing, Notarisierung und der reale
+      Alt-App-Ersatz bleiben getrennte offene Release-Gates.
 - [ ] Ein signierter und notarisierter Electron-DMG-/ZIP-Release veröffentlicht
       verifizierte Updater-Metadaten und
       `workjet.desktop-install-manifest.v1`; Update `N → N+1` ist real

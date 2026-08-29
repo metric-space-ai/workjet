@@ -31,6 +31,7 @@ import {
   ctoxRailCollapseKey,
   CtoxAppRailList,
   CtoxMainShell,
+  shouldRenderCtoxShellUpdateStatus,
   CtoxManagedInstanceList,
   CtoxModeProvider,
   CtoxSidebarShell,
@@ -765,10 +766,42 @@ describe("CtoxMainShell", () => {
       ctoxModeShellSource.lastIndexOf('data-ctox-main-chrome=""'),
     );
     expect(ctoxModeShellSource).toContain("<CtoxGuestHost instance={selected} />");
-    expect(ctoxModeShellSource).not.toContain("CtoxShellUpdateButton");
+    expect(ctoxModeShellSource).toContain("CtoxShellUpdateButton");
+    expect(ctoxModeShellSource).toContain("shouldRenderCtoxShellUpdateStatus");
     expect(ctoxModeShellSource).toContain("selected === undefined ? (");
     expect(ctoxModeShellSource).not.toContain("BusinessOsSettingsDialog");
     expect(ctoxModeShellSource).not.toContain("openSettingsRequestKey");
+  });
+
+  it("omits only an unavailable mobile shell status without inventing a value", () => {
+    const withoutUpdate = instance({
+      id: "managed:mobile-without-update",
+      source: "ctox_dev",
+      displayName: "Mobile",
+    });
+    const withUpdate = instance({
+      id: "managed:mobile-with-update",
+      source: "ctox_dev",
+      displayName: "Mobile",
+      shellUpdate: {
+        activeVersion: "0.1.11",
+        desiredVersion: "0.1.11",
+        latestCompatibleVersion: "0.1.11",
+        channel: "stable",
+        phase: "current",
+        health: "healthy",
+        administrable: true,
+        recoveryShell: false,
+        lastCheckedAt: null,
+        lastActivatedAt: null,
+        errorCode: null,
+        pause: null,
+      },
+    });
+
+    expect(shouldRenderCtoxShellUpdateStatus(withoutUpdate, true)).toBe(false);
+    expect(shouldRenderCtoxShellUpdateStatus(withoutUpdate, false)).toBe(true);
+    expect(shouldRenderCtoxShellUpdateStatus(withUpdate, true)).toBe(true);
   });
 
   it("detaches the native guest before a host-owned overlay is revealed", async () => {

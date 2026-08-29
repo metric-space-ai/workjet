@@ -120,11 +120,11 @@ function RootRouteView() {
   }
 
   const appShell = (
-    <CommandPalette>
-      <AppSidebarLayout>
+    <AppSidebarLayout>
+      <CommandPalette>
         <Outlet />
-      </AppSidebarLayout>
-    </CommandPalette>
+      </CommandPalette>
+    </AppSidebarLayout>
   );
 
   return (

@@ -13,6 +13,8 @@ import {
   CtoxInstanceAppsResult,
   CtoxWorkjetDeviceControlInput,
   CtoxWorkjetDeviceControlResult,
+  CtoxWorkjetProjectControlInput,
+  CtoxWorkjetProjectControlResult,
   CtoxManagedActionResult,
   CtoxManagedActivationInput,
   CtoxManagedGuestResult,
@@ -598,6 +600,29 @@ export const requestDeviceControl: DesktopIpc.DesktopIpcMethod<
     }),
 };
 
+export const requestProjectControl: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_WORKJET_PROJECT_CONTROL_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxWorkjetProjectControlInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxWorkjetProjectControlResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* guests
+        .requestProjectControl(input.value.instanceId, input.value.request)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxWorkjetProjectControlResult, result)));
+    }),
+};
+
 export const openApp: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
   channel: IpcChannels.CTOX_OPEN_APP_CHANNEL,
   handler: (raw) =>
@@ -844,6 +869,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   setGuestBounds,
   listApps,
   requestDeviceControl,
+  requestProjectControl,
   openApp,
   openSettings,
   setAppDocked,

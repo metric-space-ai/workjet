@@ -1517,6 +1517,47 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("uses only an existing warm guest for project control", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "failed",
+          code: "not_active",
+        },
+      );
+      expect(harness.views).toHaveLength(0);
+
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.exitBusinessOsMode;
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: unknown) => {
+        const source = String(expression);
+        if (!source.includes("workjetProjectControl")) return undefined;
+        expect(source).toContain('"action":"project.list"');
+        expect(source).not.toContain("fetch(");
+        return { status: "completed", result: { action: "project.list", projects: [] } };
+      });
+
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "completed",
+          response: { action: "project.list", projects: [] },
+        },
+      );
+      assert.deepEqual(
+        yield* manager.requestProjectControl("managed:other", { action: "project.list" }),
+        { _tag: "failed", code: "not_active" },
+      );
+      expect(harness.views).toHaveLength(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   /**
    * THE NAVIGATION POLICY IS WIRED, NOT MERELY WRITTEN
    * (docs/workjet-plan.md → "Security invariants": "Deny untrusted guest

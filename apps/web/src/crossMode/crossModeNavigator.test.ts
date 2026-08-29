@@ -100,8 +100,8 @@ const stepsBefore = (
   return earlierIndex !== -1 && laterIndex !== -1 && earlierIndex < laterIndex;
 };
 
-describe("navigateToCrossModeTarget — teardown before mount", () => {
-  it("destroys the CTOX guest before Code mode is allowed to render", async () => {
+describe("navigateToCrossModeTarget — native surface detachment before mode paint", () => {
+  it("detaches the CTOX guest view before Code mode is allowed to render", async () => {
     const harness = createHarness({ initialMode: "ctox" });
 
     const outcome = await navigateToCrossModeTarget(CODE_TARGET, harness.dependencies);

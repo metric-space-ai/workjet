@@ -83,13 +83,13 @@ describe("the two main surfaces are structurally exclusive", () => {
     expect(appSidebarLayoutSource.split("<CtoxMainShell").length - 1).toBe(1);
   });
 
-  it("mounts the CTOX mode boundary only for the CTOX shell", () => {
-    // `CtoxModeBoundary` is what runs `enterBusinessOsMode` on mount and
-    // `releaseCtoxMode` on unmount; if it stopped being driven by the same
-    // flag as the main surface, the guest could outlive the surface showing it.
-    expect(appSidebarLayoutSource).toContain("<CtoxModeBoundary active={isCtoxShell}>");
-    expect(appSidebarLayoutSource).toContain(
-      "active ? <CtoxModeProvider>{children}</CtoxModeProvider> : children",
-    );
+  it("keeps one CTOX scope mounted while only the native surface follows the mode", () => {
+    // Selection, discovery and the pooled WebRTC guest are Workjet-shell
+    // state. Tearing the provider down on Code/Settings changes used to create
+    // a second selection authority and reconnect the guest. Visibility is now
+    // the only mode-dependent part.
+    expect(appSidebarLayoutSource).toContain("<CtoxModeProvider businessOsVisible={isCtoxShell}>");
+    expect(appSidebarLayoutSource).not.toContain("function CtoxModeBoundary");
+    expect(appSidebarLayoutSource.split("<CtoxModeProvider").length - 1).toBe(1);
   });
 });

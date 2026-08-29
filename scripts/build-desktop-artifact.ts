@@ -10,6 +10,7 @@ import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/rela
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
+import desktopProductIdentity from "../apps/desktop/product-identity.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
@@ -41,7 +42,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+const DESKTOP_APP_ID = desktopProductIdentity.productionAppId;
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2177,18 +2178,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-// Deep-link schemes the packaged app claims. Workjet is the only current
-// identity; CTOX Desktop and t3code stay claimed as inbound aliases. Kept in sync with
-// apps/desktop/src/electron/desktopSchemes.ts (DESKTOP_DEEP_LINK_SCHEMES).
-export const DESKTOP_PROTOCOL_SCHEMES = [
-  "workjet",
-  "workjet-dev",
-  "workjet-preview",
-  "ctox-desktop",
-  "ctox-desktop-dev",
-  "t3code",
-  "t3code-dev",
-] as const;
+// The production artifact claims exactly one product protocol. Development
+// uses its separate launcher and development scheme; retired aliases never
+// enter the packaged runtime or release metadata.
+export const DESKTOP_PROTOCOL_SCHEMES = [desktopProductIdentity.productionScheme] as const;
 
 export function resolveDesktopProductName(_version: string): string {
   return desktopPackageJson.productName ?? "Workjet";
@@ -2265,12 +2258,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: desktopProductIdentity.linuxExecutableName,
       icon: "icons",
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // workjet:// and inbound legacy callbacks to the app.
+      // the canonical workjet:// deep link to the app.
       protocols: [
         {
           name: "Workjet",
@@ -2279,7 +2272,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: desktopProductIdentity.linuxWmClass,
         },
       },
     };
@@ -2478,7 +2471,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
-    prefix: `t3code-desktop-${options.platform}-stage-`,
+    prefix: `workjet-desktop-${options.platform}-stage-`,
   });
 
   const stageAppDir = path.join(stageRoot, "app");
@@ -2686,7 +2679,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageDependencies,
   );
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: "workjet-desktop",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

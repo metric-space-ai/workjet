@@ -36,8 +36,8 @@ const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
     stateDir: "/tmp/t3-state",
     isDevelopment,
     appDataDirectory: "/tmp/app-data",
-    userDataDirName: isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App",
-    legacyUserDataDirNames: isDevelopment ? ["t3code-dev"] : ["t3code"],
+    userDataDirName: isDevelopment ? "Workjet (Dev)" : "Workjet",
+    legacyUserDataDirNames: isDevelopment ? ["CTOX Desktop App (Dev)"] : ["CTOX Desktop App"],
     path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
@@ -102,7 +102,7 @@ describe("DesktopClerk", () => {
           {
             storage: storageAdapter,
             passkeys: true,
-            renderer: { scheme: "t3code-dev", host: "app" },
+            renderer: { scheme: "workjet-dev", host: "app" },
           },
         ],
       ]);
@@ -111,7 +111,7 @@ describe("DesktopClerk", () => {
       // the lock both lives in and creates the userData directory — so the
       // real path must be set before the bridge exists.
       assert.deepEqual(events, [
-        "setPath:userData:/tmp/app-data/CTOX Desktop App (Dev)",
+        "setPath:userData:/tmp/app-data/Workjet (Dev)",
         "createClerkBridge",
       ]);
       storageMock.mockClear();
@@ -224,8 +224,8 @@ describe("DesktopClerk", () => {
   });
 
   it.each([
-    { isDevelopment: true, scheme: "t3code-dev" },
-    { isDevelopment: false, scheme: "t3code" },
+    { isDevelopment: true, scheme: "workjet-dev" },
+    { isDevelopment: false, scheme: "workjet" },
   ])("configures the SDK with the $scheme renderer origin", ({ isDevelopment, scheme }) => {
     const bridge = { cleanup: vi.fn(), isPrimaryInstance: true };
     storageMock.mockReturnValue(storageAdapter);

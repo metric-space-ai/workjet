@@ -20,10 +20,10 @@ const { logInfo, logWarning } = makeComponentLogger("desktop-user-data-migration
  * "this was already decided" signal, so the offer is shown at most once —
  * including when the user declined.
  */
-export const USER_DATA_MIGRATION_MARKER_FILE = "ctox-user-data-migration.json";
+export const USER_DATA_MIGRATION_MARKER_FILE = "workjet-user-data-migration.json";
 
 /**
- * Top-level entries copied out of a legacy user-data directory.
+ * Top-level entries copied out of the previous Workjet Electron profile.
  *
  * The directory is a Chromium profile: the app's own settings live in
  * ~/.t3/<userdata|dev> (DesktopEnvironment.stateDir) and are NOT affected by
@@ -217,8 +217,9 @@ const copyEntry = (
  * Copy the allowlisted entries from `legacyPath` into `targetPath` and return
  * the names actually copied.
  *
- * This is a COPY: the legacy directory is never modified or removed, so a user
- * can always go back to the previous build.
+ * This is an offline COPY before Chromium opens the target profile. The source
+ * directory is never modified or used as a live fallback. This is the sole
+ * transition from the previous Workjet Electron storage identity.
  */
 export const copyAllowlistedUserData = Effect.fn("desktop.userDataMigration.copy")(
   function* (input: {
@@ -400,7 +401,10 @@ export const make = Effect.gen(function* () {
       joinPath: environment.path.join,
     }).pipe(
       Effect.tapCause((cause) =>
-        logWarning("legacy user-data import failed", { legacyPath, cause: String(cause) }),
+        logWarning("previous Workjet user-data import failed", {
+          legacyPath,
+          cause: String(cause),
+        }),
       ),
       Effect.orElseSucceed(() => [] as readonly string[]),
     );
@@ -411,7 +415,7 @@ export const make = Effect.gen(function* () {
       decidedAt: DateTime.formatIso(yield* DateTime.now),
       copiedEntries: copied,
     });
-    yield* logInfo("imported legacy user data", {
+    yield* logInfo("imported previous Workjet user data", {
       legacyPath,
       targetPath,
       copiedEntries: [...copied],

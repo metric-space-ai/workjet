@@ -235,7 +235,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/workjet",
               },
             }),
           ),
@@ -246,7 +246,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                GITHUB_REPOSITORY: "pingdotgg/t3code",
+                GITHUB_REPOSITORY: "metric-space-ai/workjet",
               },
             }),
           ),
@@ -255,56 +255,56 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.deepStrictEqual(latestConfig, {
         provider: "github",
-        owner: "pingdotgg",
-        repo: "t3code",
+        owner: "metric-space-ai",
+        repo: "workjet",
         releaseType: "release",
       });
       assert.deepStrictEqual(nightlyConfig, {
         provider: "github",
-        owner: "pingdotgg",
-        repo: "t3code",
+        owner: "metric-space-ai",
+        repo: "workjet",
         releaseType: "prerelease",
         channel: "nightly",
       });
     }),
   );
 
-  // The packaged update feed carries the product identity: a CTOX build must
-  // resolve to the CTOX repository, never to an inherited Workjet feed. The
+  // The packaged update feed carries the product identity: a Workjet build must
+  // resolve to the configured Workjet repository, never to an inherited feed. The
   // slug is environment-derived by design, so the release pipeline MUST set
   // T3CODE_DESKTOP_UPDATE_REPOSITORY to the CTOX `owner/repo` (or run in the
-  // CTOX repository, which supplies the same slug through the GitHub Actions
+  // Workjet repository, which supplies the same slug through the GitHub Actions
   // GITHUB_REPOSITORY variable). With neither set there is deliberately no
   // publish config at all, so an unconfigured local build ships without an
   // update feed rather than silently pointing at somebody else's releases.
-  it.effect("points the desktop update feed at the configured CTOX repository", () =>
+  it.effect("points the desktop update feed at the configured Workjet repository", () =>
     Effect.gen(function* () {
       const withEnv = (env: Record<string, string>) =>
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
 
-      const ctoxConfig = yield* resolveGitHubPublishConfig("latest").pipe(
-        withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop" }),
+      const workjetConfig = yield* resolveGitHubPublishConfig("latest").pipe(
+        withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/workjet-updates" }),
       );
-      assert.deepStrictEqual(ctoxConfig, {
+      assert.deepStrictEqual(workjetConfig, {
         provider: "github",
         owner: "metric-space-ai",
-        repo: "ctox-desktop",
+        repo: "workjet-updates",
         releaseType: "release",
       });
 
       // The explicit override wins over the ambient GitHub Actions slug, so a
-      // CTOX release built from another repository still publishes and
-      // updates against the CTOX feed.
+      // Workjet release built from another repository still publishes and
+      // updates against the explicitly configured feed.
       const overriddenConfig = yield* resolveGitHubPublishConfig("nightly").pipe(
         withEnv({
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop",
-          GITHUB_REPOSITORY: "pingdotgg/t3code",
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/workjet-updates",
+          GITHUB_REPOSITORY: "metric-space-ai/workjet",
         }),
       );
       assert.deepStrictEqual(overriddenConfig, {
         provider: "github",
         owner: "metric-space-ai",
-        repo: "ctox-desktop",
+        repo: "workjet-updates",
         releaseType: "prerelease",
         channel: "nightly",
       });
@@ -319,7 +319,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       );
       assert.isUndefined(
         yield* resolveGitHubPublishConfig("latest").pipe(
-          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop/extra" }),
+          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/workjet-updates/extra" }),
         ),
       );
     }),
@@ -679,20 +679,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(mac, "asarUnpack");
       assert.notProperty(linux, "asarUnpack");
       assert.deepStrictEqual(win.asarUnpack, WINDOWS_ASAR_UNPACK);
-      // Linux must register the renderer schemes so the generated .desktop
-      // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
+      // Linux registers only the canonical production deep-link scheme.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
         {
           name: "Workjet",
-          schemes: [
-            "workjet",
-            "workjet-dev",
-            "workjet-preview",
-            "ctox-desktop",
-            "ctox-desktop-dev",
-            "t3code",
-            "t3code-dev",
-          ],
+          schemes: ["workjet"],
         },
       ]);
       for (const config of [mac, linux, win]) {
@@ -751,22 +742,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("derives macOS passkey signing configuration from the Clerk publishable key", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
       T3CODE_APPLE_TEAM_ID: "abc1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
+      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
       T3CODE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa("example.clerk.accounts.dev$")}`,
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "com.t3tools.t3code",
+      appId: "dev.workjet.desktop",
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
-      provisioningProfilePath: "/tmp/t3code.provisionprofile",
+      provisioningProfilePath: "/tmp/workjet.provisionprofile",
     });
   });
 
   it("normalizes explicit macOS passkey RP domains and renders required entitlements", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
       T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
+      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
       T3CODE_CLERK_PASSKEY_RP_DOMAINS:
         " Clerk.Example.com,example.clerk.accounts.dev,clerk.example.com ",
     });
@@ -776,7 +767,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "clerk.example.com",
       "example.clerk.accounts.dev",
     ]);
-    assert.include(entitlements, "<string>ABC1234567.com.t3tools.t3code</string>");
+    assert.include(entitlements, "<string>ABC1234567.dev.workjet.desktop</string>");
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
@@ -806,7 +797,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "https://domain-user:domain-secret@example.clerk.accounts.dev/path?token=query-secret";
     const invalidDomainError = captureError({
       T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
+      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
       T3CODE_CLERK_PASSKEY_RP_DOMAINS: unsafeDomain,
     });
     assert.instanceOf(invalidDomainError, InvalidMacPasskeyRpDomainError);
@@ -824,14 +815,14 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       () =>
         resolveMacPasskeySigningConfiguration({
           T3CODE_APPLE_TEAM_ID: "ABC1234567",
-          T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
+          T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
           T3CODE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev:8443",
         }),
       /Invalid passkey RP domain/u,
     );
     const invalidPublishableKeyError = captureError({
       T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
+      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
       T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_%",
     });
     assert.instanceOf(invalidPublishableKeyError, InvalidMacPasskeyPublishableKeyError);
@@ -863,7 +854,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.notInclude(error.message, secret);
   });
 
-  it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
+  it.effect("adds passkey entitlements and only the production renderer protocol", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig(
         "mac",
@@ -874,27 +865,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         {
           entitlementsPath: "/tmp/entitlements.mac.plist",
-          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+          provisioningProfilePath: "/tmp/workjet.provisionprofile",
         },
         "/verified/ctox-business-os-shell",
       );
 
       const mac = config.mac as Record<string, unknown>;
-      assert.equal(config.appId, "com.t3tools.t3code");
+      assert.equal(config.appId, "dev.workjet.desktop");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
-      assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
+      assert.equal(mac.provisioningProfile, "/tmp/workjet.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
         {
           name: "Workjet",
-          schemes: [
-            "workjet",
-            "workjet-dev",
-            "workjet-preview",
-            "ctox-desktop",
-            "ctox-desktop-dev",
-            "t3code",
-            "t3code-dev",
-          ],
+          schemes: ["workjet"],
         },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),

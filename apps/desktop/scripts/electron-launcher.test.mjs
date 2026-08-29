@@ -1,6 +1,7 @@
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  APP_BUNDLE_ID,
   DEVELOPMENT_MAC_ICON_PATH,
   makeDevelopmentLauncherScript,
   resolveElectronBinaryPath,
@@ -13,6 +14,7 @@ describe("electron development launcher", () => {
     assert.equal(resolveLauncherDisplayName(true), "Workjet");
     assert.equal(resolveLauncherDisplayName(false), "Workjet");
     assert.match(DEVELOPMENT_MAC_ICON_PATH, /assets\/workjet\/workjet-app-icon\.png$/);
+    assert.equal(APP_BUNDLE_ID, "dev.workjet.desktop");
   });
 
   it("uses captured values only as fallbacks for a live runner environment", () => {

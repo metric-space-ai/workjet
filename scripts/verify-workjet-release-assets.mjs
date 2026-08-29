@@ -15,6 +15,30 @@ if (manifest.schema !== "workjet.desktop-install-manifest.v1") {
 if (!["stable", "nightly"].includes(manifest.channel)) {
   throw new Error("Release channel must be stable or nightly.");
 }
+if (
+  manifest.identity?.appId !== "dev.workjet.desktop" ||
+  JSON.stringify(manifest.identity?.deepLinkSchemes) !== JSON.stringify(["workjet"]) ||
+  manifest.identity?.macosInstallPath !== "/Applications/Workjet.app" ||
+  JSON.stringify(manifest.identity?.updateCompatibleAppIds) !==
+    JSON.stringify(["dev.workjet.desktop"])
+) {
+  throw new Error("Workjet desktop identity is missing or not canonical.");
+}
+if (
+  manifest.identity?.replacesByInstallPath?.appId !== "dev.workjet.menubar" ||
+  manifest.identity?.replacesByInstallPath?.updateCompatible !== false ||
+  manifest.identity?.replacesByInstallPath?.mustBeStoppedBeforeInstall !== true
+) {
+  throw new Error("The obsolete native Workjet app replacement contract is missing.");
+}
+if (
+  manifest.identity?.profileMigration?.mode !== "offline-copy-on-first-launch" ||
+  manifest.identity?.profileMigration?.sourceUserDataDirName !== "CTOX Desktop App" ||
+  manifest.identity?.profileMigration?.targetUserDataDirName !== "Workjet" ||
+  manifest.identity?.profileMigration?.sourceIsRuntimeFallback !== false
+) {
+  throw new Error("The offline Workjet profile migration contract is missing.");
+}
 
 const expected = new Set(["macos/arm64", "macos/x64", "windows/x64", "linux/x64", "linux/arm64"]);
 for (const artifact of manifest.artifacts || []) {

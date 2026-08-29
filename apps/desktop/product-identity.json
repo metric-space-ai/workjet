@@ -1,0 +1,12 @@
+{
+  "productName": "Workjet",
+  "productionAppId": "dev.workjet.desktop",
+  "developmentAppIdPrefix": "dev.workjet.desktop.dev",
+  "productionScheme": "workjet",
+  "developmentScheme": "workjet-dev",
+  "productionUserDataDirName": "Workjet",
+  "developmentUserDataDirName": "Workjet (Dev)",
+  "linuxExecutableName": "workjet",
+  "linuxDesktopEntryName": "workjet.desktop",
+  "linuxWmClass": "workjet"
+}

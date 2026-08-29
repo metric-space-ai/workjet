@@ -12,8 +12,8 @@ const decode = Schema.decodeUnknownEffect(DesktopPendingDeepLinksSchema);
 
 const pending: DesktopDeepLinkRouter.PendingDesktopDeepLink = {
   linkId: "deep-link-1",
-  scheme: "ctox-desktop",
-  canonicalUrl: "t3code://app/threads/abc?tab=diff",
+  scheme: "workjet",
+  canonicalUrl: "workjet://app/threads/abc?tab=diff",
   path: "/threads/abc",
   search: "?tab=diff",
   hash: "",

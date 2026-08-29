@@ -289,7 +289,7 @@ export function selectWorkjetTarget(targets: readonly CdpTarget[]): CdpTarget {
   const matches = targets.filter(
     (target) =>
       target.type === "page" &&
-      /^t3code(?:-dev|-preview)?:\/\/app\//u.test(target.url) &&
+      /^workjet(?:-dev)?:\/\/app\//u.test(target.url) &&
       target.webSocketDebuggerUrl !== undefined,
   );
   if (matches.length !== 1)

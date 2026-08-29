@@ -26,7 +26,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
-import { executeEnvironmentHttpRequest, makeEnvironmentHttpApiClient } from "../rpc/http.ts";
+import { executeEnvironmentHttpRequest, makeProductEnvironmentHttpApiClient } from "../rpc/http.ts";
 import {
   buildEnvironmentAuthHeaders,
   type EnvironmentHttpAuthHeaders,
@@ -81,7 +81,7 @@ const withCurrentEnvironmentConnection = Effect.fn(
     | EnvironmentNotConnectedForMobileInviteError
     | EnvironmentNotConnectedForMobileShellPackError,
   request: (input: {
-    readonly client: Effect.Success<ReturnType<typeof makeEnvironmentHttpApiClient>>;
+    readonly client: Effect.Success<ReturnType<typeof makeProductEnvironmentHttpApiClient>>;
     readonly headers: EnvironmentHttpAuthHeaders;
   }) => Effect.Effect<A, E, HttpClient.HttpClient>,
 ) {
@@ -92,7 +92,7 @@ const withCurrentEnvironmentConnection = Effect.fn(
   }
   const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
   const requestUrl = environmentEndpointUrl(prepared.value.httpBaseUrl, path);
-  const client = yield* makeEnvironmentHttpApiClient(prepared.value.httpBaseUrl);
+  const client = yield* makeProductEnvironmentHttpApiClient(prepared.value.httpBaseUrl);
   const headers = yield* buildEnvironmentAuthHeaders(
     prepared.value.httpAuthorization,
     "POST",
@@ -198,7 +198,7 @@ export const redeemWorkjetDeviceInviteReference = (input: {
       return yield* new WorkjetDeviceInviteReferenceInvalidError();
     }
     const requestUrl = environmentEndpointUrl(endpoint, DEVICE_INVITE_REDEEM_PATH);
-    const client = yield* makeEnvironmentHttpApiClient(endpoint);
+    const client = yield* makeProductEnvironmentHttpApiClient(endpoint);
     return yield* executeEnvironmentHttpRequest(
       requestUrl,
       DEVICE_INVITE_REDEEM_REQUEST_TIMEOUT_MS,

@@ -4,7 +4,7 @@ import {
   AuthAccessWriteScope,
   AuthStandardClientScopes,
   EnvironmentInternalError,
-  EnvironmentHttpApi,
+  ProductEnvironmentHttpApi,
   WorkjetDeviceInviteRedeemRateLimitedError,
   WorkjetDeviceInviteRedeemRejectedError,
 } from "@t3tools/contracts";
@@ -101,7 +101,7 @@ function deviceInviteRateLimitKey(source: unknown): string {
 }
 
 export const businessOsHttpApiLayer = HttpApiBuilder.group(
-  EnvironmentHttpApi,
+  ProductEnvironmentHttpApi,
   "businessOs",
   Effect.fnUntraced(function* (handlers) {
     const mobileInvites = yield* CtoxMobileInviteService;

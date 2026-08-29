@@ -7,18 +7,32 @@ import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
 /**
- * Source trees that may ship in Workjet. Infra/relay stays excluded because it
- * is not a product data plane; every desktop, web, server and mobile surface
- * is checked against the same RxDB/WebRTC-only release contract.
+ * Desktop, Web and Server product trees must stay free of the retired managed
+ * relay stack. Mobile still owns a bounded compatibility slice listed below;
+ * release artifacts are always scanned without that source exception.
  */
 export const ACTIVE_PRODUCT_ROOTS = Object.freeze([
-  "apps/desktop/src",
-  "apps/mobile/src",
-  "apps/web/src",
-  "apps/server/src",
-  "packages/shared/src",
-  "packages/client-runtime/src",
-  "packages/contracts/src",
+  "apps/desktop",
+  "apps/web",
+  "apps/server",
+  "scripts/build-desktop-artifact.ts",
+  "scripts/lib/cli-external-packages.ts",
+]);
+
+/** Temporary, exact Mobile compatibility ownership and migration blockers. */
+export const MOBILE_ONLY_LEGACY_REMOTE_PATHS = Object.freeze([
+  "apps/mobile",
+  "packages/client-runtime/src/relay",
+  "packages/client-runtime/src/state/businessOsManagedBackendControl.ts",
+  "packages/contracts/src/environmentHttp.ts",
+  "packages/contracts/src/relay.ts",
+  "packages/contracts/src/workjetManagedBackendControl.ts",
+  "packages/shared/src/dpop.ts",
+  "packages/shared/src/dpopCommon.ts",
+  "packages/shared/src/relayAuth.ts",
+  "packages/shared/src/relayJwt.ts",
+  "packages/shared/src/relayTracing.ts",
+  "packages/shared/src/relayUrl.ts",
 ]);
 
 export interface ForbiddenReference {
@@ -56,6 +70,36 @@ export const FORBIDDEN_REFERENCES: ReadonlyArray<ForbiddenReference> = Object.fr
       /\/api\/business-os\/(?:collections|records|files|chunks|commands|replication)(?:\/|\b)/giu,
     description: "Business OS record, file, command or replication HTTP route",
   },
+  {
+    id: "managed-relay-runtime",
+    pattern: /\b(?:ManagedRelay|managedRelay|connectEnvironment)\b/gu,
+    description: "managed relay connection runtime",
+  },
+  {
+    id: "managed-device-session",
+    pattern: /\b(?:WorkjetManagedBackendControl|WorkjetManagedDeviceSession|DeviceSession)\b/gu,
+    description: "managed backend or device-session control runtime",
+  },
+  {
+    id: "clerk-web-session",
+    pattern: /(?:@clerk\/|\buseClerk\b|\bClerkProvider\b|\bDesktopClerk\b)/gu,
+    description: "Clerk-backed desktop or web session",
+  },
+  {
+    id: "legacy-connect-http",
+    pattern: /(?:\bEnvironmentConnectHttpApi\b|\/api\/connect(?:\/|\b)|\/api\/workjet\/device-session(?:\/|\b))/gu,
+    description: "legacy managed-connect HTTP control route",
+  },
+  {
+    id: "retired-relay-host",
+    pattern: /\brelay\.t3\.codes\b/gu,
+    description: "retired Workjet relay host",
+  },
+  {
+    id: "retired-relay-infrastructure",
+    pattern: /\b(?:PlanetScale|Axiom)\b/gu,
+    description: "retired relay persistence or telemetry vendor",
+  },
 ]);
 
 type AllowlistEntry = {
@@ -77,6 +121,12 @@ export const LEGACY_REFERENCE_ALLOWLIST: ReadonlyArray<AllowlistEntry> = Object.
       "http-data-bridge-enabled",
       "http-data-transport",
       "business-data-http-route",
+      "managed-relay-runtime",
+      "managed-device-session",
+      "clerk-web-session",
+      "legacy-connect-http",
+      "retired-relay-host",
+      "retired-relay-infrastructure",
     ],
     reason: "Literal canaries used only by the release guard's focused fixture test.",
   },

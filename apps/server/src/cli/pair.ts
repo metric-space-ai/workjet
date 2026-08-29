@@ -78,7 +78,7 @@ export class NoRunningServerError extends Schema.TaggedErrorClass<NoRunningServe
     return [
       "No running Workjet server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
-      "Start one with `npx t3 serve`, or connect this machine with Workjet Connect: `npx t3 connect`.",
+      "Start one with `npx t3 serve`.",
     ].join("\n");
   }
 }

@@ -8,6 +8,7 @@ import * as NodeTest from "node:test";
 import {
   ACTIVE_PRODUCT_ROOTS,
   FORBIDDEN_REFERENCES,
+  MOBILE_ONLY_LEGACY_REMOTE_PATHS,
   checkWorkjetWebRtcOnlyRelease,
   isAllowlistedLegacyReference,
   scanLegacyReleaseText,
@@ -69,7 +70,7 @@ NodeTest.test("allows only the exact fixture, never active product source", () =
 });
 
 NodeTest.test(
-  "scans mobile and supplied build artifacts while allowing legitimate authentication",
+  "scans Desktop/Web/Server and artifacts while isolating Mobile compatibility",
   async () => {
     const repoRoot = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-webrtc-only-"));
     const webRoot = NodePath.join(repoRoot, "apps/web/src");
@@ -105,17 +106,18 @@ NodeTest.test(
       artifactPaths: ["release/web"],
     });
 
-    NodeAssert.equal(result.filesScanned, 4);
+    NodeAssert.equal(result.filesScanned, 3);
     NodeAssert.deepEqual(
       result.findings.map(({ path: findingPath, markerId }) => [findingPath, markerId]),
       [
-        ["apps/mobile/src/legacy.ts", "shared-signaling-secret"],
         ["release/web/app.js", "business-data-http-route"],
+        ["release/web/node_modules/legacy-runtime/index.js", "clerk-web-session"],
         ["release/web/node_modules/legacy-runtime/index.js", "http-data-transport"],
       ],
     );
-    NodeAssert.ok(ACTIVE_PRODUCT_ROOTS.includes("apps/web/src"));
-    NodeAssert.ok(ACTIVE_PRODUCT_ROOTS.includes("apps/mobile/src"));
+    NodeAssert.ok(ACTIVE_PRODUCT_ROOTS.includes("apps/web"));
+    NodeAssert.ok(!ACTIVE_PRODUCT_ROOTS.includes("apps/mobile"));
+    NodeAssert.ok(MOBILE_ONLY_LEGACY_REMOTE_PATHS.includes("apps/mobile"));
   },
 );
 

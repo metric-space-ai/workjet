@@ -37,12 +37,6 @@ the task commands.
 - `packages/effect-codex-app-server` (`effect-codex-app-server`): Effect client for the
   `codex app-server` JSON-RPC protocol.
 
-## infra
-
-- `infra/relay`: retired, non-deployable protocol reference code. Production signaling and
-  device-session control run on Cloudflare; Business OS records synchronize directly through CTOX.
-  See [t3-connect.md](./t3-connect.md).
-
 ## Other top-level directories
 
 - `scripts/`: workspace tooling run through `vp run`. Dev runner, desktop artifact builds, release

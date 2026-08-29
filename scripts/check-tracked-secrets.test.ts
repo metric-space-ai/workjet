@@ -115,7 +115,7 @@ describe("scanTrackedFileText", () => {
       "a committed .env is scanned with the whole table, residue heuristics included",
     );
     assert.deepStrictEqual(
-      shapesForPath("infra/relay/.env.example").map((shape) => shape.name),
+      shapesForPath("docs/example.env").map((shape) => shape.name),
       SOURCE_TREE_SECRET_SHAPES.map((shape) => shape.name),
       "a documented template holds placeholders, so it is scanned like documentation",
     );

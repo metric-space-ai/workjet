@@ -12,7 +12,7 @@ import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
-import { executeEnvironmentHttpRequest, makeEnvironmentHttpApiClient } from "../rpc/http.ts";
+import { executeEnvironmentHttpRequest, makeProductEnvironmentHttpApiClient } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 
@@ -47,7 +47,7 @@ export const fetchEnvironmentSessionState = Effect.fn(
   readonly timeoutMs?: number;
 }) {
   const requestUrl = environmentEndpointUrl(input.prepared.httpBaseUrl, "/api/auth/session");
-  const client = yield* makeEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
+  const client = yield* makeProductEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
   const headers = yield* buildEnvironmentAuthHeaders(
     input.prepared.httpAuthorization,
     "GET",

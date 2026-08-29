@@ -157,25 +157,6 @@ describe("DesktopDeepLinkRouter", () => {
     }),
   );
 
-  itScoped("leaves the Clerk OAuth callback on the renderer scheme untouched", () =>
-    Effect.gen(function* () {
-      const harness = makeHarness();
-      const router = yield* makeRouter(harness);
-      yield* router.register;
-
-      // Exactly the shape @clerk/electron builds: renderer scheme, host `app`,
-      // path `/`, OAuth parameters in the query.
-      yield* openUrl(harness, "workjet://app/?code=oauth-code&state=xyz");
-
-      assert.deepEqual(yield* router.takePending, []);
-      assert.deepEqual(harness.preventedDefaults, []);
-
-      // The same scheme WITH a path is a product deep link and is claimed.
-      yield* openUrl(harness, "workjet://app/threads/abc");
-      assert.equal((yield* router.takePending).length, 1);
-    }),
-  );
-
   itScoped("extracts deep links from a second-instance argv", () =>
     Effect.gen(function* () {
       const harness = makeHarness();
@@ -241,13 +222,10 @@ describe("DesktopDeepLinkRouter", () => {
     }),
   );
 
-  itScoped("uses the development renderer scheme for the Clerk filter", () =>
+  itScoped("uses the development renderer scheme", () =>
     Effect.gen(function* () {
       const harness = makeHarness();
       const router = yield* makeRouter(harness, true);
-
-      yield* router.offer("workjet-dev://app/?code=oauth", "open-url");
-      assert.deepEqual(yield* router.takePending, []);
 
       yield* router.offer("workjet-dev://app/threads/x", "open-url");
       const delivered = yield* router.takePending;

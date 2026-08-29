@@ -23,14 +23,14 @@ const snapshotLoaderLayer = Layer.mergeAll(
 );
 
 type ConnectionLayerSource =
-  | typeof Connection.layer
+  | typeof Connection.productLayer
   | typeof snapshotLoaderLayer
   | typeof runtimeContextLayer
   | typeof connectionPlatformLayer
   | typeof backgroundActivityObserverLayer
   | typeof backgroundActivityReporterLayer;
 
-const providedClientConnectionLayer = Layer.merge(Connection.layer, snapshotLoaderLayer).pipe(
+const providedClientConnectionLayer = Layer.merge(Connection.productLayer, snapshotLoaderLayer).pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       runtimeContextLayer,

@@ -729,7 +729,19 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
-export class EnvironmentHttpApi extends HttpApi.make("environment")
+export class ProductEnvironmentHttpApi extends HttpApi.make("environment")
+  .add(EnvironmentMetadataHttpApi)
+  .add(EnvironmentAuthHttpApi)
+  .add(EnvironmentBusinessOsHttpApi)
+  .add(EnvironmentOrchestrationHttpApi)
+  .add(EnvironmentPullRequestsHttpApi) {}
+
+/**
+ * Temporary mobile-only compatibility surface. Desktop, web, and server must
+ * use ProductEnvironmentHttpApi so the retired Connect control routes cannot
+ * re-enter their source or release graph.
+ */
+export class EnvironmentHttpApi extends HttpApi.make("legacyMobileEnvironment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentBusinessOsHttpApi)

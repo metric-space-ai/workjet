@@ -248,12 +248,9 @@ export const copyAllowlistedUserData = Effect.fn("desktop.userDataMigration.copy
 /**
  * A SYNCHRONOUS FileSystem for this service's construction path.
  *
- * The service is constructed before Electron's `ready` event because
- * `DesktopClerk.make` depends on it and the Clerk bridge must register
- * privileged schemes pre-ready. The async Node FileSystem yields to the
+ * The service is constructed before Electron's `ready` event. The async Node FileSystem yields to the
  * macrotask queue on every operation, which lets `ready` fire mid-graph and
- * crashed the packaged app with "registerSchemesAsPrivileged should be called
- * before app is ready". Wrapping Node's sync fs in `Effect.sync` keeps the
+ * could let readiness-sensitive platform setup run mid-graph. Wrapping Node's sync fs in `Effect.sync` keeps the
  * whole construction free of macrotask boundaries, so `ready` cannot preempt
  * it. The one-time blocking copy is acceptable: it runs exactly once, on the
  * launch after the user accepted the import.

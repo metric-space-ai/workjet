@@ -133,12 +133,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@clerk/electron':
-        specifier: 0.0.24
-        version: 0.0.24(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@41.10.3)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@clerk/electron-passkeys':
-        specifier: 0.0.3
-        version: 0.0.3
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))(ioredis@5.11.0)(utf-8-validate@6.0.6)
@@ -533,12 +527,6 @@ importers:
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.5.0(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@clerk/electron':
-        specifier: 0.0.24
-        version: 0.0.24(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@41.10.3)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@clerk/react':
-        specifier: 6.12.10
-        version: 6.12.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

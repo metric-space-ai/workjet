@@ -9,8 +9,8 @@ import type { PreparedConnection } from "../connection/model.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import {
   executeEnvironmentHttpRequest,
-  makeEnvironmentHttpApiClient,
-  makeEnvironmentHttpApiUrlBuilder,
+  makeProductEnvironmentHttpApiClient,
+  makeProductEnvironmentHttpApiUrlBuilder,
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
@@ -25,10 +25,10 @@ export const fetchEnvironmentPullRequestDiff = Effect.fn(
   readonly signer: Option.Option<ManagedRelayDpopSigner["Service"]>;
   readonly timeoutMs?: number;
 }) {
-  const requestUrl = makeEnvironmentHttpApiUrlBuilder(
+  const requestUrl = makeProductEnvironmentHttpApiUrlBuilder(
     input.prepared.httpBaseUrl,
   ).pullRequests.diff();
-  const client = yield* makeEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
+  const client = yield* makeProductEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
   const headers = yield* buildEnvironmentAuthHeaders(
     input.prepared.httpAuthorization,
     "POST",

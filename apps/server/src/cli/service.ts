@@ -157,7 +157,7 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
       message: installed
         ? "The installed Workjet service needs an update or repair. Update it now?"
         : "Run Workjet in the background whenever this machine boots? " +
-          "It stays reachable through Workjet Connect even after you log out.",
+          "It stays available on configured network endpoints after you log out.",
       initial: true,
     }),
   );

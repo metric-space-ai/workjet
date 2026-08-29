@@ -1,4 +1,4 @@
-import { AuthOrchestrationReadScope, EnvironmentHttpApi } from "@t3tools/contracts";
+import { AuthOrchestrationReadScope, ProductEnvironmentHttpApi } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
@@ -7,7 +7,7 @@ import * as PullRequestService from "./PullRequestService.ts";
 
 /** The patch is often the largest PR payload and benefits from HTTP compression and flow control. */
 export const pullRequestHttpApiLayer = HttpApiBuilder.group(
-  EnvironmentHttpApi,
+  ProductEnvironmentHttpApi,
   "pullRequests",
   Effect.fnUntraced(function* (handlers) {
     const pullRequests = yield* PullRequestService.PullRequestService;

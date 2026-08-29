@@ -47,10 +47,6 @@
       "types": "./src/state/businessOsMobileInvite.ts",
       "default": "./src/state/businessOsMobileInvite.ts"
     },
-    "./state/business-os-computer-membership": {
-      "types": "./src/state/businessOsComputerMembership.ts",
-      "default": "./src/state/businessOsComputerMembership.ts"
-    },
     "./state/business-os-managed-backend-control": {
       "types": "./src/state/businessOsManagedBackendControl.ts",
       "default": "./src/state/businessOsManagedBackendControl.ts"

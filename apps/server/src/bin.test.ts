@@ -46,8 +46,8 @@ import { environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 class ProjectCliHttpApi extends HttpApi.make("environment").add(EnvironmentOrchestrationHttpApi) {}
 
-const connectCli = makeCli({ cloudEnabled: true });
-const noConnectCli = makeCli({ cloudEnabled: false });
+const connectCli = makeCli();
+const noConnectCli = makeCli();
 const runCli = (args: ReadonlyArray<string>, command = cli) =>
   Command.runWith(command, { version: "0.0.0" })(args);
 const runConnectCli = (args: ReadonlyArray<string>) => runCli(args, connectCli);

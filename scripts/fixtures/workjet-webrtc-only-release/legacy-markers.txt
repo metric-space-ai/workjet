@@ -3,3 +3,9 @@ pairing_version: "w1"
 http_bridge_available: true
 data_plane: "http-proxy"
 /api/business-os/records/customer-1
+ManagedRelay.connectEnvironment()
+WorkjetManagedDeviceSession
+useClerk()
+/api/connect/link-state
+relay.t3.codes
+PlanetScale Axiom

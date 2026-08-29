@@ -48,7 +48,6 @@ import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
-import * as DesktopClerk from "./app/DesktopClerk.ts";
 import * as DesktopDeepLinkRouter from "./app/DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
 import * as DesktopAssets from "./app/DesktopAssets.ts";
@@ -275,38 +274,25 @@ const desktopApplicationLayer = Layer.mergeAll(
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),
 );
 
-// The migration layer runs the pending legacy user-data import while it is
-// constructed, and DesktopClerk depends on it, so the import always completes
-// before the single-instance lock opens the profile.
+// The migration layer runs any pending legacy user-data import before the
+// application opens the profile.
 const desktopUserDataMigrationLayer = DesktopUserDataMigration.layer.pipe(
   // The sync FileSystem keeps this construction free of macrotask yields so
-  // Electron's `ready` cannot fire before the Clerk bridge registers its
-  // privileged schemes (see syncFileSystemLayer).
+  // Keep construction synchronous until the pre-ready application setup.
   Layer.provide(DesktopUserDataMigration.syncFileSystemLayer),
   Layer.provideMerge(desktopEnvironmentLayer),
   Layer.provideMerge(NodeServices.layer),
 );
 
-const desktopClerkLayer = DesktopClerk.layer.pipe(
-  Layer.provideMerge(desktopUserDataMigrationLayer),
-  Layer.provideMerge(desktopEnvironmentLayer),
-  Layer.provideMerge(NodeServices.layer),
-  Layer.provideMerge(ElectronApp.layer),
-);
-
 const desktopApplicationRuntimeLayer = desktopApplicationLayer.pipe(
+  Layer.provideMerge(desktopUserDataMigrationLayer),
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(NodeHttpClient.layerUndici),
   Layer.provideMerge(NetService.layer),
   Layer.provideMerge(electronLayer),
 );
 
-// Acquire strict pre-ready setup before Clerk, whose userData resolution can
-// yield and let Electron emit ready.
-const desktopRuntimeLayer = desktopClerkLayer.pipe(
-  Layer.flatMap((clerkContext) =>
-    desktopApplicationRuntimeLayer.pipe(Layer.provideMerge(Layer.succeedContext(clerkContext))),
-  ),
+const desktopRuntimeLayer = desktopApplicationRuntimeLayer.pipe(
   Layer.provideMerge(DesktopPreReadyPlatform.layer),
 );
 

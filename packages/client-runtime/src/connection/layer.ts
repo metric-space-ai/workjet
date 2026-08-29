@@ -10,6 +10,7 @@ import * as ConnectionOnboarding from "./onboarding.ts";
 import * as PlatformConnectionSource from "../platform/source.ts";
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import * as ManagedRelay from "../relay/managedRelay.ts";
 import * as RpcSession from "../rpc/session.ts";
 
 const resolverLayer = ConnectionResolver.layer.pipe(
@@ -47,3 +48,20 @@ const connectionStartupLayer = Layer.effectDiscard(
 );
 
 export const layer = connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer));
+
+const unsupportedProductRelayClient = ManagedRelay.ManagedRelayClient.of(
+  new Proxy(
+    { relayUrl: "" },
+    {
+      get: (target, property) =>
+        property === "relayUrl"
+          ? target.relayUrl
+          : () => Effect.die("Managed relay is unavailable in this product runtime."),
+    },
+  ) as ManagedRelay.ManagedRelayClient["Service"],
+);
+
+/** Desktop/Web layer: relay targets are intentionally unsupported. */
+export const productLayer = layer.pipe(
+  Layer.provide(Layer.succeed(ManagedRelay.ManagedRelayClient, unsupportedProductRelayClient)),
+);

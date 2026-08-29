@@ -1,7 +1,7 @@
 import {
   CommandId,
   AuthAdministrativeScopes,
-  EnvironmentHttpApi,
+  ProductEnvironmentHttpApi,
   EnvironmentHttpCommonError,
   type OrchestrationReadModel,
   ProjectId,
@@ -224,7 +224,7 @@ const withProjectCliLiveServerTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>
   effect.pipe(Effect.timeout(PROJECT_CLI_LIVE_SERVER_TIMEOUT));
 
 const makeLiveServerClient = (origin: string) =>
-  HttpApiClient.make(EnvironmentHttpApi, {
+  HttpApiClient.make(ProductEnvironmentHttpApi, {
     baseUrl: origin,
   });
 

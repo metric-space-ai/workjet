@@ -1,7 +1,6 @@
 packages:
   - apps/*
   - infra/*
-  - "!infra/relay"
   - oxlint-plugin-t3code
   - packages/*
   - scripts

@@ -1,6 +1,0 @@
-{
-  "name": "workjet-relay-reference",
-  "private": true,
-  "description": "Non-deployable protocol reference; production runs on Cloudflare.",
-  "type": "module"
-}

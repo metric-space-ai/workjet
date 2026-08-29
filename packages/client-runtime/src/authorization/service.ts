@@ -77,7 +77,7 @@ const fetchDescriptor = Effect.fn("clientRuntime.connection.remote.fetchDescript
 });
 
 export const make = Effect.gen(function* () {
-  const signer = yield* ManagedRelay.ManagedRelayDpopSigner;
+  const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const tokenStore = yield* TokenStore.RemoteDpopAccessTokenStore;
   const httpClient = yield* HttpClient.HttpClient;
@@ -151,7 +151,13 @@ export const make = Effect.gen(function* () {
 
   const createDpopSocketUrl = Effect.fn("clientRuntime.connection.remote.createDpopSocketUrl")(
     function* (token: TokenStore.RemoteDpopAccessToken, timeoutMs?: number) {
-      const ticketProof = yield* signer
+      if (Option.isNone(signer)) {
+        return yield* new ConnectionBlockedError({
+          reason: "unsupported",
+          detail: "Managed relay authorization is unavailable in this product.",
+        });
+      }
+      const ticketProof = yield* signer.value
         .createProof({
           method: "POST",
           url: environmentEndpointUrl(token.endpoint.httpBaseUrl, "/api/auth/websocket-ticket"),
@@ -186,7 +192,13 @@ export const make = Effect.gen(function* () {
       >[0]["obtainBootstrap"];
       readonly authorizationContext?: string;
     }) {
-      const thumbprint = yield* signer.thumbprint.pipe(
+      if (Option.isNone(signer)) {
+        return yield* new ConnectionBlockedError({
+          reason: "unsupported",
+          detail: "Managed relay authorization is unavailable in this product.",
+        });
+      }
+      const thumbprint = yield* signer.value.thumbprint.pipe(
         Effect.mapError(
           () =>
             new ConnectionBlockedError({
@@ -248,7 +260,7 @@ export const make = Effect.gen(function* () {
           actual: descriptor.environmentId,
         });
       }
-      const bootstrapProof = yield* signer
+      const bootstrapProof = yield* signer.value
         .createProof({
           method: "POST",
           url: environmentEndpointUrl(bootstrap.endpoint.httpBaseUrl, "/oauth/token"),

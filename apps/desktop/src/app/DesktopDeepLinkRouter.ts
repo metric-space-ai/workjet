@@ -44,27 +44,8 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
  * MAX_PENDING_DEEP_LINKS) instead of pushed, and the renderer drains the queue
  * when it mounts.
  *
- * Coexistence with the Clerk bridge
- * ---------------------------------
- * `@clerk/electron` installs its own `open-url` and `second-instance`
- * listeners for the OAuth callback, whose URL it builds as
- * `${renderer.scheme}://${renderer.host}/` — i.e. `workjet://app/` — and
- * matches on protocol + host + pathname only, with the OAuth parameters in the
- * query string. This parser accepts that URL too, so without a filter every
- * sign-in would raise an "open this link?" dialog. Two rules keep the two
- * consumers disjoint:
- *
- *   1. Only URLs whose scheme is one of DESKTOP_DEEP_LINK_SCHEMES are handled
- *      at all, so any foreign scheme passes straight through to whoever owns
- *      it.
- *   2. A link on the *renderer* scheme whose path is exactly `/` is Clerk's
- *      OAuth callback and is ignored here. Electron invokes every registered
- *      listener, so ignoring is precisely what leaves the event to Clerk. This
- *      router never removes Clerk's listener and never calls
- *      `preventDefault()` on an event it does not own.
- *
- * Product deep links always carry a path (`workjet://app/threads/x`), so
- * rule 2 costs nothing: a bare `://app/` link has no target to navigate to.
+ * Only URLs whose scheme is one of the product deep-link schemes are handled;
+ * foreign schemes pass through to their owner.
  */
 
 /** Beyond this many unconfirmed links, further arrivals are dropped. */
@@ -95,18 +76,6 @@ export function redactDeepLinkUrl(rawUrl: string): string {
   if (!remainder.startsWith("//")) return `${scheme}:<redacted>`;
   const host = (remainder.slice(2).split(/[/?#]/, 1)[0] ?? "").toLowerCase();
   return host.length === 0 || host.length > 64 ? `${scheme}://<redacted>` : `${scheme}://${host}`;
-}
-
-/**
- * True for the `workjet://app/` shape Clerk's OAuth transport owns. See the
- * module doc: the renderer scheme with an empty path is a sign-in callback,
- * never a product deep link.
- */
-export function isClerkOAuthCallbackLink(
-  link: DesktopDeepLink.DesktopDeepLink,
-  rendererScheme: string,
-): boolean {
-  return link.scheme === rendererScheme && link.path === "/";
 }
 
 /**
@@ -171,12 +140,6 @@ export const make = Effect.gen(function* () {
         });
         return;
       }
-      if (isClerkOAuthCallbackLink(link, rendererScheme)) {
-        // Left to the Clerk bridge's own listener. Not an error, and not
-        // logged per-arrival: every sign-in produces one.
-        return;
-      }
-
       const pending = yield* Ref.get(pendingRef);
       if (pending.length >= MAX_PENDING_DEEP_LINKS) {
         yield* logWarning("dropped a deep link because the pending queue is full", {
@@ -218,13 +181,8 @@ export const make = Effect.gen(function* () {
 
     yield* electronApp.on<[PreventableEvent, string]>("open-url", (event, url) => {
       const parsed = DesktopDeepLink.parseDesktopDeepLink(url);
-      // Claim only links this app owns and that are not Clerk's callback, so
-      // Clerk still sees its own event untouched.
-      if (
-        Option.isSome(parsed) &&
-        parsed.value.scheme === rendererScheme &&
-        !isClerkOAuthCallbackLink(parsed.value, rendererScheme)
-      ) {
+      // Claim only links owned by this product scheme.
+      if (Option.isSome(parsed) && parsed.value.scheme === rendererScheme) {
         event?.preventDefault?.();
         void runPromise(offer(url, "open-url"));
         return;

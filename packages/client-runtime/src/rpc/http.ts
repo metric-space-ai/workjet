@@ -1,5 +1,6 @@
 import {
   EnvironmentHttpApi,
+  ProductEnvironmentHttpApi,
   EnvironmentHttpCommonError,
   type EnvironmentAuthInvalidError,
   type EnvironmentInternalError,
@@ -102,6 +103,16 @@ export const makeEnvironmentHttpApiClient = (httpBaseUrl: string) =>
 /** Contract-derived request URLs for authentication proofs, tracing, and structured errors. */
 export const makeEnvironmentHttpApiUrlBuilder = (httpBaseUrl: string) =>
   HttpApiClient.urlBuilder(EnvironmentHttpApi, {
+    baseUrl: remoteApiBaseUrl(httpBaseUrl),
+  });
+
+export const makeProductEnvironmentHttpApiClient = (httpBaseUrl: string) =>
+  HttpApiClient.make(ProductEnvironmentHttpApi, {
+    baseUrl: remoteApiBaseUrl(httpBaseUrl),
+  });
+
+export const makeProductEnvironmentHttpApiUrlBuilder = (httpBaseUrl: string) =>
+  HttpApiClient.urlBuilder(ProductEnvironmentHttpApi, {
     baseUrl: remoteApiBaseUrl(httpBaseUrl),
   });
 

@@ -11,7 +11,13 @@ const targetsDir = NodePath.dirname(testDir);
 const fixturesDir = NodePath.join(testDir, "fixtures");
 const mockCtox = NodePath.join(testDir, "mock-ctox.mjs");
 const sharedScript = NodePath.join(targetsDir, "_shared", "generic-prospect-v1.js");
-const PROTECTED_TARGETS = ["dnbhoovers.com", "leadfeeder.com", "rocketreach.com"];
+const PROTECTED_TARGETS = [
+  "dnbhoovers.com",
+  "leadfeeder.com",
+  "linkedin.com",
+  "rocketreach.com",
+  "xing.com",
+];
 const PUBLIC_UNLOCK_TARGETS = [
   "bundesanzeiger.de",
   "companyhouse.de",
@@ -127,7 +133,7 @@ function containsForbiddenSecretKey(value) {
 
 NodeTest("all DACH research scrape targets pass production-like fixture gates", async (t) => {
   const targets = targetDirectories();
-  NodeAssert.equal(targets.length, 15, `expected 15 targets, found: ${targets.join(", ")}`);
+  NodeAssert.equal(targets.length, 16, `expected 16 targets, found: ${targets.join(", ")}`);
 
   const seenKeys = new Set();
   for (const targetName of targets) {
@@ -289,7 +295,7 @@ NodeTest("public sources without credentials never emit auth handoffs", async (t
 });
 
 NodeTest("protected providers resume capture after secret-backed Browser-App login", async (t) => {
-  for (const targetName of ["dnbhoovers.com", "leadfeeder.com", "rocketreach.com"]) {
+  for (const targetName of PROTECTED_TARGETS) {
     await t.test(targetName, () => {
       const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
       const fixture = loadJson(fixturePath);

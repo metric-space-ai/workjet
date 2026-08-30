@@ -44,6 +44,12 @@ const PROTECTED_SOURCE_CONFIG = Object.freeze({
     credential_ref: "ctox-secret://credentials/LEADFEEDER_BROWSER_LOGIN",
     capture_supported: true,
   },
+  "linkedin.com": {
+    login_url: "https://www.linkedin.com/login",
+    allowed_domains: ["linkedin.com", "www.linkedin.com", "api.linkedin.com"],
+    credential_ref: "ctox-secret://credentials/LINKEDIN_BROWSER_LOGIN",
+    capture_supported: true,
+  },
   "rocketreach.com": {
     login_url: "https://rocketreach.co/login",
     allowed_domains: ["rocketreach.com", "rocketreach.co"],
@@ -95,6 +101,11 @@ const SOURCE_CONFIG = Object.freeze({
     native: true,
     native_only: true,
     domains: ["leadfeeder.com", "app.leadfeeder.com", "api.leadfeeder.com"],
+  },
+  "linkedin.com": {
+    native: true,
+    native_only: true,
+    domains: ["linkedin.com", "www.linkedin.com", "api.linkedin.com"],
   },
   "moneyhouse.ch": { native: false, domains: ["moneyhouse.ch"] },
   "northdata.de": { native: true, domains: ["northdata.de"] },

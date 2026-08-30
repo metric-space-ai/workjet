@@ -463,7 +463,7 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
 
 ### 12.1 Abgeschlossen und nachgewiesen
 
-- [x] `workjet-ui-testing` ist als Testwerkzeug selbst abgenommen: 12/12
+- [x] `workjet-ui-testing` ist als Testwerkzeug selbst abgenommen: 13/13
       Runner-/Vertrags-/Redaction-/Watchdog-/Restart-/Review-Gate-Tests sind
       grün. Die absichtlich defekte Electron-Fixture erkannte 7/7 Fehler am
       korrekten letzten Schritt: toter Klick, unsichtbares Overlay,
@@ -511,6 +511,36 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
       identifiziert: native Swift-Menüleisten-App 0.1.0, Bundle-ID
       `dev.workjet.menubar`, ad-hoc signiert; sie ist nicht der aktuelle
       Electron-Desktop und nicht updatekompatibel.
+- [x] Die alte Swift-App wurde recoverbar ersetzt. Der Electron-Kandidat auf
+      Workjet-Commit `0c9507be3e266475090d2b3487859298b40d7290` ist als
+      `/Applications/Workjet.app` installiert und gestartet: Version 0.0.33,
+      Bundle-ID `dev.workjet.desktop`, `workjet://`, gehärtete Runtime und
+      gültige Developer-ID-Signatur von Team `2HS27B8739`. Das unveränderte
+      CTOX-Profil sowie das Workjet-/Alt-Electron-Profil wurden zuvor unter
+      `/Users/Shared/workjet-install-backup-20260829T171113` gesichert; die
+      ersetzte Swift-App liegt unter
+      `/Users/Shared/Workjet-old-swift-20260829T1819.app`. Der Vergleich nach
+      Start weist weiterhin acht CTOX-Dateien aus; nur der erwartete flüchtige
+      `shell-fleet-status.json` änderte sich. Die App ist noch nicht
+      notarisiert und dieser lokale Installationsbeweis ist kein Releasebeweis.
+- [x] Der zweite Desktop/Web/Server-Hard-Cut ist als
+      `0c9507be3e266475090d2b3487859298b40d7290` remote erreichbar. Contracts-,
+      Client-Runtime-, Desktop-, Web- und Server-Typechecks, Desktop-/Web-/
+      Server-Builds sowie die fünf WebRTC-only-Guardtests sind grün. Im
+      erzeugten Bundle verbleibende Kompatibilitätssymbole und die noch aktive
+      Primary-WebSocket-Produktkante verhindern weiterhin das Architektur-Gate
+      und werden deshalb ausdrücklich nicht als erledigt markiert.
+- [x] Der sichtbare Add-Project-Einstieg erstellt ab Workjet-Commit
+      `2fe02443af514cdebc55a1f614036d41a262560b` zuerst ein logisches Projekt in
+      der aktiven Business-OS-Instanz. Er öffnet nicht mehr den lokalen
+      Ordnerdialog und verlangt weder Computer noch Working Copy; beides wird
+      erst danach zugeordnet. Retry nutzt stabile Command-/Project-IDs, der
+      Dialog bleibt bis zur autoritativen CTOX-Projektion offen und zeigt den
+      Pending-Zustand. 14/14 fokussierte Webtests, 63/63 Desktop-Gast-/IPC-Tests,
+      Web-Typecheck und Web-Produktionsbuild sind grün. Die installierte
+      0.0.33-App entdeckt im geprüften Profil aktuell jedoch nur `CTOX Local
+    Instance`; deshalb bleiben Welsch-, Zweitinstanz-, Reload- und
+      Neustart-Abnahme als US-03-Gate offen.
 - [x] Das Workjet-Repository besitzt zum Prüfzeitpunkt weder GitHub-Release
       noch Tag. Die Electron-Updateengine ist implementiert, hat damit aber
       keinen produktiven Releasefeed.
@@ -537,11 +567,13 @@ Baustein ersetzt keine vollständige User-Story-Abnahme.
       Typecheck sowie Web-/Server-Produktionsbuild sind grün. Der Branch ist
       remote erreichbar. Apple-Signing, Notarisierung und der reale
       Alt-App-Ersatz bleiben getrennte offene Release-Gates.
-- [ ] Ein signierter und notarisierter Electron-DMG-/ZIP-Release veröffentlicht
+- [ ] Ein notarisierter Electron-DMG-/ZIP-Release veröffentlicht
       verifizierte Updater-Metadaten und
       `workjet.desktop-install-manifest.v1`; Update `N → N+1` ist real
       durchgeklickt. Die alte Swift-App wird einmalig ersetzt und niemals als
-      paralleles Produkt oder Runtime-Fallback weitergeführt.
+      paralleles Produkt oder Runtime-Fallback weitergeführt. Die lokale
+      Developer-ID-Signatur und der recoverable Alt-App-Ersatz sind bewiesen;
+      Notarisierung, Veröffentlichung und `N → N+1` bleiben offen.
 - [ ] US-03 `Projekt anlegen → sichtbar → Reload → App-Neustart` ist gegen
       genau diesen CTOX-Head vollständig grün.
 - [ ] Ein Computer lässt sich in der gemeinsamen Settings-IA sichtbar einer

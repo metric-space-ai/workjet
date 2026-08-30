@@ -1288,7 +1288,9 @@ function appendSearchHitEvidence(records, sourceId, hit, company) {
             ? protectedConfig
               ? "authorization_required"
               : "auth_required"
-            : "temporary_unreachable",
+            : COMMAND_ERRORS.length > 0
+              ? "temporary_unreachable"
+              : "no_match",
         detail: !googleProviderVerified
           ? "google.de target rejected results from a non-Google search provider"
           : reauthRequired

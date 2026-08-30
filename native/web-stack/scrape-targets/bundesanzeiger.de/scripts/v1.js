@@ -170,7 +170,7 @@ function classifyBrowserResult(company, result) {
   if (result.no_results === true) {
     return {
       records: [],
-      failure_mode: "temporary_unreachable",
+      failure_mode: "no_match",
       detail: "bundesanzeiger.de found no publications for the exact company name",
     };
   }
@@ -179,7 +179,7 @@ function classifyBrowserResult(company, result) {
       records: [],
       failure_mode:
         Array.isArray(result.entries) && result.entries.length > 0
-          ? "temporary_unreachable"
+          ? "no_match"
           : "portal_drift",
       detail:
         Array.isArray(result.entries) && result.entries.length > 0

@@ -584,7 +584,11 @@ function main() {
       // elements is portal drift. A failed browser command plus a rejected
       // foreign-provider fallback is transport unavailability, not a reason to
       // enqueue script-repair work (and therefore not a core task-spawn path).
-      failure_mode: selectorDrift ? "portal_drift" : "temporary_unreachable",
+      failure_mode: selectorDrift
+        ? "portal_drift"
+        : fallbackSearch.providerOk
+          ? "no_match"
+          : "temporary_unreachable",
       detail: selectorDrift
         ? "google.de loaded without challenge but no organic h3 results matched the selector"
         : fallbackSearch.providerOk

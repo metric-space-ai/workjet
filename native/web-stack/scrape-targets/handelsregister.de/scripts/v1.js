@@ -151,7 +151,7 @@ function classifyBrowserResult(company, result) {
       records: [],
       failure_mode:
         Array.isArray(result.entries) && result.entries.length > 0
-          ? "temporary_unreachable"
+          ? "no_match"
           : "portal_drift",
       detail:
         Array.isArray(result.entries) && result.entries.length > 0

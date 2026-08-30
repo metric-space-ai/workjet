@@ -147,7 +147,7 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
-import { runWorkjetProjectCreation, workjetLogicalProjectId } from "../workjetProjectCreation";
+import { runWorkjetProjectCreation } from "../workjetProjectCreation";
 import {
   readWorkjetProjectRegistry,
   recordWorkjetProjectProjection,
@@ -640,6 +640,13 @@ function OpenCommandPaletteDialog(props: {
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const projectCreationPendingRef = useRef(false);
+  const [isLogicalProjectCreating, setIsLogicalProjectCreating] = useState(false);
+  const [logicalProjectDraft, setLogicalProjectDraft] = useState<{
+    readonly presentationInstanceId: string;
+    readonly commandId: ReturnType<typeof newCommandId>;
+    readonly projectId: ReturnType<typeof newProjectId>;
+    readonly createdAt: string;
+  } | null>(null);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
@@ -1098,6 +1105,7 @@ function OpenCommandPaletteDialog(props: {
   function popView(): void {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
+    setLogicalProjectDraft(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
     }
@@ -1326,53 +1334,32 @@ function OpenCommandPaletteDialog(props: {
     [addProjectEnvironmentItems],
   );
 
-  const createLogicalProjectFromFolder = useCallback(async (): Promise<void> => {
+  const createLogicalProjectFromTitle = useCallback(async (): Promise<void> => {
     if (projectCreationPendingRef.current) return;
-    const api = readLocalApi();
-    if (!api) {
+    const title = query.trim();
+    if (title.length === 0 || logicalProjectDraft === null) return;
+    const presentationInstanceId = logicalProjectDraft.presentationInstanceId;
+    if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
           title: "Failed to add project",
-          description: "The folder picker is not available in this Workjet host.",
+          description: "The active CTOX instance changed. Open Add project again and retry.",
         }),
       );
       return;
     }
     projectCreationPendingRef.current = true;
+    setIsLogicalProjectCreating(true);
     try {
-      setIsPickingProjectFolder(true);
-      let pickedPath: string | null;
-      try {
-        pickedPath = await api.dialogs.pickFolder();
-      } catch {
-        pickedPath = null;
-      } finally {
-        setIsPickingProjectFolder(false);
-      }
-      if (!pickedPath) return;
-
-      const presentationInstanceId = activeCtoxInstanceId;
-      if (presentationInstanceId === null) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to add project",
-            description: "Select a connected CTOX instance, then try again.",
-          }),
-        );
-        return;
-      }
-
-      const projectId = await workjetLogicalProjectId(presentationInstanceId, pickedPath);
       const outcome = await runWorkjetProjectCreation({
         presentationInstanceId,
         request: {
           action: "project.create",
-          commandId: newCommandId(),
-          projectId,
-          title: inferProjectTitleFromPath(pickedPath),
-          createdAt: new Date().toISOString(),
+          commandId: logicalProjectDraft.commandId,
+          projectId: logicalProjectDraft.projectId,
+          title,
+          createdAt: logicalProjectDraft.createdAt,
         },
       });
       if (outcome._tag === "failed") {
@@ -1416,14 +1403,15 @@ function OpenCommandPaletteDialog(props: {
       }
       toastManager.add({
         type: "success",
-        title: "Project added",
-        description: `${outcome.project.title} is now available in this CTOX instance.`,
+        title: "Project created",
+        description: `${outcome.project.title} is now available in this CTOX instance. Choose a computer when you are ready to run it.`,
       });
       setOpen(false);
     } finally {
       projectCreationPendingRef.current = false;
+      setIsLogicalProjectCreating(false);
     }
-  }, [activeCtoxInstanceId, setOpen]);
+  }, [logicalProjectDraft, query, setOpen]);
 
   const openAddProjectFlow = useCallback(() => {
     // An explicit Add Project intent must never inherit a previous palette
@@ -1432,6 +1420,16 @@ function OpenCommandPaletteDialog(props: {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
     setAddProjectEnvironmentId(null);
+    setLogicalProjectDraft(
+      activeCtoxInstanceId === null
+        ? null
+        : {
+            presentationInstanceId: activeCtoxInstanceId,
+            commandId: newCommandId(),
+            projectId: newProjectId(),
+            createdAt: new Date().toISOString(),
+          },
+    );
     setViewStack([]);
     setHighlightedItemValue(null);
     setQuery("");
@@ -1445,20 +1443,23 @@ function OpenCommandPaletteDialog(props: {
           items: [
             {
               kind: "action",
-              value: "action:add-project:choose-folder",
-              searchTerms: ["project", "folder", "directory", "local"],
-              title: "Choose folder…",
+              value: "action:add-project:create",
+              searchTerms: ["project", "create", "name", "ctox"],
+              title:
+                activeCtoxInstanceId === null ? "No active CTOX instance" : "Enter a project name",
               description:
-                "Create the project in the active CTOX instance. A computer can be chosen or changed later.",
+                activeCtoxInstanceId === null
+                  ? "Select a connected Business OS instance before creating a project."
+                  : "The project belongs to the active CTOX instance. Computer and working copy are chosen later.",
               icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-              keepOpen: true,
-              run: createLogicalProjectFromFolder,
+              disabled: true,
+              run: async () => {},
             },
           ],
         },
       ],
     });
-  }, [browseNavigation, createLogicalProjectFromFolder, pushPaletteView]);
+  }, [activeCtoxInstanceId, browseNavigation, pushPaletteView]);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "add-project") {
@@ -2049,7 +2050,32 @@ function OpenCommandPaletteDialog(props: {
   }, [addProjectCloneFlow]);
 
   let displayedGroups: CommandPaletteView["groups"] = filteredGroups;
-  if (addProjectCloneFlow?.step === "repository") {
+  const logicalProjectTitle = query.trim();
+  if (logicalProjectDraft !== null) {
+    displayedGroups = [
+      {
+        value: "ctox-project-create",
+        label: "Project in active CTOX instance",
+        items: [
+          {
+            kind: "action",
+            value: "action:add-project:create",
+            searchTerms: ["project", "create", logicalProjectTitle],
+            title:
+              logicalProjectTitle.length > 0
+                ? `Create “${logicalProjectTitle}”`
+                : "Enter a project name",
+            description:
+              "Create the logical project first. Choose or change its computer and working copy later.",
+            icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+            disabled: logicalProjectTitle.length === 0 || isLogicalProjectCreating,
+            keepOpen: true,
+            run: createLogicalProjectFromTitle,
+          },
+        ],
+      },
+    ];
+  } else if (addProjectCloneFlow?.step === "repository") {
     displayedGroups = [];
   } else if (addProjectCloneFlow?.step === "confirm") {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
@@ -2058,8 +2084,10 @@ function OpenCommandPaletteDialog(props: {
   }
 
   const inputPlaceholder =
-    remoteProjectInputPlaceholder(addProjectCloneFlow) ??
-    getCommandPaletteInputPlaceholder(paletteMode);
+    logicalProjectDraft !== null
+      ? "Project name…"
+      : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
+        getCommandPaletteInputPlaceholder(paletteMode));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canSubmitBrowsePath =
@@ -2150,6 +2178,12 @@ function OpenCommandPaletteDialog(props: {
         executeItem(matchingItem);
         return;
       }
+    }
+
+    if (logicalProjectDraft !== null && event.key === "Enter") {
+      event.preventDefault();
+      void createLogicalProjectFromTitle();
+      return;
     }
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
@@ -2316,7 +2350,28 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const inputAccessory =
-    addProjectCloneFlow?.step === "repository" ? (
+    logicalProjectDraft !== null ? (
+      <Button
+        variant="outline"
+        size="xs"
+        tabIndex={-1}
+        data-workjet-action="project.create.submit"
+        className="absolute inset-e-2.5 top-1/2 gap-1.5 pe-1 ps-2 -translate-y-1/2"
+        aria-label="Create project (Enter)"
+        disabled={logicalProjectTitle.length === 0 || isLogicalProjectCreating}
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+        onClick={() => {
+          void createLogicalProjectFromTitle();
+        }}
+      >
+        <span>{isLogicalProjectCreating ? "Creating…" : "Create"}</span>
+        <KbdGroup className="pointer-events-none -me-0.5 items-center gap-1">
+          <Kbd>Enter</Kbd>
+        </KbdGroup>
+      </Button>
+    ) : addProjectCloneFlow?.step === "repository" ? (
       <Tooltip>
         <TooltipTrigger
           render={
@@ -2391,29 +2446,32 @@ function OpenCommandPaletteDialog(props: {
     ) : null;
 
   const footerActionLabel =
-    addProjectCloneFlow?.step === "repository"
-      ? (remoteProjectButtonLabel ?? "Continue")
-      : !canSubmitBrowsePath || hasHighlightedBrowseItem
-        ? "Select"
-        : undefined;
+    logicalProjectDraft !== null
+      ? "Create"
+      : addProjectCloneFlow?.step === "repository"
+        ? (remoteProjectButtonLabel ?? "Continue")
+        : !canSubmitBrowsePath || hasHighlightedBrowseItem
+          ? "Select"
+          : undefined;
 
-  const footerTrailing = canOpenProjectFromFileManager ? (
-    <Button
-      variant="ghost"
-      size="xs"
-      className="h-auto px-2 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
-      disabled={isPickingProjectFolder}
-      onClick={() => {
-        void handleOpenProjectFromFileManager();
-      }}
-    >
-      {`Open in ${fileManagerName}`}
-    </Button>
-  ) : null;
+  const footerTrailing =
+    logicalProjectDraft === null && canOpenProjectFromFileManager ? (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="h-auto px-2 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
+        disabled={isPickingProjectFolder}
+        onClick={() => {
+          void handleOpenProjectFromFileManager();
+        }}
+      >
+        {`Open in ${fileManagerName}`}
+      </Button>
+    ) : null;
 
   return (
     <CommandPaletteContent
-      key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${addProjectCloneFlow?.step ?? "none"}`}
+      key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${logicalProjectDraft !== null ? "logical-project" : (addProjectCloneFlow?.step ?? "none")}`}
       aria-label="Command palette"
       autoHighlight={isBrowsing || isRemoteProjectCloneFlow ? false : "always"}
       footerActionLabel={footerActionLabel}
@@ -2421,13 +2479,15 @@ function OpenCommandPaletteDialog(props: {
       inputAccessory={inputAccessory}
       inputProps={{
         className:
-          addProjectCloneFlow?.step === "repository"
+          logicalProjectDraft !== null
             ? "pe-32"
-            : isBrowsing
-              ? willCreateProjectPath
-                ? "pe-36"
-                : "pe-16"
-              : undefined,
+            : addProjectCloneFlow?.step === "repository"
+              ? "pe-32"
+              : isBrowsing
+                ? willCreateProjectPath
+                  ? "pe-36"
+                  : "pe-16"
+                : undefined,
         placeholder: inputPlaceholder,
         wrapperClassName: isSubmenu
           ? "[&_[data-slot=autocomplete-start-addon]]:pointer-events-auto"
@@ -2479,24 +2539,29 @@ function OpenCommandPaletteDialog(props: {
         isActionsOnly={isActionsOnly}
         keybindings={keybindings}
         onExecuteItem={executeItem}
-        {...(addProjectCloneFlow?.step === "repository"
+        {...(logicalProjectDraft !== null
           ? {
-              emptyStateMessage:
-                addProjectCloneFlow.source === "url"
-                  ? "Enter a Git clone URL and press Enter to continue."
-                  : "Enter a repository path and press Enter to look it up.",
+              emptyStateMessage: "Enter a project name and press Enter to create it.",
             }
-          : addProjectCloneFlow?.step === "confirm"
-            ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-            : relativePathNeedsActiveProject
-              ? { emptyStateMessage: "Relative paths require an active project." }
-              : willCreateProjectPath
-                ? {
-                    emptyStateMessage: "Press Enter to create this folder and add it as a project.",
-                  }
-                : threadSearch.isPending
-                  ? { emptyStateMessage: "Searching thread messages…" }
-                  : {})}
+          : addProjectCloneFlow?.step === "repository"
+            ? {
+                emptyStateMessage:
+                  addProjectCloneFlow.source === "url"
+                    ? "Enter a Git clone URL and press Enter to continue."
+                    : "Enter a repository path and press Enter to look it up.",
+              }
+            : addProjectCloneFlow?.step === "confirm"
+              ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
+              : relativePathNeedsActiveProject
+                ? { emptyStateMessage: "Relative paths require an active project." }
+                : willCreateProjectPath
+                  ? {
+                      emptyStateMessage:
+                        "Press Enter to create this folder and add it as a project.",
+                    }
+                  : threadSearch.isPending
+                    ? { emptyStateMessage: "Searching thread messages…" }
+                    : {})}
       />
     </CommandPaletteContent>
   );

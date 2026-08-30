@@ -3451,10 +3451,11 @@ export default function Sidebar() {
                     data-workjet-action={`project.select:${project.id}`}
                     onClick={() => {
                       if (workjetProjectRegistry.presentationInstanceId !== null) {
-                        selectWorkjetProject(
+                        const selected = selectWorkjetProject(
                           workjetProjectRegistry.presentationInstanceId,
                           project.id,
                         );
+                        if (selected) void router.navigate({ to: "/" });
                       }
                     }}
                     className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover aria-[current=page]:bg-sidebar-row-hover"

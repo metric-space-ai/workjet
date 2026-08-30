@@ -380,7 +380,17 @@ impl SourceModule for Xing {
     }
 
     fn authoritative_for(&self) -> &'static [FieldKey] {
-        &[FieldKey::PersonFunktion, FieldKey::PersonXing]
+        &[
+            // Gender may only be emitted when the profile contains an
+            // explicit value; the source must never infer it from names.
+            FieldKey::PersonGeschlecht,
+            FieldKey::PersonTitel,
+            FieldKey::PersonVorname,
+            FieldKey::PersonNachname,
+            FieldKey::PersonFunktion,
+            FieldKey::PersonPosition,
+            FieldKey::PersonXing,
+        ]
     }
 
     fn requires_credential(&self) -> Option<&'static str> {

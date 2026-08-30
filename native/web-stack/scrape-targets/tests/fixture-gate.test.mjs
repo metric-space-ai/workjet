@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeChildProcess from "node:child_process";
-import * as NodeTest from "node:test";
+import { test as NodeTest } from "node:test";
 
 const testDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const targetsDir = NodePath.dirname(testDir);
@@ -27,6 +27,7 @@ const FIELD_KEYS = new Set([
   "firma_email",
   "firma_domain",
   "firma_telefon",
+  "firma_fax",
   "wz_code",
   "umsatz",
   "mitarbeiter",

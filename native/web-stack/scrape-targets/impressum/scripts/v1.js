@@ -12,7 +12,7 @@
 // Live-verified with scrape-targets/impressum/solo/probe.mjs on 2026-07-31
 // against destilla.com, bnt-chemicals.de and akemi.de: all seven policy
 // fields (firma_name, firma_anschrift, firma_plz, firma_ort, firma_telefon,
-// firma_email, firma_domain) extracted from each live Impressum, plus the
+// firma_fax, firma_email, firma_domain) extracted from each live Impressum, plus the
 // legally required representatives (§ 5 DDG/TMG) as one person_vorname /
 // person_nachname / person_funktion (/ person_titel) record set per named
 // person — destilla.com "Geschäftsführer: Matthias Thienel",
@@ -399,6 +399,8 @@ const PLZ_RE =
 
 const PHONE_LABEL_RE = /(?:telefon|tel\.?|phone|zentrale)\b\s*[:.]?\s*(\+?\d[\d\s()./-]{5,22}\d)/i;
 
+const FAX_LABEL_RE = /(?:telefax|fax)\b\s*[:.]?\s*(\+?\d[\d\s()./-]{5,22}\d)/i;
+
 const EMAIL_TEXT_RE = /\b([A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b/g;
 
 function looksLikeStreet(line) {
@@ -516,6 +518,16 @@ function extractPhones(windowLines, html) {
     hrefs.push(decodeEntities(match[1]).replace(/\s+/g, " ").trim());
   }
   return [...new Set(hrefs)].filter((value) => value.replace(/\D/g, "").length >= 6);
+}
+
+function extractFax(windowLines) {
+  for (const line of windowLines) {
+    const match = line.match(FAX_LABEL_RE);
+    if (!match) continue;
+    const value = match[1].replace(/\s+/g, " ").trim();
+    if (value.replace(/\D/g, "").length >= 6) return value;
+  }
+  return null;
 }
 
 function extractEmails(windowLines, html, host) {
@@ -764,6 +776,7 @@ function extractImpressum(html, finalUrl) {
   const windowEnd = address ? address.addressIndex + 16 : region.length;
   const windowLines = region.slice(windowStart, windowEnd);
   const phones = extractPhones(windowLines, html);
+  const fax = extractFax(windowLines);
   const emails = extractEmails(windowLines, html, host);
   const persons = extractPersons(region, finalUrl);
 
@@ -781,6 +794,7 @@ function extractImpressum(html, finalUrl) {
     put("firma_ort", address.ort);
   }
   put("firma_telefon", phones[0]);
+  put("firma_fax", fax);
   put("firma_email", emails);
   put("firma_domain", host);
   return { blocked: false, fields, persons, title, lineCount: lines.length };
@@ -1056,6 +1070,7 @@ const RECORD_NOTES = {
   firma_plz: "Impressum: postal code of the address block",
   firma_ort: "Impressum: city of the address block",
   firma_telefon: "Impressum: labelled phone number near the address block",
+  firma_fax: "Impressum: labelled fax number near the address block",
   firma_email: "Impressum: email stated near the address block",
   firma_domain: "company origin hosting its own Impressum",
   person_vorname: "Impressum: representative first name as stated (§ 5 DDG/TMG)",

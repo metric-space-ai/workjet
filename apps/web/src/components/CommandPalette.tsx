@@ -57,17 +57,21 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment } from "../state/filesystem";
-import { projectEnvironment } from "../state/projects";
+import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
-import { useBusinessOsScopedEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import {
+  useBusinessOsScopedEnvironments,
+  usePrimaryEnvironment,
+  usePrimaryEnvironmentId,
+} from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -572,6 +576,7 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const clientSettings = useClientSettings();
+  const workjetComputers = usePrimarySettings((settings) => settings.workjet.computers);
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -588,9 +593,11 @@ function OpenCommandPaletteDialog(props: {
   const { environments } = useBusinessOsScopedEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const primaryEnvironment = usePrimaryEnvironment();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
+  const unscopedProjects = useAtomValue(environmentProjects.projectsAtom);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -639,6 +646,11 @@ function OpenCommandPaletteDialog(props: {
     null,
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
+  const [isLogicalProjectPathEntry, setIsLogicalProjectPathEntry] = useState(false);
+  const [isLogicalProjectCreating, setIsLogicalProjectCreating] = useState(false);
+  const [logicalProjectCreationError, setLogicalProjectCreationError] = useState<string | null>(
+    null,
+  );
   const projectCreationPendingRef = useRef(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
@@ -1100,6 +1112,7 @@ function OpenCommandPaletteDialog(props: {
     setAddProjectCloneFlow(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
+      setIsLogicalProjectPathEntry(false);
     }
     setViewStack((previousViews) => previousViews.slice(0, -1));
     setHighlightedItemValue(null);
@@ -1116,7 +1129,7 @@ function OpenCommandPaletteDialog(props: {
   }
 
   const startAddProjectBrowse = useCallback(
-    async (environmentId: EnvironmentId): Promise<void> => {
+    async (environmentId: EnvironmentId, logicalProjectPathEntry = false): Promise<void> => {
       const initialQuery = getAddProjectInitialQueryForEnvironment(environmentId);
       const initialBrowsePath = getBrowseDirectoryPath(initialQuery);
       const browseCwd = getBrowseCwdForEnvironment(environmentId);
@@ -1134,6 +1147,7 @@ function OpenCommandPaletteDialog(props: {
         () => {
           setAddProjectEnvironmentId(environmentId);
           setAddProjectCloneFlow(null);
+          setIsLogicalProjectPathEntry(logicalProjectPathEntry);
           pushPaletteView(view);
         },
       );
@@ -1326,104 +1340,198 @@ function OpenCommandPaletteDialog(props: {
     [addProjectEnvironmentItems],
   );
 
+  const createLogicalProjectFromPath = useCallback(
+    async (rawPath: string): Promise<void> => {
+      const pickedPath = rawPath.trim();
+      if (pickedPath.length === 0 || projectCreationPendingRef.current) return;
+      projectCreationPendingRef.current = true;
+      setLogicalProjectCreationError(null);
+      setIsLogicalProjectCreating(true);
+      try {
+        const presentationInstanceId = activeCtoxInstanceId;
+        if (presentationInstanceId === null) {
+          const description = "Select a connected CTOX instance, then try again.";
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+          );
+          return;
+        }
+
+        const environmentId = defaultAddProjectEnvironmentId ?? primaryEnvironmentId;
+        const environment =
+          environments.find((candidate) => candidate.environmentId === environmentId) ??
+          (primaryEnvironment?.environmentId === environmentId ? primaryEnvironment : null);
+        if (
+          environmentId === null ||
+          !canCreateProjectInEnvironment(environment?.connection.phase)
+        ) {
+          const description = "The local Code environment is not connected.";
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+          );
+          return;
+        }
+
+        const cwd = resolveProjectPathForDispatch(pickedPath, null);
+        if (cwd.length === 0) return;
+        const existingLocalProject = findProjectByPath(
+          unscopedProjects.filter((project) => project.environmentId === environmentId),
+          cwd,
+        );
+        const projectId =
+          existingLocalProject?.id ?? (await workjetLogicalProjectId(presentationInstanceId, cwd));
+        if (existingLocalProject === undefined) {
+          const createResult = await createProject({
+            environmentId,
+            input: {
+              projectId,
+              title: inferProjectTitleFromPath(cwd),
+              workspaceRoot: cwd,
+              createWorkspaceRootIfMissing: true,
+              defaultModelSelection: resolveDefaultProviderModelSelection(
+                environment?.serverConfig?.providers ?? [],
+                null,
+              ),
+            },
+          });
+          if (createResult._tag === "Failure") {
+            const error = squashAtomCommandFailure(createResult);
+            const description =
+              error instanceof Error ? error.message : "The local project could not be created.";
+            setLogicalProjectCreationError(description);
+            toastManager.add(
+              stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+            );
+            return;
+          }
+        }
+
+        const workingCopyComputer = workjetComputers.find(
+          (computer) => computer.environmentId === environmentId,
+        );
+        const outcome = await runWorkjetProjectCreation({
+          presentationInstanceId,
+          request: {
+            action: "project.create",
+            commandId: newCommandId(),
+            projectId,
+            title: inferProjectTitleFromPath(cwd),
+            ...(workingCopyComputer
+              ? {
+                  workingCopy: {
+                    computerId: workingCopyComputer.id,
+                    path: cwd,
+                  },
+                }
+              : {}),
+            createdAt: new Date().toISOString(),
+          },
+        });
+        if (outcome._tag === "failed") {
+          const description =
+            outcome.code === "not_active"
+              ? "The selected CTOX instance is no longer connected."
+              : "CTOX did not confirm the project. You can retry without reopening this dialog.";
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+          );
+          return;
+        }
+        if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
+          const description = "The active instance changed while the project was being created.";
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Project belongs to another instance",
+              description,
+            }),
+          );
+          return;
+        }
+        const recorded = recordWorkjetProjectProjection(presentationInstanceId, outcome.project, {
+          select: true,
+        });
+        const visible = readWorkjetProjectRegistry(presentationInstanceId).projects.some(
+          (project) => project.id === outcome.project.id,
+        );
+        if (!recorded || !visible) {
+          const description =
+            "CTOX created the project, but it is not visible in this instance yet.";
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Project confirmation incomplete",
+              description,
+            }),
+          );
+          return;
+        }
+        toastManager.add({
+          type: "success",
+          title: "Project added",
+          description: `${outcome.project.title} is now available in this CTOX instance.`,
+        });
+        setOpen(false);
+      } catch {
+        const description =
+          "Workjet could not reach the active CTOX shell. Check the connection and try again.";
+        setLogicalProjectCreationError(description);
+        toastManager.add(
+          stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+        );
+      } finally {
+        projectCreationPendingRef.current = false;
+        setIsLogicalProjectCreating(false);
+      }
+    },
+    [
+      activeCtoxInstanceId,
+      createProject,
+      defaultAddProjectEnvironmentId,
+      environments,
+      primaryEnvironment,
+      primaryEnvironmentId,
+      setOpen,
+      unscopedProjects,
+      workjetComputers,
+    ],
+  );
+
   const createLogicalProjectFromFolder = useCallback(async (): Promise<void> => {
     if (projectCreationPendingRef.current) return;
     const api = readLocalApi();
     if (!api) {
+      const description = "The folder picker is not available in this Workjet host.";
+      setLogicalProjectCreationError(description);
       toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to add project",
-          description: "The folder picker is not available in this Workjet host.",
-        }),
+        stackedThreadToast({ type: "error", title: "Failed to add project", description }),
       );
       return;
     }
     projectCreationPendingRef.current = true;
+    setLogicalProjectCreationError(null);
+    setIsPickingProjectFolder(true);
+    let pickedPath: string | null = null;
     try {
-      setIsPickingProjectFolder(true);
-      let pickedPath: string | null;
-      try {
-        pickedPath = await api.dialogs.pickFolder();
-      } catch {
-        pickedPath = null;
-      } finally {
-        setIsPickingProjectFolder(false);
-      }
-      if (!pickedPath) return;
-
-      const presentationInstanceId = activeCtoxInstanceId;
-      if (presentationInstanceId === null) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to add project",
-            description: "Select a connected CTOX instance, then try again.",
-          }),
-        );
-        return;
-      }
-
-      const projectId = await workjetLogicalProjectId(presentationInstanceId, pickedPath);
-      const outcome = await runWorkjetProjectCreation({
-        presentationInstanceId,
-        request: {
-          action: "project.create",
-          commandId: newCommandId(),
-          projectId,
-          title: inferProjectTitleFromPath(pickedPath),
-          createdAt: new Date().toISOString(),
-        },
-      });
-      if (outcome._tag === "failed") {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to add project",
-            description:
-              outcome.code === "not_active"
-                ? "The selected CTOX instance is no longer connected."
-                : "CTOX did not confirm the project. The dialog remains open so you can retry.",
-          }),
-        );
-        return;
-      }
-      if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Project belongs to another instance",
-            description: "The active instance changed while the project was being created.",
-          }),
-        );
-        return;
-      }
-      const recorded = recordWorkjetProjectProjection(presentationInstanceId, outcome.project, {
-        select: true,
-      });
-      const visible = readWorkjetProjectRegistry(presentationInstanceId).projects.some(
-        (project) => project.id === outcome.project.id,
+      pickedPath = await api.dialogs.pickFolder();
+    } catch {
+      const description =
+        "Workjet could not open the folder picker. Enter the folder path instead.";
+      setLogicalProjectCreationError(description);
+      toastManager.add(
+        stackedThreadToast({ type: "error", title: "Failed to open folder picker", description }),
       );
-      if (!recorded || !visible) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Project confirmation incomplete",
-            description: "CTOX created the project, but it is not visible in this instance yet.",
-          }),
-        );
-        return;
-      }
-      toastManager.add({
-        type: "success",
-        title: "Project added",
-        description: `${outcome.project.title} is now available in this CTOX instance.`,
-      });
-      setOpen(false);
     } finally {
+      setIsPickingProjectFolder(false);
       projectCreationPendingRef.current = false;
     }
-  }, [activeCtoxInstanceId, setOpen]);
+    if (pickedPath) await createLogicalProjectFromPath(pickedPath);
+  }, [createLogicalProjectFromPath]);
 
   const openAddProjectFlow = useCallback(() => {
     // An explicit Add Project intent must never inherit a previous palette
@@ -1432,6 +1540,8 @@ function OpenCommandPaletteDialog(props: {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
     setAddProjectEnvironmentId(null);
+    setIsLogicalProjectPathEntry(false);
+    setLogicalProjectCreationError(null);
     setViewStack([]);
     setHighlightedItemValue(null);
     setQuery("");
@@ -1448,17 +1558,49 @@ function OpenCommandPaletteDialog(props: {
               value: "action:add-project:choose-folder",
               searchTerms: ["project", "folder", "directory", "local"],
               title: "Choose folder…",
-              description:
-                "Create the project in the active CTOX instance. A computer can be chosen or changed later.",
+              description: "Add the local Code project and sync it with the active CTOX instance.",
               icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
               keepOpen: true,
               run: createLogicalProjectFromFolder,
+            },
+            {
+              kind: "action",
+              value: "action:add-project:enter-folder-path",
+              searchTerms: ["project", "folder", "directory", "local", "path"],
+              title: "Enter folder path…",
+              description:
+                "Type an existing local folder path, add it to Code, and sync it with CTOX.",
+              icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+              keepOpen: true,
+              run: async () => {
+                const environmentId = defaultAddProjectEnvironmentId ?? primaryEnvironmentId;
+                if (environmentId === null) {
+                  const description = "No connected local environment is available for this path.";
+                  setLogicalProjectCreationError(description);
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title: "Failed to add project",
+                      description,
+                    }),
+                  );
+                  return;
+                }
+                await startAddProjectBrowse(environmentId, true);
+              },
             },
           ],
         },
       ],
     });
-  }, [browseNavigation, createLogicalProjectFromFolder, pushPaletteView]);
+  }, [
+    browseNavigation,
+    createLogicalProjectFromFolder,
+    defaultAddProjectEnvironmentId,
+    primaryEnvironmentId,
+    pushPaletteView,
+    startAddProjectBrowse,
+  ]);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "add-project") {
@@ -2057,9 +2199,10 @@ function OpenCommandPaletteDialog(props: {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
 
-  const inputPlaceholder =
-    remoteProjectInputPlaceholder(addProjectCloneFlow) ??
-    getCommandPaletteInputPlaceholder(paletteMode);
+  const inputPlaceholder = isLogicalProjectPathEntry
+    ? "Enter an existing local folder path"
+    : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
+      getCommandPaletteInputPlaceholder(paletteMode));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canSubmitBrowsePath =
@@ -2155,6 +2298,17 @@ function OpenCommandPaletteDialog(props: {
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
       event.preventDefault();
       void submitAddProjectCloneFlow();
+      return;
+    }
+
+    if (
+      isLogicalProjectPathEntry &&
+      event.key === "Enter" &&
+      query.trim().length > 0 &&
+      !isLogicalProjectCreating
+    ) {
+      event.preventDefault();
+      void createLogicalProjectFromPath(resolvedAddProjectPath);
       return;
     }
 
@@ -2357,8 +2511,11 @@ function OpenCommandPaletteDialog(props: {
               )}
               aria-label={`${submitActionLabel} (${addShortcutLabel})`}
               disabled={
-                !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
+                (!isLogicalProjectPathEntry &&
+                  !canCreateProjectInEnvironment(browseEnvironment?.connection.phase)) ||
                 relativePathNeedsActiveProject ||
+                (isLogicalProjectPathEntry &&
+                  (isLogicalProjectCreating || resolvedAddProjectPath.length === 0)) ||
                 (isCloneDestinationStep && isRemoteProjectPending)
               }
               onMouseDown={(event) => {
@@ -2366,6 +2523,10 @@ function OpenCommandPaletteDialog(props: {
               }}
               onClick={() => {
                 if (relativePathNeedsActiveProject) {
+                  return;
+                }
+                if (isLogicalProjectPathEntry) {
+                  void createLogicalProjectFromPath(resolvedAddProjectPath);
                   return;
                 }
                 if (isCloneDestinationStep) {
@@ -2378,7 +2539,11 @@ function OpenCommandPaletteDialog(props: {
           }
         >
           <span>
-            {isCloneDestinationStep && isRemoteProjectPending ? "Cloning" : submitActionLabel}
+            {isLogicalProjectCreating
+              ? "Adding…"
+              : isCloneDestinationStep && isRemoteProjectPending
+                ? "Cloning"
+                : submitActionLabel}
           </span>
           <KbdGroup className="pointer-events-none -me-0.5 items-center gap-1">
             <Kbd>{hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter"}</Kbd>
@@ -2397,19 +2562,20 @@ function OpenCommandPaletteDialog(props: {
         ? "Select"
         : undefined;
 
-  const footerTrailing = canOpenProjectFromFileManager ? (
-    <Button
-      variant="ghost"
-      size="xs"
-      className="h-auto px-2 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
-      disabled={isPickingProjectFolder}
-      onClick={() => {
-        void handleOpenProjectFromFileManager();
-      }}
-    >
-      {`Open in ${fileManagerName}`}
-    </Button>
-  ) : null;
+  const footerTrailing =
+    canOpenProjectFromFileManager && !isLogicalProjectPathEntry ? (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="h-auto px-2 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
+        disabled={isPickingProjectFolder}
+        onClick={() => {
+          void handleOpenProjectFromFileManager();
+        }}
+      >
+        {`Open in ${fileManagerName}`}
+      </Button>
+    ) : null;
 
   return (
     <CommandPaletteContent
@@ -2473,6 +2639,24 @@ function OpenCommandPaletteDialog(props: {
           </div>
         </div>
       ) : null}
+      {isPickingProjectFolder || isLogicalProjectCreating || logicalProjectCreationError ? (
+        <div
+          aria-live="polite"
+          className={cn(
+            "mx-4 mt-3 rounded-md border px-3 py-2 text-sm",
+            logicalProjectCreationError
+              ? "border-destructive/40 bg-destructive/10 text-destructive"
+              : "border-border bg-muted/40 text-muted-foreground",
+          )}
+          role="status"
+        >
+          {isPickingProjectFolder
+            ? "Opening folder picker…"
+            : isLogicalProjectCreating
+              ? "Adding the local project and syncing it with CTOX…"
+              : logicalProjectCreationError}
+        </div>
+      ) : null}
       <CommandPaletteResults
         groups={displayedGroups}
         highlightedItemValue={highlightedItemValue}
@@ -2488,15 +2672,21 @@ function OpenCommandPaletteDialog(props: {
             }
           : addProjectCloneFlow?.step === "confirm"
             ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-            : relativePathNeedsActiveProject
-              ? { emptyStateMessage: "Relative paths require an active project." }
-              : willCreateProjectPath
-                ? {
-                    emptyStateMessage: "Press Enter to create this folder and add it as a project.",
-                  }
-                : threadSearch.isPending
-                  ? { emptyStateMessage: "Searching thread messages…" }
-                  : {})}
+            : isLogicalProjectPathEntry
+              ? {
+                  emptyStateMessage:
+                    "Enter an existing local folder path and press Enter to add it.",
+                }
+              : relativePathNeedsActiveProject
+                ? { emptyStateMessage: "Relative paths require an active project." }
+                : willCreateProjectPath
+                  ? {
+                      emptyStateMessage:
+                        "Press Enter to create this folder and add it as a project.",
+                    }
+                  : threadSearch.isPending
+                    ? { emptyStateMessage: "Searching thread messages…" }
+                    : {})}
       />
     </CommandPaletteContent>
   );

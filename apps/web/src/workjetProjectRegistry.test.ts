@@ -1,5 +1,5 @@
 import { ProjectId } from "@t3tools/contracts";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   __resetWorkjetProjectRegistryForTests,
@@ -10,7 +10,10 @@ import {
   recordWorkjetProjectProjection,
 } from "./workjetProjectRegistry";
 
-afterEach(() => __resetWorkjetProjectRegistryForTests());
+afterEach(() => {
+  __resetWorkjetProjectRegistryForTests();
+  vi.unstubAllGlobals();
+});
 
 const project = {
   id: ProjectId.make("11111111-1111-4111-8111-111111111111"),
@@ -33,6 +36,13 @@ describe("Workjet project registry", () => {
       projects: [],
       selectedProjectId: null,
     });
+  });
+
+  it("returns a referentially stable loading snapshot for React external-store reads", () => {
+    expect(loadingWorkjetProjectRegistry("managed:welsch")).toBe(
+      loadingWorkjetProjectRegistry("managed:welsch"),
+    );
+    expect(loadingWorkjetProjectRegistry(null)).toBe(loadingWorkjetProjectRegistry(null));
   });
 
   it("rejects a late projection from a different instance", () => {
@@ -69,5 +79,24 @@ describe("Workjet project registry", () => {
       selectedProjectId: project.id,
     });
     expect(recordWorkjetProjectProjection("managed:other", project)).toBe(false);
+  });
+
+  it("restores the last confirmed projection before the embedded Business OS view is active", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    expect(recordWorkjetProjectProjection("managed:welsch", project, { select: true })).toBe(true);
+
+    __resetWorkjetProjectRegistryForTests();
+    expect(loadingWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      presentationInstanceId: "managed:welsch",
+      phase: "ready",
+      projects: [project],
+      selectedProjectId: project.id,
+    });
   });
 });

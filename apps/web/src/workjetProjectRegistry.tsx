@@ -1,4 +1,5 @@
-import type { CtoxWorkjetProjectProjection } from "@t3tools/contracts";
+import { CtoxWorkjetProjectProjection, ProjectId } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { useActiveWorkjetScope } from "./activeWorkjetScope";
@@ -12,30 +13,93 @@ export interface WorkjetProjectRegistrySnapshot {
 }
 
 const EMPTY_PROJECTS: readonly CtoxWorkjetProjectProjection[] = Object.freeze([]);
-let snapshot: WorkjetProjectRegistrySnapshot = {
+const WORKJET_PROJECT_REGISTRY_STORAGE_PREFIX = "workjet:project-registry:v1:";
+const PersistedWorkjetProjectRegistry = Schema.Struct({
+  version: Schema.Literal(1),
+  selectedProjectId: Schema.NullOr(ProjectId),
+  projects: Schema.Array(CtoxWorkjetProjectProjection).check(Schema.isMaxLength(10_000)),
+});
+const decodePersistedWorkjetProjectRegistry = Schema.decodeUnknownSync(
+  PersistedWorkjetProjectRegistry,
+);
+const IDLE_SNAPSHOT: WorkjetProjectRegistrySnapshot = Object.freeze({
   presentationInstanceId: null,
   phase: "idle",
   projects: EMPTY_PROJECTS,
   selectedProjectId: null,
-};
+});
+const loadingSnapshots = new Map<string, WorkjetProjectRegistrySnapshot>();
+let snapshot: WorkjetProjectRegistrySnapshot = IDLE_SNAPSHOT;
 const listeners = new Set<() => void>();
+
+function registryStorageKey(presentationInstanceId: string): string {
+  return `${WORKJET_PROJECT_REGISTRY_STORAGE_PREFIX}${encodeURIComponent(presentationInstanceId)}`;
+}
+
+function readPersistedSnapshot(
+  presentationInstanceId: string,
+): WorkjetProjectRegistrySnapshot | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(registryStorageKey(presentationInstanceId));
+    if (raw === null) return null;
+    const persisted = decodePersistedWorkjetProjectRegistry(JSON.parse(raw));
+    const selectedProjectId = persisted.projects.some(
+      (project) => project.id === persisted.selectedProjectId,
+    )
+      ? persisted.selectedProjectId
+      : (persisted.projects[0]?.id ?? null);
+    return Object.freeze({
+      presentationInstanceId,
+      phase: "ready",
+      projects: Object.freeze([...persisted.projects]),
+      selectedProjectId,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function persistSnapshot(next: WorkjetProjectRegistrySnapshot): void {
+  if (
+    typeof localStorage === "undefined" ||
+    next.presentationInstanceId === null ||
+    next.phase !== "ready"
+  )
+    return;
+  try {
+    localStorage.setItem(
+      registryStorageKey(next.presentationInstanceId),
+      JSON.stringify({
+        version: 1,
+        projects: next.projects,
+        selectedProjectId: next.selectedProjectId,
+      }),
+    );
+  } catch {
+    // The confirmed in-memory projection remains usable when persistence is unavailable.
+  }
+}
 
 export function loadingWorkjetProjectRegistry(
   presentationInstanceId: string | null,
 ): WorkjetProjectRegistrySnapshot {
-  return presentationInstanceId === null
-    ? {
-        presentationInstanceId: null,
-        phase: "idle",
-        projects: EMPTY_PROJECTS,
-        selectedProjectId: null,
-      }
-    : {
-        presentationInstanceId,
-        phase: "loading",
-        projects: EMPTY_PROJECTS,
-        selectedProjectId: null,
-      };
+  if (presentationInstanceId === null) return IDLE_SNAPSHOT;
+  const cached = loadingSnapshots.get(presentationInstanceId);
+  if (cached) return cached;
+  const persisted = readPersistedSnapshot(presentationInstanceId);
+  if (persisted !== null) {
+    loadingSnapshots.set(presentationInstanceId, persisted);
+    return persisted;
+  }
+  const next: WorkjetProjectRegistrySnapshot = Object.freeze({
+    presentationInstanceId,
+    phase: "loading",
+    projects: EMPTY_PROJECTS,
+    selectedProjectId: null,
+  });
+  loadingSnapshots.set(presentationInstanceId, next);
+  return next;
 }
 
 export function mergeWorkjetProjectProjection(
@@ -54,6 +118,10 @@ export function mergeWorkjetProjectProjection(
 
 function publish(next: WorkjetProjectRegistrySnapshot): void {
   snapshot = next;
+  if (next.presentationInstanceId !== null) {
+    loadingSnapshots.set(next.presentationInstanceId, next);
+  }
+  persistSnapshot(next);
   for (const listener of listeners) listener();
 }
 
@@ -136,12 +204,14 @@ export function WorkjetProjectRegistrySynchronizer() {
       (result) => {
         if (cancelled) return;
         if (result._tag !== "completed" || result.response.action !== "project.list") {
-          publish({
-            presentationInstanceId,
-            phase: "blocked",
-            projects: EMPTY_PROJECTS,
-            selectedProjectId: null,
-          });
+          const current = readWorkjetProjectRegistry(presentationInstanceId);
+          if (current.projects.length === 0)
+            publish({
+              presentationInstanceId,
+              phase: "blocked",
+              projects: EMPTY_PROJECTS,
+              selectedProjectId: null,
+            });
           return;
         }
         const selectedProjectId = result.response.projects.some(
@@ -158,12 +228,14 @@ export function WorkjetProjectRegistrySynchronizer() {
       },
       () => {
         if (!cancelled) {
-          publish({
-            presentationInstanceId,
-            phase: "blocked",
-            projects: EMPTY_PROJECTS,
-            selectedProjectId: null,
-          });
+          const current = readWorkjetProjectRegistry(presentationInstanceId);
+          if (current.projects.length === 0)
+            publish({
+              presentationInstanceId,
+              phase: "blocked",
+              projects: EMPTY_PROJECTS,
+              selectedProjectId: null,
+            });
         }
       },
     );
@@ -177,5 +249,6 @@ export function WorkjetProjectRegistrySynchronizer() {
 export function __resetWorkjetProjectRegistryForTests(
   next: WorkjetProjectRegistrySnapshot = loadingWorkjetProjectRegistry(null),
 ): void {
+  loadingSnapshots.clear();
   publish(next);
 }

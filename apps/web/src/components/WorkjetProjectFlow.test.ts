@@ -31,6 +31,8 @@ describe("CTOX-native project story", () => {
       creation.indexOf("await runWorkjetProjectCreation"),
     );
     expect(creation).toContain("...(workingCopyComputer");
+    expect(creation).toContain("confirmedRegistry.projects.find");
+    expect(creation).toContain("if (confirmedProject === undefined)");
     expect(creation).toContain("recordWorkjetProjectProjection");
     expect(creation).toContain("readWorkjetProjectRegistry(presentationInstanceId).projects.some");
     expect(creation.indexOf("setOpen(false)")).toBeGreaterThan(

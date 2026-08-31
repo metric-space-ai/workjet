@@ -1411,34 +1411,41 @@ function OpenCommandPaletteDialog(props: {
         const workingCopyComputer = workjetComputers.find(
           (computer) => computer.environmentId === environmentId,
         );
-        const outcome = await runWorkjetProjectCreation({
-          presentationInstanceId,
-          request: {
-            action: "project.create",
-            commandId: newCommandId(),
-            projectId,
-            title: inferProjectTitleFromPath(cwd),
-            ...(workingCopyComputer
-              ? {
-                  workingCopy: {
-                    computerId: workingCopyComputer.id,
-                    path: cwd,
-                  },
-                }
-              : {}),
-            createdAt: new Date().toISOString(),
-          },
-        });
-        if (outcome._tag === "failed") {
-          const description =
-            outcome.code === "not_active"
-              ? "The selected CTOX instance is no longer connected."
-              : "CTOX did not confirm the project. You can retry without reopening this dialog.";
-          setLogicalProjectCreationError(description);
-          toastManager.add(
-            stackedThreadToast({ type: "error", title: "Failed to add project", description }),
-          );
-          return;
+        const confirmedRegistry = readWorkjetProjectRegistry(presentationInstanceId);
+        let confirmedProject = confirmedRegistry.projects.find(
+          (project) => project.id === projectId,
+        );
+        if (confirmedProject === undefined) {
+          const outcome = await runWorkjetProjectCreation({
+            presentationInstanceId,
+            request: {
+              action: "project.create",
+              commandId: newCommandId(),
+              projectId,
+              title: inferProjectTitleFromPath(cwd),
+              ...(workingCopyComputer
+                ? {
+                    workingCopy: {
+                      computerId: workingCopyComputer.id,
+                      path: cwd,
+                    },
+                  }
+                : {}),
+              createdAt: new Date().toISOString(),
+            },
+          });
+          if (outcome._tag === "failed") {
+            const description =
+              outcome.code === "not_active"
+                ? "The selected CTOX instance is no longer connected."
+                : "CTOX did not confirm the project. You can retry without reopening this dialog.";
+            setLogicalProjectCreationError(description);
+            toastManager.add(
+              stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+            );
+            return;
+          }
+          confirmedProject = outcome.project;
         }
         if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
           const description = "The active instance changed while the project was being created.";
@@ -1452,11 +1459,11 @@ function OpenCommandPaletteDialog(props: {
           );
           return;
         }
-        const recorded = recordWorkjetProjectProjection(presentationInstanceId, outcome.project, {
+        const recorded = recordWorkjetProjectProjection(presentationInstanceId, confirmedProject, {
           select: true,
         });
         const visible = readWorkjetProjectRegistry(presentationInstanceId).projects.some(
-          (project) => project.id === outcome.project.id,
+          (project) => project.id === confirmedProject.id,
         );
         if (!recorded || !visible) {
           const description =
@@ -1474,7 +1481,7 @@ function OpenCommandPaletteDialog(props: {
         toastManager.add({
           type: "success",
           title: "Project added",
-          description: `${outcome.project.title} is now available in this CTOX instance.`,
+          description: `${confirmedProject.title} is now available in this CTOX instance.`,
         });
         setOpen(false);
       } catch {

@@ -3440,34 +3440,66 @@ export default function Sidebar() {
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
           {!isSearchingThreads && workjetProjects.length > 0 ? (
-            <ul aria-label="Projects" className="mb-2 flex flex-col gap-px">
-              {workjetProjects.map((project) => (
-                <li key={project.id} className="list-none">
-                  <button
-                    type="button"
-                    aria-current={
-                      workjetProjectRegistry.selectedProjectId === project.id ? "page" : undefined
-                    }
-                    data-workjet-action={`project.select:${project.id}`}
-                    onClick={() => {
-                      if (workjetProjectRegistry.presentationInstanceId !== null) {
-                        selectWorkjetProject(
-                          workjetProjectRegistry.presentationInstanceId,
-                          project.id,
-                        );
+            <div className="mb-2 flex flex-col gap-1.5">
+              <ul aria-label="Projects" className="flex flex-col gap-px">
+                {workjetProjects.map((project) => (
+                  <li key={project.id} className="list-none">
+                    <button
+                      type="button"
+                      aria-current={
+                        workjetProjectRegistry.selectedProjectId === project.id ? "page" : undefined
                       }
-                    }}
-                    className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover aria-[current=page]:bg-sidebar-row-hover"
-                  >
-                    <FolderIcon
-                      aria-hidden
-                      className="size-4 shrink-0 text-sidebar-muted-foreground"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{project.title}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                      data-workjet-action={`project.select:${project.id}`}
+                      onClick={() => {
+                        if (workjetProjectRegistry.presentationInstanceId !== null) {
+                          selectWorkjetProject(
+                            workjetProjectRegistry.presentationInstanceId,
+                            project.id,
+                          );
+                        }
+                      }}
+                      className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover aria-[current=page]:bg-sidebar-row-hover"
+                    >
+                      <FolderIcon
+                        aria-hidden
+                        className="size-4 shrink-0 text-sidebar-muted-foreground"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="grid grid-cols-2 gap-1 px-1">
+                <button
+                  type="button"
+                  data-workjet-action="project.add.sidebar.persistent"
+                  onClick={openAddProjectCommandPalette}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sidebar-border px-2 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                >
+                  <FolderPlusIcon aria-hidden className="size-3.5" />
+                  Add project
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNewThreadClick}
+                  disabled={projects.length === 0}
+                  aria-label={
+                    projects.length === 0
+                      ? "New session unavailable until a computer is selected"
+                      : "New session"
+                  }
+                  title={
+                    projects.length === 0
+                      ? "Choose a computer before starting a session"
+                      : "New session"
+                  }
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sidebar-border px-2 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <SquarePenIcon aria-hidden className="size-3.5" />
+                  New session
+                </button>
+              </div>
+            </div>
           ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
@@ -3808,7 +3840,18 @@ export default function Sidebar() {
                   </button>
                 </>
               ) : workjetProjects.length > 0 && projects.length === 0 ? (
-                "No threads yet. Choose a computer when you are ready to run one."
+                <>
+                  <span>No sessions yet.</span>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void router.navigate({ to: "/settings/computers" })}
+                  >
+                    <ServerIcon aria-hidden className="size-3.5" />
+                    Choose computer
+                  </Button>
+                </>
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`
               ) : (

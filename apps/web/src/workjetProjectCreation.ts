@@ -79,17 +79,23 @@ export async function runWorkjetProjectCreation(
     () => ({ _tag: "failed", code: "guest_failed" }) as const,
   );
   if (listed._tag === "failed") {
-    onPhase("failed");
-    return { _tag: "failed", code: listed.code };
-  }
-  if (listed.response.action !== "project.list") {
-    onPhase("failed");
-    return { _tag: "failed", code: "invalid_projection" };
-  }
-  const existing = exactProject(listed.response.projects, attempt.request.projectId);
-  if (existing !== undefined) {
-    onPhase("visible");
-    return { _tag: "visible", project: existing };
+    if (listed.code === "not_active") {
+      onPhase("failed");
+      return { _tag: "failed", code: listed.code };
+    }
+    // Listing is an idempotency optimization, not a prerequisite for create.
+    // The instance-bound project id is stable, so retrying project.create is
+    // safe even when an older CTOX core rejects or cannot return project.list.
+  } else {
+    if (listed.response.action !== "project.list") {
+      onPhase("failed");
+      return { _tag: "failed", code: "invalid_projection" };
+    }
+    const existing = exactProject(listed.response.projects, attempt.request.projectId);
+    if (existing !== undefined) {
+      onPhase("visible");
+      return { _tag: "visible", project: existing };
+    }
   }
 
   onPhase("creating");

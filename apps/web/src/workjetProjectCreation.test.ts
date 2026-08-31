@@ -84,6 +84,36 @@ describe("runWorkjetProjectCreation", () => {
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
 
+  it("creates with the stable id when an older core cannot list projects", async () => {
+    const phases: string[] = [];
+    const port = vi
+      .fn()
+      .mockResolvedValueOnce({ _tag: "failed", code: "guest_failed" })
+      .mockResolvedValueOnce({
+        _tag: "completed",
+        response: { action: "project.create", project },
+      });
+
+    await expect(
+      runWorkjetProjectCreation(
+        { presentationInstanceId: instanceId, request },
+        { port, onPhase: (phase) => phases.push(phase) },
+      ),
+    ).resolves.toEqual({ _tag: "visible", project });
+    expect(port).toHaveBeenNthCalledWith(1, instanceId, { action: "project.list" });
+    expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
+    expect(phases).toEqual(["checking", "creating", "visible"]);
+  });
+
+  it("does not create when the selected CTOX instance is no longer active", async () => {
+    const port = vi.fn(async () => ({ _tag: "failed" as const, code: "not_active" as const }));
+
+    await expect(
+      runWorkjetProjectCreation({ presentationInstanceId: instanceId, request }, { port }),
+    ).resolves.toEqual({ _tag: "failed", code: "not_active" });
+    expect(port).toHaveBeenCalledTimes(1);
+  });
+
   it("creates a logical project without requiring a computer working copy", async () => {
     const logicalProject = { ...project, workingCopies: [] };
     const port = vi

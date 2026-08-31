@@ -1139,6 +1139,18 @@ function OpenCommandPaletteDialog(props: {
         initialQuery,
       };
 
+      if (logicalProjectPathEntry) {
+        // Manual path entry is an in-app form. It must open immediately and
+        // must not wait for a filesystem browse prefetch that the user did not
+        // request (and that can be slow or unavailable on a remote host).
+        browseNavigation.invalidate();
+        setAddProjectEnvironmentId(environmentId);
+        setAddProjectCloneFlow(null);
+        setIsLogicalProjectPathEntry(true);
+        pushPaletteView(view);
+        return;
+      }
+
       await browseNavigation.run(
         () =>
           initialBrowsePath.length > 0
@@ -1562,16 +1574,6 @@ function OpenCommandPaletteDialog(props: {
           items: [
             {
               kind: "action",
-              value: "action:add-project:choose-folder",
-              searchTerms: ["project", "folder", "directory", "local"],
-              title: "Choose folder…",
-              description: "Add the local Code project and sync it with the active CTOX instance.",
-              icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-              keepOpen: true,
-              run: createLogicalProjectFromFolder,
-            },
-            {
-              kind: "action",
               value: "action:add-project:enter-folder-path",
               searchTerms: ["project", "folder", "directory", "local", "path"],
               title: "Enter folder path…",
@@ -1595,6 +1597,17 @@ function OpenCommandPaletteDialog(props: {
                 }
                 await startAddProjectBrowse(environmentId, true);
               },
+            },
+            {
+              kind: "action",
+              value: "action:add-project:choose-folder",
+              searchTerms: ["project", "folder", "directory", "local", "picker"],
+              title: "Choose folder…",
+              description:
+                "Optionally use the system folder picker instead of entering a path in Workjet.",
+              icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+              keepOpen: true,
+              run: createLogicalProjectFromFolder,
             },
           ],
         },

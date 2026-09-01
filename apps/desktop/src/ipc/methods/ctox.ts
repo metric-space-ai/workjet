@@ -446,6 +446,22 @@ export const activate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxG
     }),
 };
 
+export const ensurePooled: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxGuestManager> = {
+  channel: IpcChannels.CTOX_ENSURE_POOLED_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      const input = yield* Schema.decodeUnknownEffect(CtoxManagedActivationInput)(raw).pipe(
+        Effect.option,
+      );
+      const result =
+        input._tag === "None"
+          ? ({ _tag: "failed", code: "invalid_input" } as const)
+          : yield* guests.ensurePooled(input.value.instanceId);
+      return yield* encodeSafe(CtoxManagedGuestResult, result);
+    }),
+};
+
 export const enterBusinessOsMode: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxGuestManager.CtoxGuestManager
@@ -864,6 +880,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   enterBusinessOsMode,
   exitBusinessOsMode,
   activate,
+  ensurePooled,
   suspend,
   deactivate,
   setGuestBounds,

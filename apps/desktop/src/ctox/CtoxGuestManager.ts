@@ -116,6 +116,7 @@ interface ActiveGuest {
  * process), so this constant IS the memory bound of the pool.
  */
 export const CTOX_GUEST_POOL_LIMIT = 4;
+const CTOX_POOLED_GUEST_BOUNDS: CtoxGuestBounds = { x: 0, y: 0, width: 1, height: 1 };
 
 interface PooledGuest extends ActiveGuest {
   /** Monotonic recency stamp for least-recently-used eviction. */
@@ -161,6 +162,8 @@ export class CtoxGuestManager extends Context.Service<
       instanceId: string,
       bounds: CtoxGuestBounds,
     ) => Effect.Effect<CtoxManagedGuestResult>;
+    /** Load an instance guest into the warm pool without attaching its native view. */
+    readonly ensurePooled: (instanceId: string) => Effect.Effect<CtoxManagedGuestResult>;
     /** Detach the active guest without destroying its warm renderer state. */
     readonly suspend: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
@@ -825,6 +828,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       instanceId: string,
       bounds: CtoxGuestBounds,
       existingSession?: Session,
+      shouldAttach = true,
     ) {
       if (!isValidBounds(bounds)) {
         return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
@@ -1032,7 +1036,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       } catch {
         return failView();
       }
-      if (!attachGuest(mainWindow.value, view, bounds)) return failView();
+      if (shouldAttach && !attachGuest(mainWindow.value, view, bounds)) return failView();
 
       const active: ActiveGuest = {
         instanceId,
@@ -1145,28 +1149,97 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const ensurePooled = (instanceId: string): Effect.Effect<CtoxManagedGuestResult> =>
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* () {
+          const stamp = ++guestUseSequence;
+          const pool = new Map(state.pool);
+          const warm = pool.get(instanceId);
+          if (
+            warm !== undefined &&
+            !warm.view.webContents.isDestroyed() &&
+            !warm.window.isDestroyed()
+          ) {
+            pool.set(instanceId, { ...warm, lastUsedAt: stamp });
+            return [{ _tag: "ready", instanceId } as const, { ...state, pool }] as const;
+          }
+          if (warm !== undefined) {
+            pool.delete(instanceId);
+            destroyPooledGuest(warm);
+          }
+
+          emitGuestState(instanceId, "loading");
+          const [result, prepared] = yield* prepareGuest(
+            instanceId,
+            CTOX_POOLED_GUEST_BOUNDS,
+            undefined,
+            false,
+          ).pipe(Effect.onInterrupt(() => Effect.sync(() => emitGuestState(instanceId, "none"))));
+          if (prepared === undefined) {
+            emitGuestState(instanceId, "none");
+            return [
+              result,
+              {
+                ...state,
+                activeId: state.activeId === instanceId ? undefined : state.activeId,
+                pool,
+              },
+            ] as const;
+          }
+
+          pool.set(instanceId, { ...prepared, lastUsedAt: stamp });
+          while (pool.size > CTOX_GUEST_POOL_LIMIT) {
+            let victim: PooledGuest | undefined;
+            for (const candidate of pool.values()) {
+              if (candidate.instanceId === instanceId || candidate.instanceId === state.activeId) {
+                continue;
+              }
+              if (victim === undefined || candidate.lastUsedAt < victim.lastUsedAt) {
+                victim = candidate;
+              }
+            }
+            if (victim === undefined) break;
+            pool.delete(victim.instanceId);
+            destroyPooledGuest(victim);
+          }
+          emitGuestState(instanceId, "warm");
+          return [{ _tag: "ready", instanceId } as const, { ...state, pool }] as const;
+        }),
+      );
+
     const refresh = (sender: WebContents) =>
       SynchronizedRef.modifyEffect(stateRef, (state) => {
-        const active = attachedGuest(state);
-        if (active === undefined || active.view.webContents !== sender || sender.isDestroyed()) {
+        const guest = [...state.pool.values()].find(
+          (candidate) => candidate.view.webContents === sender,
+        );
+        if (guest === undefined || sender.isDestroyed()) {
           return Effect.succeed([undefined, state] as const);
         }
+        const wasAttached = state.activeId === guest.instanceId;
         return Effect.gen(function* () {
-          destroyGuest(active);
-          emitGuestState(active.instanceId, "loading");
+          destroyGuest(guest);
+          emitGuestState(guest.instanceId, "loading");
           const pool = new Map(state.pool);
-          pool.delete(active.instanceId);
+          pool.delete(guest.instanceId);
           const [, replacement] = yield* prepareGuest(
-            active.instanceId,
-            active.bounds,
-            active.browserSession,
+            guest.instanceId,
+            guest.bounds,
+            guest.browserSession,
+            wasAttached,
           );
           if (replacement === undefined) {
-            emitGuestState(active.instanceId, "none");
-            return [undefined, { ...state, activeId: undefined, pool }] as const;
+            emitGuestState(guest.instanceId, "none");
+            return [
+              undefined,
+              {
+                ...state,
+                activeId: wasAttached ? undefined : state.activeId,
+                pool,
+              },
+            ] as const;
           }
-          pool.set(active.instanceId, { ...replacement, lastUsedAt: ++guestUseSequence });
-          emitGuestState(active.instanceId, "warm");
+          pool.set(guest.instanceId, { ...replacement, lastUsedAt: ++guestUseSequence });
+          emitGuestState(guest.instanceId, "warm");
           return [undefined, { ...state, pool }] as const;
         });
       });
@@ -1447,6 +1520,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       enterBusinessOsMode,
       exitBusinessOsMode,
       activate,
+      ensurePooled,
       suspend,
       deactivate,
       deactivateInstance,

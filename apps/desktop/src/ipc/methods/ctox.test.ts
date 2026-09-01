@@ -12,8 +12,11 @@ import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
+import * as IpcChannels from "../channels.ts";
 import {
   activate,
+  ensurePooled,
+  methods,
   importInvite,
   importManualPairing,
   listApps,
@@ -105,6 +108,7 @@ function removalCleanupLayer(
     enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     activate: () => Effect.die("unused"),
+    ensurePooled: () => Effect.die("unused"),
     suspend: Effect.succeed({ _tag: "completed" }),
     deactivate: Effect.succeed({ _tag: "completed" }),
     deactivateInstance: input.deactivateInstance ?? (() => Effect.succeed({ _tag: "completed" })),
@@ -209,6 +213,7 @@ describe("CTOX IPC methods", () => {
       enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
       exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
       activate: activateGuest,
+      ensurePooled: () => Effect.die("unused"),
       suspend: Effect.succeed({ _tag: "completed" }),
       deactivate: Effect.succeed({ _tag: "completed" }),
       deactivateInstance: () => Effect.succeed({ _tag: "completed" }),
@@ -230,6 +235,41 @@ describe("CTOX IPC methods", () => {
       assert.deepEqual(result, { _tag: "failed", code: "invalid_input" });
       expect(activateGuest).not.toHaveBeenCalled();
       assert.notInclude(encodeUnknownJson(result), "secret");
+    }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests)));
+  });
+
+  it.effect("registers and delegates the ensure-pooled channel", () => {
+    const ensureGuest = vi.fn((instanceId: string) =>
+      Effect.succeed({ _tag: "ready" as const, instanceId }),
+    );
+    const guests = CtoxGuestManager.CtoxGuestManager.of({
+      enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+      exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+      activate: () => Effect.die("unused"),
+      ensurePooled: ensureGuest,
+      suspend: Effect.succeed({ _tag: "completed" }),
+      deactivate: Effect.succeed({ _tag: "completed" }),
+      deactivateInstance: () => Effect.succeed({ _tag: "completed" }),
+      setBounds: () => Effect.die("unused"),
+      readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
+      openGuestApp: () => Effect.die("unused"),
+      openGuestSettings: () => Effect.die("unused"),
+      setHostTheme: () => Effect.succeed({ _tag: "completed" }),
+      requestDeviceControl: () => Effect.die("unused"),
+      requestProjectControl: () => Effect.die("unused"),
+    });
+
+    return Effect.gen(function* () {
+      assert.equal(ensurePooled.channel, IpcChannels.CTOX_ENSURE_POOLED_CHANNEL);
+      expect(methods).toContain(ensurePooled);
+      assert.deepEqual(
+        yield* ensurePooled.handler({
+          instanceId: "managed:tenant",
+          bounds: { x: 0, y: 0, width: 1, height: 1 },
+        }),
+        { _tag: "ready", instanceId: "managed:tenant" },
+      );
+      expect(ensureGuest).toHaveBeenCalledExactlyOnceWith("managed:tenant");
     }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests)));
   });
 
@@ -553,6 +593,7 @@ describe("CTOX app rail IPC methods", () => {
       enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
       exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
       activate: () => Effect.die("unused"),
+      ensurePooled: () => Effect.die("unused"),
       suspend: Effect.succeed({ _tag: "completed" }),
       deactivate: Effect.succeed({ _tag: "completed" }),
       deactivateInstance: () => Effect.succeed({ _tag: "completed" }),

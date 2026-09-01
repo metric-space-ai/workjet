@@ -298,9 +298,13 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
 // immediately and the modifier changes nothing.
 export function shouldCreateNewThreadInCurrentProject(
   shiftKey: boolean,
-  projectGroupCount: number,
+  availableProjectCount: number,
 ): boolean {
-  return shiftKey || projectGroupCount <= 1;
+  return shiftKey || availableProjectCount <= 1;
+}
+
+export function isSidebarNewThreadDisabled(availableProjectCount: number): boolean {
+  return availableProjectCount === 0;
 }
 
 export function orderItemsByPreferredIds<TItem, TId>(input: {

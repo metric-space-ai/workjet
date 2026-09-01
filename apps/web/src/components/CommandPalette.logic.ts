@@ -15,6 +15,10 @@ export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
+export function shouldShowNewThreadActions(availableProjectCount: number): boolean {
+  return availableProjectCount > 0;
+}
+
 /**
  * The global search overlay hosts three mutually exclusive surfaces: the
  * command palette (⌘K), the project file picker (⌘P), and project content

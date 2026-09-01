@@ -12,6 +12,7 @@ import {
   getProjectSortTimestamp,
   hasUnseenCompletion,
   isContextMenuPointerDown,
+  isSidebarNewThreadDisabled,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
@@ -431,6 +432,16 @@ describe("isSidebarNestedLinkClick", () => {
   it("leaves ordinary row clicks alone", () => {
     expect(isSidebarNestedLinkClick({ closest: () => null } as unknown as EventTarget)).toBe(false);
     expect(isSidebarNestedLinkClick(null)).toBe(false);
+  });
+});
+
+describe("new thread availability gating", () => {
+  it("enables the action for a sync-only available project", () => {
+    expect(isSidebarNewThreadDisabled(1)).toBe(false);
+  });
+
+  it("disables the action when neither local nor synced projects are available", () => {
+    expect(isSidebarNewThreadDisabled(0)).toBe(true);
   });
 });
 

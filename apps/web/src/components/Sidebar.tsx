@@ -101,11 +101,11 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
+import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { useBusinessOsScopedEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { useBusinessOsScopedEnvironments } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
@@ -128,6 +128,7 @@ import {
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
+  isSidebarNewThreadDisabled,
   orderItemsByPreferredIds,
   planPinnedReorder,
   resolveAdjacentThreadId,
@@ -157,7 +158,6 @@ import {
   type SnoozePreset,
 } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { resolveComposerComputer } from "./chat/ChatComposer";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
@@ -178,8 +178,8 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
-import { selectWorkjetProject, useWorkjetProjectRegistry } from "../workjetProjectRegistry";
-import { useActiveWorkjetScope } from "../activeWorkjetScope";
+import { selectWorkjetProject } from "../workjetProjectRegistry";
+import { useAvailableProjectContext } from "../availableProjects";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -1598,9 +1598,12 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 
 export default function Sidebar() {
   const projects = useProjects();
-  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
-  const workjetProjectRegistry = useWorkjetProjectRegistry(activeCtoxInstanceId);
-  const workjetProjects = workjetProjectRegistry.projects;
+  const {
+    availableProjects,
+    resolvedComputer: sidebarComputer,
+    workjetProjectRegistry,
+    workjetProjects,
+  } = useAvailableProjectContext();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
@@ -1612,8 +1615,6 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const workjetConfiguration = usePrimarySettings((settings) => settings.workjet);
-  const primaryEnvironment = usePrimaryEnvironment();
   const {
     settleThread,
     unsettleThread,
@@ -1731,36 +1732,7 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
-  const routeComposerWorkerId = useComposerDraftStore((store) => {
-    if (routeTarget === null || routeTarget === undefined) return null;
-    return store.getComposerDraft(
-      routeTarget.kind === "server" ? routeTarget.threadRef : routeTarget.draftId,
-    )?.workjetWorkerId;
-  });
-  const scopedEnvironmentIds = useMemo(
-    () => new Set(environments.map((environment) => environment.environmentId)),
-    [environments],
-  );
-  const sidebarWorkjetComputers = useMemo(
-    () =>
-      workjetConfiguration.computers.filter((computer) =>
-        scopedEnvironmentIds.has(computer.environmentId),
-      ),
-    [scopedEnvironmentIds, workjetConfiguration.computers],
-  );
-  const routeWorkerComputerId =
-    routeComposerWorkerId === null || routeComposerWorkerId === undefined
-      ? null
-      : (workjetConfiguration.workerProfiles.find((worker) => worker.id === routeComposerWorkerId)
-          ?.computerId ?? null);
-  const sidebarComputerResolution = resolveComposerComputer({
-    computers: sidebarWorkjetComputers,
-    workerModeActive: routeComposerWorkerId !== null && routeComposerWorkerId !== undefined,
-    workerComputerId: routeWorkerComputerId,
-    activeEnvironmentId: routeThreadRef?.environmentId ?? primaryEnvironment?.environmentId ?? null,
-    selectedComputerId: workjetConfiguration.selectedComputerId,
-  });
-  const hasResolvableSidebarComputer = sidebarComputerResolution.computer !== null;
+  const hasResolvableSidebarComputer = sidebarComputer !== null;
   const routeTargetRef = useRef(routeTarget);
   routeTargetRef.current = routeTarget;
   // Post-settle navigation validates against the CURRENT route, not the one
@@ -3271,7 +3243,9 @@ export default function Sidebar() {
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.
-      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
+      if (
+        shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, availableProjects.length)
+      ) {
         if (isMobile) setOpenMobile(false);
         void startNewThreadFromContext({
           activeDraftThread: newThreadContext.activeDraftThread,
@@ -3284,7 +3258,7 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [availableProjects.length, isMobile, newThreadContext, setOpenMobile],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
@@ -3297,7 +3271,9 @@ export default function Sidebar() {
   // shift+click and its keyboard twin chat.newLocal for direct create.
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.new") ??
-    (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
+    (availableProjects.length <= 1
+      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
+      : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
@@ -3364,7 +3340,7 @@ export default function Sidebar() {
                         type="button"
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
-                        disabled={projects.length === 0}
+                        disabled={isSidebarNewThreadDisabled(availableProjects.length)}
                         aria-label="New thread"
                       />
                     }
@@ -3376,7 +3352,7 @@ export default function Sidebar() {
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {projectGroups.length > 1 ? (
+                    {availableProjects.length > 1 ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel
@@ -3543,18 +3519,18 @@ export default function Sidebar() {
                 <button
                   type="button"
                   onClick={handleNewThreadClick}
-                  disabled={projects.length === 0}
+                  disabled={isSidebarNewThreadDisabled(availableProjects.length)}
                   aria-label={
-                    projects.length === 0
+                    availableProjects.length === 0
                       ? hasResolvableSidebarComputer
-                        ? "New session unavailable until a project is selected"
+                        ? "New session unavailable without a working copy on this computer"
                         : "New session unavailable until a computer is selected"
                       : "New session"
                   }
                   title={
-                    projects.length === 0
+                    availableProjects.length === 0
                       ? hasResolvableSidebarComputer
-                        ? "Choose a project before starting a session"
+                        ? "Add a working copy on this computer before starting a session"
                         : "Choose a computer before starting a session"
                       : "New session"
                   }
@@ -3904,9 +3880,11 @@ export default function Sidebar() {
                     Add project
                   </button>
                 </>
-              ) : workjetProjects.length > 0 && projects.length === 0 ? (
+              ) : workjetProjects.length > 0 &&
+                projects.length === 0 &&
+                sidebarComputer === null ? (
                 <>
-                  <span>No sessions yet.</span>
+                  <span>Choose a computer to start a session</span>
                   <Button
                     type="button"
                     size="xs"
@@ -3917,6 +3895,8 @@ export default function Sidebar() {
                     Choose computer
                   </Button>
                 </>
+              ) : workjetProjects.length > 0 && availableProjects.length === 0 ? (
+                <span>Project available, but no working copy on this computer</span>
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`
               ) : (

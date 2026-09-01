@@ -29,6 +29,11 @@ import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefau
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import {
+  availableProjectRef,
+  useAvailableProjects,
+  type AvailableProject,
+} from "../availableProjects";
 import { useClientSettings } from "./useSettings";
 
 interface NewThreadWorkspaceOptions {
@@ -50,8 +55,49 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
+function isAvailableProjectTarget(
+  project: ScopedProjectRef | AvailableProject,
+): project is AvailableProject {
+  return "kind" in project;
+}
+
+export function resolveNewThreadProjectTarget(input: {
+  readonly project: ScopedProjectRef | AvailableProject;
+  readonly availableProjects: readonly AvailableProject[];
+}): {
+  readonly projectRef: ScopedProjectRef;
+  readonly workspaceOptions: NewThreadWorkspaceOptions;
+} {
+  let explicitProject: AvailableProject | null;
+  let projectRef: ScopedProjectRef;
+  if (isAvailableProjectTarget(input.project)) {
+    explicitProject = input.project;
+    projectRef = availableProjectRef(input.project);
+  } else {
+    explicitProject = null;
+    projectRef = input.project;
+  }
+  const availableProject =
+    explicitProject ??
+    input.availableProjects.find(
+      (candidate) =>
+        candidate.id === projectRef.projectId &&
+        candidate.environmentId === projectRef.environmentId,
+    ) ??
+    null;
+
+  return {
+    projectRef,
+    workspaceOptions:
+      availableProject?.kind === "workjet"
+        ? { worktreePath: availableProject.path, envMode: "local" }
+        : {},
+  };
+}
+
 export function useNewThreadHandler() {
   const projects = useProjects();
+  const availableProjects = useAvailableProjects();
   // New-thread defaults are a user preference, and the settings UI only ever
   // edits the primary environment's settings.json. Reading the target
   // environment's own settings here would silently reset remote projects to
@@ -67,8 +113,8 @@ export function useNewThreadHandler() {
 
   return useCallback(
     (
-      projectRef: ScopedProjectRef,
-      options?: {
+      projectTarget: ScopedProjectRef | AvailableProject,
+      requestedOptions?: {
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
@@ -87,6 +133,12 @@ export function useNewThreadHandler() {
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+      const target = resolveNewThreadProjectTarget({
+        project: projectTarget,
+        availableProjects,
+      });
+      const projectRef = target.projectRef;
+      const options = { ...requestedOptions, ...target.workspaceOptions };
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
@@ -427,7 +479,14 @@ export function useNewThreadHandler() {
         return { draftId, threadId };
       })();
     },
-    [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+    [
+      availableProjects,
+      getCurrentRouteTarget,
+      primaryServerSettings,
+      projectGroupingSettings,
+      projects,
+      router,
+    ],
   );
 }
 
@@ -448,6 +507,7 @@ export function useHandleNewThread() {
       : null,
   );
   const projects = useProjects();
+  const availableProjects = useAvailableProjects();
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
       items: projects,
@@ -460,12 +520,21 @@ export function useHandleNewThread() {
     });
   }, [projectOrder, projects]);
   const handleNewThread = useNewThreadHandler();
+  const defaultAvailableProject =
+    (orderedProjects[0]
+      ? availableProjects.find(
+          (project) =>
+            project.id === orderedProjects[0]?.id &&
+            project.environmentId === orderedProjects[0]?.environmentId,
+        )
+      : undefined) ?? availableProjects[0];
 
   return {
     activeDraftThread,
     activeThread,
-    defaultProjectRef: orderedProjects[0]
-      ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)
+    availableProjects,
+    defaultProjectRef: defaultAvailableProject
+      ? availableProjectRef(defaultAvailableProject)
       : null,
     handleNewThread,
     routeThreadRef,

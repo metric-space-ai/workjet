@@ -140,6 +140,7 @@ describe("ServerSettings Workjet catalog", () => {
       workerProfiles: [],
       workerGraph: { positions: [], dependencies: [] },
       managedSystemPrompt: "",
+      managerThreadReference: "",
       telemetry: {
         claudeCodeEvents: true,
         sidecarEvents: true,

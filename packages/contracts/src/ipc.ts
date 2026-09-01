@@ -1241,6 +1241,8 @@ export interface DesktopCtoxBridge {
   enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
+  /** Load the selected CTOX instance for control without attaching its native view. */
+  ensurePooled?: (instanceId: string) => Promise<CtoxManagedGuestResult>;
   /** Detach the active native guest while keeping it warm for later re-attachment. */
   suspend: () => Promise<CtoxManagedActionResult>;
   deactivate: () => Promise<CtoxManagedActionResult>;

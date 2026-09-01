@@ -499,6 +499,50 @@ describe("CtoxGuestManager", () => {
     },
   );
 
+  it.effect("pools idempotently without attaching and activation adopts the pooled guest", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(yield* manager.ensurePooled(descriptor.id), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      assert.deepEqual(yield* manager.ensurePooled(descriptor.id), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.launch).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.setBounds).not.toHaveBeenCalled();
+      expect(harness.addChildView).not.toHaveBeenCalled();
+      harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
+        status: "completed",
+        result: { action: "project.list", projects: [] },
+      });
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "completed",
+          response: { action: "project.list", projects: [] },
+        },
+      );
+
+      yield* manager.enterBusinessOsMode;
+      assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.launch).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.setBounds).toHaveBeenCalledExactlyOnceWith(bounds);
+      expect(harness.addChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("resolves on a valid main-frame commit while loadURL remains pending", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };

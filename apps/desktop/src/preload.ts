@@ -251,6 +251,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     exitBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL),
     activate: (instanceId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
+    ensurePooled: (instanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_ENSURE_POOLED_CHANNEL, {
+        instanceId,
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+      }),
     suspend: () => ipcRenderer.invoke(IpcChannels.CTOX_SUSPEND_CHANNEL),
     deactivate: () => ipcRenderer.invoke(IpcChannels.CTOX_DEACTIVATE_CHANNEL),
     setGuestBounds: (bounds) =>

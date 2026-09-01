@@ -1,4 +1,5 @@
 export * from "./generated/web-stack-tools.v1.ts";
+export * from "./generated/workjet-collective-skill.ts";
 export * from "./availability.ts";
 export * from "./activation.ts";
 export * from "./dualHost.ts";

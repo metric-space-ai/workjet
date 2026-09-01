@@ -155,11 +155,15 @@ function NoProjectsHero() {
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
+              <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Workjet Collective
+              </p>
               <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                What should we work on?
+                Your workers start here.
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Add a project to start your first thread.
+                Add a project to create threads, connect harnesses, and share durable handoffs
+                across computers.
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button size="sm" data-workjet-action="project.add.hero" onClick={openAddProject}>

@@ -1017,6 +1017,7 @@ export function mapLegacyWorkjetConfig(input: {
     workerProfiles,
     workerGraph: { positions: [], dependencies: [] },
     managedSystemPrompt: composeManagedSystemPrompt(config),
+    managerThreadReference: "",
     telemetry: {
       claudeCodeEvents: config.telemetryClaudeCodeEvents,
       sidecarEvents: config.telemetrySidecarEvents,

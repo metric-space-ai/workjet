@@ -25,6 +25,7 @@ import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -137,6 +138,11 @@ interface CursorSessionContext {
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
+  readonly acpSessionId: string;
+  readonly managedPrompt: string | undefined;
+  readonly managedPromptFingerprint: string | undefined;
+  appliedManagedPromptFingerprint: string | undefined;
+  managedPromptInjectionInFlight: boolean;
   stopped: boolean;
 }
 
@@ -170,11 +176,70 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseCursorResume(raw: unknown): { sessionId: string } | undefined {
+interface CursorResumeCursor {
+  readonly schemaVersion: typeof CURSOR_RESUME_VERSION;
+  readonly sessionId: string;
+  readonly managedPromptFingerprint?: string;
+}
+
+const MANAGED_PROMPT_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+
+function parseCursorResume(raw: unknown): Omit<CursorResumeCursor, "schemaVersion"> | undefined {
   if (!isRecord(raw)) return undefined;
   if (raw.schemaVersion !== CURSOR_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
-  return { sessionId: raw.sessionId.trim() };
+  const managedPromptFingerprint =
+    typeof raw.managedPromptFingerprint === "string" &&
+    MANAGED_PROMPT_FINGERPRINT_PATTERN.test(raw.managedPromptFingerprint)
+      ? raw.managedPromptFingerprint
+      : undefined;
+  return {
+    sessionId: raw.sessionId.trim(),
+    ...(managedPromptFingerprint ? { managedPromptFingerprint } : {}),
+  };
+}
+
+function makeCursorResumeCursor(
+  sessionId: string,
+  managedPromptFingerprint?: string,
+): CursorResumeCursor {
+  return {
+    schemaVersion: CURSOR_RESUME_VERSION,
+    sessionId,
+    ...(managedPromptFingerprint ? { managedPromptFingerprint } : {}),
+  };
+}
+
+function delimitManagedPrompt(compiledManagedPrompt: string | undefined): string | undefined {
+  const managedPrompt = compiledManagedPrompt?.trim();
+  return managedPrompt
+    ? `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
+    : undefined;
+}
+
+function applyManagedPromptFingerprint(
+  ctx: CursorSessionContext,
+  managedPromptFingerprint: string | undefined,
+): void {
+  if (managedPromptFingerprint === undefined) return;
+  ctx.appliedManagedPromptFingerprint = managedPromptFingerprint;
+  ctx.managedPromptInjectionInFlight = false;
+  ctx.session = {
+    ...ctx.session,
+    resumeCursor: makeCursorResumeCursor(ctx.acpSessionId, managedPromptFingerprint),
+  };
+}
+
+function releaseManagedPromptInjection(
+  ctx: CursorSessionContext,
+  managedPromptFingerprint: string | undefined,
+): void {
+  if (
+    managedPromptFingerprint !== undefined &&
+    ctx.appliedManagedPromptFingerprint !== managedPromptFingerprint
+  ) {
+    ctx.managedPromptInjectionInFlight = false;
+  }
 }
 
 function normalizeModeSearchText(mode: AcpSessionMode): string {
@@ -512,7 +577,8 @@ export function makeCursorAdapter(
           );
           let ctx!: CursorSessionContext;
 
-          const resumeSessionId = parseCursorResume(input.resumeCursor)?.sessionId;
+          const resumeCursor = parseCursorResume(input.resumeCursor);
+          const resumeSessionId = resumeCursor?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
@@ -532,6 +598,21 @@ export function makeCursorAdapter(
             : cursorSettings;
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
+          const managedPromptFingerprint = managedPrompt
+            ? yield* crypto.digest("SHA-256", new TextEncoder().encode(managedPrompt)).pipe(
+                Effect.map(Encoding.encodeHex),
+                Effect.mapError(
+                  (cause) =>
+                    new ProviderAdapterProcessError({
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      detail: "Failed to fingerprint Cursor managed instructions.",
+                      cause,
+                    }),
+                ),
+              )
+            : undefined;
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
             ...(options?.environment ? { environment: options.environment } : {}),
@@ -759,10 +840,10 @@ export function makeCursorAdapter(
             cwd,
             model: cursorModelSelection?.model,
             threadId: input.threadId,
-            resumeCursor: {
-              schemaVersion: CURSOR_RESUME_VERSION,
-              sessionId: started.sessionId,
-            },
+            resumeCursor: makeCursorResumeCursor(
+              started.sessionId,
+              resumeCursor?.managedPromptFingerprint,
+            ),
             createdAt: now,
             updatedAt: now,
           };
@@ -779,6 +860,11 @@ export function makeCursorAdapter(
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             promptsInFlight: 0,
+            acpSessionId: started.sessionId,
+            managedPrompt,
+            managedPromptFingerprint,
+            appliedManagedPromptFingerprint: resumeCursor?.managedPromptFingerprint,
+            managedPromptInjectionInFlight: false,
             stopped: false,
           };
 
@@ -1004,6 +1090,18 @@ export function makeCursorAdapter(
             });
           }
 
+          const managedPromptFingerprintToApply =
+            ctx.managedPrompt !== undefined &&
+            ctx.managedPromptFingerprint !== undefined &&
+            ctx.appliedManagedPromptFingerprint !== ctx.managedPromptFingerprint &&
+            !ctx.managedPromptInjectionInFlight
+              ? ctx.managedPromptFingerprint
+              : undefined;
+          if (managedPromptFingerprintToApply !== undefined) {
+            ctx.managedPromptInjectionInFlight = true;
+            promptParts.unshift({ type: "text", text: ctx.managedPrompt! });
+          }
+
           const result = yield* ctx.acp
             .prompt({
               prompt: promptParts,
@@ -1011,6 +1109,16 @@ export function makeCursorAdapter(
             .pipe(
               Effect.mapError((error) =>
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+              ),
+              Effect.tap(() =>
+                Effect.sync(() =>
+                  applyManagedPromptFingerprint(ctx, managedPromptFingerprintToApply),
+                ),
+              ),
+              Effect.ensuring(
+                Effect.sync(() =>
+                  releaseManagedPromptInjection(ctx, managedPromptFingerprintToApply),
+                ),
               ),
             );
 

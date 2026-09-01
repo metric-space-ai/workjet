@@ -19,6 +19,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import {
   ApprovalRequestId,
   CursorSettings,
+  EnvironmentId,
   ProviderDriverKind,
   type ProviderRuntimeEvent,
   ThreadId,
@@ -26,6 +27,7 @@ import {
 } from "@t3tools/contracts";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { makeCursorAdapter } from "./CursorAdapter.ts";
@@ -130,6 +132,19 @@ function waitForJsonLogMatch(
   });
 }
 
+function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): void {
+  McpProviderSession.setMcpProviderSession({
+    environmentId: EnvironmentId.make("cursor-managed-prompt-test"),
+    threadId,
+    providerSessionId: "cursor-managed-prompt-session",
+    providerInstanceId: ProviderInstanceId.make("cursor"),
+    endpoint: "http://127.0.0.1/mcp",
+    authorizationHeader: "Bearer test-token",
+    activeWorkjetMcpCapabilityIds: [],
+    compiledManagedPrompt,
+  });
+}
+
 // Tests mutate `ServerSettingsService` mid-flight (e.g. setting
 // `providers.cursor.binaryPath` to a mock ACP wrapper). The adapter
 // captures `cursorSettings` once at construction, so without a resolver
@@ -168,6 +183,62 @@ const cursorAdapterTestLayer = it.layer(
 );
 
 cursorAdapterTestLayer("CursorAdapterLive", (it) => {
+  it.effect("injects managed instructions once and persists their resume fingerprint", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-managed-prompt");
+      const requestLogPath = NodePath.join(
+        yield* Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-log-"))),
+        "requests.ndjson",
+      );
+      const argvLogPath = `${requestLogPath}.argv`;
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+      setManagedPrompt(threadId, "Follow the managed Cursor workflow.");
+
+      return yield* Effect.gen(function* () {
+        yield* adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("cursor"),
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+        const first = yield* adapter.sendTurn({ threadId, input: "first", attachments: [] });
+        const second = yield* adapter.sendTurn({ threadId, input: "second", attachments: [] });
+        const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+        const prompts = requests.filter((entry) => entry.method === "session/prompt");
+        const promptTexts = prompts.map((entry) => {
+          const params = entry.params as { prompt?: Array<{ type?: string; text?: string }> };
+          return (params.prompt ?? []).flatMap((part) =>
+            part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+          );
+        });
+
+        assert.equal(prompts.length, 2);
+        assert.include(
+          promptTexts[0] ?? [],
+          "<workjet_managed_instructions>\nFollow the managed Cursor workflow.\n</workjet_managed_instructions>",
+        );
+        assert.notInclude(
+          promptTexts[1] ?? [],
+          "<workjet_managed_instructions>\nFollow the managed Cursor workflow.\n</workjet_managed_instructions>",
+        );
+        assert.equal(
+          typeof (first.resumeCursor as { managedPromptFingerprint?: unknown })
+            .managedPromptFingerprint,
+          "string",
+        );
+        assert.deepStrictEqual(second.resumeCursor, first.resumeCursor);
+      }).pipe(
+        Effect.ensuring(adapter.stopSession(threadId).pipe(Effect.ignore)),
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      );
+    }),
+  );
+
   it.effect("starts a session and maps mock ACP prompt flow to runtime events", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;

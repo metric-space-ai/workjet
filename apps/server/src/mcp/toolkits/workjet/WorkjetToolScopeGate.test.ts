@@ -43,6 +43,7 @@ const TOOLKIT_DIR = import.meta.dirname;
  * alone proves nothing. Only these actually refuse.
  */
 const SCOPE_ENFORCERS = [
+  "requireWorkjetMember",
   "requireWorkjetOrchestrator",
   "requireActiveWorkjetMcpCapability",
   "requireMcpCapability",
@@ -57,6 +58,9 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   readonly file: string;
   readonly enforcer: (typeof SCOPE_ENFORCERS)[number];
 }> = [
+  { file: "CollectiveTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "WorkBlockTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "ManagerTool.ts", enforcer: "requireWorkjetMember" },
   { file: "DecisionHubTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "GreppyTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },

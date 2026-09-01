@@ -27,6 +27,7 @@ import {
   WorkjetThreadConfig,
 } from "@t3tools/contracts";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import { parseWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -59,6 +60,7 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { resolveThreadCapabilityContext } from "../../workjet/ThreadCapabilityContext.ts";
 import { DecisionHubConnectionRegistry } from "../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 const isModelSelection = Schema.is(ModelSelection);
@@ -233,6 +235,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const decisionHubConnections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
+  const serverSettings = yield* Effect.serviceOption(ServerSettingsService);
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const prepareMcpSession = (
@@ -246,9 +249,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const summaries = requiresDecisionHub
         ? yield* Option.match(decisionHubConnections, {
             onNone: () => Effect.succeed([]),
-            onSome: (connections) => connections.list.pipe(Effect.catch(() => Effect.succeed([]))),
+            onSome: (connections) => connections.list.pipe(Effect.orElseSucceed(() => [])),
           })
         : [];
+      const globalManagedInstructions = yield* Option.match(serverSettings, {
+        onNone: () => Effect.succeed(""),
+        onSome: (settings) =>
+          settings.getSettings.pipe(
+            Effect.map((snapshot) =>
+              compileCollectiveManagedInstructions(
+                snapshot.workjet.managedSystemPrompt,
+                snapshot.workjet.managerThreadReference,
+                threadId,
+              ),
+            ),
+            Effect.orElseSucceed(() => ""),
+          ),
+      });
       const threadCapabilityContext = resolveThreadCapabilityContext(
         workjetConfig,
         undefined,
@@ -262,6 +279,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               ),
             }
           : undefined,
+        globalManagedInstructions,
       );
       const credential = yield* McpSessionRegistry.issueActiveMcpCredential({
         threadId,
@@ -1213,6 +1231,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   } satisfies ProviderService.ProviderService["Service"];
 });
+
+export const compileCollectiveManagedInstructions = (
+  managedSystemPrompt: string,
+  managerThreadReference: string,
+  threadId: ThreadId,
+): string => {
+  const manager = parseWorkjetThreadDeepLink(managerThreadReference);
+  return [
+    managedSystemPrompt,
+    manager === null
+      ? ""
+      : manager.threadId === threadId
+        ? [
+            "You are the dedicated Workjet Manager for this Collective.",
+            "Treat incoming manager delegations as the durable blackboard queue: classify them, use the bound CTOX Decision Hub and policy-gated tools for bugs, access, and secret-handle operations, then reply with a receipt or exact blocker.",
+            "Never accept, request, reveal, or persist plaintext secret values. Record one concise work block when a continuous manager task stops or changes topic.",
+          ].join(" ")
+        : `The configured Workjet Manager thread reference is ${managerThreadReference}. Resolve it with \`workjet_resolve_thread\` before contacting the manager.`,
+  ]
+    .filter((value) => value.trim().length > 0)
+    .join("\n\n");
+};
 
 export const ProviderServiceLive = Layer.effect(
   ProviderService.ProviderService,

@@ -27,11 +27,12 @@ export function resolveThreadCapabilityContext(
     readonly knownConnectionIds: ReadonlySet<string>;
     readonly reachableConnectionIds: ReadonlySet<string>;
   },
+  globalManagedInstructions = "",
 ): ThreadCapabilityContext {
   const activation = validateCapabilityActivation({
     config: workjetConfig,
     registry,
-    ...connections,
+    ...(connections ?? {}),
   });
   const blocked = new Set(activation.issues.map(({ capabilityId }) => capabilityId));
   const enabled = activation.config.enabledCapabilityIds.filter(
@@ -50,7 +51,12 @@ export function resolveThreadCapabilityContext(
     promptCapabilityIds: Object.freeze(promptManifests.map((manifest) => manifest.id)),
     compiledManagedPrompt: compileCapabilityPrompt({
       role: workjetConfig.role,
-      managedInstructions: workjetConfig.managedInstructions,
+      managedInstructions: [
+        globalManagedInstructions.trim(),
+        workjetConfig.managedInstructions.trim(),
+      ]
+        .filter((value) => value.length > 0)
+        .join("\n\n"),
       manifests: promptManifests,
     }),
     ...(enabled.includes("decision-hub") && decisionHubBinding !== undefined

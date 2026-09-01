@@ -2,7 +2,7 @@ import type { CapabilityManifest } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { builtInCapabilityManifests } from "./manifests.ts";
-import { compileCapabilityPrompt } from "./prompt.ts";
+import { compileCapabilityPrompt, WORKJET_COLLECTIVE_SYSTEM_PROMPT } from "./prompt.ts";
 
 const withPrompt = (
   manifest: CapabilityManifest,
@@ -27,6 +27,7 @@ describe("capability prompt compiler", () => {
       }),
     ).toBe(
       [
+        WORKJET_COLLECTIVE_SYSTEM_PROMPT,
         "## Managed Instructions\n\nFollow the managed policy.",
         "## Capability: web-search@1.0.0\n\nSearch carefully.",
         "## Capability: greppy@1.0.0\n\nLocate exact matches.",
@@ -51,7 +52,7 @@ describe("capability prompt compiler", () => {
     expect(prompt.match(/greppy@1\.0\.0/g)).toHaveLength(1);
   });
 
-  it("returns empty output for blank instructions and no contributions", () => {
+  it("retains the immutable collective prompt for blank instructions and no contributions", () => {
     expect(
       compileCapabilityPrompt({
         role: "standard",
@@ -61,7 +62,7 @@ describe("capability prompt compiler", () => {
           withPrompt(builtInCapabilityManifests[1]!, null),
         ],
       }),
-    ).toBe("");
+    ).toBe(WORKJET_COLLECTIVE_SYSTEM_PROMPT);
   });
 
   it("omits permissions, secret references, schemas, adapters, and metadata", () => {
@@ -95,10 +96,10 @@ describe("capability prompt compiler", () => {
     expect(prompt).not.toContain("ctox-business-command");
   });
 
-  it("keeps a plain standard role byte-for-byte empty", () => {
+  it("keeps a plain standard role on the collective baseline", () => {
     expect(
       compileCapabilityPrompt({ role: "standard", managedInstructions: "", manifests: [] }),
-    ).toBe("");
+    ).toBe(WORKJET_COLLECTIVE_SYSTEM_PROMPT);
   });
 
   it("compiles deterministic orchestrator and worker role boundaries", () => {
@@ -106,6 +107,8 @@ describe("capability prompt compiler", () => {
       compileCapabilityPrompt({ role: "orchestrator", managedInstructions: "", manifests: [] }),
     ).toBe(
       [
+        WORKJET_COLLECTIVE_SYSTEM_PROMPT,
+        "",
         "## Workjet Role: Orchestrator",
         "",
         "You are a Workjet orchestrator. Workers are ordinary T3 threads in the same server environment. Use `workjet_dispatch_worker` as the dispatch boundary. Delegate bounded tasks and use the returned worker thread ID to track the dispatched work.",
@@ -115,6 +118,8 @@ describe("capability prompt compiler", () => {
       compileCapabilityPrompt({ role: "worker", managedInstructions: "", manifests: [] }),
     ).toBe(
       [
+        WORKJET_COLLECTIVE_SYSTEM_PROMPT,
+        "",
         "## Workjet Role: Worker",
         "",
         "You are a Workjet worker child thread. Complete the assigned task in this thread and report the result here. Do not dispatch more workers.",

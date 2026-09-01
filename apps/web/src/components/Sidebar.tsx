@@ -31,6 +31,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { buildWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
@@ -1681,6 +1682,24 @@ export default function Sidebar() {
       );
     },
   });
+  const { copyToClipboard: copyDeepLinkToClipboard } = useCopyToClipboard<{ link: string }>({
+    onCopy: ({ link }) => {
+      toastManager.add({
+        type: "success",
+        title: "Workjet link copied",
+        description: link,
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy Workjet link",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+  });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
@@ -3109,6 +3128,14 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "copy-deep-link": {
+            const link = buildWorkjetThreadDeepLink({
+              environmentId: thread.environmentId,
+              threadId: thread.id,
+            });
+            copyDeepLinkToClipboard(link, { link });
+            return;
+          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -3150,6 +3177,7 @@ export default function Sidebar() {
       attemptUnsnooze,
       confirmThreadDelete,
       copyBranchToClipboard,
+      copyDeepLinkToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,

@@ -11,6 +11,7 @@ import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSet
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
+import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { RemoteEnvironmentsSection } from "./ConnectionsSettings";
@@ -30,19 +31,7 @@ import { workjetHarnessDisplayLabel } from "./WorkjetWorkerEditor";
 import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
 import { searchableSetting } from "./settingsSearch";
 
-export function applyAutomaticCurrentComputer(
-  configuration: WorkjetConfiguration,
-  localEnvironmentId: EnvironmentId | null,
-): WorkjetConfiguration {
-  if (configuration.selectedComputerId !== null || configuration.computers.length !== 1) {
-    return configuration;
-  }
-  const onlyComputer = configuration.computers[0];
-  if (onlyComputer === undefined || onlyComputer.environmentId !== localEnvironmentId) {
-    return configuration;
-  }
-  return { ...configuration, selectedComputerId: onlyComputer.id };
-}
+export { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 
 export function toggleCurrentComputer(
   configuration: WorkjetConfiguration,

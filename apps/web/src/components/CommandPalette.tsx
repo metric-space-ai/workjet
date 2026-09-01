@@ -56,6 +56,7 @@ import { useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
+import { useAvailableProjectContext } from "../availableProjects";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
@@ -156,6 +157,7 @@ import { runWorkjetProjectCreation, workjetLogicalProjectId } from "../workjetPr
 import {
   readWorkjetProjectRegistry,
   recordWorkjetProjectProjection,
+  resolveLocalWorkjetWorkingCopy,
 } from "../workjetProjectRegistry";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
@@ -597,6 +599,7 @@ function OpenCommandPaletteDialog(props: {
   const primaryEnvironment = usePrimaryEnvironment();
   const { activeDraftThread, activeThread, availableProjects, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const { resolvedComputer } = useAvailableProjectContext();
   const projects = useProjects();
   const unscopedProjects = useAtomValue(environmentProjects.projectsAtom);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
@@ -1441,14 +1444,24 @@ function OpenCommandPaletteDialog(props: {
           }
         }
 
-        const workingCopyComputer = workjetComputers.find(
-          (computer) => computer.environmentId === environmentId,
-        );
+        const localWorkingCopy = resolveLocalWorkjetWorkingCopy({
+          computers: workjetComputers,
+          resolvedComputer,
+          localEnvironmentId: primaryEnvironmentId,
+          path: cwd,
+        });
         const confirmedRegistry = readWorkjetProjectRegistry(presentationInstanceId);
         let confirmedProject = confirmedRegistry.projects.find(
           (project) => project.id === projectId,
         );
         if (confirmedProject === undefined) {
+          if (localWorkingCopy === null) {
+            toastManager.add({
+              type: "info",
+              title: "No local computer registered",
+              description: "The project will be added without a local working copy.",
+            });
+          }
           const outcome = await runWorkjetProjectCreation({
             presentationInstanceId,
             request: {
@@ -1456,14 +1469,7 @@ function OpenCommandPaletteDialog(props: {
               commandId: newCommandId(),
               projectId,
               title: inferProjectTitleFromPath(cwd),
-              ...(workingCopyComputer
-                ? {
-                    workingCopy: {
-                      computerId: workingCopyComputer.id,
-                      path: cwd,
-                    },
-                  }
-                : {}),
+              ...(localWorkingCopy ? { workingCopy: localWorkingCopy } : {}),
               createdAt: new Date().toISOString(),
             },
           });
@@ -1536,6 +1542,7 @@ function OpenCommandPaletteDialog(props: {
       environments,
       primaryEnvironment,
       primaryEnvironmentId,
+      resolvedComputer,
       setOpen,
       unscopedProjects,
       workjetComputers,

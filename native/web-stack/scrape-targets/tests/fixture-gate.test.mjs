@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeChildProcess from "node:child_process";
-import { test as NodeTest } from "node:test";
+import * as NodeTest from "node:test";
 
 const testDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const targetsDir = NodePath.dirname(testDir);
@@ -131,7 +131,7 @@ function containsForbiddenSecretKey(value) {
   );
 }
 
-NodeTest("all DACH research scrape targets pass production-like fixture gates", async (t) => {
+NodeTest.test("all DACH research scrape targets pass production-like fixture gates", async (t) => {
   const targets = targetDirectories();
   NodeAssert.equal(targets.length, 16, `expected 16 targets, found: ${targets.join(", ")}`);
 
@@ -194,58 +194,65 @@ NodeTest("all DACH research scrape targets pass production-like fixture gates", 
   }
 });
 
-NodeTest("protected research adapters use secret references and Browser-App handoff", async (t) => {
-  for (const targetName of PROTECTED_TARGETS) {
-    await t.test(targetName, () => {
-      const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
-      const fixture = loadJson(fixturePath);
-      NodeAssert.equal(
-        containsForbiddenSecretKey(fixture),
-        false,
-        `${targetName} fixture contains a credential value`,
-      );
-      NodeAssert.match(fixture.input.credential_ref, /^ctox-secret:\/\/credentials\/[A-Z0-9_]+$/);
-
-      const { result, calls } = executeFixture(targetName, fixturePath, "auth_required");
-      NodeAssert.deepEqual(result.records, [], `${targetName} fabricated records without a login`);
-      NodeAssert.equal(result.failure_mode, "authorization_required");
-      NodeAssert.equal(result.browser_assist_requested, true);
-
-      const reauthorization = result.reauthorization;
-      NodeAssert.ok(reauthorization, `${targetName} did not persist a reauthorization action`);
-      NodeAssert.equal(reauthorization.kind, "auth-assist-request");
-      NodeAssert.equal(reauthorization.source_id, targetName);
-      NodeAssert.equal(reauthorization.login_url, fixture.login_url);
-      for (const domain of fixture.browser_allowed_domains) {
-        NodeAssert.ok(
-          reauthorization.allowed_domains.some(
-            (allowed) => domain === allowed || domain.endsWith(`.${allowed}`),
-          ),
-          `${targetName} reauthorization allow-list ${JSON.stringify(reauthorization.allowed_domains)} does not cover ${domain}`,
+NodeTest.test(
+  "protected research adapters use secret references and Browser-App handoff",
+  async (t) => {
+    for (const targetName of PROTECTED_TARGETS) {
+      await t.test(targetName, () => {
+        const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
+        const fixture = loadJson(fixturePath);
+        NodeAssert.equal(
+          containsForbiddenSecretKey(fixture),
+          false,
+          `${targetName} fixture contains a credential value`,
         );
-      }
-      NodeAssert.equal(reauthorization.credential_ref, fixture.input.credential_ref);
-      NodeAssert.equal(reauthorization.reason, "session_expired_or_invalid");
-      NodeAssert.equal(reauthorization.secret_value_in_payload, false);
-      NodeAssert.equal(
-        containsForbiddenSecretKey(result),
-        false,
-        `${targetName} result contains a credential value`,
-      );
+        NodeAssert.match(fixture.input.credential_ref, /^ctox-secret:\/\/credentials\/[A-Z0-9_]+$/);
 
-      const handoff = calls.find(
-        (args) => args[0] === "business-os" && args.includes("auth-assist-request"),
-      );
-      NodeAssert.ok(handoff, `${targetName} did not open a Browser-App authorization request`);
-      NodeAssert.equal(flagValue(handoff, "--credential-ref"), fixture.input.credential_ref);
-      NodeAssert.equal(flagValue(handoff, "--target-url"), fixture.login_url);
-      NodeAssert.equal(flagValue(handoff, "--task-id"), fixture.input.task_id);
-      NodeAssert.ok(!calls.flat().some((arg) => /(?:password|passwd)=/i.test(String(arg))));
-    });
-  }
-});
+        const { result, calls } = executeFixture(targetName, fixturePath, "auth_required");
+        NodeAssert.deepEqual(
+          result.records,
+          [],
+          `${targetName} fabricated records without a login`,
+        );
+        NodeAssert.equal(result.failure_mode, "authorization_required");
+        NodeAssert.equal(result.browser_assist_requested, true);
 
-NodeTest(
+        const reauthorization = result.reauthorization;
+        NodeAssert.ok(reauthorization, `${targetName} did not persist a reauthorization action`);
+        NodeAssert.equal(reauthorization.kind, "auth-assist-request");
+        NodeAssert.equal(reauthorization.source_id, targetName);
+        NodeAssert.equal(reauthorization.login_url, fixture.login_url);
+        for (const domain of fixture.browser_allowed_domains) {
+          NodeAssert.ok(
+            reauthorization.allowed_domains.some(
+              (allowed) => domain === allowed || domain.endsWith(`.${allowed}`),
+            ),
+            `${targetName} reauthorization allow-list ${JSON.stringify(reauthorization.allowed_domains)} does not cover ${domain}`,
+          );
+        }
+        NodeAssert.equal(reauthorization.credential_ref, fixture.input.credential_ref);
+        NodeAssert.equal(reauthorization.reason, "session_expired_or_invalid");
+        NodeAssert.equal(reauthorization.secret_value_in_payload, false);
+        NodeAssert.equal(
+          containsForbiddenSecretKey(result),
+          false,
+          `${targetName} result contains a credential value`,
+        );
+
+        const handoff = calls.find(
+          (args) => args[0] === "business-os" && args.includes("auth-assist-request"),
+        );
+        NodeAssert.ok(handoff, `${targetName} did not open a Browser-App authorization request`);
+        NodeAssert.equal(flagValue(handoff, "--credential-ref"), fixture.input.credential_ref);
+        NodeAssert.equal(flagValue(handoff, "--target-url"), fixture.login_url);
+        NodeAssert.equal(flagValue(handoff, "--task-id"), fixture.input.task_id);
+        NodeAssert.ok(!calls.flat().some((arg) => /(?:password|passwd)=/i.test(String(arg))));
+      });
+    }
+  },
+);
+
+NodeTest.test(
   "expired-session login landing stays distinguishable from genuine portal drift",
   async (t) => {
     for (const targetName of PROTECTED_TARGETS) {
@@ -269,7 +276,7 @@ NodeTest(
   },
 );
 
-NodeTest("public sources without credentials never emit auth handoffs", async (t) => {
+NodeTest.test("public sources without credentials never emit auth handoffs", async (t) => {
   for (const targetName of ["zefix.ch", "experte.de", "bundesanzeiger.de"]) {
     await t.test(targetName, () => {
       const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
@@ -294,51 +301,59 @@ NodeTest("public sources without credentials never emit auth handoffs", async (t
   }
 });
 
-NodeTest("protected providers resume capture after secret-backed Browser-App login", async (t) => {
-  for (const targetName of PROTECTED_TARGETS) {
-    await t.test(targetName, () => {
-      const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
-      const fixture = loadJson(fixturePath);
-      const { result, calls } = executeFixture(targetName, fixturePath, "auth_recovery");
-      for (const [field, expectedValue] of Object.entries(fixture.expected)) {
-        NodeAssert.ok(
-          result.records.some((record) => record.field === field && record.value === expectedValue),
+NodeTest.test(
+  "protected providers resume capture after secret-backed Browser-App login",
+  async (t) => {
+    for (const targetName of PROTECTED_TARGETS) {
+      await t.test(targetName, () => {
+        const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
+        const fixture = loadJson(fixturePath);
+        const { result, calls } = executeFixture(targetName, fixturePath, "auth_recovery");
+        for (const [field, expectedValue] of Object.entries(fixture.expected)) {
+          NodeAssert.ok(
+            result.records.some(
+              (record) => record.field === field && record.value === expectedValue,
+            ),
+          );
+        }
+        const login = calls.find(
+          (args) => args[0] === "business-os" && args.includes("auth-assist-login"),
         );
-      }
-      const login = calls.find(
-        (args) => args[0] === "business-os" && args.includes("auth-assist-login"),
-      );
-      NodeAssert.ok(login, `${targetName} did not run the native secret-backed login`);
-      NodeAssert.equal(flagValue(login, "--credential-ref"), fixture.input.credential_ref);
-      const captures = calls.filter(
-        (args) => args[0] === "business-os" && args.includes("source-capture"),
-      );
-      NodeAssert.equal(captures.length, 2);
-      NodeAssert.match(flagValue(captures[1], "--session-id"), /^browser_session_fixture_/);
-    });
-  }
-});
+        NodeAssert.ok(login, `${targetName} did not run the native secret-backed login`);
+        NodeAssert.equal(flagValue(login, "--credential-ref"), fixture.input.credential_ref);
+        const captures = calls.filter(
+          (args) => args[0] === "business-os" && args.includes("source-capture"),
+        );
+        NodeAssert.equal(captures.length, 2);
+        NodeAssert.match(flagValue(captures[1], "--session-id"), /^browser_session_fixture_/);
+      });
+    }
+  },
+);
 
-NodeTest("protected captures retry transient provider failures after secret-backed login", () => {
-  const targetName = "dnbhoovers.com";
-  const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
-  const fixture = loadJson(fixturePath);
-  const { result, calls } = executeFixture(targetName, fixturePath, "capture_retry");
-  NodeAssert.ok(
-    result.records.some(
-      (record) => record.field === "firma_name" && record.value === fixture.expected.firma_name,
-    ),
-  );
-  NodeAssert.ok(
-    calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-login")),
-  );
-  NodeAssert.equal(
-    calls.filter((args) => args[0] === "business-os" && args.includes("source-capture")).length,
-    2,
-  );
-});
+NodeTest.test(
+  "protected captures retry transient provider failures after secret-backed login",
+  () => {
+    const targetName = "dnbhoovers.com";
+    const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
+    const fixture = loadJson(fixturePath);
+    const { result, calls } = executeFixture(targetName, fixturePath, "capture_retry");
+    NodeAssert.ok(
+      result.records.some(
+        (record) => record.field === "firma_name" && record.value === fixture.expected.firma_name,
+      ),
+    );
+    NodeAssert.ok(
+      calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-login")),
+    );
+    NodeAssert.equal(
+      calls.filter((args) => args[0] === "business-os" && args.includes("source-capture")).length,
+      2,
+    );
+  },
+);
 
-NodeTest(
+NodeTest.test(
   "RocketReach keeps exact public provider evidence while protected fields await authorization",
   () => {
     const targetName = "rocketreach.com";
@@ -359,47 +374,53 @@ NodeTest(
   },
 );
 
-NodeTest("blocked protected adapters record Web-Unlock evidence and stay non-green", async (t) => {
-  for (const targetName of PROTECTED_TARGETS) {
-    await t.test(targetName, () => {
-      const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
-      const { result, calls } = executeFixture(targetName, fixturePath, "blocked");
-      NodeAssert.deepEqual(result.records, []);
-      NodeAssert.equal(result.failure_mode, "blocked");
-      NodeAssert.equal(result.browser_assist_requested, true);
-      const unlock = calls.find(
-        (args) =>
-          args[0] === "web" &&
-          args[1] === "unlock" &&
-          args[2] === "signals" &&
-          args[3] === "record",
-      );
-      NodeAssert.ok(unlock, `${targetName} did not record a Web-Unlock signal`);
-      const evidence = JSON.parse(flagValue(unlock, "--evidence"));
-      NodeAssert.equal(evidence.source_id, targetName);
-      NodeAssert.equal(evidence.secret_value_in_payload, false);
-      NodeAssert.ok(
-        calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")),
-      );
-    });
-  }
-});
+NodeTest.test(
+  "blocked protected adapters record Web-Unlock evidence and stay non-green",
+  async (t) => {
+    for (const targetName of PROTECTED_TARGETS) {
+      await t.test(targetName, () => {
+        const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
+        const { result, calls } = executeFixture(targetName, fixturePath, "blocked");
+        NodeAssert.deepEqual(result.records, []);
+        NodeAssert.equal(result.failure_mode, "blocked");
+        NodeAssert.equal(result.browser_assist_requested, true);
+        const unlock = calls.find(
+          (args) =>
+            args[0] === "web" &&
+            args[1] === "unlock" &&
+            args[2] === "signals" &&
+            args[3] === "record",
+        );
+        NodeAssert.ok(unlock, `${targetName} did not record a Web-Unlock signal`);
+        const evidence = JSON.parse(flagValue(unlock, "--evidence"));
+        NodeAssert.equal(evidence.source_id, targetName);
+        NodeAssert.equal(evidence.secret_value_in_payload, false);
+        NodeAssert.ok(
+          calls.some((args) => args[0] === "business-os" && args.includes("auth-assist-request")),
+        );
+      });
+    }
+  },
+);
 
-NodeTest("blocked public adapters record Web-Unlock evidence and stay non-green", async (t) => {
-  for (const targetName of PUBLIC_UNLOCK_TARGETS) {
-    await t.test(targetName, () => {
-      const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
-      const { result, calls } = executeFixture(targetName, fixturePath, "blocked");
-      NodeAssert.deepEqual(result.records, [], `${targetName} fabricated records while blocked`);
-      NodeAssert.notEqual(result.failure_mode, "succeeded");
+NodeTest.test(
+  "blocked public adapters record Web-Unlock evidence and stay non-green",
+  async (t) => {
+    for (const targetName of PUBLIC_UNLOCK_TARGETS) {
+      await t.test(targetName, () => {
+        const fixturePath = NodePath.join(fixturesDir, `${targetName}.json`);
+        const { result, calls } = executeFixture(targetName, fixturePath, "blocked");
+        NodeAssert.deepEqual(result.records, [], `${targetName} fabricated records while blocked`);
+        NodeAssert.notEqual(result.failure_mode, "succeeded");
 
-      const unlock = calls.find(
-        (args) => args[0] === "web" && args.includes("unlock") && args.includes("record"),
-      );
-      NodeAssert.ok(unlock, `${targetName} did not record a Web-Unlock signal`);
-      const evidence = JSON.parse(flagValue(unlock, "--evidence"));
-      NodeAssert.equal(evidence.source_id, targetName);
-      NodeAssert.equal(evidence.secret_value_in_payload, false);
-    });
-  }
-});
+        const unlock = calls.find(
+          (args) => args[0] === "web" && args.includes("unlock") && args.includes("record"),
+        );
+        NodeAssert.ok(unlock, `${targetName} did not record a Web-Unlock signal`);
+        const evidence = JSON.parse(flagValue(unlock, "--evidence"));
+        NodeAssert.equal(evidence.source_id, targetName);
+        NodeAssert.equal(evidence.secret_value_in_payload, false);
+      });
+    }
+  },
+);

@@ -150,9 +150,7 @@ function classifyBrowserResult(company, result) {
     return {
       records: [],
       failure_mode:
-        Array.isArray(result.entries) && result.entries.length > 0
-          ? "no_match"
-          : "portal_drift",
+        Array.isArray(result.entries) && result.entries.length > 0 ? "no_match" : "portal_drift",
       detail:
         Array.isArray(result.entries) && result.entries.length > 0
           ? "handelsregister.de returned no exact company match"

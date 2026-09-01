@@ -9,7 +9,6 @@ import type {
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
-  WorkjetComputer,
   WorkjetThreadRole,
 } from "@t3tools/contracts";
 import {
@@ -133,7 +132,10 @@ import {
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
+import { resolveWorkjetComputer } from "../../workjetProjectRegistry";
 import { cn, randomUUID } from "~/lib/utils";
+
+export { resolveWorkjetComputer as resolveComposerComputer } from "../../workjetProjectRegistry";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -530,46 +532,6 @@ export interface ChatComposerProps {
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
-}
-
-export interface ComposerComputerResolution {
-  readonly computer: WorkjetComputer | null;
-  readonly source: "worker" | "environment" | "selected" | null;
-}
-
-export function resolveComposerComputer(input: {
-  readonly computers: ReadonlyArray<WorkjetComputer>;
-  readonly workerModeActive: boolean;
-  readonly workerComputerId: string | null;
-  readonly activeEnvironmentId: EnvironmentId | null;
-  readonly selectedComputerId: string | null;
-}): ComposerComputerResolution {
-  if (input.workerModeActive && input.workerComputerId !== null) {
-    const workerComputer = input.computers.find(
-      (computer) => computer.id === input.workerComputerId,
-    );
-    if (workerComputer !== undefined) {
-      return { computer: workerComputer, source: "worker" };
-    }
-  }
-
-  const environmentComputer = input.computers.find(
-    (computer) => computer.environmentId === input.activeEnvironmentId,
-  );
-  if (environmentComputer !== undefined) {
-    return { computer: environmentComputer, source: "environment" };
-  }
-
-  if (input.selectedComputerId !== null) {
-    const selectedComputer = input.computers.find(
-      (computer) => computer.id === input.selectedComputerId,
-    );
-    if (selectedComputer !== undefined) {
-      return { computer: selectedComputer, source: "selected" };
-    }
-  }
-
-  return { computer: null, source: null };
 }
 
 // --------------------------------------------------------------------------
@@ -1197,7 +1159,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? null
       : (workjetComputers.find((computer) => computer.id === selectedWorkjetWorker.computerId) ??
         null);
-  const composerComputerResolution = resolveComposerComputer({
+  const composerComputerResolution = resolveWorkjetComputer({
     computers: workjetComputers,
     workerModeActive,
     workerComputerId: selectedWorkjetWorker?.computerId ?? null,

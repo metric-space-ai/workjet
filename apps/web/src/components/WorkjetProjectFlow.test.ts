@@ -58,7 +58,7 @@ describe("CTOX-native project story", () => {
     expect(commandPaletteResultsSource).toContain("data-workjet-action={props.item.value}");
     expect(sidebarSource).toContain('data-workjet-action="project.add.sidebar"');
     expect(chatIndexSource).toContain('data-workjet-action="project.add.hero"');
-    expect(sidebarSource).toContain("useWorkjetProjectRegistry(activeCtoxInstanceId)");
+    expect(sidebarSource).toContain("useAvailableProjectContext()");
     expect(sidebarSource).toContain("project.title");
     expect(chatIndexSource).toContain('data-workjet-project-state="ready"');
     expect(chatIndexSource).toContain("Project synced with this CTOX instance");

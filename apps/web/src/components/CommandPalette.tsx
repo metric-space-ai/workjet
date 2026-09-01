@@ -117,6 +117,7 @@ import {
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
+  shouldShowNewThreadActions,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
@@ -594,7 +595,7 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const primaryEnvironment = usePrimaryEnvironment();
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+  const { activeDraftThread, activeThread, availableProjects, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
   const unscopedProjects = useAtomValue(environmentProjects.projectsAtom);
@@ -979,38 +980,58 @@ function OpenCommandPaletteDialog(props: {
     [openProjectFromSearch, pickerProjects, projectGroupByTargetKey],
   );
 
-  const projectThreadItems = useMemo(
-    () =>
-      enumerateCommandPaletteItems(
-        buildProjectActionItems({
-          projects: pickerProjects,
-          valuePrefix: "new-thread-in",
-          searchTerms: (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            return (
-              group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
-            );
-          },
-          icon: projectFavicon,
-          runProject: async (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            const contextualRefBelongsToGroup =
-              contextualProjectRef !== null &&
-              group?.memberProjectRefs.some(
-                (projectRef) =>
-                  projectRef.environmentId === contextualProjectRef.environmentId &&
-                  projectRef.projectId === contextualProjectRef.projectId,
-              );
-            await handleNewThread(
-              contextualRefBelongsToGroup
-                ? contextualProjectRef
-                : scopeProjectRef(project.environmentId, project.id),
-            );
-          },
-        }),
-      ),
-    [contextualProjectRef, handleNewThread, pickerProjects, projectGroupByTargetKey],
-  );
+  const projectThreadItems = useMemo(() => {
+    const localItems = buildProjectActionItems({
+      projects: pickerProjects,
+      valuePrefix: "new-thread-in",
+      searchTerms: (project) => {
+        const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+        return (
+          group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
+        );
+      },
+      icon: projectFavicon,
+      runProject: async (project) => {
+        const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+        const contextualRefBelongsToGroup =
+          contextualProjectRef !== null &&
+          group?.memberProjectRefs.some(
+            (projectRef) =>
+              projectRef.environmentId === contextualProjectRef.environmentId &&
+              projectRef.projectId === contextualProjectRef.projectId,
+          );
+        await handleNewThread(
+          contextualRefBelongsToGroup
+            ? contextualProjectRef
+            : scopeProjectRef(project.environmentId, project.id),
+        );
+      },
+    });
+    const workjetItems: CommandPaletteActionItem[] = availableProjects.flatMap((project) =>
+      project.kind === "workjet"
+        ? [
+            {
+              kind: "action" as const,
+              value: `new-thread-in:${project.environmentId}:${project.id}`,
+              searchTerms: [project.title, project.path, "synced", "working copy"],
+              title: project.title,
+              description: project.path,
+              icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+              run: async () => {
+                await handleNewThread(project);
+              },
+            },
+          ]
+        : [],
+    );
+    return enumerateCommandPaletteItems([...localItems, ...workjetItems]);
+  }, [
+    availableProjects,
+    contextualProjectRef,
+    handleNewThread,
+    pickerProjects,
+    projectGroupByTargetKey,
+  ]);
 
   const allThreadItems = useMemo(
     () =>
@@ -1671,10 +1692,22 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
+  if (shouldShowNewThreadActions(availableProjects.length)) {
+    const preferredLocalProjectTitle = projectPickerEntries.find((entry) => entry.isPreferred)
+      ?.group.displayName;
+    const currentLocalProjectTitle = currentProjectId
+      ? projectTitleById.get(currentProjectId)
+      : undefined;
+    const defaultAvailableProjectTitle = availableProjects.find(
+      (project) =>
+        project.environmentId === defaultProjectRef?.environmentId &&
+        project.id === defaultProjectRef?.projectId,
+    )?.title;
     const activeProjectTitle =
-      projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
-      (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
+      preferredLocalProjectTitle ??
+      currentLocalProjectTitle ??
+      defaultAvailableProjectTitle ??
+      null;
 
     if (activeProjectTitle) {
       actionItems.push({

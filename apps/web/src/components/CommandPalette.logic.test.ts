@@ -13,8 +13,19 @@ import {
   enumerateCommandPaletteItems,
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
+  shouldShowNewThreadActions,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
+
+describe("new thread action gating", () => {
+  it("shows actions for a sync-only available project", () => {
+    expect(shouldShowNewThreadActions(1)).toBe(true);
+  });
+
+  it("hides actions when no project is available", () => {
+    expect(shouldShowNewThreadActions(0)).toBe(false);
+  });
+});
 
 describe("reduceCommandPaletteUiState", () => {
   const closedState = { open: false, mode: "command", openIntent: null } as const;

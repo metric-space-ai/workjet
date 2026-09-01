@@ -1,4 +1,9 @@
-import { CtoxWorkjetProjectProjection, ProjectId } from "@t3tools/contracts";
+import {
+  CtoxWorkjetProjectProjection,
+  type EnvironmentId,
+  ProjectId,
+  type WorkjetComputer,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 
@@ -151,6 +156,46 @@ export function findWorkjetProjectByWorkingCopy(
         normalizedWorkingCopyPath(workingCopy.path) === normalizedPath,
     ),
   );
+}
+
+export interface WorkjetComputerResolution {
+  readonly computer: WorkjetComputer | null;
+  readonly source: "worker" | "environment" | "selected" | null;
+}
+
+export function resolveWorkjetComputer(input: {
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly workerModeActive: boolean;
+  readonly workerComputerId: string | null;
+  readonly activeEnvironmentId: EnvironmentId | null;
+  readonly selectedComputerId: string | null;
+}): WorkjetComputerResolution {
+  if (input.workerModeActive && input.workerComputerId !== null) {
+    const workerComputer = input.computers.find(
+      (computer) => computer.id === input.workerComputerId,
+    );
+    if (workerComputer !== undefined) {
+      return { computer: workerComputer, source: "worker" };
+    }
+  }
+
+  const environmentComputer = input.computers.find(
+    (computer) => computer.environmentId === input.activeEnvironmentId,
+  );
+  if (environmentComputer !== undefined) {
+    return { computer: environmentComputer, source: "environment" };
+  }
+
+  if (input.selectedComputerId !== null) {
+    const selectedComputer = input.computers.find(
+      (computer) => computer.id === input.selectedComputerId,
+    );
+    if (selectedComputer !== undefined) {
+      return { computer: selectedComputer, source: "selected" };
+    }
+  }
+
+  return { computer: null, source: null };
 }
 
 export function recordWorkjetProjectProjection(

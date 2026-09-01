@@ -110,11 +110,17 @@ const register = Effect.fn("McpHttpServer.registerWorkjetManager")(function* () 
           fiber.context,
           McpInvocationContext.McpInvocationContext,
         );
+        const settings = Context.getUnsafe(fiber.context, ServerSettingsService);
+        const delivery = Context.getUnsafe(
+          fiber.context,
+          WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+        );
+        const identity = Context.getUnsafe(fiber.context, WorkjetMeshIdentity);
+        const snapshots = Context.getUnsafe(
+          fiber.context,
+          WorkjetSnapshotStore.WorkjetSnapshotStore,
+        );
         return Effect.gen(function* () {
-          const settings = yield* ServerSettingsService;
-          const delivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
-          const identity = yield* WorkjetMeshIdentity;
-          const snapshots = yield* WorkjetSnapshotStore.WorkjetSnapshotStore;
           yield* McpInvocationContext.requireWorkjetMember();
           const input = yield* Schema.decodeUnknownEffect(WorkjetContactManagerInput, {
             onExcessProperty: "error",

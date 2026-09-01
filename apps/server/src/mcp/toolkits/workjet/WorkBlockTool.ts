@@ -89,8 +89,6 @@ export const resolveWorkBlockStartMillis = (
 
 const register = Effect.fn("McpHttpServer.registerWorkjetWorkBlock")(function* () {
   const server = yield* McpServer.McpServer;
-  const engine = yield* OrchestrationEngine.OrchestrationEngineService;
-  const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
   const tool = WorkjetRecordWorkBlockTool;
 
@@ -114,6 +112,14 @@ const register = Effect.fn("McpHttpServer.registerWorkjetWorkBlock")(function* (
         const invocation = Context.getUnsafe(
           fiber.context,
           McpInvocationContext.McpInvocationContext,
+        );
+        const engine = Context.getUnsafe(
+          fiber.context,
+          OrchestrationEngine.OrchestrationEngineService,
+        );
+        const query = Context.getUnsafe(
+          fiber.context,
+          ProjectionSnapshotQuery.ProjectionSnapshotQuery,
         );
         return Effect.gen(function* () {
           yield* McpInvocationContext.requireWorkjetMember();

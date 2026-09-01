@@ -76,7 +76,7 @@ minimumReleaseAgeExclude:
   - "@legendapp/list@3.3.5"
 
 overrides:
-  browserslist: '>=4.28.7'
+  browserslist: ">=4.28.7"
   "@clerk/backend": "catalog:"
   "@clerk/clerk-js": "catalog:"
   "@clerk/clerk-js>@base-org/account": "-"

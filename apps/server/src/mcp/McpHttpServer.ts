@@ -31,6 +31,9 @@ import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
 import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
 import { WorkerToolkitRegistrationLive } from "./toolkits/workjet/WorkerTool.ts";
 import { DecisionHubToolkitRegistrationLive } from "./toolkits/workjet/DecisionHubTool.ts";
+import { CollectiveToolkitRegistrationLive } from "./toolkits/workjet/CollectiveTool.ts";
+import { WorkBlockToolkitRegistrationLive } from "./toolkits/workjet/WorkBlockTool.ts";
+import { ManagerToolkitRegistrationLive } from "./toolkits/workjet/ManagerTool.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -226,6 +229,9 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
 );
 
 const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
+  CollectiveToolkitRegistrationLive,
+  WorkBlockToolkitRegistrationLive,
+  ManagerToolkitRegistrationLive,
   WorkerToolkitRegistrationLive,
   DecisionHubToolkitRegistrationLive,
   MailboxToolkitRegistrationLive,

@@ -6,6 +6,16 @@ export interface CompileCapabilityPromptInput {
   readonly manifests: ReadonlyArray<CapabilityManifest>;
 }
 
+export const WORKJET_COLLECTIVE_SYSTEM_PROMPT = [
+  "## Workjet Collective",
+  "",
+  "This thread is a member of the Workjet Collective. Before using collective coordination, handling a Workjet thread reference, reporting a managed-tool bug, requesting access, or requesting a scoped secret operation, read the versioned Workjet Collective skill with `workjet_collective_guide` and follow it.",
+  "",
+  "Use Workjet worker addresses and Workjet thread references for coordination; never guess or forward a provider-native session id. The Workjet Manager is the durable contact for collective bug reports, access requests, and scoped secret operations. Never request, reveal, or place plaintext secrets in prompts, messages, thread events, work blocks, or bug reports; use secret handles and policy-gated operations only.",
+  "",
+  "After material work, author one concise work block when the work stops, changes topic, is handed off, or completes. A work block covers the actual continuous interval, regardless of duration. If the session terminates before that is possible, leave the block incomplete rather than inventing a summary.",
+].join("\n");
+
 const roleSection = (role: WorkjetThreadRole): string => {
   switch (role) {
     case "standard":
@@ -30,7 +40,7 @@ export const compileCapabilityPrompt = ({
   managedInstructions,
   manifests,
 }: CompileCapabilityPromptInput): string => {
-  const sections: Array<string> = [];
+  const sections: Array<string> = [WORKJET_COLLECTIVE_SYSTEM_PROMPT];
   const compiledRoleSection = roleSection(role);
   const trimmedManagedInstructions = managedInstructions.trim();
 

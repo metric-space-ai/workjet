@@ -86,6 +86,14 @@ describe("parseDesktopDeepLink", () => {
     assert.equal(link.hash, "#/deep");
   });
 
+  it("normalizes a Workjet thread reference onto the renderer thread route", () => {
+    const link = Option.getOrThrow(
+      parseDesktopDeepLink("workjet://app/threads/environment-1/thread-1"),
+    );
+    assert.equal(link.path, "/environment-1/thread-1");
+    assert.equal(link.canonicalUrl, "t3code://app/environment-1/thread-1");
+  });
+
   it("accepts an upper-case scheme as delivered by some launchers", () => {
     const link = Option.getOrThrow(parseDesktopDeepLink("WORKJET://app/x"));
     assert.equal(link.scheme, "workjet");
@@ -120,6 +128,13 @@ describe("resolveDesktopDeepLinkRedirect", () => {
 
   it("does not redirect a link already on the renderer origin", () => {
     assert.isTrue(Option.isNone(resolveDesktopDeepLinkRedirect("t3code://app/threads")));
+  });
+
+  it("redirects renderer-scheme thread references onto the canonical route", () => {
+    assert.deepEqual(
+      resolveDesktopDeepLinkRedirect("t3code://app/threads/environment-1/thread-1"),
+      Option.some("t3code://app/environment-1/thread-1"),
+    );
   });
 
   it("does not redirect a foreign url", () => {

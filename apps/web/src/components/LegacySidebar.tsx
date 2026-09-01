@@ -49,6 +49,7 @@ import {
   type SidebarProjectGroupingMode,
   ThreadId,
 } from "@t3tools/contracts";
+import { buildWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
 import {
   parseScopedThreadKey,
   scopedProjectKey,
@@ -1169,6 +1170,26 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       );
     },
   });
+  const { copyToClipboard: copyDeepLinkToClipboard } = useCopyToClipboard<{
+    link: string;
+  }>({
+    onCopy: (ctx) => {
+      toastManager.add({
+        type: "success",
+        title: "Workjet link copied",
+        description: ctx.link,
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy Workjet link",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+  });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{
     path: string;
   }>({
@@ -2149,6 +2170,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
+          { id: "copy-deep-link", label: "Copy Workjet Link" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
@@ -2206,6 +2228,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         copyThreadIdToClipboard(thread.id, { threadId: thread.id });
         return;
       }
+      if (clicked === "copy-deep-link") {
+        const link = buildWorkjetThreadDeepLink({
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+        });
+        copyDeepLinkToClipboard(link, { link });
+        return;
+      }
       if (clicked !== "delete") return;
       if (appSettingsConfirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
@@ -2233,6 +2263,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [
       appSettingsConfirmThreadDelete,
+      copyDeepLinkToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,

@@ -46,6 +46,15 @@ export class WorkjetOrchestratorUnavailableError extends Schema.TaggedErrorClass
   }
 }
 
+export class WorkjetMemberUnavailableError extends Schema.TaggedErrorClass<WorkjetMemberUnavailableError>()(
+  "WorkjetMemberUnavailableError",
+  {},
+) {
+  override get message(): string {
+    return "This MCP credential is not bound to a Workjet collective member thread.";
+  }
+}
+
 export class McpSessionCwdUnavailableError extends Schema.TaggedErrorClass<McpSessionCwdUnavailableError>()(
   "McpSessionCwdUnavailableError",
   {},
@@ -95,6 +104,19 @@ export const requireActiveWorkjetMcpCapability = Effect.fn("mcp.requireActiveWor
     return invocation;
   },
 );
+
+export const isWorkjetMember = (invocation: McpInvocationScope): boolean =>
+  invocation.workjetRole === "standard" ||
+  invocation.workjetRole === "orchestrator" ||
+  invocation.workjetRole === "worker";
+
+export const requireWorkjetMember = Effect.fn("mcp.requireWorkjetMember")(function* () {
+  const invocation = yield* McpInvocationContext;
+  if (!isWorkjetMember(invocation)) {
+    return yield* new WorkjetMemberUnavailableError();
+  }
+  return invocation;
+});
 
 export const isWorkjetOrchestrator = (invocation: McpInvocationScope): boolean =>
   invocation.workjetRole === "orchestrator";

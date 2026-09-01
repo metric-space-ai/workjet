@@ -341,6 +341,9 @@ export const WorkjetConfigurationValue = Schema.Struct({
   ),
   workerGraph: WorkjetWorkerGraph,
   managedSystemPrompt: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  managerThreadReference: TrimmedString.check(Schema.isMaxLength(2_048)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
   telemetry: WorkjetTelemetryConfiguration,
   execution: WorkjetExecutionConfiguration,
 });

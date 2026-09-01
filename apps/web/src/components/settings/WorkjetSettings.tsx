@@ -971,6 +971,27 @@ export function WorkjetSettingsView({
           id={searchableSetting("workjet-prompt").id}
           title={searchableSetting("workjet-prompt").title}
         >
+          <SettingsRow
+            title="Workjet Manager"
+            description="Provider-neutral Workjet link for the durable CTOX-backed manager thread. Workers use it for bug reports, access requests, scoped secret operations, and collective notices."
+          >
+            <div className="mt-2 max-w-3xl pb-3.5">
+              <Textarea
+                key={configuration.managerThreadReference}
+                defaultValue={configuration.managerThreadReference}
+                rows={2}
+                placeholder="workjet://app/threads/<environment>/<thread>"
+                aria-label="Workjet Manager thread reference"
+                onBlur={(event) => {
+                  const managerThreadReference = event.target.value.trim();
+                  if (managerThreadReference !== configuration.managerThreadReference) {
+                    onChange({ ...configuration, managerThreadReference });
+                  }
+                }}
+              />
+            </div>
+          </SettingsRow>
+
           {/* The Swift page shows this prompt as named cards, each with its own
               edit affordance, instead of one 6 KB scroll box. Same here — but
               as a VIEW: the sections are found by the headings already in the

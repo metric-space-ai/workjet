@@ -9,9 +9,33 @@ import type {
 } from "@t3tools/contracts";
 import { ProviderInstanceId } from "@t3tools/contracts";
 
-import { projectThreadAwareness } from "./agentAwareness.ts";
+import {
+  buildWorkjetThreadDeepLink,
+  parseWorkjetThreadDeepLink,
+  projectThreadAwareness,
+} from "./agentAwareness.ts";
 
 const NOW = "2026-05-22T12:00:00.000Z";
+
+describe("Workjet thread references", () => {
+  it("round-trips a provider-neutral desktop deep link", () => {
+    const reference = {
+      environmentId: "env-1" as EnvironmentId,
+      threadId: "thread-1" as ThreadId,
+    };
+    const link = buildWorkjetThreadDeepLink(reference);
+    expect(link).toBe("workjet://app/threads/env-1/thread-1");
+    expect(parseWorkjetThreadDeepLink(link)).toEqual(reference);
+  });
+
+  it("rejects foreign hosts, extra state, and provider-native session links", () => {
+    expect(parseWorkjetThreadDeepLink("workjet://foreign/threads/env-1/thread-1")).toBeNull();
+    expect(
+      parseWorkjetThreadDeepLink("workjet://app/threads/env-1/thread-1?token=secret"),
+    ).toBeNull();
+    expect(parseWorkjetThreadDeepLink("codex://threads/native-session-id")).toBeNull();
+  });
+});
 
 const project = {
   title: "t3code",

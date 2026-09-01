@@ -73,6 +73,7 @@ import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopComputerProvisioner from "./provisioning/DesktopComputerProvisioner.ts";
 import * as DesktopState from "./app/DesktopState.ts";
+import { resolveDesktopProfileHome } from "./app/DesktopTestProfile.ts";
 import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
@@ -91,7 +92,11 @@ const desktopEnvironmentLayer = Layer.unwrap(
     const processArch = yield* HostProcessArchitecture;
     return DesktopEnvironment.layer({
       dirname: __dirname,
-      homeDirectory: NodeOS.homedir(),
+      homeDirectory: resolveDesktopProfileHome({
+        argv: process.argv,
+        defaultHomeDirectory: NodeOS.homedir(),
+        isPackaged: metadata.isPackaged,
+      }),
       platform,
       processArch,
       ...metadata,

@@ -20,6 +20,7 @@ export type ThreadActionMenuId =
   | "mark-unread"
   | "copy-path"
   | "copy-branch"
+  | "copy-deep-link"
   | "copy-thread-id"
   | "delete";
 
@@ -101,6 +102,7 @@ export function buildThreadActionMenuItems(
     { id: "mark-unread", label: "Mark unread" },
     { id: "copy-path", label: "Copy path", icon: "copy" },
     ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
+    { id: "copy-deep-link", label: "Copy Workjet link", icon: "copy" },
     { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];

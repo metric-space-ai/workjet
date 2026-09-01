@@ -1,6 +1,7 @@
 import {
   builtInCapabilityManifests,
   createCapabilityRegistry,
+  WORKJET_COLLECTIVE_SYSTEM_PROMPT,
 } from "@metric-space-ai/workjet-capabilities";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
@@ -27,12 +28,12 @@ const registry = createCapabilityRegistry([
 ]);
 
 describe("resolveThreadCapabilityContext", () => {
-  it("resolves the default config to empty T3 capability context", () => {
+  it("resolves the default config to the collective prompt baseline", () => {
     expect(resolveThreadCapabilityContext(DEFAULT_WORKJET_THREAD_CONFIG)).toEqual({
       workjetRole: "standard",
       mcpCapabilityIds: [],
       promptCapabilityIds: [],
-      compiledManagedPrompt: "",
+      compiledManagedPrompt: WORKJET_COLLECTIVE_SYSTEM_PROMPT,
     });
   });
 
@@ -58,6 +59,7 @@ describe("resolveThreadCapabilityContext", () => {
     expect(context.promptCapabilityIds).toEqual(["greppy", "web-stack-browser"]);
     expect(context.compiledManagedPrompt).toBe(
       [
+        WORKJET_COLLECTIVE_SYSTEM_PROMPT,
         "## Managed Instructions\n\nApply the configured workflow.",
         "## Capability: greppy@1.0.0\n\nUse Greppy to locate relevant text in files when repository or document search would help answer the task.",
         "## Capability: web-stack-browser@1.0.0\n\nUse Web Stack Browser for tasks that require interacting with or inspecting a rendered web page. Supply only its finite structured actions, never JavaScript, shell commands, paths, environment variables, or secrets, and report observed outcomes.",
@@ -83,6 +85,22 @@ describe("resolveThreadCapabilityContext", () => {
       mcpCapabilityIds: ["web-search"],
       promptCapabilityIds: [],
     });
+  });
+
+  it("places global managed policy before thread-specific instructions", () => {
+    const context = resolveThreadCapabilityContext(
+      {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        managedInstructions: "Thread-specific policy.",
+      },
+      undefined,
+      undefined,
+      "Collective-wide policy.",
+    );
+
+    expect(context.compiledManagedPrompt.indexOf("Collective-wide policy.")).toBeLessThan(
+      context.compiledManagedPrompt.indexOf("Thread-specific policy."),
+    );
   });
 
   it("projects orchestrator and worker roles into the managed prompt", () => {

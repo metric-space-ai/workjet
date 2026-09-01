@@ -84,7 +84,14 @@ export function parseDesktopDeepLink(rawUrl: string): Option.Option<DesktopDeepL
   if (parsed.port !== "" || parsed.username !== "" || parsed.password !== "") return Option.none();
 
   const canonicalScheme = DesktopSchemes.getDesktopScheme(descriptor.isDevelopment);
-  const path = parsed.pathname === "" ? "/" : parsed.pathname;
+  const parsedPath = parsed.pathname === "" ? "/" : parsed.pathname;
+  const threadReferenceMatch = parsedPath.match(/^\/threads\/([^/]+)\/([^/]+)\/?$/);
+  // External Workjet thread references carry an explicit `/threads/` marker.
+  // The renderer's canonical TanStack route is `/:environmentId/:threadId`,
+  // so normalize only that exact, bounded shape before navigation.
+  const path = threadReferenceMatch
+    ? `/${threadReferenceMatch[1]}/${threadReferenceMatch[2]}`
+    : parsedPath;
 
   return Option.some({
     scheme,
@@ -105,7 +112,7 @@ export function parseDesktopDeepLink(rawUrl: string): Option.Option<DesktopDeepL
  */
 export function resolveDesktopDeepLinkRedirect(rawUrl: string): Option.Option<string> {
   return parseDesktopDeepLink(rawUrl).pipe(
-    Option.filter((link) => link.scheme !== link.canonicalScheme),
+    Option.filter((link) => link.canonicalUrl !== rawUrl.trim()),
     Option.map((link) => link.canonicalUrl),
   );
 }

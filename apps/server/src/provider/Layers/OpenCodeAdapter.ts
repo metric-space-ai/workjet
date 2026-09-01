@@ -16,6 +16,7 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -69,7 +70,17 @@ const OPENCODE_RESUME_VERSION = 1 as const;
  * rather than an error. Re-adopting the session id IS the resume mechanism —
  * OpenCode scopes a conversation's history by session id.
  */
-function parseOpenCodeResume(raw: unknown): { readonly sessionId: string } | undefined {
+interface OpenCodeResumeCursor {
+  readonly schemaVersion: typeof OPENCODE_RESUME_VERSION;
+  readonly sessionId: string;
+  readonly managedPromptFingerprint?: string;
+}
+
+const MANAGED_PROMPT_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+
+function parseOpenCodeResume(
+  raw: unknown,
+): Omit<OpenCodeResumeCursor, "schemaVersion"> | undefined {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return undefined;
   }
@@ -80,7 +91,33 @@ function parseOpenCodeResume(raw: unknown): { readonly sessionId: string } | und
   if (typeof record.sessionId !== "string" || record.sessionId.trim().length === 0) {
     return undefined;
   }
-  return { sessionId: record.sessionId.trim() };
+  const managedPromptFingerprint =
+    typeof record.managedPromptFingerprint === "string" &&
+    MANAGED_PROMPT_FINGERPRINT_PATTERN.test(record.managedPromptFingerprint)
+      ? record.managedPromptFingerprint
+      : undefined;
+  return {
+    sessionId: record.sessionId.trim(),
+    ...(managedPromptFingerprint ? { managedPromptFingerprint } : {}),
+  };
+}
+
+function makeOpenCodeResumeCursor(
+  sessionId: string,
+  managedPromptFingerprint?: string,
+): OpenCodeResumeCursor {
+  return {
+    schemaVersion: OPENCODE_RESUME_VERSION,
+    sessionId,
+    ...(managedPromptFingerprint ? { managedPromptFingerprint } : {}),
+  };
+}
+
+function delimitManagedPrompt(compiledManagedPrompt: string | undefined): string | undefined {
+  const managedPrompt = compiledManagedPrompt?.trim();
+  return managedPrompt
+    ? `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
+    : undefined;
 }
 
 /**
@@ -211,6 +248,10 @@ interface OpenCodeSessionContext {
   readonly server: OpenCodeServerConnection;
   readonly directory: string;
   readonly openCodeSessionId: string;
+  readonly managedPrompt: string | undefined;
+  readonly managedPromptFingerprint: string | undefined;
+  appliedManagedPromptFingerprint: string | undefined;
+  managedPromptInjectionInFlight: boolean;
   readonly pendingPermissions: Map<string, PermissionRequest>;
   readonly pendingQuestions: Map<string, QuestionRequest>;
   readonly messageRoleById: Map<string, "user" | "assistant">;
@@ -236,6 +277,31 @@ interface OpenCodeSessionContext {
    *   - tears down the OpenCode server process for scope-owned servers.
    */
   readonly sessionScope: Scope.Closeable;
+}
+
+function applyManagedPromptFingerprint(
+  context: OpenCodeSessionContext,
+  managedPromptFingerprint: string | undefined,
+): void {
+  if (managedPromptFingerprint === undefined) return;
+  context.appliedManagedPromptFingerprint = managedPromptFingerprint;
+  context.managedPromptInjectionInFlight = false;
+  context.session = {
+    ...context.session,
+    resumeCursor: makeOpenCodeResumeCursor(context.openCodeSessionId, managedPromptFingerprint),
+  };
+}
+
+function releaseManagedPromptInjection(
+  context: OpenCodeSessionContext,
+  managedPromptFingerprint: string | undefined,
+): void {
+  if (
+    managedPromptFingerprint !== undefined &&
+    context.appliedManagedPromptFingerprint !== managedPromptFingerprint
+  ) {
+    context.managedPromptInjectionInFlight = false;
+  }
 }
 
 export interface OpenCodeAdapterLiveOptions {
@@ -1208,7 +1274,24 @@ export function makeOpenCodeAdapter(
         const serverUrl = openCodeSettings.serverUrl;
         const serverPassword = openCodeSettings.serverPassword;
         const directory = input.cwd ?? serverConfig.cwd;
-        const resumeSessionId = parseOpenCodeResume(input.resumeCursor)?.sessionId;
+        const resumeCursor = parseOpenCodeResume(input.resumeCursor);
+        const resumeSessionId = resumeCursor?.sessionId;
+        const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
+        const managedPromptFingerprint = managedPrompt
+          ? yield* crypto.digest("SHA-256", new TextEncoder().encode(managedPrompt)).pipe(
+              Effect.map(Encoding.encodeHex),
+              Effect.mapError(
+                (cause) =>
+                  new ProviderAdapterProcessError({
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    detail: "Failed to fingerprint OpenCode managed instructions.",
+                    cause,
+                  }),
+              ),
+            )
+          : undefined;
         const existing = sessions.get(input.threadId);
         if (existing) {
           yield* stopOpenCodeContext(existing);
@@ -1238,7 +1321,6 @@ export function makeOpenCodeAdapter(
                 directory,
                 ...(server.external && serverPassword ? { serverPassword } : {}),
               });
-              const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
               if (mcpSession && !server.external) {
                 yield* runOpenCodeSdk("mcp.add", () =>
                   client.mcp.add({
@@ -1289,7 +1371,7 @@ export function makeOpenCodeAdapter(
                       permission: buildOpenCodePermissionRules(input.runtimeMode),
                     }),
                   );
-                  return { openCodeSession: reusable, created: false };
+                  return { openCodeSession: reusable, created: false, preservedHistory: true };
                 }
 
                 // The session lives under a different cwd (e.g. the thread
@@ -1316,7 +1398,7 @@ export function makeOpenCodeAdapter(
                       permission: buildOpenCodePermissionRules(input.runtimeMode),
                     }),
                   );
-                  return { openCodeSession: forked, created: true };
+                  return { openCodeSession: forked, created: true, preservedHistory: true };
                 }
 
                 if (resumeSessionId) {
@@ -1335,7 +1417,11 @@ export function makeOpenCodeAdapter(
                     detail: "OpenCode session.create returned no session payload.",
                   });
                 }
-                return { openCodeSession: createdSession.data, created: true };
+                return {
+                  openCodeSession: createdSession.data,
+                  created: true,
+                  preservedHistory: false,
+                };
               });
 
               return {
@@ -1344,6 +1430,7 @@ export function makeOpenCodeAdapter(
                 client,
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
+                preservedHistory: resolved.preservedHistory,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1384,10 +1471,10 @@ export function makeOpenCodeAdapter(
           // ProviderService persists this cursor and feeds it back into
           // `startSession` after the in-memory session is lost (reaper /
           // restart), so follow-ups continue the same conversation (#3604).
-          resumeCursor: {
-            schemaVersion: OPENCODE_RESUME_VERSION,
-            sessionId: started.openCodeSession.id,
-          },
+          resumeCursor: makeOpenCodeResumeCursor(
+            started.openCodeSession.id,
+            started.preservedHistory ? resumeCursor?.managedPromptFingerprint : undefined,
+          ),
           createdAt,
           updatedAt: createdAt,
         };
@@ -1398,6 +1485,12 @@ export function makeOpenCodeAdapter(
           server: started.server,
           directory,
           openCodeSessionId: started.openCodeSession.id,
+          managedPrompt,
+          managedPromptFingerprint,
+          appliedManagedPromptFingerprint: started.preservedHistory
+            ? resumeCursor?.managedPromptFingerprint
+            : undefined,
+          managedPromptInjectionInFlight: false,
           pendingPermissions: new Map(),
           pendingQuestions: new Map(),
           partById: new Map(),
@@ -1478,6 +1571,17 @@ export function makeOpenCodeAdapter(
         });
       }
 
+      const managedPromptFingerprintToApply =
+        context.managedPrompt !== undefined &&
+        context.managedPromptFingerprint !== undefined &&
+        context.appliedManagedPromptFingerprint !== context.managedPromptFingerprint &&
+        !context.managedPromptInjectionInFlight
+          ? context.managedPromptFingerprint
+          : undefined;
+      if (managedPromptFingerprintToApply !== undefined) {
+        context.managedPromptInjectionInFlight = true;
+      }
+
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
 
@@ -1511,10 +1615,26 @@ export function makeOpenCodeAdapter(
           model: parsedModel,
           ...(context.activeAgent ? { agent: context.activeAgent } : {}),
           ...(context.activeVariant ? { variant: context.activeVariant } : {}),
-          parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
+          parts: [
+            ...(managedPromptFingerprintToApply !== undefined
+              ? [{ type: "text" as const, text: context.managedPrompt! }]
+              : []),
+            ...(text ? [{ type: "text" as const, text }] : []),
+            ...fileParts,
+          ],
         }),
       ).pipe(
         Effect.mapError(toRequestError),
+        Effect.tap(() =>
+          Effect.sync(() =>
+            applyManagedPromptFingerprint(context, managedPromptFingerprintToApply),
+          ),
+        ),
+        Effect.ensuring(
+          Effect.sync(() =>
+            releaseManagedPromptInjection(context, managedPromptFingerprintToApply),
+          ),
+        ),
         // On failure of a fresh turn: clear active-turn state, flip the
         // session back to ready with lastError set, emit turn.aborted, then
         // let the typed error propagate. We don't need to rebuild the error

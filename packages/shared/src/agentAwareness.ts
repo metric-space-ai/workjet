@@ -50,6 +50,54 @@ export function buildAgentAwarenessDeepLink(input: {
   return `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
 }
 
+export interface WorkjetThreadReference {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}
+
+/**
+ * Provider-neutral, OS-routable pointer to a Workjet thread. The reference
+ * deliberately contains no Codex/Claude/Cursor/Grok/OpenCode session id.
+ */
+export function buildWorkjetThreadDeepLink(input: WorkjetThreadReference): string {
+  return `workjet://app/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
+}
+
+export function parseWorkjetThreadDeepLink(raw: string): WorkjetThreadReference | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (
+    !["workjet:", "workjet-dev:", "workjet-preview:"].includes(parsed.protocol) ||
+    parsed.hostname !== "app" ||
+    parsed.port !== "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    return null;
+  }
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (segments.length !== 3 || segments[0] !== "threads") return null;
+  try {
+    const environmentId = decodeURIComponent(segments[1] ?? "");
+    const threadId = decodeURIComponent(segments[2] ?? "");
+    if (!environmentId || !threadId || environmentId.includes("/") || threadId.includes("/")) {
+      return null;
+    }
+    return {
+      environmentId: environmentId as EnvironmentId,
+      threadId: threadId as ThreadId,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function projectThreadAwareness(
   input: ProjectThreadAwarenessInput,
 ): AgentAwarenessState | null {

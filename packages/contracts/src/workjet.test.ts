@@ -396,6 +396,7 @@ describe("WorkjetConfiguration", () => {
       workerProfiles: [],
       workerGraph: { positions: [], dependencies: [] },
       managedSystemPrompt: "",
+      managerThreadReference: "",
       telemetry: {
         claudeCodeEvents: true,
         sidecarEvents: true,
@@ -447,6 +448,7 @@ describe("WorkjetConfiguration", () => {
       workerProfiles: [],
       modelPrompts: [],
       managedSystemPrompt: "",
+      managerThreadReference: "",
       telemetry: { claudeCodeEvents: true, sidecarEvents: true, retentionDays: 14 },
       execution: { probeTimeoutSeconds: 120, turnTimeoutSeconds: 5_400, degradationAllowed: true },
     };
@@ -456,6 +458,15 @@ describe("WorkjetConfiguration", () => {
       ...encodedInput,
       schemaVersion: 4,
       workerGraph: { positions: [], dependencies: [] },
+    });
+  });
+
+  it("persists the provider-neutral Workjet Manager thread reference", () => {
+    const managerThreadReference = "workjet://app/threads/ctox-main/workjet-manager";
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({ managerThreadReference });
+    expect(decoded.managerThreadReference).toBe(managerThreadReference);
+    expect(Schema.encodeUnknownSync(WorkjetConfiguration)(decoded)).toMatchObject({
+      managerThreadReference,
     });
   });
 });

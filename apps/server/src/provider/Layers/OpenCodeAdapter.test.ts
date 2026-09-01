@@ -16,6 +16,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { beforeEach } from "vite-plus/test";
 
 import {
+  EnvironmentId,
   OpenCodeSettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -23,6 +24,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
@@ -280,7 +282,76 @@ beforeEach(() => {
 const advanceTestClock = (ms: number) =>
   TestClock.adjust(`${ms} millis`).pipe(Effect.andThen(Effect.yieldNow));
 
+function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): void {
+  McpProviderSession.setMcpProviderSession({
+    environmentId: EnvironmentId.make("opencode-managed-prompt-test"),
+    threadId,
+    providerSessionId: "opencode-managed-prompt-session",
+    providerInstanceId: ProviderInstanceId.make("opencode"),
+    endpoint: "http://127.0.0.1/mcp",
+    authorizationHeader: "Bearer test-token",
+    activeWorkjetMcpCapabilityIds: [],
+    compiledManagedPrompt,
+  });
+}
+
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
+  it.effect("injects managed instructions once and persists their resume fingerprint", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-managed-prompt");
+      setManagedPrompt(threadId, "Follow the managed OpenCode workflow.");
+
+      return yield* Effect.gen(function* () {
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("opencode"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+        const first = yield* adapter.sendTurn({
+          threadId,
+          input: "first",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("opencode"),
+            model: "openai/gpt-5",
+          },
+        });
+        const second = yield* adapter.sendTurn({
+          threadId,
+          input: "second",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("opencode"),
+            model: "openai/gpt-5",
+          },
+        });
+        const promptCalls = runtimeMock.state.promptCalls as Array<{
+          parts?: Array<{ type?: string; text?: string }>;
+        }>;
+        const texts = promptCalls.map((call) =>
+          (call.parts ?? []).flatMap((part) =>
+            part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+          ),
+        );
+
+        NodeAssert.equal(promptCalls.length, 2);
+        NodeAssert.equal(
+          texts[0]?.[0],
+          "<workjet_managed_instructions>\nFollow the managed OpenCode workflow.\n</workjet_managed_instructions>",
+        );
+        NodeAssert.deepEqual(texts[1], ["second"]);
+        NodeAssert.equal(
+          typeof (first.resumeCursor as { managedPromptFingerprint?: unknown })
+            .managedPromptFingerprint,
+          "string",
+        );
+        NodeAssert.deepEqual(second.resumeCursor, first.resumeCursor);
+      }).pipe(
+        Effect.ensuring(adapter.stopSession(threadId).pipe(Effect.ignore)),
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      );
+    }),
+  );
+
   it.effect("reuses a configured OpenCode server URL instead of spawning a local server", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

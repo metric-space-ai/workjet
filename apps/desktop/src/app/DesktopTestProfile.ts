@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - resolves the development-only test profile root from argv before app services exist.
 import * as NodePath from "node:path";
 
 const TEST_PROFILE_SWITCH = "--workjet-ui-test-profile-root=";

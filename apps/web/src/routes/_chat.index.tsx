@@ -1,6 +1,6 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -98,6 +98,8 @@ function IndexDraftLanding() {
 }
 
 function WorkjetProjectReady({ projectTitle }: { readonly projectTitle: string }) {
+  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <Empty className="flex-1" data-workjet-project-state="ready">
@@ -107,6 +109,16 @@ function WorkjetProjectReady({ projectTitle }: { readonly projectTitle: string }
             Project synced with this CTOX instance. Choose a computer when you are ready to run a
             worker; the project itself is not tied to one computer.
           </EmptyDescription>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button size="sm" variant="outline" onClick={openAddProject}>
+              <FolderPlusIcon className="size-4" />
+              Add project
+            </Button>
+            <Button render={<Link to="/settings/computers" />} size="sm">
+              <ServerIcon className="size-4" />
+              Choose computer
+            </Button>
+          </div>
         </EmptyHeader>
       </Empty>
     </SidebarInset>

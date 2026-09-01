@@ -1,4 +1,9 @@
-import { ProjectId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  WorkjetComputerId,
+  type WorkjetComputer,
+} from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -8,11 +13,23 @@ import {
   mergeWorkjetProjectProjection,
   readWorkjetProjectRegistry,
   recordWorkjetProjectProjection,
+  resolveLocalWorkjetComputer,
+  resolveLocalWorkjetWorkingCopy,
 } from "./workjetProjectRegistry";
 
 afterEach(() => {
   __resetWorkjetProjectRegistryForTests();
   vi.unstubAllGlobals();
+});
+
+const localEnvironmentId = EnvironmentId.make("environment-local");
+const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+const computer = (id: string, environmentId: EnvironmentId): WorkjetComputer => ({
+  id: WorkjetComputerId.make(id),
+  label: id,
+  environmentId,
+  presentationKind: environmentId === localEnvironmentId ? "local" : "ssh",
+  harnesses: [],
 });
 
 const project = {
@@ -67,6 +84,56 @@ describe("Workjet project registry", () => {
     expect(
       findWorkjetProjectByWorkingCopy([project], "computer:other", "/workspace/greppy"),
     ).toBeUndefined();
+  });
+
+  it("resolves a local working-copy computer without a draft environment", () => {
+    const localComputer = computer("computer-local", localEnvironmentId);
+    const remoteComputer = computer("computer-remote", remoteEnvironmentId);
+
+    expect(
+      resolveLocalWorkjetWorkingCopy({
+        computers: [remoteComputer, localComputer],
+        resolvedComputer: null,
+        localEnvironmentId,
+        path: "/workspace/greppy",
+      }),
+    ).toEqual({
+      computerId: localComputer.id,
+      path: "/workspace/greppy",
+    });
+  });
+
+  it("uses an F2-resolved computer only when it belongs to the local environment", () => {
+    const firstLocalComputer = computer("computer-local-first", localEnvironmentId);
+    const resolvedLocalComputer = computer("computer-local-resolved", localEnvironmentId);
+    const resolvedRemoteComputer = computer("computer-remote-resolved", remoteEnvironmentId);
+
+    expect(
+      resolveLocalWorkjetComputer({
+        computers: [firstLocalComputer, resolvedLocalComputer],
+        resolvedComputer: resolvedLocalComputer,
+        localEnvironmentId,
+      }),
+    ).toBe(resolvedLocalComputer);
+    expect(
+      resolveLocalWorkjetComputer({
+        computers: [resolvedRemoteComputer, firstLocalComputer],
+        resolvedComputer: resolvedRemoteComputer,
+        localEnvironmentId,
+      }),
+    ).toBe(firstLocalComputer);
+  });
+
+  it("returns no working-copy computer when no local computer is registered", () => {
+    const remoteComputer = computer("computer-remote", remoteEnvironmentId);
+
+    expect(
+      resolveLocalWorkjetComputer({
+        computers: [remoteComputer],
+        resolvedComputer: remoteComputer,
+        localEnvironmentId,
+      }),
+    ).toBeNull();
   });
 
   it("publishes an authoritative project only for the currently active instance", () => {

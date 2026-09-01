@@ -9,7 +9,7 @@
  * access is intentionally named as such so environment-sensitive consumers
  * cannot silently read the wrong server's settings.
  */
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -34,12 +34,20 @@ import {
   themeAllowsSidebarArtwork,
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
-import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerSettingsAtom,
+  serverEnvironment,
+} from "~/state/server";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { createAutomaticCurrentComputerHydrator } from "~/state/workjetSettings";
 import { useTheme } from "./useTheme";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
+const hydrateAutomaticCurrentComputer = createAutomaticCurrentComputerHydrator();
+
+export { createAutomaticCurrentComputerHydrator };
 
 type UnifiedSettingsPatch = ServerSettingsPatch & ClientSettingsPatch;
 
@@ -336,6 +344,28 @@ export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
 
 export function useUpdatePrimarySettings() {
   return useUpdateSettingsTarget(usePrimaryEnvironment()?.environmentId ?? null);
+}
+
+/**
+ * Persist the local server's computer as the startup default as soon as the
+ * authoritative primary ServerConfig has hydrated. The hydrator marks that
+ * environment before calling the existing settings updater, so repeated
+ * config projections and React effect replays cannot create a write loop.
+ */
+export function useHydratePrimaryWorkjetSettings(): void {
+  const serverConfig = useAtomValue(primaryServerConfigAtom);
+  const updateSettings = useUpdateSettingsTarget(serverConfig?.environment.environmentId ?? null);
+
+  useEffect(() => {
+    if (serverConfig === null) {
+      return;
+    }
+    hydrateAutomaticCurrentComputer({
+      configuration: serverConfig.settings.workjet,
+      localEnvironmentId: serverConfig.environment.environmentId,
+      update: (workjet) => updateSettings({ workjet }),
+    });
+  }, [serverConfig, updateSettings]);
 }
 
 export function useUpdateClientSettings() {

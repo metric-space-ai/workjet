@@ -34,21 +34,42 @@ const configurationWith = (...computers: ReadonlyArray<WorkjetComputer>) => ({
 });
 
 describe("current computer settings", () => {
-  it("automatically selects exactly one local computer, but not one of two computers", () => {
-    expect(
-      applyAutomaticCurrentComputer(configurationWith(localComputer), localEnvironmentId)
-        .selectedComputerId,
-    ).toBe(localComputer.id);
+  it("selects the local computer among three registered computers", () => {
+    const secondRemoteComputer = computer("computer-remote-2", remoteEnvironmentId);
+
     expect(
       applyAutomaticCurrentComputer(
-        configurationWith(localComputer, remoteComputer),
+        configurationWith(remoteComputer, localComputer, secondRemoteComputer),
         localEnvironmentId,
       ).selectedComputerId,
-    ).toBeNull();
+    ).toBe(localComputer.id);
+  });
+
+  it("keeps the single-computer fallback when no local computer is registered", () => {
     expect(
       applyAutomaticCurrentComputer(configurationWith(remoteComputer), localEnvironmentId)
         .selectedComputerId,
+    ).toBe(remoteComputer.id);
+  });
+
+  it("leaves multiple non-local computers unselected", () => {
+    const secondRemoteComputer = computer("computer-remote-2", remoteEnvironmentId);
+
+    expect(
+      applyAutomaticCurrentComputer(
+        configurationWith(remoteComputer, secondRemoteComputer),
+        localEnvironmentId,
+      ).selectedComputerId,
     ).toBeNull();
+  });
+
+  it("preserves an existing current-computer selection", () => {
+    const selectedRemote = {
+      ...configurationWith(remoteComputer, localComputer),
+      selectedComputerId: remoteComputer.id,
+    };
+
+    expect(applyAutomaticCurrentComputer(selectedRemote, localEnvironmentId)).toBe(selectedRemote);
   });
 
   it("uses radio semantics to select exactly one computer and deactivate it", () => {

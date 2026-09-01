@@ -30,7 +30,12 @@ describe("CTOX-native project story", () => {
     expect(creation.indexOf("await createProject")).toBeLessThan(
       creation.indexOf("await runWorkjetProjectCreation"),
     );
-    expect(creation).toContain("...(workingCopyComputer");
+    expect(creation).toContain("resolveLocalWorkjetWorkingCopy({");
+    expect(creation).toContain("resolvedComputer,");
+    expect(creation).toContain("localEnvironmentId: primaryEnvironmentId");
+    expect(creation).toContain("path: cwd");
+    expect(creation).toContain("workingCopy: localWorkingCopy");
+    expect(creation).toContain('title: "No local computer registered"');
     expect(creation).toContain("confirmedRegistry.projects.find");
     expect(creation).toContain("if (confirmedProject === undefined)");
     expect(creation).toContain("recordWorkjetProjectProjection");

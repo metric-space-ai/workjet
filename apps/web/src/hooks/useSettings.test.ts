@@ -1,12 +1,18 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
+  WorkjetComputerId,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { mergeEnvironmentSettings, resolveEnvironmentIdentificationMode } from "./useSettings";
+import {
+  createAutomaticCurrentComputerHydrator,
+  mergeEnvironmentSettings,
+  resolveEnvironmentIdentificationMode,
+} from "./useSettings";
 
 describe("resolveEnvironmentIdentificationMode", () => {
   it("keeps identification hidden until client settings hydrate", () => {
@@ -47,6 +53,35 @@ describe("resolveEnvironmentIdentificationMode", () => {
         paletteThemeAllowsArtwork: true,
       }),
     ).toBe("artwork");
+  });
+});
+
+describe("primary Workjet settings hydration", () => {
+  it("persists the automatic local computer only once for repeated hydration", () => {
+    const localEnvironmentId = EnvironmentId.make("environment-local");
+    const localComputerId = WorkjetComputerId.make("computer-local");
+    const configuration = {
+      ...DEFAULT_SERVER_SETTINGS.workjet,
+      computers: [
+        {
+          id: localComputerId,
+          label: "This machine",
+          environmentId: localEnvironmentId,
+          presentationKind: "local" as const,
+          harnesses: [],
+        },
+      ],
+    };
+    const update = vi.fn();
+    const hydrate = createAutomaticCurrentComputerHydrator();
+
+    expect(hydrate({ configuration, localEnvironmentId, update })).toBe(true);
+    expect(hydrate({ configuration, localEnvironmentId, update })).toBe(false);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({
+      ...configuration,
+      selectedComputerId: localComputerId,
+    });
   });
 });
 

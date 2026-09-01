@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { useActiveWorkjetScope } from "./activeWorkjetScope";
+import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
 
 export interface WorkjetProjectRegistrySnapshot {
@@ -163,6 +164,33 @@ export interface WorkjetComputerResolution {
   readonly source: "worker" | "environment" | "selected" | null;
 }
 
+export function resolveLocalWorkjetComputer(input: {
+  readonly resolvedComputer: WorkjetComputer | null;
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly localEnvironmentId: EnvironmentId | null;
+}): WorkjetComputer | null {
+  if (
+    input.resolvedComputer !== null &&
+    input.resolvedComputer.environmentId === input.localEnvironmentId
+  ) {
+    return input.resolvedComputer;
+  }
+
+  return (
+    input.computers.find((computer) => computer.environmentId === input.localEnvironmentId) ?? null
+  );
+}
+
+export function resolveLocalWorkjetWorkingCopy(input: {
+  readonly resolvedComputer: WorkjetComputer | null;
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly localEnvironmentId: EnvironmentId | null;
+  readonly path: string;
+}): { readonly computerId: WorkjetComputer["id"]; readonly path: string } | null {
+  const computer = resolveLocalWorkjetComputer(input);
+  return computer === null ? null : { computerId: computer.id, path: input.path };
+}
+
 export function resolveWorkjetComputer(input: {
   readonly computers: ReadonlyArray<WorkjetComputer>;
   readonly workerModeActive: boolean;
@@ -239,6 +267,7 @@ export function useWorkjetProjectRegistry(
 }
 
 export function WorkjetProjectRegistrySynchronizer() {
+  useHydratePrimaryWorkjetSettings();
   const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
 
   useEffect(() => {

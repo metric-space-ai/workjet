@@ -391,6 +391,7 @@ describe("WorkjetConfiguration", () => {
     expect(DEFAULT_WORKJET_CONFIGURATION).toEqual({
       schemaVersion: 4,
       computers: [],
+      selectedComputerId: null,
       llmRoutes: [],
       modelPrompts: [],
       workerProfiles: [],
@@ -407,6 +408,22 @@ describe("WorkjetConfiguration", () => {
         degradationAllowed: true,
       },
     });
+  });
+
+  it("decodes persisted configuration without a selected computer", () => {
+    const decoded = Schema.decodeUnknownSync(WorkjetConfiguration)({
+      schemaVersion: 4,
+      computers: [],
+      llmRoutes: [],
+      modelPrompts: [],
+      workerProfiles: [],
+      workerGraph: { positions: [], dependencies: [] },
+      managedSystemPrompt: "",
+      telemetry: { claudeCodeEvents: true, sidecarEvents: true, retentionDays: 14 },
+      execution: { probeTimeoutSeconds: 120, turnTimeoutSeconds: 5_400, degradationAllowed: true },
+    });
+
+    expect(decoded.selectedComputerId).toBeNull();
   });
 
   it("keeps reusable routes model-free and credential-free", () => {
@@ -455,6 +472,7 @@ describe("WorkjetConfiguration", () => {
     expect(Schema.encodeUnknownSync(WorkjetConfiguration)(decoded)).toEqual({
       ...encodedInput,
       schemaVersion: 4,
+      selectedComputerId: null,
       workerGraph: { positions: [], dependencies: [] },
     });
   });

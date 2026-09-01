@@ -115,6 +115,7 @@ describe("mapLegacyWorkjetConfig without bindings", () => {
       workersTotal: 4,
     });
     assert.deepEqual(result.configuration.computers, []);
+    assert.isNull(result.configuration.selectedComputerId);
     assert.deepEqual(result.configuration.llmRoutes, []);
     assert.deepEqual(result.configuration.workerProfiles, []);
   });
@@ -194,6 +195,15 @@ describe("mapLegacyWorkjetConfig with bindings", () => {
     const result = mapGolden(FULL_BINDINGS);
     const encoded = encodeWorkjetConfiguration(result.configuration);
     assert.deepEqual(decodeWorkjetConfiguration(encoded), result.configuration);
+  });
+
+  it("maps the selected legacy computer only when that computer was imported", () => {
+    assert.strictEqual(mapGolden(FULL_BINDINGS).configuration.selectedComputerId, LOCAL);
+    assert.isNull(
+      mapGolden(FULL_BINDINGS, (document) => {
+        document.selectedComputerID = "computer-not-imported";
+      }).configuration.selectedComputerId,
+    );
   });
 
   it("imports every computer and derives its harness list from the workers", () => {

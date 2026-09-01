@@ -330,6 +330,9 @@ export type WorkjetModelPrompt = typeof WorkjetModelPrompt.Type;
 export const WorkjetConfigurationValue = Schema.Struct({
   schemaVersion: WorkjetConfigurationSchemaVersion,
   computers: Schema.Array(WorkjetComputer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  selectedComputerId: Schema.NullOr(WorkjetComputerId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   modelPrompts: Schema.Array(WorkjetModelPrompt).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),

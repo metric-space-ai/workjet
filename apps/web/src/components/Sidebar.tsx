@@ -100,11 +100,11 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { useBusinessOsScopedEnvironments } from "../state/environments";
+import { useBusinessOsScopedEnvironments, usePrimaryEnvironment } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
@@ -156,6 +156,7 @@ import {
   type SnoozePreset,
 } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { resolveComposerComputer } from "./chat/ChatComposer";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
@@ -1610,6 +1611,8 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const workjetConfiguration = usePrimarySettings((settings) => settings.workjet);
+  const primaryEnvironment = usePrimaryEnvironment();
   const {
     settleThread,
     unsettleThread,
@@ -1709,6 +1712,36 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
+  const routeComposerWorkerId = useComposerDraftStore((store) => {
+    if (routeTarget === null || routeTarget === undefined) return null;
+    return store.getComposerDraft(
+      routeTarget.kind === "server" ? routeTarget.threadRef : routeTarget.draftId,
+    )?.workjetWorkerId;
+  });
+  const scopedEnvironmentIds = useMemo(
+    () => new Set(environments.map((environment) => environment.environmentId)),
+    [environments],
+  );
+  const sidebarWorkjetComputers = useMemo(
+    () =>
+      workjetConfiguration.computers.filter((computer) =>
+        scopedEnvironmentIds.has(computer.environmentId),
+      ),
+    [scopedEnvironmentIds, workjetConfiguration.computers],
+  );
+  const routeWorkerComputerId =
+    routeComposerWorkerId === null || routeComposerWorkerId === undefined
+      ? null
+      : (workjetConfiguration.workerProfiles.find((worker) => worker.id === routeComposerWorkerId)
+          ?.computerId ?? null);
+  const sidebarComputerResolution = resolveComposerComputer({
+    computers: sidebarWorkjetComputers,
+    workerModeActive: routeComposerWorkerId !== null && routeComposerWorkerId !== undefined,
+    workerComputerId: routeWorkerComputerId,
+    activeEnvironmentId: routeThreadRef?.environmentId ?? primaryEnvironment?.environmentId ?? null,
+    selectedComputerId: workjetConfiguration.selectedComputerId,
+  });
+  const hasResolvableSidebarComputer = sidebarComputerResolution.computer !== null;
   const routeTargetRef = useRef(routeTarget);
   routeTargetRef.current = routeTarget;
   // Post-settle navigation validates against the CURRENT route, not the one
@@ -3485,12 +3518,16 @@ export default function Sidebar() {
                   disabled={projects.length === 0}
                   aria-label={
                     projects.length === 0
-                      ? "New session unavailable until a computer is selected"
+                      ? hasResolvableSidebarComputer
+                        ? "New session unavailable until a project is selected"
+                        : "New session unavailable until a computer is selected"
                       : "New session"
                   }
                   title={
                     projects.length === 0
-                      ? "Choose a computer before starting a session"
+                      ? hasResolvableSidebarComputer
+                        ? "Choose a project before starting a session"
+                        : "Choose a computer before starting a session"
                       : "New session"
                   }
                   className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sidebar-border px-2 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-45"

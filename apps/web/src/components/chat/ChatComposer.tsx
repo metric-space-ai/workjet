@@ -9,6 +9,7 @@ import type {
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
+  WorkjetComputer,
   WorkjetThreadRole,
 } from "@t3tools/contracts";
 import {
@@ -529,6 +530,46 @@ export interface ChatComposerProps {
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
+}
+
+export interface ComposerComputerResolution {
+  readonly computer: WorkjetComputer | null;
+  readonly source: "worker" | "environment" | "selected" | null;
+}
+
+export function resolveComposerComputer(input: {
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly workerModeActive: boolean;
+  readonly workerComputerId: string | null;
+  readonly activeEnvironmentId: EnvironmentId | null;
+  readonly selectedComputerId: string | null;
+}): ComposerComputerResolution {
+  if (input.workerModeActive && input.workerComputerId !== null) {
+    const workerComputer = input.computers.find(
+      (computer) => computer.id === input.workerComputerId,
+    );
+    if (workerComputer !== undefined) {
+      return { computer: workerComputer, source: "worker" };
+    }
+  }
+
+  const environmentComputer = input.computers.find(
+    (computer) => computer.environmentId === input.activeEnvironmentId,
+  );
+  if (environmentComputer !== undefined) {
+    return { computer: environmentComputer, source: "environment" };
+  }
+
+  if (input.selectedComputerId !== null) {
+    const selectedComputer = input.computers.find(
+      (computer) => computer.id === input.selectedComputerId,
+    );
+    if (selectedComputer !== undefined) {
+      return { computer: selectedComputer, source: "selected" };
+    }
+  }
+
+  return { computer: null, source: null };
 }
 
 // --------------------------------------------------------------------------
@@ -1156,11 +1197,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? null
       : (workjetComputers.find((computer) => computer.id === selectedWorkjetWorker.computerId) ??
         null);
-  const activeEnvironmentComputer =
-    workjetComputers.find((computer) => computer.environmentId === environmentId) ?? null;
-  const composerSelectedComputerId = workerModeActive
-    ? (workerBoundComputer?.id ?? null)
-    : (activeEnvironmentComputer?.id ?? null);
+  const composerComputerResolution = resolveComposerComputer({
+    computers: workjetComputers,
+    workerModeActive,
+    workerComputerId: selectedWorkjetWorker?.computerId ?? null,
+    activeEnvironmentId: environmentId,
+    selectedComputerId: settings.workjet.selectedComputerId,
+  });
+  const composerSelectedComputerId = composerComputerResolution.computer?.id ?? null;
   // Worker mode surfaces the mismatch instead of lying: the worker names a
   // computer this draft could not move to, so the thread stays where it is.
   const composerComputerMismatchNote = !workerModeActive
@@ -1189,6 +1233,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       workjetComputers,
     ],
   );
+  useEffect(() => {
+    if (
+      composerComputerResolution.source !== "selected" ||
+      composerComputerResolution.computer === null
+    ) {
+      return;
+    }
+    handleSelectComposerComputer(composerComputerResolution.computer.id);
+  }, [
+    composerComputerResolution.computer,
+    composerComputerResolution.source,
+    handleSelectComposerComputer,
+  ]);
 
   /**
    * Worker-mode EXTRAS resolve against the thread config on a server thread

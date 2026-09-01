@@ -196,10 +196,10 @@ export const LEGACY_WORKJET_MAPPING_TABLE: readonly LegacyWorkjetDecision[] = [
   },
   {
     source: "selectedComputerID",
-    destination: null,
-    outcome: "dropped",
+    destination: "selectedComputerId",
+    outcome: "mapped",
     reason:
-      "The contract has no globally selected computer. Each worker profile names its own computer, and threads select per turn.",
+      "The selected legacy computer becomes the persisted current computer when that computer is successfully imported; unresolved references safely become null.",
   },
   {
     source: "skillRules",
@@ -1005,9 +1005,13 @@ export function mapLegacyWorkjetConfig(input: {
   const telemetryDefaults = DEFAULT_WORKJET_CONFIGURATION.telemetry;
   const executionDefaults = DEFAULT_WORKJET_CONFIGURATION.execution;
 
+  const selectedComputerId = config.selectedComputerID.trim();
   const configuration: WorkjetConfiguration = {
     schemaVersion: WORKJET_CONFIGURATION_SCHEMA_VERSION,
     computers,
+    selectedComputerId: computers.some((computer) => computer.id === selectedComputerId)
+      ? WorkjetComputerId.make(selectedComputerId)
+      : null,
     modelPrompts: [],
     llmRoutes,
     workerProfiles,

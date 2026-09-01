@@ -135,6 +135,7 @@ describe("ServerSettings Workjet catalog", () => {
     expect(decodeServerSettings({}).workjet).toEqual({
       schemaVersion: 4,
       computers: [],
+      selectedComputerId: null,
       llmRoutes: [],
       modelPrompts: [],
       workerProfiles: [],

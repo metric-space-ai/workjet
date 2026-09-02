@@ -53,6 +53,12 @@ import {
   type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
+import {
+  NO_PROCESS_STOP_RESULT,
+  type ProviderTrackedProcess,
+  terminateProviderProcesses,
+  trackedChildProcess,
+} from "../Services/ProviderAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import {
@@ -110,6 +116,7 @@ interface CodexAdapterSessionContext {
   readonly scope: Scope.Closeable;
   readonly runtime: CodexSessionRuntimeShape;
   readonly eventFiber: Fiber.Fiber<void, never>;
+  readonly processes: readonly ProviderTrackedProcess[];
   stopped: boolean;
 }
 
@@ -1723,6 +1730,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             : {}),
         };
         const sessionScope = yield* Scope.make("sequential");
+        const processes: Array<ProviderTrackedProcess> = [];
+        const trackingSpawner = ChildProcessSpawner.make((command) =>
+          childProcessSpawner.spawn(command).pipe(
+            Effect.tap((handle) => Effect.sync(() => processes.push(trackedChildProcess(handle)))),
+          ),
+        );
         let sessionScopeTransferred = false;
         yield* Effect.addFinalizer(() =>
           sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
@@ -1730,7 +1743,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const createRuntime = options?.makeRuntime ?? makeCodexSessionRuntime;
         const runtime = yield* createRuntime(runtimeInput).pipe(
           Effect.provideService(Scope.Scope, sessionScope),
-          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, trackingSpawner),
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError(
             (cause) =>
@@ -1784,6 +1797,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           scope: sessionScope,
           runtime,
           eventFiber,
+          processes,
           stopped: false,
         });
         sessionScopeTransferred = true;
@@ -1953,22 +1967,27 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     session: CodexAdapterSessionContext,
   ) {
     if (session.stopped) {
-      return;
+      return NO_PROCESS_STOP_RESULT;
     }
     session.stopped = true;
     sessions.delete(session.threadId);
-    yield* session.runtime.close.pipe(Effect.ignore);
-    yield* Effect.ignore(Scope.close(session.scope, Exit.void));
-    yield* Fiber.interrupt(session.eventFiber).pipe(Effect.ignore);
+    return yield* terminateProviderProcesses({
+      processes: session.processes,
+      cooperative: session.runtime.close.pipe(
+        Effect.ignore,
+        Effect.andThen(Effect.ignore(Scope.close(session.scope, Exit.void))),
+        Effect.andThen(Fiber.interrupt(session.eventFiber).pipe(Effect.ignore)),
+      ),
+    });
   });
 
   const stopSession: CodexAdapterShape["stopSession"] = (threadId) =>
     Effect.gen(function* () {
       const session = sessions.get(threadId);
       if (!session) {
-        return;
+        return NO_PROCESS_STOP_RESULT;
       }
-      yield* stopSessionInternal(session);
+      return yield* stopSessionInternal(session);
     });
 
   const listSessions: CodexAdapterShape["listSessions"] = () =>

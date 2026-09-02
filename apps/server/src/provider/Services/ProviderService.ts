@@ -19,6 +19,7 @@ import type {
   ProviderRuntimeEvent,
   ProviderSendTurnInput,
   ProviderSession,
+  ProviderSessionStopResult,
   ProviderSessionStartInput,
   ProviderStopSessionInput,
   ThreadId,
@@ -77,7 +78,7 @@ export interface ProviderServiceShape {
    */
   readonly stopSession: (
     input: ProviderStopSessionInput,
-  ) => Effect.Effect<void, ProviderServiceError>;
+  ) => Effect.Effect<ProviderSessionStopResult | void, ProviderServiceError>;
 
   /**
    * List active provider sessions.

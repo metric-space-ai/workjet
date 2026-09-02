@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
+import * as NodeChildProcess from "node:child_process";
+
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
  *
@@ -19,6 +22,8 @@ import {
   type SettingSource,
   type SDKUserMessage,
   type ModelUsage,
+  type SpawnOptions,
+  type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import {
@@ -96,6 +101,10 @@ import {
   type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import {
+  type ProviderTrackedProcess,
+  terminateProviderProcesses,
+} from "../Services/ProviderAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
   clearProviderAuthObservation,
@@ -232,6 +241,7 @@ interface ClaudeSessionContext {
   session: ProviderSession;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
+  readonly processes: readonly ProviderTrackedProcess[];
   streamFiber: Fiber.Fiber<void, Error> | undefined;
   readonly startedAt: string;
   readonly basePermissionMode: PermissionMode | undefined;
@@ -4208,6 +4218,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? [input.cwd] : []),
         serverConfig.attachmentsDir,
       ];
+      const processes: Array<ProviderTrackedProcess> = [];
+      const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions): SpawnedProcess => {
+        const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
+          cwd: spawnOptions.cwd,
+          env: spawnOptions.env,
+          signal: spawnOptions.signal,
+          detached: process.platform !== "win32",
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+        });
+        if (child.pid !== undefined) {
+          const pid = child.pid;
+          processes.push({
+            pid,
+            isRunning: Effect.sync(() => child.exitCode === null && child.signalCode === null),
+            kill: (signal) =>
+              Effect.sync(() => {
+                try {
+                  if (process.platform !== "win32") process.kill(-pid, signal);
+                  else child.kill(signal);
+                } catch {
+                  child.kill(signal);
+                }
+              }),
+          });
+        }
+        return child as SpawnedProcess;
+      };
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -4232,6 +4270,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         canUseTool,
         env: sessionEnvironment,
         additionalDirectories,
+        ...(options?.createQuery === undefined ? { spawnClaudeCodeProcess } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
           ? {
@@ -4316,6 +4355,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         session,
         promptQueue,
         query: queryRuntime,
+        processes,
         streamFiber: undefined,
         startedAt,
         basePermissionMode: permissionMode,
@@ -4641,8 +4681,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const stopSession: ClaudeAdapterShape["stopSession"] = Effect.fn("stopSession")(
     function* (threadId) {
       const context = yield* requireSession(threadId);
-      yield* stopSessionInternal(context, {
-        emitExitEvent: true,
+      return yield* terminateProviderProcesses({
+        processes: context.processes,
+        cooperative: stopSessionInternal(context, {
+          emitExitEvent: true,
+        }),
       });
     },
   );

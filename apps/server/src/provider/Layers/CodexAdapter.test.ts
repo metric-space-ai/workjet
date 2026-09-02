@@ -1224,8 +1224,13 @@ scopedLifecycleLayer("CodexAdapterLive scoped lifecycle", (it) => {
       const runtime = scopedLifecycleRuntimeFactory.lastRuntime;
       NodeAssert.ok(runtime);
 
-      yield* adapter.stopSession(asThreadId("thread-stop"));
+      const result = yield* adapter.stopSession(asThreadId("thread-stop"));
 
+      NodeAssert.deepStrictEqual(result, {
+        terminated: true,
+        method: "cooperative",
+        pids: [],
+      });
       NodeAssert.equal(runtime.closeImpl.mock.calls.length, 1);
       NodeAssert.deepStrictEqual(scopedLifecycleRuntimeFactory.releasedThreadIds, [
         asThreadId("thread-stop"),

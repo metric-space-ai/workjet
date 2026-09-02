@@ -2211,7 +2211,12 @@ describe("ClaudeAdapterLive", () => {
         runtimeMode: "full-access",
       });
 
-      yield* adapter.stopSession(THREAD_ID);
+      const stopResult = yield* adapter.stopSession(THREAD_ID);
+      assert.deepEqual(stopResult, {
+        terminated: true,
+        method: "cooperative",
+        pids: [],
+      });
 
       yield* Effect.yieldNow;
       yield* Effect.yieldNow;

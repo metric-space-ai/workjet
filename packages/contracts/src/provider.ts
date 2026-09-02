@@ -103,6 +103,13 @@ export const ProviderStopSessionInput = Schema.Struct({
 });
 export type ProviderStopSessionInput = typeof ProviderStopSessionInput.Type;
 
+export const ProviderSessionStopResult = Schema.Struct({
+  terminated: Schema.Boolean,
+  method: Schema.Literals(["cooperative", "sigterm", "sigkill"]),
+  pids: Schema.Array(Schema.Number).check(Schema.isMaxLength(32)),
+});
+export type ProviderSessionStopResult = typeof ProviderSessionStopResult.Type;
+
 export const ProviderRespondToRequestInput = Schema.Struct({
   threadId: ThreadId,
   requestId: ApprovalRequestId,

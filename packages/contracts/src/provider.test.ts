@@ -7,12 +7,14 @@ import {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
+  ProviderSessionStopResult,
 } from "./provider.ts";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
 const decodeProviderSession = Schema.decodeUnknownSync(ProviderSession);
 const decodeProviderEvent = Schema.decodeUnknownSync(ProviderEvent);
+const decodeProviderSessionStopResult = Schema.decodeUnknownSync(ProviderSessionStopResult);
 
 function getOptionValue(
   options: ReadonlyArray<{ id: string; value: unknown }> | undefined,
@@ -20,6 +22,25 @@ function getOptionValue(
 ): unknown {
   return options?.find((option) => option.id === id)?.value;
 }
+
+describe("ProviderSessionStopResult", () => {
+  it("decodes a bounded verified process termination result", () => {
+    expect(
+      decodeProviderSessionStopResult({
+        terminated: true,
+        method: "sigkill",
+        pids: [101, 202],
+      }),
+    ).toEqual({ terminated: true, method: "sigkill", pids: [101, 202] });
+    expect(() =>
+      decodeProviderSessionStopResult({
+        terminated: true,
+        method: "unknown",
+        pids: [],
+      }),
+    ).toThrow();
+  });
+});
 
 describe("ProviderSessionStartInput", () => {
   it("defaults legacy payloads to the standard Workjet thread config", () => {

@@ -990,9 +990,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.kind": routed.adapter.provider,
           "provider.thread_id": input.threadId,
         });
-        if (routed.isActive) {
-          yield* routed.adapter.stopSession(routed.threadId);
-        }
+        const result = routed.isActive
+          ? ((yield* routed.adapter.stopSession(routed.threadId)) ?? {
+              terminated: true,
+              method: "cooperative" as const,
+              pids: [],
+            })
+          : { terminated: true, method: "cooperative" as const, pids: [] };
+        if (!result.terminated) return result;
         yield* clearMcpSession(input.threadId);
         yield* directory.upsert({
           threadId: input.threadId,
@@ -1006,6 +1011,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* analytics.record("provider.session.stopped", {
           provider: routed.adapter.provider,
         });
+        return result;
       }).pipe(
         withMetrics({
           counter: providerSessionsTotal,

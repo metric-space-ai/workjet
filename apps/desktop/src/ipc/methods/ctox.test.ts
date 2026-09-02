@@ -25,6 +25,7 @@ import {
   openSettings,
   requestDeviceControl,
   requestSessionControl,
+  registerSessionTransferEvents,
   refresh,
   resolveInstanceAuthority,
   removePairedInstance,
@@ -121,6 +122,7 @@ function removalCleanupLayer(
     requestDeviceControl: () => Effect.die("unused"),
     requestProjectControl: () => Effect.die("unused"),
     requestSessionControl: () => Effect.die("unused"),
+    registerSessionTransferEvents: () => Effect.die("unused"),
   });
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.die("unused"),
@@ -227,6 +229,7 @@ describe("CTOX IPC methods", () => {
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
+      registerSessionTransferEvents: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -261,6 +264,7 @@ describe("CTOX IPC methods", () => {
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
+      registerSessionTransferEvents: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -609,6 +613,7 @@ describe("CTOX app rail IPC methods", () => {
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
+      registerSessionTransferEvents: () => Effect.die("unused"),
       ...overrides,
     });
   }
@@ -677,6 +682,30 @@ describe("CTOX app rail IPC methods", () => {
         { _tag: "failed", code: "invalid_input" },
       );
       expect(request).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, manager)));
+  });
+
+  it.effect("validates local computer ids before transfer event registration", () => {
+    const register = vi.fn(() => Effect.succeed({ _tag: "completed" as const }));
+    const manager = guestsWithApps({ registerSessionTransferEvents: register });
+    return Effect.gen(function* () {
+      assert.equal(
+        registerSessionTransferEvents.channel,
+        IpcChannels.CTOX_SESSION_TRANSFER_REGISTER_CHANNEL,
+      );
+      expect(methods).toContain(registerSessionTransferEvents);
+      assert.deepEqual(
+        yield* registerSessionTransferEvents.handler({ computerIds: ["computer-1"] }),
+        { _tag: "completed" },
+      );
+      assert.deepEqual(
+        yield* registerSessionTransferEvents.handler({
+          computerIds: ["computer-1"],
+          extra: true,
+        }),
+        { _tag: "failed", code: "invalid_input" },
+      );
+      expect(register).toHaveBeenCalledExactlyOnceWith(["computer-1"]);
     }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, manager)));
   });
 

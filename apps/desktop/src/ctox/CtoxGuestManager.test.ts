@@ -16,7 +16,7 @@ vi.mock("electron", () => ({ WebContentsView: class {} }));
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { CTOX_GUEST_STATE_CHANNEL } from "../ipc/channels.ts";
+import { CTOX_GUEST_STATE_CHANNEL, CTOX_SESSION_TRANSFER_EVENT_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
@@ -163,6 +163,7 @@ function makeGuestHarness() {
     readonly finishLoad: () => void;
     readonly listenerCount: (event: string) => number;
     readonly refresh: (...args: Array<unknown>) => void;
+    readonly postSessionTransferEvent: (...args: Array<unknown>) => void;
     readonly openWindow: (url: string) => { readonly action: string };
     readonly willNavigate: (url: string) => boolean;
   }> = [];
@@ -188,7 +189,7 @@ function makeGuestHarness() {
     });
     const loadURL = vi.fn((url: string) => loadURLImplementation(url, emit));
     const setBounds = vi.fn();
-    let refreshHandler: ((event: unknown, ...args: Array<unknown>) => void) | undefined;
+    const ipcHandlers = new Map<string, (event: unknown, ...args: Array<unknown>) => void>();
     const executeJavaScript = vi.fn(async () => undefined);
     const webContents = {
       session: browserSession,
@@ -205,9 +206,8 @@ function makeGuestHarness() {
         listeners.get(event)?.delete(handler);
       }),
       ipc: {
-        on: vi.fn((channel: string, handler: typeof refreshHandler) => {
-          assert.equal(channel, CtoxGuestManager.REFRESH_MANAGED_LAUNCH_CHANNEL);
-          refreshHandler = handler;
+        on: vi.fn((channel: string, handler: (event: unknown, ...args: Array<unknown>) => void) => {
+          ipcHandlers.set(channel, handler);
         }),
       },
       getURL: vi.fn(() => loadURL.mock.calls.at(-1)?.[0] ?? "about:blank"),
@@ -228,7 +228,10 @@ function makeGuestHarness() {
       emit,
       finishLoad: () => emit("did-finish-load"),
       listenerCount: (event) => listeners.get(event)?.size ?? 0,
-      refresh: (...args) => refreshHandler?.({}, ...args),
+      refresh: (...args) =>
+        ipcHandlers.get(CtoxGuestManager.REFRESH_MANAGED_LAUNCH_CHANNEL)?.({}, ...args),
+      postSessionTransferEvent: (...args) =>
+        ipcHandlers.get("ctox-guest:session-transfer-event")?.({}, ...args),
       /** The handler the guest installed, so a test can ask it for a verdict. */
       openWindow: (url: string) => {
         const handler = webContents.setWindowOpenHandler.mock.calls[0]?.[0];
@@ -1599,6 +1602,46 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "not_active" },
       );
       expect(harness.views).toHaveLength(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("registers transfer sources, forwards valid events, and drops invalid payloads", () => {
+    const harness = makeGuestHarness();
+    const event = {
+      type: "workjet.session.transfer",
+      transferId: "transfer-1",
+      sessionId: "session-1",
+      state: "pause_requested",
+      fenceEpoch: 4,
+      sourceComputerId: "computer-1",
+      targetComputerId: "computer-2",
+      deadlineAtMs: 1_788_000_040_000,
+      updatedAtMs: 1_788_000_000_000,
+    } as const;
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      harness.views[0]?.executeJavaScript.mockImplementationOnce(async (expression: unknown) => {
+        const source = String(expression);
+        expect(source).toContain("globalThis.workjetSessionEvents");
+        expect(source).toContain('"computer-1"');
+        return { registered: 1, events: [event] };
+      });
+
+      assert.deepEqual(yield* manager.registerSessionTransferEvents(["computer-1"]), {
+        _tag: "completed",
+      });
+      harness.views[0]?.postSessionTransferEvent(event);
+      harness.views[0]?.postSessionTransferEvent({ ...event, extra: true });
+
+      const notifications = harness.sendAll.mock.calls
+        .filter(([channel]) => channel === CTOX_SESSION_TRANSFER_EVENT_CHANNEL)
+        .map(([, payload]) => payload);
+      expect(notifications).toEqual([
+        { instanceId: descriptor.id, event },
+        { instanceId: descriptor.id, event },
+      ]);
     }).pipe(Effect.provide(harness.layer));
   });
 

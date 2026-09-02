@@ -114,6 +114,7 @@ import type {
   CtoxWorkjetProjectControlResult,
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
+  CtoxWorkjetSessionTransferNotification,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveResult,
   CtoxSshManagedInstanceAddInput,
@@ -1240,6 +1241,14 @@ export interface DesktopCtoxBridge {
     instanceId: string,
     request: CtoxWorkjetSessionControlRequest,
   ) => Promise<CtoxWorkjetSessionControlResult>;
+  /** Register local computer ids with every warm Business OS renderer. */
+  registerSessionTransferEvents?: (
+    computerIds: readonly string[],
+  ) => Promise<CtoxManagedActionResult>;
+  /** Subscribe to validated transfer notifications from Business OS renderers. */
+  onSessionTransferEvent?: (
+    listener: (notification: CtoxWorkjetSessionTransferNotification) => void,
+  ) => () => void;
   /** Configure one SSH-managed CTOX instance; carries no credential. */
   addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,

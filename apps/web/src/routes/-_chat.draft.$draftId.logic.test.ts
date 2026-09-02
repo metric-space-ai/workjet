@@ -75,6 +75,27 @@ describe("resolveDraftActiveInstanceStatus", () => {
     ).toBe(false);
   });
 
+  it("keeps the server-project draft for the synced working copy active", () => {
+    const activeInstanceStatus = resolveDraftActiveInstanceStatus({
+      draftSession: {
+        ...draftSession,
+        projectId: ProjectId.make("server-project-greppy"),
+      },
+      businessOsCodeScope: scope,
+      workjetProjectRegistry: registry([project]),
+      computers: [computer],
+    });
+
+    expect(activeInstanceStatus).toBe("active");
+    expect(
+      shouldRedirectDraftToIndex({
+        draftSessionPresent: true,
+        activeInstanceStatus,
+        canonicalThreadPresent: false,
+      }),
+    ).toBe(false);
+  });
+
   it("redirects a draft whose synced project belongs to a different instance", () => {
     const activeInstanceStatus = resolveDraftActiveInstanceStatus({
       draftSession,

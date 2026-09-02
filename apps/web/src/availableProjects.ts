@@ -52,6 +52,19 @@ function normalizedProjectPath(path: string): string {
   return normalized === "/" ? normalized : normalized.replace(/\/+$/u, "");
 }
 
+export function findEnvironmentProjectByPath(input: {
+  readonly projects: readonly EnvironmentProject[];
+  readonly environmentId: EnvironmentId;
+  readonly path: string;
+}): EnvironmentProject | undefined {
+  const normalizedPath = normalizedProjectPath(input.path);
+  return input.projects.find(
+    (project) =>
+      project.environmentId === input.environmentId &&
+      normalizedProjectPath(project.workspaceRoot) === normalizedPath,
+  );
+}
+
 export function buildAvailableProjects(input: {
   readonly projects: readonly EnvironmentProject[];
   readonly workjetProjects: readonly CtoxWorkjetProjectProjection[];
@@ -105,21 +118,18 @@ export function buildAvailableProjects(input: {
   return [...localProjects, ...workjetProjects];
 }
 
-export function workjetProjectMatchesDraftSession(input: {
+interface WorkjetDraftSessionTarget {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly worktreePath: string | null;
+}
+
+export function workjetWorkingCopyMatchesDraftSession(input: {
   readonly project: CtoxWorkjetProjectProjection;
   readonly computers: readonly WorkjetComputer[];
-  readonly draftSession: {
-    readonly environmentId: EnvironmentId;
-    readonly projectId: ProjectId;
-    readonly worktreePath: string | null;
-  };
+  readonly draftSession: WorkjetDraftSessionTarget;
 }): boolean {
-  if (
-    input.project.id !== input.draftSession.projectId ||
-    input.draftSession.worktreePath === null
-  ) {
-    return false;
-  }
+  if (input.draftSession.worktreePath === null) return false;
   const computerIds = new Set<string>(
     input.computers
       .filter((computer) => computer.environmentId === input.draftSession.environmentId)
@@ -131,6 +141,17 @@ export function workjetProjectMatchesDraftSession(input: {
       workingCopy.status === "active" &&
       computerIds.has(workingCopy.computerId) &&
       normalizedProjectPath(workingCopy.path) === draftPath,
+  );
+}
+
+export function workjetProjectMatchesDraftSession(input: {
+  readonly project: CtoxWorkjetProjectProjection;
+  readonly computers: readonly WorkjetComputer[];
+  readonly draftSession: WorkjetDraftSessionTarget;
+}): boolean {
+  return (
+    input.project.id === input.draftSession.projectId &&
+    workjetWorkingCopyMatchesDraftSession(input)
   );
 }
 

@@ -70,6 +70,7 @@ export interface AcpSessionRuntimeOptions {
   };
   readonly authMethodId: string;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
+  readonly onProcessSpawn?: (handle: ChildProcessSpawner.ChildProcessHandle) => void;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
     readonly logIncoming?: boolean;
@@ -352,6 +353,8 @@ export const make = (
             }),
         ),
       );
+
+    options.onProcessSpawn?.(child);
 
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {

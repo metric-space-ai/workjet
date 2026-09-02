@@ -1713,6 +1713,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
+          onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
           ...(mcpSession
             ? {
                 compiledManagedPrompt: mcpSession.compiledManagedPrompt,
@@ -1731,11 +1732,6 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         };
         const sessionScope = yield* Scope.make("sequential");
         const processes: Array<ProviderTrackedProcess> = [];
-        const trackingSpawner = ChildProcessSpawner.make((command) =>
-          childProcessSpawner.spawn(command).pipe(
-            Effect.tap((handle) => Effect.sync(() => processes.push(trackedChildProcess(handle)))),
-          ),
-        );
         let sessionScopeTransferred = false;
         yield* Effect.addFinalizer(() =>
           sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
@@ -1743,7 +1739,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const createRuntime = options?.makeRuntime ?? makeCodexSessionRuntime;
         const runtime = yield* createRuntime(runtimeInput).pipe(
           Effect.provideService(Scope.Scope, sessionScope),
-          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, trackingSpawner),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError(
             (cause) =>

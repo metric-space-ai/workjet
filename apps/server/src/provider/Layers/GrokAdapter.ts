@@ -69,6 +69,12 @@ import {
   XAiAskUserQuestionRequest,
 } from "../acp/XAiAcpExtension.ts";
 import { type GrokAdapterShape } from "../Services/GrokAdapter.ts";
+import {
+  NO_PROCESS_STOP_RESULT,
+  type ProviderTrackedProcess,
+  terminateProviderProcesses,
+  trackedChildProcess,
+} from "../Services/ProviderAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -119,6 +125,7 @@ interface GrokSessionContext {
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
+  readonly processes: readonly ProviderTrackedProcess[];
   notificationFiber: Fiber.Fiber<void, never> | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
@@ -587,21 +594,26 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     const stopSessionInternal = (ctx: GrokSessionContext) =>
       Effect.gen(function* () {
-        if (ctx.stopped) return;
+        if (ctx.stopped) return NO_PROCESS_STOP_RESULT;
         ctx.stopped = true;
-        yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
-        yield* settlePendingUserInputsAsCancelled(ctx.pendingUserInputs);
-        if (ctx.notificationFiber) {
-          yield* Fiber.interrupt(ctx.notificationFiber);
-        }
-        yield* Effect.ignore(Scope.close(ctx.scope, Exit.void));
-        sessions.delete(ctx.threadId);
-        yield* offerRuntimeEvent({
-          type: "session.exited",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId: ctx.threadId,
-          payload: { exitKind: "graceful" },
+        return yield* terminateProviderProcesses({
+          processes: ctx.processes,
+          cooperative: Effect.gen(function* () {
+            yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+            yield* settlePendingUserInputsAsCancelled(ctx.pendingUserInputs);
+            if (ctx.notificationFiber) {
+              yield* Fiber.interrupt(ctx.notificationFiber);
+            }
+            yield* Effect.ignore(Scope.close(ctx.scope, Exit.void));
+            sessions.delete(ctx.threadId);
+            yield* offerRuntimeEvent({
+              type: "session.exited",
+              ...(yield* makeEventStamp()),
+              provider: PROVIDER,
+              threadId: ctx.threadId,
+              payload: { exitKind: "graceful" },
+            });
+          }),
         });
       });
 
@@ -635,6 +647,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
           const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           const sessionScope = yield* Scope.make("sequential");
+          const processes: Array<ProviderTrackedProcess> = [];
           let sessionScopeTransferred = false;
           yield* Effect.addFinalizer(() =>
             sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
@@ -673,6 +686,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             grokSettings,
             ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
             childProcessSpawner,
+            onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },
@@ -868,6 +882,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             session,
             scope: sessionScope,
             acp,
+            processes,
             notificationFiber: undefined,
             pendingApprovals,
             pendingUserInputs,
@@ -1602,7 +1617,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         threadId,
         Effect.gen(function* () {
           const ctx = yield* requireSession(threadId);
-          yield* stopSessionInternal(ctx);
+          return yield* stopSessionInternal(ctx);
         }),
       );
 

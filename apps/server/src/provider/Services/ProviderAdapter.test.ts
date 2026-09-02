@@ -1,7 +1,5 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
-import * as TestClock from "effect/testing/TestClock";
 
 import { terminateProviderProcesses, type ProviderTrackedProcess } from "./ProviderAdapter.ts";
 
@@ -35,13 +33,11 @@ it.effect("reports cooperative process termination", () =>
 it.effect("escalates a hanging process to SIGTERM", () =>
   Effect.gen(function* () {
     const fake = fakeProcess({ stopOn: "SIGTERM" });
-    const fiber = yield* terminateProviderProcesses({
+    const result = yield* terminateProviderProcesses({
       processes: [fake.process],
       cooperative: Effect.never,
-    }).pipe(Effect.forkChild);
-    yield* TestClock.adjust("5 seconds");
-    yield* Effect.yieldNow;
-    const result = yield* Fiber.join(fiber);
+      phaseTimeoutMs: 1,
+    });
     assert.deepEqual(result, { terminated: true, method: "sigterm", pids: [4242] });
     assert.deepEqual(fake.signals, ["SIGTERM"]);
   }),
@@ -50,13 +46,11 @@ it.effect("escalates a hanging process to SIGTERM", () =>
 it.effect("escalates a SIGTERM-resistant process to SIGKILL", () =>
   Effect.gen(function* () {
     const fake = fakeProcess({ stopOn: "SIGKILL" });
-    const fiber = yield* terminateProviderProcesses({
+    const result = yield* terminateProviderProcesses({
       processes: [fake.process],
       cooperative: Effect.never,
-    }).pipe(Effect.forkChild);
-    yield* TestClock.adjust("10 seconds");
-    yield* Effect.yieldNow;
-    const result = yield* Fiber.join(fiber);
+      phaseTimeoutMs: 1,
+    });
     assert.deepEqual(result, { terminated: true, method: "sigkill", pids: [4242] });
     assert.deepEqual(fake.signals, ["SIGTERM", "SIGKILL"]);
   }),

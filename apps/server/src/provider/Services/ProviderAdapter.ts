@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off -- Process termination deadlines must use wall time even when adapter tests provide Effect TestClock.
 /**
  * ProviderAdapter - Provider-specific runtime adapter contract.
  *
@@ -22,9 +23,7 @@ import type {
   TurnId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type * as Duration from "effect/Duration";
 import * as Fiber from "effect/Fiber";
-import * as Option from "effect/Option";
 import type * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
@@ -70,18 +69,36 @@ export function trackedChildProcess(
   };
 }
 
+function wallSleep(milliseconds: number): Effect.Effect<void> {
+  return Effect.promise(
+    () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds)),
+  );
+}
+
 function waitForProcesses(
   processes: readonly ProviderTrackedProcess[],
-  timeout: Duration.Input,
+  timeoutMs: number,
 ): Effect.Effect<boolean> {
-  const wait = Effect.gen(function* () {
+  return Effect.gen(function* () {
+    const expiresAt = performance.now() + timeoutMs;
     while (true) {
       const running = yield* Effect.forEach(processes, (process) => process.isRunning);
-      if (running.every((value) => !value)) return;
-      yield* Effect.sleep("50 millis");
+      if (running.every((value) => !value)) return true;
+      if (performance.now() >= expiresAt) return false;
+      yield* wallSleep(Math.min(50, Math.max(1, expiresAt - performance.now())));
     }
   });
-  return wait.pipe(Effect.timeoutOption(timeout), Effect.map(Option.isSome));
+}
+
+function waitForFiber(fiber: Fiber.Fiber<void>, timeoutMs: number): Effect.Effect<boolean> {
+  return Effect.gen(function* () {
+    const expiresAt = performance.now() + timeoutMs;
+    while (true) {
+      if (fiber.pollUnsafe() !== undefined) return true;
+      if (performance.now() >= expiresAt) return false;
+      yield* wallSleep(Math.min(50, Math.max(1, expiresAt - performance.now())));
+    }
+  });
 }
 
 /**
@@ -92,45 +109,50 @@ function waitForProcesses(
 export function terminateProviderProcesses<E>(input: {
   readonly processes: readonly ProviderTrackedProcess[];
   readonly cooperative: Effect.Effect<void, E>;
+  /** Test-only override; production always uses the five-second default. */
+  readonly phaseTimeoutMs?: number;
 }): Effect.Effect<ProviderSessionStopResult> {
   const processes = input.processes.slice(0, 32);
   const pids = processes.map((process) => process.pid);
+  const phaseTimeoutMs = input.phaseTimeoutMs ?? 5_000;
   return Effect.gen(function* () {
+    const cooperativeFiber = yield* input.cooperative.pipe(
+      Effect.ignore,
+      Effect.forkDetach({ startImmediately: true }),
+    );
     if (processes.length === 0) {
-      const completed = yield* input.cooperative.pipe(
-        Effect.ignore,
-        Effect.as(true),
-        Effect.timeoutOrElse({ duration: "14 seconds", orElse: () => Effect.succeed(false) }),
+      const completed = yield* waitForFiber(
+        cooperativeFiber,
+        phaseTimeoutMs === 5_000 ? 14_000 : phaseTimeoutMs * 3,
       );
       return completed ? NO_PROCESS_STOP_RESULT : { ...NO_PROCESS_STOP_RESULT, terminated: false };
     }
 
-    const cooperativeFiber = yield* input.cooperative.pipe(
-      Effect.ignore,
-      Effect.forkChild({ startImmediately: true }),
-    );
-    if (yield* waitForProcesses(processes, "5 seconds")) {
-      yield* Fiber.interrupt(cooperativeFiber).pipe(Effect.ignore);
+    if (yield* waitForProcesses(processes, phaseTimeoutMs)) {
+      cooperativeFiber.interruptUnsafe();
       return { terminated: true, method: "cooperative", pids };
     }
 
     yield* Effect.forEach(
       processes,
-      (process) => process.kill("SIGTERM").pipe(Effect.forkChild({ startImmediately: true })).pipe(Effect.asVoid),
+      (process) => process.kill("SIGTERM").pipe(Effect.forkDetach({ startImmediately: true })).pipe(Effect.asVoid),
       { discard: true },
     );
-    if (yield* waitForProcesses(processes, "5 seconds")) {
-      yield* Fiber.interrupt(cooperativeFiber).pipe(Effect.ignore);
+    if (yield* waitForProcesses(processes, phaseTimeoutMs)) {
+      cooperativeFiber.interruptUnsafe();
       return { terminated: true, method: "sigterm", pids };
     }
 
     yield* Effect.forEach(
       processes,
-      (process) => process.kill("SIGKILL").pipe(Effect.forkChild({ startImmediately: true })).pipe(Effect.asVoid),
+      (process) => process.kill("SIGKILL").pipe(Effect.forkDetach({ startImmediately: true })).pipe(Effect.asVoid),
       { discard: true },
     );
-    const terminated = yield* waitForProcesses(processes, "4 seconds");
-    yield* Fiber.interrupt(cooperativeFiber).pipe(Effect.ignore);
+    const terminated = yield* waitForProcesses(
+      processes,
+      phaseTimeoutMs === 5_000 ? 4_000 : phaseTimeoutMs,
+    );
+    cooperativeFiber.interruptUnsafe();
     return { terminated, method: "sigkill", pids };
   });
 }

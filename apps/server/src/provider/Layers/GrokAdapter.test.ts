@@ -242,7 +242,10 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         assert.equal(delta.payload.delta, "hello from mock");
       }
 
-      yield* adapter.stopSession(threadId);
+      const stopResult = yield* adapter.stopSession(threadId);
+      assert.equal(stopResult?.terminated, true);
+      assert.equal(stopResult?.method, "cooperative");
+      assert.lengthOf(stopResult?.pids ?? [], 1);
     }),
   );
 

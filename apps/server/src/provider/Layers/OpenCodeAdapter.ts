@@ -40,6 +40,7 @@ import {
   type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
+import { terminateProviderProcesses } from "../Services/ProviderAdapter.ts";
 import {
   buildOpenCodePermissionRules,
   OpenCodeRuntime,
@@ -1752,19 +1753,25 @@ export function makeOpenCodeAdapter(
             threadId,
           });
         }
-        const stopped = yield* stopOpenCodeContext(context);
-        sessions.delete(threadId);
-        if (!stopped) {
-          return;
-        }
-        yield* emit({
-          ...(yield* buildEventBase({ threadId })),
-          type: "session.exited",
-          payload: {
-            reason: "Session stopped.",
-            recoverable: false,
-            exitKind: "graceful",
-          },
+        // OpenCodeRuntime, not this adapter, owns a local server process inside
+        // sessionScope; external server URLs are API-only and have no local pid.
+        // Scope.close does not return until its bounded process-tree finalizer ran.
+        return yield* terminateProviderProcesses({
+          processes: [],
+          cooperative: Effect.gen(function* () {
+            const stopped = yield* stopOpenCodeContext(context);
+            sessions.delete(threadId);
+            if (!stopped) return;
+            yield* emit({
+              ...(yield* buildEventBase({ threadId })),
+              type: "session.exited",
+              payload: {
+                reason: "Session stopped.",
+                recoverable: false,
+                exitKind: "graceful",
+              },
+            });
+          }),
         });
       },
     );

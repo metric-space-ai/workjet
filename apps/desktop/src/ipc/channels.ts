@@ -113,6 +113,7 @@ export const CTOX_SET_GUEST_BOUNDS_CHANNEL = "desktop:ctox-set-guest-bounds";
 export const CTOX_LIST_APPS_CHANNEL = "desktop:ctox-list-apps";
 export const CTOX_WORKJET_DEVICE_CONTROL_CHANNEL = "desktop:ctox-workjet-device-control";
 export const CTOX_WORKJET_PROJECT_CONTROL_CHANNEL = "desktop:ctox-workjet-project-control";
+export const CTOX_WORKJET_SESSION_CONTROL_CHANNEL = "desktop:ctox-workjet-session-control";
 export const CTOX_OPEN_APP_CHANNEL = "desktop:ctox-open-app";
 export const CTOX_OPEN_SETTINGS_CHANNEL = "desktop:ctox-open-settings";
 export const CTOX_SET_APP_DOCKED_CHANNEL = "desktop:ctox-set-app-docked";

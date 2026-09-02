@@ -17,6 +17,8 @@ import {
   CtoxPairedInstanceMutationFailureCode,
   CtoxPairedInstanceRemoveInput,
   CtoxPairingInviteImportInput,
+  CtoxWorkjetSessionControlRequest,
+  CtoxWorkjetSessionControlResponse,
   WorkjetDeviceWebRtcRequestV1,
   WorkjetDeviceWebRtcResponseV1,
 } from "./ctox.ts";
@@ -301,6 +303,110 @@ describe("CTOX renderer contracts", () => {
     expect(() => decode({ action: "invite.create", ttlSeconds: 59 })).toThrow();
     expect(() => decode({ action: "binding.list", environmentId: "primary" })).toThrow();
     expect(() => decode({ action: "connect", url: "https://relay.t3.codes" })).toThrow();
+  });
+
+  it("accepts all bounded Workjet session-control actions", () => {
+    const decode = Schema.decodeUnknownSync(CtoxWorkjetSessionControlRequest, {
+      onExcessProperty: "error",
+    });
+    const requests = [
+      { action: "session.list" },
+      {
+        action: "session.create",
+        commandId: "command-1",
+        sessionId: "session-1",
+        projectId: "project-1",
+        workingCopyId: "copy-1",
+        threadId: "thread-1",
+        codingSessionId: "coding-1",
+      },
+      {
+        action: "session.transfer.start",
+        commandId: "command-2",
+        sessionId: "session-1",
+        targetComputerId: "computer-2",
+        targetPath: "/srv/workjet",
+        idempotencyKey: "transfer-start-1",
+      },
+      {
+        action: "session.transfer.status",
+        commandId: "command-3",
+        transferId: "transfer-1",
+      },
+      {
+        action: "session.transfer.abort",
+        commandId: "command-4",
+        transferId: "transfer-1",
+        reason: "operator requested abort",
+        idempotencyKey: "transfer-abort-1",
+      },
+    ] as const;
+
+    for (const request of requests) expect(decode(request)).toEqual(request);
+    expect(() =>
+      decode({
+        action: "session.transfer.start",
+        commandId: "command-2",
+        sessionId: "session-1",
+        targetComputerId: "computer-2",
+        targetPath: "x".repeat(4_097),
+        idempotencyKey: "transfer-start-1",
+      }),
+    ).toThrow();
+    expect(() => decode({ action: "session.create", commandId: "command-1" })).toThrow();
+    expect(() => decode({ action: "session.list", projectId: "forbidden" })).toThrow();
+  });
+
+  it("decodes bounded Workjet session projections and transfer outcomes", () => {
+    const decode = Schema.decodeUnknownSync(CtoxWorkjetSessionControlResponse, {
+      onExcessProperty: "error",
+    });
+    const session = {
+      id: "session-1",
+      projectId: "project-1",
+      workingCopyId: "copy-1",
+      computerId: "computer-1",
+      threadId: null,
+      codingSessionId: "coding-1",
+      runStatus: "transferring",
+      fenceEpoch: 3,
+      activeTransferId: "transfer-1",
+      updatedAtMs: 1_788_000_000_000,
+    } as const;
+    expect(decode({ action: "session.list", sessions: [session] })).toEqual({
+      action: "session.list",
+      sessions: [session],
+    });
+    expect(
+      decode({
+        action: "session.transfer.status",
+        outcome: {
+          ok: true,
+          transferId: "transfer-1",
+          state: "copying",
+          session,
+          transfer: { copiedBytes: 1_024 },
+        },
+      }),
+    ).toMatchObject({ action: "session.transfer.status", outcome: { ok: true, session } });
+    expect(() =>
+      decode({ action: "session.create", session: { ...session, fenceEpoch: -1 } }),
+    ).toThrow();
+    expect(() =>
+      decode({
+        action: "session.transfer.status",
+        outcome: { ok: false, message: "x".repeat(513) },
+      }),
+    ).toThrow();
+    expect(() =>
+      decode({
+        action: "session.transfer.status",
+        outcome: { ok: true, transfer: { payload: "x".repeat(65_536) } },
+      }),
+    ).toThrow();
+    expect(() =>
+      decode({ action: "session.list", sessions: [], accessToken: "forbidden" }),
+    ).toThrow();
   });
 
   it("decodes the transient invite and binding responses without transport fallbacks", () => {

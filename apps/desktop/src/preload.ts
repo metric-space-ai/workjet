@@ -272,6 +272,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         instanceId,
         request,
       }),
+    requestSessionControl: (instanceId, request) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_SESSION_CONTROL_CHANNEL, {
+        instanceId,
+        request,
+      }),
     openApp: (instanceId, moduleId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_OPEN_APP_CHANNEL, { instanceId, moduleId, bounds }),
     openSettings: (instanceId) =>

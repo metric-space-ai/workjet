@@ -185,7 +185,7 @@ import {
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
@@ -194,6 +194,7 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
+  usePrimarySettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -358,10 +359,15 @@ import {
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  runCtoxSessionRegistrationBeforeThreadCreate,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
   waitForStartedServerThread,
 } from "./ChatView.logic";
+import { useActiveWorkjetScope } from "../activeWorkjetScope";
+import { createWorkjetSession } from "../workjetSessionControl";
+import { resolveDraftCtoxSessionTarget, withCtoxSessionBinding } from "../workjetSessionBinding";
+import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
@@ -393,6 +399,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
+const CTOX_SESSION_REGISTRATION_TIMEOUT_MS = 20_000;
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -1330,6 +1337,11 @@ function ChatViewContent(props: ChatViewProps) {
   }, [routeKind, routeThreadRef, routeThreadState]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const settings = useEnvironmentSettings(environmentId);
+  const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
+  const workjetProjectRegistry = useWorkjetProjectRegistry(presentationInstanceId);
+  const workjetComputers = usePrimarySettings(
+    (primarySettings) => primarySettings.workjet.computers,
+  );
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
   // primary server rather than the thread's environment.
@@ -5931,56 +5943,133 @@ function ChatViewContent(props: ChatViewProps) {
 
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
-      const bootstrap =
-        isLocalDraftThread || baseBranchForWorktree
-          ? {
-              ...(isLocalDraftThread
-                ? {
-                    createThread: {
-                      projectId: activeProject.id,
-                      title,
-                      modelSelection: threadCreateModelSelection,
-                      runtimeMode,
-                      interactionMode,
-                      workjetConfig: workjetConfigForFirstTurn,
-                      branch: activeThreadBranch,
-                      worktreePath: activeThread.worktreePath,
-                      createdAt: activeThread.createdAt,
-                    },
-                  }
-                : {}),
-              ...(baseBranchForWorktree
-                ? {
-                    prepareWorktree: {
-                      projectCwd: activeProject.workspaceRoot,
-                      baseBranch: baseBranchForWorktree,
-                      branch: buildTemporaryWorktreeBranchName(randomHex),
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
-                    },
-                    runSetupScript: true,
-                  }
-                : {}),
-            }
-          : undefined;
-      beginLocalDispatch({ preparingWorktree: false });
-      const startResult = await startThreadTurn({
-        environmentId,
-        input: {
-          threadId: threadIdForSend,
-          message: {
-            messageId: messageIdForSend,
-            role: "user",
-            text: outgoingMessageText,
-            attachments: turnAttachmentsResult.value,
+      const startFirstTurn = async (workjetConfig: WorkjetThreadConfig) => {
+        const bootstrap =
+          isLocalDraftThread || baseBranchForWorktree
+            ? {
+                ...(isLocalDraftThread
+                  ? {
+                      createThread: {
+                        projectId: activeProject.id,
+                        title,
+                        modelSelection: threadCreateModelSelection,
+                        runtimeMode,
+                        interactionMode,
+                        workjetConfig,
+                        branch: activeThreadBranch,
+                        worktreePath: activeThread.worktreePath,
+                        createdAt: activeThread.createdAt,
+                      },
+                    }
+                  : {}),
+                ...(baseBranchForWorktree
+                  ? {
+                      prepareWorktree: {
+                        projectCwd: activeProject.workspaceRoot,
+                        baseBranch: baseBranchForWorktree,
+                        branch: buildTemporaryWorktreeBranchName(randomHex),
+                        ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                      },
+                      runSetupScript: true,
+                    }
+                  : {}),
+              }
+            : undefined;
+        beginLocalDispatch({ preparingWorktree: false });
+        return startThreadTurn({
+          environmentId,
+          input: {
+            threadId: threadIdForSend,
+            message: {
+              messageId: messageIdForSend,
+              role: "user",
+              text: outgoingMessageText,
+              attachments: turnAttachmentsResult.value,
+            },
+            modelSelection: ctxSelectedModelSelection,
+            titleSeed: title,
+            runtimeMode,
+            interactionMode,
+            ...(bootstrap ? { bootstrap } : {}),
+            createdAt: messageCreatedAt,
           },
-          modelSelection: ctxSelectedModelSelection,
-          titleSeed: title,
-          runtimeMode,
-          interactionMode,
-          ...(bootstrap ? { bootstrap } : {}),
-          createdAt: messageCreatedAt,
-        },
-      });
+        });
+      };
+      const ctoxSessionTarget = isLocalDraftThread
+        ? resolveDraftCtoxSessionTarget({
+            draft: activeThread,
+            presentationInstanceId,
+            registry: workjetProjectRegistry,
+            computers: workjetComputers,
+            localProjects: allProjects,
+          })
+        : null;
+      const startResult =
+        ctoxSessionTarget === null
+          ? await startFirstTurn(
+              isLocalDraftThread
+                ? withCtoxSessionBinding(workjetConfigForFirstTurn, {
+                    instanceId: presentationInstanceId,
+                    result: null,
+                  })
+                : workjetConfigForFirstTurn,
+            )
+          : await runCtoxSessionRegistrationBeforeThreadCreate({
+              registerSession: async () => {
+                let timeoutId: ReturnType<typeof setTimeout> | null = null;
+                try {
+                  return await Promise.race([
+                    createWorkjetSession(ctoxSessionTarget.instanceId, {
+                      action: "session.create",
+                      commandId: newCommandId(),
+                      projectId: ctoxSessionTarget.ctoxProjectId,
+                      workingCopyId: ctoxSessionTarget.workingCopyId,
+                      threadId: activeThread.id,
+                    }).then((result) => ({ kind: "result" as const, result })),
+                    new Promise<{ readonly kind: "timeout" }>((resolve) => {
+                      timeoutId = setTimeout(
+                        () => resolve({ kind: "timeout" }),
+                        CTOX_SESSION_REGISTRATION_TIMEOUT_MS,
+                      );
+                    }),
+                  ]);
+                } catch {
+                  return { kind: "rejected" as const };
+                } finally {
+                  if (timeoutId !== null) clearTimeout(timeoutId);
+                }
+              },
+              createThread: async (registration) => {
+                const sessionResult = registration.kind === "result" ? registration.result : null;
+                const sessionRegistered =
+                  sessionResult?._tag === "completed" &&
+                  sessionResult.response.action === "session.create";
+                if (!sessionRegistered) {
+                  console.warn("CTOX session registration failed; continuing first turn.", {
+                    instanceId: ctoxSessionTarget.instanceId,
+                    outcome:
+                      registration.kind === "result"
+                        ? registration.result._tag === "failed"
+                          ? registration.result.code
+                          : "unexpected_response"
+                        : registration.kind,
+                  });
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "warning",
+                      title: "CTOX-Session konnte nicht registriert werden",
+                      description: "Der Thread wird ohne Transfer-Bindung gestartet.",
+                    }),
+                  );
+                }
+                return startFirstTurn(
+                  withCtoxSessionBinding(workjetConfigForFirstTurn, {
+                    instanceId: ctoxSessionTarget.instanceId,
+                    result: sessionResult,
+                  }),
+                );
+              },
+            });
       if (startResult._tag === "Failure") {
         failure = startResult;
       } else {

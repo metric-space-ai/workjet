@@ -915,11 +915,35 @@ const WorkjetThreadConfigV1BaseFields = {
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
 } as const;
 
+const WorkjetThreadCtoxText = (maxLength: number) =>
+  TrimmedNonEmptyString.check(
+    Schema.isMaxLength(maxLength),
+    Schema.makeFilter((value) => {
+      for (let index = 0; index < value.length; index += 1) {
+        const codeUnit = value.charCodeAt(index);
+        if (codeUnit <= 0x1f || codeUnit === 0x7f) {
+          return "Value must not contain ASCII control characters.";
+        }
+      }
+      return true;
+    }),
+  );
+
+export const WorkjetThreadCtoxSession = Schema.Struct({
+  instanceId: WorkjetThreadCtoxText(512),
+  sessionId: WorkjetThreadCtoxText(160),
+  fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type WorkjetThreadCtoxSession = typeof WorkjetThreadCtoxSession.Type;
+
 const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
+  ctoxSession: Schema.optionalKey(Schema.NullOr(WorkjetThreadCtoxSession)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 } as const;
 
 export const WorkjetThreadConfig = Schema.Union([
@@ -958,6 +982,7 @@ export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): Workj
       managedInstructions: config.managedInstructions,
       enabledCapabilityIds: config.enabledCapabilityIds,
       capabilityBindings: [],
+      ctoxSession: null,
     };
   }
   return {
@@ -967,6 +992,7 @@ export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): Workj
     managedInstructions: config.managedInstructions,
     enabledCapabilityIds: config.enabledCapabilityIds,
     capabilityBindings: [],
+    ctoxSession: null,
   };
 }
 
@@ -977,6 +1003,7 @@ export const DEFAULT_WORKJET_THREAD_CONFIG = {
   managedInstructions: "",
   enabledCapabilityIds: [],
   capabilityBindings: [],
+  ctoxSession: null,
 } as const satisfies WorkjetThreadConfig;
 
 /**

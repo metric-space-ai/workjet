@@ -30,6 +30,7 @@ import {
   reconcileRetainedMountedThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
+  runCtoxSessionRegistrationBeforeThreadCreate,
   scheduleEnvironmentReconnectWarning,
   startNewThreadForProject,
   shouldShowBranchMismatchBanner,
@@ -40,6 +41,24 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("first-turn CTOX session registration", () => {
+  it("awaits session registration before creating the thread", async () => {
+    const calls: string[] = [];
+
+    await runCtoxSessionRegistrationBeforeThreadCreate({
+      registerSession: async () => {
+        calls.push("session");
+        return "registered";
+      },
+      createThread: async (registration) => {
+        calls.push(`thread:${registration}`);
+      },
+    });
+
+    expect(calls).toEqual(["session", "thread:registered"]);
+  });
+});
 
 describe("environment reconnect warning grace", () => {
   afterEach(() => vi.useRealTimers());

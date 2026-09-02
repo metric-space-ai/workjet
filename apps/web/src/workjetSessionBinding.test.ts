@@ -1,15 +1,17 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   ProjectId,
   WorkjetComputerId,
   type CtoxWorkjetProjectProjection,
+  type CtoxWorkjetSessionControlResult,
   type WorkjetComputer,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { WorkjetProjectRegistrySnapshot } from "./workjetProjectRegistry";
-import { resolveDraftCtoxSessionTarget } from "./workjetSessionBinding";
+import { resolveDraftCtoxSessionTarget, withCtoxSessionBinding } from "./workjetSessionBinding";
 
 const environmentId = EnvironmentId.make("environment-local");
 const serverProjectId = ProjectId.make("11111111-1111-4111-8111-111111111111");
@@ -78,6 +80,63 @@ function resolve(
     localProjects: overrides.localProjects ?? [localProject],
   });
 }
+
+describe("withCtoxSessionBinding", () => {
+  it("stores a completed session projection in the thread configuration", () => {
+    const result = {
+      _tag: "completed",
+      response: {
+        action: "session.create",
+        session: {
+          id: "session-1",
+          projectId: ctoxProjectId,
+          workingCopyId: "working-copy-local",
+          computerId: computer.id,
+          threadId: "thread-1",
+          codingSessionId: null,
+          runStatus: "running",
+          fenceEpoch: 4,
+          activeTransferId: null,
+          updatedAtMs: 1,
+        },
+      },
+    } satisfies CtoxWorkjetSessionControlResult;
+
+    expect(
+      withCtoxSessionBinding(DEFAULT_WORKJET_THREAD_CONFIG, {
+        instanceId: "managed:welsch",
+        result,
+      }),
+    ).toEqual({
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      ctoxSession: {
+        instanceId: "managed:welsch",
+        sessionId: "session-1",
+        fenceEpoch: 4,
+      },
+    });
+  });
+
+  it("clears the session binding after a failed registration", () => {
+    const config = {
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      ctoxSession: {
+        instanceId: "managed:welsch",
+        sessionId: "stale-session",
+        fenceEpoch: 2,
+      },
+    };
+    const result = {
+      _tag: "failed",
+      code: "not_active",
+    } satisfies CtoxWorkjetSessionControlResult;
+
+    expect(withCtoxSessionBinding(config, { instanceId: "managed:welsch", result })).toEqual({
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      ctoxSession: null,
+    });
+  });
+});
 
 describe("resolveDraftCtoxSessionTarget", () => {
   it("resolves the CTOX project and active working copy for a synced draft", () => {

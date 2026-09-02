@@ -1,5 +1,13 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ProjectId, WorkjetComputer } from "@t3tools/contracts";
+import {
+  normalizeWorkjetThreadConfig,
+  type CtoxWorkjetSessionControlResult,
+  type EnvironmentId,
+  type ProjectId,
+  type WorkjetComputer,
+  type WorkjetThreadConfig,
+  type WorkjetThreadConfigV2,
+} from "@t3tools/contracts";
 
 import {
   findEnvironmentProjectByPath,
@@ -11,6 +19,34 @@ export interface DraftCtoxSessionTarget {
   readonly instanceId: string;
   readonly ctoxProjectId: ProjectId;
   readonly workingCopyId: string;
+}
+
+export interface CtoxSessionBindingResult {
+  readonly instanceId: string | null;
+  readonly result: CtoxWorkjetSessionControlResult | null;
+}
+
+export function withCtoxSessionBinding(
+  config: WorkjetThreadConfig,
+  bindingResult: CtoxSessionBindingResult,
+): WorkjetThreadConfigV2 {
+  const normalized = normalizeWorkjetThreadConfig(config);
+  const result = bindingResult.result;
+  if (
+    bindingResult.instanceId === null ||
+    result?._tag !== "completed" ||
+    result.response.action !== "session.create"
+  ) {
+    return { ...normalized, ctoxSession: null };
+  }
+  return {
+    ...normalized,
+    ctoxSession: {
+      instanceId: bindingResult.instanceId,
+      sessionId: result.response.session.id,
+      fenceEpoch: result.response.session.fenceEpoch,
+    },
+  };
 }
 
 export function resolveDraftCtoxSessionTarget(input: {

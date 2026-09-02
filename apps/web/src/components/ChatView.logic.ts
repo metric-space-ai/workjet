@@ -56,6 +56,14 @@ export function startNewThreadForProject(
   return true;
 }
 
+export async function runCtoxSessionRegistrationBeforeThreadCreate<TRegistration, TResult>(input: {
+  readonly registerSession: () => Promise<TRegistration>;
+  readonly createThread: (registration: TRegistration) => Promise<TResult>;
+}): Promise<TResult> {
+  const registration = await input.registerSession();
+  return input.createThread(registration);
+}
+
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;

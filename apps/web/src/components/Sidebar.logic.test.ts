@@ -1634,6 +1634,30 @@ describe("sortScopedProjectsForSidebar", () => {
 });
 
 describe("includeAvailableProjectsInSidebar", () => {
+  it("keeps the local server project for a synced working copy in the sidebar group", () => {
+    const syncedEnvironmentId = EnvironmentId.make("environment-computer");
+    const serverProjectId = ProjectId.make("project-server");
+    const sidebarProjects = includeAvailableProjectsInSidebar(
+      [],
+      [
+        {
+          kind: "local",
+          id: serverProjectId,
+          title: "Synced project",
+          environmentId: syncedEnvironmentId,
+          path: "/workspace/synced",
+        },
+      ],
+    );
+
+    expect(sidebarProjects).toHaveLength(1);
+    expect(sidebarProjects[0]).toMatchObject({
+      id: serverProjectId,
+      environmentId: syncedEnvironmentId,
+      workspaceRoot: "/workspace/synced",
+    });
+  });
+
   it("gives a promoted synced-project thread a sidebar project group", () => {
     const syncedEnvironmentId = EnvironmentId.make("environment-computer");
     const syncedProjectId = ProjectId.make("project-synced");

@@ -84,6 +84,30 @@ describe("buildAvailableProjects", () => {
     ]);
   });
 
+  it("keeps one local entry after the server project is created at the working-copy path", () => {
+    const serverProject = {
+      ...localProject,
+      environmentId: computer.environmentId,
+      workspaceRoot: "/workspace/synced/",
+    } as EnvironmentProject;
+
+    expect(
+      buildAvailableProjects({
+        projects: [serverProject],
+        workjetProjects: [syncedProject()],
+        computer,
+      }),
+    ).toEqual([
+      {
+        kind: "local",
+        id: serverProject.id,
+        title: serverProject.title,
+        environmentId: computer.environmentId,
+        path: serverProject.workspaceRoot,
+      },
+    ]);
+  });
+
   it("excludes a sync project without an active working copy on the resolved computer", () => {
     expect(
       buildAvailableProjects({

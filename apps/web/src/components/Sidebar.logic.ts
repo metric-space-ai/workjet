@@ -893,7 +893,7 @@ export function includeAvailableProjectsInSidebar(
   );
   const additions = availableProjects.flatMap((project): EnvironmentProject[] => {
     const key = `${project.environmentId}\0${project.id}`;
-    if (project.kind !== "workjet" || existingKeys.has(key)) return [];
+    if (existingKeys.has(key)) return [];
     existingKeys.add(key);
     return [
       {

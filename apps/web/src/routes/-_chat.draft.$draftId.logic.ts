@@ -3,7 +3,10 @@ import type { WorkjetComputer } from "@t3tools/contracts";
 import type { BusinessOsCodeScopeSnapshot } from "../businessOsCodeScope";
 import { businessOsCodeScopeContainsEnvironment } from "../businessOsCodeScope";
 import type { DraftSessionState } from "../composerDraftStore";
-import { workjetProjectMatchesDraftSession } from "../availableProjects";
+import {
+  workjetProjectMatchesDraftSession,
+  workjetWorkingCopyMatchesDraftSession,
+} from "../availableProjects";
 import type { WorkjetProjectRegistrySnapshot } from "../workjetProjectRegistry";
 
 export type DraftActiveInstanceStatus = "active" | "pending" | "foreign";
@@ -45,13 +48,21 @@ export function resolveDraftActiveInstanceStatus(input: {
     return "pending";
   }
 
-  return input.workjetProjectRegistry.projects.some((project) =>
-    workjetProjectMatchesDraftSession({
-      project,
-      computers: input.computers,
-      draftSession,
-    }),
-  )
-    ? "active"
-    : "foreign";
+  const identityProject = input.workjetProjectRegistry.projects.find(
+    (project) => project.id === draftSession.projectId,
+  );
+  const matchesActiveWorkingCopy = identityProject
+    ? workjetProjectMatchesDraftSession({
+        project: identityProject,
+        computers: input.computers,
+        draftSession,
+      })
+    : input.workjetProjectRegistry.projects.some((project) =>
+        workjetWorkingCopyMatchesDraftSession({
+          project,
+          computers: input.computers,
+          draftSession,
+        }),
+      );
+  return matchesActiveWorkingCopy ? "active" : "foreign";
 }

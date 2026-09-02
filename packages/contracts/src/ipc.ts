@@ -112,6 +112,8 @@ import type {
   CtoxWorkjetDeviceControlResult,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
+  CtoxWorkjetSessionControlRequest,
+  CtoxWorkjetSessionControlResult,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveResult,
   CtoxSshManagedInstanceAddInput,
@@ -1233,6 +1235,11 @@ export interface DesktopCtoxBridge {
     instanceId: string,
     request: CtoxWorkjetProjectControlRequest,
   ) => Promise<CtoxWorkjetProjectControlResult>;
+  /** Session data/control through the exact selected CTOX RxDB/WebRTC peer. */
+  requestSessionControl?: (
+    instanceId: string,
+    request: CtoxWorkjetSessionControlRequest,
+  ) => Promise<CtoxWorkjetSessionControlResult>;
   /** Configure one SSH-managed CTOX instance; carries no credential. */
   addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,

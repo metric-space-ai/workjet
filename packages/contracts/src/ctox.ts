@@ -555,6 +555,140 @@ export const CtoxWorkjetProjectControlResult = Schema.Union([
 ]);
 export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlResult.Type;
 
+const CtoxSessionId = CtoxProjectText(160);
+const CtoxSessionComputerId = CtoxProjectText(256);
+const CtoxSessionOutcomeText = Schema.String.check(
+  Schema.isMaxLength(512),
+  NoAsciiControlCharacters,
+);
+const MAX_WORKJET_TRANSFER_BYTES = 64 * 1_024;
+const encodeCtoxUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+const CtoxWorkjetTransfer = Schema.Unknown.check(
+  Schema.makeFilter((transfer) => {
+    if (typeof transfer !== "object" || transfer === null || Array.isArray(transfer)) {
+      return "Transfer must be an object.";
+    }
+    try {
+      if (
+        new TextEncoder().encode(encodeCtoxUnknownJson(transfer)).byteLength >
+        MAX_WORKJET_TRANSFER_BYTES
+      ) {
+        return `Transfer must not exceed ${MAX_WORKJET_TRANSFER_BYTES} bytes.`;
+      }
+    } catch {
+      return "Transfer must be JSON serializable.";
+    }
+    return true;
+  }),
+);
+
+export const CtoxWorkjetSessionControlRequest = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("session.list") }),
+  Schema.Struct({
+    action: Schema.Literal("session.create"),
+    commandId: CtoxSessionId,
+    sessionId: Schema.optionalKey(CtoxSessionId),
+    projectId: CtoxSessionId,
+    workingCopyId: CtoxSessionId,
+    threadId: Schema.optionalKey(CtoxSessionId),
+    codingSessionId: Schema.optionalKey(CtoxSessionId),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.start"),
+    commandId: CtoxSessionId,
+    sessionId: CtoxSessionId,
+    targetComputerId: CtoxSessionComputerId,
+    targetPath: CtoxProjectText(4_096),
+    idempotencyKey: CtoxSessionId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.status"),
+    commandId: CtoxSessionId,
+    transferId: Schema.optionalKey(CtoxSessionId),
+    sessionId: Schema.optionalKey(CtoxSessionId),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.abort"),
+    commandId: CtoxSessionId,
+    transferId: CtoxSessionId,
+    reason: CtoxSessionOutcomeText,
+    idempotencyKey: CtoxSessionId,
+  }),
+]);
+export type CtoxWorkjetSessionControlRequest = typeof CtoxWorkjetSessionControlRequest.Type;
+
+export const CtoxWorkjetSessionProjection = Schema.Struct({
+  id: CtoxSessionId,
+  projectId: CtoxSessionId,
+  workingCopyId: CtoxSessionId,
+  computerId: CtoxSessionComputerId,
+  threadId: Schema.NullOr(CtoxSessionId),
+  codingSessionId: Schema.NullOr(CtoxSessionId),
+  runStatus: Schema.Literals([
+    "running",
+    "pausing",
+    "paused",
+    "transferring",
+    "resuming",
+    "transfer_failed",
+  ]),
+  fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  activeTransferId: Schema.NullOr(CtoxSessionId),
+  updatedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type CtoxWorkjetSessionProjection = typeof CtoxWorkjetSessionProjection.Type;
+
+export const CtoxWorkjetTransferOutcome = Schema.Struct({
+  ok: Schema.Boolean,
+  transferId: Schema.optionalKey(CtoxSessionId),
+  state: Schema.optionalKey(CtoxSessionOutcomeText),
+  errorCode: Schema.optionalKey(CtoxSessionOutcomeText),
+  retryable: Schema.optionalKey(Schema.Boolean),
+  message: Schema.optionalKey(CtoxSessionOutcomeText),
+  session: Schema.optionalKey(CtoxWorkjetSessionProjection),
+  transfer: Schema.optionalKey(CtoxWorkjetTransfer),
+});
+export type CtoxWorkjetTransferOutcome = typeof CtoxWorkjetTransferOutcome.Type;
+
+export const CtoxWorkjetSessionControlResponse = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("session.list"),
+    sessions: Schema.Array(CtoxWorkjetSessionProjection).check(Schema.isMaxLength(10_000)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.create"),
+    session: CtoxWorkjetSessionProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.start"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.status"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.abort"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+]);
+export type CtoxWorkjetSessionControlResponse = typeof CtoxWorkjetSessionControlResponse.Type;
+
+export const CtoxWorkjetSessionControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: CtoxWorkjetSessionControlRequest,
+});
+export type CtoxWorkjetSessionControlInput = typeof CtoxWorkjetSessionControlInput.Type;
+
+export const CtoxWorkjetSessionControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: CtoxWorkjetSessionControlResponse }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+  }),
+]);
+export type CtoxWorkjetSessionControlResult = typeof CtoxWorkjetSessionControlResult.Type;
+
 /**
  * One user-visible Workjet device pairing. The environment bootstrap grants
  * Code access while the nested CTOX invite grants the minimum Business OS

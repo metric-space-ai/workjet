@@ -37,6 +37,7 @@ import * as Struct from "effect/Struct";
 import {
   primaryServerConfigAtom,
   primaryServerSettingsAtom,
+  primaryServerWelcomeAtom,
   serverEnvironment,
 } from "~/state/server";
 import { usePrimaryEnvironment } from "~/state/environments";
@@ -347,25 +348,55 @@ export function useUpdatePrimarySettings() {
 }
 
 /**
- * Persist the local server's computer as the startup default as soon as the
- * authoritative primary ServerConfig has hydrated. The hydrator marks that
- * environment before calling the existing settings updater, so repeated
- * config projections and React effect replays cannot create a write loop.
+ * Persist this renderer's primary computer as the startup default after the
+ * live server welcome arrives. ServerConfig can come from IndexedDB before the
+ * RPC transport is ready; using the primary-environment identity also keeps
+ * hydration aligned with the "This machine" probe in Computers settings.
  */
 export function useHydratePrimaryWorkjetSettings(): void {
   const serverConfig = useAtomValue(primaryServerConfigAtom);
-  const updateSettings = useUpdateSettingsTarget(serverConfig?.environment.environmentId ?? null);
+  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const primaryEnvironment = usePrimaryEnvironment();
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
 
   useEffect(() => {
-    if (serverConfig === null) {
+    if (serverConfig === null || primaryEnvironment === null || serverWelcome === null) {
       return;
     }
-    hydrateAutomaticCurrentComputer({
-      configuration: serverConfig.settings.workjet,
-      localEnvironmentId: serverConfig.environment.environmentId,
-      update: (workjet) => updateSettings({ workjet }),
-    });
-  }, [serverConfig, updateSettings]);
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const localEnvironmentId = primaryEnvironment.environmentId;
+    const attemptHydration = () => {
+      hydrateAutomaticCurrentComputer({
+        configuration: serverConfig.settings.workjet,
+        localEnvironmentId,
+        ready: true,
+        update: async (workjet) => {
+          const result = await persistServerSettings({
+            environmentId: localEnvironmentId,
+            input: { patch: { workjet } },
+          });
+          const persisted = result._tag === "Success";
+          if (!persisted && !cancelled) {
+            retryTimer = setTimeout(attemptHydration, 500);
+          }
+          return persisted;
+        },
+      });
+    };
+
+    attemptHydration();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [persistServerSettings, primaryEnvironment, serverConfig, serverWelcome]);
 }
 
 export function useUpdateClientSettings() {

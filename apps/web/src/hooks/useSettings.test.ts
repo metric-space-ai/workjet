@@ -57,28 +57,51 @@ describe("resolveEnvironmentIdentificationMode", () => {
 });
 
 describe("primary Workjet settings hydration", () => {
-  it("persists the automatic local computer only once for repeated hydration", () => {
-    const localEnvironmentId = EnvironmentId.make("environment-local");
-    const localComputerId = WorkjetComputerId.make("computer-local");
+  it("selects and persists this machine from the three-computer cold-start profile", async () => {
+    const localEnvironmentId = EnvironmentId.make("385a20df-8851-44af-af9b-bf0297dbf755");
+    const localComputerId = WorkjetComputerId.make("50988886-2a39-4a55-9d91-640930524b13");
     const configuration = {
       ...DEFAULT_SERVER_SETTINGS.workjet,
       computers: [
         {
           id: localComputerId,
-          label: "This machine",
+          label: "MacBook Pro von Michael (2)",
           environmentId: localEnvironmentId,
           presentationKind: "local" as const,
           harnesses: [],
         },
+        {
+          id: WorkjetComputerId.make("e77cd0ca-4051-4837-847d-8e9a17424925"),
+          label: "gpu3-a4500",
+          environmentId: EnvironmentId.make("unpaired-gpu3-a4500"),
+          presentationKind: "tailscale" as const,
+          harnesses: [],
+        },
+        {
+          id: WorkjetComputerId.make("e93e4f5f-25dc-4e21-8c62-c7f7bf568cf4"),
+          label: "gpu1-a6000",
+          environmentId: EnvironmentId.make("unpaired-gpu1-a6000"),
+          presentationKind: "tailscale" as const,
+          harnesses: [],
+        },
       ],
+      selectedComputerId: null,
     };
-    const update = vi.fn();
+    const update = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const hydrate = createAutomaticCurrentComputerHydrator();
+    const input = { configuration, localEnvironmentId, ready: true, update };
 
-    expect(hydrate({ configuration, localEnvironmentId, update })).toBe(true);
-    expect(hydrate({ configuration, localEnvironmentId, update })).toBe(false);
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith({
+    // The cached ServerConfig is present before the cold-start transport can persist.
+    expect(hydrate({ ...input, ready: false })).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+
+    // A failed live write is not remembered as hydrated, so the next attempt persists.
+    expect(hydrate(input)).toBe(true);
+    await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(hydrate(input)).toBe(true);
+    await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(hydrate(input)).toBe(false);
+    expect(update).toHaveBeenLastCalledWith({
       ...configuration,
       selectedComputerId: localComputerId,
     });

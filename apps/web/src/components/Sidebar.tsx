@@ -101,7 +101,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -179,7 +179,11 @@ import {
   type DraftSessionState,
 } from "../composerDraftStore";
 import { selectWorkjetProject } from "../workjetProjectRegistry";
-import { useAvailableProjectContext } from "../availableProjects";
+import {
+  buildAvailableProjects,
+  useAvailableProjectContext,
+  type AvailableProject,
+} from "../availableProjects";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -1615,6 +1619,38 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const workjetConfiguration = usePrimarySettings((settings) => settings.workjet);
+  const selectedWorkjetComputer = useMemo(
+    () =>
+      workjetConfiguration.computers.find(
+        (computer) => computer.id === workjetConfiguration.selectedComputerId,
+      ) ?? null,
+    [workjetConfiguration.computers, workjetConfiguration.selectedComputerId],
+  );
+  // Workjet computers are not connection-catalog environments. If Code's
+  // Business OS environment scope filters out the selected local computer,
+  // resolve its active working copy directly from the instance-scoped registry.
+  const sidebarFallbackProject = useMemo<AvailableProject | null>(() => {
+    if (availableProjects.length > 0 || selectedWorkjetComputer === null) return null;
+    const fallbackProjects = buildAvailableProjects({
+      projects: [],
+      workjetProjects,
+      computer: selectedWorkjetComputer,
+      selectedWorkjetProjectId: workjetProjectRegistry.selectedProjectId,
+    });
+    return fallbackProjects[0] ?? null;
+  }, [
+    availableProjects.length,
+    selectedWorkjetComputer,
+    workjetProjectRegistry.selectedProjectId,
+    workjetProjects,
+  ]);
+  const sidebarAvailableProjectCount =
+    availableProjects.length > 0
+      ? availableProjects.length
+      : sidebarFallbackProject === null
+        ? 0
+        : 1;
   const {
     settleThread,
     unsettleThread,
@@ -1732,7 +1768,7 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
-  const hasResolvableSidebarComputer = sidebarComputer !== null;
+  const hasResolvableSidebarComputer = sidebarComputer !== null || selectedWorkjetComputer !== null;
   const routeTargetRef = useRef(routeTarget);
   routeTargetRef.current = routeTarget;
   // Post-settle navigation validates against the CURRENT route, not the one
@@ -3240,11 +3276,20 @@ export default function Sidebar() {
   // for multi-project setups.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
+      if (sidebarFallbackProject !== null) {
+        if (isMobile) setOpenMobile(false);
+        void newThreadContext.handleNewThread(sidebarFallbackProject);
+        return;
+      }
+
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.
       if (
-        shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, availableProjects.length)
+        shouldCreateNewThreadInCurrentProject(
+          event?.shiftKey ?? false,
+          sidebarAvailableProjectCount,
+        )
       ) {
         if (isMobile) setOpenMobile(false);
         void startNewThreadFromContext({
@@ -3258,7 +3303,13 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [availableProjects.length, isMobile, newThreadContext, setOpenMobile],
+    [
+      isMobile,
+      newThreadContext,
+      setOpenMobile,
+      sidebarAvailableProjectCount,
+      sidebarFallbackProject,
+    ],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
@@ -3271,7 +3322,7 @@ export default function Sidebar() {
   // shift+click and its keyboard twin chat.newLocal for direct create.
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.new") ??
-    (availableProjects.length <= 1
+    (sidebarAvailableProjectCount <= 1
       ? shortcutLabelForCommand(keybindings, "chat.newLocal")
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
@@ -3340,7 +3391,7 @@ export default function Sidebar() {
                         type="button"
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
-                        disabled={isSidebarNewThreadDisabled(availableProjects.length)}
+                        disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
                         aria-label="New thread"
                       />
                     }
@@ -3352,7 +3403,7 @@ export default function Sidebar() {
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {availableProjects.length > 1 ? (
+                    {sidebarAvailableProjectCount > 1 ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel
@@ -3519,16 +3570,16 @@ export default function Sidebar() {
                 <button
                   type="button"
                   onClick={handleNewThreadClick}
-                  disabled={isSidebarNewThreadDisabled(availableProjects.length)}
+                  disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
                   aria-label={
-                    availableProjects.length === 0
+                    sidebarAvailableProjectCount === 0
                       ? hasResolvableSidebarComputer
                         ? "New session unavailable without a working copy on this computer"
                         : "New session unavailable until a computer is selected"
                       : "New session"
                   }
                   title={
-                    availableProjects.length === 0
+                    sidebarAvailableProjectCount === 0
                       ? hasResolvableSidebarComputer
                         ? "Add a working copy on this computer before starting a session"
                         : "Choose a computer before starting a session"
@@ -3882,7 +3933,7 @@ export default function Sidebar() {
                 </>
               ) : workjetProjects.length > 0 &&
                 projects.length === 0 &&
-                sidebarComputer === null ? (
+                !hasResolvableSidebarComputer ? (
                 <>
                   <span>Choose a computer to start a session</span>
                   <Button
@@ -3895,7 +3946,7 @@ export default function Sidebar() {
                     Choose computer
                   </Button>
                 </>
-              ) : workjetProjects.length > 0 && availableProjects.length === 0 ? (
+              ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
                 <span>Project available, but no working copy on this computer</span>
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`

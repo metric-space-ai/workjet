@@ -1061,6 +1061,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
         });
         webContents.on("did-finish-load", () => {
+          void registerSessionEventsForWebContents(instanceId, webContents);
           if (latestHostTheme !== undefined) {
             try {
               webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, latestHostTheme);

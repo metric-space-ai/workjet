@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
@@ -4219,12 +4220,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         serverConfig.attachmentsDir,
       ];
       const processes: Array<ProviderTrackedProcess> = [];
+      const hostPlatform = yield* HostProcessPlatform;
       const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions): SpawnedProcess => {
         const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
           cwd: spawnOptions.cwd,
           env: spawnOptions.env,
           signal: spawnOptions.signal,
-          detached: process.platform !== "win32",
+          detached: hostPlatform !== "win32",
           stdio: ["pipe", "pipe", "pipe"],
           windowsHide: true,
         });
@@ -4236,7 +4238,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             kill: (signal) =>
               Effect.sync(() => {
                 try {
-                  if (process.platform !== "win32") process.kill(-pid, signal);
+                  if (hostPlatform !== "win32") process.kill(-pid, signal);
                   else child.kill(signal);
                 } catch {
                   child.kill(signal);

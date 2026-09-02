@@ -11,10 +11,13 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { waitForDraftHeroTransition } from "../components/chat/draftHeroTransition";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useThread, useThreadRefs } from "../state/entities";
+import { useBusinessOsCodeScope } from "../businessOsCodeScope";
+import { usePrimarySettings } from "../hooks/useSettings";
+import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import {
-  businessOsCodeScopeContainsEnvironment,
-  useBusinessOsCodeScope,
-} from "../businessOsCodeScope";
+  resolveDraftActiveInstanceStatus,
+  shouldRedirectDraftToIndex,
+} from "./-_chat.draft.$draftId.logic";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
@@ -22,9 +25,17 @@ function DraftChatThreadRouteView() {
   const draftId = DraftId.make(rawDraftId);
   const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
   const businessOsCodeScope = useBusinessOsCodeScope();
-  const draftInActiveInstance =
-    draftSession !== null &&
-    businessOsCodeScopeContainsEnvironment(businessOsCodeScope, draftSession.environmentId);
+  const workjetProjectRegistry = useWorkjetProjectRegistry(
+    businessOsCodeScope.presentationInstanceId,
+  );
+  const workjetComputers = usePrimarySettings((settings) => settings.workjet.computers);
+  const draftActiveInstanceStatus = resolveDraftActiveInstanceStatus({
+    draftSession,
+    businessOsCodeScope,
+    workjetProjectRegistry,
+    computers: workjetComputers,
+  });
+  const draftInActiveInstance = draftSession !== null && draftActiveInstanceStatus === "active";
   const threadRefs = useThreadRefs();
   const inferredThreadRef = draftInActiveInstance
     ? (threadRefs.find(
@@ -68,11 +79,17 @@ function DraftChatThreadRouteView() {
   }, [canonicalThreadRef, navigate]);
 
   useEffect(() => {
-    if ((draftSession && draftInActiveInstance) || canonicalThreadRef) {
+    if (
+      !shouldRedirectDraftToIndex({
+        draftSessionPresent: draftSession !== null,
+        activeInstanceStatus: draftActiveInstanceStatus,
+        canonicalThreadPresent: canonicalThreadRef !== null,
+      })
+    ) {
       return;
     }
     void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftInActiveInstance, draftSession, navigate]);
+  }, [canonicalThreadRef, draftActiveInstanceStatus, draftSession, navigate]);
 
   if (!draftSession || !draftInActiveInstance) {
     return null;

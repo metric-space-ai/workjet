@@ -11,6 +11,7 @@ import {
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
   hasUnseenCompletion,
+  includeAvailableProjectsInSidebar,
   isContextMenuPointerDown,
   isSidebarNewThreadDisabled,
   isSidebarNestedLinkClick,
@@ -1629,6 +1630,42 @@ describe("sortScopedProjectsForSidebar", () => {
       "Visible project",
       "Archived-only project",
     ]);
+  });
+});
+
+describe("includeAvailableProjectsInSidebar", () => {
+  it("gives a promoted synced-project thread a sidebar project group", () => {
+    const syncedEnvironmentId = EnvironmentId.make("environment-computer");
+    const syncedProjectId = ProjectId.make("project-synced");
+    const sidebarProjects = includeAvailableProjectsInSidebar(
+      [],
+      [
+        {
+          kind: "workjet",
+          id: syncedProjectId,
+          title: "Synced project",
+          environmentId: syncedEnvironmentId,
+          path: "/workspace/synced",
+          workingCopyId: "working-copy-synced",
+        },
+      ],
+    );
+    const groups = sidebarProjects.map((project) => ({
+      ...project,
+      projectKey: "logical-synced",
+      memberProjectRefs: [{ environmentId: project.environmentId, projectId: project.id }],
+    }));
+    const promotedThread = makeThread({
+      environmentId: syncedEnvironmentId,
+      projectId: syncedProjectId,
+      updatedAt: "2026-03-09T10:05:00.000Z",
+    });
+
+    expect(sortLogicalProjectsForSidebar(groups, [promotedThread], "updated_at")).toEqual(groups);
+    expect(groups[0]?.memberProjectRefs).toContainEqual({
+      environmentId: promotedThread.environmentId,
+      projectId: promotedThread.projectId,
+    });
   });
 });
 

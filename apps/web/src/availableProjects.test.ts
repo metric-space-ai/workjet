@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildAvailableProjects } from "./availableProjects";
+import { buildAvailableProjects, workjetProjectMatchesDraftSession } from "./availableProjects";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
 const remoteEnvironmentId = EnvironmentId.make("environment-remote");
@@ -102,6 +102,34 @@ describe("buildAvailableProjects", () => {
         computer,
       }),
     ).toEqual([]);
+  });
+
+  it("matches a draft to its active working copy in the instance project registry", () => {
+    expect(
+      workjetProjectMatchesDraftSession({
+        project: syncedProject(),
+        computers: [computer],
+        draftSession: {
+          environmentId: computer.environmentId,
+          projectId: workjetProjectId,
+          worktreePath: "/workspace/synced/",
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("does not match a draft with the same project id on another computer environment", () => {
+    expect(
+      workjetProjectMatchesDraftSession({
+        project: syncedProject(),
+        computers: [computer],
+        draftSession: {
+          environmentId: localEnvironmentId,
+          projectId: workjetProjectId,
+          worktreePath: "/workspace/synced",
+        },
+      }),
+    ).toBe(false);
   });
 
   it("keeps only local projects when no computer can be resolved", () => {

@@ -663,8 +663,13 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         runtimeMode: "full-access",
       });
 
-      yield* adapter.stopSession(asThreadId("thread-opencode"));
+      const result = yield* adapter.stopSession(asThreadId("thread-opencode"));
 
+      NodeAssert.deepEqual(result, {
+        terminated: true,
+        method: "cooperative",
+        pids: [],
+      });
       NodeAssert.deepEqual(runtimeMock.state.startCalls, []);
       NodeAssert.deepEqual(
         runtimeMock.state.abortCalls.includes("http://127.0.0.1:9999/session"),

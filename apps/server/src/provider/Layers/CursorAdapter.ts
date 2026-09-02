@@ -76,6 +76,12 @@ import {
   extractTodosAsPlan,
 } from "../acp/CursorAcpExtension.ts";
 import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
+import {
+  NO_PROCESS_STOP_RESULT,
+  type ProviderTrackedProcess,
+  terminateProviderProcesses,
+  trackedChildProcess,
+} from "../Services/ProviderAdapter.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -128,6 +134,7 @@ interface CursorSessionContext {
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
+  readonly processes: readonly ProviderTrackedProcess[];
   notificationFiber: Fiber.Fiber<void, never> | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
@@ -523,21 +530,26 @@ export function makeCursorAdapter(
 
     const stopSessionInternal = (ctx: CursorSessionContext) =>
       Effect.gen(function* () {
-        if (ctx.stopped) return;
+        if (ctx.stopped) return NO_PROCESS_STOP_RESULT;
         ctx.stopped = true;
-        yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
-        yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
-        if (ctx.notificationFiber) {
-          yield* Fiber.interrupt(ctx.notificationFiber);
-        }
-        yield* Effect.ignore(Scope.close(ctx.scope, Exit.void));
-        sessions.delete(ctx.threadId);
-        yield* offerRuntimeEvent({
-          type: "session.exited",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId: ctx.threadId,
-          payload: { exitKind: "graceful" },
+        return yield* terminateProviderProcesses({
+          processes: ctx.processes,
+          cooperative: Effect.gen(function* () {
+            yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+            yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
+            if (ctx.notificationFiber) {
+              yield* Fiber.interrupt(ctx.notificationFiber);
+            }
+            yield* Effect.ignore(Scope.close(ctx.scope, Exit.void));
+            sessions.delete(ctx.threadId);
+            yield* offerRuntimeEvent({
+              type: "session.exited",
+              ...(yield* makeEventStamp()),
+              provider: PROVIDER,
+              threadId: ctx.threadId,
+              payload: { exitKind: "graceful" },
+            });
+          }),
         });
       });
 
@@ -571,6 +583,7 @@ export function makeCursorAdapter(
           const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
           const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           const sessionScope = yield* Scope.make("sequential");
+          const processes: Array<ProviderTrackedProcess> = [];
           let sessionScopeTransferred = false;
           yield* Effect.addFinalizer(() =>
             sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
@@ -617,6 +630,7 @@ export function makeCursorAdapter(
             cursorSettings: effectiveCursorSettings,
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
+            onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },
@@ -853,6 +867,7 @@ export function makeCursorAdapter(
             session,
             scope: sessionScope,
             acp,
+            processes,
             notificationFiber: undefined,
             pendingApprovals,
             pendingUserInputs,
@@ -1242,7 +1257,7 @@ export function makeCursorAdapter(
         threadId,
         Effect.gen(function* () {
           const ctx = yield* requireSession(threadId);
-          yield* stopSessionInternal(ctx);
+          return yield* stopSessionInternal(ctx);
         }),
       );
 

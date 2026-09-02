@@ -11,13 +11,21 @@ import { useThreadShells } from "../state/entities";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { acknowledgeWorkjetSessionPause } from "../workjetSessionControl";
-import { planPauseReaction, type WorkjetSessionPausePlan } from "../workjetSessionPauseObserver";
+import {
+  planPauseReaction,
+  runPauseHardCancel,
+  type WorkjetSessionPausePlan,
+} from "../workjetSessionPauseObserver";
 import { usePrimarySettings } from "./useSettings";
 
 export const WORKJET_SESSION_PAUSE_WAIT_MAX_MS = 40_000;
+export const WORKJET_SESSION_STOP_CONFIRM_MAX_MS = 15_000;
+export const WORKJET_SESSION_STOP_UNCONFIRMED_TOAST =
+  "Übergabe wartet: Worker-Prozess konnte nicht sicher beendet werden";
 const WORKJET_SESSION_PAUSE_POLL_MS = 250;
 const acknowledgedTransferIds = new Set<string>();
 const processingTransferIds = new Set<string>();
+const stopRequestedTransferIds = new Set<string>();
 
 export function pauseWaitTimeoutMs(deadlineAtMs: number, nowMs: number): number {
   return Math.max(0, Math.min(WORKJET_SESSION_PAUSE_WAIT_MAX_MS, deadlineAtMs - nowMs));
@@ -63,6 +71,7 @@ export function useWorkjetSessionPauseObserver(): void {
     computers.find((computer) => computer.presentationKind === "local")?.id ?? null;
   const computerIds = useMemo(() => computers.map((computer) => computer.id), [computers]);
   const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn, { reportFailure: false });
+  const stopSession = useAtomCommand(threadEnvironment.stopSession, { reportFailure: false });
   const threadsRef = useRef(threads);
   const localComputerIdRef = useRef<string | null>(localComputerId);
   const activeWaitsRef = useRef(new Map<string, AbortController>());
@@ -124,7 +133,10 @@ export function useWorkjetSessionPauseObserver(): void {
   );
 
   const waitForStillness = useCallback(
-    async (notification: CtoxWorkjetSessionTransferNotification): Promise<void> => {
+    async (
+      notification: CtoxWorkjetSessionTransferNotification,
+      threadRef: ScopedThreadRef,
+    ): Promise<void> => {
       const transferId = notification.event.transferId;
       const controller = new AbortController();
       activeWaitsRef.current.set(transferId, controller);
@@ -162,13 +174,40 @@ export function useWorkjetSessionPauseObserver(): void {
         }
 
         if (!controller.signal.aborted) {
-          console.warn("Workjet session handoff is still waiting for the running turn to end", {
+          await runPauseHardCancel({
             transferId,
-            timeoutMs: WORKJET_SESSION_PAUSE_WAIT_MAX_MS,
-          });
-          toastManager.add({
-            type: "warning",
-            title: "Übergabe wartet auf das Ende des laufenden Turns",
+            threadRef,
+            requestedTransferIds: stopRequestedTransferIds,
+            requestStop: () =>
+              stopSession({
+                environmentId: threadRef.environmentId,
+                input: { threadId: threadRef.threadId },
+              }),
+            readThread: () =>
+              threadsRef.current.find(
+                (candidate) =>
+                  sameThread(candidate, threadRef) &&
+                  configuredInstanceId(candidate) === notification.instanceId,
+              ),
+            acknowledge: (lastTerminalTurnId) =>
+              acknowledge(notification, {
+                kind: "ack",
+                threadRef,
+                lastTerminalTurnId,
+              }),
+            onUnconfirmed: () => {
+              console.warn(
+                `Workjet session stop could not be confirmed for thread ${threadRef.threadId}`,
+                { transferId },
+              );
+              toastManager.add({
+                type: "warning",
+                title: WORKJET_SESSION_STOP_UNCONFIRMED_TOAST,
+              });
+            },
+            isCancelled: () => controller.signal.aborted,
+            timeoutMs: WORKJET_SESSION_STOP_CONFIRM_MAX_MS,
+            pollMs: WORKJET_SESSION_PAUSE_POLL_MS,
           });
         }
       } finally {
@@ -176,7 +215,7 @@ export function useWorkjetSessionPauseObserver(): void {
         processingTransferIds.delete(transferId);
       }
     },
-    [acknowledge, plan],
+    [acknowledge, plan, stopSession],
   );
 
   const observe = useCallback(
@@ -207,7 +246,7 @@ export function useWorkjetSessionPauseObserver(): void {
             : {}),
         },
       });
-      void waitForStillness(notification);
+      void waitForStillness(notification, reaction.threadRef);
     },
     [acknowledge, interruptTurn, plan, waitForStillness],
   );

@@ -1306,7 +1306,15 @@ const make = Effect.gen(function* () {
 
     const now = event.payload.createdAt;
     if (thread.session && thread.session.status !== "stopped") {
-      yield* providerService.stopSession({ threadId: thread.id });
+      const result = yield* providerService.stopSession({ threadId: thread.id });
+      if (result !== undefined && !result.terminated) {
+        yield* Effect.logWarning("provider.session.stop-unconfirmed", {
+          threadId: thread.id,
+          method: result.method,
+          pids: result.pids,
+        });
+        return;
+      }
     }
 
     yield* setThreadSession({

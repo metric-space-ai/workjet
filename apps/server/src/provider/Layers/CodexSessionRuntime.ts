@@ -108,6 +108,7 @@ export interface CodexSessionRuntimeOptions {
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly compiledManagedPrompt?: string;
+  readonly onProcessSpawn?: (handle: ChildProcessSpawner.ChildProcessHandle) => void;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -902,6 +903,8 @@ export const makeCodexSessionRuntime = (
             }),
         ),
       );
+
+    options.onProcessSpawn?.(child);
 
     const clientContext = yield* CodexClient.layerChildProcess(child).pipe(
       Layer.build,

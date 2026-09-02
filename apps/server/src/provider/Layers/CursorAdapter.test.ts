@@ -422,10 +422,15 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
       });
 
-      yield* adapter.stopSession(threadId);
+      const result = yield* adapter.stopSession(threadId);
 
       const exitLog = yield* Effect.promise(() => waitForFileContent(exitLogPath));
       assert.include(exitLog, "SIGTERM");
+      assert.isDefined(result);
+      assert.equal(result?.terminated, true);
+      assert.equal(result?.method, "cooperative");
+      assert.lengthOf(result?.pids ?? [], 1);
+      assert.isNumber(result?.pids[0]);
     }),
   );
 

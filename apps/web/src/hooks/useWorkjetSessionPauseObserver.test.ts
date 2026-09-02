@@ -4,6 +4,8 @@ import {
   buildPauseAcknowledgementRequest,
   pauseWaitTimeoutMs,
   WORKJET_SESSION_PAUSE_WAIT_MAX_MS,
+  WORKJET_SESSION_STOP_CONFIRM_MAX_MS,
+  WORKJET_SESSION_STOP_UNCONFIRMED_TOAST,
 } from "./useWorkjetSessionPauseObserver";
 
 const notification = {
@@ -26,6 +28,13 @@ describe("useWorkjetSessionPauseObserver support logic", () => {
     expect(pauseWaitTimeoutMs(100_000, 10_000)).toBe(WORKJET_SESSION_PAUSE_WAIT_MAX_MS);
     expect(pauseWaitTimeoutMs(25_000, 10_000)).toBe(15_000);
     expect(pauseWaitTimeoutMs(9_000, 10_000)).toBe(0);
+  });
+
+  it("uses the bounded stop confirmation window and required warning copy", () => {
+    expect(WORKJET_SESSION_STOP_CONFIRM_MAX_MS).toBe(15_000);
+    expect(WORKJET_SESSION_STOP_UNCONFIRMED_TOAST).toBe(
+      "Übergabe wartet: Worker-Prozess konnte nicht sicher beendet werden",
+    );
   });
 
   it("preserves the transfer fence and terminal turn in pause acknowledgements", () => {

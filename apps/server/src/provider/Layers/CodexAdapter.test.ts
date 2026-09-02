@@ -291,7 +291,13 @@ validationLayer("CodexAdapterLive validation", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
+      const validationOptions = validationRuntimeFactory.factory.mock.calls[0]?.[0] as
+        | (Record<string, unknown> & { onProcessSpawn?: unknown })
+        | undefined;
+      NodeAssert.equal(typeof validationOptions?.onProcessSpawn, "function");
+      const { onProcessSpawn: _onProcessSpawn, ...validationOptionsWithoutSpawnHook } =
+        validationOptions ?? {};
+      NodeAssert.deepStrictEqual(validationOptionsWithoutSpawnHook, {
         binaryPath: "codex",
         cwd: process.cwd(),
         launchArgs: "",
@@ -1224,8 +1230,13 @@ scopedLifecycleLayer("CodexAdapterLive scoped lifecycle", (it) => {
       const runtime = scopedLifecycleRuntimeFactory.lastRuntime;
       NodeAssert.ok(runtime);
 
-      yield* adapter.stopSession(asThreadId("thread-stop"));
+      const result = yield* adapter.stopSession(asThreadId("thread-stop"));
 
+      NodeAssert.deepStrictEqual(result, {
+        terminated: true,
+        method: "cooperative",
+        pids: [],
+      });
       NodeAssert.equal(runtime.closeImpl.mock.calls.length, 1);
       NodeAssert.deepStrictEqual(scopedLifecycleRuntimeFactory.releasedThreadIds, [
         asThreadId("thread-stop"),

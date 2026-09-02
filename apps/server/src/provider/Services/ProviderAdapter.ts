@@ -64,8 +64,7 @@ export function trackedChildProcess(
   return {
     pid: Number(handle.pid),
     isRunning: handle.isRunning.pipe(Effect.orElseSucceed(() => false)),
-    kill: (signal) =>
-      handle.kill({ killSignal: signal }).pipe(Effect.ignore, Effect.asVoid),
+    kill: (signal) => handle.kill({ killSignal: signal }).pipe(Effect.ignore, Effect.asVoid),
   };
 }
 
@@ -135,7 +134,11 @@ export function terminateProviderProcesses<E>(input: {
 
     yield* Effect.forEach(
       processes,
-      (process) => process.kill("SIGTERM").pipe(Effect.forkDetach({ startImmediately: true })).pipe(Effect.asVoid),
+      (process) =>
+        process
+          .kill("SIGTERM")
+          .pipe(Effect.forkDetach({ startImmediately: true }))
+          .pipe(Effect.asVoid),
       { discard: true },
     );
     if (yield* waitForProcesses(processes, phaseTimeoutMs)) {
@@ -145,7 +148,11 @@ export function terminateProviderProcesses<E>(input: {
 
     yield* Effect.forEach(
       processes,
-      (process) => process.kill("SIGKILL").pipe(Effect.forkDetach({ startImmediately: true })).pipe(Effect.asVoid),
+      (process) =>
+        process
+          .kill("SIGKILL")
+          .pipe(Effect.forkDetach({ startImmediately: true }))
+          .pipe(Effect.asVoid),
       { discard: true },
     );
     const terminated = yield* waitForProcesses(

@@ -291,7 +291,13 @@ validationLayer("CodexAdapterLive validation", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
+      const validationOptions = validationRuntimeFactory.factory.mock.calls[0]?.[0] as
+        | (Record<string, unknown> & { onProcessSpawn?: unknown })
+        | undefined;
+      NodeAssert.equal(typeof validationOptions?.onProcessSpawn, "function");
+      const { onProcessSpawn: _onProcessSpawn, ...validationOptionsWithoutSpawnHook } =
+        validationOptions ?? {};
+      NodeAssert.deepStrictEqual(validationOptionsWithoutSpawnHook, {
         binaryPath: "codex",
         cwd: process.cwd(),
         launchArgs: "",

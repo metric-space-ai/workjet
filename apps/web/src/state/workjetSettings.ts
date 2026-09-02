@@ -27,28 +27,46 @@ export function applyAutomaticCurrentComputer(
 }
 
 /**
- * Coordinate the renderer's server-settings hydration. Remember an
- * environment synchronously before persisting so repeated config projections
- * and React effect replays issue at most one update for that hydrated profile.
+ * Coordinate the renderer's server-settings hydration. Cached ServerConfig is
+ * available before the transport is live, so wait for readiness and remember
+ * an environment only after the automatic selection persisted successfully.
  */
 export function createAutomaticCurrentComputerHydrator(): (input: {
   readonly configuration: WorkjetConfiguration;
   readonly localEnvironmentId: EnvironmentId;
-  readonly update: (configuration: WorkjetConfiguration) => void;
+  readonly ready: boolean;
+  readonly update: (configuration: WorkjetConfiguration) => Promise<boolean> | boolean;
 }) => boolean {
   const hydratedEnvironmentIds = new Set<EnvironmentId>();
+  const hydratingEnvironmentIds = new Set<EnvironmentId>();
 
   return (input) => {
-    if (hydratedEnvironmentIds.has(input.localEnvironmentId)) {
+    if (
+      !input.ready ||
+      hydratedEnvironmentIds.has(input.localEnvironmentId) ||
+      hydratingEnvironmentIds.has(input.localEnvironmentId)
+    ) {
       return false;
     }
-    hydratedEnvironmentIds.add(input.localEnvironmentId);
 
     const next = applyAutomaticCurrentComputer(input.configuration, input.localEnvironmentId);
     if (next === input.configuration) {
+      hydratedEnvironmentIds.add(input.localEnvironmentId);
       return false;
     }
-    input.update(next);
+
+    hydratingEnvironmentIds.add(input.localEnvironmentId);
+    void Promise.resolve()
+      .then(() => input.update(next))
+      .then((persisted) => {
+        if (persisted) {
+          hydratedEnvironmentIds.add(input.localEnvironmentId);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        hydratingEnvironmentIds.delete(input.localEnvironmentId);
+      });
     return true;
   };
 }

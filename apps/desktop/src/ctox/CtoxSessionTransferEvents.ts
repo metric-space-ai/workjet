@@ -3,7 +3,7 @@ import type { CtoxWorkjetSessionTransferEvent } from "@t3tools/contracts";
 import { CtoxWorkjetSessionTransferEvent as SessionTransferEventSchema } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-export const CTOX_SESSION_TRANSFER_POST_CHANNEL = "ctox-guest:session-transfer-event";
+export const CTOX_SESSION_TRANSFER_POST_CHANNEL = "ctox-instance:session-transfer-event";
 
 const decodeTransferEvent = Schema.decodeUnknownSync(SessionTransferEventSchema, {
   onExcessProperty: "error",

@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const REFRESH_MANAGED_LAUNCH_CHANNEL = "instance:refresh-managed-launch";
 const APPLY_HOST_THEME_CHANNEL = "instance:apply-host-theme";
-const SESSION_TRANSFER_EVENT_CHANNEL = "ctox-guest:session-transfer-event";
+const SESSION_TRANSFER_EVENT_CHANNEL = "ctox-instance:session-transfer-event";
 
 const HOST_THEME_TOKEN_KEYS = new Set([
   "bg",

@@ -28,7 +28,7 @@ describe("CtoxGuestPreload", () => {
     host?.postSessionTransferEvent?.(event);
 
     expect(send).toHaveBeenNthCalledWith(1, "instance:refresh-managed-launch");
-    expect(send).toHaveBeenNthCalledWith(2, "ctox-guest:session-transfer-event", event);
+    expect(send).toHaveBeenNthCalledWith(2, "ctox-instance:session-transfer-event", event);
   });
 
   it("applies only allowlisted, bounded host theme tokens", () => {

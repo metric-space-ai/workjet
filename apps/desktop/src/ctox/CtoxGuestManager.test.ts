@@ -231,7 +231,7 @@ function makeGuestHarness() {
       refresh: (...args) =>
         ipcHandlers.get(CtoxGuestManager.REFRESH_MANAGED_LAUNCH_CHANNEL)?.({}, ...args),
       postSessionTransferEvent: (...args) =>
-        ipcHandlers.get("ctox-guest:session-transfer-event")?.({}, ...args),
+        ipcHandlers.get("ctox-instance:session-transfer-event")?.({}, ...args),
       /** The handler the guest installed, so a test can ask it for a verdict. */
       openWindow: (url: string) => {
         const handler = webContents.setWindowOpenHandler.mock.calls[0]?.[0];

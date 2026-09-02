@@ -1602,6 +1602,57 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("bounds and decodes session control on the selected warm renderer", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        { _tag: "failed", code: "not_active" },
+      );
+      expect(harness.views).toHaveLength(0);
+
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.exitBusinessOsMode;
+      harness.views[0]?.executeJavaScript.mockImplementationOnce(async (expression: unknown) => {
+        const source = String(expression);
+        expect(source).toContain("globalThis.workjetSessionControl");
+        expect(source).toContain('{"action":"session.list"}');
+        expect(source).not.toContain("fetch(");
+        return { status: "completed", result: { action: "session.list", sessions: [] } };
+      });
+
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        {
+          _tag: "completed",
+          response: { action: "session.list", sessions: [] },
+        },
+      );
+
+      harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
+        status: "completed",
+        result: { action: "session.list", sessions: "invalid" },
+      });
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
+
+      harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
+        status: "completed",
+        result: { action: "session.list", sessions: [], padding: "x".repeat(256 * 1_024) },
+      });
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        { _tag: "failed", code: "response_too_large" },
+      );
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   /**
    * THE NAVIGATION POLICY IS WIRED, NOT MERELY WRITTEN
    * (docs/workjet-plan.md → "Security invariants": "Deny untrusted guest

@@ -24,6 +24,7 @@ import {
   openApp,
   openSettings,
   requestDeviceControl,
+  requestSessionControl,
   refresh,
   resolveInstanceAuthority,
   removePairedInstance,
@@ -119,6 +120,7 @@ function removalCleanupLayer(
     setHostTheme: () => Effect.succeed({ _tag: "completed" }),
     requestDeviceControl: () => Effect.die("unused"),
     requestProjectControl: () => Effect.die("unused"),
+    requestSessionControl: () => Effect.die("unused"),
   });
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.die("unused"),
@@ -224,6 +226,7 @@ describe("CTOX IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestSessionControl: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -257,6 +260,7 @@ describe("CTOX IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestSessionControl: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -604,6 +608,7 @@ describe("CTOX app rail IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestSessionControl: () => Effect.die("unused"),
       ...overrides,
     });
   }
@@ -651,6 +656,28 @@ describe("CTOX app rail IPC methods", () => {
       );
       expect(request).toHaveBeenCalledOnce();
     }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests)));
+  });
+
+  it.effect("rejects malformed session control before delegation", () => {
+    const request = vi.fn(() =>
+      Effect.succeed({
+        _tag: "completed" as const,
+        response: { action: "session.list" as const, sessions: [] },
+      }),
+    );
+    const manager = guestsWithApps({ requestSessionControl: request });
+    return Effect.gen(function* () {
+      assert.equal(requestSessionControl.channel, IpcChannels.CTOX_WORKJET_SESSION_CONTROL_CHANNEL);
+      expect(methods).toContain(requestSessionControl);
+      assert.deepEqual(
+        yield* requestSessionControl.handler({
+          instanceId: "managed:welsch",
+          request: { action: "session.list", projectId: "forbidden" },
+        }),
+        { _tag: "failed", code: "invalid_input" },
+      );
+      expect(request).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, manager)));
   });
 
   it.effect("merges docked and open apps from a live guest and refreshes the cache", () => {

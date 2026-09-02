@@ -126,6 +126,7 @@ import {
   formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
+  includeAvailableProjectsInSidebar,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   isSidebarNewThreadDisabled,
@@ -1777,6 +1778,10 @@ export default function Sidebar() {
   const routeThreadKeyRef = useRef(routeThreadKey);
   routeThreadKeyRef.current = routeThreadKey;
 
+  const sidebarProjects = useMemo(
+    () => includeAvailableProjectsInSidebar(projects, availableProjects),
+    [availableProjects, projects],
+  );
   const environmentLabelById = useMemo(
     () =>
       new Map(
@@ -1787,7 +1792,7 @@ export default function Sidebar() {
   const orderedProjects = useMemo(
     () =>
       orderItemsByPreferredIds({
-        items: projects,
+        items: sidebarProjects,
         preferredIds: projectOrder,
         getId: getProjectOrderKey,
         getPreferenceIds: (project) => [
@@ -1795,12 +1800,12 @@ export default function Sidebar() {
           legacyProjectCwdPreferenceKey(project.workspaceRoot),
         ],
       }),
-    [projectOrder, projects],
+    [projectOrder, sidebarProjects],
   );
   const unsortedProjectGroups = useMemo(
     () =>
       buildSidebarProjectSnapshots({
-        projects: sidebarProjectSortOrder === "manual" ? orderedProjects : projects,
+        projects: sidebarProjectSortOrder === "manual" ? orderedProjects : sidebarProjects,
         settings: projectGroupingSettings,
         primaryEnvironmentId: null,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
@@ -1809,7 +1814,7 @@ export default function Sidebar() {
       environmentLabelById,
       orderedProjects,
       projectGroupingSettings,
-      projects,
+      sidebarProjects,
       sidebarProjectSortOrder,
     ],
   );
@@ -1830,19 +1835,22 @@ export default function Sidebar() {
   const projectCwdByKey = useMemo(
     () =>
       new Map(
-        projects.map((project) => [
+        sidebarProjects.map((project) => [
           `${project.environmentId}:${project.id}`,
           project.workspaceRoot,
         ]),
       ),
-    [projects],
+    [sidebarProjects],
   );
   const projectFaviconPathByKey = useMemo(
     () =>
       new Map(
-        projects.map((project) => [`${project.environmentId}:${project.id}`, project.faviconPath]),
+        sidebarProjects.map((project) => [
+          `${project.environmentId}:${project.id}`,
+          project.faviconPath,
+        ]),
       ),
-    [projects],
+    [sidebarProjects],
   );
   const projectDisplayNameByKey = useMemo(
     () =>

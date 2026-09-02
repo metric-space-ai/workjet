@@ -105,6 +105,35 @@ export function buildAvailableProjects(input: {
   return [...localProjects, ...workjetProjects];
 }
 
+export function workjetProjectMatchesDraftSession(input: {
+  readonly project: CtoxWorkjetProjectProjection;
+  readonly computers: readonly WorkjetComputer[];
+  readonly draftSession: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly worktreePath: string | null;
+  };
+}): boolean {
+  if (
+    input.project.id !== input.draftSession.projectId ||
+    input.draftSession.worktreePath === null
+  ) {
+    return false;
+  }
+  const computerIds = new Set<string>(
+    input.computers
+      .filter((computer) => computer.environmentId === input.draftSession.environmentId)
+      .map((computer) => computer.id),
+  );
+  const draftPath = normalizedProjectPath(input.draftSession.worktreePath);
+  return input.project.workingCopies.some(
+    (workingCopy) =>
+      workingCopy.status === "active" &&
+      computerIds.has(workingCopy.computerId) &&
+      normalizedProjectPath(workingCopy.path) === draftPath,
+  );
+}
+
 export function availableProjectRef(project: AvailableProject): ScopedProjectRef {
   return scopeProjectRef(project.environmentId, project.id);
 }

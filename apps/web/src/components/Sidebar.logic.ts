@@ -7,6 +7,8 @@ import {
   toSortableTimestamp,
   type ThreadSortInput,
 } from "../lib/threadSort";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { AvailableProject } from "../availableProjects";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
@@ -880,6 +882,34 @@ export function sortProjectsForSidebar<
     (project) => threadsByProjectId.get(project.id) ?? [],
     (left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id),
   );
+}
+
+export function includeAvailableProjectsInSidebar(
+  projects: readonly EnvironmentProject[],
+  availableProjects: readonly AvailableProject[],
+): EnvironmentProject[] {
+  const existingKeys = new Set(
+    projects.map((project) => `${project.environmentId}\0${project.id}`),
+  );
+  const additions = availableProjects.flatMap((project): EnvironmentProject[] => {
+    const key = `${project.environmentId}\0${project.id}`;
+    if (project.kind !== "workjet" || existingKeys.has(key)) return [];
+    existingKeys.add(key);
+    return [
+      {
+        id: project.id,
+        environmentId: project.environmentId,
+        title: project.title,
+        workspaceRoot: project.path,
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: "1970-01-01T00:00:00.000Z",
+        updatedAt: "1970-01-01T00:00:00.000Z",
+      },
+    ];
+  });
+  return [...projects, ...additions];
 }
 
 export function sortLogicalProjectsForSidebar<

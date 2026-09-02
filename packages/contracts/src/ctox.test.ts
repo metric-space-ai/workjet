@@ -19,6 +19,7 @@ import {
   CtoxPairingInviteImportInput,
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResponse,
+  CtoxWorkjetSessionTransferEvent,
   WorkjetDeviceWebRtcRequestV1,
   WorkjetDeviceWebRtcResponseV1,
 } from "./ctox.ts";
@@ -340,6 +341,16 @@ describe("CTOX renderer contracts", () => {
         reason: "operator requested abort",
         idempotencyKey: "transfer-abort-1",
       },
+      {
+        action: "session.transfer.pause_ack",
+        commandId: "command-5",
+        transferId: "transfer-1",
+        computerId: "computer-1",
+        fenceEpoch: 3,
+        lastTerminalTurnId: "turn-1",
+        gitRepository: true,
+        idempotencyKey: "transfer-pause-1",
+      },
     ] as const;
 
     for (const request of requests) expect(decode(request)).toEqual(request);
@@ -355,6 +366,28 @@ describe("CTOX renderer contracts", () => {
     ).toThrow();
     expect(() => decode({ action: "session.create", commandId: "command-1" })).toThrow();
     expect(() => decode({ action: "session.list", projectId: "forbidden" })).toThrow();
+  });
+
+  it("rejects malformed session transfer events and excess fields", () => {
+    const decode = Schema.decodeUnknownSync(CtoxWorkjetSessionTransferEvent, {
+      onExcessProperty: "error",
+    });
+    const event = {
+      type: "workjet.session.transfer",
+      transferId: "transfer-1",
+      sessionId: "session-1",
+      state: "pause_requested",
+      fenceEpoch: 3,
+      sourceComputerId: "computer-1",
+      targetComputerId: "computer-2",
+      deadlineAtMs: 1_788_000_040_000,
+      updatedAtMs: 1_788_000_000_000,
+    } as const;
+
+    expect(decode(event)).toEqual(event);
+    expect(() => decode({ ...event, fenceEpoch: -1 })).toThrow();
+    expect(() => decode({ ...event, transferId: "x".repeat(257) })).toThrow();
+    expect(() => decode({ ...event, extra: true })).toThrow();
   });
 
   it("decodes bounded Workjet session projections and transfer outcomes", () => {
@@ -376,6 +409,15 @@ describe("CTOX renderer contracts", () => {
     expect(decode({ action: "session.list", sessions: [session] })).toEqual({
       action: "session.list",
       sessions: [session],
+    });
+    expect(
+      decode({
+        action: "session.transfer.pause_ack",
+        outcome: { ok: true, transferId: "transfer-1" },
+      }),
+    ).toEqual({
+      action: "session.transfer.pause_ack",
+      outcome: { ok: true, transferId: "transfer-1" },
     });
     expect(
       decode({

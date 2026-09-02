@@ -11,6 +11,7 @@ import type {
   CtoxWorkjetProjectControlResult,
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
+  CtoxWorkjetSessionTransferEvent,
   WorkjetDeviceWebRtcRequestV1,
 } from "@t3tools/contracts";
 import {
@@ -28,7 +29,7 @@ import { WebContentsView, type BrowserWindow, type Session, type WebContents } f
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { CTOX_GUEST_STATE_CHANNEL } from "../ipc/channels.ts";
+import { CTOX_GUEST_STATE_CHANNEL, CTOX_SESSION_TRANSFER_EVENT_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
@@ -38,6 +39,11 @@ import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
 import * as CtoxSshManagedLaunch from "./CtoxSshManagedLaunch.ts";
 import { isLaunchableCtoxSshManagedInstance } from "./CtoxSshManagedSource.ts";
+import {
+  buildSessionTransferEventsRegistrationExpression,
+  CTOX_SESSION_TRANSFER_POST_CHANNEL,
+  CtoxSessionTransferEventDecoder,
+} from "./CtoxSessionTransferEvents.ts";
 
 const SENSITIVE_QUERY_PARAMETERS = new Set([
   "ctox_config",
@@ -201,6 +207,9 @@ export class CtoxGuestManager extends Context.Service<
       instanceId: string,
       request: CtoxWorkjetSessionControlRequest,
     ) => Effect.Effect<CtoxWorkjetSessionControlResult>;
+    readonly registerSessionTransferEvents: (
+      computerIds: readonly string[],
+    ) => Effect.Effect<CtoxManagedActionResult>;
   }
 >()("@t3tools/desktop/ctox/CtoxGuestManager") {}
 
@@ -724,7 +733,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
     let latestHostTheme: CtoxHostThemeInput | undefined;
+    let registeredSessionComputerIds: readonly string[] = [];
     let guestUseSequence = 0;
+    const sessionEventDecoders = new Map<string, CtoxSessionTransferEventDecoder>();
     const stateRef = yield* SynchronizedRef.make<GuestState>({
       businessOsModeActive: false,
       activeId: undefined,
@@ -741,6 +752,48 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       void runPromise(
         electronWindow.sendAll(CTOX_GUEST_STATE_CHANNEL, { instanceId, state: guestState }),
       ).catch(() => undefined);
+    };
+
+    const sessionEventDecoder = (instanceId: string): CtoxSessionTransferEventDecoder => {
+      const existing = sessionEventDecoders.get(instanceId);
+      if (existing !== undefined) return existing;
+      const created = new CtoxSessionTransferEventDecoder();
+      sessionEventDecoders.set(instanceId, created);
+      return created;
+    };
+
+    const emitSessionTransferEvent = (
+      instanceId: string,
+      event: CtoxWorkjetSessionTransferEvent,
+    ): void => {
+      void runPromise(
+        electronWindow.sendAll(CTOX_SESSION_TRANSFER_EVENT_CHANNEL, { instanceId, event }),
+      ).catch(() => undefined);
+    };
+
+    const decodeAndEmitSessionTransferEvent = (instanceId: string, raw: unknown): void => {
+      const decoder = sessionEventDecoder(instanceId);
+      const event = decoder.decode(raw);
+      if (event !== undefined) emitSessionTransferEvent(instanceId, event);
+    };
+
+    const registerSessionEventsForWebContents = async (
+      instanceId: string,
+      webContents: WebContents,
+    ): Promise<void> => {
+      if (registeredSessionComputerIds.length === 0 || webContents.isDestroyed()) return;
+      try {
+        const raw = await webContents.executeJavaScript(
+          buildSessionTransferEventsRegistrationExpression(registeredSessionComputerIds),
+          true,
+        );
+        if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return;
+        const events = (raw as { readonly events?: unknown }).events;
+        if (!Array.isArray(events)) return;
+        for (const event of events) decodeAndEmitSessionTransferEvent(instanceId, event);
+      } catch {
+        // The shell-side API is optional until its parallel release is installed.
+      }
     };
 
     const destroyPooledGuest = (guest: ActiveGuest): void => {
@@ -1008,6 +1061,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
         });
         webContents.on("did-finish-load", () => {
+          void registerSessionEventsForWebContents(instanceId, webContents);
           if (latestHostTheme !== undefined) {
             try {
               webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, latestHostTheme);
@@ -1050,6 +1104,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         webContents.ipc.on(REFRESH_MANAGED_LAUNCH_CHANNEL, (_event, ...args) => {
           if (args.length === 0) refreshFromWebContents(webContents);
         });
+        webContents.ipc.on(CTOX_SESSION_TRANSFER_POST_CHANNEL, (_event, ...args) => {
+          decodeAndEmitSessionTransferEvent(instanceId, args.length === 1 ? args[0] : undefined);
+        });
       } catch {
         return failView();
       }
@@ -1078,6 +1135,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         destroyGuest(active);
         return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
       }
+      yield* Effect.promise(() => registerSessionEventsForWebContents(instanceId, webContents));
       return [{ _tag: "ready", instanceId }, active] as const;
     });
 
@@ -1582,6 +1640,22 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const registerSessionTransferEvents = (
+      computerIds: readonly string[],
+    ): Effect.Effect<CtoxManagedActionResult> =>
+      Effect.gen(function* () {
+        registeredSessionComputerIds = [...new Set(computerIds)];
+        const state = yield* SynchronizedRef.get(stateRef);
+        yield* Effect.promise(() =>
+          Promise.all(
+            [...state.pool.values()].map((entry) =>
+              registerSessionEventsForWebContents(entry.instanceId, entry.view.webContents),
+            ),
+          ).then(() => undefined),
+        );
+        return { _tag: "completed" } as const;
+      });
+
     return CtoxGuestManager.of({
       enterBusinessOsMode,
       exitBusinessOsMode,
@@ -1598,6 +1672,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       requestDeviceControl,
       requestProjectControl,
       requestSessionControl,
+      registerSessionTransferEvents,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));
 

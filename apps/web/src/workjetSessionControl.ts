@@ -79,3 +79,15 @@ export function abortWorkjetSessionTransfer(
 ): Promise<CtoxWorkjetSessionControlResult> {
   return requestWorkjetSessionControl(instanceId, request, port, ensurePooled);
 }
+
+export function acknowledgeWorkjetSessionPause(
+  instanceId: string,
+  request: Extract<
+    CtoxWorkjetSessionControlRequest,
+    { readonly action: "session.transfer.pause_ack" }
+  >,
+  port?: WorkjetSessionControlPort,
+  ensurePooled?: WorkjetSessionPoolPort,
+): Promise<CtoxWorkjetSessionControlResult> {
+  return requestWorkjetSessionControl(instanceId, request, port, ensurePooled);
+}

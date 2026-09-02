@@ -557,12 +557,52 @@ export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlRe
 
 const CtoxSessionId = CtoxProjectText(160);
 const CtoxSessionComputerId = CtoxProjectText(256);
+const CtoxSessionTransferText = CtoxProjectText(256);
 const CtoxSessionOutcomeText = Schema.String.check(
   Schema.isMaxLength(512),
   NoAsciiControlCharacters,
 );
 const MAX_WORKJET_TRANSFER_BYTES = 64 * 1_024;
 const encodeCtoxUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+export const CtoxWorkjetSessionTransferEvent = Schema.Struct({
+  type: Schema.Literal("workjet.session.transfer"),
+  transferId: CtoxSessionTransferText,
+  sessionId: CtoxSessionTransferText,
+  state: Schema.Literals([
+    "pause_requested",
+    "packing",
+    "packed",
+    "shipping",
+    "applying",
+    "applied",
+    "switching",
+    "resuming",
+    "completed",
+    "aborting",
+    "rolled_back",
+    "failed",
+  ]),
+  fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  sourceComputerId: CtoxSessionComputerId,
+  targetComputerId: CtoxSessionComputerId,
+  deadlineAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  updatedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type CtoxWorkjetSessionTransferEvent = typeof CtoxWorkjetSessionTransferEvent.Type;
+
+export const CtoxWorkjetSessionTransferNotification = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  event: CtoxWorkjetSessionTransferEvent,
+});
+export type CtoxWorkjetSessionTransferNotification =
+  typeof CtoxWorkjetSessionTransferNotification.Type;
+
+export const CtoxWorkjetSessionEventsRegistrationInput = Schema.Struct({
+  computerIds: Schema.Array(CtoxSessionComputerId).check(Schema.isMaxLength(1_000)),
+});
+export type CtoxWorkjetSessionEventsRegistrationInput =
+  typeof CtoxWorkjetSessionEventsRegistrationInput.Type;
 
 const CtoxWorkjetTransfer = Schema.Unknown.check(
   Schema.makeFilter((transfer) => {
@@ -613,6 +653,16 @@ export const CtoxWorkjetSessionControlRequest = Schema.Union([
     commandId: CtoxSessionId,
     transferId: CtoxSessionId,
     reason: CtoxSessionOutcomeText,
+    idempotencyKey: CtoxSessionId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.pause_ack"),
+    commandId: CtoxSessionId,
+    transferId: CtoxSessionId,
+    computerId: CtoxSessionComputerId,
+    fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    lastTerminalTurnId: Schema.NullOr(CtoxSessionId),
+    gitRepository: Schema.Boolean,
     idempotencyKey: CtoxSessionId,
   }),
 ]);
@@ -670,6 +720,10 @@ export const CtoxWorkjetSessionControlResponse = Schema.Union([
   }),
   Schema.Struct({
     action: Schema.Literal("session.transfer.abort"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.pause_ack"),
     outcome: CtoxWorkjetTransferOutcome,
   }),
 ]);

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   abortWorkjetSessionTransfer,
+  acknowledgeWorkjetSessionPause,
   createWorkjetSession,
   listWorkjetSessions,
   readWorkjetSessionTransferStatus,
@@ -95,17 +96,29 @@ describe("requestWorkjetSessionControl", () => {
       reason: "operator requested abort",
       idempotencyKey: "abort-1",
     } as const;
+    const acknowledge = {
+      action: "session.transfer.pause_ack",
+      commandId: "command-acknowledge",
+      transferId: "transfer-1",
+      computerId: "computer-1",
+      fenceEpoch: 3,
+      lastTerminalTurnId: "turn-1",
+      gitRepository: true,
+      idempotencyKey: "pause-1",
+    } as const;
 
     await listWorkjetSessions(instanceId, request);
     await createWorkjetSession(instanceId, create, request);
     await startWorkjetSessionTransfer(instanceId, start, request);
     await readWorkjetSessionTransferStatus(instanceId, status, request);
     await abortWorkjetSessionTransfer(instanceId, abort, request);
+    await acknowledgeWorkjetSessionPause(instanceId, acknowledge, request);
 
     expect(request).toHaveBeenNthCalledWith(1, instanceId, { action: "session.list" });
     expect(request).toHaveBeenNthCalledWith(2, instanceId, create);
     expect(request).toHaveBeenNthCalledWith(3, instanceId, start);
     expect(request).toHaveBeenNthCalledWith(4, instanceId, status);
     expect(request).toHaveBeenNthCalledWith(5, instanceId, abort);
+    expect(request).toHaveBeenNthCalledWith(6, instanceId, acknowledge);
   });
 });

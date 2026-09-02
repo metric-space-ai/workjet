@@ -31,6 +31,7 @@ import {
   WorkjetThreadConfig,
   WorkjetWorkerProfileId,
   migrateWorkjetLlmRouteV1ToV2,
+  normalizeWorkjetThreadConfig,
   WorktreeStorageInspection,
   WorktreeStorageInspectionInput,
 } from "./workjet.ts";
@@ -613,6 +614,79 @@ describe("WorkjetThreadConfig", () => {
         parent: workerConfig.parent,
       }),
     ).toThrow();
+  });
+
+  it("defaults a missing V2 CTOX session binding to null", () => {
+    expect(
+      decodeWorkjetThreadConfig({
+        schemaVersion: 2,
+        role: "standard",
+        parent: null,
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
+      }),
+    ).toMatchObject({ ctoxSession: null });
+  });
+
+  it("preserves a valid V2 CTOX session binding", () => {
+    const ctoxSession = {
+      instanceId: "managed:welsch",
+      sessionId: "session-1",
+      fenceEpoch: 3,
+    } as const;
+
+    expect(
+      decodeWorkjetThreadConfig({
+        schemaVersion: 2,
+        role: "standard",
+        parent: null,
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
+        ctoxSession,
+      }),
+    ).toMatchObject({ ctoxSession });
+  });
+
+  it("rejects a CTOX session id longer than 160 characters", () => {
+    expect(() =>
+      decodeWorkjetThreadConfig({
+        schemaVersion: 2,
+        role: "standard",
+        parent: null,
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
+        ctoxSession: {
+          instanceId: "managed:welsch",
+          sessionId: "s".repeat(161),
+          fenceEpoch: 0,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a negative CTOX session fence epoch", () => {
+    expect(() =>
+      decodeWorkjetThreadConfig({
+        schemaVersion: 2,
+        role: "standard",
+        parent: null,
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
+        ctoxSession: {
+          instanceId: "managed:welsch",
+          sessionId: "session-1",
+          fenceEpoch: -1,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("normalizes V1 configurations with no CTOX session binding", () => {
+    expect(normalizeWorkjetThreadConfig(standardConfig)).toMatchObject({ ctoxSession: null });
   });
 
   it("rejects unknown capability IDs", () => {

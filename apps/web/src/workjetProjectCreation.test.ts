@@ -60,6 +60,73 @@ describe("runWorkjetProjectCreation", () => {
     expect(port).toHaveBeenCalledWith(instanceId, { action: "project.list" });
   });
 
+  const incompleteCopies = [
+    { name: "missing", workingCopies: [] },
+    {
+      name: "other computer",
+      workingCopies: [{ ...project.workingCopies[0]!, computerId: "computer:other" }],
+    },
+    {
+      name: "other path",
+      workingCopies: [{ ...project.workingCopies[0]!, path: "/workspace/other" }],
+    },
+    {
+      name: "detached",
+      workingCopies: [{ ...project.workingCopies[0]!, status: "detached" as const }],
+    },
+  ];
+
+  it.each(incompleteCopies)(
+    "resumes creation when the requested copy is $name",
+    async ({ workingCopies }) => {
+      const phases: string[] = [];
+      const port = vi
+        .fn()
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.list", projects: [{ ...project, workingCopies }] },
+        })
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.create", project },
+        });
+
+      await expect(
+        runWorkjetProjectCreation(
+          { presentationInstanceId: instanceId, request },
+          { port, onPhase: (phase) => phases.push(phase) },
+        ),
+      ).resolves.toEqual({ _tag: "visible", project });
+      expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
+      expect(phases).toEqual(["checking", "creating", "visible"]);
+    },
+  );
+
+  it.each(incompleteCopies)(
+    "rejects create success when the requested copy is $name",
+    async ({ workingCopies }) => {
+      const phases: string[] = [];
+      const port = vi
+        .fn()
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.list", projects: [] },
+        })
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.create", project: { ...project, workingCopies } },
+        });
+
+      await expect(
+        runWorkjetProjectCreation(
+          { presentationInstanceId: instanceId, request },
+          { port, onPhase: (phase) => phases.push(phase) },
+        ),
+      ).resolves.toEqual({ _tag: "failed", code: "invalid_projection" });
+      expect(phases).toEqual(["checking", "creating", "failed"]);
+    },
+  );
+
   it("lists, creates, and exposes the exact authoritative projection", async () => {
     const phases: string[] = [];
     const port = vi

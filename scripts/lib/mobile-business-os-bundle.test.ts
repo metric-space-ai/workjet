@@ -4,6 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { writeMobileBusinessOsBundle } from "./mobile-business-os-bundle.mjs";
 
 const fixture = Effect.gen(function* () {
@@ -59,7 +60,15 @@ it.layer(NodeServices.layer)("Business OS resources inside the signed mobile bin
           assert.equal(file.sha256, NodeCrypto.createHash("sha256").update(bytes).digest("hex"));
         }
         const catalog = yield* fs.readFileString(path.join(payload, "mobile-apps.json"));
-        assert.deepEqual(JSON.parse(catalog).apps, [{ id: "threads", title: "Threads" }]);
+        const decoded = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(
+            Schema.Struct({
+              apps: Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String })),
+            }),
+          ),
+        )(catalog);
+        assert.deepEqual(decoded.apps, [{ id: "threads", title: "Threads" }]);
+        assert.notInclude(catalog, '"icon":');
         assert.isFalse(yield* fs.exists(path.join(payload, "vendor/ctox-office")));
         assert.match(result.packId, /^[0-9a-f]{64}$/u);
         const repeated = yield* Effect.tryPromise(() =>

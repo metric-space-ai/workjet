@@ -21,21 +21,21 @@ consume the gateway the same way Workjet consumes the shell.
 Six targets, one artifact each. Every `(os, arch)` pair is unique, so a consumer
 picks its artifact from `process.platform` / `process.arch` without ambiguity.
 
-| Rust target triple          | `process.platform` | `process.arch` | Build runner                     |
-| --------------------------- | ------------------ | -------------- | -------------------------------- |
-| `aarch64-apple-darwin`      | `darwin`           | `arm64`        | `blacksmith-12vcpu-macos-26`     |
-| `x86_64-apple-darwin`       | `darwin`           | `x64`          | `blacksmith-12vcpu-macos-26`     |
-| `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `blacksmith-32vcpu-ubuntu-2404`  |
-| `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm`               |
-| `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `blacksmith-32vcpu-windows-2025` |
-| `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-11-arm`                 |
+| Rust target triple          | `process.platform` | `process.arch` | Build runner       |
+| --------------------------- | ------------------ | -------------- | ------------------ |
+| `aarch64-apple-darwin`      | `darwin`           | `arm64`        | `macos-latest`     |
+| `x86_64-apple-darwin`       | `darwin`           | `x64`          | `macos-latest`     |
+| `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `ubuntu-24.04`     |
+| `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm` |
+| `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `windows-2025`     |
+| `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-11-arm`   |
 
 Every triple builds on a runner of its own architecture, except
 `x86_64-apple-darwin`, which builds on the arm64 macOS runner — that is already
 this repository's practice for the resource monitor in `release.yml`. The two
-ARM64 non-Apple triples use GitHub-hosted ARM runners because the repository has
-no Blacksmith ARM labels; a hand-rolled MSVC/GCC cross-linking setup would be
-considerably more fragile than a native run.
+ARM64 non-Apple triples use GitHub-hosted ARM runners. All six targets use
+GitHub-hosted runners, so the fork does not depend on a separate runner fleet;
+a hand-rolled MSVC/GCC cross-linking setup would be more fragile than a native run.
 
 A release is all-or-nothing: `collect` refuses to build a manifest that is
 missing any of the six targets, so a partially successful matrix fails the run

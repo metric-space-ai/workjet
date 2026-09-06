@@ -168,7 +168,8 @@ describe("ssh tunnel scripts", () => {
       "does not satisfy required range ",
     );
     assert.include(buildRemoteLaunchScript(), 'kill "$REMOTE_PID" 2>/dev/null || true');
-    assert.include(buildRemoteLaunchScript(), "wait_ready");
+    assert.include(buildRemoteLaunchScript(), 'wait_ready "45000"');
+    assert.include(buildRemoteLaunchScript(), 'mv -f "$LOG_FILE" "$LOG_FILE.previous"');
     assert.include(buildRemoteLaunchScript(), '"$RUNNER_FILE" serve --host 127.0.0.1');
     assert.include(buildRemoteLaunchScript(), '--base-dir "$DEFAULT_SERVER_HOME"');
     assert.notInclude(buildRemoteLaunchScript(), "server-home");

@@ -115,8 +115,13 @@ describe("Business OS native security guards", () => {
     ).toBe(false);
     expect(root).not.toContain('"settings" | "app"');
     expect(root).not.toContain('setRoute("settings")');
-    expect(root).toContain('navigation.navigate("SettingsSheet"');
-    expect(root).toContain('params: { screen: "SettingsBusinessOs" }');
+    const app = read("src/App.tsx");
+    const setup = read("src/features/mode/BusinessOsSetupScreen.tsx");
+    expect(root).toContain("const openSettings = props.onOpenSettings;");
+    expect(setup).toContain("onOpenSettings={props.onOpenSettings}");
+    expect(app).toContain("onOpenSettings={openBusinessOsSettings}");
+    expect(app).toContain('navigationRef.navigate("SettingsSheet"');
+    expect(app).toContain('params: { screen: "SettingsBusinessOs" }');
     expect(root).toContain("showsSettingsAction={!sidebarAvailable || !sidebarVisible}");
     expect(home).toContain("props.showsSettingsAction ?");
     expect(nativeTypes).toContain("readonly showsSettingsAction: boolean");

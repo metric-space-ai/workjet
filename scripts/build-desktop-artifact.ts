@@ -3,6 +3,7 @@
 
 import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
+import * as NodeURL from "node:url";
 
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -43,6 +44,9 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+const MAC_ADHOC_ENTITLEMENTS_PATH = NodeURL.fileURLToPath(
+  new URL("../apps/desktop/resources/entitlements.mac.adhoc.plist", import.meta.url),
+);
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -2253,8 +2257,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ? {
             identity: "-",
             hardenedRuntime: true,
-            entitlements: "apps/desktop/resources/entitlements.mac.adhoc.plist",
-            entitlementsInherit: "apps/desktop/resources/entitlements.mac.adhoc.plist",
+            entitlements: MAC_ADHOC_ENTITLEMENTS_PATH,
+            entitlementsInherit: MAC_ADHOC_ENTITLEMENTS_PATH,
           }
         : {}),
       protocols: [

@@ -1,24 +1,26 @@
-import { createHash } from "node:crypto";
-import * as fs from "node:fs/promises";
-import path from "node:path";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 
 export const MOBILE_BUNDLE_TYPE = "workjet.bundled-business-os-shell.v1";
-const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const digest = (bytes) => NodeCrypto.createHash("sha256").update(bytes).digest("hex");
 
 /** Derive resources only after the upstream release verifier has accepted sourceRoot. */
 export async function writeMobileBusinessOsBundle({ sourceRoot, outputRoot, release, catalog }) {
-  await fs.mkdir(outputRoot);
-  const payload = path.join(outputRoot, "payload");
-  await fs.mkdir(payload, { recursive: true });
+  await NodeFSP.mkdir(outputRoot);
+  const payload = NodePath.join(outputRoot, "payload");
+  await NodeFSP.mkdir(payload, { recursive: true });
   const files = [];
   async function write(relative, bytes) {
-    const target = path.join(payload, relative);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, bytes);
+    const target = NodePath.join(payload, relative);
+    await NodeFSP.mkdir(NodePath.dirname(target), { recursive: true });
+    await NodeFSP.writeFile(target, bytes);
     files.push({ path: relative, size: bytes.length, sha256: digest(bytes) });
   }
   async function visit(relative = "") {
-    const entries = await fs.readdir(path.join(sourceRoot, relative), { withFileTypes: true });
+    const entries = await NodeFSP.readdir(NodePath.join(sourceRoot, relative), {
+      withFileTypes: true,
+    });
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const name = relative ? `${relative}/${entry.name}` : entry.name;
       if (
@@ -30,7 +32,8 @@ export async function writeMobileBusinessOsBundle({ sourceRoot, outputRoot, rele
         continue;
       if (entry.isSymbolicLink()) throw new Error(`Shell bundle contains a symbolic link: ${name}`);
       if (entry.isDirectory()) await visit(name);
-      else if (entry.isFile()) await write(name, await fs.readFile(path.join(sourceRoot, name)));
+      else if (entry.isFile())
+        await write(name, await NodeFSP.readFile(NodePath.join(sourceRoot, name)));
       else throw new Error(`Unsupported shell bundle entry: ${name}`);
     }
   }
@@ -54,6 +57,6 @@ export async function writeMobileBusinessOsBundle({ sourceRoot, outputRoot, rele
   files.sort((a, b) => a.path.localeCompare(b.path));
   const inventory = { type: MOBILE_BUNDLE_TYPE, upstream: release, files };
   const manifest = { ...inventory, packId: digest(JSON.stringify(inventory)) };
-  await fs.writeFile(path.join(outputRoot, "manifest.json"), JSON.stringify(manifest));
+  await NodeFSP.writeFile(NodePath.join(outputRoot, "manifest.json"), JSON.stringify(manifest));
   return manifest;
 }

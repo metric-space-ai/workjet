@@ -1,5 +1,5 @@
-import * as fs from "node:fs/promises";
-import path from "node:path";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 import {
   CTOX_BUSINESS_OS_SHELL_RELEASE,
   prepareCtoxBusinessOsShell,
@@ -10,11 +10,11 @@ import { writeMobileBusinessOsBundle } from "./lib/mobile-business-os-bundle.mjs
 
 export async function prepareMobileBusinessOsBundle({ projectRoot, platform }) {
   if (platform !== "android" && platform !== "ios") throw new Error("Unsupported mobile platform");
-  const repoRoot = path.resolve(projectRoot, "../..");
+  const repoRoot = NodePath.resolve(projectRoot, "../..");
   const dependencyRoot = resolveCtoxBusinessOsShellDependencyRoot({ repoRoot });
   const source = await prepareCtoxBusinessOsShell({ repoRoot, dependencyRoot });
-  const staging = await fs.mkdtemp(path.join(dependencyRoot, "mobile-shell-"));
-  const bundleRoot = path.join(staging, "WorkjetBusinessOs.bundle");
+  const staging = await NodeFSP.mkdtemp(NodePath.join(dependencyRoot, "mobile-shell-"));
+  const bundleRoot = NodePath.join(staging, "WorkjetBusinessOs.bundle");
   try {
     await writeMobileBusinessOsBundle({
       sourceRoot: source.installPath,
@@ -22,23 +22,23 @@ export async function prepareMobileBusinessOsBundle({ projectRoot, platform }) {
       release: CTOX_BUSINESS_OS_SHELL_RELEASE,
       catalog: BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
     });
-    const moduleRoot = path.join(projectRoot, "modules/t3-native-controls");
+    const moduleRoot = NodePath.join(projectRoot, "modules/t3-native-controls");
     const link =
       platform === "android"
-        ? path.join(moduleRoot, "android/src/main/assets/workjet-business-os")
-        : path.join(moduleRoot, "ios/Resources/WorkjetBusinessOs.bundle");
-    await fs.mkdir(path.dirname(link), { recursive: true });
-    const existing = await fs.lstat(link).catch((error) => {
+        ? NodePath.join(moduleRoot, "android/src/main/assets/workjet-business-os")
+        : NodePath.join(moduleRoot, "ios/Resources/WorkjetBusinessOs.bundle");
+    await NodeFSP.mkdir(NodePath.dirname(link), { recursive: true });
+    const existing = await NodeFSP.lstat(link).catch((error) => {
       if (error.code !== "ENOENT") throw error;
       return null;
     });
     if (existing && !existing.isSymbolicLink())
       throw new Error(`Refusing to replace non-generated resources: ${link}`);
-    if (existing) await fs.unlink(link);
-    await fs.symlink(bundleRoot, link, "dir");
+    if (existing) await NodeFSP.unlink(link);
+    await NodeFSP.symlink(bundleRoot, link, "dir");
     return bundleRoot;
   } catch (error) {
-    await fs.rm(staging, { recursive: true, force: true });
+    await NodeFSP.rm(staging, { recursive: true, force: true });
     throw error;
   }
 }

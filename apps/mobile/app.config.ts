@@ -89,7 +89,7 @@ const VARIANT_CONFIG = {
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "Workjet",
+    appName: "Workjet Preview",
     schemes: ["workjet-preview", "ctox-mobile-preview", "t3code-preview"],
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",

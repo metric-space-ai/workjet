@@ -130,7 +130,6 @@ export function resolveBusinessOsCodeScopeEnvironmentIds({
   return environmentIds;
 }
 
-
 /**
  * Resolves the renderer presentation id through Desktop Main, then includes
  * Relay targets carrying the exact server-authoritative instance id. Primary is

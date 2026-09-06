@@ -3,6 +3,7 @@
 
 import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
+import * as NodeURL from "node:url";
 
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -43,6 +44,9 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+const MAC_ADHOC_ENTITLEMENTS_PATH = NodeURL.fileURLToPath(
+  new URL("../apps/desktop/resources/entitlements.mac.adhoc.plist", import.meta.url),
+);
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -2247,6 +2251,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      // Builds without a distribution identity still need a valid bundle seal.
+      // Keep hardened runtime and the Electron JIT/library entitlements together.
+      ...(!signed
+        ? {
+            identity: "-",
+            hardenedRuntime: true,
+            entitlements: MAC_ADHOC_ENTITLEMENTS_PATH,
+            entitlementsInherit: MAC_ADHOC_ENTITLEMENTS_PATH,
+          }
+        : {}),
       protocols: [
         {
           name: "Workjet",
@@ -2796,6 +2810,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   }
   if (!options.signed) {
     buildEnv.CSC_IDENTITY_AUTO_DISCOVERY = "false";
+    if (options.platform === "mac") {
+      // PR builds otherwise skip even the explicit ad-hoc identity above.
+      // This path never imports a distribution certificate or notarization key.
+      buildEnv.CSC_FOR_PULL_REQUEST = "true";
+    }
     delete buildEnv.CSC_LINK;
     delete buildEnv.CSC_KEY_PASSWORD;
     delete buildEnv.APPLE_API_KEY;

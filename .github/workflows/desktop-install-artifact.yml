@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - .github/workflows/desktop-install-artifact.yml
+      - scripts/build-desktop-artifact.ts
+      - apps/desktop/resources/entitlements.mac.adhoc.plist
 
 permissions:
   contents: read
@@ -47,6 +49,13 @@ jobs:
           export ELECTRON_CACHE="$RUNNER_TEMP/electron-cache"
           export ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/electron-builder-cache"
           node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
+      - name: Verify the packaged app signature and executable
+        run: |
+          mkdir -p "$RUNNER_TEMP/workjet-desktop-verify"
+          ditto -xk "$RUNNER_TEMP"/workjet-desktop/Workjet-*-arm64.zip "$RUNNER_TEMP/workjet-desktop-verify"
+          app="$RUNNER_TEMP/workjet-desktop-verify/Workjet.app"
+          codesign --verify --deep --strict "$app"
+          ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Workjet" -e 'if (!process.versions.electron) process.exit(1)'
       - name: Record source and artifact checksums
         run: |
           git rev-parse HEAD > "$RUNNER_TEMP/workjet-desktop/SOURCE_COMMIT"

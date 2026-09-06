@@ -6,6 +6,9 @@ on:
     paths:
       - .github/workflows/desktop-install-artifact.yml
       - scripts/build-desktop-artifact.ts
+      - scripts/lib/prepare-provider-gateway-host.ts
+      - scripts/smoke-packaged-startup.mjs
+      - apps/desktop/resources/provider-gateway/host-release.pin.json
       - apps/desktop/resources/entitlements.mac.adhoc.plist
 
 permissions:
@@ -56,6 +59,7 @@ jobs:
           app="$RUNNER_TEMP/workjet-desktop-verify/Workjet.app"
           codesign --verify --deep --strict "$app"
           ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Workjet" -e 'if (!process.versions.electron) process.exit(1)'
+          node scripts/smoke-packaged-startup.mjs "$app/Contents/MacOS/Workjet" "$RUNNER_TEMP/workjet-desktop/startup-smoke.json"
       - name: Record source and artifact checksums
         run: |
           git rev-parse HEAD > "$RUNNER_TEMP/workjet-desktop/SOURCE_COMMIT"

@@ -176,6 +176,15 @@ and the repository `NOTICE.md`. The `collect` subcommand copies them and
 notices. `scripts/lib/release-notice.ts` remains the source of truth for what
 the notice says about this component.
 
+The NOTICE generator stays offline. Ordinary package metadata comes from the
+installed pnpm manifests; exact-version metadata for platform-specific packages
+is reviewed in `scripts/lib/release-platform-license-metadata.ts`, with a source
+URL for every published manifest. This prevents a Linux preflight from losing
+the macOS and Windows license records that pnpm does not install there. When a
+platform dependency version changes, review its new published manifest, update
+the corresponding record, and regenerate NOTICE. An installed license that
+conflicts with the reviewed record fails generation instead of being hidden.
+
 ## 6. Reproducing a release locally
 
 The release workflow runs exactly these subcommands, so the same commands

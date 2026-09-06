@@ -8,6 +8,10 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/unstable/cli";
 import * as YAML from "yaml";
+import {
+  applyReleasePlatformMetadata,
+  ReleaseNoticePlatformMetadataConflictError,
+} from "./lib/release-platform-license-metadata.ts";
 
 import {
   collectProductionClosure,
@@ -17,7 +21,6 @@ import {
   packageKey,
   renderReleaseNotice,
   VENDORED_NATIVE_COMPONENTS,
-  type InstalledPackageIndex,
   type InstalledPackageMetadata,
   type ReleaseLockfile,
 } from "./lib/release-notice.ts";
@@ -108,8 +111,9 @@ function normalizeLicense(manifest: Record<string, unknown>): string | undefined
 
 /**
  * Index every manifest in the pnpm virtual store by `name@version`. Reading the
- * installed manifests is the only offline source of license metadata: the
- * lockfile records resolutions, not licenses.
+ * installed manifests supplies the ordinary package metadata: the lockfile
+ * records resolutions, not licenses. Reviewed exact-version platform metadata
+ * fills the packages that pnpm omits on the generating host.
  */
 export const buildInstalledPackageIndex = Effect.fn("buildInstalledPackageIndex")(function* (
   repoRoot: string,
@@ -157,7 +161,13 @@ export const buildInstalledPackageIndex = Effect.fn("buildInstalledPackageIndex"
     }
   }
 
-  return index satisfies InstalledPackageIndex as InstalledPackageIndex;
+  return yield* Effect.try({
+    try: () => applyReleasePlatformMetadata(index),
+    catch: (cause) =>
+      cause instanceof ReleaseNoticePlatformMetadataConflictError
+        ? cause
+        : new ReleaseNoticeClosureError({ cause }),
+  });
 });
 
 export const renderRepositoryReleaseNotice = Effect.fn("renderRepositoryReleaseNotice")(function* (

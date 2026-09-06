@@ -11,6 +11,7 @@ import {
   DarkTheme,
   DefaultTheme,
   useNavigationContainerRef,
+  type StaticParamList,
 } from "@react-navigation/native";
 
 import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
@@ -115,7 +116,7 @@ function SplashScreenCoordinator() {
 
 function WorkjetModeRoot(props: { readonly dark: boolean }) {
   const { isReady, mode, setMode } = useWorkjetMode();
-  const navigationRef = useNavigationContainerRef();
+  const navigationRef = useNavigationContainerRef<StaticParamList<typeof RootStack>>();
   const openBusinessOsSettings = useCallback(() => {
     if (!navigationRef.isReady()) return;
     setMode("code");

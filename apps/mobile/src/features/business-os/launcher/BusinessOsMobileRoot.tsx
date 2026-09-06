@@ -1,4 +1,3 @@
-import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
@@ -265,10 +264,11 @@ function UnavailableShell(props: { readonly app: BusinessOsMobileAppDescriptor |
 export function BusinessOsMobileRoot(props: {
   /** Hidden mode roots stay mounted, but only the active one may own back/lifecycle events. */
   readonly active: boolean;
+  /** The sibling Code navigator owns the shared settings sheet. */
+  readonly onOpenSettings: () => void;
   /** Set only by the native verified-pack lifecycle. Production currently stays fail-closed. */
   readonly activatedShellPack?: BusinessOsActivatedShellPack | null;
 }) {
-  const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const reducedMotion = useReducedMotion();
@@ -303,12 +303,7 @@ export function BusinessOsMobileRoot(props: {
   const activeApp = apps.find((app) => app.id === activeAppId) ?? null;
   const sidebarAvailable = selected !== null && width >= 600;
   const toggleSidebar = useCallback(() => setSidebarVisible((current) => !current), []);
-  const openSettings = useCallback(() => {
-    navigation.navigate("SettingsSheet", {
-      screen: "SettingsContent",
-      params: { screen: "SettingsBusinessOs" },
-    });
-  }, [navigation]);
+  const openSettings = props.onOpenSettings;
   useRegisterWorkjetProductSidebar("business_os", {
     available: sidebarAvailable,
     visible: sidebarAvailable && sidebarVisible,

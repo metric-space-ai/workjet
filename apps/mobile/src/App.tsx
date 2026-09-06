@@ -6,7 +6,12 @@ import { StatusBar, StyleSheet, useColorScheme, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { createStaticNavigation, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import {
+  createStaticNavigation,
+  DarkTheme,
+  DefaultTheme,
+  useNavigationContainerRef,
+} from "@react-navigation/native";
 
 import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -110,6 +115,15 @@ function SplashScreenCoordinator() {
 
 function WorkjetModeRoot(props: { readonly dark: boolean }) {
   const { isReady, mode, setMode } = useWorkjetMode();
+  const navigationRef = useNavigationContainerRef();
+  const openBusinessOsSettings = useCallback(() => {
+    if (!navigationRef.isReady()) return;
+    setMode("code");
+    navigationRef.navigate("SettingsSheet", {
+      screen: "SettingsContent",
+      params: { screen: "SettingsBusinessOs" },
+    });
+  }, [navigationRef, setMode]);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const { instances, isReady: businessOsRegistryReady } = useBusinessOs();
@@ -155,7 +169,11 @@ function WorkjetModeRoot(props: { readonly dark: boolean }) {
               { opacity: !showPairingOnboarding && mode === "code" ? 1 : 0 },
             ]}
           >
-            <Navigation linking={appLinking} theme={props.dark ? DarkTheme : DefaultTheme} />
+            <Navigation
+              linking={appLinking}
+              ref={navigationRef}
+              theme={props.dark ? DarkTheme : DefaultTheme}
+            />
           </View>
           <View
             accessibilityElementsHidden={showPairingOnboarding || mode !== "business_os"}
@@ -168,7 +186,10 @@ function WorkjetModeRoot(props: { readonly dark: boolean }) {
               { opacity: !showPairingOnboarding && mode === "business_os" ? 1 : 0 },
             ]}
           >
-            <BusinessOsSetupScreen active={!showPairingOnboarding && mode === "business_os"} />
+            <BusinessOsSetupScreen
+              active={!showPairingOnboarding && mode === "business_os"}
+              onOpenSettings={openBusinessOsSettings}
+            />
           </View>
         </View>
       </SafeAreaProvider>

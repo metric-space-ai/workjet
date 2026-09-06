@@ -81,6 +81,8 @@ vi.mock("electron", () => ({
 }));
 
 import * as ElectronApp from "./ElectronApp.ts";
+import * as Electron from "electron";
+import desktopPackageJson from "../../package.json" with { type: "json" };
 
 describe("ElectronApp", () => {
   beforeEach(() => {
@@ -108,6 +110,21 @@ describe("ElectronApp", () => {
         resourcesPath: process.resourcesPath,
         runningUnderArm64Translation: false,
       });
+    }).pipe(Effect.provide(ElectronApp.layer)),
+  );
+
+  it.effect("uses the product version when launched by the bare Electron runtime", () =>
+    Effect.gen(function* () {
+      const packaged = Electron.app.isPackaged;
+      Object.defineProperty(Electron.app, "isPackaged", { value: false, configurable: true });
+      try {
+        const electronApp = yield* ElectronApp.ElectronApp;
+        const metadata = yield* electronApp.metadata;
+        assert.strictEqual(metadata.appVersion, desktopPackageJson.version);
+        assert.strictEqual(metadata.isPackaged, false);
+      } finally {
+        Object.defineProperty(Electron.app, "isPackaged", { value: packaged, configurable: true });
+      }
     }).pipe(Effect.provide(ElectronApp.layer)),
   );
 

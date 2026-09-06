@@ -147,32 +147,63 @@ export interface RuntimeManifest {
 }
 
 export type SyncHostMember =
-  { readonly type: "voter"; readonly nodeId: number } |
-  { readonly type: "worker"; readonly member: WorkerMembership };
+  | { readonly type: "voter"; readonly nodeId: number }
+  | { readonly type: "worker"; readonly member: WorkerMembership };
 
 export type AuthorityFailure =
-  { readonly type: "notLeader"; readonly leader: number | null } |
-  { readonly type: "unavailable"; readonly reason: string } |
-  { readonly type: "rejected"; readonly reason: string };
+  | { readonly type: "notLeader"; readonly leader: number | null }
+  | { readonly type: "unavailable"; readonly reason: string }
+  | { readonly type: "rejected"; readonly reason: string };
 
 export type SyncIpcOperation =
-  { readonly type: "hello";  } |
-  { readonly type: "workerMembership"; readonly nodeId: number } |
-  { readonly type: "admitWorker"; readonly worker: WorkerMembership } |
-  { readonly type: "revokeWorker"; readonly nodeId: number } |
-  { readonly type: "create"; readonly spec: ExecutionSpec } |
-  { readonly type: "validate"; readonly jobId: string; readonly ownership: ExecutionOwnership } |
-  { readonly type: "beginEffect"; readonly jobId: string; readonly ownership: ExecutionOwnership; readonly effectId: string } |
-  { readonly type: "completeEffect"; readonly jobId: string; readonly ownership: ExecutionOwnership; readonly effectId: string } |
-  { readonly type: "stop"; readonly jobId: string; readonly ownership: ExecutionOwnership };
+  | { readonly type: "hello" }
+  | { readonly type: "workerMembership"; readonly nodeId: number }
+  | { readonly type: "admitWorker"; readonly worker: WorkerMembership }
+  | { readonly type: "revokeWorker"; readonly nodeId: number }
+  | { readonly type: "create"; readonly spec: ExecutionSpec }
+  | { readonly type: "validate"; readonly jobId: string; readonly ownership: ExecutionOwnership }
+  | {
+      readonly type: "beginEffect";
+      readonly jobId: string;
+      readonly ownership: ExecutionOwnership;
+      readonly effectId: string;
+    }
+  | {
+      readonly type: "completeEffect";
+      readonly jobId: string;
+      readonly ownership: ExecutionOwnership;
+      readonly effectId: string;
+    }
+  | { readonly type: "stop"; readonly jobId: string; readonly ownership: ExecutionOwnership };
 
 export type SyncIpcResult =
-  { readonly type: "workerMembership"; readonly nodeId: number; readonly worker: WorkerMembership | null } |
-  { readonly type: "workerApplied"; readonly worker: WorkerMembership } |
-  { readonly type: "workerReplayed"; readonly worker: WorkerMembership } |
-  { readonly type: "ready"; readonly nodeId: number; readonly scopeId: string; readonly protocolVersion: number } |
-  { readonly type: "authorized"; readonly spec: ExecutionSpec; readonly ownership: ExecutionOwnership } |
-  { readonly type: "applied"; readonly spec: ExecutionSpec; readonly ownership: ExecutionOwnership } |
-  { readonly type: "replayed"; readonly spec: ExecutionSpec; readonly ownership: ExecutionOwnership } |
-  { readonly type: "rejected"; readonly reason: string } |
-  { readonly type: "unavailable"; readonly reason: string };
+  | {
+      readonly type: "workerMembership";
+      readonly nodeId: number;
+      readonly worker: WorkerMembership | null;
+    }
+  | { readonly type: "workerApplied"; readonly worker: WorkerMembership }
+  | { readonly type: "workerReplayed"; readonly worker: WorkerMembership }
+  | {
+      readonly type: "ready";
+      readonly nodeId: number;
+      readonly scopeId: string;
+      readonly protocolVersion: number;
+    }
+  | {
+      readonly type: "authorized";
+      readonly spec: ExecutionSpec;
+      readonly ownership: ExecutionOwnership;
+    }
+  | {
+      readonly type: "applied";
+      readonly spec: ExecutionSpec;
+      readonly ownership: ExecutionOwnership;
+    }
+  | {
+      readonly type: "replayed";
+      readonly spec: ExecutionSpec;
+      readonly ownership: ExecutionOwnership;
+    }
+  | { readonly type: "rejected"; readonly reason: string }
+  | { readonly type: "unavailable"; readonly reason: string };

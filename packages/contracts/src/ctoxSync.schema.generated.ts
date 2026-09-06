@@ -10,8 +10,12 @@ export const ExecutionPeerSchema = Schema.Struct({
 
 export const SyncHostTimingSchema = Schema.Struct({
   heartbeatMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-  electionMinMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-  electionMaxMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  electionMinMs: Schema.Int.check(
+    Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
+  ),
+  electionMaxMs: Schema.Int.check(
+    Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
+  ),
 });
 
 export const WorkerMembershipSchema = Schema.Struct({
@@ -22,12 +26,11 @@ export const WorkerMembershipSchema = Schema.Struct({
 });
 
 export const SyncHostMemberSchema = Schema.Union([
-Schema.Struct({ type: Schema.Literal("voter"),
-  nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-}),
-Schema.Struct({ type: Schema.Literal("worker"),
-  member: WorkerMembershipSchema,
-})
+  Schema.Struct({
+    type: Schema.Literal("voter"),
+    nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  }),
+  Schema.Struct({ type: Schema.Literal("worker"), member: WorkerMembershipSchema }),
 ]);
 
 export const SyncHostConfigurationSchema = Schema.Struct({
@@ -67,39 +70,39 @@ export const ExecutionOwnershipSchema = Schema.Struct({
 });
 
 export const SyncIpcOperationSchema = Schema.Union([
-Schema.Struct({ type: Schema.Literal("hello"),
-
-}),
-Schema.Struct({ type: Schema.Literal("workerMembership"),
-  nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-}),
-Schema.Struct({ type: Schema.Literal("admitWorker"),
-  worker: WorkerMembershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("revokeWorker"),
-  nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-}),
-Schema.Struct({ type: Schema.Literal("create"),
-  spec: ExecutionSpecSchema,
-}),
-Schema.Struct({ type: Schema.Literal("validate"),
-  jobId: Schema.String,
-  ownership: ExecutionOwnershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("beginEffect"),
-  jobId: Schema.String,
-  ownership: ExecutionOwnershipSchema,
-  effectId: Schema.String,
-}),
-Schema.Struct({ type: Schema.Literal("completeEffect"),
-  jobId: Schema.String,
-  ownership: ExecutionOwnershipSchema,
-  effectId: Schema.String,
-}),
-Schema.Struct({ type: Schema.Literal("stop"),
-  jobId: Schema.String,
-  ownership: ExecutionOwnershipSchema,
-})
+  Schema.Struct({ type: Schema.Literal("hello") }),
+  Schema.Struct({
+    type: Schema.Literal("workerMembership"),
+    nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  }),
+  Schema.Struct({ type: Schema.Literal("admitWorker"), worker: WorkerMembershipSchema }),
+  Schema.Struct({
+    type: Schema.Literal("revokeWorker"),
+    nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  }),
+  Schema.Struct({ type: Schema.Literal("create"), spec: ExecutionSpecSchema }),
+  Schema.Struct({
+    type: Schema.Literal("validate"),
+    jobId: Schema.String,
+    ownership: ExecutionOwnershipSchema,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("beginEffect"),
+    jobId: Schema.String,
+    ownership: ExecutionOwnershipSchema,
+    effectId: Schema.String,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("completeEffect"),
+    jobId: Schema.String,
+    ownership: ExecutionOwnershipSchema,
+    effectId: Schema.String,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("stop"),
+    jobId: Schema.String,
+    ownership: ExecutionOwnershipSchema,
+  }),
 ]);
 
 export const SyncIpcRequestSchema = Schema.Struct({
@@ -109,39 +112,36 @@ export const SyncIpcRequestSchema = Schema.Struct({
 });
 
 export const SyncIpcResultSchema = Schema.Union([
-Schema.Struct({ type: Schema.Literal("workerMembership"),
-  nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-  worker: Schema.optionalKey(Schema.NullOr(WorkerMembershipSchema)),
-}),
-Schema.Struct({ type: Schema.Literal("workerApplied"),
-  worker: WorkerMembershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("workerReplayed"),
-  worker: WorkerMembershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("ready"),
-  nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-  scopeId: Schema.String,
-  protocolVersion: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4294967295 })),
-}),
-Schema.Struct({ type: Schema.Literal("authorized"),
-  spec: ExecutionSpecSchema,
-  ownership: ExecutionOwnershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("applied"),
-  spec: ExecutionSpecSchema,
-  ownership: ExecutionOwnershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("replayed"),
-  spec: ExecutionSpecSchema,
-  ownership: ExecutionOwnershipSchema,
-}),
-Schema.Struct({ type: Schema.Literal("rejected"),
-  reason: Schema.String,
-}),
-Schema.Struct({ type: Schema.Literal("unavailable"),
-  reason: Schema.String,
-})
+  Schema.Struct({
+    type: Schema.Literal("workerMembership"),
+    nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    worker: Schema.optionalKey(Schema.NullOr(WorkerMembershipSchema)),
+  }),
+  Schema.Struct({ type: Schema.Literal("workerApplied"), worker: WorkerMembershipSchema }),
+  Schema.Struct({ type: Schema.Literal("workerReplayed"), worker: WorkerMembershipSchema }),
+  Schema.Struct({
+    type: Schema.Literal("ready"),
+    nodeId: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    scopeId: Schema.String,
+    protocolVersion: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4294967295 })),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("authorized"),
+    spec: ExecutionSpecSchema,
+    ownership: ExecutionOwnershipSchema,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("applied"),
+    spec: ExecutionSpecSchema,
+    ownership: ExecutionOwnershipSchema,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("replayed"),
+    spec: ExecutionSpecSchema,
+    ownership: ExecutionOwnershipSchema,
+  }),
+  Schema.Struct({ type: Schema.Literal("rejected"), reason: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("unavailable"), reason: Schema.String }),
 ]);
 
 export const SyncIpcResponseSchema = Schema.Struct({
@@ -224,13 +224,14 @@ export const RuntimeManifestSchema = Schema.Struct({
 });
 
 export const AuthorityFailureSchema = Schema.Union([
-Schema.Struct({ type: Schema.Literal("notLeader"),
-  leader: Schema.optionalKey(Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })))),
-}),
-Schema.Struct({ type: Schema.Literal("unavailable"),
-  reason: Schema.String,
-}),
-Schema.Struct({ type: Schema.Literal("rejected"),
-  reason: Schema.String,
-})
+  Schema.Struct({
+    type: Schema.Literal("notLeader"),
+    leader: Schema.optionalKey(
+      Schema.NullOr(
+        Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+      ),
+    ),
+  }),
+  Schema.Struct({ type: Schema.Literal("unavailable"), reason: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("rejected"), reason: Schema.String }),
 ]);

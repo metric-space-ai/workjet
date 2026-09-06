@@ -1,7 +1,6 @@
 import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
-  DesktopCtoxBridge,
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@t3tools/contracts";
@@ -16,20 +15,14 @@ import {
   RefreshCwIcon,
   SmartphoneIcon,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-} from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
+import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -661,28 +654,9 @@ export function BusinessOsSettingsView({
   );
 }
 
-function useBusinessOsDiscovery(bridge: DesktopCtoxBridge | undefined) {
-  const [discovery, setDiscovery] = useState<BusinessOsDiscovery>("loading");
-  const refresh = useCallback(async () => {
-    if (bridge === undefined) {
-      setDiscovery({ _tag: "failed", code: "network_error" });
-      return;
-    }
-    setDiscovery("loading");
-    try {
-      setDiscovery(await bridge.refresh());
-    } catch {
-      setDiscovery({ _tag: "failed", code: "network_error" });
-    }
-  }, [bridge]);
-  useEffect(() => void refresh(), [refresh]);
-  return { discovery, refresh };
-}
-
 export function BusinessOsSettings() {
   const settings = usePrimarySettings();
-  const bridge = window.desktopBridge?.ctox;
-  const { discovery, refresh } = useBusinessOsDiscovery(bridge);
+  const { bridge, discovery, refresh, refreshing } = useCtoxMode();
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
   const activeInstanceId = useSyncExternalStore(
     crossModeSelectionMemory.subscribeToActiveCtoxInstance,
@@ -701,14 +675,14 @@ export function BusinessOsSettings() {
     activeInstanceId !== null && bridge?.requestDeviceControl !== undefined;
 
   useEffect(() => {
-    if (discovery === "loading" || discovery._tag !== "ready") return;
+    if (refreshing || discovery === "loading" || discovery._tag !== "ready") return;
     if (
       activeInstanceId !== null &&
       !instances.some((instance) => instance.id === activeInstanceId)
     ) {
       crossModeSelectionMemory.forget("business-os");
     }
-  }, [activeInstanceId, discovery, instances]);
+  }, [activeInstanceId, discovery, instances, refreshing]);
 
   const selectInstance = (instanceId: string) => {
     if (!instances.some((instance) => instance.id === instanceId)) return;
@@ -752,7 +726,7 @@ export function BusinessOsSettings() {
         mode: "business-os",
         ctoxInstanceId: result.instance.id,
       });
-      await refresh();
+      refresh();
       return null;
     } catch {
       return "Business OS konnte nicht hinzugefügt werden. Bitte Verbindung und Einladung prüfen.";
@@ -858,7 +832,7 @@ export function BusinessOsSettings() {
       instances={instances}
       activeInstanceId={activeInstanceId}
       loading={discovery === "loading"}
-      refreshDisabled={bridge === undefined}
+      refreshDisabled={bridge === undefined || refreshing}
       addDisabledReason={bridge === undefined ? "Nur in Workjet Desktop verfügbar." : null}
       computerCount={settings.workjet.computers.length}
       devices={devices}

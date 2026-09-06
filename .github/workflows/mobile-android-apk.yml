@@ -2,6 +2,14 @@ name: Mobile Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: Installed Android app identity to build (does not publish to a store)
+        type: choice
+        default: preview
+        options:
+          - preview
+          - production
   pull_request:
     paths:
       - ".github/workflows/mobile-android-apk.yml"
@@ -14,16 +22,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: mobile-android-apk-${{ github.ref }}
+  group: mobile-android-apk-${{ github.ref }}-${{ inputs.variant || 'preview' }}
   cancel-in-progress: true
 
 jobs:
   apk:
-    name: Standalone Android preview APK
+    name: Standalone Android ${{ inputs.variant || 'preview' }} APK
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      APP_VARIANT: preview
+      APP_VARIANT: ${{ inputs.variant || 'preview' }}
       EXPO_NO_DOTENV: "1"
       CI: "1"
       NODE_OPTIONS: --max-old-space-size=4096
@@ -49,27 +57,32 @@ jobs:
       - name: Generate native Android project
         working-directory: apps/mobile
         run: vp exec expo prebuild --platform android --clean --no-install
-      - name: Build standalone ARM64 preview
+      - name: Build standalone ARM64 app
         working-directory: apps/mobile/android
         run: ./gradlew --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a assembleRelease
-      - name: Verify preview identity and signature
+      - name: Verify selected identity and signature
         env:
           APK_PATH: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK_PATH" | tee "$RUNNER_TEMP/android-package.txt"
-          grep -q "package: name='com.t3tools.t3code.preview'" "$RUNNER_TEMP/android-package.txt"
+          case "$APP_VARIANT" in
+            preview) expected_package=com.t3tools.t3code.preview ;;
+            production) expected_package=com.t3tools.t3code ;;
+            *) echo "Unsupported Android app variant" >&2; exit 1 ;;
+          esac
+          grep -Fq "package: name='$expected_package'" "$RUNNER_TEMP/android-package.txt"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK_PATH" > "$RUNNER_TEMP/android-signature.txt"
           node scripts/verify-mobile-business-os-apk.mjs "$APK_PATH"
           mkdir -p "$RUNNER_TEMP/workjet-apk"
-          cp "$APK_PATH" "$RUNNER_TEMP/workjet-apk/Workjet-preview-arm64.apk"
+          cp "$APK_PATH" "$RUNNER_TEMP/workjet-apk/Workjet-$APP_VARIANT-arm64.apk"
           cp "$RUNNER_TEMP/android-package.txt" "$RUNNER_TEMP/android-signature.txt" "$RUNNER_TEMP/workjet-apk/"
           git rev-parse HEAD > "$RUNNER_TEMP/workjet-apk/SOURCE_COMMIT"
           cd "$RUNNER_TEMP/workjet-apk"
-          sha256sum Workjet-preview-arm64.apk > SHA256SUMS
+          sha256sum "Workjet-$APP_VARIANT-arm64.apk" > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: workjet-android-preview-${{ github.sha }}
+          name: workjet-android-${{ env.APP_VARIANT }}-${{ github.sha }}
           path: ${{ runner.temp }}/workjet-apk
           if-no-files-found: error
           retention-days: 14

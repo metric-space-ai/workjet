@@ -28,14 +28,15 @@ picks its artifact from `process.platform` / `process.arch` without ambiguity.
 | `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `ubuntu-24.04`     |
 | `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm` |
 | `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `windows-2025`     |
-| `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-11-arm`   |
+| `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-2025` (cross-build) |
 
-Every triple builds on a runner of its own architecture, except
-`x86_64-apple-darwin`, which builds on the arm64 macOS runner — that is already
-this repository's practice for the resource monitor in `release.yml`. The two
-ARM64 non-Apple triples use GitHub-hosted ARM runners. All six targets use
-GitHub-hosted runners, so the fork does not depend on a separate runner fleet;
-a hand-rolled MSVC/GCC cross-linking setup would be more fragile than a native run.
+Most targets build on a runner of their own architecture. macOS x64 is built
+on the arm64 macOS runner, as in the resource-monitor release. Windows ARM64
+uses the ARM64 tools on the x64 Windows runner: `btls-sys` 0.5.6 enables its
+upstream portable crypto configuration for this cross-build, while its native
+Windows ARM path returns before that configuration and fails with MSVC LNK1181
+on incompatible assembly objects. This uses the dependency's existing build
+path without patching TLS code. All six targets use GitHub-hosted runners.
 
 A release is all-or-nothing: `collect` refuses to build a manifest that is
 missing any of the six targets, so a partially successful matrix fails the run

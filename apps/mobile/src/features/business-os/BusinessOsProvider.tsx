@@ -219,12 +219,12 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   );
 
   const importLink = useCallback(
-    (raw: string) => commitPrepared(prepareBusinessOsPairing(raw), true),
+    async (raw: string) => commitPrepared(prepareBusinessOsPairing(raw), true),
     [commitPrepared],
   );
 
   const importInvite = useCallback(
-    (invite: ValidatedBusinessOsInvite, options: { readonly confirm?: boolean } = {}) =>
+    async (invite: ValidatedBusinessOsInvite, options: { readonly confirm?: boolean } = {}) =>
       commitPrepared(prepareValidatedBusinessOsPairing(invite), options.confirm !== false),
     [commitPrepared],
   );
@@ -261,16 +261,14 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   );
 
   useEffect(() => {
+    const showPairingFailure = () => {
+      Alert.alert("Pairing fehlgeschlagen", "Der QR-Code oder Link ist ungültig oder abgelaufen.");
+    };
     const handle = (url: string | null) => {
       if (!url || !isBusinessOsPairLink(url)) return;
-      void importLink(url).catch(() => {
-        Alert.alert(
-          "Pairing fehlgeschlagen",
-          "Der QR-Code oder Link ist ungültig oder abgelaufen.",
-        );
-      });
+      void importLink(url).catch(showPairingFailure);
     };
-    void Linking.getInitialURL().then(handle);
+    void Linking.getInitialURL().then(handle).catch(showPairingFailure);
     const subscription = Linking.addEventListener("url", ({ url }) => handle(url));
     return () => subscription.remove();
   }, [importLink]);

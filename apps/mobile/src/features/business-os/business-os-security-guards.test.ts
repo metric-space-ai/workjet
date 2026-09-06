@@ -6,6 +6,14 @@ const MOBILE_ROOT = NodePath.resolve(import.meta.dirname, "../../..");
 const read = (path: string) => NodeFS.readFileSync(NodePath.resolve(MOBILE_ROOT, path), "utf8");
 
 describe("Business OS native security guards", () => {
+  it("turns pairing validation failures into handled promise rejections", () => {
+    const provider = read("src/features/business-os/BusinessOsProvider.tsx");
+    expect(provider).toMatch(/const importLink = useCallback\(\s*async \(raw: string\)/u);
+    expect(provider).toMatch(/const importInvite = useCallback\(\s*async \(invite:/u);
+    expect(provider).toContain("void importLink(url).catch(showPairingFailure)");
+    expect(provider).toContain("Linking.getInitialURL().then(handle).catch(showPairingFailure)");
+  });
+
   it("has no manual signaling, room or password field in its settings surface", () => {
     const settings = read("src/features/business-os/components/BusinessOsSettingsPanel.tsx");
     expect(settings).not.toMatch(/TextInput/u);

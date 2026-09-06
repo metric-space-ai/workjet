@@ -14,6 +14,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 import {
   BusinessOsSettingsView,
+  importBusinessOsSettingsInvite,
   manualConnectionCredentialText,
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
@@ -39,6 +40,36 @@ function instance(
 }
 
 describe("Business OS settings scope", () => {
+  it("activates an imported backend through the shared selector before refreshing discovery", async () => {
+    const backend = instance("paired:backend-alpha", "Lab");
+    const events: string[] = [];
+    const select = vi.fn((selected: CtoxManagedInstance) => events.push(`selected:${selected.id}`));
+    const refresh = () => events.push("refresh");
+    const bridge = {
+      importInvite: vi.fn(async () => ({ _tag: "completed" as const, instance: backend })),
+    };
+    expect(
+      await importBusinessOsSettingsInvite(bridge, "fixture-invite", select, refresh),
+    ).toBeNull();
+    expect(select).toHaveBeenCalledWith(backend);
+    expect(events).toEqual(["selected:paired:backend-alpha", "refresh"]);
+  });
+
+  it("preserves the selected backend when an invitation cannot be imported", async () => {
+    const select = vi.fn();
+    const refresh = vi.fn();
+    const bridge = {
+      importInvite: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    };
+    expect(
+      await importBusinessOsSettingsInvite(bridge, "fixture-invite", select, refresh),
+    ).toContain("nicht hinzugefügt");
+    expect(select).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it("uses only an explicitly selected Business OS instance", () => {
     expect(
       resolveActiveBusinessOsInstanceId({

@@ -8,7 +8,7 @@ import type {
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { environmentCatalog } from "./connection/catalog";
-import { crossModeSelectionMemory } from "./crossMode/crossModeSelectionMemory";
+import { useActiveWorkjetScope } from "./activeWorkjetScope";
 import { usePrimarySettings } from "./hooks/useSettings";
 import { primaryEnvironmentIdAtom } from "./state/primaryEnvironment";
 
@@ -130,10 +130,6 @@ export function resolveBusinessOsCodeScopeEnvironmentIds({
   return environmentIds;
 }
 
-function readActivePresentationInstanceId(): string | null {
-  return crossModeSelectionMemory.readActiveCtoxInstanceId();
-}
-
 /**
  * Resolves the renderer presentation id through Desktop Main, then includes
  * Relay targets carrying the exact server-authoritative instance id. Primary is
@@ -146,11 +142,7 @@ export function BusinessOsCodeScopeSynchronizer({
 }: {
   readonly bridge?: DesktopCtoxBridge;
 }) {
-  const presentationInstanceId = useSyncExternalStore(
-    crossModeSelectionMemory.subscribeToActiveCtoxInstance,
-    readActivePresentationInstanceId,
-    readActivePresentationInstanceId,
-  );
+  const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   const computers = usePrimarySettings((settings) => settings.workjet.computers);

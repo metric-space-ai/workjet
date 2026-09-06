@@ -20,9 +20,13 @@ function readProductionTree(relativePath: string): string {
 }
 
 describe("Workjet Mobile product identity", () => {
-  it("keeps one visible app name while preserving update identities", () => {
+  it("distinguishes the preview while preserving production and update identities", () => {
     const config = read("../../app.config.ts");
-    expect(config.match(/appName: "Workjet"/gu)).toHaveLength(3);
+    expect([...config.matchAll(/appName: "([^"]+)"/gu)].map((match) => match[1])).toEqual([
+      "Workjet",
+      "Workjet Preview",
+      "Workjet",
+    ]);
     expect(config).toContain('iosBundleIdentifier: "com.t3tools.t3code"');
     expect(config).toContain('androidPackage: "com.t3tools.t3code"');
     expect(config).toContain('slug: "t3-code"');
@@ -64,7 +68,11 @@ describe("Workjet Mobile product identity", () => {
     const mark = read("../components/CtoxMark.tsx");
     const manifest = read("../../package.json");
 
-    expect(config.match(/appName: "Workjet"/gu)).toHaveLength(3);
+    expect([...config.matchAll(/appName: "([^"]+)"/gu)].map((match) => match[1])).toEqual([
+      "Workjet",
+      "Workjet Preview",
+      "Workjet",
+    ]);
     expect(config).not.toMatch(/appName: "(?:CTOX|T3 Code|T3Code|Alpha)"/u);
     expect(config).toContain("Allow Workjet to connect to CTOX backends");
     expect(config).toContain("updates: { enabled: false }");

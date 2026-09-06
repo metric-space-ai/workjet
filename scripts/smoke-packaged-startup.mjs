@@ -118,6 +118,7 @@ async function main() {
   child.stdout.on("data", capture);
   child.stderr.on("data", capture);
   const exited = new Promise((resolve) => child.once("exit", resolve));
+  const closed = new Promise((resolve) => child.once("close", () => resolve(true)));
   const running = () => !spawnFailed && child.exitCode === null && child.signalCode === null;
   const started = Date.now();
   let ready = false;
@@ -150,15 +151,24 @@ async function main() {
         process.kill(-child.pid, "SIGKILL");
       } catch {}
     }
+    // Check stream closure before destroying handles: inherited pipes must
+    // not hide a surviving backend after the Electron parent has stopped.
+    const parentProcessClosed = await Promise.race([
+      closed,
+      NodeTimersPromises.setTimeout(3000, false),
+    ]);
     child.stdout.destroy();
     child.stderr.destroy();
     child.unref();
-    ready = ready && !gatewayFailed();
+    ready = ready && !gatewayFailed() && parentProcessClosed;
     const report = {
       ready,
       elapsedMs: Date.now() - started,
       errorTags: [...errorTags].slice(0, 20),
       childPid: child.pid,
+      backendPort: backend.port,
+      debugPort: debug.port,
+      parentProcessClosed,
     };
     await NodeFSP.mkdir(NodePath.dirname(reportPath), { recursive: true });
     await NodeFSP.writeFile(reportPath, JSON.stringify(report, null, 2) + "\n");

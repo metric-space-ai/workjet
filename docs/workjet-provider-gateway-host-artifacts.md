@@ -21,13 +21,13 @@ consume the gateway the same way Workjet consumes the shell.
 Six targets, one artifact each. Every `(os, arch)` pair is unique, so a consumer
 picks its artifact from `process.platform` / `process.arch` without ambiguity.
 
-| Rust target triple          | `process.platform` | `process.arch` | Build runner       |
-| --------------------------- | ------------------ | -------------- | ------------------ |
-| `aarch64-apple-darwin`      | `darwin`           | `arm64`        | `macos-latest`     |
-| `x86_64-apple-darwin`       | `darwin`           | `x64`          | `macos-latest`     |
-| `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `ubuntu-24.04`     |
-| `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm` |
-| `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `windows-2025`     |
+| Rust target triple          | `process.platform` | `process.arch` | Build runner                 |
+| --------------------------- | ------------------ | -------------- | ---------------------------- |
+| `aarch64-apple-darwin`      | `darwin`           | `arm64`        | `macos-latest`               |
+| `x86_64-apple-darwin`       | `darwin`           | `x64`          | `macos-latest`               |
+| `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `ubuntu-24.04`               |
+| `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm`           |
+| `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `windows-2025`               |
 | `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-2025` (cross-build) |
 
 Most targets build on a runner of their own architecture. macOS x64 is built

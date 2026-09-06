@@ -407,12 +407,28 @@ export function BusinessOsMobileRoot(props: {
     if (!activeAppId || !selected || readyShellIdentity !== selected.storageIdentity) return;
     // Wait for the catalog handshake. A resume command cannot open an app
     // that the shell has never received, including a selection made during boot.
+    if (route !== "app") {
+      send({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.suspend", appId: activeAppId });
+      return;
+    }
+    if (props.active && shellState?.appId !== activeAppId) {
+      send({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.open", appId: activeAppId });
+      return;
+    }
     send({
       protocol: BUSINESS_OS_SHELL_PROTOCOL,
-      type: props.active && route === "app" ? "app.open" : "app.suspend",
+      type: props.active ? "app.resume" : "app.suspend",
       appId: activeAppId,
     });
-  }, [activeAppId, props.active, route, readyShellIdentity, selected?.storageIdentity, send]);
+  }, [
+    activeAppId,
+    props.active,
+    route,
+    readyShellIdentity,
+    selected?.storageIdentity,
+    shellState?.appId,
+    send,
+  ]);
 
   const onShellMessage = useCallback(
     (raw: string) => {

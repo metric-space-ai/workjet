@@ -2806,6 +2806,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   }
   if (!options.signed) {
     buildEnv.CSC_IDENTITY_AUTO_DISCOVERY = "false";
+    if (options.platform === "mac") {
+      // PR builds otherwise skip even the explicit ad-hoc identity above.
+      // This path never imports a distribution certificate or notarization key.
+      buildEnv.CSC_FOR_PULL_REQUEST = "true";
+    }
     delete buildEnv.CSC_LINK;
     delete buildEnv.CSC_KEY_PASSWORD;
     delete buildEnv.APPLE_API_KEY;

@@ -68,6 +68,9 @@ const PackageManifestFromJsonString = Schema.fromJsonString(
   Schema.Record(Schema.String, Schema.Unknown),
 );
 const decodePackageManifest = Schema.decodeUnknownEffect(PackageManifestFromJsonString);
+const isReleaseNoticePlatformMetadataConflictError = Schema.is(
+  ReleaseNoticePlatformMetadataConflictError,
+);
 
 function normalizeRepository(manifest: Record<string, unknown>): string | undefined {
   const repository = manifest["repository"];
@@ -164,7 +167,7 @@ export const buildInstalledPackageIndex = Effect.fn("buildInstalledPackageIndex"
   return yield* Effect.try({
     try: () => applyReleasePlatformMetadata(index),
     catch: (cause) =>
-      cause instanceof ReleaseNoticePlatformMetadataConflictError
+      isReleaseNoticePlatformMetadataConflictError(cause)
         ? cause
         : new ReleaseNoticeClosureError({ cause }),
   });

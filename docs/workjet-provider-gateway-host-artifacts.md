@@ -121,8 +121,11 @@ The pin has two states:
 - `"status": "unreleased"` — a first-class state recording that no gateway
   release exists yet, with a human-readable `unreleasedReason`. It is **not** a
   licence to download something unverified; it makes the resolver report an
-  unmet pin. The pin checked in today is in this state, because no
-  `provider-gateway-host-v*` release has been published.
+  unmet pin.
+
+The checked-in pin selects `provider-gateway-host-v0.1.0`, published from
+`main` commit `26f0a9947a10debe349d0c609df73147aa154221`. Its manifest and all six
+target digests come from the verified release workflow, not a dry-run build.
 
 CTOX pins the same way: it consumes the manifest and per-target digests from a
 release tag and verifies the bytes it downloads. Because the manifest is

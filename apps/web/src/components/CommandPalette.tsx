@@ -1450,42 +1450,38 @@ function OpenCommandPaletteDialog(props: {
           localEnvironmentId: primaryEnvironmentId,
           path: cwd,
         });
-        const confirmedRegistry = readWorkjetProjectRegistry(presentationInstanceId);
-        let confirmedProject = confirmedRegistry.projects.find(
-          (project) => project.id === projectId,
-        );
-        if (confirmedProject === undefined) {
-          if (localWorkingCopy === null) {
-            toastManager.add({
-              type: "info",
-              title: "No local computer registered",
-              description: "The project will be added without a local working copy.",
-            });
-          }
-          const outcome = await runWorkjetProjectCreation({
-            presentationInstanceId,
-            request: {
-              action: "project.create",
-              commandId: newCommandId(),
-              projectId,
-              title: inferProjectTitleFromPath(cwd),
-              ...(localWorkingCopy ? { workingCopy: localWorkingCopy } : {}),
-              createdAt: new Date().toISOString(),
-            },
+        if (localWorkingCopy === null) {
+          toastManager.add({
+            type: "info",
+            title: "No local computer registered",
+            description: "The project will be added without a local working copy.",
           });
-          if (outcome._tag === "failed") {
-            const description =
-              outcome.code === "not_active"
-                ? "The selected CTOX instance is no longer connected."
-                : "CTOX did not confirm the project. You can retry without reopening this dialog.";
-            setLogicalProjectCreationError(description);
-            toastManager.add(
-              stackedThreadToast({ type: "error", title: "Failed to add project", description }),
-            );
-            return;
-          }
-          confirmedProject = outcome.project;
         }
+        // A cached logical project does not confirm this computer's folder.
+        // The shared creation path verifies the requested working copy too.
+        const outcome = await runWorkjetProjectCreation({
+          presentationInstanceId,
+          request: {
+            action: "project.create",
+            commandId: newCommandId(),
+            projectId,
+            title: inferProjectTitleFromPath(cwd),
+            ...(localWorkingCopy ? { workingCopy: localWorkingCopy } : {}),
+            createdAt: new Date().toISOString(),
+          },
+        });
+        if (outcome._tag === "failed") {
+          const description =
+            outcome.code === "not_active"
+              ? "The selected CTOX instance is no longer connected."
+              : "CTOX did not confirm the project. You can retry without reopening this dialog.";
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+          );
+          return;
+        }
+        const confirmedProject = outcome.project;
         if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
           const description = "The active instance changed while the project was being created.";
           setLogicalProjectCreationError(description);

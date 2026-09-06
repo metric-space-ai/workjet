@@ -36,8 +36,12 @@ describe("CTOX-native project story", () => {
     expect(creation).toContain("path: cwd");
     expect(creation).toContain("workingCopy: localWorkingCopy");
     expect(creation).toContain('title: "No local computer registered"');
-    expect(creation).toContain("confirmedRegistry.projects.find");
-    expect(creation).toContain("if (confirmedProject === undefined)");
+    expect(creation).toContain("const confirmedProject = outcome.project");
+    expect(creation).toContain('if (outcome._tag === "failed")');
+    expect(creation.indexOf('if (outcome._tag === "failed")')).toBeLessThan(
+      creation.indexOf("const confirmedProject = outcome.project"),
+    );
+    expect(creation).not.toContain("confirmedRegistry.projects.find");
     expect(creation).toContain("recordWorkjetProjectProjection");
     expect(creation).toContain("readWorkjetProjectRegistry(presentationInstanceId).projects.some");
     expect(creation.indexOf("setOpen(false)")).toBeGreaterThan(

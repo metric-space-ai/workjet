@@ -60,7 +60,7 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 - License: `MIT`
 - Redistributed in the desktop artifact: yes
 - Retained license texts: `LICENSE`
-- Upstream: First-party T3 Code component; covered by the repository-root MIT license.
+- Upstream: First-party Workjet component; covered by the repository-root MIT license.
 
 ### `native/web-stack`
 
@@ -82,7 +82,7 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 - License: See the CTOX release; AGPL-3.0-only unless the dual option applies
 - The verified shell archive is fetched at build time by scripts/prepare-ctox-business-os-shell.ts and IS copied into the packaged artifact as the 'ctox-business-os-shell' extra resource. Its licensing follows the CTOX release it was built from; see docs/workjet-electron-guest-shell-license-review.md.
 
-## 4. Third-party npm packages (536)
+## 4. Third-party npm packages (485)
 
 Production dependency closure of the release importers
 (`apps/desktop`, `apps/server`, `apps/web`), following workspace
@@ -93,9 +93,8 @@ links transitively. Development dependencies are excluded. Workspace importers r
 
 - `pako@1.0.11` — nodeca/pako
 
-### (MIT OR CC0-1.0) (2)
+### (MIT OR CC0-1.0) (1)
 
-- `type-fest@0.13.1` — sindresorhus/type-fest
 - `type-fest@2.19.0` — sindresorhus/type-fest
 
 ### (MIT OR GPL-3.0-or-later) (1)
@@ -117,29 +116,25 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `playwright-core@1.60.0` — https://github.com/microsoft/playwright
 - `sumchecker@3.0.1` — https://github.com/malept/sumchecker
 
-### BSD-2-Clause (6)
+### BSD-2-Clause (5)
 
+- `@electron-internal/extract-zip@1.0.5` — https://github.com/electron/extract-zip
 - `entities@6.0.1` — https://github.com/fb55/entities
-- `extract-zip@2.0.1` — maxogden/extract-zip
 - `glob-to-regexp@0.4.1` — https://github.com/fitzgen/glob-to-regexp
-- `http-cache-semantics@4.2.0` — https://github.com/kornelski/http-cache-semantics
 - `json-schema-typed@7.0.3` — https://github.com/typeslick/json-schema-typed
 - `json-schema-typed@8.0.2` — https://github.com/RemyRylan/json-schema-typed
 
-### BSD-3-Clause (6)
+### BSD-3-Clause (3)
 
 - `diff@9.0.0` — https://github.com/kpdecker/jsdiff
-- `fast-uri@3.1.2` — https://github.com/fastify/fast-uri
-- `global-agent@3.0.0` — https://github.com/gajus/global-agent
+- `fast-uri@3.1.6` — https://github.com/fastify/fast-uri
 - `qs@6.15.3` — https://github.com/ljharb/qs
-- `roarr@2.15.4` — git@github.com:gajus/roarr
-- `sprintf-js@1.1.3` — https://github.com/alexei/sprintf.js
 
 ### BlueOak-1.0.0 (1)
 
 - `sax@1.6.0` — ssh://git@github.com/isaacs/sax-js
 
-### ISC (19)
+### ISC (17)
 
 - `@iarna/toml@2.2.5` — https://github.com/iarna/iarna-toml
 - `@ungap/structured-clone@1.3.1` — https://github.com/ungap/structured-clone
@@ -147,11 +142,9 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `inherits@2.0.4` — https://github.com/isaacs/inherits
 - `ini@7.0.0` — https://github.com/npm/ini
 - `isexe@2.0.0` — https://github.com/isaacs/isexe
-- `json-stringify-safe@5.0.1` — https://github.com/isaacs/json-stringify-safe
 - `lucide-react@0.564.0` — https://github.com/lucide-icons/lucide
 - `once@1.4.0` — https://github.com/isaacs/once
 - `picocolors@1.1.1` — alexeyraspopov/picocolors
-- `semver@6.3.1` — https://github.com/npm/node-semver
 - `semver@7.7.4` — https://github.com/npm/node-semver
 - `semver@7.8.5` — https://github.com/npm/node-semver
 - `setprototypeof@1.2.0` — https://github.com/wesleytodd/setprototypeof
@@ -161,7 +154,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `yaml@2.9.0` — github:eemeli/yaml
 - `zod-to-json-schema@3.25.2` — https://github.com/StefanTerdell/zod-to-json-schema
 
-### MIT (484)
+### MIT (440)
 
 - `@anthropic-ai/sdk@0.93.0` — github:anthropics/anthropic-sdk-typescript
 - `@babel/runtime@7.29.7` — https://github.com/babel/babel
@@ -172,8 +165,8 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@clerk/electron-passkeys@0.0.3` — https://github.com/clerk/javascript
 - `@clerk/electron-passkeys-darwin-arm64@0.0.3` — https://github.com/clerk/javascript
 - `@clerk/electron-passkeys-darwin-x64@0.0.3` — https://github.com/clerk/javascript
-- `@clerk/electron-passkeys-win32-arm64-msvc@0.0.3` (license from platform sibling)
-- `@clerk/electron-passkeys-win32-x64-msvc@0.0.3` (license from platform sibling)
+- `@clerk/electron-passkeys-win32-arm64-msvc@0.0.3` — https://github.com/clerk/javascript
+- `@clerk/electron-passkeys-win32-x64-msvc@0.0.3` — https://github.com/clerk/javascript
 - `@clerk/react@6.12.10` — https://github.com/clerk/javascript
 - `@clerk/shared@4.25.10` — https://github.com/clerk/javascript
 - `@dnd-kit/accessibility@3.1.1` — https://github.com/clauderic/dnd-kit
@@ -186,15 +179,15 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@effect/platform-node@4.0.0-beta.103` — https://github.com/Effect-TS/effect
 - `@effect/platform-node-shared@4.0.0-beta.103` — https://github.com/Effect-TS/effect
 - `@effect/sql-sqlite-bun@4.0.0-beta.103` — https://github.com/Effect-TS/effect
-- `@electron/get@2.0.3` — https://github.com/electron/get
+- `@electron/get@5.1.0` — https://github.com/electron/get
 - `@ff-labs/fff-bin-darwin-arm64@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-darwin-x64@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-linux-arm64-gnu@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-linux-arm64-musl@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-linux-x64-gnu@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-linux-x64-musl@0.9.4` — https://github.com/dmtrKovalenko/fff
-- `@ff-labs/fff-bin-win32-arm64@0.9.4` (license from platform sibling)
-- `@ff-labs/fff-bin-win32-x64@0.9.4` (license from platform sibling)
+- `@ff-labs/fff-bin-win32-arm64@0.9.4` — https://github.com/dmtrKovalenko/fff
+- `@ff-labs/fff-bin-win32-x64@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-node@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@floating-ui/core@1.7.5` — https://github.com/floating-ui/floating-ui
 - `@floating-ui/dom@1.7.6` — https://github.com/floating-ui/floating-ui
@@ -202,7 +195,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@floating-ui/react-dom@2.1.8` — https://github.com/floating-ui/floating-ui
 - `@floating-ui/utils@0.2.11` — https://github.com/floating-ui/floating-ui
 - `@formkit/auto-animate@0.9.0` — https://github.com/formkit/auto-animate
-- `@hono/node-server@1.19.14` — https://github.com/honojs/node-server
+- `@hono/node-server@1.19.15` — https://github.com/honojs/node-server
 - `@ioredis/commands@1.10.0` — https://github.com/ioredis/commands
 - `@legendapp/list@3.3.5` — github:LegendApp/legend-list
 - `@lexical/clipboard@0.41.0` — https://github.com/facebook/lexical
@@ -228,12 +221,12 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@lexical/utils@0.41.0` — https://github.com/facebook/lexical
 - `@lexical/yjs@0.41.0` — https://github.com/facebook/lexical
 - `@modelcontextprotocol/sdk@1.29.0` — https://github.com/modelcontextprotocol/typescript-sdk
-- `@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-linux-arm@3.0.4` (license from platform sibling)
-- `@msgpackr-extract/msgpackr-extract-linux-arm64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-linux-x64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4` (license from platform sibling)
+- `@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-linux-arm@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-linux-arm64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-linux-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
 - `@noble/curves@1.9.1` — https://github.com/paulmillr/noble-curves
 - `@noble/hashes@1.8.0` — https://github.com/paulmillr/noble-hashes
 - `@opencode-ai/sdk@1.15.13`
@@ -250,10 +243,8 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@shikijs/types@4.2.0` — https://github.com/shikijs/shiki
 - `@shikijs/types@4.3.0` — https://github.com/shikijs/shiki
 - `@shikijs/vscode-textmate@10.0.2` — https://github.com/shikijs/vscode-textmate
-- `@sindresorhus/is@4.6.0` — sindresorhus/is
 - `@standard-schema/spec@1.1.0` — https://github.com/standard-schema/standard-schema
 - `@stripe/stripe-js@5.6.0` — github:stripe/stripe-js
-- `@szmarczak/http-timer@4.0.6` — https://github.com/szmarczak/http-timer
 - `@tanstack/devtools-event-client@0.4.3` — https://github.com/TanStack/devtools
 - `@tanstack/history@1.162.0` — https://github.com/TanStack/router
 - `@tanstack/pacer@0.18.0` — https://github.com/TanStack/pacer
@@ -265,33 +256,29 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@tanstack/router-core@1.171.8` — https://github.com/TanStack/router
 - `@tanstack/store@0.8.1` — https://github.com/TanStack/store
 - `@tanstack/store@0.9.3` — https://github.com/TanStack/store
-- `@types/cacheable-request@6.0.3` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/debug@4.1.13` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/estree@1.0.9` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/estree-jsx@1.0.5` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/hast@3.0.4` — https://github.com/DefinitelyTyped/DefinitelyTyped
-- `@types/http-cache-semantics@4.2.0` — https://github.com/DefinitelyTyped/DefinitelyTyped
-- `@types/keyv@3.1.4` — https://github.com/DefinitelyTyped/DefinitelyTyped
+- `@types/hast@3.0.5` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/mdast@4.0.4` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/ms@2.1.0` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/node@24.12.4` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/react@19.2.16` — https://github.com/DefinitelyTyped/DefinitelyTyped
-- `@types/responselike@1.0.3` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/unist@2.0.11` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/unist@3.0.3` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/ws@8.18.1` — https://github.com/DefinitelyTyped/DefinitelyTyped
-- `@types/yauzl@2.10.3` — https://github.com/DefinitelyTyped/DefinitelyTyped
-- `@yuuang/ffi-rs-android-arm64@1.3.2` (license from platform sibling)
+- `@yuuang/ffi-rs-android-arm64@1.3.2`
 - `@yuuang/ffi-rs-darwin-arm64@1.3.2`
 - `@yuuang/ffi-rs-darwin-x64@1.3.2`
-- `@yuuang/ffi-rs-linux-arm-gnueabihf@1.3.2` (license from platform sibling)
+- `@yuuang/ffi-rs-linux-arm-gnueabihf@1.3.2`
 - `@yuuang/ffi-rs-linux-arm64-gnu@1.3.2`
 - `@yuuang/ffi-rs-linux-arm64-musl@1.3.2`
 - `@yuuang/ffi-rs-linux-x64-gnu@1.3.2`
 - `@yuuang/ffi-rs-linux-x64-musl@1.3.2`
-- `@yuuang/ffi-rs-win32-arm64-msvc@1.3.2` (license from platform sibling)
-- `@yuuang/ffi-rs-win32-ia32-msvc@1.3.2` (license from platform sibling)
-- `@yuuang/ffi-rs-win32-x64-msvc@1.3.2` (license from platform sibling)
+- `@yuuang/ffi-rs-win32-arm64-msvc@1.3.2`
+- `@yuuang/ffi-rs-win32-ia32-msvc@1.3.2`
+- `@yuuang/ffi-rs-win32-x64-msvc@1.3.2`
 - `@zxcvbn-ts/core@3.0.4` — https://github.com/zxcvbn-ts/zxcvbn
 - `@zxcvbn-ts/language-common@3.0.4` — https://github.com/zxcvbn-ts/zxcvbn
 - `accepts@2.0.0` — jshttp/accepts
@@ -305,14 +292,10 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `bail@2.0.2` — wooorm/bail
 - `bippy@0.5.41` — https://github.com/aidenybai/bippy
 - `body-parser@2.3.0` — expressjs/body-parser
-- `boolean@3.2.0` — https://github.com/thenativeweb/boolean
 - `browser-tabs-lock@1.3.0` — https://github.com/supertokens/browser-tabs-lock
-- `buffer-crc32@0.2.13` — https://github.com/brianloveswords/buffer-crc32
 - `bufferutil@4.1.0` — https://github.com/websockets/bufferutil
-- `builder-util-runtime@9.5.1` — https://github.com/electron-userland/electron-builder
+- `builder-util-runtime@9.7.0` — https://github.com/electron-userland/electron-builder
 - `bytes@3.1.2` — visionmedia/bytes.js
-- `cacheable-lookup@5.0.4` — https://github.com/szmarczak/cacheable-lookup
-- `cacheable-request@7.0.4` — lukechilds/cacheable-request
 - `call-bind-apply-helpers@1.0.2` — https://github.com/ljharb/call-bind-apply-helpers
 - `call-bound@1.0.4` — https://github.com/ljharb/call-bound
 - `ccount@2.0.1` — wooorm/ccount
@@ -323,7 +306,6 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `character-reference-invalid@2.0.1` — wooorm/character-reference-invalid
 - `cli-cursor@5.0.0` — sindresorhus/cli-cursor
 - `cli-spinners@3.4.0` — sindresorhus/cli-spinners
-- `clone-response@1.0.3` — https://github.com/sindresorhus/clone-response
 - `clsx@2.1.1` — lukeed/clsx
 - `comma-separated-tokens@2.0.3` — wooorm/comma-separated-tokens
 - `commander@14.0.3` — https://github.com/tj/commander.js
@@ -344,30 +326,23 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `debounce-fn@4.0.0` — sindresorhus/debounce-fn
 - `debug@4.4.3` — https://github.com/debug-js/debug
 - `decode-named-character-reference@1.3.0` — wooorm/decode-named-character-reference
-- `decompress-response@6.0.0` — sindresorhus/decompress-response
-- `defer-to-connect@2.0.1` — https://github.com/szmarczak/defer-to-connect
-- `define-data-property@1.1.4` — https://github.com/ljharb/define-data-property
-- `define-properties@1.2.1` — https://github.com/ljharb/define-properties
 - `depd@2.0.0` — dougwilson/nodejs-depd
 - `dequal@2.0.3` — lukeed/dequal
-- `detect-node@2.1.0` — https://github.com/iliakan/detect-node
 - `devlop@1.1.0` — wooorm/devlop
 - `dot-prop@6.0.1` — sindresorhus/dot-prop
 - `dunder-proto@1.0.1` — https://github.com/es-shims/dunder-proto
 - `ee-first@1.1.1` — jonathanong/ee-first
 - `effect@4.0.0-beta.103` — https://github.com/Effect-TS/effect
-- `electron@41.5.0` — https://github.com/electron/electron
+- `electron@41.10.3` — https://github.com/electron/electron
 - `electron-store@8.2.0` — sindresorhus/electron-store
 - `electron-updater@6.8.3` — https://github.com/electron-userland/electron-builder
 - `encodeurl@2.0.0` — pillarjs/encodeurl
-- `end-of-stream@1.4.5` — https://github.com/mafintosh/end-of-stream
 - `env-paths@2.2.1` — sindresorhus/env-paths
+- `env-paths@3.0.0` — sindresorhus/env-paths
 - `es-define-property@1.0.1` — https://github.com/ljharb/es-define-property
 - `es-errors@1.3.0` — https://github.com/ljharb/es-errors
 - `es-object-atoms@1.1.2` — https://github.com/ljharb/es-object-atoms
-- `es6-error@4.1.1` — https://github.com/bjyoungblood/es6-error
 - `escape-html@1.0.3` — component/escape-html
-- `escape-string-regexp@4.0.0` — sindresorhus/escape-string-regexp
 - `escape-string-regexp@5.0.0` — sindresorhus/escape-string-regexp
 - `estree-util-is-identifier-name@3.0.0` — syntax-tree/estree-util-is-identifier-name
 - `etag@1.8.1` — jshttp/etag
@@ -379,7 +354,6 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `fast-check@4.9.0` — https://github.com/dubzzz/fast-check
 - `fast-deep-equal@3.1.3` — https://github.com/epoberezkin/fast-deep-equal
 - `fastest-levenshtein@1.0.16` — https://github.com/ka-weihe/fastest-levenshtein
-- `fd-slicer@1.1.0` — https://github.com/andrewrk/node-fd-slicer
 - `ffi-rs@1.3.2` — https://github.com/zhangyuang/node-ffi-rs
 - `finalhandler@2.1.1` — pillarjs/finalhandler
 - `find-my-way-ts@0.1.6` — https://github.com/tim-smart/find-my-way-ts
@@ -387,16 +361,11 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `forwarded@0.2.0` — jshttp/forwarded
 - `fresh@2.0.0` — jshttp/fresh
 - `fs-extra@10.1.0` — https://github.com/jprichardson/node-fs-extra
-- `fs-extra@8.1.0` — https://github.com/jprichardson/node-fs-extra
 - `function-bind@1.1.2` — https://github.com/Raynos/function-bind
 - `get-east-asian-width@1.6.0` — sindresorhus/get-east-asian-width
 - `get-intrinsic@1.3.0` — https://github.com/ljharb/get-intrinsic
 - `get-proto@1.0.1` — https://github.com/ljharb/get-proto
-- `get-stream@5.2.0` — sindresorhus/get-stream
-- `globalthis@1.0.4` — https://github.com/ljharb/System.global
 - `gopd@1.2.0` — https://github.com/ljharb/gopd
-- `got@11.8.6` — sindresorhus/got
-- `has-property-descriptors@1.0.2` — https://github.com/inspect-js/has-property-descriptors
 - `has-symbols@1.1.0` — https://github.com/inspect-js/has-symbols
 - `hasown@2.0.4` — https://github.com/inspect-js/hasOwn
 - `hast-util-from-parse5@8.0.3` — syntax-tree/hast-util-from-parse5
@@ -408,17 +377,16 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `hast-util-to-parse5@8.0.1` — syntax-tree/hast-util-to-parse5
 - `hast-util-whitespace@3.0.0` — syntax-tree/hast-util-whitespace
 - `hastscript@9.0.1` — syntax-tree/hastscript
-- `hono@4.12.27` — https://github.com/honojs/hono
+- `hono@4.12.34` — https://github.com/honojs/hono
 - `html-url-attributes@3.0.1` — https://github.com/rehypejs/rehype-minify/tree/main/packages/html-url-attributes
 - `html-void-elements@3.0.0` — wooorm/html-void-elements
 - `http-errors@2.0.1` — jshttp/http-errors
-- `http2-wrapper@1.0.3` — https://github.com/szmarczak/http2-wrapper
 - `iconv-lite@0.7.2` — https://github.com/pillarjs/iconv-lite
 - `ignore@7.0.5` — git@github.com:kaelzhang/node-ignore
 - `immediate@3.0.6` — https://github.com/calvinmetcalf/immediate
 - `inline-style-parser@0.2.7` — https://github.com/remarkablemark/inline-style-parser
 - `ioredis@5.11.0` — https://github.com/luin/ioredis
-- `ip-address@10.2.0` — https://github.com/beaugunderson/ip-address
+- `ip-address@10.3.1` — https://github.com/beaugunderson/ip-address
 - `ipaddr.js@1.9.1` — https://github.com/whitequark/ipaddr.js
 - `is-alphabetical@2.0.1` — wooorm/is-alphabetical
 - `is-alphanumerical@2.0.1` — wooorm/is-alphanumerical
@@ -434,14 +402,11 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `jose@6.2.2` — panva/jose
 - `jose@6.2.3` — panva/jose
 - `js-cookie@3.0.7` — https://github.com/js-cookie/js-cookie
-- `js-yaml@4.2.0` — nodeca/js-yaml
-- `json-buffer@3.0.1` — https://github.com/dominictarr/json-buffer
+- `js-yaml@4.3.1` — nodeca/js-yaml
 - `json-schema-to-ts@3.1.1` — https://github.com/ThomasAribart/json-schema-to-ts
 - `json-schema-traverse@1.0.0` — https://github.com/epoberezkin/json-schema-traverse
 - `jsonc-parser@3.3.1` — https://github.com/microsoft/node-jsonc-parser
-- `jsonfile@4.0.0` — git@github.com:jprichardson/node-jsonfile
 - `jsonfile@6.2.1` — git@github.com:jprichardson/node-jsonfile
-- `keyv@4.5.4` — https://github.com/jaredwray/keyv
 - `kleur@3.0.3` — lukeed/kleur
 - `lazy-val@1.0.5` — develar/lazy-val
 - `lexical@0.41.0` — https://github.com/facebook/lexical
@@ -453,10 +418,8 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `lodash.isequal@4.5.0` — lodash/lodash
 - `log-symbols@7.0.1` — sindresorhus/log-symbols
 - `longest-streak@3.1.0` — wooorm/longest-streak
-- `lowercase-keys@2.0.0` — sindresorhus/lowercase-keys
 - `lru_map@0.4.1` — https://github.com/rsms/js-lru
 - `markdown-table@3.0.4` — wooorm/markdown-table
-- `matcher@3.0.0` — sindresorhus/matcher
 - `math-intrinsics@1.1.0` — https://github.com/es-shims/math-intrinsics
 - `mdast-util-find-and-replace@3.0.2` — syntax-tree/mdast-util-find-and-replace
 - `mdast-util-from-markdown@2.0.3` — syntax-tree/mdast-util-from-markdown
@@ -510,8 +473,6 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `mimic-fn@2.1.0` — sindresorhus/mimic-fn
 - `mimic-fn@3.1.0` — sindresorhus/mimic-fn
 - `mimic-function@5.0.1` — sindresorhus/mimic-function
-- `mimic-response@1.0.1` — sindresorhus/mimic-response
-- `mimic-response@3.1.0` — sindresorhus/mimic-response
 - `ms@2.1.3` — vercel/ms
 - `msgpackr@2.0.4` — https://github.com/kriszyp/msgpackr
 - `msgpackr-extract@3.0.4` — https://github.com/kriszyp/msgpackr-extract
@@ -521,17 +482,14 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `node-gyp-build@4.8.4` — https://github.com/prebuild/node-gyp-build
 - `node-gyp-build-optional-packages@5.2.2` — https://github.com/prebuild/node-gyp-build
 - `node-pty@1.1.0` — https://github.com/microsoft/node-pty
-- `normalize-url@6.1.0` — sindresorhus/normalize-url
 - `object-assign@4.1.1` — sindresorhus/object-assign
 - `object-inspect@1.13.4` — https://github.com/inspect-js/object-inspect
-- `object-keys@1.1.1` — https://github.com/ljharb/object-keys
 - `on-finished@2.4.1` — jshttp/on-finished
 - `onetime@5.1.2` — sindresorhus/onetime
 - `onetime@7.0.0` — sindresorhus/onetime
 - `oniguruma-parser@0.12.2` — https://github.com/slevithan/oniguruma-parser
 - `oniguruma-to-es@4.3.6` — https://github.com/slevithan/oniguruma-to-es
 - `ora@9.4.0` — sindresorhus/ora
-- `p-cancelable@2.1.1` — sindresorhus/p-cancelable
 - `p-limit@2.3.0` — sindresorhus/p-limit
 - `p-locate@3.0.0` — sindresorhus/p-locate
 - `p-try@2.2.0` — sindresorhus/p-try
@@ -541,8 +499,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `parseurl@1.3.3` — pillarjs/parseurl
 - `path-exists@3.0.0` — sindresorhus/path-exists
 - `path-key@3.1.1` — sindresorhus/path-key
-- `path-to-regexp@8.4.2` — https://github.com/pillarjs/path-to-regexp
-- `pend@1.2.0` — https://github.com/andrewrk/node-pend
+- `path-to-regexp@6.3.0` — https://github.com/pillarjs/path-to-regexp
 - `pkce-challenge@5.0.1` — https://github.com/crouchcd/pkce-challenge
 - `pkg-up@3.1.0` — sindresorhus/pkg-up
 - `preact@11.0.0-beta.0` — preactjs/preact
@@ -553,9 +510,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `prompts@2.4.2` — terkelg/prompts
 - `property-information@7.2.0` — wooorm/property-information
 - `proxy-addr@2.0.7` — jshttp/proxy-addr
-- `pump@3.0.4` — https://github.com/mafintosh/pump
 - `pure-rand@8.4.0` — https://github.com/dubzzz/pure-rand
-- `quick-lru@5.1.1` — sindresorhus/quick-lru
 - `range-parser@1.2.1` — jshttp/range-parser
 - `raw-body@3.0.2` — stream-utils/raw-body
 - `react@19.2.6` — https://github.com/facebook/react
@@ -578,16 +533,12 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `remark-stringify@11.0.0` — https://github.com/remarkjs/remark/tree/main/packages/remark-stringify
 - `require-from-string@2.0.2` — floatdrop/require-from-string
 - `reselect@5.2.0` — https://github.com/reduxjs/reselect
-- `resolve-alpn@1.2.1` — https://github.com/szmarczak/resolve-alpn
-- `responselike@2.0.1` — https://github.com/sindresorhus/responselike
 - `restore-cursor@5.1.0` — sindresorhus/restore-cursor
 - `router@2.2.0` — pillarjs/router
 - `safe-buffer@5.1.2` — https://github.com/feross/safe-buffer
 - `safer-buffer@2.1.2` — https://github.com/ChALkeR/safer-buffer
 - `scheduler@0.27.0` — https://github.com/facebook/react
-- `semver-compare@1.0.0` — https://github.com/substack/semver-compare
 - `send@1.2.1` — pillarjs/send
-- `serialize-error@7.0.1` — sindresorhus/serialize-error
 - `seroval@1.5.4` — https://github.com/lxsmnsyc/seroval
 - `seroval-plugins@1.5.4` — https://github.com/lxsmnsyc/seroval
 - `serve-static@2.2.1` — expressjs/serve-static
@@ -620,7 +571,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `trough@2.2.0` — wooorm/trough
 - `ts-algebra@2.0.0` — https://github.com/ThomasAribart/ts-algebra
 - `type-is@2.1.0` — jshttp/type-is
-- `undici@8.9.0` — https://github.com/nodejs/undici
+- `undici@6.28.0` — https://github.com/nodejs/undici
 - `undici-types@7.16.0` — https://github.com/nodejs/undici
 - `unified@11.0.5` — unifiedjs/unified
 - `unist-util-is@6.0.1` — syntax-tree/unist-util-is
@@ -628,20 +579,18 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `unist-util-stringify-position@4.0.0` — syntax-tree/unist-util-stringify-position
 - `unist-util-visit@5.1.0` — syntax-tree/unist-util-visit
 - `unist-util-visit-parents@6.0.2` — syntax-tree/unist-util-visit-parents
-- `universalify@0.1.2` — https://github.com/RyanZim/universalify
 - `universalify@2.0.1` — https://github.com/RyanZim/universalify
 - `unpipe@1.0.0` — stream-utils/unpipe
 - `use-sync-external-store@1.6.0` — https://github.com/facebook/react
 - `utf-8-validate@6.0.6` — https://github.com/websockets/utf-8-validate
 - `util-deprecate@1.0.2` — https://github.com/TooTallNate/util-deprecate
-- `uuid@14.0.1` — https://github.com/uuidjs/uuid
+- `uuid@11.1.1` — https://github.com/uuidjs/uuid
 - `vary@1.1.2` — jshttp/vary
 - `vfile@6.0.3` — vfile/vfile
 - `vfile-location@5.0.3` — vfile/vfile-location
 - `vfile-message@4.0.3` — vfile/vfile-message
 - `web-namespaces@2.0.1` — wooorm/web-namespaces
 - `ws@8.21.0` — https://github.com/websockets/ws
-- `yauzl@2.10.0` — https://github.com/thejoshwolfe/yauzl
 - `yjs@13.6.31` — https://github.com/yjs/yjs
 - `yoctocolors@2.1.2` — sindresorhus/yoctocolors
 - `zod@4.4.3` — https://github.com/colinhacks/zod

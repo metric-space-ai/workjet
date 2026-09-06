@@ -2247,6 +2247,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      // Builds without a distribution identity still need a valid bundle seal.
+      // Keep hardened runtime and the Electron JIT/library entitlements together.
+      ...(!signed
+        ? {
+            identity: "-",
+            hardenedRuntime: true,
+            entitlements: "apps/desktop/resources/entitlements.mac.adhoc.plist",
+            entitlementsInherit: "apps/desktop/resources/entitlements.mac.adhoc.plist",
+          }
+        : {}),
       protocols: [
         {
           name: "Workjet",

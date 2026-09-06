@@ -6,6 +6,14 @@ const MOBILE_ROOT = NodePath.resolve(import.meta.dirname, "../../..");
 const read = (path: string) => NodeFS.readFileSync(NodePath.resolve(MOBILE_ROOT, path), "utf8");
 
 describe("Business OS native security guards", () => {
+  it("turns pairing validation failures into handled promise rejections", () => {
+    const provider = read("src/features/business-os/BusinessOsProvider.tsx");
+    expect(provider).toMatch(/const importLink = useCallback\(\s*async \(raw: string\)/u);
+    expect(provider).toMatch(/const importInvite = useCallback\(\s*async \(invite:/u);
+    expect(provider).toContain("void importLink(url).catch(showPairingFailure)");
+    expect(provider).toContain("Linking.getInitialURL().then(handle).catch(showPairingFailure)");
+  });
+
   it("has no manual signaling, room or password field in its settings surface", () => {
     const settings = read("src/features/business-os/components/BusinessOsSettingsPanel.tsx");
     expect(settings).not.toMatch(/TextInput/u);
@@ -115,8 +123,13 @@ describe("Business OS native security guards", () => {
     ).toBe(false);
     expect(root).not.toContain('"settings" | "app"');
     expect(root).not.toContain('setRoute("settings")');
-    expect(root).toContain('navigation.navigate("SettingsSheet"');
-    expect(root).toContain('params: { screen: "SettingsBusinessOs" }');
+    const app = read("src/App.tsx");
+    const setup = read("src/features/mode/BusinessOsSetupScreen.tsx");
+    expect(root).toContain("const openSettings = props.onOpenSettings;");
+    expect(setup).toContain("onOpenSettings={props.onOpenSettings}");
+    expect(app).toContain("onOpenSettings={openBusinessOsSettings}");
+    expect(app).toContain('navigationRef.navigate("SettingsSheet"');
+    expect(app).toContain('params: { screen: "SettingsBusinessOs" }');
     expect(root).toContain("showsSettingsAction={!sidebarAvailable || !sidebarVisible}");
     expect(home).toContain("props.showsSettingsAction ?");
     expect(nativeTypes).toContain("readonly showsSettingsAction: boolean");

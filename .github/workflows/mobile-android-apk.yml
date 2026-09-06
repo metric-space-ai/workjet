@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/mobile-android-apk.yml"
+      - "apps/mobile/**"
 
 permissions:
   contents: read

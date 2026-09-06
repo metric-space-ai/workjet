@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
+import desktopPackageJson from "../../package.json" with { type: "json" };
 
 export interface ElectronAppMetadata {
   readonly appVersion: string;
@@ -95,7 +96,8 @@ const addScopedAppListener = <Args extends ReadonlyArray<unknown>>(
 export const make = ElectronApp.of({
   metadata: Effect.gen(function* () {
     const appVersion = yield* Effect.try({
-      try: () => Electron.app.getVersion(),
+      // A bare Electron launch reports the Electron runtime version here.
+      try: () => (Electron.app.isPackaged ? Electron.app.getVersion() : desktopPackageJson.version),
       catch: (cause) =>
         new ElectronAppMetadataReadError({
           property: "app-version",

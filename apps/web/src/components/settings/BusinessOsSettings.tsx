@@ -29,6 +29,7 @@ import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
+import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -463,9 +464,7 @@ export function BusinessOsSettingsView({
               >
                 {selected === null ? <option value="">Instanz auswählen</option> : null}
                 {instances.map((instance) => (
-                  <option key={instance.id} value={instance.id}>
-                    {ctoxInstanceDisplayTitle(instance)}
-                  </option>
+                  <CtoxInstanceSelectOption key={instance.id} instance={instance} />
                 ))}
               </select>
               {selected === null ? null : (

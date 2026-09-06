@@ -165,8 +165,8 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@clerk/electron-passkeys@0.0.3` — https://github.com/clerk/javascript
 - `@clerk/electron-passkeys-darwin-arm64@0.0.3` — https://github.com/clerk/javascript
 - `@clerk/electron-passkeys-darwin-x64@0.0.3` — https://github.com/clerk/javascript
-- `@clerk/electron-passkeys-win32-arm64-msvc@0.0.3` (license from platform sibling)
-- `@clerk/electron-passkeys-win32-x64-msvc@0.0.3` (license from platform sibling)
+- `@clerk/electron-passkeys-win32-arm64-msvc@0.0.3` — https://github.com/clerk/javascript
+- `@clerk/electron-passkeys-win32-x64-msvc@0.0.3` — https://github.com/clerk/javascript
 - `@clerk/react@6.12.10` — https://github.com/clerk/javascript
 - `@clerk/shared@4.25.10` — https://github.com/clerk/javascript
 - `@dnd-kit/accessibility@3.1.1` — https://github.com/clauderic/dnd-kit
@@ -186,8 +186,8 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@ff-labs/fff-bin-linux-arm64-musl@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-linux-x64-gnu@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-bin-linux-x64-musl@0.9.4` — https://github.com/dmtrKovalenko/fff
-- `@ff-labs/fff-bin-win32-arm64@0.9.4` (license from platform sibling)
-- `@ff-labs/fff-bin-win32-x64@0.9.4` (license from platform sibling)
+- `@ff-labs/fff-bin-win32-arm64@0.9.4` — https://github.com/dmtrKovalenko/fff
+- `@ff-labs/fff-bin-win32-x64@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@ff-labs/fff-node@0.9.4` — https://github.com/dmtrKovalenko/fff
 - `@floating-ui/core@1.7.5` — https://github.com/floating-ui/floating-ui
 - `@floating-ui/dom@1.7.6` — https://github.com/floating-ui/floating-ui
@@ -221,12 +221,12 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@lexical/utils@0.41.0` — https://github.com/facebook/lexical
 - `@lexical/yjs@0.41.0` — https://github.com/facebook/lexical
 - `@modelcontextprotocol/sdk@1.29.0` — https://github.com/modelcontextprotocol/typescript-sdk
-- `@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-linux-arm@3.0.4` (license from platform sibling)
-- `@msgpackr-extract/msgpackr-extract-linux-arm64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-linux-x64@3.0.4` — https://github.com/kriszyp/msgpackr-extract
-- `@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4` (license from platform sibling)
+- `@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-linux-arm@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-linux-arm64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-linux-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
+- `@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
 - `@noble/curves@1.9.1` — https://github.com/paulmillr/noble-curves
 - `@noble/hashes@1.8.0` — https://github.com/paulmillr/noble-hashes
 - `@opencode-ai/sdk@1.15.13`
@@ -268,17 +268,17 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@types/unist@2.0.11` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/unist@3.0.3` — https://github.com/DefinitelyTyped/DefinitelyTyped
 - `@types/ws@8.18.1` — https://github.com/DefinitelyTyped/DefinitelyTyped
-- `@yuuang/ffi-rs-android-arm64@1.3.2` (license from platform sibling)
+- `@yuuang/ffi-rs-android-arm64@1.3.2`
 - `@yuuang/ffi-rs-darwin-arm64@1.3.2`
 - `@yuuang/ffi-rs-darwin-x64@1.3.2`
-- `@yuuang/ffi-rs-linux-arm-gnueabihf@1.3.2` (license from platform sibling)
+- `@yuuang/ffi-rs-linux-arm-gnueabihf@1.3.2`
 - `@yuuang/ffi-rs-linux-arm64-gnu@1.3.2`
 - `@yuuang/ffi-rs-linux-arm64-musl@1.3.2`
 - `@yuuang/ffi-rs-linux-x64-gnu@1.3.2`
 - `@yuuang/ffi-rs-linux-x64-musl@1.3.2`
-- `@yuuang/ffi-rs-win32-arm64-msvc@1.3.2` (license from platform sibling)
-- `@yuuang/ffi-rs-win32-ia32-msvc@1.3.2` (license from platform sibling)
-- `@yuuang/ffi-rs-win32-x64-msvc@1.3.2` (license from platform sibling)
+- `@yuuang/ffi-rs-win32-arm64-msvc@1.3.2`
+- `@yuuang/ffi-rs-win32-ia32-msvc@1.3.2`
+- `@yuuang/ffi-rs-win32-x64-msvc@1.3.2`
 - `@zxcvbn-ts/core@3.0.4` — https://github.com/zxcvbn-ts/zxcvbn
 - `@zxcvbn-ts/language-common@3.0.4` — https://github.com/zxcvbn-ts/zxcvbn
 - `accepts@2.0.0` — jshttp/accepts

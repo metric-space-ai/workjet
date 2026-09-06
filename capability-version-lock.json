@@ -3,11 +3,11 @@
   "generator": "scripts/check-capability-version-lock.ts",
   "ctoxHostArtifact": {
     "schema": "ctox.business-os-shell.v1",
-    "version": "0.1.11",
-    "sourceCommit": "6cb733eda58b64cc83586aaa2041fa7cacbee898",
-    "archiveSha256": "a2b7b756d06146f587a84a75b82ff69a335d176bab6b92947fd441cd96c45146",
-    "embeddedManifestSha256": "43770ef9e8514a77caefb124f0fae158a9afecabb0d2051334f32ba78628ee86",
-    "manifestSha256": "df181362d8a79e1d1a1fe262c884b79d304018684c8acf03221cff280ce28188"
+    "version": "0.1.46-beta.8",
+    "sourceCommit": "87daa431b1604bfcca364a1eb1a851e90da1874d",
+    "archiveSha256": "c0c15c33871e947b747a7752fadacccf2a7027cc78a9c2d907d40bff45b5eef8",
+    "embeddedManifestSha256": "aa52f59280aa25e874585dd60d9691a4611b6e0a00ea66d49f1af732f32c448c",
+    "manifestSha256": "e6bbaae08ddb0daf0848457a67382250adfb87d95574cb62598d534437e3ad2e"
   },
   "capabilities": [
     {

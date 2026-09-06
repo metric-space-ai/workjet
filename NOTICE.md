@@ -10,7 +10,7 @@ legal advice and it grants no rights beyond the licenses it names.
 
 ## 1. Workjet application
 
-The Workjet application is derived from Workjet and remains under the MIT License. The
+The Workjet application is derived from T3 Code and remains under the MIT License. The
 original copyright and permission notice is retained verbatim in the repository-root
 [`LICENSE`](LICENSE) file and is packaged with every desktop artifact under
 `Resources/legal/LICENSE`.
@@ -124,9 +124,10 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `json-schema-typed@7.0.3` — https://github.com/typeslick/json-schema-typed
 - `json-schema-typed@8.0.2` — https://github.com/RemyRylan/json-schema-typed
 
-### BSD-3-Clause (2)
+### BSD-3-Clause (3)
 
 - `diff@9.0.0` — https://github.com/kpdecker/jsdiff
+- `fast-uri@3.1.6` — https://github.com/fastify/fast-uri
 - `qs@6.15.3` — https://github.com/ljharb/qs
 
 ### BlueOak-1.0.0 (1)
@@ -604,10 +605,9 @@ links transitively. Development dependencies are excluded. Workspace importers r
 
 - `@anthropic-ai/claude-agent-sdk@0.3.170` — https://github.com/anthropics/claude-agent-sdk-typescript
 
-### UNRESOLVED (2)
+### UNRESOLVED (1)
 
 - `@react-grab/cli@0.1.44` — https://github.com/aidenybai/react-grab
-- `fast-uri@3.1.6`
 
 ### Unlicense (1)
 
@@ -634,13 +634,12 @@ listed for completeness; their code is not redistributed.
 - `@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.170` — SEE LICENSE IN LICENSE.md
 - `@anthropic-ai/claude-agent-sdk-win32-x64@0.3.170` — SEE LICENSE IN LICENSE.md
 
-## 6. Unresolved license metadata (2)
+## 6. Unresolved license metadata (1)
 
 These packages declare no license in their manifest and have no platform sibling to
 resolve through. They must be resolved manually before a public release.
 
 - `@react-grab/cli@0.1.44`
-- `fast-uri@3.1.6`
 
 ## 7. Source offer
 

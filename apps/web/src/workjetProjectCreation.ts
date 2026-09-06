@@ -69,6 +69,22 @@ function exactProject(
   return projects.find((project) => project.id === projectId);
 }
 
+function hasRequestedWorkingCopy(
+  project: CtoxWorkjetProjectProjection,
+  attempt: WorkjetProjectCreationAttempt,
+): boolean {
+  const requested = attempt.request.workingCopy;
+  return (
+    requested === undefined ||
+    project.workingCopies.some(
+      (copy) =>
+        copy.status === "active" &&
+        copy.computerId === requested.computerId &&
+        copy.path === requested.path,
+    )
+  );
+}
+
 export async function runWorkjetProjectCreation(
   attempt: WorkjetProjectCreationAttempt,
   options: WorkjetProjectCreationOptions = {},
@@ -92,7 +108,7 @@ export async function runWorkjetProjectCreation(
       return { _tag: "failed", code: "invalid_projection" };
     }
     const existing = exactProject(listed.response.projects, attempt.request.projectId);
-    if (existing !== undefined) {
+    if (existing !== undefined && hasRequestedWorkingCopy(existing, attempt)) {
       onPhase("visible");
       return { _tag: "visible", project: existing };
     }
@@ -110,7 +126,8 @@ export async function runWorkjetProjectCreation(
   }
   if (
     created.response.action !== "project.create" ||
-    created.response.project.id !== attempt.request.projectId
+    created.response.project.id !== attempt.request.projectId ||
+    !hasRequestedWorkingCopy(created.response.project, attempt)
   ) {
     onPhase("failed");
     return { _tag: "failed", code: "invalid_projection" };

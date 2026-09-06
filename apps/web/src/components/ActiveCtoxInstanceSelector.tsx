@@ -1,7 +1,7 @@
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
-import { ctoxInstanceDisplayTitle } from "./ctox/ctoxInstanceDisplayTitle";
+import { CtoxInstanceSelectOption } from "./ctox/CtoxInstanceSelectOption";
 import { useCtoxMode } from "./ctox/CtoxModeShell";
 import { useActiveWorkjetScope } from "../activeWorkjetScope";
 
@@ -71,9 +71,7 @@ export function ActiveCtoxInstanceSelector() {
             </option>
           ) : null}
           {instances.map((instance) => (
-            <option key={instance.id} value={instance.id}>
-              {ctoxInstanceDisplayTitle(instance)}
-            </option>
+            <CtoxInstanceSelectOption key={instance.id} instance={instance} />
           ))}
         </select>
       </label>

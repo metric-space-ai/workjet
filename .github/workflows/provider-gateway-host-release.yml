@@ -112,7 +112,26 @@ jobs:
         run: vp run --filter @t3tools/scripts test
 
       - name: Release notice is current
+        id: notice
         run: node scripts/generate-release-notice.ts --check
+
+      - name: Preserve notice mismatch for review
+        if: failure() && steps.notice.outcome == 'failure'
+        run: |
+          node scripts/generate-release-notice.ts
+          mkdir -p "$RUNNER_TEMP/notice-review"
+          cp NOTICE.md "$RUNNER_TEMP/notice-review/NOTICE.md"
+          git diff -- NOTICE.md > "$RUNNER_TEMP/notice-review/NOTICE.diff"
+          git rev-parse HEAD > "$RUNNER_TEMP/notice-review/SOURCE_COMMIT"
+
+      - name: Upload notice mismatch
+        if: failure() && steps.notice.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-notice-review-${{ github.sha }}
+          path: ${{ runner.temp }}/notice-review/
+          if-no-files-found: error
+          retention-days: 14
 
   build:
     name: Build ${{ matrix.triple }}

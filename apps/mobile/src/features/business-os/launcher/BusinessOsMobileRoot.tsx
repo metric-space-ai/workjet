@@ -300,6 +300,8 @@ export function BusinessOsMobileRoot(props: {
     BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
   );
   const [badges, setBadges] = useState<ReadonlyMap<string, number>>(new Map());
+  const [readyShellIdentity, setReadyShellIdentity] = useState<string | null>(null);
+  const [shellError, setShellError] = useState(false);
   const [shellState, setShellState] = useState<Extract<
     BusinessOsShellMessage,
     { readonly type: "app.state" }
@@ -329,6 +331,8 @@ export function BusinessOsMobileRoot(props: {
   useEffect(() => {
     setRoute("home");
     setActiveAppId(null);
+    setReadyShellIdentity(null);
+    setShellError(false);
     setCatalog(BUILT_IN_BUSINESS_OS_MOBILE_CATALOG);
     setBadges(new Map());
     if (!selected) {
@@ -366,16 +370,13 @@ export function BusinessOsMobileRoot(props: {
     setCommandJson(encodeBusinessOsHostCommand(command));
   }, []);
 
-  const openApp = useCallback(
-    (app: BusinessOsMobileAppDescriptor) => {
-      setShellState(null);
-      setActiveAppId(app.id);
-      setRoute("app");
-      setRecents((current) => addBusinessOsRecent(current, app.id));
-      send({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.open", appId: app.id });
-    },
-    [send],
-  );
+  const openApp = useCallback((app: BusinessOsMobileAppDescriptor) => {
+    setShellState(null);
+    setShellError(false);
+    setActiveAppId(app.id);
+    setRoute("app");
+    setRecents((current) => addBusinessOsRecent(current, app.id));
+  }, []);
 
   const goHome = useCallback(() => {
     if (activeAppId) {
@@ -403,32 +404,40 @@ export function BusinessOsMobileRoot(props: {
   }, [goBack, props.active]);
 
   useEffect(() => {
-    if (!activeAppId) return;
+    if (!activeAppId || !selected || readyShellIdentity !== selected.storageIdentity) return;
+    // Wait for the catalog handshake. A resume command cannot open an app
+    // that the shell has never received, including a selection made during boot.
     send({
       protocol: BUSINESS_OS_SHELL_PROTOCOL,
-      type: props.active ? "app.resume" : "app.suspend",
+      type: props.active && route === "app" ? "app.open" : "app.suspend",
       appId: activeAppId,
     });
-  }, [activeAppId, props.active, send]);
+  }, [activeAppId, props.active, route, readyShellIdentity, selected?.storageIdentity, send]);
 
-  const onShellMessage = useCallback((raw: string) => {
-    let message: BusinessOsShellMessage;
-    try {
-      message = decodeBusinessOsShellMessage(raw);
-    } catch {
-      return;
-    }
-    if (message.type === "catalog.replace") setCatalog(message.catalog);
-    if (message.type === "app.state") setShellState(message);
-    if (message.type === "badge.update") {
-      setBadges((current) => {
-        const next = new Map(current);
-        if (message.count === 0) next.delete(message.appId);
-        else next.set(message.appId, message.count);
-        return next;
-      });
-    }
-  }, []);
+  const onShellMessage = useCallback(
+    (raw: string) => {
+      let message: BusinessOsShellMessage;
+      try {
+        message = decodeBusinessOsShellMessage(raw);
+      } catch {
+        return;
+      }
+      if (message.type === "shell.ready" && selected)
+        setReadyShellIdentity(selected.storageIdentity);
+      if (message.type === "shell.error") setShellError(true);
+      if (message.type === "catalog.replace") setCatalog(message.catalog);
+      if (message.type === "app.state") setShellState(message);
+      if (message.type === "badge.update") {
+        setBadges((current) => {
+          const next = new Map(current);
+          if (message.count === 0) next.delete(message.appId);
+          else next.set(message.appId, message.count);
+          return next;
+        });
+      }
+    },
+    [selected?.storageIdentity],
+  );
 
   if (!isReady) {
     return (
@@ -480,6 +489,15 @@ export function BusinessOsMobileRoot(props: {
             onHome={goHome}
           />
           <View className="flex-1">
+            {shellError ? (
+              <Text
+                accessibilityRole="alert"
+                className="px-6 py-4 text-center text-foreground-muted"
+              >
+                Diese App konnte nicht geöffnet werden. Kehre zum Home Desk zurück und versuche es
+                erneut.
+              </Text>
+            ) : null}
             {activatedShellPack ? (
               <BusinessOsShellHost
                 key={selected.storageIdentity}

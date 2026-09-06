@@ -1,88 +1,110 @@
 import * as NodeCrypto from "node:crypto";
-import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import { writeMobileBusinessOsBundle } from "./mobile-business-os-bundle.mjs";
 
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => NodeFSP.rm(root, { recursive: true, force: true })),
-  );
-});
-async function fixture() {
-  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "mobile-bundle-"));
-  roots.push(root);
-  const sourceRoot = NodePath.join(root, "source");
-  await NodeFSP.mkdir(NodePath.join(sourceRoot, "vendor/ctox-office"), { recursive: true });
+const fixture = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: "mobile-bundle-" });
+  const sourceRoot = path.join(root, "source");
+  yield* fs.makeDirectory(path.join(sourceRoot, "vendor/ctox-office"), { recursive: true });
   for (const name of [
     "index.html",
     "mobile-host.js",
     "mobile-host.css",
     "vendor/ctox-office/office.js",
   ]) {
-    await NodeFSP.writeFile(
-      NodePath.join(sourceRoot, name),
+    yield* fs.writeFileString(
+      path.join(sourceRoot, name),
       name === "index.html" ? "<html><head></head></html>" : name,
     );
   }
-  const options = {
-    sourceRoot,
-    outputRoot: NodePath.join(root, "bundle"),
-    release: { version: "verified-test" },
-    catalog: {
-      type: "workjet.business-os-mobile-apps.v1",
-      revision: "test",
-      apps: [{ id: "threads", icon: "text.bubble", title: "Threads" }],
+  return {
+    fs,
+    path,
+    root,
+    options: {
+      sourceRoot,
+      outputRoot: path.join(root, "bundle"),
+      release: { version: "verified-test" },
+      catalog: {
+        type: "workjet.business-os-mobile-apps.v1",
+        revision: "test",
+        apps: [{ id: "threads", title: "Threads", icon: "bubble.left" }],
+      },
     },
   };
-  return { root, options };
-}
+});
 
-describe("Business OS resources inside the signed mobile binary", () => {
-  it("includes the native catalog, preserves file hashes, and keeps Office separate", async () => {
-    const { options } = await fixture();
-    const result = await writeMobileBusinessOsBundle(options);
-    const payload = NodePath.join(options.outputRoot, "payload");
-    expect(result.files.map((file: { path: string }) => file.path)).toEqual([
-      "index.html",
-      "mobile-apps.json",
-      "mobile-host.css",
-      "mobile-host.js",
-    ]);
-    for (const file of result.files) {
-      const bytes = await NodeFSP.readFile(NodePath.join(payload, file.path));
-      expect(file.size).toBe(bytes.length);
-      expect(file.sha256).toBe(NodeCrypto.createHash("sha256").update(bytes).digest("hex"));
-    }
-    expect(
-      JSON.parse(await NodeFSP.readFile(NodePath.join(payload, "mobile-apps.json"), "utf8")).apps,
-    ).toEqual([{ id: "threads", title: "Threads" }]);
-    await expect(NodeFSP.stat(NodePath.join(payload, "vendor/ctox-office"))).rejects.toThrow();
-    expect(result.packId).toMatch(/^[0-9a-f]{64}$/u);
-    const repeated = await writeMobileBusinessOsBundle({
-      ...options,
-      outputRoot: `${options.outputRoot}-second`,
-    });
-    expect(repeated.packId).toBe(result.packId);
-  });
+const run = Effect.scoped;
 
-  it("refuses missing entry points instead of packaging a launcher that cannot open apps", async () => {
-    const { options } = await fixture();
-    await NodeFSP.unlink(NodePath.join(options.sourceRoot, "mobile-host.js"));
-    await expect(writeMobileBusinessOsBundle(options)).rejects.toThrow(
-      "Missing mobile shell entry: mobile-host.js",
-    );
-  });
+it.layer(NodeServices.layer)("Business OS resources inside the signed mobile binary", (it) => {
+  it.effect("includes the native catalog, preserves file hashes, and keeps Office separate", () =>
+    run(
+      Effect.gen(function* () {
+        const { fs, path, options } = yield* fixture;
+        const result = yield* Effect.tryPromise(() => writeMobileBusinessOsBundle(options));
+        const payload = path.join(options.outputRoot, "payload");
+        assert.deepEqual(
+          result.files.map((file) => file.path),
+          ["index.html", "mobile-apps.json", "mobile-host.css", "mobile-host.js"],
+        );
+        for (const file of result.files) {
+          const bytes = yield* fs.readFile(path.join(payload, file.path));
+          assert.equal(file.size, bytes.length);
+          assert.equal(file.sha256, NodeCrypto.createHash("sha256").update(bytes).digest("hex"));
+        }
+        const catalog = yield* fs.readFileString(path.join(payload, "mobile-apps.json"));
+        assert.deepEqual(JSON.parse(catalog).apps, [{ id: "threads", title: "Threads" }]);
+        assert.isFalse(yield* fs.exists(path.join(payload, "vendor/ctox-office")));
+        assert.match(result.packId, /^[0-9a-f]{64}$/u);
+        const repeated = yield* Effect.tryPromise(() =>
+          writeMobileBusinessOsBundle({ ...options, outputRoot: `${options.outputRoot}-again` }),
+        );
+        assert.equal(repeated.packId, result.packId);
+      }),
+    ),
+  );
 
-  it("refuses links out of the verified source tree", async () => {
-    const { root, options } = await fixture();
-    await NodeFSP.writeFile(NodePath.join(root, "private.txt"), "must not enter the bundle");
-    await NodeFSP.symlink(
-      NodePath.join(root, "private.txt"),
-      NodePath.join(options.sourceRoot, "leak.txt"),
-    );
-    await expect(writeMobileBusinessOsBundle(options)).rejects.toThrow("symbolic link");
-  });
+  it.effect(
+    "refuses missing entry points instead of packaging a launcher that cannot open apps",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const { fs, path, options } = yield* fixture;
+          yield* fs.remove(path.join(options.sourceRoot, "mobile-host.js"));
+          const message = yield* Effect.promise(() =>
+            writeMobileBusinessOsBundle(options).then(
+              () => "unexpected success",
+              (error: unknown) => String(error),
+            ),
+          );
+          assert.include(message, "Missing mobile shell entry: mobile-host.js");
+        }),
+      ),
+  );
+
+  it.effect("refuses links out of the verified source tree", () =>
+    run(
+      Effect.gen(function* () {
+        const { fs, path, root, options } = yield* fixture;
+        yield* fs.writeFileString(path.join(root, "private.txt"), "must not enter the bundle");
+        yield* fs.symlink(
+          path.join(root, "private.txt"),
+          path.join(options.sourceRoot, "leak.txt"),
+        );
+        const message = yield* Effect.promise(() =>
+          writeMobileBusinessOsBundle(options).then(
+            () => "unexpected success",
+            (error: unknown) => String(error),
+          ),
+        );
+        assert.include(message, "symbolic link");
+      }),
+    ),
+  );
 });

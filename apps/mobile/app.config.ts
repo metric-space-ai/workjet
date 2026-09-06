@@ -226,6 +226,7 @@ const config: ExpoConfig = {
     favicon: variant.assets.appIcon,
   },
   plugins: [
+    "./plugins/with-business-os-bundle.cjs",
     "expo-asset",
     [
       "expo-font",

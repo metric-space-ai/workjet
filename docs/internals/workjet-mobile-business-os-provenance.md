@@ -81,7 +81,7 @@ references. Re-pairing writes both new secrets and the registry row before old
 references are deleted. Forgetting an instance removes only its two references
 and its isolated WebView profile.
 
-The native shell host is present but cannot activate a production shell yet:
+The native shell host can activate a base shell embedded in the signed mobile binary:
 
 - iOS serves `workjet-business-os://<storage-uuid>/business-os/index.html`
   through `WKURLSchemeHandler` and a `WKWebsiteDataStore` created from that
@@ -105,7 +105,23 @@ The native shell host is present but cannot activate a production shell yet:
   row provides catch-up after reconnect; this bridge is not a replacement for
   a remote APNs/FCM push when the app is fully suspended or terminated.
 
-Activation remains fail-closed because the signed shell distribution endpoint
+At prebuild, Workjet verifies the same pinned CTOX release archive used by the
+desktop host, then derives `workjet.bundled-business-os-shell.v1` resources.
+The inventory records upstream provenance and every file's size and SHA-256;
+its digest identifies the pack. The native Workjet app catalog is included as
+`mobile-apps.json`, without native symbol names. Office is excluded. Native
+launcher icons remain platform symbols, so this bundled base does not claim to
+be the downloadable cross-platform PNG icon pack.
+
+Android reads the base directly from APK assets; iOS reads a CocoaPods resource
+bundle. Both are covered by native app signing. Only the native module resolves
+that resource root. No download, server-provided path or current/next Ed25519 key
+is used to activate these app resources. New base code ships in a new signed
+app binary. Per-instance WebView profiles and the WebRTC-only data boundary
+remain unchanged. The host remounts when storage identity changes, discarding
+pending secrets and events from the previous instance.
+
+Downloaded-pack activation remains fail-closed because the signed shell distribution endpoint
 is present but its production producer and bundled public-key trust map have not
 landed. Mobile resolves it through the shared DPoP-capable Environment command
 from Workjet commit `9df756456` and validates the

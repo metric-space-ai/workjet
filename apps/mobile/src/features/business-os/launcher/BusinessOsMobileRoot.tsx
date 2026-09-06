@@ -20,6 +20,7 @@ import { useBusinessOs } from "../BusinessOsProvider";
 import type { BusinessOsInstance } from "../registry/business-os-registry";
 import { BusinessOsSettingsPanel } from "../components/BusinessOsSettingsPanel";
 import { BusinessOsShellHost } from "../shell/BusinessOsShellHost";
+import { loadNativeBundledBusinessOsShellPack } from "../shell/native-business-os-surface";
 import {
   BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
   mergeBusinessOsMobileCatalog,
@@ -254,8 +255,8 @@ function UnavailableShell(props: { readonly app: BusinessOsMobileAppDescriptor |
         {props.app?.title ?? "Business OS"} ist noch nicht bereit
       </Text>
       <Text className="mt-3 max-w-[520px] text-center text-base leading-normal text-foreground-muted">
-        Das signierte Business-OS-Paket ist auf diesem Gerät noch nicht aktiviert. Workjet bleibt
-        gesperrt, bis Paket, Revision und Ed25519-Vertrauenskette vollständig geprüft sind.
+        Das Business-OS-Paket konnte nicht geöffnet werden. Aktualisiere Workjet und versuche es
+        erneut.
       </Text>
     </View>
   );
@@ -266,9 +267,24 @@ export function BusinessOsMobileRoot(props: {
   readonly active: boolean;
   /** The sibling Code navigator owns the shared settings sheet. */
   readonly onOpenSettings: () => void;
-  /** Set only by the native verified-pack lifecycle. Production currently stays fail-closed. */
+  /** Optional verified downloaded pack; otherwise use resources signed with the native app. */
   readonly activatedShellPack?: BusinessOsActivatedShellPack | null;
 }) {
+  const [bundledPack, setBundledPack] = useState<BusinessOsActivatedShellPack | null>(null);
+  useEffect(() => {
+    let current = true;
+    void loadNativeBundledBusinessOsShellPack()
+      .then((pack) => {
+        if (current) setBundledPack(pack);
+      })
+      .catch(() => {
+        // Unsupported / older hosts retain the visible unavailable state.
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
+  const activatedShellPack = props.activatedShellPack ?? bundledPack;
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const reducedMotion = useReducedMotion();
@@ -284,6 +300,8 @@ export function BusinessOsMobileRoot(props: {
     BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
   );
   const [badges, setBadges] = useState<ReadonlyMap<string, number>>(new Map());
+  const [readyShellIdentity, setReadyShellIdentity] = useState<string | null>(null);
+  const [shellError, setShellError] = useState(false);
   const [shellState, setShellState] = useState<Extract<
     BusinessOsShellMessage,
     { readonly type: "app.state" }
@@ -313,6 +331,8 @@ export function BusinessOsMobileRoot(props: {
   useEffect(() => {
     setRoute("home");
     setActiveAppId(null);
+    setReadyShellIdentity(null);
+    setShellError(false);
     setCatalog(BUILT_IN_BUSINESS_OS_MOBILE_CATALOG);
     setBadges(new Map());
     if (!selected) {
@@ -350,16 +370,13 @@ export function BusinessOsMobileRoot(props: {
     setCommandJson(encodeBusinessOsHostCommand(command));
   }, []);
 
-  const openApp = useCallback(
-    (app: BusinessOsMobileAppDescriptor) => {
-      setShellState(null);
-      setActiveAppId(app.id);
-      setRoute("app");
-      setRecents((current) => addBusinessOsRecent(current, app.id));
-      send({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.open", appId: app.id });
-    },
-    [send],
-  );
+  const openApp = useCallback((app: BusinessOsMobileAppDescriptor) => {
+    setShellState(null);
+    setShellError(false);
+    setActiveAppId(app.id);
+    setRoute("app");
+    setRecents((current) => addBusinessOsRecent(current, app.id));
+  }, []);
 
   const goHome = useCallback(() => {
     if (activeAppId) {
@@ -387,32 +404,56 @@ export function BusinessOsMobileRoot(props: {
   }, [goBack, props.active]);
 
   useEffect(() => {
-    if (!activeAppId) return;
+    if (!activeAppId || !selected || readyShellIdentity !== selected.storageIdentity) return;
+    // Wait for the catalog handshake. A resume command cannot open an app
+    // that the shell has never received, including a selection made during boot.
+    if (route !== "app") {
+      send({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.suspend", appId: activeAppId });
+      return;
+    }
+    if (props.active && shellState?.appId !== activeAppId) {
+      send({ protocol: BUSINESS_OS_SHELL_PROTOCOL, type: "app.open", appId: activeAppId });
+      return;
+    }
     send({
       protocol: BUSINESS_OS_SHELL_PROTOCOL,
       type: props.active ? "app.resume" : "app.suspend",
       appId: activeAppId,
     });
-  }, [activeAppId, props.active, send]);
+  }, [
+    activeAppId,
+    props.active,
+    route,
+    readyShellIdentity,
+    selected?.storageIdentity,
+    shellState?.appId,
+    send,
+  ]);
 
-  const onShellMessage = useCallback((raw: string) => {
-    let message: BusinessOsShellMessage;
-    try {
-      message = decodeBusinessOsShellMessage(raw);
-    } catch {
-      return;
-    }
-    if (message.type === "catalog.replace") setCatalog(message.catalog);
-    if (message.type === "app.state") setShellState(message);
-    if (message.type === "badge.update") {
-      setBadges((current) => {
-        const next = new Map(current);
-        if (message.count === 0) next.delete(message.appId);
-        else next.set(message.appId, message.count);
-        return next;
-      });
-    }
-  }, []);
+  const onShellMessage = useCallback(
+    (raw: string) => {
+      let message: BusinessOsShellMessage;
+      try {
+        message = decodeBusinessOsShellMessage(raw);
+      } catch {
+        return;
+      }
+      if (message.type === "shell.ready" && selected)
+        setReadyShellIdentity(selected.storageIdentity);
+      if (message.type === "shell.error") setShellError(true);
+      if (message.type === "catalog.replace") setCatalog(message.catalog);
+      if (message.type === "app.state") setShellState(message);
+      if (message.type === "badge.update") {
+        setBadges((current) => {
+          const next = new Map(current);
+          if (message.count === 0) next.delete(message.appId);
+          else next.set(message.appId, message.count);
+          return next;
+        });
+      }
+    },
+    [selected?.storageIdentity],
+  );
 
   if (!isReady) {
     return (
@@ -464,13 +505,23 @@ export function BusinessOsMobileRoot(props: {
             onHome={goHome}
           />
           <View className="flex-1">
-            {props.activatedShellPack ? (
+            {shellError ? (
+              <Text
+                accessibilityRole="alert"
+                className="px-6 py-4 text-center text-foreground-muted"
+              >
+                Diese App konnte nicht geöffnet werden. Kehre zum Home Desk zurück und versuche es
+                erneut.
+              </Text>
+            ) : null}
+            {activatedShellPack ? (
               <BusinessOsShellHost
+                key={selected.storageIdentity}
                 commandJson={commandJson}
                 instance={selected}
                 onShellMessage={onShellMessage}
-                packId={props.activatedShellPack.packId}
-                shellRootUri={props.activatedShellPack.rootUri}
+                packId={activatedShellPack.packId}
+                shellRootUri={activatedShellPack.rootUri}
               />
             ) : (
               <UnavailableShell app={activeApp} />

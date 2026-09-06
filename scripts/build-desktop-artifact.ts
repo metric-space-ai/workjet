@@ -811,13 +811,11 @@ export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
 /**
  * The host is included ONLY when a staged directory is supplied.
  *
- * There is no `provider-gateway-host-v*` release yet
- * (`apps/desktop/resources/provider-gateway/host-release.pin.json` reads
- * `"status": "unreleased"`), so pointing electron-builder at a directory that
- * does not exist would break every packaged build today for a binary nobody
- * can ship yet. Passing the staged path — produced by
- * `scripts/provider-gateway-host-artifacts.ts stage` — is what turns this on,
- * so the wiring is in place the moment the tag is cut and inert until then.
+ * The standalone builder always supplies the directory returned by
+ * prepareProviderGatewayHost after verifying the pinned release manifest and
+ * executable. An unreleased pin fails preparation before packaging begins.
+ * The optional argument remains available to callers constructing only the
+ * resource list; it is not a runtime fallback for a standalone build.
  */
 export function createDesktopExtraResources(
   businessOsShellInstallPath: string,

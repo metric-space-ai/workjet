@@ -731,6 +731,7 @@ describe("DesktopBackendManager", () => {
             const backendFiber = yield* DesktopBackendManager.runBackendProcess({
               ...baseConfig,
               readinessTimeout: Duration.millis(50),
+              desktopTelemetryStream: Stream.empty,
               onReady: () =>
                 Effect.sync(() => {
                   readyCount += 1;
@@ -739,7 +740,7 @@ describe("DesktopBackendManager", () => {
                 Effect.sync(() => {
                   failureCount += 1;
                 }),
-            }).pipe(Effect.provide(spawnerLayer), Effect.provide(clientLayer), Effect.forkScoped);
+            }).pipe(Effect.provide(Layer.mergeAll(spawnerLayer, clientLayer)), Effect.forkScoped);
 
             yield* Deferred.await(firstRequest);
             yield* TestClock.adjust(Duration.millis(50));

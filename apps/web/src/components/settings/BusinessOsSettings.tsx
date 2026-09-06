@@ -1,6 +1,7 @@
 import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
+  DesktopCtoxBridge,
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@t3tools/contracts";
@@ -15,10 +16,10 @@ import {
   RefreshCwIcon,
   SmartphoneIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
-import { crossModeSelectionMemory } from "../../crossMode/crossModeSelectionMemory";
+
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
@@ -654,15 +655,36 @@ export function BusinessOsSettingsView({
   );
 }
 
+export async function importBusinessOsSettingsInvite(
+  bridge: Pick<DesktopCtoxBridge, "importInvite"> | undefined,
+  invite: string,
+  select: (instance: CtoxManagedInstance) => void,
+  refresh: () => void,
+): Promise<string | null> {
+  if (bridge === undefined)
+    return "Diese Workjet-Ausgabe kann keine Backend-Einladung importieren.";
+  try {
+    const result = await bridge.importInvite(invite);
+    if (result._tag !== "completed") return "Die Backend-Einladung ist ungültig oder abgelaufen.";
+    select(result.instance);
+    refresh();
+    return null;
+  } catch {
+    return "Business OS konnte nicht hinzugefügt werden. Bitte Verbindung und Einladung prüfen.";
+  }
+}
+
 export function BusinessOsSettings() {
   const settings = usePrimarySettings();
-  const { bridge, discovery, refresh, refreshing } = useCtoxMode();
+  const {
+    bridge,
+    discovery,
+    refresh,
+    refreshing,
+    selectedId: activeInstanceId,
+    select,
+  } = useCtoxMode();
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
-  const activeInstanceId = useSyncExternalStore(
-    crossModeSelectionMemory.subscribeToActiveCtoxInstance,
-    () => resolveActiveBusinessOsInstanceId(crossModeSelectionMemory.read("business-os")),
-    () => resolveActiveBusinessOsInstanceId(crossModeSelectionMemory.read("business-os")),
-  );
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState<string | null>(null);
@@ -674,19 +696,9 @@ export function BusinessOsSettings() {
   const deviceControlAvailable =
     activeInstanceId !== null && bridge?.requestDeviceControl !== undefined;
 
-  useEffect(() => {
-    if (refreshing || discovery === "loading" || discovery._tag !== "ready") return;
-    if (
-      activeInstanceId !== null &&
-      !instances.some((instance) => instance.id === activeInstanceId)
-    ) {
-      crossModeSelectionMemory.forget("business-os");
-    }
-  }, [activeInstanceId, discovery, instances, refreshing]);
-
   const selectInstance = (instanceId: string) => {
-    if (!instances.some((instance) => instance.id === instanceId)) return;
-    crossModeSelectionMemory.remember({ mode: "business-os", ctoxInstanceId: instanceId });
+    const instance = instances.find((candidate) => candidate.id === instanceId);
+    if (instance !== undefined) select(instance);
   };
 
   useEffect(() => {
@@ -716,22 +728,8 @@ export function BusinessOsSettings() {
     };
   }, [activeInstanceId, bridge, deviceControlAvailable, deviceRefreshKey]);
 
-  const addBusinessOs = async (invite: string): Promise<string | null> => {
-    if (bridge === undefined)
-      return "Diese Workjet-Ausgabe kann keine Backend-Einladung importieren.";
-    try {
-      const result = await bridge.importInvite(invite);
-      if (result._tag !== "completed") return "Die Backend-Einladung ist ungültig oder abgelaufen.";
-      crossModeSelectionMemory.remember({
-        mode: "business-os",
-        ctoxInstanceId: result.instance.id,
-      });
-      refresh();
-      return null;
-    } catch {
-      return "Business OS konnte nicht hinzugefügt werden. Bitte Verbindung und Einladung prüfen.";
-    }
-  };
+  const addBusinessOs = (invite: string) =>
+    importBusinessOsSettingsInvite(bridge, invite, select, refresh);
 
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const deviceManagementBlockedReason =

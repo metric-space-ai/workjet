@@ -1,0 +1,70 @@
+name: Mobile Android APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/mobile-android-apk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Standalone Android preview APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      APP_VARIANT: preview
+      EXPO_NO_DOTENV: "1"
+      CI: "1"
+      NODE_OPTIONS: --max-old-space-size=4096
+      T3CODE_RELAY_URL: https://relay.t3.codes
+      EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL: https://ctox.dev
+      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
+      EXPO_PUBLIC_CLERK_JWT_TEMPLATE: t3-relay
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Generate native Android project
+        working-directory: apps/mobile
+        run: vp exec expo prebuild --platform android --clean --no-install
+      - name: Build standalone ARM64 preview
+        working-directory: apps/mobile/android
+        run: ./gradlew --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a assembleRelease
+      - name: Verify preview identity and signature
+        env:
+          APK_PATH: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK_PATH" | tee "$RUNNER_TEMP/android-package.txt"
+          grep -q "package: name='com.t3tools.t3code.preview'" "$RUNNER_TEMP/android-package.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK_PATH" > "$RUNNER_TEMP/android-signature.txt"
+          mkdir -p "$RUNNER_TEMP/workjet-apk"
+          cp "$APK_PATH" "$RUNNER_TEMP/workjet-apk/Workjet-preview-arm64.apk"
+          cp "$RUNNER_TEMP/android-package.txt" "$RUNNER_TEMP/android-signature.txt" "$RUNNER_TEMP/workjet-apk/"
+          git rev-parse HEAD > "$RUNNER_TEMP/workjet-apk/SOURCE_COMMIT"
+          cd "$RUNNER_TEMP/workjet-apk"
+          sha256sum Workjet-preview-arm64.apk > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workjet-android-preview-${{ github.sha }}
+          path: ${{ runner.temp }}/workjet-apk
+          if-no-files-found: error
+          retention-days: 14

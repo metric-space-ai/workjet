@@ -1,0 +1,60 @@
+name: Desktop install artifact
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/desktop-install-artifact.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-install-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-arm64:
+    name: Standalone macOS ARM64 app
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CI: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
+      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
+      T3CODE_RELAY_URL: https://relay.t3.codes
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: stable
+      - name: Build the standalone install package
+        run: |
+          test "$(uname -m)" = arm64
+          export TMPDIR="$RUNNER_TEMP"
+          export ELECTRON_CACHE="$RUNNER_TEMP/electron-cache"
+          export ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/electron-builder-cache"
+          node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
+      - name: Record source and artifact checksums
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/workjet-desktop/SOURCE_COMMIT"
+          cd "$RUNNER_TEMP/workjet-desktop"
+          shasum -a 256 ./*.zip > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workjet-desktop-macos-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/workjet-desktop/
+          if-no-files-found: error
+          retention-days: 14

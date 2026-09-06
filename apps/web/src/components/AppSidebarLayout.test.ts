@@ -34,8 +34,9 @@ describe("AppSidebarLayout mode ownership", () => {
 
   it("mounts one shared active-instance selector above every mode-specific sidebar", () => {
     expect(appSidebarLayoutSource.split("<ActiveCtoxInstanceSelector").length - 1).toBe(1);
-    expect(appSidebarLayoutSource).toContain(
-      "<ActiveCtoxInstanceSelector productMode={productMode} />",
+    expect(appSidebarLayoutSource).toContain("<ActiveCtoxInstanceSelector />");
+    expect(appSidebarLayoutSource.indexOf("<ActiveCtoxInstanceSelector />")).toBeLessThan(
+      appSidebarLayoutSource.indexOf('sidebarSurface === "business-os" ?'),
     );
     expect(appSidebarLayoutSource).toContain("[&_[data-slot=sidebar-header]]:order-[-2]");
   });

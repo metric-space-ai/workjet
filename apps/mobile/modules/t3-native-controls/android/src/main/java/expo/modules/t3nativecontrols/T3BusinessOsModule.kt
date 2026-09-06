@@ -39,6 +39,8 @@ import org.json.JSONObject
 
 private const val BUSINESS_OS_NOTIFICATION_INTERFACE = "WorkjetBusinessOsNative"
 private const val BUSINESS_OS_DEVICE_PROOF_INTERFACE = "WorkjetBusinessOsDeviceProof"
+private const val BUSINESS_OS_BUNDLED_ROOT = "workjet-bundle://business-os"
+private const val BUSINESS_OS_BUNDLE_ASSETS = "workjet-business-os"
 private const val BUSINESS_OS_ORIGIN = "https://appassets.androidplatform.net"
 private const val BUSINESS_OS_SHELL_PROTOCOL = "workjet.business-os-shell.v1"
 private const val BUSINESS_OS_SHELL_MESSAGE_MAX_BYTES = 65_536
@@ -156,11 +158,12 @@ private fun businessOsMime(path: String) = when (path.substringAfterLast('.', ""
 }
 
 private class WorkjetBusinessOsAssetHandler(
-  shellRoot: File,
+  shellRoot: File?,
+  private val context: Context,
   private val sessionJson: String,
   private val configJson: String
 ) : WebViewAssetLoader.PathHandler {
-  private val root = shellRoot.canonicalFile
+  private val root = shellRoot?.canonicalFile
 
   // These scripts are intentionally compact and byte-stable because they are injected into the
   // packaged shell. Reflowing them would add executable whitespace and obscure fixture diffs.
@@ -182,11 +185,17 @@ private class WorkjetBusinessOsAssetHandler(
 
   override fun handle(path: String): WebResourceResponse? = try {
     val clean = path.ifEmpty { "index.html" }
-    require(!clean.split('/').contains(".."))
-    val file = File(root, clean).canonicalFile
-    require(file.path.startsWith(root.path + File.separator) && file.isFile)
+    require(!clean.startsWith("/") && !clean.contains("\\"))
+    require(clean.split('/').none { it.isEmpty() || it == "." || it == ".." })
+    val raw = if (root == null) {
+      context.assets.open("$BUSINESS_OS_BUNDLE_ASSETS/payload/$clean").use { it.readBytes() }
+    } else {
+      val file = File(root, clean).canonicalFile
+      require(file.path.startsWith(root.path + File.separator) && file.isFile)
+      file.readBytes()
+    }
     val index = clean == "index.html"
-    val bytes = file.readBytes().let { if (index) inject(it) else it }
+    val bytes = if (index) inject(raw) else raw
     WebResourceResponse(
       businessOsMime(clean),
       null,
@@ -258,8 +267,9 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
       loadedKey = launchKey
       return
     }
-    val root = Uri.parse(shellRootUri).path?.let(::File)
-    if (root == null || !root.isDirectory) {
+    val bundled = shellRootUri == BUSINESS_OS_BUNDLED_ROOT
+    val root = if (bundled) null else Uri.parse(shellRootUri).path?.let(::File)
+    if (!bundled && (root == null || !root.isDirectory)) {
       onError(mapOf("code" to "shell-root"))
       loadedKey = launchKey
       return
@@ -270,7 +280,10 @@ class T3BusinessOsView(context: Context, appContext: AppContext) : ExpoView(cont
 
     val loader = WebViewAssetLoader.Builder()
       .setDomain("appassets.androidplatform.net")
-      .addPathHandler("/business-os/", WorkjetBusinessOsAssetHandler(root, sessionJson, configJson))
+      .addPathHandler(
+        "/business-os/",
+        WorkjetBusinessOsAssetHandler(root, context, sessionJson, configJson)
+      )
       .build()
     val next = WebView(context)
     ProfileStore.getInstance().getOrCreateProfile("workjet-business-os-$storageIdentity")
@@ -405,6 +418,17 @@ class T3BusinessOsModule : Module() {
       Prop("commandJson") { view: T3BusinessOsView, value: String -> view.setCommandJson(value) }
       Events("onError", "onNotification", "onShellMessage")
       OnViewDestroys { view: T3BusinessOsView -> view.cleanup() }
+    }
+    AsyncFunction("getBundledShellPack") {
+      val context = requireNotNull(appContext.reactContext)
+      val manifest = context.assets.open("$BUSINESS_OS_BUNDLE_ASSETS/manifest.json").use {
+        JSONObject(it.bufferedReader().readText())
+      }
+      require(manifest.getString("type") == "workjet.bundled-business-os-shell.v1")
+      val packId = manifest.getString("packId")
+      require(packId.matches(Regex("[0-9a-f]{64}")))
+      context.assets.open("$BUSINESS_OS_BUNDLE_ASSETS/payload/index.html").close()
+      mapOf("packId" to packId, "rootUri" to BUSINESS_OS_BUNDLED_ROOT)
     }
     AsyncFunction("removeProfile") { storageIdentity: String ->
       if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) return@AsyncFunction

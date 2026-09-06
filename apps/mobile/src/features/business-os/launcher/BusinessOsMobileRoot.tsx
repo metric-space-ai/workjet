@@ -20,6 +20,7 @@ import { useBusinessOs } from "../BusinessOsProvider";
 import type { BusinessOsInstance } from "../registry/business-os-registry";
 import { BusinessOsSettingsPanel } from "../components/BusinessOsSettingsPanel";
 import { BusinessOsShellHost } from "../shell/BusinessOsShellHost";
+import { loadNativeBundledBusinessOsShellPack } from "../shell/native-business-os-surface";
 import {
   BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
   mergeBusinessOsMobileCatalog,
@@ -254,8 +255,8 @@ function UnavailableShell(props: { readonly app: BusinessOsMobileAppDescriptor |
         {props.app?.title ?? "Business OS"} ist noch nicht bereit
       </Text>
       <Text className="mt-3 max-w-[520px] text-center text-base leading-normal text-foreground-muted">
-        Das signierte Business-OS-Paket ist auf diesem Gerät noch nicht aktiviert. Workjet bleibt
-        gesperrt, bis Paket, Revision und Ed25519-Vertrauenskette vollständig geprüft sind.
+        Das Business-OS-Paket konnte nicht geöffnet werden. Aktualisiere Workjet und versuche es
+        erneut.
       </Text>
     </View>
   );
@@ -266,9 +267,24 @@ export function BusinessOsMobileRoot(props: {
   readonly active: boolean;
   /** The sibling Code navigator owns the shared settings sheet. */
   readonly onOpenSettings: () => void;
-  /** Set only by the native verified-pack lifecycle. Production currently stays fail-closed. */
+  /** Optional verified downloaded pack; otherwise use resources signed with the native app. */
   readonly activatedShellPack?: BusinessOsActivatedShellPack | null;
 }) {
+  const [bundledPack, setBundledPack] = useState<BusinessOsActivatedShellPack | null>(null);
+  useEffect(() => {
+    let current = true;
+    void loadNativeBundledBusinessOsShellPack()
+      .then((pack) => {
+        if (current) setBundledPack(pack);
+      })
+      .catch(() => {
+        // Unsupported / older hosts retain the visible unavailable state.
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
+  const activatedShellPack = props.activatedShellPack ?? bundledPack;
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const reducedMotion = useReducedMotion();
@@ -464,13 +480,14 @@ export function BusinessOsMobileRoot(props: {
             onHome={goHome}
           />
           <View className="flex-1">
-            {props.activatedShellPack ? (
+            {activatedShellPack ? (
               <BusinessOsShellHost
+                key={selected.storageIdentity}
                 commandJson={commandJson}
                 instance={selected}
                 onShellMessage={onShellMessage}
-                packId={props.activatedShellPack.packId}
-                shellRootUri={props.activatedShellPack.rootUri}
+                packId={activatedShellPack.packId}
+                shellRootUri={activatedShellPack.rootUri}
               />
             ) : (
               <UnavailableShell app={activeApp} />

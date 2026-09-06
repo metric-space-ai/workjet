@@ -6,9 +6,26 @@ const MODULE_NAME = "T3BusinessOsSurface";
 
 interface NativeBusinessOsSurfaceModule {
   readonly isSupported?: () => boolean;
+  readonly getBundledShellPack?: () => Promise<NativeBundledBusinessOsShellPack>;
   readonly removeProfile?: (storageIdentity: string) => Promise<void>;
   readonly getDeviceProofKey?: () => Promise<NativeWorkjetDeviceProofKey>;
   readonly signDeviceProofMessage?: (message: string) => Promise<NativeWorkjetDeviceProof>;
+}
+
+export interface NativeBundledBusinessOsShellPack {
+  readonly packId: string;
+  readonly rootUri: string;
+}
+
+/** Only the native module resolves resources covered by APK / app-bundle signing. */
+export async function loadNativeBundledBusinessOsShellPack(): Promise<NativeBundledBusinessOsShellPack> {
+  const load = module()?.getBundledShellPack;
+  if (!load) throw new Error("The installed app has no bundled Business OS shell.");
+  const pack = await load();
+  if (!/^[0-9a-f]{64}$/u.test(pack?.packId) || !pack.rootUri) {
+    throw new Error("The bundled Business OS shell descriptor is invalid.");
+  }
+  return Object.freeze({ packId: pack.packId, rootUri: pack.rootUri });
 }
 
 export interface NativeWorkjetDeviceProofPublicJwk {

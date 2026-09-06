@@ -6,6 +6,9 @@ on:
     paths:
       - ".github/workflows/mobile-android-apk.yml"
       - "apps/mobile/**"
+      - "scripts/*mobile-business-os*.mjs"
+      - "scripts/lib/mobile-business-os-bundle.*"
+      - "apps/desktop/resources/ctox/business-os-shell.manifest.json"
 
 permissions:
   contents: read
@@ -57,6 +60,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK_PATH" | tee "$RUNNER_TEMP/android-package.txt"
           grep -q "package: name='com.t3tools.t3code.preview'" "$RUNNER_TEMP/android-package.txt"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK_PATH" > "$RUNNER_TEMP/android-signature.txt"
+          node scripts/verify-mobile-business-os-apk.mjs "$APK_PATH"
           mkdir -p "$RUNNER_TEMP/workjet-apk"
           cp "$APK_PATH" "$RUNNER_TEMP/workjet-apk/Workjet-preview-arm64.apk"
           cp "$RUNNER_TEMP/android-package.txt" "$RUNNER_TEMP/android-signature.txt" "$RUNNER_TEMP/workjet-apk/"

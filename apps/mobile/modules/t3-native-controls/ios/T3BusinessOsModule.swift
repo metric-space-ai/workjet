@@ -465,6 +465,19 @@ public final class T3BusinessOsModule: Module {
       Prop("commandJson") { (view: T3BusinessOsView, value: String) in view.setCommandJson(value) }
       Events("onError", "onNotification", "onShellMessage")
     }
+    AsyncFunction("getBundledShellPack") {
+      guard let bundle = Bundle.main.url(forResource: "WorkjetBusinessOs", withExtension: "bundle"),
+        let data = try? Data(contentsOf: bundle.appendingPathComponent("manifest.json")),
+        let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        manifest["type"] as? String == "workjet.bundled-business-os-shell.v1",
+        let packID = manifest["packId"] as? String,
+        packID.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+      else { throw CocoaError(.fileReadCorruptFile) }
+      let root = bundle.appendingPathComponent("payload", isDirectory: true)
+      guard FileManager.default.fileExists(atPath: root.appendingPathComponent("index.html").path)
+      else { throw CocoaError(.fileReadNoSuchFile) }
+      return ["packId": packID, "rootUri": root.absoluteString]
+    }
     AsyncFunction("removeProfile") { (storageIdentity: String) in
       guard let identifier = UUID(uuidString: storageIdentity) else { return }
       try await WKWebsiteDataStore.remove(forIdentifier: identifier)

@@ -42,7 +42,7 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 
 - Component: `workjet-provider-gateway` 0.1.0
 - License: `MIT OR AGPL-3.0-only`
-- Redistributed in the desktop artifact: not currently packaged
+- Redistributed in the desktop artifact: yes
 - Retained license texts: `native/provider-gateway/LICENSE.MIT`, `native/provider-gateway/LICENSE.AGPL-3.0-only`, `native/provider-gateway/LICENSE.upstream`
 - Upstream: Rust port of router-for-me/CLIProxyAPI at commit a88197f845c979132c8978ea223c6af05cc81536; the upstream MIT notice is retained as LICENSE.upstream.
 
@@ -50,9 +50,9 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 
 - Component: `workjet-provider-gateway-host` 0.1.0
 - License: `MIT OR AGPL-3.0-only`
-- Redistributed in the desktop artifact: not currently packaged
+- Redistributed in the desktop artifact: yes
 - Retained license texts: `native/provider-gateway/LICENSE.MIT`, `native/provider-gateway/LICENSE.AGPL-3.0-only`, `native/provider-gateway/LICENSE.upstream`
-- Upstream: First-party Workjet host wrapper around the provider gateway; the executable statically links native/provider-gateway, so that crate's notices apply to it. It is not packaged inside the desktop artifact, but standalone executables ARE published under `provider-gateway-host-v*` release tags, and `.github/workflows/provider-gateway-host-release.yml` copies these license texts and this NOTICE into every such release (see `docs/workjet-provider-gateway-host-artifacts.md`).
+- Upstream: First-party Workjet host wrapper around the provider gateway; the executable statically links native/provider-gateway, so that crate's notices apply to it. The standalone desktop builder bundles the verified pinned executable. Standalone executables are also published under `provider-gateway-host-v*` release tags, and `.github/workflows/provider-gateway-host-release.yml` copies these license texts and this NOTICE into every such release (see `docs/workjet-provider-gateway-host-artifacts.md`).
 
 ### `native/resource-monitor`
 

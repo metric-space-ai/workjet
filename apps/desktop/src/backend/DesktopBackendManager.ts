@@ -563,19 +563,38 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       ).pipe(Effect.forkScoped),
     );
   }
-  yield* waitForHttpReady({
-    executablePath: options.executablePath,
-    entryPath: options.entryPath,
-    cwd: options.cwd,
-    httpBaseUrl: options.httpBaseUrl,
-    timeout: options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
-  }).pipe(
-    Effect.tap(() => options.onReady?.() ?? Effect.void),
-    Effect.catchTags({
-      BackendReadinessTimeoutError: (error) => options.onReadinessFailure?.(error) ?? Effect.void,
-    }),
-    Effect.forkScoped,
-  );
+  const readinessFiber = yield* Effect.gen(function* () {
+    let timeoutReported = false;
+    // A slow but live child can become ready after the initial deadline. Keep
+    // observing it so the window receives onReady, without restarting the child
+    // or repeatedly persisting the same startup failure.
+    while (true) {
+      const ready = yield* waitForHttpReady({
+        executablePath: options.executablePath,
+        entryPath: options.entryPath,
+        cwd: options.cwd,
+        httpBaseUrl: options.httpBaseUrl,
+        timeout: options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
+      }).pipe(
+        Effect.as(true),
+        Effect.catchTags({
+          BackendReadinessTimeoutError: (error) =>
+            Effect.gen(function* () {
+              if (!timeoutReported) {
+                timeoutReported = true;
+                yield* options.onReadinessFailure?.(error) ?? Effect.void;
+              }
+              return false;
+            }),
+        }),
+      );
+      if (ready) {
+        yield* options.onReady?.() ?? Effect.void;
+        return;
+      }
+      yield* Effect.sleep(Duration.seconds(1));
+    }
+  }).pipe(Effect.forkScoped);
 
   const exit = yield* handle.exitCode.pipe(
     Effect.mapError(
@@ -591,6 +610,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     ),
     Effect.exit,
   );
+  yield* Fiber.interrupt(readinessFiber);
   yield* options.onExitObserved?.() ?? Effect.void;
   yield* Effect.forEach(outputFibers, Fiber.await, {
     concurrency: "unbounded",

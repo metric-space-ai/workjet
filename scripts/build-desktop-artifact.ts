@@ -18,6 +18,7 @@ import { enforceCapabilityVersionLock } from "./check-capability-version-lock.ts
 import { BRAND_ASSET_PATHS, type WebAssetBrand } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
+import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -291,6 +292,15 @@ export class CtoxBusinessOsShellPreparationError extends Schema.TaggedErrorClass
 ) {
   override get message(): string {
     return "Could not prepare the verified CTOX Business OS shell dependency.";
+  }
+}
+
+export class ProviderGatewayHostPreparationError extends Schema.TaggedErrorClass<ProviderGatewayHostPreparationError>()(
+  "ProviderGatewayHostPreparationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Could not prepare the verified Workjet provider-gateway host dependency.";
   }
 }
 
@@ -801,13 +811,11 @@ export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
 /**
  * The host is included ONLY when a staged directory is supplied.
  *
- * There is no `provider-gateway-host-v*` release yet
- * (`apps/desktop/resources/provider-gateway/host-release.pin.json` reads
- * `"status": "unreleased"`), so pointing electron-builder at a directory that
- * does not exist would break every packaged build today for a binary nobody
- * can ship yet. Passing the staged path — produced by
- * `scripts/provider-gateway-host-artifacts.ts stage` — is what turns this on,
- * so the wiring is in place the moment the tag is cut and inert until then.
+ * The standalone builder always supplies the directory returned by
+ * prepareProviderGatewayHost after verifying the pinned release manifest and
+ * executable. An unreleased pin fails preparation before packaging begins.
+ * The optional argument remains available to callers constructing only the
+ * resource list; it is not a runtime fallback for a standalone build.
  */
 export function createDesktopExtraResources(
   businessOsShellInstallPath: string,
@@ -2251,6 +2259,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      // The runtime verifies the released executable's exact SHA-256. Its own
+      // signature must survive packaging; the app seal still covers these bytes.
+      signIgnore: ["/Contents/Resources/provider-gateway-host/"],
       // Builds without a distribution identity still need a valid bundle seal.
       // Keep hardened runtime and the Electron JIT/library entitlements together.
       ...(!signed
@@ -2434,6 +2445,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
+  const providerGatewayHost = yield* Effect.tryPromise({
+    try: () =>
+      prepareProviderGatewayHost({ repoRoot, platform: options.platform, arch: options.arch }),
+    catch: (cause) => new ProviderGatewayHostPreparationError({ cause }),
+  });
   const businessOsShell = yield* Effect.tryPromise({
     try: () => prepareCtoxBusinessOsShell({ repoRoot }),
     catch: (cause) => new CtoxBusinessOsShellPreparationError({ cause }),
@@ -2723,6 +2739,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           }
         : undefined,
       businessOsShell.installPath,
+      providerGatewayHost.installPath,
     ),
     dependencies: stageDependencies,
     devDependencies: {

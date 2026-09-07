@@ -121,8 +121,11 @@ The pin has two states:
 - `"status": "unreleased"` — a first-class state recording that no gateway
   release exists yet, with a human-readable `unreleasedReason`. It is **not** a
   licence to download something unverified; it makes the resolver report an
-  unmet pin. The pin checked in today is in this state, because no
-  `provider-gateway-host-v*` release has been published.
+  unmet pin.
+
+The checked-in pin selects `provider-gateway-host-v0.1.0`, published from
+`main` commit `26f0a9947a10debe349d0c609df73147aa154221`. Its manifest and all six
+target digests come from the verified release workflow, not a dry-run build.
 
 CTOX pins the same way: it consumes the manifest and per-target digests from a
 release tag and verifies the bytes it downloads. Because the manifest is
@@ -159,9 +162,26 @@ size, wrong digest, unsupported platform, or no pinned release). A packaged app
 has no Rust toolchain, so a silent fallback would only surface later as a
 confusing "the gateway will not start".
 
-Today, with an `unreleased` pin, every development build uses path 1 or 3 and a
-packaged build would fail fast — which is correct: nothing has been released to
-package.
+The standalone desktop builder prepares the host before invoking
+electron-builder. `scripts/lib/prepare-provider-gateway-host.ts` requires a
+released pin, verifies the release manifest against the pin, and downloads only
+the executables for the requested target. A universal macOS package includes
+both Apple targets. The staging cache is
+`.deps/workjet-provider-gateway-host/<version>/<os>-<arch>/`; cached files are
+verified again before reuse, and corrupt entries are replaced only by a
+verified download. The builder copies this directory into the resource path
+above. An unreleased pin, mismatched manifest, or invalid executable fails the
+build before a package can be produced.
+
+macOS packaging preserves the published host executable's bytes instead of
+re-signing the nested resource and invalidating its pinned digest. The enclosing
+app signature still seals the resource directory. A host that needs a different
+signing identity must be signed before its release digest is generated.
+
+The macOS install-artifact workflow also starts the packaged app with a fresh
+temporary profile. It requires a listening backend and a rendered app window,
+and rejects a reported `ProviderGatewayHostArtifactError`. Signature and Electron
+executable checks alone cannot establish that Workjet's services start.
 
 ## 5. Licensing obligations
 

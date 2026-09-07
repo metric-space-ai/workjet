@@ -6,6 +6,9 @@ on:
     paths:
       - .github/workflows/desktop-install-artifact.yml
       - scripts/build-desktop-artifact.ts
+      - scripts/lib/prepare-provider-gateway-host.ts
+      - scripts/smoke-packaged-startup.mjs
+      - apps/desktop/resources/provider-gateway/host-release.pin.json
       - apps/desktop/resources/entitlements.mac.adhoc.plist
 
 permissions:
@@ -48,6 +51,10 @@ jobs:
           export TMPDIR="$RUNNER_TEMP"
           export ELECTRON_CACHE="$RUNNER_TEMP/electron-cache"
           export ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/electron-builder-cache"
+          # This workflow publishes an install artifact, not an updater feed.
+          # Use the existing unconfigured-build behavior instead of embedding
+          # the ambient Actions repository as a nonexistent desktop release feed.
+          unset GITHUB_REPOSITORY T3CODE_DESKTOP_UPDATE_REPOSITORY
           node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
       - name: Verify the packaged app signature and executable
         run: |
@@ -55,13 +62,15 @@ jobs:
           ditto -xk "$RUNNER_TEMP"/workjet-desktop/Workjet-*-arm64.zip "$RUNNER_TEMP/workjet-desktop-verify"
           app="$RUNNER_TEMP/workjet-desktop-verify/Workjet.app"
           codesign --verify --deep --strict "$app"
+          test ! -e "$app/Contents/Resources/app-update.yml"
           ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Workjet" -e 'if (!process.versions.electron) process.exit(1)'
+          node scripts/smoke-packaged-startup.mjs "$app/Contents/MacOS/Workjet" "$RUNNER_TEMP/workjet-desktop/startup-smoke.json"
       - name: Record source and artifact checksums
         run: |
           git rev-parse HEAD > "$RUNNER_TEMP/workjet-desktop/SOURCE_COMMIT"
           cd "$RUNNER_TEMP/workjet-desktop"
           shasum -a 256 ./*.zip > SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: workjet-desktop-macos-arm64-${{ github.sha }}
           path: ${{ runner.temp }}/workjet-desktop/

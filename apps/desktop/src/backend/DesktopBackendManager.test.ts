@@ -701,6 +701,72 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  for (const becomesReady of [false, true]) {
+    it.effect(
+      becomesReady
+        ? "opens a backend that becomes ready after its initial startup deadline"
+        : "stops readiness retries when an unready backend exits",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            let healthy = false;
+            let requests = 0;
+            let readyCount = 0;
+            let failureCount = 0;
+            const firstRequest = yield* Deferred.make<void>();
+            const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+            const spawnerLayer = Layer.succeed(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() =>
+                Effect.succeed(makeProcess({ exitCode: Deferred.await(exited) })),
+              ),
+            );
+            const clientLayer = httpClientLayer((request) =>
+              Effect.gen(function* () {
+                requests += 1;
+                yield* Deferred.succeed(firstRequest, undefined);
+                return responseForRequest(request, healthy ? 200 : 503);
+              }),
+            );
+            const backendFiber = yield* DesktopBackendManager.runBackendProcess({
+              ...baseConfig,
+              readinessTimeout: Duration.millis(50),
+              desktopTelemetryStream: Stream.empty,
+              onReady: () =>
+                Effect.sync(() => {
+                  readyCount += 1;
+                }),
+              onReadinessFailure: () =>
+                Effect.sync(() => {
+                  failureCount += 1;
+                }),
+            }).pipe(Effect.provide(Layer.mergeAll(spawnerLayer, clientLayer)), Effect.forkScoped);
+
+            yield* Deferred.await(firstRequest);
+            yield* TestClock.adjust(Duration.millis(50));
+            assert.equal(failureCount, 1);
+            assert.equal(readyCount, 0);
+            const initialRequests = requests;
+            healthy = becomesReady;
+            yield* TestClock.adjust(Duration.seconds(1));
+            assert.ok(
+              requests > initialRequests,
+              "a live backend must still be observed after timeout",
+            );
+            assert.equal(readyCount, becomesReady ? 1 : 0);
+            assert.equal(failureCount, 1);
+
+            yield* Deferred.succeed(exited, ChildProcessSpawner.ExitCode(0));
+            yield* Fiber.join(backendFiber);
+            const requestsAtExit = requests;
+            yield* TestClock.adjust(Duration.seconds(2));
+            assert.equal(requests, requestsAtExit, "an exited backend must no longer be probed");
+            assert.equal(readyCount, becomesReady ? 1 : 0);
+          }).pipe(Effect.provide(TestClock.layer())),
+        ),
+    );
+  }
+
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(
       Effect.gen(function* () {

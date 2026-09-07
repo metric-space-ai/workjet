@@ -114,15 +114,26 @@ function describe(result: KeychainPhaseResult): string {
   return result.error ?? result.reason ?? JSON.stringify(result);
 }
 
-function runPhase(phase: "encrypt" | "decrypt", filePath: string): KeychainPhaseResult {
+function runPhase(
+  phase: "encrypt" | "decrypt" | "encrypt-async" | "decrypt-async",
+  filePath: string,
+): KeychainPhaseResult {
   const electron = NodePath.join(repoRoot, "apps/desktop/node_modules/.bin/electron");
   const mainScript = NodePath.join(repoRoot, "scripts/keychainSmoke/main.cjs");
   const result = NodeChildProcess.spawnSync(electron, [mainScript, phase, filePath], {
     encoding: "utf8",
     // A keychain prompt would hang a CI box forever.
     timeout: 120_000,
+    killSignal: "SIGKILL",
     env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" },
   });
+  if (result.error || result.status !== 0 || result.signal !== null) {
+    return {
+      ok: false,
+      phase,
+      error: `electron exited with status ${result.status}, signal ${result.signal}: ${result.error?.message ?? result.stderr ?? ""}`,
+    };
+  }
   const line = (result.stdout ?? "")
     .split("\n")
     .toReversed()
@@ -143,13 +154,27 @@ export function main(): number {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "keychain-smoke-"));
   const filePath = NodePath.join(directory, "ciphertext.bin");
   try {
-    const encrypt = runPhase("encrypt", filePath);
+    const asynchronous = hostPlatform === "darwin";
+    const encrypt = runPhase(asynchronous ? "encrypt-async" : "encrypt", filePath);
     const decrypt = encrypt.ok
-      ? runPhase("decrypt", filePath)
+      ? runPhase(asynchronous ? "decrypt-async" : "decrypt", filePath)
       : ({ ok: false, phase: "decrypt", reason: "skipped, encrypt failed" } as KeychainPhaseResult);
 
     const { verdict, detail } = interpretKeychainSmoke({ encrypt, decrypt });
     process.stdout.write(`keychain smoke: ${verdict} — ${detail}\n`);
+
+    if (asynchronous && verdict === "pass") {
+      const legacyPath = NodePath.join(directory, "legacy-ciphertext.bin");
+      const legacyEncrypt = runPhase("encrypt", legacyPath);
+      const asyncDecrypt = legacyEncrypt.ok
+        ? runPhase("decrypt-async", legacyPath)
+        : { ok: false, reason: "legacy encryption failed" };
+      const migration = interpretKeychainSmoke({ encrypt: legacyEncrypt, decrypt: asyncDecrypt });
+      process.stdout.write(
+        `legacy keychain migration: ${migration.verdict} — ${migration.detail}\n`,
+      );
+      if (migration.verdict !== "pass") return 1;
+    }
 
     if (hostPlatform === "linux") {
       const linux = checkLinuxBackendFailsClosed(encrypt.backend ?? null);

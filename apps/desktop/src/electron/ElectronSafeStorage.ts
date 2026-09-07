@@ -70,20 +70,39 @@ export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;
 
   return ElectronSafeStorage.of({
-    isEncryptionAvailable: Effect.try({
-      try: () => Electron.safeStorage.isEncryptionAvailable(),
-      catch: (cause) => new ElectronSafeStorageAvailabilityError({ cause }),
-    }),
+    // macOS can wait for a Keychain authorization dialog. The synchronous
+    // API blocks Electron's main thread, including window creation and IPC.
+    isEncryptionAvailable:
+      platform === "darwin"
+        ? Effect.tryPromise({
+            try: () => Electron.safeStorage.isAsyncEncryptionAvailable(),
+            catch: (cause) => new ElectronSafeStorageAvailabilityError({ cause }),
+          })
+        : Effect.try({
+            try: () => Electron.safeStorage.isEncryptionAvailable(),
+            catch: (cause) => new ElectronSafeStorageAvailabilityError({ cause }),
+          }),
     encryptString: (value) =>
-      Effect.try({
-        try: () => Electron.safeStorage.encryptString(value),
-        catch: (cause) => new ElectronSafeStorageEncryptError({ cause }),
-      }),
+      platform === "darwin"
+        ? Effect.tryPromise({
+            try: () => Electron.safeStorage.encryptStringAsync(value),
+            catch: (cause) => new ElectronSafeStorageEncryptError({ cause }),
+          })
+        : Effect.try({
+            try: () => Electron.safeStorage.encryptString(value),
+            catch: (cause) => new ElectronSafeStorageEncryptError({ cause }),
+          }),
     decryptString: (value) =>
-      Effect.try({
-        try: () => Electron.safeStorage.decryptString(Buffer.from(value)),
-        catch: (cause) => new ElectronSafeStorageDecryptError({ cause }),
-      }),
+      platform === "darwin"
+        ? Effect.tryPromise({
+            try: async () =>
+              (await Electron.safeStorage.decryptStringAsync(Buffer.from(value))).result,
+            catch: (cause) => new ElectronSafeStorageDecryptError({ cause }),
+          })
+        : Effect.try({
+            try: () => Electron.safeStorage.decryptString(Buffer.from(value)),
+            catch: (cause) => new ElectronSafeStorageDecryptError({ cause }),
+          }),
     selectedStorageBackend: Effect.sync(() => {
       if (platform !== "linux") {
         return Option.none();

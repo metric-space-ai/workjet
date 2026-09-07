@@ -333,7 +333,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `dunder-proto@1.0.1` — https://github.com/es-shims/dunder-proto
 - `ee-first@1.1.1` — jonathanong/ee-first
 - `effect@4.0.0-beta.103` — https://github.com/Effect-TS/effect
-- `electron@41.10.3` — https://github.com/electron/electron
+- `electron@42.11.2` — https://github.com/electron/electron
 - `electron-store@8.2.0` — sindresorhus/electron-store
 - `electron-updater@6.8.3` — https://github.com/electron-userland/electron-builder
 - `encodeurl@2.0.0` — pillarjs/encodeurl

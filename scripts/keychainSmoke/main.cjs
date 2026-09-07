@@ -16,27 +16,37 @@ const emit = (payload) => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 };
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone Electron helper has no Effect runtime; capture the host boundary once.
   const hostPlatform = process.platform;
   const phase = process.argv[process.argv.length - 2];
   const filePath = process.argv[process.argv.length - 1];
   try {
-    const available = safeStorage.isEncryptionAvailable();
+    const asynchronous = phase.endsWith("-async");
+    const available = asynchronous
+      ? await safeStorage.isAsyncEncryptionAvailable()
+      : safeStorage.isEncryptionAvailable();
     const backend =
       hostPlatform === "linux" && typeof safeStorage.getSelectedStorageBackend === "function"
         ? safeStorage.getSelectedStorageBackend()
         : null;
 
-    if (phase === "encrypt") {
+    if (phase === "encrypt" || phase === "encrypt-async") {
       if (!available) {
         emit({ ok: false, phase, available, backend, reason: "encryption-unavailable" });
       } else {
-        fs.writeFileSync(filePath, safeStorage.encryptString("keychain-smoke-sentinel"));
+        const ciphertext = asynchronous
+          ? await safeStorage.encryptStringAsync("keychain-smoke-sentinel")
+          : safeStorage.encryptString("keychain-smoke-sentinel");
+        fs.writeFileSync(filePath, ciphertext);
         emit({ ok: true, phase, available, backend });
       }
     } else {
-      const plaintext = available ? safeStorage.decryptString(fs.readFileSync(filePath)) : null;
+      const plaintext = !available
+        ? null
+        : asynchronous
+          ? (await safeStorage.decryptStringAsync(fs.readFileSync(filePath))).result
+          : safeStorage.decryptString(fs.readFileSync(filePath));
       emit({ ok: available, phase, available, backend, plaintext });
     }
   } catch (error) {

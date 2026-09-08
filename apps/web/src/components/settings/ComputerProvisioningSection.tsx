@@ -122,14 +122,15 @@ export function ComputerProvisioningSection() {
     }
   };
 
-  const start = async () => {
+  const start = async (action: "install" | "start" = "install") => {
     if (!preflight) return;
     setBusy(true);
     try {
       const result = await bridge.startProvisioningOperation!({
         preflightId: preflight.preflightId,
-        action: "install",
-        components: installWorkjet ? ["ctox-backend", "workjet"] : ["ctox-backend"],
+        action,
+        components:
+          action === "install" && installWorkjet ? ["ctox-backend", "workjet"] : ["ctox-backend"],
         channel: "stable",
       });
       if (result._tag === "failed") throw new Error(result.message);
@@ -138,7 +139,7 @@ export function ComputerProvisioningSection() {
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Could not start installation",
+        title: action === "start" ? "Could not start backend" : "Could not start installation",
         description: errorText(error),
       });
     } finally {
@@ -270,6 +271,22 @@ export function ComputerProvisioningSection() {
 
           {stage === "components" && preflight ? (
             <div className="space-y-4">
+              {preflight.ctoxInstalledVersion !== null ? (
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-sm font-medium">CTOX is already installed</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Start the existing backend to reconnect projects on this computer.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-3"
+                    disabled={busy}
+                    onClick={() => void start("start")}
+                  >
+                    Start backend
+                  </Button>
+                </div>
+              ) : null}
               <div className="rounded-lg border border-border p-3 text-sm">
                 <p className="font-medium">
                   {preflight.platform} · {preflight.architecture}

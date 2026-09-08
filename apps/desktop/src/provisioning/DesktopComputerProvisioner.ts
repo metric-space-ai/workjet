@@ -613,7 +613,13 @@ export const make = Effect.gen(function* () {
         );
       }
       let administratorPassword: string | null = null;
-      if (record.public.administratorPasswordRequired) {
+      if (
+        record.public.administratorPasswordRequired &&
+        (action === "install" ||
+          action === "repair" ||
+          action === "update" ||
+          action === "rollback")
+      ) {
         administratorPassword = yield* prompts.request({
           attempt: 1,
           destination:

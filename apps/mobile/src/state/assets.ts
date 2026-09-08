@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createAssetEnvironmentAtoms, resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import { createAssetEnvironmentAtoms, resolveAssetUrl } from "@workjet/client-runtime/state/assets";
+import type { AssetResource, EnvironmentId } from "@workjet/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";

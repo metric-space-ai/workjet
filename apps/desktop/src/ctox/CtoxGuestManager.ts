@@ -13,12 +13,12 @@ import type {
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionTransferEvent,
   WorkjetDeviceWebRtcRequestV1,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   CtoxWorkjetProjectControlResponse,
   CtoxWorkjetSessionControlResponse,
   WorkjetDeviceWebRtcResponseV1,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -211,7 +211,7 @@ export class CtoxGuestManager extends Context.Service<
       computerIds: readonly string[],
     ) => Effect.Effect<CtoxManagedActionResult>;
   }
->()("@t3tools/desktop/ctox/CtoxGuestManager") {}
+>()("@workjet/desktop/ctox/CtoxGuestManager") {}
 
 export const CTOX_APPLY_HOST_THEME_CHANNEL = "instance:apply-host-theme";
 
@@ -334,7 +334,13 @@ function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1
 function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRequest): string {
   return `(async () => {
   const control = globalThis.workjetProjectControl;
-  if (typeof control !== "function") return { status: "unsupported" };
+  if (typeof control !== "function") {
+    const password = document.querySelector('input[type="password"]');
+    if (password && password.getClientRects().length > 0) {
+      return { status: "authentication_required" };
+    }
+    return { status: "unsupported" };
+  }
   const result = await control(${JSON.stringify(request)});
   return { status: "completed", result };
 })()`;
@@ -431,7 +437,10 @@ function normalizePathname(pathname: string): string {
 
 function stripBusinessOsPathPrefix(path: string): string {
   if (path === "/business-os") return "/";
-  return path.startsWith("/business-os/") ? path.slice("/business-os".length) : path;
+  const relative = path.startsWith("/business-os/") ? path.slice("/business-os".length) : path;
+  // Managed releases mount the same shell below a versioned static path.
+  // Normalize the mount before applying the existing asset/control allowlists.
+  return relative.replace(/^\/_shell\/\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?(?=\/)/u, "");
 }
 
 function isAllowedStaticAssetPath(path: string, method = "GET"): boolean {
@@ -904,9 +913,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
       }
 
-      const managed = yield* auth.refresh.pipe(
-        Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
-      );
+      // Local and explicitly paired instances resolve their own authority below.
+      // Their activation must not wait for the unrelated hosted account service.
+      const managed = instanceId.startsWith("managed:")
+        ? yield* auth.refresh.pipe(
+            Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
+          )
+        : ({ _tag: "signed_out" } as const);
       const discovery = yield* registry.merge(managed);
       const descriptor =
         discovery._tag === "ready"
@@ -1491,154 +1504,179 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       instanceId: string,
       request: WorkjetDeviceWebRtcRequestV1,
     ): Effect.Effect<CtoxWorkjetDeviceControlResult> =>
-      SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.gen(function* (): Generator<
-          Effect.Effect<unknown>,
-          readonly [CtoxWorkjetDeviceControlResult, GuestState],
-          never
-        > {
-          const guest = state.pool.get(instanceId);
-          if (guest === undefined || guest.view.webContents.isDestroyed()) {
-            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
-          }
-          const raw = yield* Effect.tryPromise({
-            try: () =>
-              guest.view.webContents.executeJavaScript(
-                buildGuestDeviceControlExpression(request),
-                true,
-              ),
-            catch: () => undefined,
-          }).pipe(Effect.orElseSucceed(() => undefined));
-          if (
-            typeof raw === "object" &&
-            raw !== null &&
-            (raw as { readonly status?: unknown }).status === "unsupported"
-          ) {
-            return [{ _tag: "failed", code: "unsupported" } as const, state] as const;
-          }
-          if (
-            typeof raw !== "object" ||
-            raw === null ||
-            (raw as { readonly status?: unknown }).status !== "completed"
-          ) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          const response = (raw as { readonly result?: unknown }).result;
-          const encodedLength = yield* Effect.try({
-            try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
-            catch: () => MAX_DEVICE_CONTROL_RESPONSE_BYTES + 1,
-          }).pipe(Effect.orElseSucceed(() => MAX_DEVICE_CONTROL_RESPONSE_BYTES + 1));
-          if (encodedLength > MAX_DEVICE_CONTROL_RESPONSE_BYTES) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          const decoded = yield* Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1)(
-            response,
-            { onExcessProperty: "error" },
-          ).pipe(Effect.option);
-          if (Option.isNone(decoded)) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          return [{ _tag: "completed", response: decoded.value } as const, state] as const;
-        }),
-      );
+      Effect.gen(function* (): Generator<
+        Effect.Effect<unknown>,
+        CtoxWorkjetDeviceControlResult,
+        never
+      > {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const guest = state.pool.get(instanceId);
+        if (guest === undefined || guest.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            guest.view.webContents.executeJavaScript(
+              buildGuestDeviceControlExpression(request),
+              true,
+            ),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("30 seconds"),
+        );
+        if (Option.isNone(pending)) return { _tag: "failed", code: "guest_failed" };
+        const current = yield* SynchronizedRef.get(stateRef);
+        if (current.pool.get(instanceId) !== guest || guest.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const raw = pending.value;
+        if (
+          typeof raw === "object" &&
+          raw !== null &&
+          (raw as { readonly status?: unknown }).status === "unsupported"
+        ) {
+          return { _tag: "failed", code: "unsupported" };
+        }
+        if (
+          typeof raw !== "object" ||
+          raw === null ||
+          (raw as { readonly status?: unknown }).status !== "completed"
+        ) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        const response = (raw as { readonly result?: unknown }).result;
+        const encodedLength = yield* Effect.try({
+          try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
+          catch: () => MAX_DEVICE_CONTROL_RESPONSE_BYTES + 1,
+        }).pipe(Effect.orElseSucceed(() => MAX_DEVICE_CONTROL_RESPONSE_BYTES + 1));
+        if (encodedLength > MAX_DEVICE_CONTROL_RESPONSE_BYTES) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        const decoded = yield* Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1)(response, {
+          onExcessProperty: "error",
+        }).pipe(Effect.option);
+        if (Option.isNone(decoded)) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        return { _tag: "completed", response: decoded.value };
+      });
 
     const requestProjectControl = (
       instanceId: string,
       request: CtoxWorkjetProjectControlRequest,
     ): Effect.Effect<CtoxWorkjetProjectControlResult> =>
-      SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.gen(function* (): Generator<
-          Effect.Effect<unknown>,
-          readonly [CtoxWorkjetProjectControlResult, GuestState],
-          never
-        > {
-          const guest = state.pool.get(instanceId);
-          if (guest === undefined || guest.view.webContents.isDestroyed()) {
-            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
-          }
-
-          const raw = yield* Effect.tryPromise({
-            try: () =>
-              guest.view.webContents.executeJavaScript(
-                buildGuestProjectControlExpression(request),
-                true,
-              ),
-            catch: () => undefined,
-          }).pipe(Effect.orElseSucceed(() => undefined));
-          if (
-            typeof raw !== "object" ||
-            raw === null ||
-            (raw as { readonly status?: unknown }).status !== "completed"
-          ) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          const response = (raw as { readonly result?: unknown }).result;
-          const encodedLength = yield* Effect.try({
-            try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
-            catch: () => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1,
-          }).pipe(Effect.orElseSucceed(() => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1));
-          if (encodedLength > MAX_PROJECT_CONTROL_RESPONSE_BYTES) {
-            return [{ _tag: "failed", code: "response_too_large" } as const, state] as const;
-          }
-          const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetProjectControlResponse)(
-            response,
-            { onExcessProperty: "error" },
-          ).pipe(Effect.option);
-          if (Option.isNone(decoded)) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          return [{ _tag: "completed", response: decoded.value } as const, state] as const;
-        }),
-      );
+      Effect.gen(function* (): Generator<
+        Effect.Effect<unknown>,
+        CtoxWorkjetProjectControlResult,
+        never
+      > {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const guest = state.pool.get(instanceId);
+        if (guest === undefined || guest.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        // Sync may never settle. Keep the pool unlocked so switching and
+        // closing still work, and return a bounded failure to the caller.
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            guest.view.webContents.executeJavaScript(
+              buildGuestProjectControlExpression(request),
+              true,
+            ),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("30 seconds"),
+        );
+        if (Option.isNone(pending)) return { _tag: "failed", code: "timeout" };
+        const current = yield* SynchronizedRef.get(stateRef);
+        if (current.pool.get(instanceId) !== guest || guest.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const raw = pending.value;
+        const status =
+          typeof raw === "object" && raw !== null
+            ? (raw as { readonly status?: unknown }).status
+            : undefined;
+        if (status === "authentication_required" || status === "unsupported") {
+          return { _tag: "failed", code: status };
+        }
+        if (typeof raw !== "object" || raw === null || status !== "completed") {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        const response = (raw as { readonly result?: unknown }).result;
+        const encodedLength = yield* Effect.try({
+          try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
+          catch: () => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1,
+        }).pipe(Effect.orElseSucceed(() => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1));
+        if (encodedLength > MAX_PROJECT_CONTROL_RESPONSE_BYTES) {
+          return { _tag: "failed", code: "response_too_large" };
+        }
+        const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetProjectControlResponse)(
+          response,
+          { onExcessProperty: "error" },
+        ).pipe(Effect.option);
+        if (Option.isNone(decoded)) return { _tag: "failed", code: "guest_failed" };
+        return { _tag: "completed", response: decoded.value };
+      });
 
     const requestSessionControl = (
       instanceId: string,
       request: CtoxWorkjetSessionControlRequest,
     ): Effect.Effect<CtoxWorkjetSessionControlResult> =>
-      SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.gen(function* (): Generator<
-          Effect.Effect<unknown>,
-          readonly [CtoxWorkjetSessionControlResult, GuestState],
-          never
-        > {
-          const pooled = state.pool.get(instanceId);
-          if (pooled === undefined || pooled.view.webContents.isDestroyed()) {
-            return [{ _tag: "failed", code: "not_active" } as const, state] as const;
-          }
+      Effect.gen(function* (): Generator<
+        Effect.Effect<unknown>,
+        CtoxWorkjetSessionControlResult,
+        never
+      > {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const pooled = state.pool.get(instanceId);
+        if (pooled === undefined || pooled.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
 
-          const raw = yield* Effect.tryPromise({
-            try: () =>
-              pooled.view.webContents.executeJavaScript(
-                buildGuestSessionControlExpression(request),
-                true,
-              ),
-            catch: () => undefined,
-          }).pipe(Effect.orElseSucceed(() => undefined));
-          if (
-            typeof raw !== "object" ||
-            raw === null ||
-            (raw as { readonly status?: unknown }).status !== "completed"
-          ) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          const response = (raw as { readonly result?: unknown }).result;
-          const encodedLength = yield* Effect.try({
-            try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
-            catch: () => MAX_SESSION_CONTROL_RESPONSE_BYTES + 1,
-          }).pipe(Effect.orElseSucceed(() => MAX_SESSION_CONTROL_RESPONSE_BYTES + 1));
-          if (encodedLength > MAX_SESSION_CONTROL_RESPONSE_BYTES) {
-            return [{ _tag: "failed", code: "response_too_large" } as const, state] as const;
-          }
-          const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetSessionControlResponse)(
-            response,
-            { onExcessProperty: "error" },
-          ).pipe(Effect.option);
-          if (Option.isNone(decoded)) {
-            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
-          }
-          return [{ _tag: "completed", response: decoded.value } as const, state] as const;
-        }),
-      );
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            pooled.view.webContents.executeJavaScript(
+              buildGuestSessionControlExpression(request),
+              true,
+            ),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("30 seconds"),
+        );
+        if (Option.isNone(pending)) return { _tag: "failed", code: "guest_failed" };
+        const current = yield* SynchronizedRef.get(stateRef);
+        if (current.pool.get(instanceId) !== pooled || pooled.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const raw = pending.value;
+        if (
+          typeof raw !== "object" ||
+          raw === null ||
+          (raw as { readonly status?: unknown }).status !== "completed"
+        ) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        const response = (raw as { readonly result?: unknown }).result;
+        const encodedLength = yield* Effect.try({
+          try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
+          catch: () => MAX_SESSION_CONTROL_RESPONSE_BYTES + 1,
+        }).pipe(Effect.orElseSucceed(() => MAX_SESSION_CONTROL_RESPONSE_BYTES + 1));
+        if (encodedLength > MAX_SESSION_CONTROL_RESPONSE_BYTES) {
+          return { _tag: "failed", code: "response_too_large" };
+        }
+        const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetSessionControlResponse)(
+          response,
+          { onExcessProperty: "error" },
+        ).pipe(Effect.option);
+        if (Option.isNone(decoded)) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        return { _tag: "completed", response: decoded.value };
+      });
 
     const registerSessionTransferEvents = (
       computerIds: readonly string[],

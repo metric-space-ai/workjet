@@ -8,7 +8,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { deriveOrchestrationBatchEffects } from "./orchestrationEventEffects";

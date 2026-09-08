@@ -20,7 +20,7 @@ import {
   type WorkjetDelegation,
   type WorkjetThreadRole,
   type WorkjetWorkerAddress,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";

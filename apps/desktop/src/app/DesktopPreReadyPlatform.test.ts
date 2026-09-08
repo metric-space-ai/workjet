@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -13,6 +13,8 @@ const { appendSwitchMock, getSwitchValueMock, hasSwitchMock, registerSchemesMock
     registerSchemesMock: vi.fn(),
   }),
 );
+
+vi.mock("../electron/MacKeychainPolicy.ts", () => ({ disableMacKeychainPrompts: vi.fn() }));
 
 vi.mock("electron", () => ({
   app: {
@@ -83,7 +85,7 @@ describe("DesktopPreReadyPlatform", () => {
     () =>
       Effect.gen(function* () {
         class ClerkShaped extends Context.Service<ClerkShaped, { readonly ready: true }>()(
-          "@t3tools/desktop/app/DesktopPreReadyPlatform.test/ClerkShaped",
+          "@workjet/desktop/app/DesktopPreReadyPlatform.test/ClerkShaped",
         ) {}
 
         const events: Array<string> = [];

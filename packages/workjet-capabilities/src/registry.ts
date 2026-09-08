@@ -3,7 +3,7 @@ import {
   CapabilityUnknownIdError,
   type CapabilityAdapter,
   type CapabilityManifest,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 
 import { builtInCapabilityManifests } from "./manifests.ts";

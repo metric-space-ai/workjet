@@ -6,7 +6,7 @@ import type {
   CtoxManagedDiscoveryResult,
   CtoxManagedInstance,
   CtoxManagedInstanceSource,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 const DEFAULT_CTOX_MANAGED_BASE_URL = "https://ctox.dev";
 const CTOX_DESKTOP_CLIENT_HEADER = "ctox-business-os-desktop";

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://workjet.codes/schema/workjet.json",
+  "iconPath": "assets/workjet/workjet-web-apple-touch-180.png",
+  "scripts": [
+    {
+      "name": "Setup Worktree",
+      "command": "vp i && ln -sf $WORKJET_PROJECT_ROOT/.env .env && ln -sf $WORKJET_PROJECT_ROOT/infra/relay/.env infra/relay/.env && node apps/web/scripts/warm-dep-cache.ts",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    }
+  ]
+}

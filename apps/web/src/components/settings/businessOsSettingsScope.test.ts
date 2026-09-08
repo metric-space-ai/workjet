@@ -1,4 +1,4 @@
-import { BusinessOsInstanceId, EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, EnvironmentId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { BusinessOsCodeScopeSnapshot } from "../../businessOsCodeScope";

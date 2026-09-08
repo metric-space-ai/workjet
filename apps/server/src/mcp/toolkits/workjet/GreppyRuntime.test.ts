@@ -832,7 +832,7 @@ describe("GreppyRuntime workspace readiness", () => {
         () => gate,
       );
       seedValidExecutable(fake, "/path/bin/greppy");
-      const runtime = make({ stateDir: "/t3-state", platform: fake.platform });
+      const runtime = make({ stateDir: "/workjet-state", platform: fake.platform });
       const first = yield* runtime
         .ensureWorkspace("/harness/codex/thread-a")
         .pipe(Effect.forkChild);
@@ -854,15 +854,15 @@ describe("GreppyRuntime workspace readiness", () => {
       assert.equal(indexCommandCount(), 1);
       release();
       const [one, two] = yield* Effect.all([Fiber.join(first), Fiber.join(second)]);
-      assert.equal(one.storeDir, "/t3-state/greppy");
-      assert.equal(two.storeDir, "/t3-state/greppy");
+      assert.equal(one.storeDir, "/workjet-state/greppy");
+      assert.equal(two.storeDir, "/workjet-state/greppy");
       assert.notInclude(one.storeDir, "codex");
       assert.notInclude(one.storeDir, "thread-a");
 
       const other = readyFake([result({ stdout: healthyStatus() })]);
       seedValidExecutable(other, "/path/bin/greppy");
       const otherReadiness = yield* make({
-        stateDir: "/t3-state",
+        stateDir: "/workjet-state",
         platform: other.platform,
       }).ensureWorkspace("/harness/claude/thread-b");
       assert.equal(otherReadiness.storeDir, one.storeDir);

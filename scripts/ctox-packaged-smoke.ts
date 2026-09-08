@@ -112,7 +112,7 @@ function usage(): string {
 
 export function parseSmokeArguments(
   argv: readonly string[],
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone release smoke boundary; callers can inject a platform for deterministic tests.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone release smoke boundary; callers can inject a platform for deterministic tests.
   platform = process.platform,
 ): SmokeArguments {
   if (platform !== "darwin")
@@ -1083,7 +1083,7 @@ async function run(): Promise<void> {
   try {
     NodeFS.mkdirSync(args.smokeRoot, { recursive: false, mode: 0o700 });
     NodeFS.mkdirSync(NodePath.join(args.smokeRoot, "app-data"), { mode: 0o700 });
-    NodeFS.mkdirSync(NodePath.join(args.smokeRoot, "t3-home"), { mode: 0o700 });
+    NodeFS.mkdirSync(NodePath.join(args.smokeRoot, "workjet-home"), { mode: 0o700 });
     phase("invite: generating");
     invite = runCtox(
       args,
@@ -1101,7 +1101,7 @@ async function run(): Promise<void> {
     phase("invite: ready");
 
     port = await chooseDebugPort();
-    const userDataDir = NodePath.join(args.smokeRoot, "app-data", "t3code");
+    const userDataDir = NodePath.join(args.smokeRoot, "app-data", "workjet");
     phase("workjet: launching isolated package");
     child = NodeChildProcess.spawn(
       args.workjetExecutable,
@@ -1114,8 +1114,8 @@ async function run(): Promise<void> {
         cwd: args.smokeRoot,
         env: {
           ...process.env,
-          T3CODE_DESKTOP_APP_DATA_DIR: NodePath.join(args.smokeRoot, "app-data"),
-          T3_HOME: NodePath.join(args.smokeRoot, "t3-home"),
+          WORKJET_DESKTOP_APP_DATA_DIR: NodePath.join(args.smokeRoot, "app-data"),
+          WORKJET_HOME: NodePath.join(args.smokeRoot, "workjet-home"),
         },
         stdio: "ignore",
       },

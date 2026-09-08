@@ -1,14 +1,14 @@
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   WorkjetGatewayApiKeyProvider,
   WorkjetGatewayOauthProvider,
   WorkjetGatewayUpdateRoutingInput,
-} from "@t3tools/contracts";
-import { WorkjetGatewayAccountId } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { WorkjetGatewayAccountId } from "@workjet/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";

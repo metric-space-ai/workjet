@@ -1,6 +1,6 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import { resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/shell";
+import { threadSearchMatchKey } from "@workjet/client-runtime/state/thread-search";
+import { resolveSnoozePresets } from "@workjet/client-runtime/state/thread-settled";
 import {
   CommandId,
   EnvironmentId,
@@ -10,7 +10,7 @@ import {
   ThreadId,
   TurnId,
   DEFAULT_WORKJET_THREAD_CONFIG,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";

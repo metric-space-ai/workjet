@@ -2,8 +2,8 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, WorkjetSessionImportCandidate } from "@t3tools/contracts";
+} from "@workjet/client-runtime/state/runtime";
+import type { EnvironmentId, WorkjetSessionImportCandidate } from "@workjet/contracts";
 import { CheckIcon, ExternalLinkIcon, LoaderIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 

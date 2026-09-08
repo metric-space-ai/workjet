@@ -1,4 +1,4 @@
-import type { WorkjetComputer } from "@t3tools/contracts";
+import type { WorkjetComputer } from "@workjet/contracts";
 
 import type { BusinessOsCodeScopeSnapshot } from "../businessOsCodeScope";
 import { businessOsCodeScopeContainsEnvironment } from "../businessOsCodeScope";

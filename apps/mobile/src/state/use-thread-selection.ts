@@ -7,8 +7,8 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   DEFAULT_WORKJET_THREAD_CONFIG,
-} from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+} from "@workjet/contracts";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/shell";
 import * as Option from "effect/Option";
 
 import { useProject, useThreadShell } from "../state/entities";

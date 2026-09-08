@@ -2,7 +2,7 @@
 
 The server-side requestSyncAuthority client talks only to the local native host's
 Unix socket or Windows named pipe. It imports the shared generated execution
-contract through @t3tools/contracts/ctoxSync. The native authority remains the
+contract through @workjet/contracts/ctoxSync. The native authority remains the
 owner of membership, job ownership and effect replay decisions.
 
 The client validates request and response schemas, enforces the frame and time

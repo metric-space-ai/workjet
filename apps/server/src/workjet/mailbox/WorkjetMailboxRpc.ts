@@ -28,13 +28,13 @@ import {
   type WorkjetMailboxUpdateDelegationRpcResult,
   type WorkjetMeshWorkspaceId,
   type WorkjetMessageBody,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { OrchestrationThread } from "@t3tools/contracts";
+import type { OrchestrationThread } from "@workjet/contracts";
 import type { ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import type { WorkjetDelegationExecutorShape } from "./WorkjetDelegationExecutor.ts";
 import { boundMailboxStoreError } from "./WorkjetMailboxDelivery.ts";

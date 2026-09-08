@@ -4,9 +4,9 @@ import * as DesktopSchemes from "../electron/desktopSchemes.ts";
 
 /**
  * Which family a deep link arrived on. `workjet` is the product identity;
- * `ctox` and `legacy` are inbound compatibility aliases only.
+ * `ctox` is an inbound compatibility alias only.
  */
-export type DesktopDeepLinkFamily = "workjet" | "ctox" | "legacy";
+export type DesktopDeepLinkFamily = "workjet" | "ctox";
 
 export interface DesktopDeepLink {
   /** Scheme exactly as it arrived, without the trailing colon. */
@@ -24,7 +24,7 @@ export interface DesktopDeepLink {
   /**
    * The single internal representation every caller works with: the same link
    * expressed on the renderer's serving origin for this build variant. A
-   * `ctox-desktop://app/x` link and a `t3code://app/x` link normalize to the
+   * `ctox-desktop://app/x` link and a `workjet://app/x` link normalize to the
    * identical string, so downstream code never branches on the family.
    */
   readonly canonicalUrl: string;
@@ -41,8 +41,6 @@ const SCHEME_DESCRIPTORS: ReadonlyMap<string, SchemeDescriptor> = new Map([
   [DesktopSchemes.WORKJET_PREVIEW_SCHEME, { family: "workjet", isDevelopment: false }],
   [DesktopSchemes.CTOX_DESKTOP_PRODUCTION_SCHEME, { family: "ctox", isDevelopment: false }],
   [DesktopSchemes.CTOX_DESKTOP_DEVELOPMENT_SCHEME, { family: "ctox", isDevelopment: true }],
-  [DesktopSchemes.DESKTOP_PRODUCTION_SCHEME, { family: "legacy", isDevelopment: false }],
-  [DesktopSchemes.DESKTOP_DEVELOPMENT_SCHEME, { family: "legacy", isDevelopment: true }],
 ] satisfies ReadonlyArray<readonly [string, SchemeDescriptor]>);
 
 export function isDesktopDeepLinkScheme(scheme: string): boolean {
@@ -51,10 +49,10 @@ export function isDesktopDeepLinkScheme(scheme: string): boolean {
 
 /**
  * Parse an OS-delivered deep link. Returns `none` for anything that is not one
- * of this app's four schemes, or that targets a host other than the app host —
+ * of this app's schemes, or that targets a host other than the app host —
  * a foreign host must never be normalized onto the renderer origin.
  *
- * The four schemes are registered as *standard* schemes (see
+ * The schemes are registered as *standard* schemes (see
  * registerDesktopSchemePrivilegesSync), but this parser must also work in the
  * plain-Node test process and before Electron is ready, so it never relies on
  * Chromium's URL parser having the scheme registered.

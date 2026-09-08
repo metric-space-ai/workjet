@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { EnvironmentId, WorkjetEnvelopeId, WorkjetMeshWorkspaceId } from "@t3tools/contracts";
+import { EnvironmentId, WorkjetEnvelopeId, WorkjetMeshWorkspaceId } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 

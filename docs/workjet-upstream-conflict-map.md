@@ -1,4 +1,4 @@
-# Workjet ↔ upstream T3 conflict map
+# Workjet ↔ upstream Workjet conflict map
 
 Recovery document for upstream maintenance. Everything below was measured, not
 estimated. Re-measure before acting if `upstream/main` has moved.
@@ -6,7 +6,7 @@ estimated. Re-measure before acting if `upstream/main` has moved.
 - Measured: 2026-08-20
 - Workjet tip: `2e6e817fa` (`codex/workjet-native-foundation`, also
   `agent/up-upstream-reconnect`)
-- Public T3 baseline: `6ae44b418` (= `origin/main` of the fork)
+- Public Workjet baseline: `6ae44b418` (= `origin/main` of the fork)
 - Sanitized Workjet baseline: `39d3a27d3`
 - `upstream/main`: `beab6886f` (`fix(web): import dependency-heavy Open VSX themes (#7642)`)
 - Reconnect proof branch: `scratch/ancestry-probe` = `98cd9ef0f`
@@ -23,7 +23,7 @@ estimated. Re-measure before acting if `upstream/main` has moved.
 | Disjoint roots             | `git rev-list --max-parents=0 <sha>`              | `eccf5145b` vs `f194c9661`                      |
 | Same commit metadata       | `git log -1 --format=…`                           | identical author, dates, subject                |
 
-The sanitized side is a full 2516-commit parallel rewrite of T3 history with
+The sanitized side is a full 2516-commit parallel rewrite of Workjet history with
 identical trees and identical author/committer metadata, not a truncated import.
 Only the object ids differ.
 
@@ -112,12 +112,12 @@ git merge-base --is-ancestor 39d3a27d3 scratch/…            → rc 1   (saniti
 git rev-list --count origin/main..scratch/…                 → 485    (predicted 485)
 git rev-list --count --first-parent origin/main..scratch/…  → 348    (predicted 348)
 git rev-list --count --merges origin/main..scratch/…        → 7      (predicted 7)
-git rev-list --max-parents=0 scratch/…                      → 4 roots (T3 root + 3 imported repos)
+git rev-list --max-parents=0 scratch/…                      → 4 roots (Workjet root + 3 imported repos)
 ```
 
 A PR from the reconnected branch to `origin/main` would therefore show 485
 commits and a diff of exactly the Workjet changes, against a base that is a
-genuine T3 commit on `upstream/main`'s first-parent line.
+genuine Workjet commit on `upstream/main`'s first-parent line.
 
 **Caveat to accept before executing on the real branch:** the 485 commit ids all
 change. Nothing else does. Do it once, announce it, and re-point every agent
@@ -239,30 +239,30 @@ Measured with `git diff --name-status 6ae44b418 scratch/ancestry-probe`
 The single deletion is `.repos/alchemy-effect/.vendor/alchemy`. Added files
 concentrate in genuinely new trees: `native/provider-gateway` 1389,
 `native/web-stack` 146, `native/pdf-parse` 45, `packages/workjet-capabilities` 17.
-Modified T3 core spreads over `apps/server` 79, `apps/web` 57, `apps/desktop` 33,
+Modified Workjet core spreads over `apps/server` 79, `apps/web` 57, `apps/desktop` 33,
 `packages/client-runtime` 14, `packages/contracts` 10. Of those 206 modified
 files, only 25 conflict against 172 upstream commits — a 12% collision rate.
 
-### "Avoid changing internal T3 identifiers that are not user-visible" — **TRUE, held**
+### "Avoid changing internal Workjet identifiers that are not user-visible" — **TRUE, held**
 
-| Identifier class                                                  | Baseline             | Tip                  | Removed/renamed   |
-| ----------------------------------------------------------------- | -------------------- | -------------------- | ----------------- |
-| Desktop IPC channel literals (`apps/desktop/src/ipc/channels.ts`) | 78                   | 101                  | **0**             |
-| `Schema.Literal("…")` in `packages/contracts`                     | 228                  | 253                  | **0**             |
-| `Schema.TaggedStruct("…")` in `packages/contracts`                | 13                   | 40                   | **0**             |
-| `_tag: "…"` in `packages/contracts`                               | 11                   | 40                   | **0**             |
-| `CREATE TABLE` names in `apps/server`                             | 18                   | 25                   | **0**             |
-| `localStorage` keys                                               | 2                    | 2                    | **0**             |
-| Workspace package names (`@t3tools/*`)                            | 5                    | 5                    | **0** (identical) |
-| macOS bundle id                                                   | `com.t3tools.t3code` | `com.t3tools.t3code` | unchanged         |
+| Identifier class                                                  | Baseline          | Tip               | Removed/renamed   |
+| ----------------------------------------------------------------- | ----------------- | ----------------- | ----------------- |
+| Desktop IPC channel literals (`apps/desktop/src/ipc/channels.ts`) | 78                | 101               | **0**             |
+| `Schema.Literal("…")` in `packages/contracts`                     | 228               | 253               | **0**             |
+| `Schema.TaggedStruct("…")` in `packages/contracts`                | 13                | 40                | **0**             |
+| `_tag: "…"` in `packages/contracts`                               | 11                | 40                | **0**             |
+| `CREATE TABLE` names in `apps/server`                             | 18                | 25                | **0**             |
+| `localStorage` keys                                               | 2                 | 2                 | **0**             |
+| Workspace package names (`@workjet/*`)                            | 5                 | 5                 | **0** (identical) |
+| macOS bundle id                                                   | `dev.workjet.app` | `dev.workjet.app` | unchanged         |
 
 The copy sweep added identifiers and never renamed one. The CTOX URL schemes are
-additive too: the launcher registers `["ctox-desktop", "t3code"]`, keeping the
+additive too: the launcher registers `["ctox-desktop", "workjet"]`, keeping the
 legacy scheme.
 
 ## 5. Environment traps for the next session
 
-- `origin/main` of the fork is **`6ae44b418`, the public T3 commit** — not the
+- `origin/main` of the fork is **`6ae44b418`, the public Workjet commit** — not the
   Workjet tip. The Workjet stack is on `codex/workjet-native-foundation`, which
   shares no ancestor with `origin/main`. Any `git log origin/main..` count above
   3000 is this problem, not a real diff.
@@ -274,7 +274,7 @@ legacy scheme.
   re-parent script gives each imported repository root _itself_ as a parent. Use
   `git log -1 --format=%P`, which is empty for roots. Symptom: `origin/main..tip`
   is 488 instead of 485 and three roots appear twice.
-- The stack contains 4 root commits (T3 plus three imported repositories).
+- The stack contains 4 root commits (Workjet plus three imported repositories).
   `git rebase` and `git filter-branch` both handle these badly; the re-parent
   replay does not care.
 - Probe merges belong in a throwaway worktree

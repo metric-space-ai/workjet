@@ -3,7 +3,7 @@ import {
   type WorkjetConnectionSummary,
   WorkjetDecisionHubConnectionError,
   type WorkjetDecisionHubProvisionInput,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -82,7 +82,7 @@ export interface DecisionHubConnectionRegistryShape {
 export class DecisionHubConnectionRegistry extends Context.Service<
   DecisionHubConnectionRegistry,
   DecisionHubConnectionRegistryShape
->()("t3/workjet/decisionHub/DecisionHubConnectionRegistry") {}
+>()("workjet/workjet/decisionHub/DecisionHubConnectionRegistry") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

@@ -4,8 +4,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   WorkjetComputerId,
-} from "@t3tools/contracts";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+} from "@workjet/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@workjet/contracts/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {

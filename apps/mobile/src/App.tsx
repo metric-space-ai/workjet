@@ -74,9 +74,9 @@ const appLinking = {
     "ctox-mobile-dev://",
     "ctox-mobile-preview://",
     "ctox-business-os-mobile://",
-    "t3code://",
-    "t3code-dev://",
-    "t3code-preview://",
+    "workjet://",
+    "workjet-dev://",
+    "workjet-preview://",
   ],
   getInitialURL: async () => {
     const url = await Linking.getInitialURL();

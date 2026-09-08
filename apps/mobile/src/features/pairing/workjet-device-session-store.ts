@@ -1,5 +1,5 @@
-import type { BusinessOsInstanceId } from "@t3tools/contracts";
-import type { WorkjetManagedDeviceSessionAuthorization } from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+import type { BusinessOsInstanceId } from "@workjet/contracts";
+import type { WorkjetManagedDeviceSessionAuthorization } from "@workjet/client-runtime/state/business-os-managed-backend-control";
 
 export interface WorkjetDeviceSessionReferenceStore {
   readonly read: (businessOsInstanceId: BusinessOsInstanceId) => Promise<string | null>;

@@ -6,7 +6,7 @@ import {
   WorkjetMeshWorkspaceId,
   type WorkjetMeshPeerBinding,
   type WorkjetMeshRoster,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {

@@ -5,8 +5,8 @@ import {
   WorkjetDeviceSessionMembershipReadResult,
   WorkjetDeviceSessionRenewResult,
   WorkjetRelayControlIdentityAssertionIssueResult,
-} from "@t3tools/contracts";
-import { RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
+} from "@workjet/contracts";
+import { RelayEnvironmentConnectResponse } from "@workjet/contracts/relay";
 import {
   WorkjetManagedDeviceSessionClient,
   WorkjetManagedDeviceSessionClientError,
@@ -14,7 +14,7 @@ import {
   renewManagedWorkjetDeviceSession,
   type WorkjetManagedDeviceSessionAuthorization,
   type WorkjetManagedDeviceSessionOperation,
-} from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+} from "@workjet/client-runtime/state/business-os-managed-backend-control";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

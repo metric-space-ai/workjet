@@ -3,7 +3,7 @@ import type {
   CtoxMobileShellPackResolveResult,
   CtoxMobileShellPackTrustKey,
   EnvironmentId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import {
   validateBusinessOsShellPackDistribution,

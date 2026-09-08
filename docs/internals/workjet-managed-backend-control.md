@@ -118,8 +118,8 @@ Retries resume the same revocation; they never report success while either capab
 
 ## Activation gate
 
-The contract is published by `@t3tools/contracts` and consumed through the platform port exported
-as `@t3tools/client-runtime/state/business-os-managed-backend-control`. It is deliberately not
+The contract is published by `@workjet/contracts` and consumed through the platform port exported
+as `@workjet/client-runtime/state/business-os-managed-backend-control`. It is deliberately not
 registered on `EnvironmentHttpApi`. Workjet keeps managed device actions disabled until the
 following producers exist:
 

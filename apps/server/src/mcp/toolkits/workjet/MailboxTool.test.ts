@@ -10,7 +10,7 @@ import {
   WorkjetEnvelopeId,
   WorkjetMailboxError,
   WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -76,7 +76,7 @@ const makeSnapshotStoreLayer = (prefix: string) =>
 
 const makeTestLayer = (
   delivery: Partial<WorkjetMailboxDelivery.WorkjetMailboxDeliveryShape>,
-  snapshotPrefix = "t3code-mailbox-tool-test-",
+  snapshotPrefix = "workjet-mailbox-tool-test-",
 ) =>
   MailboxToolkitRegistrationLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
@@ -397,7 +397,7 @@ it.effect("stores the prompt and pins the delegation to the real snapshot digest
         {
           delegateTask,
         } as unknown as Partial<WorkjetMailboxDelivery.WorkjetMailboxDeliveryShape>,
-        "t3code-mailbox-tool-delegate-",
+        "workjet-mailbox-tool-delegate-",
       ),
     ),
   );
@@ -439,7 +439,7 @@ it.effect("refuses an oversized prompt before any snapshot is written", () => {
         {
           delegateTask,
         } as unknown as Partial<WorkjetMailboxDelivery.WorkjetMailboxDeliveryShape>,
-        "t3code-mailbox-tool-oversized-",
+        "workjet-mailbox-tool-oversized-",
       ),
     ),
   );

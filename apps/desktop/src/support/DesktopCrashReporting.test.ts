@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { SUPPORT_CRASH_METADATA_KEYS } from "@t3tools/contracts";
+import { SUPPORT_CRASH_METADATA_KEYS } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

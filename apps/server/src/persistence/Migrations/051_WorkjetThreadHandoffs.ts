@@ -18,7 +18,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * Representation notes, following migrations 042/045:
  *
  * - The canonical contract value lives in `handoff_json` and is encoded and
- *   decoded exclusively through the `@t3tools/contracts` `WorkjetThreadHandoff`
+ *   decoded exclusively through the `@workjet/contracts` `WorkjetThreadHandoff`
  *   schema. The columns beside it are duplicated OUT of that JSON so a bounded
  *   inbox listing never has to decode every row to sort or filter it.
  * - `handoff_id` is the PRIMARY KEY and comes from the sender, which makes the

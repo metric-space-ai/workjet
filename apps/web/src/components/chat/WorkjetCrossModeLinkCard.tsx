@@ -12,7 +12,7 @@ import {
   type WorkjetCrossModeLinkId,
   type WorkjetCrossModeOperation,
   type WorkjetCrossModeResultOutcome,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {

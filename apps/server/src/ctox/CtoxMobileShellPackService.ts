@@ -2,7 +2,7 @@
 import {
   CtoxMobileShellPackResolveResult,
   type CtoxMobileShellPackResolveResult as CtoxMobileShellPackResolveResultType,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -32,7 +32,7 @@ export class CtoxMobileShellPackService extends Context.Service<
       appVersion: string,
     ) => Effect.Effect<CtoxMobileShellPackResolveResultType, CtoxMobileShellPackServiceError>;
   }
->()("t3/ctox/CtoxMobileShellPackService") {}
+>()("workjet/ctox/CtoxMobileShellPackService") {}
 
 function serviceError(
   reason: "cli_unavailable" | "cli_timeout" | "cli_failed" | "invalid_response",

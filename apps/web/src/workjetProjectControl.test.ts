@@ -37,6 +37,46 @@ describe("requestWorkjetProjectControl", () => {
     expect(request).toHaveBeenNthCalledWith(2, "managed:welsch", { action: "project.list" });
   });
 
+  it("preserves a failed launch without sending another project request", async () => {
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "not_active",
+    });
+    const ensurePooled = vi.fn<WorkjetProjectPoolPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "launch_failed",
+    });
+    await expect(
+      requestWorkjetProjectControl(
+        "local:workstation",
+        { action: "project.list" },
+        request,
+        ensurePooled,
+      ),
+    ).resolves.toEqual({ _tag: "failed", code: "launch_failed" });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("rejects preparation of a different instance", async () => {
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "not_active",
+    });
+    const ensurePooled = vi.fn<WorkjetProjectPoolPort>().mockResolvedValue({
+      _tag: "ready",
+      instanceId: "managed:other",
+    });
+    await expect(
+      requestWorkjetProjectControl(
+        "managed:selected",
+        { action: "project.list" },
+        request,
+        ensurePooled,
+      ),
+    ).resolves.toEqual({ _tag: "failed", code: "not_active" });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it("does not pool or request a third time after the retry is still not_active", async () => {
     const request = vi
       .fn<WorkjetProjectControlPort>()

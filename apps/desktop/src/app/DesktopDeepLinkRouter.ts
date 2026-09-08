@@ -14,7 +14,7 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
 /**
- * The OS entry point for `ctox-desktop://` (and the legacy `t3code://`) deep
+ * The OS entry point for `ctox-desktop://` (and the legacy `workjet://`) deep
  * links — the only place an OS-delivered link enters the app.
  *
  * A link that arrives here is NEVER acted on. It is parsed, queued, and
@@ -48,7 +48,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
  * ---------------------------------
  * `@clerk/electron` installs its own `open-url` and `second-instance`
  * listeners for the OAuth callback, whose URL it builds as
- * `${renderer.scheme}://${renderer.host}/` — i.e. `t3code://app/` — and
+ * `${renderer.scheme}://${renderer.host}/` — i.e. `workjet://app/` — and
  * matches on protocol + host + pathname only, with the OAuth parameters in the
  * query string. This parser accepts that URL too, so without a filter every
  * sign-in would raise an "open this link?" dialog. Two rules keep the two
@@ -98,7 +98,7 @@ export function redactDeepLinkUrl(rawUrl: string): string {
 }
 
 /**
- * True for the `t3code://app/` shape Clerk's OAuth transport owns. See the
+ * True for the `workjet://app/` shape Clerk's OAuth transport owns. See the
  * module doc: the renderer scheme with an empty path is a sign-in callback,
  * never a product deep link.
  */
@@ -135,7 +135,7 @@ export class DesktopDeepLinkRouter extends Context.Service<
     /** Accepts one OS-delivered URL. Exposed so tests can drive the queue. */
     readonly offer: (rawUrl: string, source: DesktopDeepLinkSource) => Effect.Effect<void>;
   }
->()("@t3tools/desktop/app/DesktopDeepLinkRouter") {}
+>()("@workjet/desktop/app/DesktopDeepLinkRouter") {}
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-deep-link");
 

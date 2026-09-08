@@ -12,7 +12,7 @@ describe("deriveAuthClientMetadata", () => {
       request: {
         headers: {
           "user-agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) t3code/0.0.15 Chrome/136.0.7103.93 Electron/36.3.2 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) workjet/0.0.15 Chrome/136.0.7103.93 Electron/36.3.2 Safari/537.36",
         },
         source: {
           remoteAddress: "::ffff:127.0.0.1",
@@ -63,19 +63,19 @@ describe("session cookie isolation", () => {
       mode: "web",
       port: 5775,
       host: "127.0.0.1",
-      instanceKey: "/tmp/t3-agent-one",
+      instanceKey: "/tmp/workjet-agent-one",
       development: true,
     });
     const second = resolveSessionCookieName({
       mode: "web",
       port: 5775,
       host: "127.0.0.1",
-      instanceKey: "/tmp/t3-agent-two",
+      instanceKey: "/tmp/workjet-agent-two",
       development: true,
     });
 
-    expect(first).toMatch(/^t3_session_5775_[a-f0-9]{12}$/);
-    expect(second).toMatch(/^t3_session_5775_[a-f0-9]{12}$/);
+    expect(first).toMatch(/^workjet_session_5775_[a-f0-9]{12}$/);
+    expect(second).toMatch(/^workjet_session_5775_[a-f0-9]{12}$/);
     expect(first).not.toBe(second);
   });
 
@@ -88,7 +88,7 @@ describe("session cookie isolation", () => {
         instanceKey: "/srv/release-a",
         development: false,
       }),
-    ).toBe("t3_session");
+    ).toBe("workjet_session");
     expect(
       resolveSessionCookieName({
         mode: "web",
@@ -97,7 +97,7 @@ describe("session cookie isolation", () => {
         instanceKey: "/srv/release-b",
         development: false,
       }),
-    ).toBe("t3_session");
+    ).toBe("workjet_session");
   });
 
   it("retains desktop port scoping", () => {
@@ -109,7 +109,7 @@ describe("session cookie isolation", () => {
         instanceKey: "/tmp/desktop",
         development: true,
       }),
-    ).toBe("t3_session_3773");
+    ).toBe("workjet_session_3773");
   });
 
   it("isolates development servers even when they bind a wildcard host", () => {
@@ -118,10 +118,10 @@ describe("session cookie isolation", () => {
         mode: "web",
         port: 5775,
         host: "0.0.0.0",
-        instanceKey: "/tmp/t3-wildcard-dev",
+        instanceKey: "/tmp/workjet-wildcard-dev",
         development: true,
       }),
-    ).toMatch(/^t3_session_5775_[a-f0-9]{12}$/);
+    ).toMatch(/^workjet_session_5775_[a-f0-9]{12}$/);
   });
 
   it("classifies loopback aliases separately from remotely reachable hosts", () => {

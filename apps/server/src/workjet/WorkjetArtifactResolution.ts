@@ -29,7 +29,7 @@
  * naming something, and a reference that only exists remotely is `absent`
  * here — which is the honest answer, not a gap.
  */
-import type { WorkjetArtifactReferences } from "@t3tools/contracts";
+import type { WorkjetArtifactReferences } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 
 export type ReferenceState = "present" | "absent" | "unchecked";

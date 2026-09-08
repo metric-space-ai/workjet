@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { BusinessOsInstanceId, type CtoxManagedInstance } from "@t3tools/contracts";
+import { BusinessOsInstanceId, type CtoxManagedInstance } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -60,7 +60,7 @@ export class CtoxManagedLaunch extends Context.Service<
       descriptor: CtoxManagedInstance,
     ) => Effect.Effect<BusinessOsInstanceId, CtoxManagedLaunchError>;
   }
->()("@t3tools/desktop/ctox/CtoxManagedLaunch") {}
+>()("@workjet/desktop/ctox/CtoxManagedLaunch") {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

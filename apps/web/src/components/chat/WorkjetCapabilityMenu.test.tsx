@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { Children, isValidElement } from "react";
-import { EnvironmentId, ThreadId, type WorkjetThreadConfig } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type WorkjetThreadConfig } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -110,7 +110,7 @@ describe("WorkjetCapabilityMenu", () => {
     );
 
     // Membership is resolved from the catalog for the Code host, so a manifest
-    // that stops exposing the T3 MCP adapter stops appearing here.
+    // that stops exposing the Workjet MCP adapter stops appearing here.
     const views = workjetComposerCapabilities([GREPPY_CAPABILITY_ID]);
     const greppyView = views.find(({ manifest }) => manifest.id === GREPPY_CAPABILITY_ID);
     expect(greppyView?.manifest).toBe(greppyManifest);

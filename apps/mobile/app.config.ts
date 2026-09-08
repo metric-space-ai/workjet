@@ -9,20 +9,15 @@ const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
-const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const isIosPersonalTeamBuild = repoEnv.WORKJET_IOS_PERSONAL_TEAM === "1";
 
-// Public production origins and identifiers are safe to bundle. Keeping the
-// canonical values here prevents a locally assembled production APK from
-// silently shipping with the Workjet pairing and Relay clients disabled.
-// Environment values still override these defaults for controlled rollouts.
+// CTOX is the managed control plane. Optional Connect services must be supplied
+// by the Workjet operator; never inherit another application's cloud account.
 const PRODUCTION_PUBLIC_CONFIG = {
-  clerkPublishableKey: "pk_live_Y2xlcmsudDMuY29kZXMk",
-  clerkJwtTemplate: "t3-relay",
-  relayUrl: "https://relay.t3.codes",
   managedControlUrl: "https://ctox.dev",
 } as const;
 
-const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
+const personalTeamBundleIdentifier = repoEnv.WORKJET_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
@@ -33,7 +28,7 @@ if (
     !IOS_BUNDLE_IDENTIFIER_PATTERN.test(personalTeamBundleIdentifier))
 ) {
   throw new Error(
-    "T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.t3code when T3CODE_IOS_PERSONAL_TEAM=1.",
+    "WORKJET_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.workjet when WORKJET_IOS_PERSONAL_TEAM=1.",
   );
 }
 
@@ -72,36 +67,31 @@ const RELEASE_ASSETS = {
   androidNotificationColor: "#5C7590",
 } as const;
 
-// Workjet is the one user-facing mobile identity. Legacy CTOX/T3 schemes stay
-// claimed during the soft migration and the com.t3tools.t3code identifiers
-// stay untouched — signing,
-// store listings, push entitlements, app groups, and the Clerk passkey
-// relying party all hang off them, so renaming those is a separate migration.
-// `ctox:` remains the backend/daemon namespace. New outbound links always use
-// the first Workjet scheme; the remaining entries are inbound compatibility.
+// Workjet owns its package identifiers and outbound links. CTOX links remain
+// inbound aliases for previously deployed Workjet clients.
 const VARIANT_CONFIG = {
   development: {
     appName: "Workjet",
-    schemes: ["workjet-dev", "ctox-mobile-dev", "t3code-dev"],
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
+    schemes: ["workjet-dev", "ctox-mobile-dev"],
+    iosBundleIdentifier: "dev.workjet.app.dev",
+    androidPackage: "dev.workjet.app.dev",
+
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
     appName: "Workjet Preview",
-    schemes: ["workjet-preview", "ctox-mobile-preview", "t3code-preview"],
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
+    schemes: ["workjet-preview", "ctox-mobile-preview"],
+    iosBundleIdentifier: "dev.workjet.app.preview",
+    androidPackage: "dev.workjet.app.preview",
+
     assets: PREVIEW_ASSETS,
   },
   production: {
     appName: "Workjet",
-    schemes: ["workjet", "ctox-mobile", "ctox-business-os-mobile", "t3code"],
-    iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
+    schemes: ["workjet", "ctox-mobile", "ctox-business-os-mobile"],
+    iosBundleIdentifier: "dev.workjet.app",
+    androidPackage: "dev.workjet.app",
+
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -158,7 +148,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: "t3-code",
+  slug: "workjet",
   platforms: ["ios", "android"],
   scheme: [...variant.schemes],
   version: "1.0.4",
@@ -175,16 +165,9 @@ const config: ExpoConfig = {
     supportsTablet: true,
     // Multitasking-capable iPad apps cannot rotate programmatically, so the
     // showcase capture build requires full screen (see infoPlist below).
-    requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
+    requireFullScreen: process.env.WORKJET_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
-    // does not fall back to a personal team (which cannot sign app groups,
-    // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: false,
@@ -197,7 +180,7 @@ const config: ExpoConfig = {
       // Simulator menu scripting needs), and iPadOS ignores programmatic
       // orientation requests for multitasking-capable apps — so the capture
       // build opts out of multitasking and declares landscape support.
-      ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
+      ...(process.env.WORKJET_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
             "UISupportedInterfaceOrientations~ipad": [
               "UIInterfaceOrientationPortrait",
@@ -338,9 +321,7 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
-      url:
-        repoEnv.T3CODE_RELAY_URL ??
-        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.relayUrl : null),
+      url: repoEnv.WORKJET_RELAY_URL ?? null,
     },
     managedControl: {
       url:
@@ -348,12 +329,8 @@ const config: ExpoConfig = {
         (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.managedControlUrl : null),
     },
     clerk: {
-      publishableKey:
-        repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ??
-        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.clerkPublishableKey : null),
-      jwtTemplate:
-        repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ??
-        (APP_VARIANT === "production" ? PRODUCTION_PUBLIC_CONFIG.clerkJwtTemplate : null),
+      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
+      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
     },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads
@@ -369,11 +346,7 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
   },
-  owner: "pingdotgg",
 };
 
 export default config;

@@ -4,7 +4,7 @@ import type {
   WorkjetDeviceInviteRefV1,
   WorkjetManagedBackendControlConnectionId,
   WorkjetRelayControlIdentityAssertion,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import {
   makeManagedWorkjetDeviceInviteControl,

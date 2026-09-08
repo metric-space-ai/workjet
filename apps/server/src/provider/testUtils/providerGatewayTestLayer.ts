@@ -12,7 +12,7 @@ import {
   WorkjetGatewayOperationError,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayStatus,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

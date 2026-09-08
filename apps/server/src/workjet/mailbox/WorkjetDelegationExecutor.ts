@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 /**
  * The reconciler that makes a DELIVERED delegation actually run
- * (docs/workjet-plan.md → Wave 5: "Deliver accepted tasks through normal T3
+ * (docs/workjet-plan.md → Wave 5: "Deliver accepted tasks through normal Workjet
  * `thread.turn.start` semantics …" and the reconciler that "resumes after
  * restart, applies backpressure, orders events per delegation, and queues
  * target prompts while a thread already has an active turn").
@@ -63,7 +63,7 @@ import {
   type WorkjetMailboxPayload,
   type WorkjetMailboxTimestamp,
   type WorkjetWorkerAddress,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -310,7 +310,7 @@ export interface WorkjetDelegationExecutorShape {
 export class WorkjetDelegationExecutor extends Context.Service<
   WorkjetDelegationExecutor,
   WorkjetDelegationExecutorShape
->()("t3/workjet/mailbox/WorkjetDelegationExecutor") {}
+>()("workjet/workjet/mailbox/WorkjetDelegationExecutor") {}
 
 export interface WorkjetDelegationExecutorSources {
   readonly nowIso: Effect.Effect<string>;

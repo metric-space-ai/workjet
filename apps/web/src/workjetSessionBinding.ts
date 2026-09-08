@@ -1,4 +1,4 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
 import {
   normalizeWorkjetThreadConfig,
   type CtoxWorkjetSessionControlResult,
@@ -7,7 +7,7 @@ import {
   type WorkjetComputer,
   type WorkjetThreadConfig,
   type WorkjetThreadConfigV2,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import {
   findEnvironmentProjectByPath,

@@ -4,7 +4,7 @@ import {
   ThreadId,
   type OrchestrationEvent,
   type WorkjetThreadRole,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

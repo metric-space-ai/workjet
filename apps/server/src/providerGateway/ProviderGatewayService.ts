@@ -23,7 +23,7 @@ import {
   type WorkjetGatewayStatus,
   type WorkjetGatewayUpdateRoutingInput,
   type WorkjetGatewayUpdateRoutingResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -185,7 +185,7 @@ export interface ProviderGatewayServiceShape {
 export class ProviderGatewayService extends Context.Service<
   ProviderGatewayService,
   ProviderGatewayServiceShape
->()("t3/providerGateway/ProviderGatewayService") {}
+>()("workjet/providerGateway/ProviderGatewayService") {}
 
 export interface ProviderGatewayServiceOptions {
   readonly platform?: ProviderGatewayPlatform;

@@ -1,4 +1,4 @@
-import type { WorkjetWorkerPersonalization } from "@t3tools/contracts";
+import type { WorkjetWorkerPersonalization } from "@workjet/contracts";
 import {
   ArrowLeftRightIcon,
   ChevronRightIcon,

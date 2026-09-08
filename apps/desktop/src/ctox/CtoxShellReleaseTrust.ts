@@ -7,7 +7,7 @@ import {
   BusinessOsShellReleaseManifestV2,
   type BusinessOsShellChannelPointerV1 as BusinessOsShellChannelPointer,
   type BusinessOsShellReleaseManifestV2 as BusinessOsShellReleaseManifest,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 export const CTOX_STABLE_SHELL_CHANNEL_URL =

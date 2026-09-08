@@ -10,11 +10,11 @@ const CONNECT_AUTHORIZE_PATH = "/connect";
 const CONNECT_CALLBACK_PATH = "/connect/callback";
 
 /**
- * The CLI prints URLs against this origin and the web bundle uses it to
- * decide whether it is the hosted deployment — the two must agree, so the
- * default lives here.
+ * Hosted deployments must explicitly configure their own origin. An empty
+ * default prevents standalone Workjet builds from contacting another product's
+ * service or advertising an unconfigured deployment.
  */
-export const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
+export const DEFAULT_HOSTED_APP_URL = "";
 
 /**
  * Requested at authorize time by the hosted page and honored by the CLI's

@@ -1,4 +1,4 @@
-import type { DesktopSupportBundleResult } from "@t3tools/contracts";
+import type { DesktopSupportBundleResult } from "@workjet/contracts";
 import { AlertTriangleIcon, CopyIcon, LifeBuoyIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 

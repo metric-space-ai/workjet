@@ -1,6 +1,6 @@
 # Workjet
 
-Workjet is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+Workjet provides desktop, web, and mobile interfaces for coding agents and CTOX computers. Workjet builds and distribution status are published in this repository's [releases](https://github.com/metric-space-ai/workjet/releases).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, Workjet can control them.
 
@@ -21,23 +21,14 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 
-### Try it out (install-free)
+### Run from source
 
-The easiest way to test Workjet is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
-
-```bash
-npx t3@latest
-```
-
-This will launch Workjet's backend on your machine as well as the local web app to control your agents.
-
-Tip: Use `npx t3@latest --help` for the full CLI reference.
+Follow the [development overview](./docs/internals/overview.md) to build the server and clients using the repository's pinned toolchain. Use release artifacts from this repository for packaged installations; an unrelated public package or hosted service is not a Workjet release.
 
 ### Desktop app
 
-Install the latest signed Workjet desktop app from
-[GitHub Releases](https://github.com/metric-space-ai/workjet/releases). Package-manager entries
-under the old product identity are intentionally no longer advertised.
+Download Workjet desktop artifacts from
+[GitHub Releases](https://github.com/metric-space-ai/workjet/releases). Check the release notes for each artifact's platform, signing, and verification status.
 
 ## Some notes
 
@@ -90,4 +81,4 @@ vp i
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+Report Workjet issues in [this repository](https://github.com/metric-space-ai/workjet/issues).

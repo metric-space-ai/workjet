@@ -10,7 +10,7 @@ import type {
   WorkjetConnectionId,
   WorkjetThreadConfig,
   WorkjetThreadRole,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export interface ThreadCapabilityContext {
   readonly workjetRole: WorkjetThreadRole;
@@ -38,8 +38,8 @@ export function resolveThreadCapabilityContext(
   const enabled = activation.config.enabledCapabilityIds.filter(
     (capabilityId) => !blocked.has(capabilityId),
   );
-  const mcpManifests = registry.resolveEnabled(enabled, "t3-mcp");
-  const promptManifests = registry.resolveEnabled(enabled, "t3-prompt");
+  const mcpManifests = registry.resolveEnabled(enabled, "workjet-mcp");
+  const promptManifests = registry.resolveEnabled(enabled, "workjet-prompt");
   const decisionHubBinding = bindingForCapability(
     activation.config.capabilityBindings,
     "decision-hub",

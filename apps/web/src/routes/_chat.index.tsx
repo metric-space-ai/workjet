@@ -1,4 +1,4 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@workjet/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -57,7 +57,13 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    // An explicitly selected Business OS project owns this landing page.
+    // Opening an unrelated recent local project would undo that selection.
+    if (
+      workjetProjectRegistry.projects.length > 0 ||
+      mostRecentProject === null ||
+      startingRef.current
+    ) {
       return;
     }
     startingRef.current = true;
@@ -67,7 +73,12 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [
+    handleNewThread,
+    mostRecentProject,
+    startState.retryRequest,
+    workjetProjectRegistry.projects.length,
+  ]);
 
   const selectedWorkjetProject =
     workjetProjectRegistry.projects.find(

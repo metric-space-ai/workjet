@@ -294,12 +294,12 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
   },
   {
     path: "apps/desktop/src/electron/desktopSchemes.ts",
-    context: /(?:ctox-desktop(?:-dev)?|t3code(?:-dev)?):?\b/iu,
+    context: /(?:ctox-desktop(?:-dev)?|workjet(?:-dev)?):?\b/iu,
     reason: "Inbound legacy deep-link aliases remain for compatibility.",
   },
   {
     path: "apps/desktop/.electron-runtime/metadata.json",
-    context: /appBundleId|appProtocolSchemes|(?:ctox-desktop-dev|t3code-dev)/iu,
+    context: /appBundleId|appProtocolSchemes|(?:ctox-desktop-dev|workjet-dev)/iu,
     reason: "Bundle identity and protocol registration are packaged metadata.",
   },
   {

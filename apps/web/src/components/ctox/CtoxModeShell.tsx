@@ -11,8 +11,8 @@ import type {
   CtoxManualPairingImportInput,
   CtoxSshManagedInstanceAddInput,
   DesktopCtoxBridge,
-} from "@t3tools/contracts";
-import { CtoxHostThemeColor } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { CtoxHostThemeColor } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -140,7 +140,7 @@ const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
 const CONNECTION_LABELS: Record<string, string> = {
   idle: "Nicht verbunden",
   connecting: "Wird verbunden…",
-  ready: "Verbunden",
+  ready: "Geöffnet",
   error: "Verbindungsfehler",
   revoked: "Zugriff entzogen",
 };
@@ -1012,7 +1012,7 @@ function CtoxShellUpdateButton({
 }
 
 /**
- * The T3 analogy row set: instance = project, app = session. Docked apps are
+ * The Workjet analogy row set: instance = project, app = session. Docked apps are
  * always listed (greyed via the disabled instance state while disconnected);
  * undocked apps appear only while open; the open app carries a dock-style dot.
  */
@@ -2564,11 +2564,11 @@ export function CtoxMainShell() {
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                connection === "ready" ? "bg-emerald-500" : "bg-muted-foreground/45",
+                connection === "ready" ? "bg-primary" : "bg-muted-foreground/45",
               )}
               aria-hidden
             />
-            {connection === "ready" ? "Verbunden" : "Wird verbunden…"}
+            {connection === "ready" ? "Geöffnet" : "Wird geöffnet…"}
           </span>
         ) : null}
       </header>

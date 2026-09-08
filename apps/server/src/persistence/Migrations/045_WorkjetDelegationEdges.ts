@@ -9,7 +9,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * Representation notes:
  *
  * - The canonical contract value lives in `edge_json` and is encoded and
- *   decoded exclusively through the `@t3tools/contracts` `WorkjetDelegationEdge`
+ *   decoded exclusively through the `@workjet/contracts` `WorkjetDelegationEdge`
  *   schema, exactly like the mailbox tables in migration 042.
  * - `edge_id` is the PRIMARY KEY and is DERIVED from the edge's `kind`, `from`,
  *   and `to` refs (see {@link workjetDelegationEdgeId} in

@@ -10,7 +10,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * Representation notes:
  *
  * - The canonical contract values live in the JSON columns and are encoded and
- *   decoded exclusively through the `@t3tools/contracts` mailbox schemas.
+ *   decoded exclusively through the `@workjet/contracts` mailbox schemas.
  * - Every timestamp that participates in an ORDER BY or a range comparison is
  *   duplicated as an INTEGER epoch-millisecond column. `WorkjetMailboxTimestamp`
  *   permits both `Z` and numeric UTC offsets and one to nine fractional digits,

@@ -1,4 +1,4 @@
-import type { WorkjetGatewayProvider, WorkjetGatewayProviderPhase } from "@t3tools/contracts";
+import type { WorkjetGatewayProvider, WorkjetGatewayProviderPhase } from "@workjet/contracts";
 
 /**
  * Decoders for the Rust host's management payloads.

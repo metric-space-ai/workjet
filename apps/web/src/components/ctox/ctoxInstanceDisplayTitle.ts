@@ -1,4 +1,4 @@
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedInstance } from "@workjet/contracts";
 
 /**
  * Keep opaque backend authority identifiers out of regular product chrome.

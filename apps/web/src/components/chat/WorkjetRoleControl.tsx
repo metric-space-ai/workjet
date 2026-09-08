@@ -1,8 +1,8 @@
-import type { WorkjetThreadConfig, WorkjetThreadRole } from "@t3tools/contracts";
+import type { WorkjetThreadConfig, WorkjetThreadRole } from "@workjet/contracts";
 import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import { NetworkIcon, Settings2Icon, TerminalIcon, UsersIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";

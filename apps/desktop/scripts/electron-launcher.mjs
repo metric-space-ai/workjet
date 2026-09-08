@@ -21,13 +21,13 @@ export function resolveLauncherDisplayName(development) {
 
 export const APP_DISPLAY_NAME = resolveLauncherDisplayName(isDevelopment);
 export const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
-// Workjet schemes are canonical; CTOX Desktop and t3code remain inbound-only
+  ? `dev.workjet.app.dev.${devBundleIdSuffix || "local"}`
+  : "dev.workjet.app";
+// Workjet schemes are canonical; CTOX Desktop and workjet remain inbound-only
 // compatibility aliases. Mirrors apps/desktop/src/electron/desktopSchemes.ts.
 const APP_PROTOCOL_SCHEMES = isDevelopment
-  ? ["workjet-dev", "ctox-desktop-dev", "t3code-dev"]
-  : ["workjet", "workjet-preview", "ctox-desktop", "t3code"];
+  ? ["workjet-dev", "ctox-desktop-dev", "workjet-dev"]
+  : ["workjet", "workjet-preview", "ctox-desktop", "workjet"];
 const LAUNCHER_VERSION = 16;
 const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
 export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
@@ -36,7 +36,7 @@ export const DEVELOPMENT_MAC_ICON_PATH = NodePath.join(
   "workjet",
   "workjet-app-icon.png",
 );
-// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
+// oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
 
 function setPlistString(plistPath, key, value) {
@@ -116,12 +116,12 @@ export function makeDevelopmentLauncherScript({
 }) {
   const envEntries = [
     ["VITE_DEV_SERVER_URL", environment.VITE_DEV_SERVER_URL],
-    ["T3CODE_PORT", environment.T3CODE_PORT],
-    ["T3CODE_HOME", environment.T3CODE_HOME],
-    ["T3CODE_COMMIT_HASH", environment.T3CODE_COMMIT_HASH],
-    ["T3CODE_OTLP_TRACES_URL", environment.T3CODE_OTLP_TRACES_URL],
-    ["T3CODE_OTLP_EXPORT_INTERVAL_MS", environment.T3CODE_OTLP_EXPORT_INTERVAL_MS],
-    ["T3CODE_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
+    ["WORKJET_PORT", environment.WORKJET_PORT],
+    ["WORKJET_HOME", environment.WORKJET_HOME],
+    ["WORKJET_COMMIT_HASH", environment.WORKJET_COMMIT_HASH],
+    ["WORKJET_OTLP_TRACES_URL", environment.WORKJET_OTLP_TRACES_URL],
+    ["WORKJET_OTLP_EXPORT_INTERVAL_MS", environment.WORKJET_OTLP_EXPORT_INTERVAL_MS],
+    ["WORKJET_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
   ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
   return [
     "#!/bin/sh",
@@ -129,7 +129,7 @@ export function makeDevelopmentLauncherScript({
       ([name, value]) =>
         `if [ -z "\${${name}:-}" ]; then export ${name}=${shellSingleQuote(value)}; fi`,
     ),
-    `exec ${shellSingleQuote(electronBinaryPath)} --t3code-dev-root=${shellSingleQuote(desktopRoot)} ${shellSingleQuote(mainEntryPath)} "$@"`,
+    `exec ${shellSingleQuote(electronBinaryPath)} --workjet-dev-root=${shellSingleQuote(desktopRoot)} ${shellSingleQuote(mainEntryPath)} "$@"`,
     "",
   ].join("\n");
 }

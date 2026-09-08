@@ -4,7 +4,7 @@ import type {
   DesktopCtoxBridge,
   EnvironmentId,
   WorkjetComputer,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { environmentCatalog } from "./connection/catalog";

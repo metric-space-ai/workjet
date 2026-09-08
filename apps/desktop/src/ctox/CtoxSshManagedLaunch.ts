@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
-import { runSshCommand } from "@t3tools/ssh/command";
-import { openSshLocalForward } from "@t3tools/ssh/localForward";
+import type { DesktopSshEnvironmentTarget } from "@workjet/contracts";
+import { runSshCommand } from "@workjet/ssh/command";
+import { openSshLocalForward } from "@workjet/ssh/localForward";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -11,7 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@workjet/shared/Net";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
@@ -37,7 +37,7 @@ import {
  * on the *remote* loopback interface (`ws://127.0.0.1:PORT`); handing those to
  * a guest would point it at the desktop's own loopback instead. So each
  * distinct remote signaling port gets an `ssh -L` forward from
- * `@t3tools/ssh/localForward`, and the invite's URLs are rewritten onto the
+ * `@workjet/ssh/localForward`, and the invite's URLs are rewritten onto the
  * local ends before anything sees them.
  *
  * Deliberate properties:
@@ -203,7 +203,7 @@ export class CtoxSshManagedLaunch extends Context.Service<
       instanceId: string,
     ) => Effect.Effect<CtoxSshManagedLaunchDescriptor, CtoxSshManagedLaunchError>;
   }
->()("@t3tools/desktop/ctox/CtoxSshManagedLaunch") {}
+>()("@workjet/desktop/ctox/CtoxSshManagedLaunch") {}
 
 export interface CtoxSshManagedLaunchOptions {
   readonly exec?: CtoxSshInviteExec;

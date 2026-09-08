@@ -8,25 +8,25 @@ boots and keeps running after you log out.
 Install it with the latest Workjet release:
 
 ```sh
-npx t3@latest service install
+workjet service install
 ```
 
 Check whether it is installed:
 
 ```sh
-npx t3@latest service status
+workjet service status
 ```
 
 Update or repair it:
 
 ```sh
-npx t3@latest service update
+workjet service update
 ```
 
 Stop it and remove it from startup:
 
 ```sh
-npx t3@latest service uninstall
+workjet service uninstall
 ```
 
 Updating restarts Workjet briefly. Let active agent work and terminal commands finish first.
@@ -43,7 +43,7 @@ available.
 Workjet Connect may offer to install the service during setup so the host stays reachable after you log
 out. This is only an onboarding shortcut: the service and Workjet Connect are managed separately.
 
-Signing out of Workjet Connect does not remove the service. Use `t3 service uninstall` when you no longer
+Signing out of Workjet Connect does not remove the service. Use `workjet service uninstall` when you no longer
 want Workjet to start in the background.
 
 The background service currently requires Linux with systemd.

@@ -85,7 +85,7 @@ export class CtoxLocalDaemonLaunch extends Context.Service<
       instanceId: string,
     ) => Effect.Effect<CtoxLocalDaemonLaunchDescriptor, CtoxLocalDaemonLaunchError>;
   }
->()("@t3tools/desktop/ctox/CtoxLocalDaemonLaunch") {}
+>()("@workjet/desktop/ctox/CtoxLocalDaemonLaunch") {}
 
 export interface CtoxLocalDaemonLaunchOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { WorkjetHarness, WorkjetHarnessAvailabilitySnapshot } from "@t3tools/contracts";
+import type { WorkjetHarness, WorkjetHarnessAvailabilitySnapshot } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

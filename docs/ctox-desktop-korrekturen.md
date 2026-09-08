@@ -15,11 +15,11 @@ Fehlermuster. Dieses Dokument trägt NUR das Offene.
 
 Umgesetzt rein per Konfiguration (die Mechanik existierte):
 
-- **Claude:** `homePath = ~/.t3/userdata/harness-homes/claude` →
+- **Claude:** `homePath = ~/.workjet/userdata/harness-homes/claude` →
   `CLAUDE_CONFIG_DIR` (ClaudeHome.ts), plus `routeViaGateway`.
   BEWIESEN: Turn `BEREIT` (14,6 s) übers Gateway; `~/.claude` blieb bei
   16 greppy-Sitzungen, die neue Sitzung liegt im CTOX-Home.
-- **Codex:** `homePath = ~/.t3/userdata/harness-homes/codex` →
+- **Codex:** `homePath = ~/.workjet/userdata/harness-homes/codex` →
   `CODEX_HOME`, plus `routeViaGateway`. App-Server bootet im isolierten
   Home; `~/.codex/sessions` stabil bei 401 über mehrere Threads.
   Der volle Codex-Turn-Beweis wartet auf das Kontingent (27.08.).
@@ -120,7 +120,7 @@ model".
 
 IN ARBEIT: Host aus dem aktuellen Quellstand bauen
 (`cargo build --release --bin workjet-provider-gateway`), Binärdatei in
-`~/.t3/userdata/provider-gateway-host` tauschen, App neu starten,
+`~/.workjet/userdata/provider-gateway-host` tauschen, App neu starten,
 denselben Claude-Turn wiederholen. Das ist zugleich der erste Schritt zu
 Posten 7 (gleiche Binärdatei).
 
@@ -133,7 +133,7 @@ der Gateway-Account gesund ist).
 
 FERTIG heißt: Neuer Thread → Claude-Modell → Nachricht → echte Antwort,
 belegt per DB (`state=completed`, Dauer > 2 s). Scheitert es, steht die
-echte Fehlerkette in `~/.t3/userdata/logs/provider/events.<threadId>.log`.
+echte Fehlerkette in `~/.workjet/userdata/logs/provider/events.<threadId>.log`.
 
 ## 1 · Menüs (A1–A3): Worker · Rechner · fünf Reiter
 
@@ -485,7 +485,7 @@ OAuth-Begin `oauth-unavailable` (`ProviderGatewayService.ts:749`).
 Nötig: produktive Authority über den vier Auth-Modulen (`begin` liefert
 Auth-URL bzw. `verification_uri_complete`; `poll`; `cancel`), Anschluss
 an die Management-Routen, Host neu bauen und in
-`~/.t3/userdata/provider-gateway-host` bringen, dann Vertrag
+`~/.workjet/userdata/provider-gateway-host` bringen, dann Vertrag
 (`WorkjetGatewayOauthProvider` + `"xai"`), Server-Route, Oberfläche.
 
 Methoden-Warnung: Binär-`strings` sagt über vorhandene Routen NICHTS
@@ -517,7 +517,7 @@ Alle sechs direkt aus Chat-Nachrichten mit Screenshots übernommen:
 1. Sign-in-Landing-Page war ungestylter Text mit "return to Workjet" →
    ERLEDIGT im Code (loopback.rs: gestaltete Karte, hell/dunkel,
    "CTOX Desktop App", Erfolg grün / Fehler rot). NOCH ZU TUN:
-   Host-Release bauen + Binary nach ~/.t3/userdata tauschen (codesign!).
+   Host-Release bauen + Binary nach ~/.workjet/userdata tauschen (codesign!).
 2. Re-login erzeugt DOPPELTE Accounts (Claude 2×, Codex 2× im
    Screenshot). Ursache: persistClaimedAccounts pusht immer neu.
    FIX: gleiche Identität (Provider+Label) → Secrets der bestehenden
@@ -729,7 +729,7 @@ ist ein eigenes Projekt und bewusst nicht Teil dieses Fixes.
   "schon clean, so soll das sein").
 - Provider-Chip ENTFERNT: beim Gateway bestimmt das Modell den Account
   (Routing per Modellmuster) — das Modell-Menü gruppiert stattdessen
-  nach Anbieter. T3-Mini-Menü mit Anbieter-Leiste ist als nächste
+  nach Anbieter. Workjet-Mini-Menü mit Anbieter-Leiste ist als nächste
   Iteration notiert (aktuell gruppierte Liste mit Anbieter-Headern).
 - Harness-Wahl ändert das MODELL nicht mehr: der Resolver klemmte auf
   die native Modellliste der Instanz (claude-fable-5-Rückfall).
@@ -751,7 +751,7 @@ Icon-Leiste unten links, live geklickt und verifiziert: Settings →
 
 OFFEN (nächste Iterationen, priorisiert):
 
-1. Modell-Menü als T3-Mini-Menü (Anbieter-Leiste links, Modelle je
+1. Modell-Menü als Workjet-Mini-Menü (Anbieter-Leiste links, Modelle je
    Anbieter rechts) statt gruppierter Liste.
 2. Business-OS 14–17: Instanz-Warmhalten/Instant-Swap, Status-Punkte,
    Ein-/Ausklappen, Menüleiste.
@@ -760,10 +760,10 @@ OFFEN (nächste Iterationen, priorisiert):
    Live-Endstand: 0 offene Zeilen, kein Working, keine Failed-Badges.
 4. Betreiber: Grok-Login, gpu-Pairing.
 
-## Nachtrag 2026-08-24 ~14:30 — Modell-Mini-Menü (T3-Stil) live
+## Nachtrag 2026-08-24 ~14:30 — Modell-Mini-Menü (Workjet-Stil) live
 
 Das Modell-Menü im Manual-Modus ist jetzt das zweispaltige Mini-Menü
-wie im T3-Original: Anbieter-Leiste links (Icons Claude/OpenAI/Grok,
+wie im Workjet-Original: Anbieter-Leiste links (Icons Claude/OpenAI/Grok,
 Buchstaben-Badges für Z.ai/Kimi/MiniMax), rechts die Modelle des
 aktiven Anbieters aus dem Gateway-Katalog + "Custom model id…".
 Live verifiziert (Rail-Wechsel MiniMax→Claude zeigt die jeweiligen
@@ -811,7 +811,7 @@ Mini-Menü-Schiene Claude/OpenAI/Z.ai/xAI/Kimi/MiniMax alle mit echter
 Marke (Screenshot). Suiten: web settings+composer 214 grün, Typecheck 0.
 Lehre (CDP): attach.mjs wählte das ERSTE Page-Target — im BOS-Modus ist
 das ein Kunden-Guest, nicht der Host; Probe-Klicks landeten in der
-Thesen-Instanz. attach.mjs pinnt jetzt default auf t3code://app.
+Thesen-Instanz. attach.mjs pinnt jetzt default auf workjet://app.
 
 ## Grok-Kette KOMPLETT 2026-08-24 ~21:43
 
@@ -907,7 +907,7 @@ MITTEL (Auswahl)
 - K-B2/K-B3: BOS-Sidebar „Remove" und ctox.dev „Sign out" ohne
   Bestätigung (destruktiv, ein Klick).
 - K-B4/K-B5: Rohe Enums im UI: connection-Status („connecting"/„error")
-  in der BOS-Topbar; presentationKind („t3-connect") als Untertitel.
+  in der BOS-Topbar; presentationKind („workjet-connect") als Untertitel.
 - K-B7: Pi heißt „Pi Code" (Harnesses, π-Icon) und „Pi Agent"
   (Add-Dialog, anderes Icon); Coming-Soon-Karte obsolet.
 - K-B8: Zwei xAI-Marken je Fläche (GrokIcon-Wirbel auf Harness-Flächen,
@@ -1023,7 +1023,7 @@ nächsten App-Start), ctox-app-icon.icns (voller iconset), Favicons
 16/32/ico, Apple-Touch 180, ctox-windows.ico. Alte Fassungen unter
 assets/ctox/legacy-2026-08-17/. Sign-in-Landingpage des Gateway-Hosts
 zeigt das Logo inline (loopback.rs; Host-Binary gebaut, signiert und
-nach ~/.t3/userdata/provider-gateway-host kopiert — laufender Host
+nach ~/.workjet/userdata/provider-gateway-host kopiert — laufender Host
 unberührt, greift beim nächsten Gateway-Start). Mobile-Session wird
 informiert, ihre iOS/Android-Ableitungen vom neuen Master neu zu
 erzeugen.
@@ -1037,7 +1037,7 @@ erzeugen.
 - K-B4 GEFIXT: BOS-Topbar zeigt „Connecting…/Connected/Connection
   error/Access revoked" statt roher Enums.
 - K-B5 GEFIXT: presentationKind mit Klartext-Labels („This computer",
-  „T3 Connect", „SSH", „Tailscale") in Composer-Dropdown und
+  „Workjet Connect", „SSH", „Tailscale") in Composer-Dropdown und
   Computers-Seite (gemeinsames Mapping workjetComputerKindLabel).
 - K-A8 GEFIXT: veraltete Ortsangaben ersetzt („…managed in Settings →
   Computers", „Pair new remote environments in the section below",
@@ -1113,7 +1113,7 @@ Ursache bestätigt: Der Release-Artefakt-Builder hatte bereits einen
 Cross-Target-Stager für `native/resource-monitor`, der manuelle Live-Workflow
 baute aber nur Web, Server und `apps/desktop/dist-electron/main.cjs`. Direkte
 Desktop-`vp pack`-Builds erzeugten deshalb weder das Rust-Target-Binary noch
-`apps/desktop/prod-resources/resource-monitor/t3-resource-monitor`; der
+`apps/desktop/prod-resources/resource-monitor/workjet-resource-monitor`; der
 unverpackte Alpha-Launcher konnte keinen Sidecar-Pfad an den Server übergeben.
 „NATIVE UNAVAILABLE" und „Sidecar Unavailable · Restarts 5" waren zwei
 Health-Zeilen desselben fehlenden Monitors.
@@ -1157,7 +1157,7 @@ gemeinsame Hilfe einschließlich Singular/Plural), Web-Typecheck exit 0,
 gezieltes Format grün, Produktions-Web-Build grün. Der gezielte Lintlauf war
 erfolgreich und meldete nur drei bereits vorhandene Unused-Warnungen in den
 beiden berührten Bestandskomponenten. LIVE nach Client-Deploy und Reload
-ausschließlich im `t3code://app`-Target geprüft: zwölf gemeinsam gerenderte
+ausschließlich im `workjet://app`-Target geprüft: zwölf gemeinsam gerenderte
 Hilfesteuerungen auf Pools und Accounts, sichtbare Katalog-/Musterlabels und
 der vollständige gemeinsame Tooltip interaktiv nachgewiesen; Screenshot
 `output/playwright/model-counts-help.png`. Danach vorhandenen Draft
@@ -1178,11 +1178,11 @@ Format/Lint grün; Web- und Server-Typecheck exit 0 (nur bereits vorhandene
 Effect-Suggestions im Server); Produktions-Web-Build sowie beide Server-Packs
 grün. Die reale Operator-Datei enthielt vor dem Neustart genau das alte Paar
 und wurde unter
-`~/.t3/userdata/keybindings.json.before-chat-new-migration-20260825-1213`
+`~/.workjet/userdata/keybindings.json.before-chat-new-migration-20260825-1213`
 gesichert. Nach dem begründeten LaunchServices-Neustart enthält sie genau
 `mod+n` für `chat.new`.
 
-LIVE ausschließlich im `t3code://app`-Target: vorhandener Draft
+LIVE ausschließlich im `workjet://app`-Target: vorhandener Draft
 `b15d17e7-...` öffnete mit einem sichtbaren Composer; Sidebar-Tooltip und
 Command Palette zeigten `⌘N`; Settings → Keybindings zeigte genau eine
 `Chat: New`-Zeile mit `⌘N` und ohne `O`. Screenshot
@@ -1202,9 +1202,9 @@ bleiben absichtlich unverändert, damit bestehende Installation, Updates,
 Sessions, Settings und Browser-Storage nicht geforkt werden.
 
 Neue Betriebssystem-Links verwenden `workjet://`, `workjet-dev://` und
-`workjet-preview://`. `ctox-desktop*://` und `t3code*://` bleiben nur als
+`workjet-preview://`. `ctox-desktop*://` und `workjet*://` bleiben nur als
 eingehende Aliasse registriert; intern wird weiterhin auf den bestehenden
-`t3code://app`-Renderer-Ursprung normalisiert. Damit ist die sichtbare
+`workjet://app`-Renderer-Ursprung normalisiert. Damit ist die sichtbare
 Produktidentität migriert, ohne CORS oder persistierten Origin-Storage zu
 brechen.
 
@@ -1212,7 +1212,7 @@ BEWEISE VOR LIVE-DEPLOY: fokussierte Desktop-/Web-/Release-Suite 128/128 grün,
 Desktop- und Web-Typecheck exit 0 (Desktop nur vorhandene Effect-Suggestions),
 gezieltes Format und `git diff --check` grün. Die reale UI-/Paket-Abnahme folgt
 nach dem zusammenhängenden QR-/Rechner-Slice ausschließlich im
-`t3code://app`-Target; bis dahin ist dies bewusst kein Live-Abschlussbeleg.
+`workjet://app`-Target; bis dahin ist dies bewusst kein Live-Abschlussbeleg.
 
 ## Business-OS-Mobile-Pairing per QR — 2026-08-25 ~16:45
 
@@ -1295,7 +1295,7 @@ IndexedDB-/RxDB-/WebRTC- und Restart/Resync-Abnahme bleibt offen.
 
 Der aktuelle Produktionsstand wurde neu als Web, Server und Desktop gebaut,
 über LaunchServices aus der gebrandeten `Workjet.app` gestartet und
-ausschließlich im einzigen `t3code://app/`-Target interaktiv geprüft. Native
+ausschließlich im einzigen `workjet://app/`-Target interaktiv geprüft. Native
 App-Menüs heißen durchgängig Workjet. Geprüft wurden alle Workjet-Settings
 (General, Appearance, Keybindings, Harnesses, Models, Computers, Worker samt
 Prompt/Telemetry/Execution, Source Control, Connections, Diagnostics und
@@ -1362,7 +1362,7 @@ Repair-, Update- und Rollback-Proben auf macOS/Linux/Windows sowie gpu3 bleiben
 weiterhin Operator-Trigger und sind nicht als live verifiziert behauptet.
 
 LIVE-SMOKE NACH MAIN-RESTART: Die neu gebaute Workjet-App stellte genau ein
-`t3code://app`-Target bereit, verband sich wieder und listete die vorhandenen
+`workjet://app`-Target bereit, verband sich wieder und listete die vorhandenen
 Managed-/Local-CTOX-Instanzen. Der bestehende Draft `b15d17e7-...` öffnete mit
 Composer und den gespeicherten Manual-/Rechner-/Harness-/Modell-/Workspace-
 Chips. Anschließend wurde der Endzustand wieder auf Business OS ohne geöffneten
@@ -1392,7 +1392,7 @@ nicht angeboten.
 
 BEWEISE: Contract-, Authorization-, Parser- und Decider-Suite 24/24 grün;
 Contracts-, Client-Runtime-, Web- und Server-Typecheck exit 0, Format und
-`git diff --check` grün. Live im einzigen normalisierten `t3code://app/`-Target:
+`git diff --check` grün. Live im einzigen normalisierten `workjet://app/`-Target:
 20 reale Candidates, keine Health-Probe und kein `<recommended_plugins>`-Text,
 kein horizontaler Overflow bei 1422×866. Eine reale Claude-Session wurde über
 Checkbox und `Import selected` kopiert und direkt erneut importiert: Mapping
@@ -1408,7 +1408,7 @@ Desktop, Web, Server, Marketing, Release-Metadaten und aktuelle Nutzerdoku
 verwenden sichtbar nur noch **Workjet**. CTOX bleibt ausschließlich an Stellen
 sichtbar, die tatsächlich ein Backend, eine Backend-Instanz oder eine
 Business-OS-Funktion bezeichnen. Die Stable-Stufe heißt nicht mehr Alpha. Die
-alten Marketing-Screenshots mit T3-Wortmarke wurden entfernt und durch eine
+alten Marketing-Screenshots mit Workjet-Wortmarke wurden entfernt und durch eine
 statische, datenneutrale Workjet-Produktvorschau ersetzt; die früheren
 Endorsement-Zitate wurden statt einer inhaltlich falschen Umbenennung entfernt.
 
@@ -1436,7 +1436,7 @@ unveränderten Test-Fixture-Befund (`workerProfiles` ohne `role` und
 grün; die ausgelieferten PNG-/ICNS-/ICO-/Apple-Touch-Dateien haben den
 Workjet-Quellhash.
 
-LIVE: Im einzigen `t3code://app/`-Target lautet der Dokumenttitel `Workjet`.
+LIVE: Im einzigen `workjet://app/`-Target lautet der Dokumenttitel `Workjet`.
 Code, Business OS und alle elf Settings-Seiten enthalten keinen alten
 Produktnamen. Settings → Computers trennt korrekt Workjet-App und CTOX-Backend;
 Business OS zeigt `Workjet` als App und `CTOX instances` als Backend-Liste.
@@ -1448,12 +1448,12 @@ Endzustand der Desktop-App ist Business OS ohne geöffneten Kunden-Guest.
 ## Mobile-Abschluss und lokale Legacy-Runtime-Bereinigung — 2026-08-25 ~22:45
 
 Der Mobile-Worker hat die letzte sichtbare Produktidentität als Workjet-Commit
-`0cacd8941` abgeschlossen. Der alte Assetname `T3Mark.svg` ist entfernt;
+`0cacd8941` abgeschlossen. Der alte Assetname `WorkjetMark.svg` ist entfernt;
 App-Oberfläche, Widget, Accessibility-Texte und Fallbacks verwenden Workjet.
 Der dazugehörige additive native Business-OS-Mobile-Host im CTOX-Repo ist als
 `1f8d1a09a` committed. Bewusst erhalten bleiben ausschließlich unsichtbare
-technische Kontinuitätswerte: Bundle-/Package-IDs `com.t3tools.t3code*`, der
-Expo-Slug `t3-code`, persistierte Daten-/Secret-Schlüssel, native Target- und
+technische Kontinuitätswerte: Bundle-/Package-IDs `dev.workjet.app*`, der
+Expo-Slug `workjet`, persistierte Daten-/Secret-Schlüssel, native Target- und
 Modulnamen sowie eingehende Legacy-Deep-Link-Aliasse. Sie werden nicht als
 Produktname gerendert und verhindern Datenverlust beziehungsweise kaputte alte
 Links.
@@ -1504,7 +1504,7 @@ bleiben Code-Funktionen.
 
 BEWEISE: Vier fokussierte Testdateien / 93 Tests grün; Contracts-, Desktop- und
 Web-Typecheck sowie Desktop-Pack und Web-Build grün. LIVE im exakten
-`t3code://app/`-Target wurde zuerst der normale Footer-Settings-Klick und dann
+`workjet://app/`-Target wurde zuerst der normale Footer-Settings-Klick und dann
 der ursprüngliche Fehlerpfad `Code Settings → Business OS` durchgespielt. In
 beiden Fällen blieb beziehungsweise wechselte die Host-Route auf die
 Business-OS-Shell, `Project grouping` war nicht vorhanden und im lokalen
@@ -1584,7 +1584,7 @@ Manifest-SHA-256 `a9bdcc7c…bb4cf`, Artefakt-SHA-256
 `89875506…b7044ac`, 122281365 Bytes, 1651 Dateien, Workjet-Minimum 0.0.33
 und CTOX-Minimum 0.3.22. Workjet pinnt und verifiziert genau dieses Artefakt.
 
-LIVE: Im einzigen `t3code://app/`-Target startet die lokale Shell als
+LIVE: Im einzigen `workjet://app/`-Target startet die lokale Shell als
 `v0.1.4`; Manifest, Shell-Status und Mobile-Host-Dateien laden ohne 404. Der
 Titel ist Workjet, die getrennten Settings und der kompakte Dock wurden
 interaktiv geprüft. Ein frischer Gaststart nach Mode-Wechsel funktioniert; ein
@@ -1704,11 +1704,11 @@ rohen `biz_…`-ID einen kurzen Namen, klappt standardmäßig nur die ausgewähl
 Instanz auf, hält ruhige App-Kategorien geschlossen, verwendet eine einheitliche
 Hierarchie und verschiebt destruktives Entfernen in ein bestätigtes Kontextmenü.
 
-WORKER-KONTINUITÄT: Die Produktionsdatei `~/.t3/userdata/settings.json` enthielt
+WORKER-KONTINUITÄT: Die Produktionsdatei `~/.workjet/userdata/settings.json` enthielt
 weiterhin alle zwölf Worker-Profile; gelöscht war nichts. Die isolierte Dev-App
-unter `~/.t3/dev` hatte lediglich keine Settings-Datei. Ein einmaliger statischer
+unter `~/.workjet/dev` hatte lediglich keine Settings-Datei. Ein einmaliger statischer
 Snapshot ausschließlich des `workjet`-Abschnitts wurde nach
-`~/.t3/dev/settings.json` übernommen. Settings → Worker zeigt wieder alle zwölf
+`~/.workjet/dev/settings.json` übernommen. Settings → Worker zeigt wieder alle zwölf
 Profile. Es existiert keine laufende Synchronisation und keine Interferenz mit
 der Produktionskonfiguration.
 

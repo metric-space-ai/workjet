@@ -2,7 +2,7 @@
 // @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect the complete bounded error value.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
-import { WorkjetContentDigest } from "@t3tools/contracts";
+import { WorkjetContentDigest } from "@workjet/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -100,7 +100,7 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
 
       const stat = yield* store.stat(first.digest);
       assert.deepStrictEqual(stat, Option.some({ byteLength: first.byteLength }));
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-roundtrip-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-roundtrip-"))),
   );
 
   it.effect("preserves multi-byte UTF-8 and counts bytes, not characters", () =>
@@ -112,7 +112,7 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
       assert.strictEqual(stored.byteLength, Buffer.byteLength(text, "utf8"));
       assert.isAbove(stored.byteLength, text.length);
       assert.strictEqual(yield* store.get(stored.digest), text);
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-utf8-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-utf8-"))),
   );
 
   it.effect("rejects content past the 8 MiB ceiling without writing anything", () =>
@@ -138,7 +138,7 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
       const atCeiling = "y".repeat(WORKJET_SNAPSHOT_MAX_BYTES);
       const stored = yield* store.put(atCeiling);
       assert.strictEqual(stored.byteLength, WORKJET_SNAPSHOT_MAX_BYTES);
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-ceiling-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-ceiling-"))),
   );
 
   it.effect("reports a missing snapshot as not-found rather than a defect", () =>
@@ -149,7 +149,7 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
       const error = yield* Effect.flip(store.get(digest));
       assert.isTrue(isWorkjetSnapshotNotFoundError(error));
       assert.deepStrictEqual(yield* store.stat(digest), Option.none());
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-missing-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-missing-"))),
   );
 
   it.effect("catches a tampered stored file through digest re-verification", () =>
@@ -170,7 +170,7 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
       assert.deepInclude(error, { digest: stored.digest, issue: "digest-mismatch" });
       // The failure never carries the offending content.
       assert.notInclude(JSON.stringify(error), "Substituted instructions.");
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-tampered-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-tampered-"))),
   );
 
   it.effect("rejects stored bytes that are no longer valid UTF-8", () =>
@@ -197,7 +197,7 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
       const error = yield* Effect.flip(store.get(digest));
       assert.isTrue(isWorkjetSnapshotCorruptError(error));
       assert.deepInclude(error, { digest, issue: "invalid-utf8" });
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-utf8-invalid-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-utf8-invalid-"))),
   );
 
   it.effect("deduplicates identical content and separates distinct content", () =>
@@ -211,6 +211,6 @@ it.layer(NodeServices.layer)("workjet snapshot store", (it) => {
       assert.notStrictEqual(beta.digest, alpha.digest);
       assert.strictEqual(yield* store.get(alpha.digest), "alpha prompt");
       assert.strictEqual(yield* store.get(beta.digest), "beta prompt");
-    }).pipe(Effect.provide(makeStoreLayer("t3code-workjet-snapshot-dedup-"))),
+    }).pipe(Effect.provide(makeStoreLayer("workjet-workjet-snapshot-dedup-"))),
   );
 });

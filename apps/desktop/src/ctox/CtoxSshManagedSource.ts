@@ -5,8 +5,8 @@ import type {
   CtoxManagedInstance,
   CtoxSshManagedInstanceAddInput,
   DesktopSshEnvironmentTarget,
-} from "@t3tools/contracts";
-import { runSshCommand } from "@t3tools/ssh/command";
+} from "@workjet/contracts";
+import { runSshCommand } from "@workjet/ssh/command";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -24,7 +24,7 @@ import {
 /**
  * Read-only discovery of CTOX daemons on SSH hosts the user has configured.
  *
- * The desktop already owns an SSH execution path — `@t3tools/ssh/command`'s
+ * The desktop already owns an SSH execution path — `@workjet/ssh/command`'s
  * `runSshCommand`, the same one `DesktopSshEnvironment` drives — so this module
  * adds no second SSH stack, no credential storage, and no host-key policy of
  * its own:
@@ -153,7 +153,7 @@ export function isCtoxSshManagedInstance(instance: CtoxManagedInstance): boolean
  *
  * A CTOX daemon's invite names signaling endpoints on *its own* loopback
  * interface (`ws://127.0.0.1:PORT`), which the desktop cannot reach directly.
- * `openSshLocalForward` in `@t3tools/ssh/localForward` now supplies the missing
+ * `openSshLocalForward` in `@workjet/ssh/localForward` now supplies the missing
  * piece — a scoped `ssh -L` forward with a TCP readiness gate — so the launch
  * path mints the invite over SSH, forwards each signaling port, and rewrites
  * the invite onto the local ends. Everything else mirrors the local daemon:
@@ -226,7 +226,7 @@ export const CTOX_SSH_INVITE_TIMEOUT_MS = 25_000;
  * and matched here. Only this exact marker is ever read out of stderr; the rest
  * is never logged, kept, or surfaced.
  */
-export const CTOX_SSH_INVITE_FAILURE_MARKER = "__t3_ctox_invite_failed__";
+export const CTOX_SSH_INVITE_FAILURE_MARKER = "__workjet_ctox_invite_failed__";
 export const CTOX_SSH_SHELL_UPDATE_FAILURE_MARKER = "__workjet_shell_update_failed__";
 export const CTOX_SSH_SERVICE_RESTART_FAILURE_MARKER = "__workjet_service_restart_failed__";
 export const CTOX_SSH_DATA_PLANE_STATUS_FAILURE_MARKER = "__workjet_data_plane_status_failed__";

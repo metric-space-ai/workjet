@@ -3,7 +3,7 @@ import {
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@workjet/client-runtime/environment";
 import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
@@ -14,8 +14,8 @@ import {
   ThreadId,
   type ModelSelection,
   type ProviderOptionSelection,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@workjet/contracts";
+import { createModelSelection } from "@workjet/shared/model";
 
 // The composer draft's `modelSelectionByProvider` and
 // `stickyModelSelectionByProvider` maps are keyed by `ProviderInstanceId`
@@ -783,6 +783,34 @@ describe("composerDraftStore review comments", () => {
 });
 
 describe("composerDraftStore project draft thread mapping", () => {
+  it.each([
+    "environment-local:/workspace/local-project",
+    "environment-local:C:/workspace/local-project",
+    "github.com/example/project",
+  ])("preserves the physical project through persistence for logical key %s", (logicalKey) => {
+    resetComposerDraftStore();
+    const draftId = DraftId.make("draft-persistence");
+    const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("actual-project-id"));
+    const store = useComposerDraftStore.getState();
+    store.setLogicalProjectDraftThreadId(logicalKey, projectRef, draftId, {
+      threadId: ThreadId.make("thread-persistence"),
+      branch: "feature/persist",
+      worktreePath: "/workspace/local-project",
+    });
+    store.setPrompt(draftId, "Keep this unsent work");
+    const options = useComposerDraftStore.persist.getOptions();
+    const persisted = options.partialize!(useComposerDraftStore.getState());
+    const restored = options.merge!(persisted, useComposerDraftStore.getInitialState());
+    expect(restored.draftThreadsByThreadKey[draftId]).toMatchObject({
+      ...projectRef,
+      logicalProjectKey: logicalKey,
+      branch: "feature/persist",
+      worktreePath: "/workspace/local-project",
+    });
+    expect(restored.logicalProjectDraftThreadKeyByLogicalProjectKey[logicalKey]).toBe(draftId);
+    expect(restored.draftsByThreadKey[draftId]?.prompt).toBe("Keep this unsent work");
+  });
+
   const projectId = ProjectId.make("project-a");
   const otherProjectId = ProjectId.make("project-b");
   const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, projectId);

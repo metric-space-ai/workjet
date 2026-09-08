@@ -8,7 +8,7 @@ import {
   type WorkjetGatewayOauthProvider,
   type WorkjetGatewayProvider,
   type WorkjetGatewayStatus,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   CheckCircle2Icon,
   KeyRoundIcon,

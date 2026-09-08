@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxInstanceApp } from "@t3tools/contracts";
+import type { CtoxInstanceApp } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -135,7 +135,7 @@ export interface CtoxRailInstanceState {
 }
 
 /**
- * Session-list merge (T3 analogy): every installed app of the instance is
+ * Session-list merge (Workjet analogy): every installed app of the instance is
  * listed like sessions under a project. Docked apps come first in pin order,
  * then the remaining installed apps; open apps carry the open marker. While
  * the guest is away the last cached app list renders instead.
@@ -231,7 +231,7 @@ export class CtoxAppRail extends Context.Service<
     ) => Effect.Effect<void, CtoxAppRailError>;
     readonly removeInstance: (key: CtoxRailInstanceKey) => Effect.Effect<void, CtoxAppRailError>;
   }
->()("@t3tools/desktop/ctox/CtoxAppRail") {}
+>()("@workjet/desktop/ctox/CtoxAppRail") {}
 
 export const make = Effect.fn("CtoxAppRail.make")(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;

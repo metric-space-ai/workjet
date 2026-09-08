@@ -4,7 +4,7 @@ import {
   type WorkjetDeviceBindingListResult,
   type WorkjetDeviceBindingSummary,
   type WorkjetManagedDeviceInviteManualConnectionResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 import { encodeWorkjetBusinessOsPairingLink } from "./businessOsPairing";

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { SUPPORT_BUNDLE_PLACEHOLDERS, SUPPORT_BUNDLE_MAX_FIELD_LENGTH } from "@t3tools/contracts";
+import { SUPPORT_BUNDLE_PLACEHOLDERS, SUPPORT_BUNDLE_MAX_FIELD_LENGTH } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
 import {
@@ -201,7 +201,7 @@ describe("SupportBundleRedaction gate", () => {
       "darwin",
       "local-only",
       "desktop.appIdentity.resolveUserDataPath",
-      "resolveRemoteT3CliPackageSpec",
+      "resolveRemoteWorkjetCliPackageSpec",
       "DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES",
       "bootstrap resolved backend endpoint",
       "a1b2c3d4e5f6",
@@ -292,7 +292,7 @@ describe("SupportBundleRedaction log projection", () => {
     const projected = gateLogLine(
       ledger,
       JSON.stringify({
-        message: "runtime logging configured /Users/alice/.t3/userdata/logs",
+        message: "runtime logging configured /Users/alice/.workjet/userdata/logs",
         level: "INFO",
       }),
     );

@@ -1,7 +1,7 @@
 // @effect-diagnostics preferSchemaOverJson:off -- MCP text mirrors bounded validated structured content.
 import { WORKJET_COLLECTIVE_SKILL } from "@metric-space-ai/workjet-capabilities";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { parseWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
+import { EnvironmentId, ThreadId } from "@workjet/contracts";
+import { parseWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

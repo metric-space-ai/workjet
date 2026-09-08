@@ -49,7 +49,12 @@ const manifest = {
     type: "object",
     required: ["title"],
   },
-  supportedAdapters: ["t3-mcp", "t3-prompt", "ctox-business-os-mcp", "ctox-business-command"],
+  supportedAdapters: [
+    "workjet-mcp",
+    "workjet-prompt",
+    "ctox-business-os-mcp",
+    "ctox-business-command",
+  ],
 } as const;
 
 describe("CapabilityManifestV1", () => {

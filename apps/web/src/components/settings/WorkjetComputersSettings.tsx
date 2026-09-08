@@ -3,9 +3,9 @@ import type {
   WorkjetComputer,
   WorkjetConfiguration,
   WorkjetHarnessAvailabilitySnapshot,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
@@ -18,6 +18,8 @@ import { RemoteEnvironmentsSection } from "./ConnectionsSettings";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
+  createWorkjetComputerDraft,
+  saveWorkjetComputerDraft,
 } from "./WorkjetComputerEditor";
 import { workjetEnvironmentTargetOptions } from "./WorkjetSettings";
 import {
@@ -163,13 +165,13 @@ export function WorkjetComputersSettingsView({
           disabled={!environmentsReady || environments.length === 0}
         >
           <PlusIcon className="size-3.5" />
-          Add computer
+          Add existing connection
         </Button>
       }
     >
       <SettingsRow
         title={environmentsReady ? "Computer targets" : "Loading computer targets"}
-        description="A computer is an existing local, relay, SSH, Tailscale, or other remote environment plus its declared harnesses. Workjet stores only the selected target and harness availability; credentials remain with the owning environment."
+        description="Select the computer for your next session, or edit its name and coding tools."
       />
       {/* The editor renders where the user is looking: adding — right here
           under the header button; editing — directly below the edited row
@@ -179,7 +181,7 @@ export function WorkjetComputersSettingsView({
       {configuration.computers.length === 0 ? (
         <SettingsRow
           title="No computers yet"
-          description="Add a computer from an existing environment, or pair a new remote environment below and add it as a computer afterwards."
+          description="Use this computer or connect another one with the setup buttons above."
         />
       ) : null}
       <div role="radiogroup" aria-label="Current computer" className="space-y-1">
@@ -317,6 +319,46 @@ export function WorkjetComputersSettings() {
   const { environments, isReady: environmentsReady } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const environmentId = primaryEnvironment?.environmentId ?? null;
+  const [connectionRequest, setConnectionRequest] = useState<{
+    kind: "ssh" | "tailscale";
+    sequence: number;
+  } | null>(null);
+  const [pendingComputerId, setPendingComputerId] = useState<EnvironmentId | null>(null);
+  const targetOptions = workjetEnvironmentTargetOptions(environments);
+  const pendingTarget = targetOptions.find((target) => target.environmentId === pendingComputerId);
+  const pendingInspection = useEnvironmentQuery(
+    pendingComputerId === null
+      ? null
+      : serverEnvironment.workjetHarnessInspect({ environmentId: pendingComputerId, input: {} }),
+  );
+  useEffect(() => {
+    if (!pendingTarget || !pendingInspection.data) return;
+    const existing = settings.workjet.computers.find(
+      (computer) => computer.environmentId === pendingTarget.environmentId,
+    );
+    const draft = createWorkjetComputerDraft({ environments: [pendingTarget] });
+    const computer =
+      existing ??
+      saveWorkjetComputerDraft({
+        ...draft,
+        harnesses: draft.harnesses.map((entry) => ({
+          ...entry,
+          available: pendingInspection.data!.harnesses.some(
+            (live) => live.harness === entry.harness && live.availability === "available",
+          ),
+        })),
+      });
+    updateSettings({
+      workjet: {
+        ...settings.workjet,
+        computers: existing
+          ? settings.workjet.computers
+          : [...settings.workjet.computers, computer],
+        selectedComputerId: computer.id,
+      },
+    });
+    setPendingComputerId(null);
+  }, [pendingTarget, pendingInspection.data, settings.workjet, updateSettings]);
   // Live harness probe of this server, for the per-computer rows. Same
   // environment-query mechanics as every other read on this page.
   const harnessInspectQuery = useEnvironmentQuery(
@@ -330,10 +372,60 @@ export function WorkjetComputersSettings() {
       <div className="px-3 sm:px-4">
         <h1 className="text-xl font-semibold tracking-[-0.025em]">Computers</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          The machines Workjet workers run on: pair remote environments and declare which harnesses
-          each computer offers.
+          Connect a computer, check its coding tools, and choose where your next task runs.
         </p>
       </div>
+      <SettingsSection title="Set up a computer">
+        <div className="space-y-3 px-3 sm:px-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={!environmentsReady || environmentId === null || pendingComputerId !== null}
+              onClick={() => setPendingComputerId(environmentId)}
+            >
+              Use this computer
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setConnectionRequest((current) => ({
+                  kind: "ssh",
+                  sequence: (current?.sequence ?? 0) + 1,
+                }))
+              }
+            >
+              Connect over SSH
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setConnectionRequest((current) => ({
+                  kind: "tailscale",
+                  sequence: (current?.sequence ?? 0) + 1,
+                }))
+              }
+            >
+              Connect over Tailscale
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Workjet checks the connection and installed coding tools, then adds the computer to your
+            list.
+          </p>
+          {pendingComputerId ? (
+            <p role="status" className="text-sm">
+              Checking {pendingTarget?.label ?? "the connected computer"} and its coding tools…
+            </p>
+          ) : null}
+          {pendingComputerId && pendingInspection.error ? (
+            <div role="alert" className="text-sm text-destructive">
+              The computer did not report its coding tools. Check its connection and try again.
+              <Button variant="outline" onClick={() => setPendingComputerId(null)}>
+                Dismiss
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </SettingsSection>
       <WorkjetComputersSettingsView
         configuration={settings.workjet}
         environments={workjetEnvironmentTargetOptions(environments)}
@@ -342,8 +434,16 @@ export function WorkjetComputersSettings() {
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
       />
-      <ComputerProvisioningSection />
-      <RemoteEnvironmentsSection />
+      <RemoteEnvironmentsSection
+        connectionRequest={connectionRequest}
+        onConnected={setPendingComputerId}
+      />
+      <details className="mx-3 rounded-lg border border-border p-3 sm:mx-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          Install or repair backend software
+        </summary>
+        <ComputerProvisioningSection />
+      </details>
     </SettingsPageContainer>
   );
 }

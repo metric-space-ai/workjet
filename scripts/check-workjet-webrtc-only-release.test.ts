@@ -56,7 +56,7 @@ NodeTest.test("allows only the exact fixture, never active product source", () =
     true,
   );
   NodeAssert.equal(
-    isAllowlistedLegacyReference("apps/web/src/t3-connect.md", "shared-signaling-secret"),
+    isAllowlistedLegacyReference("apps/web/src/workjet-connect.md", "shared-signaling-secret"),
     false,
   );
   NodeAssert.equal(

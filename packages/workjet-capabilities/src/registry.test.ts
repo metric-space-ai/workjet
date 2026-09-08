@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { CapabilityManifest } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 
 import { builtInCapabilityManifests } from "./manifests.ts";
@@ -7,7 +7,7 @@ import { createCapabilityRegistry, defaultCapabilityRegistry } from "./registry.
 
 const withoutAdapter = (
   manifest: CapabilityManifest,
-  excluded: "t3-mcp" | "t3-prompt" | "ctox-business-os-mcp" | "ctox-business-command",
+  excluded: "workjet-mcp" | "workjet-prompt" | "ctox-business-os-mcp" | "ctox-business-command",
 ): CapabilityManifest => ({
   ...manifest,
   supportedAdapters: manifest.supportedAdapters.filter((adapter) => adapter !== excluded),
@@ -62,12 +62,12 @@ describe("capability registry", () => {
   it("filters manifests by adapter in registry order", () => {
     const source = [
       builtInCapabilityManifests[0],
-      withoutAdapter(builtInCapabilityManifests[1]!, "t3-prompt"),
+      withoutAdapter(builtInCapabilityManifests[1]!, "workjet-prompt"),
       builtInCapabilityManifests[2],
     ].filter((manifest): manifest is CapabilityManifest => manifest !== undefined);
     const registry = createCapabilityRegistry(source);
 
-    expect(registry.listForAdapter("t3-prompt").map(({ id }) => id)).toEqual([
+    expect(registry.listForAdapter("workjet-prompt").map(({ id }) => id)).toEqual([
       "greppy",
       "web-stack-browser",
     ]);

@@ -5,6 +5,14 @@ on:
   pull_request:
     paths:
       - .github/workflows/desktop-install-artifact.yml
+      - packages/ssh/**
+      - apps/desktop/src/main.ts
+      - apps/desktop/src/provisioning/**
+      - scripts/build-ssh-server.mjs
+      - .github/workflows/ssh-server-artifacts.yml
+
+      - apps/server/**
+      - scripts/lib/cli-external-packages.ts
       - scripts/build-desktop-artifact.ts
       - scripts/lib/prepare-provider-gateway-host.ts
       - scripts/smoke-packaged-startup.mjs
@@ -25,16 +33,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ssh-server:
+    uses: ./.github/workflows/ssh-server-artifacts.yml
+
   macos-arm64:
     name: Standalone macOS ARM64 app
+    needs: ssh-server
     runs-on: macos-latest
     timeout-minutes: 60
     env:
       CI: "1"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
-      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
-      T3CODE_RELAY_URL: https://relay.t3.codes
+
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -59,6 +69,12 @@ jobs:
           grep -q '^keychain smoke: pass' "$RUNNER_TEMP/keychain-smoke.log"
           grep -q '^legacy keychain migration: pass' "$RUNNER_TEMP/keychain-smoke.log"
       - name: Build the standalone install package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: workjet-ssh-server-*
+          path: apps/desktop/resources/ssh-servers
+          merge-multiple: true
+      - name: Package the desktop with its SSH servers
         run: |
           test "$(uname -m)" = arm64
           export TMPDIR="$RUNNER_TEMP"
@@ -67,7 +83,7 @@ jobs:
           # This workflow publishes an install artifact, not an updater feed.
           # Use the existing unconfigured-build behavior instead of embedding
           # the ambient Actions repository as a nonexistent desktop release feed.
-          unset GITHUB_REPOSITORY T3CODE_DESKTOP_UPDATE_REPOSITORY
+          unset GITHUB_REPOSITORY WORKJET_DESKTOP_UPDATE_REPOSITORY
           node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
       - name: Verify the packaged app signature and executable
         run: |

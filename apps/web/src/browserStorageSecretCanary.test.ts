@@ -29,7 +29,7 @@
  *
  * WHAT IS ALLOWED TO BE THERE. Three values in this dump are entropic on
  * purpose and are declared below with a reason each. The rest of the dump must
- * be free of every shape in `@t3tools/shared/secretShapes` — the same table the
+ * be free of every shape in `@workjet/shared/secretShapes` — the same table the
  * support-bundle gate redacts with and the tracked-file gate scans with.
  *
  * NOT COVERED, deliberately: the DPoP signing key in
@@ -44,13 +44,13 @@ import {
   BearerConnectionCredential,
   BearerConnectionProfile,
   BearerConnectionRegistration,
-} from "@t3tools/client-runtime/connection";
-import { BearerConnectionTarget } from "@t3tools/client-runtime/connection";
+} from "@workjet/client-runtime/connection";
+import { BearerConnectionTarget } from "@workjet/client-runtime/connection";
 import {
   ConnectionRegistrationStore,
   EnvironmentCacheStore,
-} from "@t3tools/client-runtime/platform";
-import { TokenStore } from "@t3tools/client-runtime/authorization";
+} from "@workjet/client-runtime/platform";
+import { TokenStore } from "@workjet/client-runtime/authorization";
 import {
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
@@ -60,11 +60,11 @@ import {
   ProviderInstanceId,
   ThreadId,
   type ServerConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   BROWSER_STORAGE_SECRET_SHAPES,
   findSecretShapeMatches,
-} from "@t3tools/shared/secretShapes";
+} from "@workjet/shared/secretShapes";
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { vi } from "vite-plus/test";
@@ -84,7 +84,7 @@ const DECLARED_BROWSER_CREDENTIALS = [
     value: "t3cbt7Qk2Lm4Rt8Wv6Yb1Nc3Kd5Fg9Hj0PsQwErTyUi",
     occurrences: 1,
     reason:
-      "The browser's own session credential for the T3 server the user paired it with, held by `CredentialStore` in the connection catalog. It is the credential the web app exists to use; a browser that cannot keep it cannot stay signed in. It is none of the five kinds the invariant names — it is neither a provider subscription token, nor a CTOX pairing or capability secret, nor a sudo or SSH secret, all of which stay in the owning runtime's secret store.",
+      "The browser's own session credential for the Workjet server the user paired it with, held by `CredentialStore` in the connection catalog. It is the credential the web app exists to use; a browser that cannot keep it cannot stay signed in. It is none of the five kinds the invariant names — it is neither a provider subscription token, nor a CTOX pairing or capability secret, nor a sudo or SSH secret, all of which stay in the owning runtime's secret store.",
   },
   {
     name: "relay DPoP access token",
@@ -245,7 +245,7 @@ const SERVER_CONFIG: ServerConfig = {
     policy: "loopback-browser",
     bootstrapMethods: ["one-time-token"],
     sessionMethods: ["browser-session-cookie", "bearer-access-token"],
-    sessionCookieName: "t3_session",
+    sessionCookieName: "workjet_session",
   },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/keybindings.json",
@@ -333,7 +333,7 @@ function persistRealisticSession(options: { readonly connectionLabel: string }) 
           endpoint: {
             httpBaseUrl: "https://relay.example.test",
             wsBaseUrl: "wss://relay.example.test",
-            providerKind: "t3_relay",
+            providerKind: "workjet_relay",
           },
           accessToken: DECLARED_BROWSER_CREDENTIALS[1].value,
           expiresAtEpochMs: 1_800_000_000_000,
@@ -381,9 +381,9 @@ describe("browser storage secret canary", () => {
       yield* persistRealisticSession({ connectionLabel: "Workstation" });
       const dump = dumpBrowserStorage();
 
-      expect(dump).toContain("t3code:client-settings:v1");
-      expect(dump).toContain("t3code:connection-runtime/catalog");
-      expect(dump).toContain("t3code:connection-runtime/server-config");
+      expect(dump).toContain("workjet:client-settings:v1");
+      expect(dump).toContain("workjet:connection-runtime/catalog");
+      expect(dump).toContain("workjet:connection-runtime/server-config");
 
       const leaks = undeclaredSecretShapes(dump);
       expect(

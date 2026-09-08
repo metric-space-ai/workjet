@@ -33,7 +33,7 @@ export class DesktopApplicationMenu extends Context.Service<
   {
     readonly configure: Effect.Effect<void>;
   }
->()("@t3tools/desktop/window/DesktopApplicationMenu") {}
+>()("@workjet/desktop/window/DesktopApplicationMenu") {}
 
 type DesktopApplicationMenuRuntimeServices =
   | DesktopSupportBundle.DesktopSupportBundle

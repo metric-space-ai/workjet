@@ -24,7 +24,7 @@
  *    transport operation that produced the event — mirroring the best-effort
  *    thread-activity append the same services already use.
  */
-import type { WorkjetMailboxAuditEvent } from "@t3tools/contracts";
+import type { WorkjetMailboxAuditEvent } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -80,7 +80,7 @@ export interface WorkjetMailboxAuditEmitterShape {
 export class WorkjetMailboxAuditEmitter extends Context.Service<
   WorkjetMailboxAuditEmitter,
   WorkjetMailboxAuditEmitterShape
->()("t3/workjet/mailbox/WorkjetMailboxAuditEmitter") {}
+>()("workjet/workjet/mailbox/WorkjetMailboxAuditEmitter") {}
 
 /**
  * A minimal sink the mailbox services depend on instead of the full emitter, so

@@ -1,0 +1,18 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": [
+      "WorkjetNativeControlsModule",
+      "WorkjetKeyboardCommandsModule",
+      "WorkjetBusinessOsModule",
+      "WorkjetBusinessOsLauncherModule"
+    ]
+  },
+  "android": {
+    "modules": [
+      "expo.modules.workjetnativecontrols.WorkjetNativeControlsModule",
+      "expo.modules.workjetnativecontrols.WorkjetBusinessOsModule",
+      "expo.modules.workjetnativecontrols.WorkjetBusinessOsLauncherModule"
+    ]
+  }
+}

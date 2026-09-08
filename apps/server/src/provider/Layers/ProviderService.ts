@@ -25,9 +25,9 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
   WorkjetThreadConfig,
-} from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
-import { parseWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
+} from "@workjet/contracts";
+import { causeErrorTag } from "@workjet/shared/observability";
+import { parseWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

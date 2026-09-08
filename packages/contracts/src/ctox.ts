@@ -550,7 +550,16 @@ export type CtoxWorkjetProjectControlResponse = typeof CtoxWorkjetProjectControl
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "launch_failed",
+      "authentication_required",
+      "unsupported",
+      "timeout",
+      "guest_failed",
+      "response_too_large",
+    ]),
   }),
 ]);
 export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlResult.Type;
@@ -1013,7 +1022,7 @@ export type CtoxGuestStateEvent = typeof CtoxGuestStateEvent.Type;
 
 /**
  * A Business OS module surfaced in the sidebar as a directly selectable app —
- * the CTOX analog of a T3 chat session under its project. Docked apps are
+ * the CTOX analog of a Workjet chat session under its project. Docked apps are
  * user-pinned to the rail (taskbar model) and stay listed even while closed
  * or disconnected; undocked apps appear only while open in the guest.
  */

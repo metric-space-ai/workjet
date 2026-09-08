@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@workjet/contracts";
 import { assert, beforeEach, describe, it } from "@effect/vitest";
 
 import {

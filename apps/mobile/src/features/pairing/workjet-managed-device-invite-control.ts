@@ -9,7 +9,7 @@ import {
   type WorkjetManagedBackendControlResolveResult,
   type WorkjetManagedDeviceInviteCreateInput,
   type WorkjetManagedDeviceInviteRevokeInput,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 import {

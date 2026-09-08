@@ -1,9 +1,9 @@
-import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
+import type { VcsRef } from "@workjet/client-runtime/state/vcs";
 import { LegendList } from "@legendapp/list/react-native";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -65,7 +65,7 @@ function SelectionRow(props: {
         <SymbolView name={props.icon} size={17} tintColor={iconColor} type="monochrome" />
       ) : null}
       <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
+        <Text className="text-base font-workjet-medium text-foreground" numberOfLines={1}>
           {props.title}
         </Text>
         {props.subtitle ? (
@@ -94,7 +94,10 @@ function ToggleRow(props: {
 }) {
   return (
     <View className="min-h-14 flex-row items-center gap-3 bg-card px-4 py-3">
-      <Text className="min-w-0 flex-1 text-base font-t3-medium text-foreground" numberOfLines={1}>
+      <Text
+        className="min-w-0 flex-1 text-base font-workjet-medium text-foreground"
+        numberOfLines={1}
+      >
         {props.title}
       </Text>
       <Switch
@@ -373,7 +376,7 @@ export function NewTaskBranchPickerRouteScreen() {
               className="rounded-full bg-card px-4 py-2 active:opacity-70"
               onPress={flow.loadBranches}
             >
-              <Text className="text-sm font-t3-medium text-foreground">Try again</Text>
+              <Text className="text-sm font-workjet-medium text-foreground">Try again</Text>
             </Pressable>
           ) : null}
         </View>

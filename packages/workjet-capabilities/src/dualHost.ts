@@ -2,7 +2,7 @@ import type {
   CapabilityAdapter,
   CapabilityManifest,
   WorkjetCapabilityId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { GREPPY_RUNTIME_PIN } from "./greppyRuntime.ts";
 import { builtInCapabilityManifests } from "./manifests.ts";
@@ -28,12 +28,12 @@ export const CAPABILITY_HOSTS = ["code", "ctox"] as const;
 export type CapabilityHostId = (typeof CAPABILITY_HOSTS)[number];
 
 /**
- * Adapter → host. The manifest vocabulary is per ADAPTER (`t3-mcp`,
+ * Adapter → host. The manifest vocabulary is per ADAPTER (`workjet-mcp`,
  * `ctox-business-command`, …); the version lock and the conformance gate reason
  * per HOST. This map is the only place that translation is written down.
  */
 export const CAPABILITY_HOST_ADAPTERS = {
-  code: ["t3-mcp", "t3-prompt"],
+  code: ["workjet-mcp", "workjet-prompt"],
   ctox: ["ctox-business-os-mcp", "ctox-business-command"],
 } as const satisfies Record<CapabilityHostId, ReadonlyArray<CapabilityAdapter>>;
 

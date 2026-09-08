@@ -22,7 +22,7 @@ import {
   type WorkjetSessionImportInspection,
   type WorkjetSessionImportResult,
   type WorkjetSessionImportSource,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -387,7 +387,7 @@ export interface WorkjetSessionImportShape {
 export class WorkjetSessionImport extends Context.Service<
   WorkjetSessionImport,
   WorkjetSessionImportShape
->()("t3/workjet/sessionImport/WorkjetSessionImport") {}
+>()("workjet/workjet/sessionImport/WorkjetSessionImport") {}
 
 export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;

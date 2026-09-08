@@ -1,4 +1,4 @@
-import { QrCode } from "@t3tools/shared/qrCode";
+import { QrCode } from "@workjet/shared/qrCode";
 import { useMemo } from "react";
 import { View } from "react-native";
 import Svg, { Rect } from "react-native-svg";

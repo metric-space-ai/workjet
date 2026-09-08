@@ -9,7 +9,7 @@ const desktopDirectory = NodePath.resolve(scriptDirectory, "..");
 const defaultRepoRoot = NodePath.resolve(desktopDirectory, "..", "..");
 
 export function resourceMonitorExecutableName(platform) {
-  return platform === "win32" ? "t3-resource-monitor.exe" : "t3-resource-monitor";
+  return platform === "win32" ? "workjet-resource-monitor.exe" : "workjet-resource-monitor";
 }
 
 export function resolveResourceMonitorStagePaths({ repoRoot, platform }) {
@@ -59,7 +59,7 @@ function buildResourceMonitor({ repoRoot, manifestPath }) {
 
 export function stageResourceMonitor({
   repoRoot = defaultRepoRoot,
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone build script host target.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone build script host target.
   platform = NodeOS.platform(),
   build = buildResourceMonitor,
 } = {}) {
@@ -80,9 +80,9 @@ export function stageResourceMonitor({
   return paths.stagedBinaryPath;
 }
 
-// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone build script entrypoint.
+// oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone build script entrypoint.
 if (import.meta.url === NodeURL.pathToFileURL(process.argv[1]).href) {
   const stagedBinaryPath = stageResourceMonitor();
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone build script output.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone build script output.
   process.stdout.write(`[desktop] Staged resource monitor at ${stagedBinaryPath}\n`);
 }

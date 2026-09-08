@@ -26,7 +26,7 @@ export const USER_DATA_MIGRATION_MARKER_FILE = "ctox-user-data-migration.json";
  * Top-level entries copied out of a legacy user-data directory.
  *
  * The directory is a Chromium profile: the app's own settings live in
- * ~/.t3/<userdata|dev> (DesktopEnvironment.stateDir) and are NOT affected by
+ * ~/.workjet/<userdata|dev> (DesktopEnvironment.stateDir) and are NOT affected by
  * this migration. What is worth carrying over is the durable browsing state
  * that represents "I am signed in":
  *
@@ -48,7 +48,7 @@ export const USER_DATA_MIGRATION_MARKER_FILE = "ctox-user-data-migration.json";
  * user-data directory. Changing the directory therefore orphans nothing —
  * every safeStorage-encrypted value stays decryptable, and the copied cookie
  * jar keeps working. The app's own encrypted secrets (connection catalog,
- * saved environments) live under ~/.t3 and are untouched by this migration
+ * saved environments) live under ~/.workjet and are untouched by this migration
  * altogether. If the display name in DesktopEnvironment ever changes, THAT is
  * what orphans keychain secrets, and it needs its own migration.
  */
@@ -185,7 +185,7 @@ export class DesktopUserDataMigration extends Context.Service<
     /** Record refusal. Terminal — the offer is never shown again. */
     readonly decline: Effect.Effect<void>;
   }
->()("@t3tools/desktop/app/DesktopUserDataMigration") {}
+>()("@workjet/desktop/app/DesktopUserDataMigration") {}
 
 export type JoinPath = (first: string, ...rest: string[]) => string;
 

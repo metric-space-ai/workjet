@@ -84,7 +84,7 @@ export const executableCandidates = (input: {
 export const webStackStateRoot = (stateDir: string): string => NodePath.join(stateDir, "web-stack");
 
 export const productionRuntime = (): WebStackRuntimeBoundary => {
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Concrete Node boundary behind the injected WebStackRuntimeBoundary interface.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Concrete Node boundary behind the injected WebStackRuntimeBoundary interface.
   const hostPlatform = process.platform;
   return {
     executableCandidates: executableCandidates({

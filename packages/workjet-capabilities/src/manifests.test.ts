@@ -10,7 +10,7 @@ import {
   CapabilityManifest,
   type CapabilityAdapter,
   type CapabilityPermissionRequirement,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -37,8 +37,8 @@ import {
 } from "./manifests.ts";
 
 const ALL_ADAPTERS: ReadonlyArray<CapabilityAdapter> = [
-  "t3-mcp",
-  "t3-prompt",
+  "workjet-mcp",
+  "workjet-prompt",
   "ctox-business-os-mcp",
   "ctox-business-command",
 ];
@@ -226,7 +226,7 @@ describe("built-in capability manifests", () => {
     for (const [index, manifest] of builtInCapabilityManifests.entries()) {
       expect(manifest.permissionRequirements).toEqual(EXPECTED[index]?.permissions);
       expect(manifest.supportedAdapters).toEqual(
-        manifest.id === "decision-hub" ? ["t3-mcp", "t3-prompt"] : ALL_ADAPTERS,
+        manifest.id === "decision-hub" ? ["workjet-mcp", "workjet-prompt"] : ALL_ADAPTERS,
       );
       expect(manifest.secretRequirements).toEqual([]);
     }

@@ -9,7 +9,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationThread,
   type WorkjetThreadConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 

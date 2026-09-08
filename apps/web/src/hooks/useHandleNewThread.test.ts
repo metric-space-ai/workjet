@@ -1,6 +1,6 @@
-import { scopedProjectKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { scopedProjectKey } from "@workjet/client-runtime/environment";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
+import { EnvironmentId, ProjectId, ThreadId } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";

@@ -355,7 +355,7 @@ export const VENDORED_NATIVE_COMPONENTS: readonly VendoredComponent[] = [
   },
   {
     path: "native/resource-monitor",
-    component: "t3-resource-monitor",
+    component: "workjet-resource-monitor",
     version: "0.1.0",
     license: "MIT",
     licenseFiles: ["LICENSE"],
@@ -459,7 +459,7 @@ export function renderReleaseNotice(input: ReleaseNoticeInput): string {
   lines.push("## 1. Workjet application");
   lines.push("");
   lines.push(
-    "The Workjet application is derived from T3 Code and remains under the MIT License. The",
+    "The Workjet application is derived from Workjet and remains under the MIT License. The",
     "original copyright and permission notice is retained verbatim in the repository-root",
     "[`LICENSE`](LICENSE) file and is packaged with every desktop artifact under",
     "`Resources/legal/LICENSE`.",

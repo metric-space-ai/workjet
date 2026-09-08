@@ -4,7 +4,7 @@ import {
   WorkjetConfiguration,
   WorkjetGatewayAccountId,
   type WorkjetComputer,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 import {

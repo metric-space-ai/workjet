@@ -53,7 +53,7 @@ import {
   type ProviderInstanceEnvironment,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayProvider,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 
 import { ProviderGatewayService } from "../providerGateway/ProviderGatewayService.ts";
@@ -111,7 +111,7 @@ export const GATEWAY_CODEX_API_KEY_ENV = "WORKJET_GATEWAY_API_KEY";
  * but it does accept `-c key=value` config overrides, and those overrides
  * reach the CLI through this variable.
  */
-export const GATEWAY_CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";
+export const GATEWAY_CODEX_LAUNCH_ARGS_ENV = "WORKJET_CODEX_LAUNCH_ARGS";
 
 /**
  * Harness drivers with a base-URL mechanism verified against the installed
@@ -228,7 +228,7 @@ export function codexGatewayLaunchArgs(
  *
  * `existingLaunchArgs` is the instance's configured Codex launch arguments;
  * the gateway overrides are appended to them rather than replacing them,
- * because `T3CODE_CODEX_LAUNCH_ARGS` shadows the configured value entirely
+ * because `WORKJET_CODEX_LAUNCH_ARGS` shadows the configured value entirely
  * and dropping the operator's arguments would be a silent regression.
  */
 export function gatewayRoutingEnvironmentOverlay(input: {

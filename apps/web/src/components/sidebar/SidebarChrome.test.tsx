@@ -26,7 +26,7 @@ describe("WorkjetProductModeSwitch", () => {
     expect(markup).toMatch(
       /<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*data-product-mode="ctox"/,
     );
-    expect(markup).not.toContain('aria-label="T3"');
+    expect(markup).not.toContain('aria-label="Workjet"');
   });
 
   it("maps radio navigation keys across the complete segmented control", () => {

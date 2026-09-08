@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/scripts",
+  "name": "@workjet/scripts",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,9 +12,9 @@
   "dependencies": {
     "@effect/platform-node": "catalog:",
     "@metric-space-ai/workjet-capabilities": "workspace:*",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/tailscale": "workspace:*",
+    "@workjet/contracts": "workspace:*",
+    "@workjet/shared": "workspace:*",
+    "@workjet/tailscale": "workspace:*",
     "effect": "catalog:",
     "pngjs": "7.0.0",
     "yaml": "catalog:"

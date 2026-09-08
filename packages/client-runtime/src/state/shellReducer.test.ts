@@ -5,8 +5,8 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@workjet/contracts";
 
 import { applyShellStreamEvent } from "./shellReducer.ts";
 

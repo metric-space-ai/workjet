@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@workjet/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
@@ -81,7 +81,7 @@ const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 const ReviewNotice = memo(function ReviewNotice(props: { readonly notice: string }) {
   return (
     <View className="border-b border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40">
-      <Text className="text-xs font-t3-bold uppercase text-amber-700 dark:text-amber-300">
+      <Text className="text-xs font-workjet-bold uppercase text-amber-700 dark:text-amber-300">
         Partial diff
       </Text>
       <Text className="text-xs leading-normal text-amber-800 dark:text-amber-200">
@@ -109,7 +109,7 @@ function ReviewSelectionActionBar(props: {
         tintColor="#ffffff"
         type="monochrome"
       />
-      <Text className="text-base font-t3-bold text-white">{props.title}</Text>
+      <Text className="text-base font-workjet-bold text-white">{props.title}</Text>
     </>
   );
 
@@ -181,16 +181,16 @@ const ReviewFileNavigatorRow = memo(function ReviewFileNavigatorRow(props: {
       <Text
         className={
           selected
-            ? "text-xs font-t3-bold text-foreground"
-            : "text-xs font-t3-medium text-foreground-secondary"
+            ? "text-xs font-workjet-bold text-foreground"
+            : "text-xs font-workjet-medium text-foreground-secondary"
         }
         numberOfLines={2}
       >
         {file.path}
       </Text>
       <View className="mt-1 flex-row gap-2">
-        <Text className="text-2xs font-t3-bold text-emerald-600">+{file.additions}</Text>
-        <Text className="text-2xs font-t3-bold text-rose-600">-{file.deletions}</Text>
+        <Text className="text-2xs font-workjet-bold text-emerald-600">+{file.additions}</Text>
+        <Text className="text-2xs font-workjet-bold text-rose-600">-{file.deletions}</Text>
       </View>
     </Pressable>
   );
@@ -323,7 +323,7 @@ function ReviewFileNavigator({
     <View className="flex-1 border-l border-border bg-sheet">
       <View className="border-b border-border" style={{ paddingTop: headerInset }}>
         <View className="px-4 py-3">
-          <Text className="text-sm font-t3-bold text-foreground">Changed files</Text>
+          <Text className="text-sm font-workjet-bold text-foreground">Changed files</Text>
           <Text className="text-xs text-foreground-muted">
             {files.length} {files.length === 1 ? "file" : "files"}
           </Text>
@@ -609,7 +609,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     if (error) {
       children.push(
         <View key="review-error" className="border-b border-border bg-card px-4 py-3">
-          <Text className="text-sm font-t3-bold text-foreground">Review unavailable</Text>
+          <Text className="text-sm font-workjet-bold text-foreground">Review unavailable</Text>
           <Text className="text-xs leading-normal text-foreground-muted">{error}</Text>
         </View>,
       );
@@ -839,7 +839,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
             {listHeader}
             {!selectedSection ? (
               <View className="border-b border-border bg-card px-4 py-5">
-                <Text className="text-sm font-t3-bold text-foreground">No review diffs</Text>
+                <Text className="text-sm font-workjet-bold text-foreground">No review diffs</Text>
                 <Text className="text-xs leading-normal text-foreground-muted">
                   This thread has no ready turn diffs and the worktree diff is empty.
                 </Text>
@@ -851,7 +851,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
               </View>
             ) : parsedDiff.kind === "empty" ? (
               <View className="border-b border-border bg-card px-4 py-5">
-                <Text className="text-sm font-t3-bold text-foreground">No changes</Text>
+                <Text className="text-sm font-workjet-bold text-foreground">No changes</Text>
                 <Text className="text-xs leading-normal text-foreground-muted">
                   {selectedSection.subtitle ?? "This diff is empty."}
                 </Text>

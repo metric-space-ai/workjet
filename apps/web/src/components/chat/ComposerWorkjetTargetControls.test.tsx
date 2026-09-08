@@ -8,7 +8,7 @@ import {
   type WorkjetGatewayModelSummary,
   type WorkjetLlmRoute,
   type WorkjetThreadConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 

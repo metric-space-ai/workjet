@@ -14,11 +14,11 @@ import {
   WorkjetManagedControlCsrfResult,
   type BusinessOsInstanceId,
   type WorkjetManagedBackendControlConnectionId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   WorkjetManagedBackendControlClient,
   WorkjetManagedBackendControlClientError,
-} from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+} from "@workjet/client-runtime/state/business-os-managed-backend-control";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

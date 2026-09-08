@@ -14,7 +14,7 @@ import {
   type CtoxManualPairingImportInput,
   type CtoxPairedInstanceMutationFailureCode as CtoxPairedInstanceMutationFailureCodeType,
   type CtoxSshManagedInstanceAddInput,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -379,7 +379,7 @@ export class CtoxInstanceRegistry extends Context.Service<
       instanceId: string,
     ) => Effect.Effect<CtoxSshManagedTarget, CtoxInstanceRegistryError>;
   }
->()("@t3tools/desktop/ctox/CtoxInstanceRegistry") {}
+>()("@workjet/desktop/ctox/CtoxInstanceRegistry") {}
 
 function registryError(code: CtoxPairedInstanceMutationFailureCodeType): CtoxInstanceRegistryError {
   return new CtoxInstanceRegistryError({ code });

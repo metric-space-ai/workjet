@@ -1,4 +1,4 @@
-import net from "node:net";
+import * as NodeNet from "node:net";
 import * as Effect from "effect/Effect";
 import {
   CTOX_SYNC_IPC_PROTOCOL_VERSION,
@@ -80,7 +80,7 @@ function exchangeSyncAuthority(
     return Promise.reject(cause);
   }
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection(endpoint);
+    const socket = NodeNet.createConnection(endpoint);
     let finished = false;
     let received = Buffer.alloc(0);
     const finish = (error?: Error, result?: SyncIpcResponse) => {

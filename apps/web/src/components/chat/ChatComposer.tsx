@@ -106,7 +106,6 @@ import {
   ComposerComputerControl,
   ComposerManualTargetControls,
   ComposerSystemPromptControl,
-  ComposerWorkjetCompactMenuContent,
   GREPPY_CAPABILITY_ID,
   harnessForProviderInstanceId,
   WorkjetCapabilityMenu,
@@ -540,6 +539,7 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const [customModelDrafts, setCustomModelDrafts] = useState<Readonly<Record<string, string>>>({});
   const [computerEditorState, setComputerEditorState] = useState<ComputerEditorState>({
     drafts: {},
     saving: false,
@@ -3287,6 +3287,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
+  const composerManualTargetControls =
+    workerModeActive || !workjetManualControlsAvailable ? null : (
+      <ComposerManualTargetControls
+        key={manualModelDraftKey}
+        customModelEditor={{
+          draft: customModelDrafts[manualModelDraftKey] ?? null,
+          onDraftChange: (draft) => {
+            setCustomModelDrafts((previous) => {
+              const next = { ...previous };
+              if (draft === null) delete next[manualModelDraftKey];
+              else next[manualModelDraftKey] = draft;
+              return next;
+            });
+          },
+        }}
+        configuredInstanceIds={configuredProviderInstanceIds}
+        unavailableHint={
+          lockedProvider === null
+            ? undefined
+            : "Locked — this thread continues on its current provider"
+        }
+        selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
+        onSelectHarness={handleSelectManualHarness}
+        models={manualGatewayModels}
+        modelsUnavailableReason={
+          manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+        }
+        selectedModelId={selectedModelForPickerWithCustomFallback}
+        onSelectModel={handleSelectManualModel}
+      />
+    );
+
   const composerSystemPromptControl =
     workerModeActive || !workjetManualControlsAvailable ? null : (
       <ComposerSystemPromptControl
@@ -3819,37 +3852,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           ? false
                           : composerProviderControls.showInteractionModeToggle
                       }
-                      workerMenuContent={
-                        <ComposerWorkjetCompactMenuContent
-                          hideWorkerSelection
-                          hideComputerSelection
-                          workers={workjetWorkers}
-                          selectedWorkerId={selectedWorkjetWorkerId}
-                          onSelectWorker={handleSelectWorkjetWorker}
-                          computers={workjetComputers}
-                          selectedComputerId={composerSelectedComputerId}
-                          activeEnvironmentId={environmentId}
-                          selectableEnvironmentIds={selectableEnvironmentIds}
-                          computerDisabledReason={composerComputerDisabledReason}
-                          onSelectComputer={handleSelectComposerComputer}
-                          manualTarget={
-                            workerModeActive || !workjetManualControlsAvailable
-                              ? null
-                              : {
-                                  configuredInstanceIds: configuredProviderInstanceIds,
-                                  selectedHarness: harnessForProviderInstanceId(selectedInstanceId),
-                                  onSelectHarness: handleSelectManualHarness,
-                                  models: manualGatewayModels,
-                                  modelsUnavailableReason:
-                                    manualGatewayModels.length === 0
-                                      ? manualModelsUnavailableReason
-                                      : null,
-                                  selectedModelId: selectedModelForPickerWithCustomFallback,
-                                  onSelectModel: handleSelectManualModel,
-                                }
-                          }
-                        />
-                      }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
                       contextWindowMenuContent={composerContextWindowMenuContent}
                       systemPromptMenuContent={composerSystemPromptControl}
@@ -3876,6 +3878,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         }}
                       />
                     )}
+                    {composerManualTargetControls}
                     {effectiveWorkjetGreppyEnabled === null ? null : (
                       <WorkjetCapabilityMenu
                         compact
@@ -3930,26 +3933,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       )
                     }
                     providerTargetControl={renderLegacyProviderTargetControl(false)}
-                    manualTargetControls={
-                      workerModeActive || !workjetManualControlsAvailable ? null : (
-                        <ComposerManualTargetControls
-                          configuredInstanceIds={configuredProviderInstanceIds}
-                          unavailableHint={
-                            lockedProvider === null
-                              ? undefined
-                              : "Locked — this thread continues on its current provider"
-                          }
-                          selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
-                          onSelectHarness={handleSelectManualHarness}
-                          models={manualGatewayModels}
-                          modelsUnavailableReason={
-                            manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
-                          }
-                          selectedModelId={selectedModelForPickerWithCustomFallback}
-                          onSelectModel={handleSelectManualModel}
-                        />
-                      )
-                    }
+                    manualTargetControls={composerManualTargetControls}
                     contextWindowControl={composerContextWindowControl}
                     systemPromptControl={composerSystemPromptControl}
                     attachmentControl={composerAttachmentControl}
